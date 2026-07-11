@@ -159,33 +159,52 @@
   function setupResize(id, cssVar, edge) {
     const pane = document.getElementById(id);
     let startX = 0, startW = 0, dragging = false;
+    // The handle is a wider, hover-visible grab strip on the pane's inner
+    // edge (size + look come from .resize-handle in CSS). Only the edge
+    // (right:0 / left:0) is set here, per pane.
     const handle = document.createElement("div");
     handle.className = "resize-handle";
-    handle.style.cssText = "position:absolute;top:0;" + edge + ":0;width:4px;height:100%;" +
-      "cursor:col-resize;z-index:10;opacity:0;";
+    handle.style.cssText = "position:absolute;top:0;" + edge + ":0;height:100%;z-index:10;";
+    const bar = document.createElement("div");
+    bar.className = "resize-handle-bar";
+    handle.appendChild(bar);
     pane.style.position = "relative";
     pane.appendChild(handle);
+
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing");
+      const w = pane.getBoundingClientRect().width;
+      if (id === "sidebar") cfg.sidebarWidth = w;
+      else cfg.outlineWidth = w;
+      persistConfig();
+    }
+
     handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;            // primary button only
       dragging = true; startX = e.clientX;
       startW = pane.getBoundingClientRect().width;
-      handle.style.opacity = "1";
+      handle.classList.add("dragging");
+      document.body.classList.add("resizing"); // keep col-resize cursor over siblings mid-drag
       e.preventDefault();
     });
     document.addEventListener("mousemove", (e) => {
       if (!dragging) return;
       const dx = e.clientX - startX;
-      const w = Math.max(140, Math.min(520, startW + dx));
+      // A left-edge handle (outline) widens when dragged away from the pane
+      // (dragging left => wider), so flip the sign; a right-edge handle
+      // (sidebar) drags naturally with +dx.
+      const sign = edge === "left" ? -1 : 1;
+      const w = Math.max(140, Math.min(520, startW + sign * dx));
       document.documentElement.style.setProperty(cssVar, w + "px");
     });
-    document.addEventListener("mouseup", () => {
-      if (!dragging) return;
-      dragging = false;
-      handle.style.opacity = "0";
-      const w = pane.getBoundingClientRect().width;
-      if (id === "sidebar") cfg.sidebarWidth = w;
-      else cfg.outlineWidth = w;
-      persistConfig();
-    });
+    document.addEventListener("mouseup", endDrag);
+    // Recover from a drag abandoned mid-gesture (button released off-window,
+    // alt-tab, tab hidden) -- otherwise body.resizing freezes the whole UI.
+    window.addEventListener("blur", endDrag);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) endDrag(); });
   }
 
   function firstFilePath(tree) {

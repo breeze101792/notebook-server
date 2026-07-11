@@ -139,19 +139,43 @@ html, body {
 .panel-title { overflow: hidden; text-overflow: ellipsis; }
 
 /* Inner content is the scroll container, inset from the handle edge so the
- * handle strip (4px) never overlaps the scrollbar. */
+ * 8px grab strip never overlaps the scrollbar (the scrollbar stays fully
+ * clickable; the handle sits in the margin gap). */
 #file-tree {
   flex: 1 1 auto;
   overflow: auto;
   min-height: 0;
-  margin-right: 4px;         /* handle lives on the sidebar's right edge */
+  margin-right: 8px;         /* handle lives on the sidebar's right edge */
 }
 #outline {
   flex: 1 1 auto;
   overflow: auto;
   min-height: 0;
-  margin-left: 4px;          /* handle lives on the outline's left edge */
+  margin-left: 8px;          /* handle lives on the outline's left edge */
 }
+
+/* --- resize handles (drag the inner edge to resize a pane) ------------- */
+/* A wide, easy-to-hit grab strip with a faint center bar that brightens on
+ * hover so the grabbable edge is visible (the old 4px invisible strip was
+ * impossible to find with a cursor). */
+.resize-handle {
+  width: 8px;
+  cursor: col-resize;
+  display: flex;
+  justify-content: center;
+}
+.resize-handle-bar {
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background .12s ease;
+}
+.resize-handle:hover .resize-handle-bar { background: var(--border); }
+.resize-handle.dragging .resize-handle-bar { background: var(--accent); }
+/* While dragging, force a column-resize cursor everywhere and suppress text
+ * selection so a fast drag that leaves the handle stays smooth. */
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 
 /* --- collapse / expand buttons (sidebar minimize) ------------------ */
 .collapse-btn {

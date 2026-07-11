@@ -337,16 +337,42 @@ function check(label, cond, extra) {
   check("outline has a resize handle", !!olH);
   check("sidebar handle on the right edge", !!sbH && sbH.style.right === "0px", sbH && sbH.style.right);
   check("outline handle on the left edge", !!olH && olH.style.left === "0px", olH && olH.style.left);
+  check("sidebar handle has a visible indicator bar", !!sbH && !!sbH.querySelector(".resize-handle-bar"));
+  check("outline handle has a visible indicator bar", !!olH && !!olH.querySelector(".resize-handle-bar"));
+  // The original bug was an invisible 4px handle via inline width/opacity.
+  // Size + visibility must come from CSS, so guard against inline overrides
+  // sneaking back (inline beats the stylesheet and would re-break it).
+  check("sidebar handle has no inline width/opacity", !!sbH && sbH.style.width === "" && sbH.style.opacity === "",
+    "w=" + (sbH && sbH.style.width) + " op=" + (sbH && sbH.style.opacity));
   // Simulate dragging the sidebar handle: mousedown -> mousemove -> mouseup.
   const sidebarPane = $("sidebar");
   const realRect = sidebarPane.getBoundingClientRect.bind(sidebarPane);
   sidebarPane.getBoundingClientRect = () => ({ width: 240, height: 600, left: 0, right: 240, top: 0, bottom: 600, x: 0, y: 0, toJSON() {} });
   sbH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: 100 }));
+  check("mousedown marks the handle dragging", sbH.classList.contains("dragging"));
+  check("mousedown marks the body resizing", window.document.body.classList.contains("resizing"));
   window.document.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 160 }));
   check("drag widens --sidebar-width (240->300)", cssVar("--sidebar-width") === "300px", cssVar("--sidebar-width"));
   window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
-  check("drag ends (handle opacity reset)", sbH.style.opacity === "0", "opacity=" + sbH.style.opacity);
+  check("drag ends (handle not dragging)", !sbH.classList.contains("dragging"));
+  check("drag ends (body not resizing)", !window.document.body.classList.contains("resizing"));
+  // Non-primary button must NOT start a drag (state is now clean).
+  sbH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 2, clientX: 100 }));
+  check("right-click does not arm a drag (button gate)", !sbH.classList.contains("dragging") && !window.document.body.classList.contains("resizing"));
   sidebarPane.getBoundingClientRect = realRect;
+
+  // Outline handle: left-edge handle. Dragging its left edge LEFT must WIDEN
+  // the outline (native left-edge resize direction), not narrow it.
+  const outlinePane = $("outline-pane");
+  const realOutlineRect = outlinePane.getBoundingClientRect.bind(outlinePane);
+  outlinePane.getBoundingClientRect = () => ({ width: 220, height: 600, left: 1060, right: 1280, top: 0, bottom: 600, x: 1060, y: 0, toJSON() {} });
+  olH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: 1060 }));
+  check("outline mousedown marks dragging", olH.classList.contains("dragging"));
+  window.document.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 1000 })); // dx = -60 (drag left)
+  check("outline drag left widens --outline-width (220->280)", cssVar("--outline-width") === "280px", cssVar("--outline-width"));
+  window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+  check("outline drag ends (not dragging)", !olH.classList.contains("dragging"));
+  outlinePane.getBoundingClientRect = realOutlineRect;
 
   console.log("== tabs: close active ==");
   const beforeCount = tabs().length;
