@@ -15,8 +15,10 @@ import shutil
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-CONFIG_DIR = os.path.join(BASE_DIR, "config")
+# NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
+# point the data and config folders elsewhere. Default to the project folders.
+DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "data")
+CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 
 WELCOME_MD = """# Welcome to your notebook
@@ -87,8 +89,12 @@ def safe_path(rel_path):
     """
     if not rel_path or not isinstance(rel_path, str):
         return None
-    rel = rel_path.strip().lstrip("/")
+    rel = rel_path.strip()
     if not rel:
+        return None
+    # Reject absolute input outright (/etc/passwd, C:\...) rather than
+    # normalising it into a path inside DATA_DIR.
+    if os.path.isabs(rel):
         return None
     candidate = os.path.normpath(os.path.join(DATA_DIR, rel))
     real = os.path.realpath(candidate)

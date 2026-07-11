@@ -113,9 +113,14 @@ html, body {
   border-right: 1px solid var(--border);
   overflow: auto;
   min-width: 0;
+  position: relative;       /* anchor for the collapsed .expand-btn strip */
 }
 #outline-pane { border-right: none; border-left: 1px solid var(--border); }
 .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
   padding: 8px 12px;
   font-size: 11px;
   text-transform: uppercase;
@@ -127,6 +132,47 @@ html, body {
   background: var(--bg-panel);
   z-index: 1;
 }
+.panel-title { overflow: hidden; text-overflow: ellipsis; }
+
+/* --- collapse / expand buttons (sidebar minimize) ------------------ */
+.collapse-btn {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+/* A thin vertical strip shown when the sidebar is collapsed; clicking it
+ * (or the chevron) expands the sidebar again. */
+.expand-btn {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  border: none;
+  background: var(--bg-panel);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 14px;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.expand-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+#sidebar.collapsed .expand-btn,
+#outline-pane.collapsed .expand-btn { display: flex; }
+#sidebar.collapsed .panel-header,
+#sidebar.collapsed #file-tree,
+#outline-pane.collapsed .panel-header,
+#outline-pane.collapsed #outline { display: none; }
+#sidebar.collapsed .resize-handle,
+#outline-pane.collapsed .resize-handle { display: none; }
 
 #editor-pane {
   position: relative;

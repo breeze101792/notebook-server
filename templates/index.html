@@ -30,8 +30,12 @@
 
     <main id="layout">
       <aside id="sidebar">
-        <div class="panel-header">Files</div>
+        <div class="panel-header">
+          <span class="panel-title">Files</span>
+          <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
+        </div>
         <div id="file-tree" class="tree"></div>
+        <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
       </aside>
 
       <section id="editor-pane">
@@ -47,8 +51,12 @@
       </section>
 
       <aside id="outline-pane">
-        <div class="panel-header">Outline</div>
+        <div class="panel-header">
+          <span class="panel-title">Outline</span>
+          <button class="collapse-btn" id="outline-collapse" title="Collapse outline (right arrow)">›</button>
+        </div>
         <div id="outline" class="outline"></div>
+        <button class="expand-btn" id="outline-expand" title="Show outline" hidden>‹</button>
       </aside>
     </main>
   </div>

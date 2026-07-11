@@ -1,0 +1,11 @@
+{
+  "name": "notebook-frontend-tests",
+  "private": true,
+  "description": "DOM-level tests for the Markdown notebook server frontend (jsdom).",
+  "scripts": {
+    "test": "node tests/dom/test_dom.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

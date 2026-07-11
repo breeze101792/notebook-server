@@ -10,8 +10,13 @@
     recentFiles: [],
     sidebarWidth: 240,
     outlineWidth: 220,
+    sidebarCollapsed: false,
+    outlineCollapsed: false,
     searchCaseSensitive: false,
   };
+
+  // Width used while a sidebar is collapsed (a thin clickable strip).
+  const COLLAPSED_W = 24;
 
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
@@ -20,6 +25,8 @@
   const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
   const saveBtn  = document.getElementById("save");
+  const sidebarEl  = document.getElementById("sidebar");
+  const outlineEl  = document.getElementById("outline-pane");
 
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
@@ -27,11 +34,28 @@
     document.body.dataset.theme = cfg.theme || "dark";
     themeSel.value = cfg.theme || "dark";
     caseEl.checked = !!cfg.searchCaseSensitive;
-    if (cfg.sidebarWidth) {
-      document.documentElement.style.setProperty("--sidebar-width", cfg.sidebarWidth + "px");
+    applySidebarState();
+    applyOutlineState();
+  }
+
+  /* Sidebar minimize: toggle between the saved width and a thin strip.
+   * The collapsed state is persisted in config. */
+  function applySidebarState() {
+    if (cfg.sidebarCollapsed) {
+      document.documentElement.style.setProperty("--sidebar-width", COLLAPSED_W + "px");
+      sidebarEl.classList.add("collapsed");
+    } else {
+      document.documentElement.style.setProperty("--sidebar-width", (cfg.sidebarWidth || 240) + "px");
+      sidebarEl.classList.remove("collapsed");
     }
-    if (cfg.outlineWidth) {
-      document.documentElement.style.setProperty("--outline-width", cfg.outlineWidth + "px");
+  }
+  function applyOutlineState() {
+    if (cfg.outlineCollapsed) {
+      document.documentElement.style.setProperty("--outline-width", COLLAPSED_W + "px");
+      outlineEl.classList.add("collapsed");
+    } else {
+      document.documentElement.style.setProperty("--outline-width", (cfg.outlineWidth || 220) + "px");
+      outlineEl.classList.remove("collapsed");
     }
   }
 
@@ -76,6 +100,16 @@
     // top bar actions
     saveBtn.addEventListener("click", () => NB.viewer.save());
     editBtn.addEventListener("click", () => NB.viewer.toggleEdit());
+
+    // sidebar minimize (collapse / expand) for both sidebars
+    document.getElementById("sidebar-collapse").addEventListener("click",
+      () => { cfg.sidebarCollapsed = true; applySidebarState(); persistConfig(); });
+    document.getElementById("sidebar-expand").addEventListener("click",
+      () => { cfg.sidebarCollapsed = false; applySidebarState(); persistConfig(); });
+    document.getElementById("outline-collapse").addEventListener("click",
+      () => { cfg.outlineCollapsed = true; applyOutlineState(); persistConfig(); });
+    document.getElementById("outline-expand").addEventListener("click",
+      () => { cfg.outlineCollapsed = false; applyOutlineState(); persistConfig(); });
 
     // keyboard: Ctrl/Cmd+S saves
     document.addEventListener("keydown", (e) => {
