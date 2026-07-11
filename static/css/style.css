@@ -177,9 +177,67 @@ html, body {
 #editor-pane {
   position: relative;
   display: flex;
+  flex-direction: column;
   min-width: 0;
   overflow: hidden;
 }
+
+/* ------------------------------------------------------------------ */
+/* File tabs                                                           */
+/* ------------------------------------------------------------------ */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 6px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.tab-bar::-webkit-scrollbar { height: 6px; }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.tab:hover { background: var(--accent-soft); color: var(--fg); }
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+.tab.dirty .tab-label::before {
+  content: "• ";
+  color: var(--accent);
+  font-weight: 700;
+}
+.tab .tab-close {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 3px;
+  border-radius: 4px;
+}
+.tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
 
 /* The viewer is the scroll container (IntersectionObserver root). */
 #viewer {

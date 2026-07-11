@@ -8,6 +8,8 @@
     theme: "dark",
     lastFile: null,
     recentFiles: [],
+    openFiles: [],
+    activeFile: null,
     sidebarWidth: 240,
     outlineWidth: 220,
     sidebarCollapsed: false,
@@ -76,19 +78,20 @@
 
   /* --- wiring -------------------------------------------------------- */
   function wire() {
-    // sidebar -> viewer
+    // sidebar -> tabs (open / activate)
     NB.evt.on("file:open-request", async (path) => {
-      try { await NB.viewer.open(path); updateRecent(path); }
+      try { await NB.tabs.open(path); }
       catch (e) { alert("Could not open: " + e.message); }
     });
 
-    // tree changes (after mutations) -> sidebar refresh already handled in sidebar.js
-    // deleted current file -> clear viewer
-    NB.evt.on("file:deleted", (path) => {
-      if (NB.viewer.getPath() === path) {
-        document.getElementById("viewer").innerHTML =
-          '<p style="color:var(--fg-muted)">No file selected.</p>';
-      }
+    // any file shown -> update recents + tree highlight (fired by viewer.activate)
+    NB.evt.on("file:open", (path) => { if (path) updateRecent(path); });
+
+    // tab set changed -> persist open files + active file
+    NB.evt.on("tabs:changed", ({ openFiles, activeFile }) => {
+      cfg.openFiles = openFiles;
+      cfg.activeFile = activeFile;
+      persistConfig();
     });
 
     // search-case toggle persists config
@@ -188,13 +191,14 @@
     await NB.sidebar.refresh();
     const tree = NB.sidebar.getTree();
 
-    const startPath = cfg.lastFile && treeHas(tree, cfg.lastFile)
-      ? cfg.lastFile
-      : firstFilePath(tree);
-    if (startPath) {
-      try { await NB.viewer.open(startPath); updateRecent(startPath); }
-      catch (e) { console.warn("open start file failed", e); }
-    }
+    // Restore previously open tabs (filtered to files that still exist),
+    // then activate the last active file; fall back to lastFile / first file.
+    const openFiles = (cfg.openFiles || []).filter(p => treeHas(tree, p));
+    const activeFile = cfg.activeFile && treeHas(tree, cfg.activeFile) ? cfg.activeFile : null;
+    const lastFile = cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile : null;
+    const fallback = lastFile || firstFilePath(tree) || null;
+    try { await NB.tabs.restore(openFiles, activeFile, fallback); }
+    catch (e) { console.warn("restore tabs failed", e); }
   }
 
   function treeHas(tree, path) {

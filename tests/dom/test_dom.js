@@ -66,6 +66,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
         <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
       </aside>
       <section id="editor-pane">
+        <div id="tab-bar" class="tab-bar"></div>
         <div id="viewer" class="markdown-body"></div>
         <textarea id="raw-editor" hidden></textarea>
         <div id="search-results" hidden>
@@ -145,6 +146,7 @@ evalIn(read("static/js/viewer.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
+evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
@@ -181,6 +183,54 @@ function check(label, cond, extra) {
     Array.from(items).every(i => i.dataset.level), "first=" + (items[0] && items[0].dataset.level));
   const codeEl = window.document.querySelector("#viewer pre code");
   check("code block highlighted", !!codeEl && /hljs/.test(codeEl.innerHTML), codeEl && codeEl.className);
+
+  console.log("== file tabs ==");
+  const barEl = window.document.getElementById("tab-bar");
+  const tabs = () => window.document.querySelectorAll("#tab-bar .tab");
+  const activeTabPath = () => {
+    const a = window.document.querySelector("#tab-bar .tab.active");
+    return a ? a.dataset.path : null;
+  };
+  check("boot opened one tab (notes/a.md)", tabs().length === 1 && tabs()[0].dataset.path === "notes/a.md",
+    tabs().length + " tab(s)");
+  check("active tab is notes/a.md", activeTabPath() === "notes/a.md");
+  // open a second file -> new tab, becomes active
+  await window.NB.tabs.open("Welcome.md");
+  await tick(20);
+  check("open Welcome adds a tab (2)", tabs().length === 2, "got " + tabs().length);
+  check("active tab is Welcome.md", activeTabPath() === "Welcome.md");
+  // switch back -> active changes, viewer re-renders File A
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  check("active switches to notes/a.md", activeTabPath() === "notes/a.md");
+  check("viewer shows notes/a.md content", /File A/.test(window.document.getElementById("viewer").textContent));
+  // re-opening an open file does not duplicate
+  await window.NB.tabs.open("notes/a.md");
+  await tick(20);
+  check("re-open does not duplicate (still 2)", tabs().length === 2, "got " + tabs().length);
+  // dirty dot appears while editing and persists after leaving edit mode
+  click("edit-toggle");
+  await tick(10);
+  const ed = $("raw-editor");
+  ed.value = "# File A\n\nDIRTY EDIT\n";
+  ed.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  const aTab = window.document.querySelector('.tab[data-path="notes/a.md"]');
+  check("dirty tab marked with .dirty", aTab && aTab.classList.contains("dirty"));
+  click("edit-toggle"); // exit edit (keeps unsaved content)
+  await tick(10);
+  check("still dirty after exiting edit", aTab.classList.contains("dirty"));
+  // close the non-active Welcome tab
+  window.NB.tabs.close("Welcome.md");
+  await tick(20);
+  check("close removes Welcome tab (1 left)", tabs().length === 1, "got " + tabs().length);
+  check("notes/a.md still active", activeTabPath() === "notes/a.md");
+  // persistence: openFiles + activeFile saved to config
+  await tick(300);
+  const tabCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("openFiles/activeFile persisted",
+    /"openFiles":\["notes\/a\.md"\]/.test(tabCfgPost) && /"activeFile":"notes\/a\.md"/.test(tabCfgPost),
+    tabCfgPost);
 
   console.log("== search ==");
   const si = $("search-input");
@@ -255,6 +305,121 @@ function check(label, cond, extra) {
   await tick(350);
   const configPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
   check("collapse persisted to config (sidebarCollapsed:true)", /sidebarCollapsed":true/.test(configPost), configPost);
+
+  console.log("== tabs: close active ==");
+  const beforeCount = tabs().length;
+  await window.NB.tabs.open("Welcome.md");
+  await tick(20);
+  check("open Welcome for close-active test", activeTabPath() === "Welcome.md" && tabs().length === beforeCount + 1,
+    "active=" + activeTabPath() + " count=" + tabs().length);
+  window.NB.tabs.close("Welcome.md");   // close the active tab
+  await tick(40);
+  check("close-active removes Welcome", !window.document.querySelector('.tab[data-path="Welcome.md"]'));
+  check("close-active restores count", tabs().length === beforeCount, "got " + tabs().length);
+  check("close-active makes a neighbor active", !!activeTabPath(), "active=" + activeTabPath());
+
+  console.log("== tabs: regression coverage ==");
+  // Reset to a known state: close everything (covers close-last-tab -> viewer.clear).
+  window.NB.tabs.close("notes/a.md", { force: true });   // non-active
+  await tick(10);
+  window.NB.tabs.close(activeTabPath(), { force: true }); // active, last tab
+  await tick(20);
+  check("close last tab -> viewer.clear placeholder", /No file selected/.test($("viewer").textContent));
+  check("close last tab -> editor hidden", $("raw-editor").hidden);
+  check("close last tab -> edit button resets", $("edit-toggle").textContent === "Edit");
+  check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
+
+  // restore() reads openFiles/activeFile back from config (round-trip).
+  await window.NB.tabs.restore(["notes/a.md", "Welcome.md"], "Welcome.md", null);
+  await tick(20);
+  check("restore reads openFiles -> 2 tabs", tabs().length === 2, "got " + tabs().length);
+  check("restore activates activeFile (Welcome)", activeTabPath() === "Welcome.md");
+  check("restore includes notes/a.md tab (lazy)", !!window.document.querySelector('.tab[data-path="notes/a.md"]'));
+
+  // Switching tabs while in edit mode preserves unsaved edits (regression).
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(10);
+  window.NB.viewer.startEdit();
+  $("raw-editor").value = "# notes/a\n\nUNSAVED SWITCH EDITS\n";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  await window.NB.tabs.activate("Welcome.md");   // switch away mid-edit
+  await tick(20);
+  await window.NB.tabs.activate("notes/a.md");   // switch back
+  await tick(20);
+  check("switch away+back preserves edits", /UNSAVED SWITCH EDITS/.test($("raw-editor").value));
+  check("switched-back tab still dirty",
+    window.document.querySelector('.tab[data-path="notes/a.md"]').classList.contains("dirty"));
+  window.NB.viewer.endEdit();   // leave edit (keeps content -> still dirty)
+  await tick(10);
+
+  // rename() re-keys the tab and carries dirty state.
+  window.NB.tabs.rename("notes/a.md", "notes/renamed.md");
+  await tick(10);
+  check("rename re-keys tab path", !!window.document.querySelector('.tab[data-path="notes/renamed.md"]'));
+  check("rename drops old path", !window.NB.tabs.isOpen("notes/a.md"));
+  check("rename adds new path", window.NB.tabs.isOpen("notes/renamed.md"));
+  check("rename keeps active -> new path", window.NB.tabs.getActive() === "notes/renamed.md");
+  check("rename carries dirty state",
+    window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+
+  // save() clears the dirty dot.
+  click("save");
+  await tick(20);
+  check("save clears dirty dot",
+    !window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+
+  // confirm-cancel keeps a dirty tab (and its edits).
+  window.NB.viewer.startEdit();
+  $("raw-editor").value = "# notes/renamed\n\nCANCEL TEST\n";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  window.NB.viewer.endEdit();
+  await tick(10);
+  const beforeClose = tabs().length;
+  window.confirm = () => false;                       // user cancels
+  window.NB.tabs.close("notes/renamed.md");           // dirty -> prompts -> cancelled
+  await tick(10);
+  check("confirm-cancel keeps the tab", tabs().length === beforeClose);
+  check("confirm-cancel keeps active", window.NB.tabs.getActive() === "notes/renamed.md");
+  check("confirm-cancel keeps dirty",
+    window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+  window.confirm = () => true;                        // restore stub
+
+  // Multi-tab dirty: a full render() re-applies the dot to every dirty tab.
+  await window.NB.tabs.activate("Welcome.md");
+  await tick(10);
+  window.NB.viewer.startEdit();
+  $("raw-editor").value = "WELCOME DIRTY";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  window.NB.viewer.endEdit();
+  await tick(10);
+  await window.NB.tabs.activate("notes/renamed.md");  // notes/renamed still dirty
+  await tick(10);
+  window.NB.tabs.render();                            // force full re-render
+  check("multi-tab: notes/renamed dirty after render",
+    window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+  check("multi-tab: Welcome dirty after render",
+    window.document.querySelector('.tab[data-path="Welcome.md"]').classList.contains("dirty"));
+
+  // Middle-click (auxclick, button 1) closes a clean tab.
+  await window.NB.tabs.open("created.md");
+  await tick(20);
+  const cnt = tabs().length;
+  const createdTab = window.document.querySelector('.tab[data-path="created.md"]');
+  createdTab.dispatchEvent(new window.MouseEvent("auxclick", { bubbles: true, button: 1 }));
+  await tick(20);
+  check("middle-click closes tab", tabs().length === cnt - 1 && !window.NB.tabs.isOpen("created.md"),
+    "count=" + tabs().length);
+
+  // Clicking the tab's × button closes it (was broken by a `close` shadowing bug).
+  await window.NB.tabs.open("created.md");
+  await tick(20);
+  const cnt2 = tabs().length;
+  const xBtn = window.document.querySelector('.tab[data-path="created.md"] .tab-close');
+  xBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("× button closes tab", tabs().length === cnt2 - 1 && !window.NB.tabs.isOpen("created.md"),
+    "count=" + tabs().length);
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

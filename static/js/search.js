@@ -106,7 +106,8 @@
 
   async function onHitClick(m, q, caseSensitive) {
     close();
-    if (NB.viewer) await NB.viewer.open(m.file);
+    if (NB.tabs) await NB.tabs.open(m.file);
+    else if (NB.viewer) await NB.viewer.activate(m.file);
     // Wait a tick for render to settle before scrolling to the match.
     requestAnimationFrame(() => {
       if (NB.viewer && NB.viewer.jumpToMatch) {

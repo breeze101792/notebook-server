@@ -84,13 +84,16 @@
     refresh();
   }
 
-  function openFile(path) {
+  function setSelected(path) {
     selectedPath = path;
     document.querySelectorAll(".tree-row.selected")
       .forEach(r => r.classList.remove("selected"));
     const row = document.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
+  }
+  function openFile(path) {
+    setSelected(path);
     NB.evt.emit("file:open-request", path);
   }
 
@@ -198,6 +201,7 @@
     if (!to || to === node.path) return;
     try {
       await NB.api.moveItem(node.path, to);
+      NB.evt.emit("file:moved", { from: node.path, to });
       if (selectedPath === node.path) openFile(to);
       await refresh();
     } catch (e) { alert("Move failed: " + e.message); }
@@ -257,4 +261,8 @@
   }
 
   NB.sidebar = { refresh, render, openFile, createAtRoot, getTree };
+
+  // Keep the tree highlight in sync whenever a file is shown, regardless of
+  // how it was opened (tab click, search result, boot).
+  NB.evt.on("file:open", (path) => { if (path) setSelected(path); });
 })();
