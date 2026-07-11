@@ -111,9 +111,13 @@ html, body {
 #sidebar, #outline-pane {
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;          /* the pane never scrolls; inner content does, so
+                              the resize handle on the pane edge is never
+                              buried under a scrollbar */
   min-width: 0;
-  position: relative;       /* anchor for the collapsed .expand-btn strip */
+  position: relative;        /* anchor for the collapsed strip + resize handle */
 }
 #outline-pane { border-right: none; border-left: 1px solid var(--border); }
 .panel-header {
@@ -122,17 +126,32 @@ html, body {
   justify-content: space-between;
   gap: 6px;
   padding: 8px 12px;
+  flex: 0 0 auto;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .8px;
   color: var(--fg-muted);
   border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
+  position: relative;
   background: var(--bg-panel);
-  z-index: 1;
+  z-index: 20;               /* above the resize handle so header buttons win */
 }
 .panel-title { overflow: hidden; text-overflow: ellipsis; }
+
+/* Inner content is the scroll container, inset from the handle edge so the
+ * handle strip (4px) never overlaps the scrollbar. */
+#file-tree {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  margin-right: 4px;         /* handle lives on the sidebar's right edge */
+}
+#outline {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  margin-left: 4px;          /* handle lives on the outline's left edge */
+}
 
 /* --- collapse / expand buttons (sidebar minimize) ------------------ */
 .collapse-btn {

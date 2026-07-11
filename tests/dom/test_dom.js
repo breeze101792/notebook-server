@@ -330,6 +330,24 @@ function check(label, cond, extra) {
   const configPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
   check("collapse persisted to config (sidebarCollapsed:true)", /sidebarCollapsed":true/.test(configPost), configPost);
 
+  console.log("== sidebar resize handles ==");
+  const sbH = window.document.querySelector("#sidebar > .resize-handle");
+  const olH = window.document.querySelector("#outline-pane > .resize-handle");
+  check("left sidebar has a resize handle", !!sbH);
+  check("outline has a resize handle", !!olH);
+  check("sidebar handle on the right edge", !!sbH && sbH.style.right === "0px", sbH && sbH.style.right);
+  check("outline handle on the left edge", !!olH && olH.style.left === "0px", olH && olH.style.left);
+  // Simulate dragging the sidebar handle: mousedown -> mousemove -> mouseup.
+  const sidebarPane = $("sidebar");
+  const realRect = sidebarPane.getBoundingClientRect.bind(sidebarPane);
+  sidebarPane.getBoundingClientRect = () => ({ width: 240, height: 600, left: 0, right: 240, top: 0, bottom: 600, x: 0, y: 0, toJSON() {} });
+  sbH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: 100 }));
+  window.document.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 160 }));
+  check("drag widens --sidebar-width (240->300)", cssVar("--sidebar-width") === "300px", cssVar("--sidebar-width"));
+  window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+  check("drag ends (handle opacity reset)", sbH.style.opacity === "0", "opacity=" + sbH.style.opacity);
+  sidebarPane.getBoundingClientRect = realRect;
+
   console.log("== tabs: close active ==");
   const beforeCount = tabs().length;
   await window.NB.tabs.open("Welcome.md");
