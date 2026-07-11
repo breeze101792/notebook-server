@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Markdown Notebook</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css">
+</head>
+<body data-theme="dark">
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">📓 Notebook</div>
+      <div class="search-wrap">
+        <input id="search-input" type="search" placeholder="Search notebooks…  (Enter to run)">
+        <label class="case-toggle" title="Case sensitive">
+          <input type="checkbox" id="search-case"> Aa
+        </label>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-actions">
+        <button id="edit-toggle">Edit</button>
+        <button id="save" class="primary" title="Save current file">Save</button>
+      </div>
+      <select id="theme-select" title="Theme">
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+      </select>
+    </header>
+
+    <main id="layout">
+      <aside id="sidebar">
+        <div class="panel-header">Files</div>
+        <div id="file-tree" class="tree"></div>
+      </aside>
+
+      <section id="editor-pane">
+        <div id="viewer" class="markdown-body"></div>
+        <textarea id="raw-editor" hidden spellcheck="false"></textarea>
+        <div id="search-results" class="search-results" hidden>
+          <div class="search-results-header">
+            <span id="search-summary"></span>
+            <button id="search-close" title="Close search">×</button>
+          </div>
+          <ul id="search-list"></ul>
+        </div>
+      </section>
+
+      <aside id="outline-pane">
+        <div class="panel-header">Outline</div>
+        <div id="outline" class="outline"></div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Right-click context menu for the file tree -->
+  <div id="context-menu" class="context-menu" hidden></div>
+
+  <!-- Vendored libs first (no CDN tags; works offline) -->
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/highlight.min.js"></script>
+  <!-- App modules, in dependency order -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/viewer.js"></script>
+  <script src="/static/js/outline.js"></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/search.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

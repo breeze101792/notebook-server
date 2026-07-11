@@ -1,0 +1,25 @@
+# --- Sandbox environment artifacts (mounted into the workdir, not part of project) ---
+.bashrc
+.bash_profile
+.zshrc
+.zprofile
+.profile
+.ripgreprc
+.gitconfig
+.gitmodules
+.mcp.json
+.vscode
+.idea
+
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- Node (frontend test dependencies) ---
+node_modules/
+package-lock.json
+
+# --- Runtime user content (recreated automatically on first run) ---
+/data/
+/config/
