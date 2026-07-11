@@ -56,7 +56,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <input type="checkbox" id="search-case">
       <button id="edit-toggle">Edit</button>
       <button id="save">Save</button>
-      <select id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select>
+      <select id="theme-select"><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select>
     </header>
     <main id="layout">
       <aside id="sidebar">
@@ -101,6 +101,13 @@ window.HTMLElement.prototype.scrollIntoView = function () {};
 window.prompt = () => promptValue;
 window.confirm = () => true;
 window.alert = () => {};
+// matchMedia stub: report a dark system preference (auto -> dark).
+window.matchMedia = () => ({
+  matches: false, media: "", onchange: null,
+  addListener() {}, removeListener() {},
+  addEventListener() {}, removeEventListener() {},
+  dispatchEvent() { return false; },
+});
 
 // Fake fetch routing for every endpoint api.js calls.
 window.fetch = async (url, opts) => {
@@ -172,6 +179,23 @@ function check(label, cond, extra) {
   check("tree has 4 rows", rows.length === 4, "got " + rows.length);
   check("globals loaded (marked/hljs/NB)",
     typeof window.marked === "object" && typeof window.hljs === "object" && !!window.NB.viewer);
+
+  console.log("== theme ==");
+  check("default theme pref is auto", $("theme-select").value === "auto", "got " + $("theme-select").value);
+  check("auto resolves to dark (system-dark stub)", window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+  $("theme-select").value = "light";
+  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
+  check("explicit light sets data-theme=light", window.document.body.dataset.theme === "light",
+    "data-theme=" + window.document.body.dataset.theme);
+  $("theme-select").value = "dark";
+  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
+  check("explicit dark sets data-theme=dark", window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+  $("theme-select").value = "auto";
+  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
+  check("back to auto resolves dark", window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
 
   console.log("== viewer + outline ==");
   const heads = window.document.querySelectorAll("#viewer h1,h2,h3,h4,h5,h6");

@@ -5,7 +5,7 @@
   window.NB = window.NB || {};
 
   const DEFAULTS = {
-    theme: "dark",
+    theme: "auto",
     lastFile: null,
     recentFiles: [],
     openFiles: [],
@@ -30,11 +30,34 @@
   const sidebarEl  = document.getElementById("sidebar");
   const outlineEl  = document.getElementById("outline-pane");
 
+  /* --- theme ---------------------------------------------------------- */
+  // "auto" follows the system color scheme; dark is the fallback when the
+  // preference can't be queried (e.g. jsdom has no matchMedia).
+  const themeMQ = window.matchMedia
+    ? window.matchMedia("(prefers-color-scheme: light)")
+    : null;
+
+  function resolveTheme(pref) {
+    if (pref === "auto") return (themeMQ && themeMQ.matches) ? "light" : "dark";
+    return pref === "light" ? "light" : "dark";
+  }
+  function applyTheme(pref) {
+    cfg.theme = pref;
+    document.body.dataset.theme = resolveTheme(pref);
+    themeSel.value = pref;
+  }
+  if (themeMQ) {
+    themeMQ.addEventListener("change", () => {
+      if (cfg.theme === "auto") {
+        document.body.dataset.theme = resolveTheme("auto");
+      }
+    });
+  }
+
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
-    document.body.dataset.theme = cfg.theme || "dark";
-    themeSel.value = cfg.theme || "dark";
+    applyTheme(cfg.theme || "auto");
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -124,8 +147,7 @@
 
     // theme
     themeSel.addEventListener("change", () => {
-      cfg.theme = themeSel.value;
-      document.body.dataset.theme = cfg.theme;
+      applyTheme(themeSel.value);
       persistConfig();
     });
 
