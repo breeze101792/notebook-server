@@ -100,8 +100,9 @@
       if (!t) {
         const data = await NB.api.getFile(path);
         const content = (data && data.content) || "";
-        t = { content, editMode: false, savedContent: content };
+        t = { content, editMode: false, savedContent: content, mtime: (data && data.mtime) || null };
         cache.set(path, t);
+        if (NB.watcher) NB.watcher.noteOpened(path, t.mtime);
       }
       active = path;
       if (t.editMode) { editorEl.value = t.content; showEditor(); }
@@ -113,6 +114,7 @@
     /* Drop the cache for a closed tab. */
     close(path) {
       cache.delete(path);
+      if (NB.watcher) NB.watcher.forget(path);
       if (active === path) active = null;
     },
 
@@ -168,6 +170,16 @@
       t.content = content;
       t.savedContent = content;
       if (t.editMode) { t.editMode = false; showViewer(); render(); }
+      // Tell the watcher our next save's mtime echo should be ignored.
+      if (NB.watcher) NB.watcher.noteSelfSave(active);
+      // Re-fetch to pick up the new mtime the server stamped on the file.
+      try {
+        const data = await NB.api.getFile(active);
+        if (data && data.mtime != null) {
+          t.mtime = data.mtime;
+          if (NB.watcher) NB.watcher.noteOpened(active, data.mtime);
+        }
+      } catch (_) { /* non-fatal; the file did save */ }
       NB.evt.emit("viewer:dirty-changed", { path: active, dirty: false });
       NB.evt.emit("file:saved", active);
     },
@@ -206,6 +218,36 @@
   editorEl.addEventListener("input", () => {
     if (!active) return;
     NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
+  });
+
+  /* External file change (watcher or poll). Refetch the file. If the user
+   * has unsaved edits, prompt; if they say no, mark the tab as a conflict
+   * and keep their version. */
+  NB.evt.on("file:external-change", async ({ path, data }) => {
+    const t = cache.get(path);
+    if (!t) return;          // never opened -> the next activate will refetch
+    let fresh = data;
+    if (!fresh) {
+      try { fresh = await NB.api.getFile(path); }
+      catch (e) { return; } // file gone or unreadable; let the sidebar handle it
+    }
+    if (fresh.mtime != null) t.mtime = fresh.mtime;
+    const wasActive = (active === path);
+    if (viewer.isDirty(path)) {
+      const ok = confirm('"' + path + '" changed on disk.\n\n' +
+        'Discard your unsaved edits and reload from disk?\n' +
+        '(Cancel keeps your edits and marks the tab as a conflict.)');
+      if (!ok) {
+        NB.evt.emit("viewer:conflict", { path, conflict: true });
+        return;
+      }
+    }
+    t.content = fresh.content;
+    t.savedContent = fresh.content;
+    t.editMode = false;
+    if (wasActive) { showViewer(); render(); }
+    NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
+    NB.evt.emit("viewer:conflict", { path, conflict: false });
   });
 
   NB.viewer = viewer;

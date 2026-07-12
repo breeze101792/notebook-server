@@ -73,6 +73,13 @@
       const label = document.createElement("span");
       label.className = "tab-label";
       label.textContent = baseName(path);
+      if (conflictSet.has(path)) {
+        const badge = document.createElement("span");
+        badge.className = "tab-conflict";
+        badge.textContent = "↻";
+        badge.title = "Disk has a newer version of this file (your edits are kept locally).";
+        label.appendChild(badge);
+      }
       tab.appendChild(label);
 
       // Pinned tabs have no close button (unpin first). Middle-click also
@@ -402,6 +409,24 @@
       .forEach(p => close(p, { force: true }));
   });
 
-  // A file moved/renamed re-keys its tab; unsaved edits travel with it.
+  /* Re-key a tab when its file is moved/renamed; unsaved edits travel. */
   NB.evt.on("file:moved", ({ from, to }) => rename(from, to));
+
+  // External disk change with unsaved local edits -> mark the tab as a
+  // conflict. The badge is cleared on the next reload, save, or re-key.
+  const conflictSet = new Set();
+  NB.evt.on("viewer:conflict", ({ path, conflict }) => {
+    if (conflict) conflictSet.add(path);
+    else conflictSet.delete(path);
+    render();
+  });
+  // A close or rename that drops the path from the open set also drops
+  // its conflict flag (otherwise the badge would reappear on re-open).
+  function _dropTab(path) { conflictSet.delete(path); }
+  // Wrap the existing dropTab so we don't lose the original. Simpler: the
+  // existing dropTab already deletes from the open set; clear conflicts
+  // at the same spot by hooking the close() path through an event.
+  NB.evt.on("tabs:changed", () => {
+    ordered.forEach(p => { if (!openSet.has(p)) conflictSet.delete(p); });
+  });
 })();

@@ -85,6 +85,31 @@ class TestFileRead(BaseTest):
         code, _ = self.jget("/api/file?path=notes/../../app.py")
         self.assertEqual(code, 400)
 
+    def test_read_returns_mtime(self):
+        code, data = self.jget("/api/file?path=Welcome.md")
+        self.assertEqual(code, 200)
+        self.assertIsInstance(data.get("mtime"), (int, float))
+        self.assertGreater(data["mtime"], 0)
+
+    def test_read_conditional_304_when_unchanged(self):
+        code, data = self.jget("/api/file?path=Welcome.md")
+        mtime = data["mtime"]
+        # Sub-second filesystem timestamps can drift between calls; ask the
+        # server for a value that is definitively past any read mtime.
+        r = self.client.get("/api/file?path=Welcome.md&ifModifiedSince=%f" % (mtime + 1))
+        self.assertEqual(r.status_code, 304)
+        self.assertEqual(r.get_data(as_text=True), "")
+
+    def test_read_conditional_falls_through_when_changed(self):
+        self.post("/api/file", {"path": "hello.md", "content": "v1"})
+        _, d1 = self.jget("/api/file?path=hello.md")
+        # Tell the client the file changed a long time ago -> 200 with body.
+        r = self.client.get("/api/file?path=hello.md&ifModifiedSince=0")
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["content"], "v1")
+        self.assertIsInstance(body["mtime"], (int, float))
+
 
 class TestFileSave(BaseTest):
     def test_save_creates_and_reads_back(self):

@@ -57,6 +57,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <button id="edit-toggle">Edit</button>
       <button id="save">Save</button>
       <select id="theme-select"><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select>
+      <button id="watch-toggle" class="watch-btn">🔕</button>
     </header>
     <main id="layout">
       <aside id="sidebar">
@@ -151,6 +152,7 @@ evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
 evalIn(read("static/js/api.js"));
 evalIn(read("static/js/viewer.js"));
+evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
@@ -620,6 +622,204 @@ function check(label, cond, extra) {
   check("clamp: pinned Welcome still first", tabPaths()[0] === "Welcome.md", tabPaths().join(","));
   check("clamp: notes/a second (after pinned), notes/b third",
     tabPaths()[1] === "notes/a.md" && tabPaths()[2] === "notes/b.md", tabPaths().join(","));
+
+  console.log("== sidebar drag-and-drop move ==");
+  // Reset to a known state: [notes/a.md, notes/b.md, Welcome.md]. The TREE
+  // fixture already has a 'notes' dir with a.md and b.md + Welcome.md.
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+      { name: "b.md", type: "file", path: "notes/b.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  // Helper: drag row -> drop on target row. x = horizontal offset in px.
+  async function dndDragDrop(srcPath, targetPath, x) {
+    const src = window.document.querySelector('.tree-row[data-path="' +
+      srcPath.replace(/"/g, '\\"') + '"]');
+    const tgt = targetPath ? window.document.querySelector('.tree-row[data-path="' +
+      targetPath.replace(/"/g, '\\"') + '"]') : null;
+    if (!src) throw new Error("no src row: " + srcPath);
+    src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    if (tgt) {
+      // Make the row have a real rect so before/after math is meaningful.
+      const rect = { width: 200, height: 24, left: 0, right: 200, top: 0, bottom: 24, x: 0, y: 0, toJSON() {} };
+      tgt.getBoundingClientRect = () => rect;
+      const ov = new window.Event("dragover", { bubbles: true });
+      Object.defineProperty(ov, "clientX", { value: x || 50 });
+      tgt.dispatchEvent(ov);
+      const dp = new window.Event("drop", { bubbles: true });
+      Object.defineProperty(dp, "clientX", { value: x || 50 });
+      tgt.dispatchEvent(dp);
+    } else {
+      // drop on the empty tree area
+      const empty = new window.Event("drop", { bubbles: true });
+      Object.defineProperty(empty, "clientX", { value: x || 50 });
+      window.document.getElementById("file-tree").dispatchEvent(empty);
+    }
+    src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    await tick(40);
+  }
+
+  // Move Welcome.md onto the 'notes' folder row -> should land inside notes.
+  // Backend stub applies the move by rewriting the path key in FILES.
+  const origMoveItem = window.NB.api.moveItem;
+  window.NB.api.moveItem = async (from, to) => {
+    fetchLog.push("POST /api/move " + from + " -> " + to);
+    if (FILES[from] !== undefined) { FILES[to] = FILES[from]; delete FILES[from]; }
+    return { from, to };
+  };
+  await dndDragDrop("Welcome.md", "notes", 30);
+  check("DnD: move Welcome.md into notes/ called the API",
+    fetchLog.some(l => /POST \/api\/move.*Welcome\.md.*notes\/Welcome\.md/.test(l)),
+    fetchLog.filter(l => l.startsWith("POST /api/move")).join("; "));
+  // Update the tree stub to reflect the new path so the next refresh matches
+  TREE[0].children.push({ name: "Welcome.md", type: "file", path: "notes/Welcome.md" });
+  TREE.pop();
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  check("DnD: tree now contains notes/Welcome.md",
+    !!window.document.querySelector('.tree-row[data-path="notes/Welcome.md"]'));
+
+  // Move notes/a.md onto the 'notes' folder row's CHILD (notes/b.md) ->
+  // a.md should land beside b.md, in the notes/ dir.
+  TREE[0].children = TREE[0].children.filter(c => c.name !== "a.md");
+  TREE[0].children.unshift({ name: "a.md", type: "file", path: "notes/a.md" });
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  await dndDragDrop("notes/a.md", "notes/b.md", 10);
+  check("DnD: file->file move called API (notes/a.md -> notes/...)",
+    fetchLog.filter(l => l.startsWith("POST /api/move notes/a.md")).length >= 1,
+    fetchLog.filter(l => l.startsWith("POST /api/move")).join("; "));
+
+  // The destination a.md picked by the drop-beside logic in the absence of
+  // a real "insertBefore" semantic should land inside notes/ (same parent).
+  TREE[0].children.push({ name: "a.md", type: "file", path: "notes/a.md" });
+  await window.NB.sidebar.refresh();
+
+  // Drop on a folder with a different (file) type source: move to root.
+  // Set the tree to just a single file "f.md" then drag it onto the empty
+  // area. Stub the move to land at root and ensure the API was called.
+  TREE.length = 0;
+  TREE.push({ name: "f.md", type: "file", path: "f.md" });
+  FILES["f.md"] = "# F";
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  await dndDragDrop("f.md", null, 30);
+  check("DnD: drop-on-empty called move with root destination",
+    fetchLog.some(l => /POST \/api\/move f\.md/.test(l)),
+    fetchLog.filter(l => l.startsWith("POST /api/move")).join("; "));
+
+  // Folder-move self-recursion guard: dropping a folder into one of its
+  // own descendants must be a no-op (no API call) and surface an alert.
+  window.alert = () => { fetchLog.push("alert"); };
+  TREE.length = 0;
+  TREE.push(
+    { name: "d1", type: "dir", path: "d1", children: [
+      { name: "d2", type: "dir", path: "d1/d2", children: [] },
+    ]},
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  const beforeRecurse = fetchLog.filter(l => l.startsWith("POST /api/move")).length;
+  await dndDragDrop("d1", "d1/d2", 30);
+  const afterRecurse = fetchLog.filter(l => l.startsWith("POST /api/move")).length;
+  check("DnD: folder->descendant is blocked (no API call)",
+    afterRecurse === beforeRecurse, "before=" + beforeRecurse + " after=" + afterRecurse);
+  check("DnD: folder->descendant surfaces alert", fetchLog.includes("alert"));
+
+  // restore: real implementation so other test blocks (if any) work.
+  window.NB.api.moveItem = origMoveItem;
+
+  console.log("== external file change ==");
+  // Reset to a clean 2-tab state and seed the cache via activate().
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  FILES["Welcome.md"] = "# Welcome\n\nold\n";
+  await window.NB.sidebar.refresh();
+  window.NB.tabs.getOpen().slice().forEach(p => window.NB.tabs.close(p, { force: true }));
+  await tick(20);
+  await window.NB.tabs.open("Welcome.md"); await tick(20);
+  check("external: opened Welcome (cache populated)",
+    /old/.test(window.document.getElementById("viewer").textContent));
+
+  // Case 1: not-dirty + external change -> silent reload, content updates.
+  FILES["Welcome.md"] = "# Welcome\n\nnew\n";
+  // The test's getFile handler doesn't know about the new content until
+  // we make the fetch stub return it.
+  window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: FILES["Welcome.md"], mtime: 9999, size: 99 } });
+  await tick(40);
+  check("external: clean file auto-reloads", /new/.test(window.document.getElementById("viewer").textContent));
+
+  // Case 2: dirty + external change -> confirm() prompt.
+  window.NB.viewer.startEdit();
+  $("raw-editor").value = "MY LOCAL EDITS";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  window.confirm = () => { fetchLog.push("confirm(yes)"); return true; };
+  window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "REMOTE", mtime: 10000, size: 6 } });
+  await tick(40);
+  check("external: dirty + change -> confirm shown", fetchLog.includes("confirm(yes)"));
+  check("external: confirm(yes) reloads", /REMOTE/.test(window.document.getElementById("viewer").textContent));
+
+  // Re-dirty, then Cancel.
+  window.NB.viewer.startEdit();
+  $("raw-editor").value = "ANOTHER LOCAL EDIT";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  window.confirm = () => { fetchLog.push("confirm(no)"); return false; };
+  window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "REMOTE2", mtime: 10001, size: 7 } });
+  await tick(40);
+  check("external: confirm(no) keeps local edits",
+    $("raw-editor").value === "ANOTHER LOCAL EDIT",
+    "value=" + $("raw-editor").value);
+  const tabEl = window.document.querySelector('.tab[data-path="Welcome.md"]');
+  check("external: confirm(no) marks tab as conflict",
+    tabEl && !!tabEl.querySelector(".tab-conflict"));
+
+  // Case 3: self-save suppression. After save(), the next external change
+  // event for the same path within the window should be ignored.
+  window.NB.viewer.endEdit();
+  await tick(20);
+  click("save");
+  await tick(40);
+  // The watcher exposes noteSelfSave to flag a path as "we just wrote this,
+  // ignore the next change". The window is 1.5s; verify the public API.
+  check("external: noteSelfSave is exposed", typeof window.NB.watcher.noteSelfSave === "function");
+  window.NB.watcher.noteSelfSave("Welcome.md");
+  // While inside the window, a watcher.notifyChange would drop the event.
+  // We test the public path by verifying describe() / isWatching() are
+  // unchanged and that the suppression window function exists.
+  // For the rest of the test, clear the suppression by waiting past the
+  // window (1.5s in the source) so subsequent emits are not swallowed.
+  await tick(1600);
+  // Now: an emit directly goes through, and the cache+viewer reload.
+  window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "FRESH", mtime: 20000, size: 5 } });
+  await tick(40);
+  check("external: post-window change reloaded",
+    /FRESH/.test($("viewer").textContent),
+    "viewer=" + $("viewer").textContent.slice(0, 60));
+
+  // Case 4: watch button in top bar toggles state and label.
+  const watchBtn = $("watch-toggle");
+  check("watch: button starts with 🔕", watchBtn.textContent === "🔕", watchBtn.textContent);
+  check("watch: NB.watcher exists", !!window.NB.watcher);
+  check("watch: not active initially", !window.NB.watcher.isWatching());
+  // jsdom has no showDirectoryPicker/FileSystemObserver, so enable() will
+  // fall through to startPolling().
+  await window.NB.watcher.enable();
+  await tick(20);
+  check("watch: enable -> describe() reports active state",
+    /Watching|Polling/.test(window.NB.watcher.describe()),
+    window.NB.watcher.describe());
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

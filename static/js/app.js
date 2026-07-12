@@ -153,6 +153,27 @@
       persistConfig();
     });
 
+    // file-change watcher toggle. The watcher is opt-in: until the user
+    // clicks, no file-system access is requested.
+    const watchBtn = document.getElementById("watch-toggle");
+    function refreshWatchBtn() {
+      if (NB.watcher.isWatching()) {
+        watchBtn.textContent = "🔔";
+        watchBtn.classList.add("active");
+        watchBtn.title = "Watching: " + NB.watcher.describe();
+      } else {
+        watchBtn.textContent = "🔕";
+        watchBtn.classList.remove("active");
+        watchBtn.title = NB.watcher.describe() + " (click to enable)";
+      }
+    }
+    watchBtn.addEventListener("click", async () => {
+      if (NB.watcher.isWatching()) NB.watcher.disable();
+      else await NB.watcher.enable();
+      refreshWatchBtn();
+    });
+    refreshWatchBtn();
+
     // resizable sidebars (drag the inner edge)
     setupResize("sidebar", "--sidebar-width", "right");
     setupResize("outline-pane", "--outline-width", "left");

@@ -211,11 +211,26 @@ def file_get():
     if not os.path.isfile(abs_path):
         return err("File not found", 404)
     try:
+        mtime = os.path.getmtime(abs_path)
+    except OSError as exc:
+        return err("Could not stat file: %s" % exc, 500)
+    # Conditional GET: client can pass a prior mtime; if the file hasn't
+    # changed since then, return 304 with no body. The browser uses the same
+    # pattern as RFC 7232 If-Modified-Since, just on a custom field so we
+    # don't depend on HTTP date parsing.
+    if_modified = request.args.get("ifModifiedSince", "").strip()
+    if if_modified:
+        try:
+            if float(if_modified) >= mtime:
+                return ("", 304)
+        except ValueError:
+            pass   # bad client value -> fall through to the full response
+    try:
         with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
     except OSError as exc:
         return err("Could not read file: %s" % exc, 500)
-    return jsonify({"path": rel, "content": content, "size": len(content)})
+    return jsonify({"path": rel, "content": content, "size": len(content), "mtime": mtime})
 
 
 @app.route("/api/file", methods=["POST"])

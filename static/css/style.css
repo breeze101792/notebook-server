@@ -298,6 +298,35 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .context-menu button:disabled { color: var(--fg-muted); cursor: default; }
 .context-menu button:disabled:hover { background: none; }
 
+/* External-change conflict badge on a tab. */
+.tab .tab-conflict {
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+/* Sidebar drag-and-drop: dim the dragged row; mark the drop target. The
+ * two classes follow the same idiom as the tab DnD (left/right stripes for
+ * before/after on a file row; an accent fill when the target is a folder). */
+.tree-row.dragging { opacity: .4; }
+.tree-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+.tree-row.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+.tree-row.drop-folder-target { background: var(--accent-soft); outline: 1px dashed var(--accent); }
+#file-tree.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+
+/* "Watching" toggle in the top bar. */
+.watch-btn {
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.watch-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.watch-btn.active { color: var(--accent); border-color: var(--accent); }
+
 /* The viewer is the scroll container (IntersectionObserver root). */
 #viewer {
   flex: 1 1 auto;

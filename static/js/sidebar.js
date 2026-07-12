@@ -14,6 +14,7 @@
   const collapsed = new Set();      // collapsed dir paths (relative)
   let selectedPath = null;
   let menuCtx = null;               // { node } the menu was opened for
+  let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
 
   /* --- render -------------------------------------------------------- */
   function render(tree) {
@@ -33,6 +34,7 @@
     const row = document.createElement("div");
     row.className = "tree-row";
     row.dataset.path = node.path;
+    row.draggable = true;
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
@@ -258,6 +260,155 @@
   function cssEscape(s) {
     if (window.CSS && CSS.escape) return CSS.escape(s);
     return String(s).replace(/["\\]/g, "\\$&");
+  }
+
+  /* --- drag-and-drop move ------------------------------------------- */
+  /* Files and folders can be dragged onto a folder row (lands inside it) or
+   * onto a file row (lands beside it in the same parent). Dropping on the
+   * empty tree area moves to the root. */
+  function findNode(tree, path) {
+    for (const n of tree) {
+      if (n.path === path) return n;
+      if (n.children) { const r = findNode(n.children, path); if (r) return r; }
+    }
+    return null;
+  }
+
+  function isAncestorOrSelf(ancestor, descendant) {
+    if (ancestor === descendant) return true;
+    if (!descendant.startsWith(ancestor + "/")) return false;
+    return true;
+  }
+
+  function resolveDropTarget(targetRow, mouseX) {
+    if (!targetRow) return { dir: "", insertBefore: null };
+    const node = findNode(treeCache, targetRow.dataset.path);
+    if (node && node.type === "dir") {
+      return { dir: node.path, insertBefore: null };
+    }
+    // file row -> drop beside, in the same parent
+    const parent = parentOf(targetRow.dataset.path);
+    const rect = targetRow.getBoundingClientRect();
+    const before = mouseX < rect.left + rect.width / 2;
+    return { dir: parent, insertBefore: { parent, path: targetRow.dataset.path, before } };
+  }
+
+  async function performMove(from, target) {
+    let to;
+    if (target.insertBefore) {
+      const { parent, path, before } = target.insertBefore;
+      const name = baseName(from);
+      const siblings = (function listSiblings(t) {
+        if (parent === "") return t;
+        const p = findNode(t, parent);
+        return p ? p.children : [];
+      })(treeCache);
+      // Find the index of the target sibling among its parent's children
+      const i = siblings.findIndex(n => n.path === path);
+      const j = i + (before ? 0 : 1);
+      const beforeName = j > 0 ? baseName(siblings[j - 1].path) : null;
+      const afterName  = j < siblings.length ? baseName(siblings[j].path) : null;
+      // Backend requires an exact destination path (no "insert before X"
+      // syntax). Derive a non-conflicting destination by picking before or
+      // after and disambiguating on conflict.
+      const tryName = (suffix) => (parent ? parent + "/" : "") + name + suffix;
+      to = beforeName
+        ? tryName(" (before " + beforeName + ")")
+        : afterName
+          ? tryName(" (after " + afterName + ")")
+          : tryName("");
+      // Collapse "name (before X) (before Y)" style collisions: try
+      // sequentially and back off to a numbered copy on conflict.
+      let attempt = to;
+      for (let n = 2; n < 1000; n++) {
+        try {
+          await NB.api.moveItem(from, attempt);
+          to = attempt;
+          break;
+        } catch (e) {
+          if (!/409|exists|already/i.test(e.message) || n === 999) throw e;
+          attempt = tryName(" (" + n + ")");
+        }
+      }
+    } else {
+      // dropped onto a folder or the empty area
+      const name = baseName(from);
+      to = target.dir ? target.dir + "/" + name : name;
+      await NB.api.moveItem(from, to);
+    }
+    NB.evt.emit("file:moved", { from, to });
+    if (selectedPath === from) openFile(to);
+    await refresh();
+  }
+
+  treeEl.addEventListener("dragstart", (e) => {
+    const row = e.target.closest && e.target.closest(".tree-row");
+    if (!row || !row.dataset.path) { e.preventDefault(); return; }
+    const node = findNode(treeCache, row.dataset.path);
+    if (!node) { e.preventDefault(); return; }
+    draggingNode = { path: node.path, type: node.type };
+    row.classList.add("dragging");
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", node.path); } catch (_) {}
+    }
+  });
+
+  treeEl.addEventListener("dragover", (e) => {
+    if (!draggingNode) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    clearDropMarks();
+    const row = e.target.closest && e.target.closest(".tree-row");
+    if (!row) {
+      // over the empty tree area: mark the whole pane for "move to root"
+      treeEl.classList.add("drop-empty");
+      return;
+    }
+    if (row.dataset.path === draggingNode.path) return;   // can't drop on self
+    const node = findNode(treeCache, row.dataset.path);
+    if (!node) return;
+    if (node.type === "dir" && draggingNode.type === "dir" &&
+        isAncestorOrSelf(draggingNode.path, node.path)) return;   // no recurse
+    if (node.type === "dir") row.classList.add("drop-folder-target");
+    else {
+      const rect = row.getBoundingClientRect();
+      const before = e.clientX < rect.left + rect.width / 2;
+      row.classList.add(before ? "drop-before" : "drop-after");
+    }
+  });
+
+  treeEl.addEventListener("drop", async (e) => {
+    if (!draggingNode) return;
+    e.preventDefault();
+    const row = e.target.closest && e.target.closest(".tree-row");
+    const target = row ? resolveDropTarget(row, e.clientX)
+                       : { dir: "", insertBefore: null };
+    // Final guard: a folder can't move into itself or a descendant. We
+    // check this BEFORE clearing state so the guard has the data it needs.
+    if (draggingNode.type === "dir" && target.dir &&
+        isAncestorOrSelf(draggingNode.path, target.dir)) {
+      clearDragging();
+      alert("Cannot move a folder into itself or one of its subfolders.");
+      return;
+    }
+    const from = draggingNode.path;
+    clearDragging();
+    try { await performMove(from, target); }
+    catch (e) { alert("Move failed: " + e.message); await refresh(); }
+  });
+
+  treeEl.addEventListener("dragend", clearDragging);
+
+  function clearDropMarks() {
+    treeEl.querySelectorAll(".drop-before,.drop-after,.drop-folder-target")
+      .forEach(r => r.classList.remove("drop-before", "drop-after", "drop-folder-target"));
+    treeEl.classList.remove("drop-empty");
+  }
+  function clearDragging() {
+    draggingNode = null;
+    treeEl.querySelectorAll(".dragging").forEach(r => r.classList.remove("dragging"));
+    clearDropMarks();
   }
 
   NB.sidebar = { refresh, render, openFile, createAtRoot, getTree };
