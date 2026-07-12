@@ -101,8 +101,10 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
             <button id="close-edit-btn" class="eb">Close</button>
           </span>
         </div>
-        <div id="viewer" class="markdown-body"></div>
-        <textarea id="raw-editor" hidden></textarea>
+        <div id="edit-split" class="edit-split">
+          <div id="viewer" class="markdown-body"></div>
+          <textarea id="raw-editor" hidden></textarea>
+        </div>
         <div id="search-results" hidden>
           <span id="search-summary"></span><button id="search-close">×</button>
           <ul id="search-list"></ul>
@@ -346,10 +348,10 @@ function check(label, cond, extra) {
   await tick(10);
   const aTab = window.document.querySelector('.tab[data-path="notes/a.md"]');
   check("dirty tab marked with .dirty", aTab && aTab.classList.contains("dirty"));
-  // Preview button exits edit and renders the (unsaved) content
+  // Preview button toggles the preview pane; editor stays open, tab stays dirty.
   click("preview-btn");
   await tick(10);
-  check("still dirty after Preview (unsaved content kept)", aTab.classList.contains("dirty"));
+  check("still dirty after toggling preview (unsaved content kept)", aTab.classList.contains("dirty"));
   // close the non-active Welcome tab
   window.NB.tabs.close("Welcome.md");
   await tick(20);
@@ -375,9 +377,14 @@ function check(label, cond, extra) {
   check("search panel hides on close", $("search-results").hidden);
 
   console.log("== edit + save ==");
-  // The previous "dirty dot" test left the active file with unsaved edits.
-  // Save first so we start this block from a known-clean state.
-  if (!$("raw-editor").hidden) { click("preview-btn"); await tick(10); }
+  // The previous "dirty dot" test left the active file with unsaved edits
+  // and still in edit mode. Exit edit mode (discarding unsaved changes),
+  // then re-enter clean.
+  if (!$("raw-editor").hidden) {
+    window.confirm = () => true;  // discard unsaved changes
+    click("close-edit-btn");
+    await tick(10);
+  }
   if (window.NB.viewer.isDirty(activeTabPath())) {
     window.NB.viewer.startEdit();
     await tick(10);
@@ -410,19 +417,33 @@ function check(label, cond, extra) {
   check("Save button hidden again after save (clean)", $("save-btn").hidden);
   const savedFile = FILES["notes/a.md"];
   check("save wrote file content", savedFile && savedFile.includes("## New heading"));
-  // Preview returns to the viewer.
+  // In edit mode the split is active: editor left, live preview right.
+  check("edit-split has .split class in edit mode",
+    $("edit-split").classList.contains("split"));
+  check("topbar has .editing class in edit mode",
+    $("topbar").classList.contains("editing"));
+  // Preview toggles the preview pane off; editor stays open.
   click("preview-btn");
   await tick(10);
-  check("Preview returns to viewer mode", $("raw-editor").hidden);
-  check("re-rendered new heading id", !!$("new-heading"));
+  check("Preview hides the preview pane", $("viewer").hidden);
+  check("Preview keeps editor open", !$("raw-editor").hidden);
+  check("split class removed when preview hidden",
+    !$("edit-split").classList.contains("split"));
+  // Preview again toggles it back on.
+  click("preview-btn");
+  await tick(10);
+  check("Preview again shows the preview pane", !$("viewer").hidden);
+  check("split class restored", $("edit-split").classList.contains("split"));
   // Close on a clean file should exit edit silently (no confirm).
-  click("edit-toggle"); await tick(10);
   let confirmCount = 0;
   window.confirm = () => { confirmCount++; return true; };
   click("close-edit-btn");
   await tick(10);
   check("Close on clean file: no confirm prompt", confirmCount === 0, "count=" + confirmCount);
   check("Close on clean file: back to viewer", $("raw-editor").hidden);
+  check("Close on clean file: topbar editing class removed",
+    !$("topbar").classList.contains("editing"));
+  check("re-rendered new heading id", !!$("new-heading"));
   // Close on a dirty file should prompt; Cancel keeps the user in edit.
   click("edit-toggle"); await tick(10);
   $("raw-editor").value = "# Edited\n\n## New heading\n\nDIRTY";
@@ -595,11 +616,14 @@ function check(label, cond, extra) {
   await tick(10);
   check("edit bar: Ctrl+I wraps selection",
     $("raw-editor").value === "*abc*", "got: " + $("raw-editor").value);
-  // Bar hides when leaving edit mode.
+  // Preview toggles the preview pane but stays in edit mode; bar stays visible.
   click("preview-btn"); await tick(10);
-  check("edit bar: hidden after Preview", $("edit-bar").hidden);
-  // And the document dirties (Save button is back to hidden because we
-  // just left edit mode cleanly).
+  check("edit bar: still visible after Preview toggle", !$("edit-bar").hidden);
+  check("preview pane hidden after toggle", $("viewer").hidden);
+  // Close exits edit mode; bar hides.
+  window.confirm = () => true;
+  click("close-edit-btn"); await tick(10);
+  check("edit bar: hidden after Close exits edit", $("edit-bar").hidden);
   // Re-enter edit, type, leave via Close on dirty to verify the bar hides.
   click("edit-toggle"); await tick(10);
   $("raw-editor").value = "new content";
@@ -607,7 +631,7 @@ function check(label, cond, extra) {
   await tick(10);
   window.confirm = () => true;
   click("close-edit-btn"); await tick(10);
-  check("edit bar: hidden after Close exits edit", $("edit-bar").hidden);
+  check("edit bar: hidden after Close on dirty", $("edit-bar").hidden);
 
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;

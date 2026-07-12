@@ -10,8 +10,10 @@
   "use strict";
   window.NB = window.NB || {};
 
-  const viewerEl = document.getElementById("viewer");
-  const editorEl = document.getElementById("raw-editor");
+  const viewerEl   = document.getElementById("viewer");
+  const editorEl   = document.getElementById("raw-editor");
+  const editSplit  = document.getElementById("edit-split");
+  const topbar     = document.getElementById("topbar");
   const editBtn    = document.getElementById("edit-toggle");
   const previewBtn = document.getElementById("preview-btn");
   const saveBtn    = document.getElementById("save-btn");
@@ -20,6 +22,8 @@
   // path -> { content, editMode, savedContent }
   const cache = new Map();
   let active = null;   // path currently displayed
+  let showPreview = true;  // preview pane visible in edit mode
+  let liveTimer = null;    // debounce timer for live preview
 
   function cur() { return active ? cache.get(active) : null; }
 
@@ -44,14 +48,17 @@
    *   - assign ids to headings (for the outline + click-to-scroll)
    *   - run highlight.js on code blocks
    * This avoids marked's custom-renderer `this.parser` binding, which is
-   * unreliable across marked versions. */
-  function render() {
-    const t = cur();
-    if (!t) { viewerEl.innerHTML = ""; return; }
+   * unreliable across marked versions.
+   *
+   * When `content` is passed (live preview), use it directly instead of
+   * reading from the cache. The outline is NOT rebuilt during live preview
+   * (it would flicker on every keystroke). */
+  function render(content) {
+    const src = content !== undefined ? content : (cur() ? cur().content : null);
+    if (src == null) { viewerEl.innerHTML = ""; return; }
     seenIds = {}; // reset dedup per render
     if (window.marked) {
-      viewerEl.innerHTML = marked.parse(t.content || "",
-        { gfm: true, breaks: false });
+      viewerEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
     } else {
       viewerEl.innerHTML = "<p>marked.js failed to load.</p>";
       return;
@@ -70,27 +77,45 @@
       });
     }
 
-    if (NB.outline) {
+    // Only rebuild the outline for the "real" render (not live preview).
+    if (content === undefined && NB.outline) {
       NB.outline.build(viewerEl);
       NB.outline.startWatching(viewerEl);
     }
   }
 
+  /* Debounced live preview: re-render the viewer from the textarea content.
+   * Called on every keystroke; the actual render fires ~150ms after the
+   * user stops typing. */
+  function scheduleLivePreview() {
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => {
+      if (!active || !showPreview) return;
+      render(editorEl.value);
+    }, 150);
+  }
+
   /* --- top-bar / edit-bar mode ------------------------------------ */
-  /* Preview mode: the top bar shows just [Edit]. Edit mode: the Edit
-   * button hides and the edit bar (under the tab bar) appears with
-   * formatting buttons on the left and [Preview Save Close] on the
-   * right. Save only appears while the file is dirty. */
+  /* Preview mode: the top bar shows just [Edit] on a neutral background.
+   * Edit mode: the Edit button hides, the top bar gets a tint, and the
+   * edit bar appears with formatting buttons on the left and
+   * [Preview Save Close] on the right. The main area splits into two
+   * columns: editor (left) and live preview (right). */
   function refreshTopbar() {
     const t = cur();
     const inEdit = !!(t && t.editMode);
     editBtn.hidden = inEdit;
     if (inEdit) {
       saveBtn.hidden = !viewer.isDirty(active);
+      topbar.classList.add("editing");
+    } else {
+      topbar.classList.remove("editing");
     }
   }
 
   function showViewer() {
+    clearTimeout(liveTimer);
+    editSplit.classList.remove("split");
     editorEl.hidden = true;
     viewerEl.hidden = false;
     refreshTopbar();
@@ -98,7 +123,14 @@
   }
   function showEditor() {
     editorEl.hidden = false;
-    viewerEl.hidden = true;
+    viewerEl.hidden = !showPreview;
+    if (showPreview) {
+      editSplit.classList.add("split");
+      // Seed the preview with the current editor content.
+      render(editorEl.value);
+    } else {
+      editSplit.classList.remove("split");
+    }
     refreshTopbar();
     editorEl.focus();
     if (NB.editbar) NB.editbar.show();
@@ -148,6 +180,8 @@
     clear() {
       active = null;
       cache.clear();
+      clearTimeout(liveTimer);
+      editSplit.classList.remove("split");
       editorEl.hidden = true;
       viewerEl.hidden = false;
       viewerEl.innerHTML =
@@ -169,15 +203,16 @@
     startEdit() {
       const t = cur(); if (!t) return;
       t.editMode = true;
+      showPreview = true;  // always start with the preview pane visible
       editorEl.value = t.content;
       showEditor();
     },
-    /* End edit mode and render the saved content. Used by the Preview
-     * button, which assumes the user wants to see the rendered view. */
+    /* End edit mode and render the saved content. */
     endEdit() {
       const t = cur(); if (!t) return;
       t.content = editorEl.value;
       t.editMode = false;
+      showPreview = true;  // reset for next edit session
       showViewer();
       render();
       NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
@@ -251,18 +286,31 @@
 
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-  /* Live dirty dot: while editing, report changed-dirty so the tab bar
-   * can mark the active file's tab without a full re-render. Also keep
-   * the Save button in sync with the dirty state. */
+  /* Live dirty dot + live preview: while editing, report changed-dirty
+   * so the tab bar can mark the active file's tab without a full
+   * re-render, keep the Save button in sync, and re-render the preview
+   * pane (debounced) so the user sees their Markdown in real time. */
   editorEl.addEventListener("input", () => {
     if (!active) return;
     refreshTopbar();
     NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
+    if (showPreview) scheduleLivePreview();
   });
 
-  /* Edit-mode toolbar buttons. Preview/Close are always visible in edit
-   * mode; Save is gated by refreshTopbar() based on the dirty flag. */
-  previewBtn.addEventListener("click", () => NB.viewer.endEdit());
+  /* Edit-mode toolbar buttons. Preview toggles the live-preview pane;
+   * Close exits edit mode (prompting on unsaved changes); Save is gated
+   * by refreshTopbar() based on the dirty flag. */
+  previewBtn.addEventListener("click", () => {
+    showPreview = !showPreview;
+    if (showPreview) {
+      viewerEl.hidden = false;
+      editSplit.classList.add("split");
+      render(editorEl.value);
+    } else {
+      viewerEl.hidden = true;
+      editSplit.classList.remove("split");
+    }
+  });
   saveBtn.addEventListener("click", () => NB.viewer.save());
   closeEditBtn.addEventListener("click", () => NB.viewer.closeEdit());
 
@@ -291,6 +339,7 @@
     t.content = fresh.content;
     t.savedContent = fresh.content;
     t.editMode = false;
+    showPreview = true;  // reset for next edit session
     if (wasActive) { showViewer(); render(); }
     NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     NB.evt.emit("viewer:conflict", { path, conflict: false });

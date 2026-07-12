@@ -538,6 +538,33 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   outline: none;
 }
 
+/* Split-pane wrapper: transparent in preview mode, flex row in edit mode. */
+.edit-split { display: contents; }
+.edit-split.split {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.edit-split.split #raw-editor {
+  flex: 1;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  border-top: none;
+}
+.edit-split.split #viewer {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 24px 60vh;
+}
+
+/* Top bar gets a tint when editing so the user can tell at a glance. */
+#topbar.editing {
+  background: var(--accent-soft);
+  border-bottom-color: var(--accent);
+}
+
 /* ------------------------------------------------------------------ */
 /* File tree                                                           */
 /* ------------------------------------------------------------------ */
