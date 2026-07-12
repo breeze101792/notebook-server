@@ -257,6 +257,9 @@
         const ok = confirm('You have unsaved changes in "' + active + '".\n\n' +
           'Discard them and exit edit mode?');
         if (!ok) return false;
+        // Revert the editor to the last saved content so the next edit
+        // session starts clean (Save button hidden until they type).
+        editorEl.value = t.savedContent;
       }
       this.endEdit();
       return true;

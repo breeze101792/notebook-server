@@ -460,6 +460,14 @@ function check(label, cond, extra) {
   await tick(10);
   check("Close on dirty + OK exits edit mode", $("raw-editor").hidden);
   check("Close on dirty + OK shows confirm", confirmCount === 2, "count=" + confirmCount);
+  // Re-entering edit mode after discarding changes: file should be clean,
+  // Save button hidden.
+  click("edit-toggle"); await tick(10);
+  check("re-enter after discard: Save hidden (clean)", $("save-btn").hidden);
+  check("re-enter after discard: editor has saved content",
+    $("raw-editor").value === "# Edited\n\n## New heading\n\nsaved body",
+    "got: " + JSON.stringify($("raw-editor").value));
+  click("close-edit-btn"); await tick(10);
 
   console.log("== edit bar ==");
   // Bar is hidden in preview mode.
