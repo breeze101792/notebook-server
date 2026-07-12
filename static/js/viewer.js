@@ -117,11 +117,33 @@
     }
   }
 
+  /* --- scroll sync -------------------------------------------------- */
+  /* While the split pane is visible, scrolling one side proportionally
+   * scrolls the other so the user can see the same spot in both. A guard
+   * flag prevents the scroll event we fire from re-triggering the sync. */
+  let syncing = false;
+
+  function syncScroll(source, target) {
+    if (syncing) return;
+    const srcMax = source.scrollHeight - source.clientHeight;
+    const tgtMax = target.scrollHeight - target.clientHeight;
+    if (srcMax <= 0 || tgtMax <= 0) return;
+    const pct = source.scrollTop / srcMax;
+    syncing = true;
+    target.scrollTop = pct * tgtMax;
+    requestAnimationFrame(() => { syncing = false; });
+  }
+
+  function onEditorScroll() { syncScroll(editorEl, viewerEl); }
+  function onViewerScroll() { syncScroll(viewerEl, editorEl); }
+
   function showViewer() {
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
     editorEl.hidden = true;
     viewerEl.hidden = false;
+    editorEl.removeEventListener("scroll", onEditorScroll);
+    viewerEl.removeEventListener("scroll", onViewerScroll);
     refreshTopbar();
     if (NB.editbar) NB.editbar.hide();
   }
@@ -130,10 +152,13 @@
     viewerEl.hidden = !showPreview;
     if (showPreview) {
       editSplit.classList.add("split");
-      // Seed the preview with the current editor content.
       render(editorEl.value);
+      editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
+      viewerEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       editSplit.classList.remove("split");
+      editorEl.removeEventListener("scroll", onEditorScroll);
+      viewerEl.removeEventListener("scroll", onViewerScroll);
     }
     refreshTopbar();
     editorEl.focus();
@@ -186,6 +211,8 @@
       cache.clear();
       clearTimeout(liveTimer);
       editSplit.classList.remove("split");
+      editorEl.removeEventListener("scroll", onEditorScroll);
+      viewerEl.removeEventListener("scroll", onViewerScroll);
       editorEl.hidden = true;
       viewerEl.hidden = false;
       viewerEl.innerHTML =
@@ -310,9 +337,13 @@
       viewerEl.hidden = false;
       editSplit.classList.add("split");
       render(editorEl.value);
+      editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
+      viewerEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       viewerEl.hidden = true;
       editSplit.classList.remove("split");
+      editorEl.removeEventListener("scroll", onEditorScroll);
+      viewerEl.removeEventListener("scroll", onViewerScroll);
     }
   });
   saveBtn.addEventListener("click", () => NB.viewer.save());

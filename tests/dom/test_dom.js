@@ -633,6 +633,34 @@ function check(label, cond, extra) {
   click("close-edit-btn"); await tick(10);
   check("edit bar: hidden after Close on dirty", $("edit-bar").hidden);
 
+  console.log("== scroll sync ==");
+  // Enter edit mode with preview visible.
+  click("edit-toggle"); await tick(10);
+  // Stub scroll dimensions so the sync has something to work with.
+  // jsdom doesn't compute scrollHeight/clientHeight from content.
+  Object.defineProperty($("raw-editor"), "scrollHeight", { value: 2000, configurable: true });
+  Object.defineProperty($("raw-editor"), "clientHeight", { value: 400, configurable: true });
+  Object.defineProperty($("viewer"), "scrollHeight", { value: 1000, configurable: true });
+  Object.defineProperty($("viewer"), "clientHeight", { value: 400, configurable: true });
+  // Scroll the editor to 50%.
+  $("raw-editor").scrollTop = 800;  // (2000-400)*0.5 = 800
+  $("raw-editor").dispatchEvent(new window.Event("scroll", { bubbles: true }));
+  await tick(20);
+  // Viewer should be at 50% of its range: (1000-400)*0.5 = 300
+  check("scroll sync: editor->viewer proportional",
+    Math.abs($("viewer").scrollTop - 300) < 5,
+    "viewer.scrollTop=" + $("viewer").scrollTop);
+  // Scroll the viewer to 75%.
+  $("viewer").scrollTop = 450;  // (1000-400)*0.75 = 450
+  $("viewer").dispatchEvent(new window.Event("scroll", { bubbles: true }));
+  await tick(20);
+  // Editor should be at 75%: (2000-400)*0.75 = 1200
+  check("scroll sync: viewer->editor proportional",
+    Math.abs($("raw-editor").scrollTop - 1200) < 5,
+    "editor.scrollTop=" + $("raw-editor").scrollTop);
+  // Clean up: exit edit mode.
+  click("close-edit-btn"); await tick(10);
+
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;
   await window.NB.sidebar.refresh();
