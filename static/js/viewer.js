@@ -96,12 +96,14 @@
     editorEl.hidden = true;
     viewerEl.hidden = false;
     refreshTopbar();
+    if (NB.editbar) NB.editbar.hide();
   }
   function showEditor() {
     editorEl.hidden = false;
     viewerEl.hidden = true;
     refreshTopbar();
     editorEl.focus();
+    if (NB.editbar) NB.editbar.show();
   }
 
   /* --- public API ----------------------------------------------------- */
@@ -154,6 +156,7 @@
         '<p style="color:var(--fg-muted)">No file selected.</p>';
       if (NB.outline) NB.outline.build(viewerEl);
       refreshTopbar();
+      if (NB.editbar) NB.editbar.hide();
     },
 
     getPath() { return active; },

@@ -44,6 +44,41 @@
 
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar"></div>
+        <div id="edit-bar" class="edit-bar" hidden>
+          <button class="eb" data-act="h1"     title="Heading 1">H1</button>
+          <button class="eb" data-act="h2"     title="Heading 2">H2</button>
+          <button class="eb" data-act="h3"     title="Heading 3">H3</button>
+          <button class="eb" data-act="h4"     title="Heading 4">H4</button>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="bold"   title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="eb" data-act="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="eb" data-act="strike" title="Strikethrough"><s>S</s></button>
+          <button class="eb" data-act="code"   title="Inline code"><code>&lt;/&gt;</code></button>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="ul"     title="Bulleted list">•&nbsp;List</button>
+          <button class="eb" data-act="ol"     title="Numbered list">1.&nbsp;List</button>
+          <button class="eb" data-act="task"   title="Task list">☑</button>
+          <button class="eb" data-act="quote"  title="Quote">&gt;</button>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="link"   title="Link">🔗</button>
+          <button class="eb" data-act="image"  title="Image">🖼</button>
+          <button class="eb" data-act="codeblock" title="Code block">{}</button>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
+          <button class="eb" data-act="redo"   title="Redo (Ctrl+Y)">↷</button>
+          <button class="eb" data-act="clear"  title="Clear formatting" hidden>Clear</button>
+          <!-- Overflow menu: the less-common syntaxes live here -->
+          <span class="eb-overflow">
+            <button class="eb eb-overflow-btn" data-act="more" title="More">⋯</button>
+            <div class="eb-menu" hidden>
+              <button class="eb" data-act="hr">── Horizontal rule</button>
+              <button class="eb" data-act="table">▦ Insert table</button>
+              <button class="eb" data-act="h5">H5</button>
+              <button class="eb" data-act="h6">H6</button>
+              <button class="eb" data-act="clear">Clear formatting</button>
+            </div>
+          </span>
+        </div>
         <div id="viewer" class="markdown-body"></div>
         <textarea id="raw-editor" hidden spellcheck="false"></textarea>
         <div id="search-results" class="search-results" hidden>
@@ -129,6 +164,7 @@
   <!-- App modules, in dependency order -->
   <script src="/static/js/api.js"></script>
   <script src="/static/js/viewer.js"></script>
+  <script src="/static/js/editbar.js"></script>
   <script src="/static/js/watcher.js"></script>
   <script src="/static/js/outline.js"></script>
   <script src="/static/js/sidebar.js"></script>

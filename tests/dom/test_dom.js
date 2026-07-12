@@ -71,6 +71,35 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar"></div>
+        <div id="edit-bar" class="edit-bar" hidden>
+          <button class="eb" data-act="bold">B</button>
+          <button class="eb" data-act="italic">I</button>
+          <button class="eb" data-act="strike">S</button>
+          <button class="eb" data-act="code">code</button>
+          <button class="eb" data-act="h1">H1</button>
+          <button class="eb" data-act="h2">H2</button>
+          <button class="eb" data-act="h3">H3</button>
+          <button class="eb" data-act="h4">H4</button>
+          <button class="eb" data-act="ul">UL</button>
+          <button class="eb" data-act="ol">OL</button>
+          <button class="eb" data-act="task">Task</button>
+          <button class="eb" data-act="quote">Q</button>
+          <button class="eb" data-act="link">Link</button>
+          <button class="eb" data-act="image">Img</button>
+          <button class="eb" data-act="codeblock">CB</button>
+          <button class="eb" data-act="undo">Undo</button>
+          <button class="eb" data-act="redo">Redo</button>
+          <span class="eb-overflow">
+            <button class="eb eb-overflow-btn" data-act="more">More</button>
+            <div class="eb-menu" hidden>
+              <button class="eb" data-act="hr">HR</button>
+              <button class="eb" data-act="table">Table</button>
+              <button class="eb" data-act="h5">H5</button>
+              <button class="eb" data-act="h6">H6</button>
+              <button class="eb" data-act="clear">Clear</button>
+            </div>
+          </span>
+        </div>
         <div id="viewer" class="markdown-body"></div>
         <textarea id="raw-editor" hidden></textarea>
         <div id="search-results" hidden>
@@ -202,6 +231,7 @@ evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
 evalIn(read("static/js/api.js"));
 evalIn(read("static/js/viewer.js"));
+evalIn(read("static/js/editbar.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -408,6 +438,175 @@ function check(label, cond, extra) {
   await tick(10);
   check("Close on dirty + OK exits edit mode", $("raw-editor").hidden);
   check("Close on dirty + OK shows confirm", confirmCount === 2, "count=" + confirmCount);
+
+  console.log("== edit bar ==");
+  // Bar is hidden in preview mode.
+  check("edit bar: hidden in preview", $("edit-bar").hidden);
+  // Enter edit mode -> bar appears.
+  click("edit-toggle"); await tick(10);
+  check("edit bar: visible in edit mode", !$("edit-bar").hidden);
+  // The bar has the inline + heading + line-prefix + undo/redo + overflow
+  // buttons. We don't assert every label here -- just the structural ones.
+  const barButtons = window.document.querySelectorAll("#edit-bar .eb[data-act]");
+  check("edit bar: at least 14 buttons present", barButtons.length >= 14, "got " + barButtons.length);
+  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  // Selection-wrap: select "hello", click Bold -> **hello**.
+  $("raw-editor").value = "hello world";
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = 5;
+  window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: bold wraps selection", $("raw-editor").value === "**hello** world", "got: " + $("raw-editor").value);
+  // Italic: select the now-bold "hello" and italicize.
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = 9;
+  window.document.querySelector('#edit-bar .eb[data-act="italic"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: italic wraps selection", $("raw-editor").value === "***hello*** world", "got: " + $("raw-editor").value);
+  // Wrap with empty selection -> inserts placeholder and selects it.
+  $("raw-editor").value = "";
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = 0;
+  window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: bold with empty selection inserts placeholder",
+    $("raw-editor").value === "**bold text**", "got: " + $("raw-editor").value);
+  // The inserted text should be selected (so the user can retype it).
+  check("edit bar: inserted placeholder is fully selected",
+    $("raw-editor").selectionStart === 0 && $("raw-editor").selectionEnd === 13,
+    "sel=" + $("raw-editor").selectionStart + "-" + $("raw-editor").selectionEnd);
+  // Heading on a line: select a single line, click H2 -> "## line".
+  $("raw-editor").value = "line one\nline two";
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = 8;
+  window.document.querySelector('#edit-bar .eb[data-act="h2"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: h2 prefixes the line", $("raw-editor").value.startsWith("## line one"),
+    "got: " + $("raw-editor").value);
+  // Idempotent: H2 again removes the prefix.
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = $("raw-editor").value.indexOf("\n");
+  window.document.querySelector('#edit-bar .eb[data-act="h2"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: h2 toggles off", $("raw-editor").value.split("\n")[0] === "line one",
+    "got: " + $("raw-editor").value);
+  // Bullet list: select a line, click UL -> "- line".
+  $("raw-editor").value = "alpha\nbeta";
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = 5;
+  window.document.querySelector('#edit-bar .eb[data-act="ul"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: ul prefixes line", $("raw-editor").value.startsWith("- alpha"),
+    "got: " + $("raw-editor").value);
+  // Task list.
+  $("raw-editor").value = "todo";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 4;
+  window.document.querySelector('#edit-bar .eb[data-act="task"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: task prefixes line", $("raw-editor").value === "- [ ] todo",
+    "got: " + $("raw-editor").value);
+  // Quote.
+  $("raw-editor").value = "said";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 4;
+  window.document.querySelector('#edit-bar .eb[data-act="quote"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: quote prefixes line", $("raw-editor").value === "> said",
+    "got: " + $("raw-editor").value);
+  // Code block: with selection wraps in ```.
+  $("raw-editor").value = "print(1)";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 8;
+  window.document.querySelector('#edit-bar .eb[data-act="codeblock"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: codeblock wraps in fences",
+    /```\nprint\(1\)\n```/.test($("raw-editor").value),
+    "got: " + $("raw-editor").value);
+  // Link: select "click", answer prompt.
+  $("raw-editor").value = "click here";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 5;
+  promptValue = "https://example.com";
+  window.prompt = () => promptValue;
+  window.document.querySelector('#edit-bar .eb[data-act="link"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: link wraps selection with URL",
+    $("raw-editor").value === "[click](https://example.com) here",
+    "got: " + $("raw-editor").value);
+  // Horizontal rule: insert at line start.
+  $("raw-editor").value = "before\nafter";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 0;
+  window.document.querySelector('#edit-bar .eb[data-act="hr"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: hr inserts a divider line",
+    /\n---\n/.test($("raw-editor").value),
+    "got: " + JSON.stringify($("raw-editor").value));
+  // Table: insert a 2-col GFM table.
+  $("raw-editor").value = "x";
+  $("raw-editor").selectionStart = 1; $("raw-editor").selectionEnd = 1;
+  window.document.querySelector('#edit-bar .eb[data-act="table"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: table inserts 2-col table",
+    /\| Column 1 \| Column 2 \|/.test($("raw-editor").value) &&
+    /\| --- \| --- \|/.test($("raw-editor").value),
+    "got: " + $("raw-editor").value);
+  // Overflow menu opens on "more" click, then a button inside it acts.
+  $("raw-editor").value = "fmt";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
+  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: more opens overflow menu", !window.document.querySelector("#edit-bar .eb-menu").hidden);
+  // Click a H5 inside the menu -> "##### fmt".
+  window.document.querySelector('#edit-bar .eb-menu .eb[data-act="h5"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: h5 inside overflow prefixes the line",
+    $("raw-editor").value === "##### fmt", "got: " + $("raw-editor").value);
+  check("edit bar: overflow menu closes after action", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  // Click outside closes the overflow.
+  window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: overflow menu reopened", !window.document.querySelector("#edit-bar .eb-menu").hidden);
+  // Outside click -> closes.
+  window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: outside click closes overflow", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  // Clear formatting: remove heading + list + quote prefixes.
+  $("raw-editor").value = "## heading\n- item\n> quote";
+  $("raw-editor").selectionStart = 0;
+  $("raw-editor").selectionEnd = $("raw-editor").value.length;
+  window.document.querySelector('#edit-bar .eb-menu .eb[data-act="clear"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: clear strips heading, list, quote prefixes",
+    $("raw-editor").value === "heading\nitem\nquote",
+    "got: " + JSON.stringify($("raw-editor").value));
+  // Ctrl+B wraps selection (keyboard shortcut).
+  $("raw-editor").value = "abc";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
+  $("raw-editor").dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
+  await tick(10);
+  check("edit bar: Ctrl+B wraps selection",
+    $("raw-editor").value === "**abc**", "got: " + $("raw-editor").value);
+  // Ctrl+I for italic.
+  $("raw-editor").value = "abc";
+  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
+  $("raw-editor").dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: "i", ctrlKey: true, bubbles: true, cancelable: true }));
+  await tick(10);
+  check("edit bar: Ctrl+I wraps selection",
+    $("raw-editor").value === "*abc*", "got: " + $("raw-editor").value);
+  // Bar hides when leaving edit mode.
+  click("preview-btn"); await tick(10);
+  check("edit bar: hidden after Preview", $("edit-bar").hidden);
+  // And the document dirties (Save button is back to hidden because we
+  // just left edit mode cleanly).
+  // Re-enter edit, type, leave via Close on dirty to verify the bar hides.
+  click("edit-toggle"); await tick(10);
+  $("raw-editor").value = "new content";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  window.confirm = () => true;
+  click("close-edit-btn"); await tick(10);
+  check("edit bar: hidden after Close exits edit", $("edit-bar").hidden);
 
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;

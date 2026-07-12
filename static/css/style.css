@@ -245,6 +245,78 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   overflow-y: hidden;
   scrollbar-width: thin;
 }
+
+/* Edit bar: a thin row of formatting buttons that sits between the tab
+ * bar and the textarea. Hidden by default; viewer.js shows it on
+ * startEdit(). The [hidden] attribute is the source of truth -- a class
+ * selector for display would outrank the UA's hidden rule. */
+.edit-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 8px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.edit-bar[hidden] { display: none; }
+.edit-bar .eb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+.edit-bar .eb:hover {
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+.edit-bar .eb:active { background: var(--accent); color: white; }
+.edit-bar .eb code,
+.edit-bar .eb b,
+.edit-bar .eb i,
+.edit-bar .eb s { font-size: 13px; }
+.edit-bar .eb-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--border);
+}
+/* Overflow menu */
+.edit-bar .eb-overflow { position: relative; }
+.edit-bar .eb-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  margin-top: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+}
+.edit-bar .eb-menu[hidden] { display: none; }
+.edit-bar .eb-menu .eb {
+  width: 100%;
+  justify-content: flex-start;
+  height: 28px;
+}
+}
 .tab-bar::-webkit-scrollbar { height: 6px; }
 .tab {
   display: flex;
