@@ -13,7 +13,6 @@
   const viewerEl = document.getElementById("viewer");
   const editorEl = document.getElementById("raw-editor");
   const editBtn    = document.getElementById("edit-toggle");
-  const editActions = document.getElementById("edit-actions");
   const previewBtn = document.getElementById("preview-btn");
   const saveBtn    = document.getElementById("save-btn");
   const closeEditBtn = document.getElementById("close-edit-btn");
@@ -77,17 +76,16 @@
     }
   }
 
-  /* --- top-bar mode ----------------------------------------------- */
-  /* Preview mode: just an [Edit] button. Edit mode: a [Preview Save Close]
-   * group where Save only appears while the file is dirty. Close returns
-   * to preview and prompts if there are unsaved changes. */
+  /* --- top-bar / edit-bar mode ------------------------------------ */
+  /* Preview mode: the top bar shows just [Edit]. Edit mode: the Edit
+   * button hides and the edit bar (under the tab bar) appears with
+   * formatting buttons on the left and [Preview Save Close] on the
+   * right. Save only appears while the file is dirty. */
   function refreshTopbar() {
     const t = cur();
     const inEdit = !!(t && t.editMode);
-    editActions.hidden = !inEdit;
     editBtn.hidden = inEdit;
     if (inEdit) {
-      // Show Save only when dirty, so the affordance is honest.
       saveBtn.hidden = !viewer.isDirty(active);
     }
   }

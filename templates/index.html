@@ -19,15 +19,7 @@
       </div>
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
-        <!-- One button to enter edit mode. Save/Preview/Close take its place. -->
         <button id="edit-toggle">Edit</button>
-        <!-- The edit-mode toolbar: hidden until startEdit() runs. Save
-             only shows when the active file is dirty. -->
-        <span id="edit-actions" class="edit-actions" hidden>
-          <button id="preview-btn" title="Render and return to preview">Preview</button>
-          <button id="save-btn" class="primary" title="Save current file" hidden>Save</button>
-          <button id="close-edit-btn" title="Exit edit mode">Close</button>
-        </span>
       </div>
       <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
     </header>
@@ -66,7 +58,6 @@
           <span class="eb-sep"></span>
           <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
           <button class="eb" data-act="redo"   title="Redo (Ctrl+Y)">↷</button>
-          <button class="eb" data-act="clear"  title="Clear formatting" hidden>Clear</button>
           <!-- Overflow menu: the less-common syntaxes live here -->
           <span class="eb-overflow">
             <button class="eb eb-overflow-btn" data-act="more" title="More">⋯</button>
@@ -77,6 +68,13 @@
               <button class="eb" data-act="h6">H6</button>
               <button class="eb" data-act="clear">Clear formatting</button>
             </div>
+          </span>
+          <!-- Spacer pushes the mode buttons to the right edge. -->
+          <span class="eb-spacer"></span>
+          <span class="eb-actions">
+            <button id="preview-btn" class="eb" title="Render and return to preview">Preview</button>
+            <button id="save-btn"    class="eb eb-primary" title="Save current file" hidden>Save</button>
+            <button id="close-edit-btn" class="eb" title="Exit edit mode">Close</button>
           </span>
         </div>
         <div id="viewer" class="markdown-body"></div>

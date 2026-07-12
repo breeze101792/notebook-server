@@ -55,11 +55,6 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="edit-toggle">Edit</button>
-      <span id="edit-actions" class="edit-actions" hidden>
-        <button id="preview-btn">Preview</button>
-        <button id="save-btn" class="primary" hidden>Save</button>
-        <button id="close-edit-btn">Close</button>
-      </span>
       <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
     <main id="layout">
@@ -98,6 +93,12 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
               <button class="eb" data-act="h6">H6</button>
               <button class="eb" data-act="clear">Clear</button>
             </div>
+          </span>
+          <span class="eb-spacer"></span>
+          <span class="eb-actions">
+            <button id="preview-btn" class="eb">Preview</button>
+            <button id="save-btn" class="eb eb-primary" hidden>Save</button>
+            <button id="close-edit-btn" class="eb">Close</button>
           </span>
         </div>
         <div id="viewer" class="markdown-body"></div>
@@ -393,7 +394,7 @@ function check(label, cond, extra) {
   // The Edit button is hidden in edit mode; the [Preview] [Save] [Close]
   // group takes its place. Save starts hidden because the file is clean.
   check("edit button hidden while editing", $("edit-toggle").hidden);
-  check("edit toolbar shown while editing", !$("edit-actions").hidden);
+  check("edit bar shown while editing", !$("edit-bar").hidden);
   check("Preview button visible in edit mode", !$("preview-btn").hidden);
   check("Close button visible in edit mode", !$("close-edit-btn").hidden);
   check("Save button hidden when clean", $("save-btn").hidden);
@@ -722,7 +723,7 @@ function check(label, cond, extra) {
   check("close last tab -> viewer.clear placeholder", /No file selected/.test($("viewer").textContent));
   check("close last tab -> editor hidden", $("raw-editor").hidden);
   check("close last tab -> edit button visible (no file)", !$("edit-toggle").hidden);
-  check("close last tab -> edit toolbar hidden", $("edit-actions").hidden);
+  check("close last tab -> edit bar hidden", $("edit-bar").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
 
   // restore() reads openFiles/activeFile back from config (round-trip).

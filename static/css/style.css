@@ -64,10 +64,6 @@ html, body {
 }
 .brand { font-weight: 700; letter-spacing: .3px; opacity: .9; }
 .topbar-actions { display: flex; gap: 6px; }
-/* The edit-mode toolbar is a span that holds [Preview] [Save] [Close].
- * The flex display here matches the rest of the topbar-actions buttons. */
-.edit-actions { display: inline-flex; gap: 6px; }
-.edit-actions[hidden] { display: none; }
 .topbar-spacer { flex: 1 1 auto; }
 
 #topbar button,
@@ -316,6 +312,19 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   justify-content: flex-start;
   height: 28px;
 }
+/* Spacer pushes the mode buttons (Preview/Save/Close) to the right. */
+.edit-bar .eb-spacer { flex: 1; }
+.edit-bar .eb-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+/* Save gets a primary accent to stand out from the formatting buttons. */
+.edit-bar .eb-primary {
+  color: var(--accent);
+  font-weight: 600;
+}
+.edit-bar .eb-primary:hover { background: var(--accent); color: white; }
 }
 .tab-bar::-webkit-scrollbar { height: 6px; }
 .tab {
