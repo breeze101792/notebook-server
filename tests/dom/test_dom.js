@@ -907,6 +907,15 @@ function check(label, cond, extra) {
   console.log("== settings modal ==");
   // Closed by default.
   check("settings: closed initially", !window.NB.settings.isOpen());
+  // The overlay must actually be invisible, not just .isOpen() === false.
+  // (Regression guard: `display: flex` on .settings-overlay would otherwise
+  // outrank the UA's [hidden] { display: none } and pop the modal up.)
+  {
+    // Pull the live computed style the same way a real browser would.
+    const overlayStyle = window.getComputedStyle($("settings-overlay"));
+    check("settings: overlay hidden-by-attr is display:none on load",
+      overlayStyle.display === "none", "computed display=" + overlayStyle.display);
+  }
   // Open via the gear button in the top bar.
   $("settings-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);

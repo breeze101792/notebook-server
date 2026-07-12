@@ -351,6 +351,10 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   justify-content: center;
   z-index: 2000;
 }
+/* The `hidden` attribute is in the markup, but our `display: flex` above
+ * outranks the UA's `[hidden] { display: none }`. Re-assert it explicitly
+ * so the overlay starts closed and stays closed. */
+.settings-overlay[hidden] { display: none; }
 .settings-modal {
   width: min(520px, 92vw);
   max-height: 86vh;
