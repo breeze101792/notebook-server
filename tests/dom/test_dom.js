@@ -400,7 +400,7 @@ function check(label, cond, extra) {
   check("edit mode entered (textarea shown)", !$("raw-editor").hidden);
   // The Edit button is hidden in edit mode; the [Preview] [Save] [Close]
   // group takes its place. Save starts hidden because the file is clean.
-  check("edit button hidden while editing", $("edit-toggle").hidden);
+  check("edit button gets .editing class while editing", $("edit-toggle").classList.contains("editing"));
   check("edit bar shown while editing", !$("edit-bar").hidden);
   check("Preview button visible in edit mode", !$("preview-btn").hidden);
   check("Close button visible in edit mode", !$("close-edit-btn").hidden);
@@ -746,7 +746,7 @@ function check(label, cond, extra) {
   await tick(20);
   check("close last tab -> viewer.clear placeholder", /No file selected/.test($("viewer").textContent));
   check("close last tab -> editor hidden", $("raw-editor").hidden);
-  check("close last tab -> edit button visible (no file)", !$("edit-toggle").hidden);
+  check("close last tab -> edit button loses .editing class", !$("edit-toggle").classList.contains("editing"));
   check("close last tab -> edit bar hidden", $("edit-bar").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
 

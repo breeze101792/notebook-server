@@ -96,15 +96,19 @@
   }
 
   /* --- top-bar / edit-bar mode ------------------------------------ */
-  /* Preview mode: the top bar shows just [Edit] on a neutral background.
-   * Edit mode: the Edit button hides, the top bar gets a tint, and the
-   * edit bar appears with formatting buttons on the left and
-   * [Preview Save Close] on the right. The main area splits into two
-   * columns: editor (left) and live preview (right). */
+  /* Preview mode: the top bar shows [Edit] in the default color.
+   * Edit mode: the Edit button stays visible but gets an accent color
+   * to indicate we're editing; the top bar also gets a tint. The edit
+   * bar appears under the tabs, and the main area splits into editor
+   * (left) + live preview (right). */
   function refreshTopbar() {
     const t = cur();
     const inEdit = !!(t && t.editMode);
-    editBtn.hidden = inEdit;
+    if (inEdit) {
+      editBtn.classList.add("editing");
+    } else {
+      editBtn.classList.remove("editing");
+    }
     if (inEdit) {
       saveBtn.hidden = !viewer.isDirty(active);
       topbar.classList.add("editing");

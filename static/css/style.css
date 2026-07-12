@@ -564,6 +564,11 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: var(--accent-soft);
   border-bottom-color: var(--accent);
 }
+/* The Edit button stays visible in edit mode but changes color. */
+#edit-toggle.editing {
+  background: var(--accent);
+  color: #fff;
+}
 
 /* ------------------------------------------------------------------ */
 /* File tree                                                           */
