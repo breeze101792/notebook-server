@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Notebook cover -->
+  <rect x="12" y="4" width="44" height="56" rx="3" ry="3"
+        fill="#f7f3e8" stroke="#555" stroke-width="2"/>
+  <!-- Spine -->
+  <rect x="10" y="4" width="6" height="56" rx="2" ry="2"
+        fill="#4a6fa5" stroke="#3b5a8c" stroke-width="1.5"/>
+  <!-- Text lines -->
+  <line x1="22" y1="16" x2="48" y2="16" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="24" x2="48" y2="24" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="32" x2="42" y2="32" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="40" x2="48" y2="40" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="22" y1="48" x2="38" y2="48" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Bookmark tab -->
+  <polygon points="44,4 44,14 38,9 32,14 32,4" fill="#e07050" stroke="#c0553a" stroke-width="1"/>
+</svg>
