@@ -12,7 +12,11 @@
 
   const viewerEl = document.getElementById("viewer");
   const editorEl = document.getElementById("raw-editor");
-  const editBtn  = document.getElementById("edit-toggle");
+  const editBtn    = document.getElementById("edit-toggle");
+  const editActions = document.getElementById("edit-actions");
+  const previewBtn = document.getElementById("preview-btn");
+  const saveBtn    = document.getElementById("save-btn");
+  const closeEditBtn = document.getElementById("close-edit-btn");
 
   // path -> { content, editMode, savedContent }
   const cache = new Map();
@@ -73,15 +77,30 @@
     }
   }
 
+  /* --- top-bar mode ----------------------------------------------- */
+  /* Preview mode: just an [Edit] button. Edit mode: a [Preview Save Close]
+   * group where Save only appears while the file is dirty. Close returns
+   * to preview and prompts if there are unsaved changes. */
+  function refreshTopbar() {
+    const t = cur();
+    const inEdit = !!(t && t.editMode);
+    editActions.hidden = !inEdit;
+    editBtn.hidden = inEdit;
+    if (inEdit) {
+      // Show Save only when dirty, so the affordance is honest.
+      saveBtn.hidden = !viewer.isDirty(active);
+    }
+  }
+
   function showViewer() {
     editorEl.hidden = true;
     viewerEl.hidden = false;
-    editBtn.textContent = "Edit";
+    refreshTopbar();
   }
   function showEditor() {
     editorEl.hidden = false;
     viewerEl.hidden = true;
-    editBtn.textContent = "Preview";
+    refreshTopbar();
     editorEl.focus();
   }
 
@@ -131,10 +150,10 @@
       cache.clear();
       editorEl.hidden = true;
       viewerEl.hidden = false;
-      editBtn.textContent = "Edit";
       viewerEl.innerHTML =
         '<p style="color:var(--fg-muted)">No file selected.</p>';
       if (NB.outline) NB.outline.build(viewerEl);
+      refreshTopbar();
     },
 
     getPath() { return active; },
@@ -152,6 +171,8 @@
       editorEl.value = t.content;
       showEditor();
     },
+    /* End edit mode and render the saved content. Used by the Preview
+     * button, which assumes the user wants to see the rendered view. */
     endEdit() {
       const t = cur(); if (!t) return;
       t.content = editorEl.value;
@@ -160,16 +181,32 @@
       render();
       NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
     },
-    toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.endEdit() : this.startEdit(); },
+    /* Close button: exit edit mode, but prompt before discarding unsaved
+     * edits. Returns true if the user chose to proceed, false if they
+     * stayed in edit mode. */
+    closeEdit() {
+      const t = cur(); if (!t) return false;
+      if (viewer.isDirty(active)) {
+        const ok = confirm('You have unsaved changes in "' + active + '".\n\n' +
+          'Discard them and exit edit mode?');
+        if (!ok) return false;
+      }
+      this.endEdit();
+      return true;
+    },
+    toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
 
     async save() {
       const t = cur();
       if (!t) { alert("No file open."); return; }
-      const content = t.editMode ? editorEl.value : t.content;
+      if (!t.editMode) return;                 // no toolbar in preview mode
+      const content = editorEl.value;
       await NB.api.saveFile(active, content);
       t.content = content;
       t.savedContent = content;
-      if (t.editMode) { t.editMode = false; showViewer(); render(); }
+      // Stay in edit mode after save — the user might still be editing.
+      // Just refresh the toolbar (Save button hides because no longer dirty).
+      refreshTopbar();
       // Tell the watcher our next save's mtime echo should be ignored.
       if (NB.watcher) NB.watcher.noteSelfSave(active);
       // Re-fetch to pick up the new mtime the server stamped on the file.
@@ -214,11 +251,19 @@
   function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
   /* Live dirty dot: while editing, report changed-dirty so the tab bar
-   * can mark the active file's tab without a full re-render. */
+   * can mark the active file's tab without a full re-render. Also keep
+   * the Save button in sync with the dirty state. */
   editorEl.addEventListener("input", () => {
     if (!active) return;
+    refreshTopbar();
     NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
   });
+
+  /* Edit-mode toolbar buttons. Preview/Close are always visible in edit
+   * mode; Save is gated by refreshTopbar() based on the dirty flag. */
+  previewBtn.addEventListener("click", () => NB.viewer.endEdit());
+  saveBtn.addEventListener("click", () => NB.viewer.save());
+  closeEditBtn.addEventListener("click", () => NB.viewer.closeEdit());
 
   /* External file change (watcher or poll). Refetch the file. If the user
    * has unsaved edits, prompt; if they say no, mark the tab as a conflict

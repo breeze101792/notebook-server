@@ -55,7 +55,11 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="edit-toggle">Edit</button>
-      <button id="save">Save</button>
+      <span id="edit-actions" class="edit-actions" hidden>
+        <button id="preview-btn">Preview</button>
+        <button id="save-btn" class="primary" hidden>Save</button>
+        <button id="close-edit-btn">Close</button>
+      </span>
       <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
     <main id="layout">
@@ -311,9 +315,10 @@ function check(label, cond, extra) {
   await tick(10);
   const aTab = window.document.querySelector('.tab[data-path="notes/a.md"]');
   check("dirty tab marked with .dirty", aTab && aTab.classList.contains("dirty"));
-  click("edit-toggle"); // exit edit (keeps unsaved content)
+  // Preview button exits edit and renders the (unsaved) content
+  click("preview-btn");
   await tick(10);
-  check("still dirty after exiting edit", aTab.classList.contains("dirty"));
+  check("still dirty after Preview (unsaved content kept)", aTab.classList.contains("dirty"));
   // close the non-active Welcome tab
   window.NB.tabs.close("Welcome.md");
   await tick(20);
@@ -339,17 +344,70 @@ function check(label, cond, extra) {
   check("search panel hides on close", $("search-results").hidden);
 
   console.log("== edit + save ==");
+  // The previous "dirty dot" test left the active file with unsaved edits.
+  // Save first so we start this block from a known-clean state.
+  if (!$("raw-editor").hidden) { click("preview-btn"); await tick(10); }
+  if (window.NB.viewer.isDirty(activeTabPath())) {
+    window.NB.viewer.startEdit();
+    await tick(10);
+    click("save-btn");
+    await tick(30);
+    window.NB.viewer.endEdit();
+    await tick(10);
+  }
+  check("baseline: active file is clean", !window.NB.viewer.isDirty(activeTabPath()));
+
   click("edit-toggle");
   await tick(10);
   check("edit mode entered (textarea shown)", !$("raw-editor").hidden);
-  check("edit button shows Preview", $("edit-toggle").textContent === "Preview");
+  // The Edit button is hidden in edit mode; the [Preview] [Save] [Close]
+  // group takes its place. Save starts hidden because the file is clean.
+  check("edit button hidden while editing", $("edit-toggle").hidden);
+  check("edit toolbar shown while editing", !$("edit-actions").hidden);
+  check("Preview button visible in edit mode", !$("preview-btn").hidden);
+  check("Close button visible in edit mode", !$("close-edit-btn").hidden);
+  check("Save button hidden when clean", $("save-btn").hidden);
+  // Type -> Save appears.
   $("raw-editor").value = "# Edited\n\n## New heading\n\nsaved body";
-  click("save");
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("Save button appears after typing", !$("save-btn").hidden);
+  // Save in edit mode stays in edit mode (just clears the dirty flag).
+  click("save-btn");
   await tick(30);
-  check("save exits edit mode", $("raw-editor").hidden);
-  check("re-rendered new heading id", !!$("new-heading"));
+  check("save keeps edit mode open (raw-editor still shown)", !$("raw-editor").hidden);
+  check("Save button hidden again after save (clean)", $("save-btn").hidden);
   const savedFile = FILES["notes/a.md"];
   check("save wrote file content", savedFile && savedFile.includes("## New heading"));
+  // Preview returns to the viewer.
+  click("preview-btn");
+  await tick(10);
+  check("Preview returns to viewer mode", $("raw-editor").hidden);
+  check("re-rendered new heading id", !!$("new-heading"));
+  // Close on a clean file should exit edit silently (no confirm).
+  click("edit-toggle"); await tick(10);
+  let confirmCount = 0;
+  window.confirm = () => { confirmCount++; return true; };
+  click("close-edit-btn");
+  await tick(10);
+  check("Close on clean file: no confirm prompt", confirmCount === 0, "count=" + confirmCount);
+  check("Close on clean file: back to viewer", $("raw-editor").hidden);
+  // Close on a dirty file should prompt; Cancel keeps the user in edit.
+  click("edit-toggle"); await tick(10);
+  $("raw-editor").value = "# Edited\n\n## New heading\n\nDIRTY";
+  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  window.confirm = () => { confirmCount++; return false; };   // user says no
+  click("close-edit-btn");
+  await tick(10);
+  check("Close on dirty + Cancel keeps edit mode", !$("raw-editor").hidden);
+  check("Close on dirty + Cancel shows confirm", confirmCount === 1, "count=" + confirmCount);
+  // ... and accepting discards.
+  window.confirm = () => { confirmCount++; return true; };
+  click("close-edit-btn");
+  await tick(10);
+  check("Close on dirty + OK exits edit mode", $("raw-editor").hidden);
+  check("Close on dirty + OK shows confirm", confirmCount === 2, "count=" + confirmCount);
 
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;
@@ -464,7 +522,8 @@ function check(label, cond, extra) {
   await tick(20);
   check("close last tab -> viewer.clear placeholder", /No file selected/.test($("viewer").textContent));
   check("close last tab -> editor hidden", $("raw-editor").hidden);
-  check("close last tab -> edit button resets", $("edit-toggle").textContent === "Edit");
+  check("close last tab -> edit button visible (no file)", !$("edit-toggle").hidden);
+  check("close last tab -> edit toolbar hidden", $("edit-actions").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
 
   // restore() reads openFiles/activeFile back from config (round-trip).
@@ -501,11 +560,16 @@ function check(label, cond, extra) {
   check("rename carries dirty state",
     window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
 
-  // save() clears the dirty dot.
-  click("save");
+  // save() clears the dirty dot. (In the new topbar model you have to be
+  // in edit mode to save -- the standalone Save button is gone.)
+  window.NB.viewer.startEdit();
+  await tick(10);
+  click("save-btn");
   await tick(20);
   check("save clears dirty dot",
     !window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+  window.NB.viewer.endEdit();
+  await tick(10);
 
   // confirm-cancel keeps a dirty tab (and its edits).
   window.NB.viewer.startEdit();
@@ -854,9 +918,10 @@ function check(label, cond, extra) {
 
   // Case 3: self-save suppression. After save(), the next external change
   // event for the same path within the window should be ignored.
-  window.NB.viewer.endEdit();
-  await tick(20);
-  click("save");
+  // In the new topbar model save() requires edit mode; start it.
+  window.NB.viewer.startEdit();
+  await tick(10);
+  click("save-btn");
   await tick(40);
   // The watcher exposes noteSelfSave to flag a path as "we just wrote this,
   // ignore the next change". The window is 1.5s; verify the public API.

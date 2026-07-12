@@ -26,7 +26,6 @@
 
   const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
-  const saveBtn  = document.getElementById("save");
   const sidebarEl  = document.getElementById("sidebar");
   const outlineEl  = document.getElementById("outline-pane");
 
@@ -123,8 +122,10 @@
       persistConfig();
     });
 
-    // top bar actions
-    saveBtn.addEventListener("click", () => NB.viewer.save());
+    // top bar: enter/exit edit mode. The Preview / Save / Close buttons
+    // for the edit-mode toolbar are wired inside viewer.js (where the
+    // edit-mode state machine lives) so the dirty-aware visibility for
+    // Save stays in one place.
     editBtn.addEventListener("click", () => NB.viewer.toggleEdit());
 
     // sidebar minimize (collapse / expand) for both sidebars
@@ -137,7 +138,8 @@
     document.getElementById("outline-expand").addEventListener("click",
       () => { cfg.outlineCollapsed = false; applyOutlineState(); persistConfig(); });
 
-    // keyboard: Ctrl/Cmd+S saves
+    // keyboard: Ctrl/Cmd+S saves (no-op outside edit mode; viewer.save
+    // checks the flag itself).
     document.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();

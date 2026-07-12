@@ -64,6 +64,10 @@ html, body {
 }
 .brand { font-weight: 700; letter-spacing: .3px; opacity: .9; }
 .topbar-actions { display: flex; gap: 6px; }
+/* The edit-mode toolbar is a span that holds [Preview] [Save] [Close].
+ * The flex display here matches the rest of the topbar-actions buttons. */
+.edit-actions { display: inline-flex; gap: 6px; }
+.edit-actions[hidden] { display: none; }
 .topbar-spacer { flex: 1 1 auto; }
 
 #topbar button,

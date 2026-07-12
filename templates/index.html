@@ -19,8 +19,15 @@
       </div>
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
+        <!-- One button to enter edit mode. Save/Preview/Close take its place. -->
         <button id="edit-toggle">Edit</button>
-        <button id="save" class="primary" title="Save current file">Save</button>
+        <!-- The edit-mode toolbar: hidden until startEdit() runs. Save
+             only shows when the active file is dirty. -->
+        <span id="edit-actions" class="edit-actions" hidden>
+          <button id="preview-btn" title="Render and return to preview">Preview</button>
+          <button id="save-btn" class="primary" title="Save current file" hidden>Save</button>
+          <button id="close-edit-btn" title="Exit edit mode">Close</button>
+        </span>
       </div>
       <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
     </header>
