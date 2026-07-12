@@ -42,6 +42,7 @@
       request("GET", "/api/search?q=" + encodeURIComponent(q) + "&case=" + (caseSensitive ? "1" : "0")),
     getConfig:     () => request("GET",  "/api/config"),
     saveConfig:    (cfg)       => request("POST", "/api/config", cfg),
+    getInfo:       () => request("GET",  "/api/info"),
   };
 
   /* Tiny pub/sub so modules decouple. */

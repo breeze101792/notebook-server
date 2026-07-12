@@ -180,6 +180,17 @@ def get_config():
     return jsonify(cfg)
 
 
+@app.route("/api/info", methods=["GET"])
+def info():
+    """Read-only info used by the settings page. Returns the absolute
+    data/config directories; both are already known to the user (they are
+    the folders the server is operating on) and contain no secrets."""
+    return jsonify({
+        "data_dir": DATA_DIR,
+        "config_dir": CONFIG_DIR,
+    })
+
+
 @app.route("/api/config", methods=["POST"])
 def set_config():
     data = request.get_json(silent=True)

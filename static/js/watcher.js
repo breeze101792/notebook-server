@@ -43,6 +43,10 @@
     /* True if the native observer is active. */
     isWatching() { return watching; },
 
+    /* True if any change-detection mechanism is running (native observer
+     * or polling fallback). Use this to decide the on/off label. */
+    isActive() { return watching || !!pollTimer; },
+
     /* UI label: "Watching data/" / "Watching off" / "Polling (5s)". */
     describe() {
       if (watching) return "Watching " + (watchedRoot || "folder");

@@ -295,5 +295,15 @@ class TestConfig(BaseTest):
         self.assertEqual(r.status_code, 400)
 
 
+class TestInfo(BaseTest):
+    def test_returns_dirs(self):
+        code, data = self.jget("/api/info")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["data_dir"], nb.DATA_DIR)
+        self.assertEqual(data["config_dir"], nb.CONFIG_DIR)
+        # Sanity: these are absolute paths under the temp dir.
+        self.assertTrue(os.path.isabs(data["data_dir"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

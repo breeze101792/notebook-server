@@ -56,8 +56,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <input type="checkbox" id="search-case">
       <button id="edit-toggle">Edit</button>
       <button id="save">Save</button>
-      <select id="theme-select"><option value="auto">Auto</option><option value="dark">Dark</option><option value="light">Light</option></select>
-      <button id="watch-toggle" class="watch-btn">🔕</button>
+      <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
     <main id="layout">
       <aside id="sidebar">
@@ -85,6 +84,49 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
   </div>
   <div id="context-menu" class="context-menu" hidden></div>
   <div id="tab-context-menu" class="context-menu" hidden></div>
+  <div id="settings-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal">
+      <div class="settings-header">
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" class="icon-btn">×</button>
+      </div>
+      <div class="settings-body">
+        <section class="settings-section">
+          <h3>Appearance</h3>
+          <div class="settings-row">
+            <span class="settings-label">Theme</span>
+            <div class="settings-control theme-options">
+              <label><input type="radio" name="theme" value="auto"> Auto</label>
+              <label><input type="radio" name="theme" value="dark"> Dark</label>
+              <label><input type="radio" name="theme" value="light"> Light</label>
+            </div>
+          </div>
+        </section>
+        <section class="settings-section">
+          <h3>File watching</h3>
+          <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span id="settings-watch-status" class="settings-value">—</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label"></span>
+            <button id="settings-watch-toggle" class="settings-action">Enable</button>
+          </div>
+        </section>
+        <section class="settings-section">
+          <h3>About</h3>
+          <div class="settings-row">
+            <span class="settings-label">Data folder</span>
+            <code id="settings-data-dir" class="settings-value settings-mono">…</code>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Config folder</span>
+            <code id="settings-config-dir" class="settings-value settings-mono">…</code>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
 </body></html>`;
 
 const dom = new JSDOM(html, {
@@ -137,10 +179,14 @@ window.fetch = async (url, opts) => {
       });
     }
     body = { query: q, matches, truncated: false };
+  } else if (p === "/api/info") {
+    body = { data_dir: "/tmp/test/data", config_dir: "/tmp/test/config" };
   } else if (p === "/api/create" || p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
     body = JSON.parse(opts.body || "{}");
   }
-  return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  return { ok: true, status: 200,
+    text: async () => JSON.stringify(body),
+    json: async () => body };
 };
 
 function evalIn(src) { vm.runInContext(src, ctx); }
@@ -157,6 +203,7 @@ evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
 evalIn(read("static/js/tabs.js"));
+evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
@@ -184,24 +231,44 @@ function check(label, cond, extra) {
     typeof window.marked === "object" && typeof window.hljs === "object" && !!window.NB.viewer);
 
   console.log("== theme ==");
-  check("default theme pref is auto", $("theme-select").value === "auto", "got " + $("theme-select").value);
-  check("auto resolves to dark (system-dark stub)", window.document.body.dataset.theme === "dark",
+  // The theme control now lives in the settings modal. The default body
+  // theme is "dark" (auto resolves dark on this jsdom's matchMedia stub).
+  check("default body theme is dark (auto -> dark)", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
-  $("theme-select").value = "light";
-  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
-  check("explicit light sets data-theme=light", window.document.body.dataset.theme === "light",
+  window.NB.settings.open();
+  await tick(20);
+  const checkedRadio = () => window.document.querySelector('input[name="theme"]:checked');
+  check("default theme radio is auto", checkedRadio() && checkedRadio().value === "auto",
+    checkedRadio() ? checkedRadio().value : "(none)");
+  // light
+  window.document.querySelector('input[name="theme"][value="light"]').checked = true;
+  window.document.querySelector('input[name="theme"][value="light"]')
+    .dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("light radio sets data-theme=light", window.document.body.dataset.theme === "light",
     "data-theme=" + window.document.body.dataset.theme);
-  $("theme-select").value = "dark";
-  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
-  check("explicit dark sets data-theme=dark", window.document.body.dataset.theme === "dark",
+  // dark
+  window.document.querySelector('input[name="theme"][value="dark"]').checked = true;
+  window.document.querySelector('input[name="theme"][value="dark"]')
+    .dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("dark radio sets data-theme=dark", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
-  $("theme-select").value = "auto";
-  $("theme-select").dispatchEvent(new window.Event("change", { bubbles: true }));
-  check("back to auto resolves dark", window.document.body.dataset.theme === "dark",
+  // back to auto
+  window.document.querySelector('input[name="theme"][value="auto"]').checked = true;
+  window.document.querySelector('input[name="theme"][value="auto"]')
+    .dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("auto radio resolves dark (matchMedia stub)", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
+  window.NB.settings.close();
+  await tick(10);
 
   console.log("== viewer + outline ==");
-  const heads = window.document.querySelectorAll("#viewer h1,h2,h3,h4,h5,h6");
+  // Selector must use a single compound (#viewer :is(h1,h2,h3,...)) or a
+  // union with the scope in EACH branch -- otherwise jsdom parses the
+  // unparenthesized second branch as "any h2/h3/... in the document".
+  const heads = window.document.querySelectorAll("#viewer :is(h1, h2, h3, h4, h5, h6)");
   check("viewer rendered headings", heads.length >= 1, "got " + heads.length);
   check("all headings have ids", Array.from(heads).every(h => h.id), heads.length + " heads");
   const items = window.document.querySelectorAll("#outline .outline-item");
@@ -808,18 +875,77 @@ function check(label, cond, extra) {
     /FRESH/.test($("viewer").textContent),
     "viewer=" + $("viewer").textContent.slice(0, 60));
 
-  // Case 4: watch button in top bar toggles state and label.
-  const watchBtn = $("watch-toggle");
-  check("watch: button starts with 🔕", watchBtn.textContent === "🔕", watchBtn.textContent);
-  check("watch: NB.watcher exists", !!window.NB.watcher);
-  check("watch: not active initially", !window.NB.watcher.isWatching());
-  // jsdom has no showDirectoryPicker/FileSystemObserver, so enable() will
-  // fall through to startPolling().
-  await window.NB.watcher.enable();
+  // Case 4: watch button lives in the settings modal now. Open the modal,
+  // verify the status line and the toggle button, then enable and check
+  // the status updates.
+  window.NB.settings.open();
   await tick(20);
-  check("watch: enable -> describe() reports active state",
-    /Watching|Polling/.test(window.NB.watcher.describe()),
-    window.NB.watcher.describe());
+  check("watch: settings modal opens", window.NB.settings.isOpen());
+  const statusEl = $("settings-watch-status");
+  const watchBtn = $("settings-watch-toggle");
+  check("watch: status element exists", !!statusEl);
+  check("watch: status starts as 'Watching off'", /off/i.test(statusEl.textContent),
+    statusEl.textContent);
+  check("watch: button starts as 'Enable'", watchBtn.textContent === "Enable",
+    watchBtn.textContent);
+  // Enable: jsdom has no FileSystemObserver, so the polling fallback kicks in.
+  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("watch: enable -> status reports active",
+    /watching|polling/i.test(statusEl.textContent),
+    statusEl.textContent);
+  check("watch: button flips to 'Disable'",
+    watchBtn.textContent === "Disable", watchBtn.textContent);
+  // Disable
+  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("watch: disable -> status reports off",
+    /off/i.test(statusEl.textContent), statusEl.textContent);
+  window.NB.settings.close();
+  await tick(10);
+
+  console.log("== settings modal ==");
+  // Closed by default.
+  check("settings: closed initially", !window.NB.settings.isOpen());
+  // Open via the gear button in the top bar.
+  $("settings-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("settings: gear button opens modal", window.NB.settings.isOpen());
+  check("settings: overlay is visible (no hidden attr)", !$("settings-overlay").hidden);
+  // Esc closes.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await tick(10);
+  check("settings: Esc closes", !window.NB.settings.isOpen());
+  // Open + close via × button.
+  window.NB.settings.open(); await tick(10);
+  $("settings-close").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("settings: × button closes", !window.NB.settings.isOpen());
+  // Open + click on backdrop closes.
+  window.NB.settings.open(); await tick(10);
+  // dispatch a click whose target IS the overlay (not the modal)
+  const backdropClick = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(backdropClick, "target", { value: $("settings-overlay") });
+  $("settings-overlay").dispatchEvent(backdropClick);
+  await tick(10);
+  check("settings: overlay-click closes", !window.NB.settings.isOpen());
+  // Click on the modal itself does NOT close.
+  window.NB.settings.open(); await tick(10);
+  const modalClick = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(modalClick, "target", { value: $("settings-overlay").querySelector(".settings-modal") });
+  $("settings-overlay").dispatchEvent(modalClick);
+  await tick(10);
+  check("settings: click inside modal keeps it open", window.NB.settings.isOpen());
+  window.NB.settings.close();
+  // Data-dir info loaded via /api/info on first open.
+  window.NB.settings.open(); await tick(40);
+  check("settings: data dir shown",
+    $("settings-data-dir").textContent === "/tmp/test/data",
+    $("settings-data-dir").textContent);
+  check("settings: config dir shown",
+    $("settings-config-dir").textContent === "/tmp/test/config",
+    $("settings-config-dir").textContent);
+  window.NB.settings.close();
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

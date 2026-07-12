@@ -24,7 +24,6 @@
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
 
-  const themeSel = document.getElementById("theme-select");
   const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
   const saveBtn  = document.getElementById("save");
@@ -45,7 +44,6 @@
   function applyTheme(pref) {
     cfg.theme = pref;
     document.body.dataset.theme = resolveTheme(pref);
-    themeSel.value = pref;
   }
   if (themeMQ) {
     themeMQ.addEventListener("change", () => {
@@ -147,32 +145,10 @@
       }
     });
 
-    // theme
-    themeSel.addEventListener("change", () => {
-      applyTheme(themeSel.value);
-      persistConfig();
-    });
-
-    // file-change watcher toggle. The watcher is opt-in: until the user
-    // clicks, no file-system access is requested.
-    const watchBtn = document.getElementById("watch-toggle");
-    function refreshWatchBtn() {
-      if (NB.watcher.isWatching()) {
-        watchBtn.textContent = "🔔";
-        watchBtn.classList.add("active");
-        watchBtn.title = "Watching: " + NB.watcher.describe();
-      } else {
-        watchBtn.textContent = "🔕";
-        watchBtn.classList.remove("active");
-        watchBtn.title = NB.watcher.describe() + " (click to enable)";
-      }
-    }
-    watchBtn.addEventListener("click", async () => {
-      if (NB.watcher.isWatching()) NB.watcher.disable();
-      else await NB.watcher.enable();
-      refreshWatchBtn();
-    });
-    refreshWatchBtn();
+    // Settings: the gear button opens a modal. The modal lives in its own
+    // module (settings.js) and reads/writes the cfg through these hooks.
+    document.getElementById("settings-btn").addEventListener("click",
+      () => NB.settings && NB.settings.open());
 
     // resizable sidebars (drag the inner edge)
     setupResize("sidebar", "--sidebar-width", "right");
@@ -275,4 +251,12 @@
   }
 
   document.addEventListener("DOMContentLoaded", boot);
+
+  /* Tiny façade so other modules (settings.js) can read live config and
+   * trigger a persist without reaching into our module-scoped state. */
+  NB.app = {
+    getCfg: () => cfg,
+    setTheme: (pref) => { applyTheme(pref); persistConfig(); },
+    save: () => persistConfig(),
+  };
 })();

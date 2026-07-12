@@ -22,12 +22,7 @@
         <button id="edit-toggle">Edit</button>
         <button id="save" class="primary" title="Save current file">Save</button>
       </div>
-      <select id="theme-select" title="Theme">
-        <option value="auto">Auto</option>
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-      </select>
-      <button id="watch-toggle" class="watch-btn" title="Watch data/ for external file changes">🔕</button>
+      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
     </header>
 
     <main id="layout">
@@ -70,6 +65,57 @@
   <!-- Right-click context menu for file tabs -->
   <div id="tab-context-menu" class="context-menu" hidden></div>
 
+  <!-- Settings modal. Opened by the ⚙ button in the top bar. -->
+  <div id="settings-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="settings-header">
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body">
+        <section class="settings-section">
+          <h3>Appearance</h3>
+          <div class="settings-row">
+            <label class="settings-label">Theme</label>
+            <div class="settings-control theme-options">
+              <label><input type="radio" name="theme" value="auto"> Auto</label>
+              <label><input type="radio" name="theme" value="dark"> Dark</label>
+              <label><input type="radio" name="theme" value="light"> Light</label>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>File watching</h3>
+          <p class="settings-help">
+            Get notified when files in your notebook are changed by another program
+            (vim, a sync tool, a different browser tab, etc.).
+          </p>
+          <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span id="settings-watch-status" class="settings-value">—</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label"></span>
+            <button id="settings-watch-toggle" class="settings-action">Enable</button>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h3>About</h3>
+          <div class="settings-row">
+            <span class="settings-label">Data folder</span>
+            <code id="settings-data-dir" class="settings-value settings-mono">…</code>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">Config folder</span>
+            <code id="settings-config-dir" class="settings-value settings-mono">…</code>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <!-- Vendored libs first (no CDN tags; works offline) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
@@ -81,6 +127,7 @@
   <script src="/static/js/sidebar.js"></script>
   <script src="/static/js/search.js"></script>
   <script src="/static/js/tabs.js"></script>
+  <script src="/static/js/settings.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
