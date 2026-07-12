@@ -282,6 +282,22 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 .tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
 
+/* Pinned tabs: narrower, marked with a pin glyph, no close button. They stay
+ * grouped on the left and are skipped by the bulk-close actions. */
+.tab.pinned { max-width: 150px; padding-right: 10px; }
+.tab.pinned .tab-pin { font-size: 11px; line-height: 1; }
+.tab.pinned .tab-label { max-width: 110px; }
+
+/* Drag-and-drop reorder: the dragged tab dims; the drop target gets an
+ * accent stripe on the edge it will insert before/after. */
+.tab.dragging { opacity: .4; }
+.tab.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+.tab.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+
+/* A disabled context-menu item (a bulk-close target with nothing to close). */
+.context-menu button:disabled { color: var(--fg-muted); cursor: default; }
+.context-menu button:disabled:hover { background: none; }
+
 /* The viewer is the scroll container (IntersectionObserver root). */
 #viewer {
   flex: 1 1 auto;

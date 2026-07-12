@@ -83,6 +83,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
     </main>
   </div>
   <div id="context-menu" class="context-menu" hidden></div>
+  <div id="tab-context-menu" class="context-menu" hidden></div>
 </body></html>`;
 
 const dom = new JSDOM(html, {
@@ -488,6 +489,137 @@ function check(label, cond, extra) {
   await tick(20);
   check("× button closes tab", tabs().length === cnt2 - 1 && !window.NB.tabs.isOpen("created.md"),
     "count=" + tabs().length);
+
+  console.log("== tab pin + context menu ==");
+  const tabPaths = () => Array.from(tabs()).map(t => t.dataset.path);
+  const menuBtn = (label) => Array.from($("tab-context-menu").querySelectorAll("button"))
+    .find(b => b.textContent === label);
+  const ctxOpen = (sel, x) => window.document.querySelector(sel)
+    .dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: x || 50, clientY: 10 }));
+
+  // reset to a clean 3-tab state: [notes/a.md, Welcome.md, notes/b.md]
+  window.NB.tabs.getOpen().slice().forEach(p => window.NB.tabs.close(p, { force: true }));
+  await tick(30);
+  await window.NB.tabs.open("notes/a.md"); await tick(10);
+  await window.NB.tabs.open("Welcome.md"); await tick(10);
+  await window.NB.tabs.open("notes/b.md"); await tick(20);
+  check("reset: 3 tabs open", tabs().length === 3, "got " + tabs().length);
+  check("reset order", tabPaths().join(",") === "notes/a.md,Welcome.md,notes/b.md", tabPaths().join(","));
+
+  // togglePin moves to front, marks pinned, drops the close button, shows marker
+  window.NB.tabs.togglePin("Welcome.md");
+  await tick(10);
+  check("pin: Welcome moved to front", tabPaths()[0] === "Welcome.md", tabPaths().join(","));
+  check("pin: Welcome tab is .pinned",
+    !!window.document.querySelector('.tab[data-path="Welcome.md"].pinned'));
+  check("pin: isPinned reports true", window.NB.tabs.isPinned("Welcome.md"));
+  check("pin: pinned tab has no close button",
+    !window.document.querySelector('.tab[data-path="Welcome.md"] .tab-close'));
+  check("pin: pinned tab shows pin marker",
+    !!window.document.querySelector('.tab[data-path="Welcome.md"] .tab-pin'));
+  check("pin: unpinned tab keeps close button",
+    !!window.document.querySelector('.tab[data-path="notes/a.md"] .tab-close'));
+
+  // context-menu Pin on notes/a -> joins pinned group at its end
+  ctxOpen('.tab[data-path="notes/a.md"]', 100);
+  check("tab context menu opened", !$("tab-context-menu").hidden);
+  menuBtn("Pin").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("menu pin: notes/a pinned", window.NB.tabs.isPinned("notes/a.md"));
+  // pinned group [Welcome.md, notes/a.md]; unpinned [notes/b.md]
+  check("menu pin: pinned tabs front in order",
+    tabPaths()[0] === "Welcome.md" && tabPaths()[1] === "notes/a.md", tabPaths().join(","));
+
+  // context-menu Unpin on Welcome -> drops to start of unpinned section
+  ctxOpen('.tab[data-path="Welcome.md"]', 50);
+  menuBtn("Unpin").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("menu unpin: Welcome not pinned", !window.NB.tabs.isPinned("Welcome.md"));
+  // pinned [notes/a.md]; unpinned [Welcome.md, notes/b.md]
+  check("menu unpin: notes/a still front (pinned)", tabPaths()[0] === "notes/a.md", tabPaths().join(","));
+
+  // bulk close protects pinned tabs. state: [notes/a(pinned), Welcome, notes/b]
+  await window.NB.tabs.activate("notes/b.md");
+  await tick(10);
+  // "Close to the right" of Welcome -> closes notes/b (the only one to its right)
+  ctxOpen('.tab[data-path="Welcome.md"]', 50);
+  check("close-right enabled", menuBtn("Close to the right") && !menuBtn("Close to the right").disabled);
+  menuBtn("Close to the right").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("close-right removed notes/b", !window.NB.tabs.isOpen("notes/b.md"));
+  check("close-right left 2 tabs", tabs().length === 2, "got " + tabs().length);
+  check("close-right kept pinned notes/a", window.NB.tabs.isOpen("notes/a.md"));
+
+  // reopen notes/b, then "Close to the left" of notes/b -> closes Welcome,
+  // skips the pinned notes/a on its left
+  await window.NB.tabs.open("notes/b.md"); await tick(20);
+  // state: [notes/a(pinned), Welcome, notes/b]
+  ctxOpen('.tab[data-path="notes/b.md"]', 150);
+  menuBtn("Close to the left").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("close-left removed Welcome (non-pinned)", !window.NB.tabs.isOpen("Welcome.md"));
+  check("close-left kept pinned notes/a", window.NB.tabs.isOpen("notes/a.md"));
+  check("close-left left 2 tabs", tabs().length === 2, "got " + tabs().length);
+
+  // "Close others" on notes/b: only pinned notes/a remains as an other, which
+  // is skipped -> the item is disabled and nothing closes
+  ctxOpen('.tab[data-path="notes/b.md"]', 150);
+  check("close-others disabled when only pinned other remains",
+    menuBtn("Close others") && menuBtn("Close others").disabled);
+  window.document.dispatchEvent(new window.Event("click", { bubbles: true })); // close menu
+  await tick(10);
+  check("tab context menu hides on outside click", $("tab-context-menu").hidden);
+
+  console.log("== tab drag reorder ==");
+  // reset to a clean 3 unpinned-tab state
+  window.NB.tabs.togglePin("notes/a.md"); // unpin it
+  await tick(10);
+  window.NB.tabs.getOpen().slice().forEach(p => window.NB.tabs.close(p, { force: true }));
+  await tick(30);
+  await window.NB.tabs.open("notes/a.md"); await tick(10);
+  await window.NB.tabs.open("Welcome.md"); await tick(10);
+  await window.NB.tabs.open("notes/b.md"); await tick(20);
+  // order: [notes/a.md, Welcome.md, notes/b.md]
+  const dSrc = window.document.querySelector('.tab[data-path="notes/b.md"]');
+  const dOver = window.document.querySelector('.tab[data-path="notes/a.md"]');
+  const dRect = dOver.getBoundingClientRect.bind(dOver);
+  dOver.getBoundingClientRect = () => ({ width: 100, height: 30, left: 0, right: 100, top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  dSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+  const ov = new window.Event("dragover", { bubbles: true });
+  Object.defineProperty(ov, "clientX", { value: 0 });
+  dOver.dispatchEvent(ov);
+  const dp = new window.Event("drop", { bubbles: true });
+  Object.defineProperty(dp, "clientX", { value: 0 });
+  dOver.dispatchEvent(dp);
+  await tick(10);
+  dOver.getBoundingClientRect = dRect;
+  check("drag: notes/b moved to front", tabPaths()[0] === "notes/b.md", tabPaths().join(","));
+  check("drag: order is [b, a, Welcome]",
+    tabPaths()[1] === "notes/a.md" && tabPaths()[2] === "Welcome.md", tabPaths().join(","));
+
+  // pinned-boundary clamp: pin Welcome, then drag unpinned notes/a onto
+  // Welcome's left half -> it must land AFTER the pinned tab, never before it.
+  window.NB.tabs.togglePin("Welcome.md"); await tick(10);
+  // order: [Welcome(pinned), notes/b, notes/a]
+  check("clamp setup: Welcome pinned at front",
+    tabPaths()[0] === "Welcome.md" && window.NB.tabs.isPinned("Welcome.md"), tabPaths().join(","));
+  const cSrc = window.document.querySelector('.tab[data-path="notes/a.md"]');
+  const cOver = window.document.querySelector('.tab[data-path="Welcome.md"]');
+  const cRect = cOver.getBoundingClientRect.bind(cOver);
+  cOver.getBoundingClientRect = () => ({ width: 100, height: 30, left: 0, right: 100, top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  cSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+  const ov2 = new window.Event("dragover", { bubbles: true });
+  Object.defineProperty(ov2, "clientX", { value: 0 });
+  cOver.dispatchEvent(ov2);
+  const dp2 = new window.Event("drop", { bubbles: true });
+  Object.defineProperty(dp2, "clientX", { value: 0 });
+  cOver.dispatchEvent(dp2);
+  await tick(10);
+  cOver.getBoundingClientRect = cRect;
+  // notes/a moved from last to middle, but stayed after pinned Welcome
+  check("clamp: pinned Welcome still first", tabPaths()[0] === "Welcome.md", tabPaths().join(","));
+  check("clamp: notes/a second (after pinned), notes/b third",
+    tabPaths()[1] === "notes/a.md" && tabPaths()[2] === "notes/b.md", tabPaths().join(","));
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

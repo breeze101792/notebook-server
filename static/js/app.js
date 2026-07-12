@@ -10,6 +10,7 @@
     recentFiles: [],
     openFiles: [],
     activeFile: null,
+    pinnedFiles: [],
     sidebarWidth: 240,
     outlineWidth: 220,
     sidebarCollapsed: false,
@@ -110,10 +111,11 @@
     // any file shown -> update recents + tree highlight (fired by viewer.activate)
     NB.evt.on("file:open", (path) => { if (path) updateRecent(path); });
 
-    // tab set changed -> persist open files + active file
-    NB.evt.on("tabs:changed", ({ openFiles, activeFile }) => {
+    // tab set changed -> persist open files + active file + pinned files
+    NB.evt.on("tabs:changed", ({ openFiles, activeFile, pinnedFiles }) => {
       cfg.openFiles = openFiles;
       cfg.activeFile = activeFile;
+      if (pinnedFiles) cfg.pinnedFiles = pinnedFiles;
       persistConfig();
     });
 
@@ -238,7 +240,8 @@
     const activeFile = cfg.activeFile && treeHas(tree, cfg.activeFile) ? cfg.activeFile : null;
     const lastFile = cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile : null;
     const fallback = lastFile || firstFilePath(tree) || null;
-    try { await NB.tabs.restore(openFiles, activeFile, fallback); }
+    const pinnedFiles = (cfg.pinnedFiles || []).filter(p => openFiles.includes(p));
+    try { await NB.tabs.restore(openFiles, activeFile, fallback, pinnedFiles); }
     catch (e) { console.warn("restore tabs failed", e); }
   }
 
