@@ -102,8 +102,8 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
           </span>
         </div>
         <div id="edit-split" class="edit-split">
-          <div id="viewer" class="markdown-body"></div>
           <textarea id="raw-editor" hidden></textarea>
+          <div id="viewer" class="markdown-body"></div>
         </div>
         <div id="search-results" hidden>
           <span id="search-summary"></span><button id="search-close">×</button>
