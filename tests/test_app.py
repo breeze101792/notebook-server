@@ -4,8 +4,8 @@ Uses Flask's test client against the real app. The data/config folders are
 redirected to a temp dir via NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR so the
 project's real data/ and config/ are never touched.
 
-Run:  .venv/bin/python -m unittest discover -s tests -v
-  or:  .venv/bin/python -m pytest tests   (if pytest is installed)
+Run:  .venv_$(hostname)/bin/python -m unittest discover -s tests -v
+  or:  .venv_$(hostname)/bin/python -m pytest tests   (if pytest is installed)
 """
 
 import json

@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VENV_DIR=".venv"
+VENV_DIR=".venv_$(hostname)"
 REQ_FILE="requirements.txt"
 
 # --- 1. Create the venv if it doesn't exist -----------------------------

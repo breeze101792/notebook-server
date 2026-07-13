@@ -12,7 +12,7 @@ and user config live in two deliberately separate folders, `data/` and `config/`
 ## Commands
 
 ```bash
-# Run the server (creates/refreshes .venv, installs requirements, then runs app.py)
+# Run the server (creates/refreshes .venv_<hostname>, installs requirements, then runs app.py)
 ./start.sh                       # 127.0.0.1:5000, debug on
 ./start.sh --port 8080 --no-debug
 ./start.sh --help                # all app.py CLI flags
@@ -21,11 +21,11 @@ and user config live in two deliberately separate folders, `data/` and `config/`
 python app.py
 
 # Backend tests (stdlib unittest against the real Flask app via test client)
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python -m pytest tests   # if pytest is installed
+.venv_$(hostname)/bin/python -m unittest discover -s tests -v
+.venv_$(hostname)/bin/python -m pytest tests   # if pytest is installed
 
 # Run a single backend test class or method
-.venv/bin/python -m unittest tests.test_app.TestSearch.test_case_insensitive_finds_all -v
+.venv_$(hostname)/bin/python -m unittest tests.test_app.TestSearch.test_case_insensitive_finds_all -v
 
 # Frontend DOM tests (jsdom — load real vendor bundles + all app modules, stub fetch)
 npm install && npm test
