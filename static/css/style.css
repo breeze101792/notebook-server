@@ -312,6 +312,23 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   justify-content: flex-start;
   height: 28px;
 }
+/* Any .eb that carries the [hidden] attribute must actually hide, despite
+ * the .eb rule above setting `display: inline-flex` (which outranks the
+ * UA's `[hidden] { display: none }` at equal specificity, since user CSS
+ * always wins). Without this, the Save button would stay visible even
+ * when JS sets its `hidden` property. */
+.edit-bar .eb[hidden] { display: none; }
+/* Close button shows an "unsaved" indicator when the current file is
+ * dirty, so the user can tell at a glance that clicking it will prompt
+ * to discard. The badge is ::after so it doesn't add a layout slot. */
+.edit-bar .eb.unsaved { color: var(--accent); border-color: var(--accent); }
+.edit-bar .eb.unsaved::after {
+  content: "●";
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 9px;
+  vertical-align: middle;
+}
 /* Spacer pushes the mode buttons (Preview/Save/Close) to the right. */
 .edit-bar .eb-spacer { flex: 1; }
 .edit-bar .eb-actions {
@@ -325,7 +342,6 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   font-weight: 600;
 }
 .edit-bar .eb-primary:hover { background: var(--accent); color: white; }
-}
 .tab-bar::-webkit-scrollbar { height: 6px; }
 .tab {
   display: flex;
@@ -350,10 +366,16 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   text-overflow: ellipsis;
   max-width: 170px;
 }
+.tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
 .tab.dirty .tab-label::before {
-  content: "• ";
-  color: var(--accent);
-  font-weight: 700;
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
 }
 .tab .tab-close {
   background: none;
@@ -566,6 +588,13 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 /* The Edit button stays visible in edit mode but changes color. */
 #edit-toggle.editing {
+  background: var(--accent);
+  color: #fff;
+}
+/* The Preview button in the edit bar reflects whether the live preview
+ * pane is currently shown. Color it when the preview is on so the user
+ * can tell at a glance; default (un-colored) when the preview is off. */
+#preview-btn.editing {
   background: var(--accent);
   color: #fff;
 }

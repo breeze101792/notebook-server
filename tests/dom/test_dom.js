@@ -394,27 +394,44 @@ function check(label, cond, extra) {
     await tick(10);
   }
   check("baseline: active file is clean", !window.NB.viewer.isDirty(activeTabPath()));
+  check("Edit button label is 'Edit' in view mode", $("edit-toggle").textContent === "Edit",
+    "got: " + JSON.stringify($("edit-toggle").textContent));
 
   click("edit-toggle");
   await tick(10);
   check("edit mode entered (textarea shown)", !$("raw-editor").hidden);
-  // The Edit button is hidden in edit mode; the [Preview] [Save] [Close]
-  // group takes its place. Save starts hidden because the file is clean.
+  // The Edit button stays visible in edit mode but its label flips to
+  // 'View' to reflect that clicking it will exit edit mode. The
+  // [Preview] [Save] [Close] group in the edit bar takes over the
+  // affordance. Save starts hidden because the file is clean.
   check("edit button gets .editing class while editing", $("edit-toggle").classList.contains("editing"));
+  check("Edit button label flips to 'View' in edit mode", $("edit-toggle").textContent === "View",
+    "got: " + JSON.stringify($("edit-toggle").textContent));
   check("edit bar shown while editing", !$("edit-bar").hidden);
   check("Preview button visible in edit mode", !$("preview-btn").hidden);
   check("Close button visible in edit mode", !$("close-edit-btn").hidden);
+  check("Preview button label is 'Preview' when split is on",
+    $("preview-btn").textContent === "Preview",
+    "got: " + JSON.stringify($("preview-btn").textContent));
+  check("Preview button has .editing when split is on (color = on)",
+    $("preview-btn").classList.contains("editing"));
   check("Save button hidden when clean", $("save-btn").hidden);
-  // Type -> Save appears.
+  check("Close button has no .unsaved when clean",
+    !$("close-edit-btn").classList.contains("unsaved"));
+  // Type -> Save appears and the close button picks up .unsaved.
   $("raw-editor").value = "# Edited\n\n## New heading\n\nsaved body";
   $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick(10);
   check("Save button appears after typing", !$("save-btn").hidden);
+  check("Close button gets .unsaved when dirty",
+    $("close-edit-btn").classList.contains("unsaved"));
   // Save in edit mode stays in edit mode (just clears the dirty flag).
   click("save-btn");
   await tick(30);
   check("save keeps edit mode open (raw-editor still shown)", !$("raw-editor").hidden);
   check("Save button hidden again after save (clean)", $("save-btn").hidden);
+  check("Close button .unsaved cleared after save",
+    !$("close-edit-btn").classList.contains("unsaved"));
   const savedFile = FILES["notes/a.md"];
   check("save wrote file content", savedFile && savedFile.includes("## New heading"));
   // In edit mode the split is active: editor left, live preview right.
@@ -429,11 +446,18 @@ function check(label, cond, extra) {
   check("Preview keeps editor open", !$("raw-editor").hidden);
   check("split class removed when preview hidden",
     !$("edit-split").classList.contains("split"));
+  check("Preview button label stays 'Preview' when split is off (only color changes)",
+    $("preview-btn").textContent === "Preview",
+    "got: " + JSON.stringify($("preview-btn").textContent));
+  check("Preview button loses .editing when split is off (color = off)",
+    !$("preview-btn").classList.contains("editing"));
   // Preview again toggles it back on.
   click("preview-btn");
   await tick(10);
   check("Preview again shows the preview pane", !$("viewer").hidden);
   check("split class restored", $("edit-split").classList.contains("split"));
+  check("Preview button .editing restored when split is on",
+    $("preview-btn").classList.contains("editing"));
   // Close on a clean file should exit edit silently (no confirm).
   let confirmCount = 0;
   window.confirm = () => { confirmCount++; return true; };
@@ -443,6 +467,9 @@ function check(label, cond, extra) {
   check("Close on clean file: back to viewer", $("raw-editor").hidden);
   check("Close on clean file: topbar editing class removed",
     !$("topbar").classList.contains("editing"));
+  check("Edit button label restored to 'Edit' after exiting edit mode",
+    $("edit-toggle").textContent === "Edit",
+    "got: " + JSON.stringify($("edit-toggle").textContent));
   check("re-rendered new heading id", !!$("new-heading"));
   // Close on a dirty file should prompt; Cancel keeps the user in edit.
   click("edit-toggle"); await tick(10);

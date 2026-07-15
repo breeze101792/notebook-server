@@ -104,6 +104,7 @@
   function refreshTopbar() {
     const t = cur();
     const inEdit = !!(t && t.editMode);
+    setEditModeLabel(inEdit);
     if (inEdit) {
       editBtn.classList.add("editing");
     } else {
@@ -111,10 +112,21 @@
     }
     if (inEdit) {
       saveBtn.hidden = !viewer.isDirty(active);
+      closeEditBtn.classList.toggle("unsaved", viewer.isDirty(active));
       topbar.classList.add("editing");
     } else {
       topbar.classList.remove("editing");
     }
+  }
+
+  /* The top-bar Edit button toggles a state, so its label should describe
+   * the *next* action the click will take, not the current state. Stash
+   * the original text on first use so the helper is idempotent. */
+  function setEditModeLabel(inEdit) {
+    if (editBtn.dataset.originalLabel == null) {
+      editBtn.dataset.originalLabel = editBtn.textContent;
+    }
+    editBtn.textContent = inEdit ? "View" : editBtn.dataset.originalLabel;
   }
 
   /* --- scroll sync -------------------------------------------------- */
@@ -150,6 +162,7 @@
   function showEditor() {
     editorEl.hidden = false;
     viewerEl.hidden = !showPreview;
+    previewBtn.classList.toggle("editing", showPreview);
     if (showPreview) {
       editSplit.classList.add("split");
       render(editorEl.value);
@@ -336,6 +349,7 @@
    * by refreshTopbar() based on the dirty flag. */
   previewBtn.addEventListener("click", () => {
     showPreview = !showPreview;
+    previewBtn.classList.toggle("editing", showPreview);
     if (showPreview) {
       viewerEl.hidden = false;
       editSplit.classList.add("split");
