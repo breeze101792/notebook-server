@@ -22,6 +22,7 @@
       <div class="topbar-actions">
         <button id="edit-toggle">Edit</button>
       </div>
+      <button id="logout-btn" class="icon-btn" title="Log out" aria-label="Log out" hidden>⎋</button>
       <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
     </header>
 
@@ -102,6 +103,29 @@
     </main>
   </div>
 
+  <!-- Login modal: shown by auth.js when auth is enabled and there's no
+       active session. The rest of the UI is dimmed via the .auth-locked
+       body class while this is up. -->
+  <div id="auth-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+      <div class="settings-header">
+        <h2 id="auth-title">Sign in</h2>
+      </div>
+      <form class="settings-body auth-form" onsubmit="return false">
+        <p class="auth-help">This notebook is password-protected. Enter the password to continue.</p>
+        <div class="settings-row">
+          <label class="settings-label" for="auth-password">Password</label>
+          <input id="auth-password" type="password" class="auth-input" autocomplete="current-password" autofocus>
+        </div>
+        <div id="auth-error" class="auth-error" role="alert"></div>
+        <div class="settings-row">
+          <span class="settings-label"></span>
+          <button id="auth-submit" type="button" class="settings-action auth-submit">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Right-click context menu for the file tree -->
   <div id="context-menu" class="context-menu" hidden></div>
 
@@ -164,6 +188,7 @@
   <script src="/static/vendor/highlight.min.js"></script>
   <!-- App modules, in dependency order -->
   <script src="/static/js/api.js"></script>
+  <script src="/static/js/auth.js"></script>
   <script src="/static/js/viewer.js"></script>
   <script src="/static/js/editbar.js"></script>
   <script src="/static/js/watcher.js"></script>

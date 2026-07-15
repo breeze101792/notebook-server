@@ -10,10 +10,13 @@ import argparse
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
+import time
 
-from flask import Flask, jsonify, render_template, request
+import bcrypt
+from flask import Flask, jsonify, render_template, request, session
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
@@ -26,6 +29,12 @@ DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebo
 DATA_DIR_REAL = os.path.realpath(DATA_DIR)
 CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+# Auth lives in its own file so the UI-prefs blob (POSTed by any client) can
+# never accidentally include hashed credentials. Schema:
+#   {"secret": "<hex>", "admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>"}
+# Either password hash may be empty/missing to leave that role disabled. If
+# both are unset the whole auth layer is bypassed.
+AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
 # copied into it. Ship a tiny starter notebook under notebook.template/ so
 # new users see something useful on first launch.
@@ -189,6 +198,120 @@ def build_tree(path):
 
 
 # --------------------------------------------------------------------------- #
+# Auth (two-password gate: admin = r/w, viewer = r/o)
+# --------------------------------------------------------------------------- #
+def load_auth():
+    """Return the parsed auth.json contents, or an empty dict if missing."""
+    if not os.path.isfile(AUTH_FILE):
+        return {}
+    try:
+        with open(AUTH_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_auth(data):
+    """Persist the auth dict atomically (same pattern as config.json)."""
+    with open(AUTH_FILE + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(AUTH_FILE + ".tmp", AUTH_FILE)
+
+
+def ensure_auth_secret():
+    """Make sure auth.json exists with at least a 32-byte hex secret.
+
+    The secret is used as Flask's session-signing key, so it's generated once
+    and persisted. Returns the loaded auth dict.
+    """
+    data = load_auth()
+    if "secret" not in data or not data["secret"]:
+        data["secret"] = secrets.token_hex(32)
+        save_auth(data)
+    return data
+
+
+def auth_enabled():
+    """True if at least one role's password hash is set."""
+    data = load_auth()
+    return bool(data.get("admin_password_hash") or data.get("viewer_password_hash"))
+
+
+def _check_password(plain, stored_hash):
+    """Constant-time-ish bcrypt check. Returns False for any error so a
+    bad hash on disk can't crash login."""
+    if not stored_hash or not isinstance(stored_hash, str):
+        return False
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), stored_hash.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+
+# In-memory rate limiter: {ip: [timestamp, ...]} of recent failed logins.
+# Best-effort -- an attacker can spoof headers, but it slows trivial brute
+# force on the LAN. Resets on successful login.
+_LOGIN_FAIL_WINDOW = 60   # seconds
+_LOGIN_FAIL_LIMIT = 5
+_login_failures = {}
+
+
+def _record_login_failure(ip):
+    """Drop timestamps older than the window, append the new one."""
+    now = time.time()
+    cutoff = now - _LOGIN_FAIL_WINDOW
+    history = [t for t in _login_failures.get(ip, []) if t >= cutoff]
+    history.append(now)
+    _login_failures[ip] = history
+
+
+def _login_locked_out(ip):
+    now = time.time()
+    cutoff = now - _LOGIN_FAIL_WINDOW
+    history = [t for t in _login_failures.get(ip, []) if t >= cutoff]
+    _login_failures[ip] = history
+    return len(history) >= _LOGIN_FAIL_LIMIT
+
+
+def _clear_login_failures(ip):
+    _login_failures.pop(ip, None)
+
+
+def login_required(view):
+    """Require either no auth configured, or a session with a role."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not auth_enabled():
+            return view(*args, **kwargs)
+        if not session.get("role"):
+            return err("Unauthorized", 401)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def admin_required(view):
+    """Require the session role to be 'admin'. Always require login too."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not auth_enabled():
+            return view(*args, **kwargs)
+        role = session.get("role")
+        if not role:
+            return err("Unauthorized", 401)
+        if role != "admin":
+            return err("Forbidden", 403)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+# --------------------------------------------------------------------------- #
 # Routes: page + config
 # --------------------------------------------------------------------------- #
 @app.route("/")
@@ -197,6 +320,7 @@ def index():
 
 
 @app.route("/api/config", methods=["GET"])
+@login_required
 def get_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -207,6 +331,7 @@ def get_config():
 
 
 @app.route("/api/info", methods=["GET"])
+@login_required
 def info():
     """Read-only info used by the settings page. Returns the absolute
     data/config directories; both are already known to the user (they are
@@ -218,6 +343,7 @@ def info():
 
 
 @app.route("/api/config", methods=["POST"])
+@admin_required
 def set_config():
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -232,14 +358,73 @@ def set_config():
 
 
 # --------------------------------------------------------------------------- #
+# Routes: auth (login / logout / status)
+# --------------------------------------------------------------------------- #
+@app.route("/api/auth", methods=["GET"])
+def auth_status():
+    """Public endpoint: tells the client whether auth is required and, if a
+    session cookie is present, which role is logged in. Always returns 200
+    so the frontend can decide whether to show a login modal without itself
+    being a gated request."""
+    enabled = auth_enabled()
+    role = session.get("role") if enabled else None
+    return jsonify({"enabled": enabled, "role": role})
+
+
+@app.route("/api/login", methods=["POST"])
+def auth_login():
+    """Try the supplied password against the admin hash, then the viewer hash.
+
+    Tries admin first so a password that's set as both still resolves to
+    admin. Failed attempts are rate-limited per client IP (5 / 60s).
+    """
+    if not auth_enabled():
+        return err("Auth is not enabled", 400)
+    data, error = expect_json("password")
+    if error:
+        return error
+    pw = data["password"]
+    if not isinstance(pw, str) or not pw:
+        return err("password must be a non-empty string", 400)
+
+    ip = request.remote_addr or "unknown"
+    if _login_locked_out(ip):
+        return err("Too many failed attempts; try again in a minute", 429)
+
+    auth = load_auth()
+    role = None
+    if _check_password(pw, auth.get("admin_password_hash")):
+        role = "admin"
+    elif _check_password(pw, auth.get("viewer_password_hash")):
+        role = "viewer"
+
+    if role is None:
+        _record_login_failure(ip)
+        return err("Invalid password", 401)
+
+    _clear_login_failures(ip)
+    session["role"] = role
+    return jsonify({"role": role})
+
+
+@app.route("/api/logout", methods=["POST"])
+@login_required
+def auth_logout():
+    session.pop("role", None)
+    return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------- #
 # Routes: file tree + read/write
 # --------------------------------------------------------------------------- #
 @app.route("/api/tree", methods=["GET"])
+@login_required
 def tree():
     return jsonify({"tree": build_tree(DATA_DIR)})
 
 
 @app.route("/api/file", methods=["GET"])
+@login_required
 def file_get():
     rel = request.args.get("path", "").strip()
     abs_path = safe_path(rel)
@@ -271,6 +456,7 @@ def file_get():
 
 
 @app.route("/api/file", methods=["POST"])
+@admin_required
 def file_save():
     data, error = expect_json("path", "content")
     if error:
@@ -296,6 +482,7 @@ def file_save():
 # Routes: create / move / copy / delete
 # --------------------------------------------------------------------------- #
 @app.route("/api/create", methods=["POST"])
+@admin_required
 def create():
     data, error = expect_json("path", "type")
     if error:
@@ -321,6 +508,7 @@ def create():
 
 
 @app.route("/api/move", methods=["POST"])
+@admin_required
 def move():
     data, error = expect_json("from", "to")
     if error:
@@ -342,6 +530,7 @@ def move():
 
 
 @app.route("/api/copy", methods=["POST"])
+@admin_required
 def copy():
     data, error = expect_json("from", "to")
     if error:
@@ -366,6 +555,7 @@ def copy():
 
 
 @app.route("/api/delete", methods=["POST"])
+@admin_required
 def delete():
     data, error = expect_json("path")
     if error:
@@ -389,6 +579,7 @@ def delete():
 # Routes: search
 # --------------------------------------------------------------------------- #
 @app.route("/api/search", methods=["GET"])
+@login_required
 def search():
     query = request.args.get("q", "")
     case_sensitive = request.args.get("case", "0") == "1"
@@ -558,6 +749,11 @@ def _lan_ipv4_addresses():
 
 
 seed_notes = seed()
+
+# Load (or generate) the auth secret and use it as Flask's session-signing key.
+# Done after seed() so auth.json is always inside an existing CONFIG_DIR.
+_auth_state = ensure_auth_secret()
+app.secret_key = _auth_state["secret"]
 
 if __name__ == "__main__":
     args = parse_args()

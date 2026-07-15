@@ -39,9 +39,33 @@ node tests/dom/test_dom.js        # equivalent if jsdom already resolvable
 There is no lint step configured; the only test runners are `unittest` (backend) and
 `node tests/dom/test_dom.js` (frontend).
 
+## Optional: enabling password protection
+
+By default the server is open. To put a two-password gate in front of the API
+(admin = read/write, viewer = read-only), write `config/auth.json`:
+
+```bash
+# 1. hash your admin password
+HASH_ADMIN=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_ADMIN_PW', bcrypt.gensalt(12)).decode())")
+# 2. (optional) hash a viewer password; omit to disable the read-only role
+HASH_VIEWER=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_VIEWER_PW', bcrypt.gensalt(12)).decode())")
+# 3. write the file (the server generates the session-signing secret on first start)
+python -c "
+import json
+open('config/auth.json', 'w').write(json.dumps({
+    'admin_password_hash': '$HASH_ADMIN',
+    'viewer_password_hash': '$HASH_VIEWER',
+}, indent=2))
+"
+# 4. restart the server -- the login modal will appear on next page load
+```
+
+A failed-login rate limiter trips 429 after 5 wrong attempts in 60s per client IP.
+Delete `config/auth.json` to remove auth.
+
 ## Architecture
 
-**Backend — `app.py` (single file, ~450 lines).** All routes are under `/api/*` and
+**Backend — `app.py` (single file, ~700 lines).** All routes are under `/api/*` and
 return JSON; `GET /` serves `index.html`. The module resolves `DATA_DIR` /
 `CONFIG_DIR` at import time from `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (defaulting to the project `notebook/` and `config/` folders) and calls `seed()`
@@ -49,9 +73,9 @@ on import. `seed()` ensures `config/config.json` exists, runs a one-time
 migration of legacy `data/` into `notebook/` if needed, and on a fresh
 install copies the contents of `notebook.template/` into `notebook/`. The
 template ships with a single `Welcome.md`; editing notes never touches the
-template. Endpoints: `/api/config` (GET/POST), `/api/tree` (GET),
-`/api/file` (GET/POST), `/api/create`, `/api/move`, `/api/copy`,
-`/api/delete`, `/api/search`.
+template. Endpoints: `/api/auth` (GET), `/api/login` (POST), `/api/logout`
+(POST), `/api/config` (GET/POST), `/api/tree` (GET), `/api/file` (GET/POST),
+`/api/create`, `/api/move`, `/api/copy`, `/api/delete`, `/api/search`.
 
 `safe_path(rel)` is the security-critical chokepoint: every file route resolves the
 user-supplied relative path through it, which rejects absolute input, `..` traversal,
@@ -63,13 +87,37 @@ same. Search (`/api/search`) is a line-by-line regex scan of all `.md` files wit
 where the hit is wrapped in `<<…>>` so the client can re-highlight safely without
 parsing HTML.
 
-**Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
-then app modules in dependency order: `api.js → viewer.js → outline.js → sidebar.js
-→ search.js → tabs.js → app.js`. Each is an IIFE that extends the shared `window.NB`
-namespace (e.g. `NB.tabs`, `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`,
-`NB.api`). Module responsibilities:
+**Auth (optional two-password gate).** `config/auth.json` (separate from
+`config.json` so the UI-prefs blob can never include hashed credentials) holds
+`{"admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>"}`
+plus a generated `secret` used as Flask's session-signing key. If both hashes
+are empty/missing the whole auth layer is bypassed. When configured,
+`@login_required` (401 if no session) gates every API route except `/` and
+`/api/auth`/`/api/login`; `@admin_required` (403 if role != "admin") adds the
+mutating routes on top. Sessions are Flask's signed/encrypted cookies; the
+role is `session["role"]` ∈ `{"admin", "viewer"}`. A best-effort in-memory
+rate limiter (5 failures / 60s per client IP) trips 429 on the 6th attempt.
+There is no in-app UI for setup — the user hashes a password with
+`python -c "import bcrypt; print(bcrypt.hashpw(b'pw', bcrypt.gensalt(12)).decode())"`
+and pastes the result into `config/auth.json`. The secret is auto-generated
+on first start and persisted.
 
-- `api.js` — fetch wrappers + a tiny pub/sub (`NB.api`).
+**Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
+then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
+watcher.js → outline.js → sidebar.js → search.js → tabs.js → settings.js → app.js`.
+Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
+`NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`).
+Module responsibilities:
+
+- `api.js` — fetch wrappers + a tiny pub/sub (`NB.api`); always sends
+  `credentials: "same-origin"` so the session cookie is included, and emits
+  `NB.evt("auth:required")` on any 401 so the auth module can re-show the
+  login modal.
+- `auth.js` — password-gate UI: on `DOMContentLoaded` calls `/api/auth`; if
+  enabled + no role, shows the login modal and dims the rest of the UI with
+  `body.auth-locked`. Successful login calls `window.location.reload()` so
+  the rest of the modules boot with a known-good session. Wires the
+  top-bar logout button.
 - `viewer.js` — renders Markdown with marked+highlight, owns the per-file
   content/edit cache and the edit/view toggle. Notebooks are the user's own files in
   `notebook/`, so they are rendered **un-sanitized**; if untrusted content is ever
@@ -97,10 +145,15 @@ Backend tests (`tests/test_app.py`) redirect `NOTEBOOK_DATA_DIR` /
 `NOTEBOOK_CONFIG_DIR` to a temp dir **before** importing `app` (the module resolves
 those at import time and calls `seed()`), so the project's real `notebook/` /
 `config/` are never touched. `setUp` wipes and re-seeds the temp dirs each test.
+`TestAuth` writes a custom `auth.json` after `super().setUp()` and resets
+`nb._login_failures` between tests so the rate limiter doesn't leak across them.
 
-Frontend tests (`tests/dom/test_dom.js`) load the real vendor bundles and all six app
-modules into a jsdom window, stub `fetch`/`matchMedia`/`prompt`, then drive the app by
-dispatching real DOM events (`DOMContentLoaded`, click, input, mousemove). When
+Frontend tests (`tests/dom/test_dom.js`) load the real vendor bundles and all eleven
+app modules into a jsdom window, stub `fetch`/`matchMedia`/`prompt`, then drive the
+app by dispatching real DOM events (`DOMContentLoaded`, click, input, mousemove).
+The fetch stub defaults to `authEnabled=false` so the login modal stays closed for
+the existing tests; a dedicated `== auth ==` block flips the flags and exercises
+the full login/logout flow + the 401 → `auth:required` event path. When
 adding frontend behavior, extend this harness rather than adding a separate runner —
 the ordering and stubs (e.g. `getBoundingClientRect` overrides for drag-resize) are
 load-bearing for the assertions.

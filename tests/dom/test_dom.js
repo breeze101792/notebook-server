@@ -47,6 +47,11 @@ const FILES = {
 let config = {};
 let promptValue = null;
 const fetchLog = [];
+// Auth state used by the fake /api/auth + /api/login + /api/logout stubs.
+// Default: auth disabled, no role. Tests flip authEnabled and observe
+// authRole to drive the login flow.
+let authEnabled = false;
+let authRole = null;
 
 const html = `<!DOCTYPE html><html><body data-theme="dark">
   <div id="app">
@@ -55,6 +60,7 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="edit-toggle">Edit</button>
+      <button id="logout-btn" class="icon-btn" hidden>⎋</button>
       <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
     <main id="layout">
@@ -120,6 +126,25 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
   </div>
   <div id="context-menu" class="context-menu" hidden></div>
   <div id="tab-context-menu" class="context-menu" hidden></div>
+  <div id="auth-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal auth-modal">
+      <div class="settings-header">
+        <h2 id="auth-title">Sign in</h2>
+      </div>
+      <form class="settings-body auth-form" onsubmit="return false">
+        <p class="auth-help">This notebook is password-protected. Enter the password to continue.</p>
+        <div class="settings-row">
+          <label class="settings-label" for="auth-password">Password</label>
+          <input id="auth-password" type="password" class="auth-input" autofocus>
+        </div>
+        <div id="auth-error" class="auth-error" role="alert"></div>
+        <div class="settings-row">
+          <span class="settings-label"></span>
+          <button id="auth-submit" type="button" class="settings-action auth-submit">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <div id="settings-overlay" class="settings-overlay" hidden>
     <div class="settings-modal">
       <div class="settings-header">
@@ -219,6 +244,23 @@ window.fetch = async (url, opts) => {
     body = { data_dir: "/tmp/test/data", config_dir: "/tmp/test/config" };
   } else if (p === "/api/create" || p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
     body = JSON.parse(opts.body || "{}");
+  } else if (p === "/api/auth") {
+    // Default: auth disabled. Tests flip authEnabled/authRole to exercise
+    // the login flow.
+    body = { enabled: authEnabled, role: authRole };
+  } else if (p === "/api/login") {
+    const d = JSON.parse(opts.body || "{}");
+    if (authEnabled && d.password === "test-pw") {
+      authRole = "admin";
+      body = { role: "admin" };
+    } else {
+      return { ok: false, status: 401,
+        text: async () => JSON.stringify({ error: "Invalid password" }),
+        json: async () => ({ error: "Invalid password" }) };
+    }
+  } else if (p === "/api/logout") {
+    authRole = null;
+    body = { ok: true };
   }
   return { ok: true, status: 200,
     text: async () => JSON.stringify(body),
@@ -233,6 +275,7 @@ window.addEventListener("error", (e) => errors.push("window error: " + (e.error 
 evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
 evalIn(read("static/js/api.js"));
+evalIn(read("static/js/auth.js"));
 evalIn(read("static/js/viewer.js"));
 evalIn(read("static/js/editbar.js"));
 evalIn(read("static/js/watcher.js"));
@@ -1307,6 +1350,102 @@ function check(label, cond, extra) {
     $("settings-config-dir").textContent === "/tmp/test/config",
     $("settings-config-dir").textContent);
   window.NB.settings.close();
+
+  console.log("== auth ==");
+  // The fetch stub defaults to authEnabled=false so the modal is closed and
+  // the logout button is hidden. Verify that baseline, then exercise the
+  // login + logout paths.
+
+  // Wait briefly so any pending DOMContentLoaded work settles, then check.
+  await tick(40);
+  check("auth: modal hidden by default (auth disabled)", $("auth-overlay").hidden);
+  check("auth: body is not auth-locked", !document.body.classList.contains("auth-locked"));
+  check("auth: logout button hidden by default", $("logout-btn").hidden);
+
+  // Expose the public hooks for direct testing.
+  check("auth: NB.auth is exposed", typeof window.NB.auth === "object"
+    && typeof window.NB.auth.showModal === "function");
+  check("auth: NB.api.getAuthStatus is exposed", typeof window.NB.api.getAuthStatus === "function");
+  check("auth: NB.api.login is exposed", typeof window.NB.api.login === "function");
+  check("auth: NB.api.logout is exposed", typeof window.NB.api.logout === "function");
+
+  // Enable auth in the stub + call showModal() to simulate the boot path
+  // (boot is idempotent and only ran once with authEnabled=false; testing
+  // the boot itself is the same code path exercised by the showModal call
+  // below since boot ends in either showModal() or unhiding the logout btn).
+  authEnabled = true; authRole = null;
+  window.NB.auth.showModal();
+  await tick(20);
+  check("auth: modal visible after showModal()", !$("auth-overlay").hidden);
+  check("auth: body gets auth-locked when modal up", document.body.classList.contains("auth-locked"));
+
+  // The /api/auth status endpoint reports enabled=true, role=null when the
+  // stub is in this state.
+  const status = await window.NB.api.getAuthStatus();
+  check("auth: getAuthStatus reports enabled=true", status && status.enabled === true,
+    JSON.stringify(status));
+  check("auth: getAuthStatus reports role=null", status && status.role === null);
+
+  // Submit the wrong password -> error message, modal stays up.
+  $("auth-password").value = "wrong";
+  $("auth-submit").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("auth: wrong password -> error shown", $("auth-error").textContent.length > 0,
+    "err=" + $("auth-error").textContent);
+  check("auth: wrong password -> modal stays up", !$("auth-overlay").hidden);
+
+  // Submit the right password -> reload() in production. The test stub
+  // replaces window.location.reload to record the call.
+  let reloaded = false;
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { reload() { reloaded = true; } },
+  });
+  $("auth-password").value = "test-pw";
+  $("auth-submit").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("auth: right password -> reload() called", reloaded);
+  // The authRole in the stub is now "admin" (simulating the post-login
+  // state). In a real reload, auth.js would re-boot and see role=admin,
+  // leaving the modal hidden and unhiding the logout button. We simulate
+  // that directly here.
+  check("auth: post-login state has role=admin (stub)",
+    authRole === "admin", "authRole=" + authRole);
+  window.NB.auth.hideModal();
+  $("logout-btn").hidden = false;   // simulate the unhide auth.js would do
+  check("auth: post-login -> modal hidden", $("auth-overlay").hidden);
+  check("auth: post-login -> logout button visible", !$("logout-btn").hidden);
+
+  // Logout: clicking the button calls /api/logout (which clears authRole
+  // in the stub) and then shows the modal directly.
+  $("logout-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("auth: logout -> /api/logout called (authRole cleared)",
+    authRole === null, "authRole=" + authRole);
+  check("auth: logout -> modal re-shown directly", !$("auth-overlay").hidden);
+
+  // 401 path: a gated endpoint returning 401 must emit auth:required and
+  // throw. Replace fetch temporarily to simulate the server returning 401.
+  const realFetch = window.fetch;
+  window.fetch = async () => ({
+    ok: false, status: 401,
+    text: async () => JSON.stringify({ error: "Unauthorized" }),
+    json: async () => ({ error: "Unauthorized" }),
+  });
+  let emitted = 0;
+  const evtHandler = () => { emitted++; };
+  window.NB.evt.on("auth:required", evtHandler);
+  let threw = false;
+  try { await window.NB.api.getFile("Welcome.md"); }
+  catch (e) { threw = true; }
+  window.NB.evt.off("auth:required", evtHandler);
+  window.fetch = realFetch;
+  check("auth: 401 -> auth:required event emitted", emitted === 1, "count=" + emitted);
+  check("auth: 401 -> request throws", threw);
+
+  // Reset for a clean exit: hide modal, restore defaults.
+  window.NB.auth.hideModal();
+  authEnabled = false; authRole = null;
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

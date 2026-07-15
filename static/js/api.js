@@ -6,7 +6,14 @@
   window.NB = window.NB || {};
 
   async function request(method, url, body) {
-    const opts = { method, headers: {} };
+    const opts = {
+      method,
+      headers: {},
+      // Always send the session cookie so the server can identify the user
+      // (same-origin so the cookie is included on both same-port and
+      // cross-port LAN connections to the same host).
+      credentials: "same-origin",
+    };
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(body);
@@ -22,6 +29,13 @@
     if (text) {
       try { data = JSON.parse(text); }
       catch (e) { throw new Error("Bad JSON from server"); }
+    }
+    // 401 from any gated endpoint means the session expired or the user
+    // logged out in another tab. Surface it as a pub/sub event so the
+    // auth module can show the login modal again, and the rest of the UI
+    // can pause until a fresh login completes.
+    if (resp.status === 401) {
+      NB.evt.emit("auth:required");
     }
     if (!resp.ok) {
       const msg = (data && data.error) || resp.statusText || "Request failed";
@@ -43,6 +57,9 @@
     getConfig:     () => request("GET",  "/api/config"),
     saveConfig:    (cfg)       => request("POST", "/api/config", cfg),
     getInfo:       () => request("GET",  "/api/info"),
+    getAuthStatus: () => request("GET",  "/api/auth"),
+    login:         (password)  => request("POST", "/api/login",  { password }),
+    logout:        () => request("POST", "/api/logout"),
   };
 
   /* Tiny pub/sub so modules decouple. */

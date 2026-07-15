@@ -305,5 +305,214 @@ class TestInfo(BaseTest):
         self.assertTrue(os.path.isabs(data["data_dir"]))
 
 
+class TestAuth(BaseTest):
+    """Two-password auth: admin (r/w) + viewer (r/o).
+
+    Each test starts with a freshly-seeded config dir (BaseTest.setUp wipes
+    it), then writes a custom auth.json with bcrypt-hashed admin + viewer
+    passwords. The rate limiter is reset between tests so failures in one
+    test don't bleed into the next.
+    """
+
+    ADMIN_PW = "admin-pw-secret"
+    VIEWER_PW = "viewer-pw-secret"
+
+    def setUp(self):
+        super().setUp()
+        # Reset the in-memory rate limiter so a test that intentionally trips
+        # 5 failures doesn't lock out the next test's IP.
+        nb._login_failures.clear()
+        # BaseTest.setUp already wiped CONFIG_DIR; write our own auth.json
+        # with both roles configured.
+        import bcrypt as _bcrypt
+        self._auth = {
+            "secret": "test-secret-not-used-for-signing-just-a-stand-in",
+            "admin_password_hash": _bcrypt.hashpw(
+                self.ADMIN_PW.encode("utf-8"), _bcrypt.gensalt(12)
+            ).decode(),
+            "viewer_password_hash": _bcrypt.hashpw(
+                self.VIEWER_PW.encode("utf-8"), _bcrypt.gensalt(12)
+            ).decode(),
+        }
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._auth, f)
+
+    def _login(self, password):
+        return self.client.post("/api/login", json={"password": password})
+
+    def _login_session(self, password):
+        """Log in and return a fresh test client with the session cookie set."""
+        client = nb.app.test_client()
+        r = client.post("/api/login", json={"password": password})
+        self.assertEqual(r.status_code, 200, "login failed: %s" % r.get_data(as_text=True))
+        return client
+
+    # --- status / no-auth bypass -----------------------------------------
+    def test_status_reports_enabled_when_passwords_set(self):
+        code, data = self.jget("/api/auth")
+        self.assertEqual(code, 200)
+        self.assertTrue(data["enabled"])
+        self.assertIsNone(data["role"])
+
+    def test_status_reports_role_when_logged_in(self):
+        client = self._login_session(self.ADMIN_PW)
+        r = client.get("/api/auth")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["role"], "admin")
+
+    def test_no_auth_file_disables_layer(self):
+        # Fresh client + no auth.json on disk -> enabled is False.
+        if os.path.isfile(nb.AUTH_FILE):
+            os.remove(nb.AUTH_FILE)
+        client = nb.app.test_client()
+        # Reads work without any session.
+        r = client.get("/api/auth")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["enabled"])
+        # Writes work without any session.
+        r = client.post("/api/file", json={"path": "x.md", "content": "y"})
+        self.assertEqual(r.status_code, 200)
+
+    # --- gating ----------------------------------------------------------
+    def test_read_requires_login(self):
+        r = self.client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 401)
+
+    def test_viewer_can_read(self):
+        client = self._login_session(self.VIEWER_PW)
+        r = client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Welcome", r.get_json()["content"])
+
+    def test_admin_can_read(self):
+        client = self._login_session(self.ADMIN_PW)
+        r = client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 200)
+
+    def test_viewer_cannot_write(self):
+        client = self._login_session(self.VIEWER_PW)
+        r = client.post("/api/file", json={"path": "x.md", "content": "y"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_admin_can_write(self):
+        client = self._login_session(self.ADMIN_PW)
+        r = client.post("/api/file", json={"path": "x.md", "content": "y"})
+        self.assertEqual(r.status_code, 200)
+        # Round-trip
+        r = client.get("/api/file?path=x.md")
+        self.assertEqual(r.get_json()["content"], "y")
+
+    def test_viewer_cannot_use_any_mutating_route(self):
+        client = self._login_session(self.VIEWER_PW)
+        for path, body in [
+            ("/api/file",   {"path": "x.md", "content": "y"}),
+            ("/api/create", {"path": "x", "type": "dir"}),
+            ("/api/move",   {"from": "Welcome.md", "to": "x.md"}),
+            ("/api/copy",   {"from": "Welcome.md", "to": "x.md"}),
+            ("/api/delete", {"path": "Welcome.md"}),
+            ("/api/config", {"theme": "dark"}),
+        ]:
+            r = client.post(path, json=body)
+            self.assertEqual(
+                r.status_code, 403,
+                "viewer should be 403 on %s, got %s: %s"
+                % (path, r.status_code, r.get_data(as_text=True)),
+            )
+
+    def test_admin_can_use_all_mutating_routes(self):
+        client = self._login_session(self.ADMIN_PW)
+        # create
+        r = client.post("/api/create", json={"path": "sub", "type": "dir"})
+        self.assertEqual(r.status_code, 200)
+        # save
+        r = client.post("/api/file", json={"path": "sub/a.md", "content": "A"})
+        self.assertEqual(r.status_code, 200)
+        # move
+        r = client.post("/api/move", json={"from": "sub/a.md", "to": "sub/b.md"})
+        self.assertEqual(r.status_code, 200)
+        # copy
+        r = client.post("/api/copy", json={"from": "sub/b.md", "to": "sub/c.md"})
+        self.assertEqual(r.status_code, 200)
+        # delete
+        r = client.post("/api/delete", json={"path": "sub/c.md"})
+        self.assertEqual(r.status_code, 200)
+        # config
+        r = client.post("/api/config", json={"theme": "light"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["ok"], True)
+
+    def test_index_unauthenticated(self):
+        # GET / must always work so the login UI can load.
+        r = self.client.get("/")
+        self.assertEqual(r.status_code, 200)
+
+    # --- login / logout --------------------------------------------------
+    def test_login_with_admin_password(self):
+        r = self._login(self.ADMIN_PW)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["role"], "admin")
+
+    def test_login_with_viewer_password(self):
+        r = self._login(self.VIEWER_PW)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["role"], "viewer")
+
+    def test_admin_takes_precedence_when_password_matches_both(self):
+        # Make the admin hash equal the viewer hash so the same password
+        # works for both; the server should still resolve to admin.
+        import bcrypt as _bcrypt
+        shared = _bcrypt.hashpw(b"shared", _bcrypt.gensalt(12)).decode()
+        self._auth["admin_password_hash"] = shared
+        self._auth["viewer_password_hash"] = shared
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._auth, f)
+        r = self._login("shared")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["role"], "admin")
+
+    def test_login_with_wrong_password(self):
+        r = self._login("nope")
+        self.assertEqual(r.status_code, 401)
+
+    def test_login_rejects_empty_password(self):
+        r = self._login("")
+        self.assertEqual(r.status_code, 400)
+
+    def test_logout_clears_session(self):
+        client = self._login_session(self.ADMIN_PW)
+        r = client.post("/api/logout")
+        self.assertEqual(r.status_code, 200)
+        # Subsequent gated call is 401 again.
+        r = client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 401)
+
+    def test_logout_requires_login_when_auth_enabled(self):
+        r = self.client.post("/api/logout")
+        self.assertEqual(r.status_code, 401)
+
+    # --- rate limiter ----------------------------------------------------
+    def test_rate_limiter_locks_out_after_5_failures(self):
+        for _ in range(nb._LOGIN_FAIL_LIMIT):
+            r = self._login("wrong-pw")
+            self.assertEqual(
+                r.status_code, 401,
+                "expected 401, got %s" % r.status_code,
+            )
+        # The next attempt, even with the right password, is 429.
+        r = self._login(self.ADMIN_PW)
+        self.assertEqual(r.status_code, 429)
+
+    def test_rate_limiter_resets_on_success(self):
+        # Trip 4 failures (under the limit), then log in successfully.
+        for _ in range(nb._LOGIN_FAIL_LIMIT - 1):
+            self._login("wrong-pw")
+        r = self._login(self.ADMIN_PW)
+        self.assertEqual(r.status_code, 200)
+        # Subsequent failures are counted from scratch.
+        for _ in range(nb._LOGIN_FAIL_LIMIT - 1):
+            r = self._login("wrong-pw")
+            self.assertEqual(r.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
