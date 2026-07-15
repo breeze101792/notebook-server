@@ -1,8 +1,8 @@
 """Backend tests for the Markdown notebook server (stdlib unittest).
 
-Uses Flask's test client against the real app. The data/config folders are
+Uses Flask's test client against the real app. The notebook/config folders are
 redirected to a temp dir via NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR so the
-project's real data/ and config/ are never touched.
+project's real notebook/ and config/ are never touched.
 
 Run:  .venv_$(hostname)/bin/python -m unittest discover -s tests -v
   or:  .venv_$(hostname)/bin/python -m pytest tests   (if pytest is installed)
@@ -20,10 +20,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-# Redirect data/config to a temp dir BEFORE importing the app module (the
+# Redirect notebook/config to a temp dir BEFORE importing the app module (the
 # module resolves DATA_DIR/CONFIG_DIR at import time and calls seed()).
 _TMP = tempfile.mkdtemp(prefix="nbtest_")
-os.environ["NOTEBOOK_DATA_DIR"] = os.path.join(_TMP, "data")
+os.environ["NOTEBOOK_DATA_DIR"] = os.path.join(_TMP, "notebook")
 os.environ["NOTEBOOK_CONFIG_DIR"] = os.path.join(_TMP, "config")
 
 import app as nb  # noqa: E402  (import after env + sys.path setup)
@@ -31,12 +31,12 @@ import app as nb  # noqa: E402  (import after env + sys.path setup)
 
 class BaseTest(unittest.TestCase):
     def setUp(self):
-        """Reset the temp data/config dirs to a freshly-seeded state."""
+        """Reset the temp notebook/config dirs to a freshly-seeded state."""
         if os.path.isdir(nb.DATA_DIR):
             shutil.rmtree(nb.DATA_DIR)
         if os.path.isdir(nb.CONFIG_DIR):
             shutil.rmtree(nb.CONFIG_DIR)
-        nb.seed()  # creates data/Welcome.md and config/config.json (={})
+        nb.seed()  # creates notebook/Welcome.md and config/config.json (={})
         self.client = nb.app.test_client()
 
     # --- helpers --------------------------------------------------------

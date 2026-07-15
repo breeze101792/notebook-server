@@ -18,43 +18,18 @@ from flask import Flask, jsonify, render_template, request
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
 # point the data and config folders elsewhere. Default to the project folders.
-DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "data")
+DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebook")
+# Resolve symlinks once at import time so safe_path() can compare against
+# the real boundary. This lets the user symlink DATA_DIR itself (e.g. as a
+# shortcut to a different folder) without every file read failing; only
+# *interior* symlinks that escape DATA_DIR are still blocked.
+DATA_DIR_REAL = os.path.realpath(DATA_DIR)
 CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-
-WELCOME_MD = """# Welcome to your notebook
-
-This is a local Markdown notebook. Notes live as `.md` files in `data/`.
-
-## Getting around
-
-- **Left sidebar**: browse, open, rename, copy, and delete files. Right-click a
-  file or folder for actions.
-- **Search**: type in the top bar to search inside all notebooks.
-- **Right outline**: a table of contents of headings -- click to jump, and the
-  current section is highlighted as you scroll.
-
-## A code block
-
-```python
-def greet(name):
-    return f"Hello, {name}!"
-```
-
-## Nested headings
-
-### Third level
-
-Some text under a third-level heading.
-
-### Another third level
-
-More text here so the section is long enough to scroll past.
-
-## Final section
-
-That's it. Create a new file from the top bar or the sidebar context menu.
-"""
+# On first run, if DATA_DIR doesn't exist, the contents of this folder are
+# copied into it. Ship a tiny starter notebook under notebook.template/ so
+# new users see something useful on first launch.
+TEMPLATE_DIR = os.path.join(BASE_DIR, "notebook.template")
 
 # Search caps so payloads stay sane.
 MAX_TOTAL_MATCHES = 200
@@ -67,16 +42,57 @@ app = Flask(__name__)
 # --------------------------------------------------------------------------- #
 # Startup seeding
 # --------------------------------------------------------------------------- #
-def seed():
-    """Ensure data/ and config/ exist with minimal defaults on first run."""
-    os.makedirs(DATA_DIR, exist_ok=True)
+def seed(verbose=False):
+    """Ensure notebook/ and config/ exist with sensible defaults on first run.
+
+    Order matters:
+    1. Make sure config/ exists with an empty config.json (cheap, no migration).
+    2. If we're using the project-default data folder and the legacy
+       `data/` directory is present but `notebook/` is not, move `data/`
+       to `notebook/` so existing user notes aren't lost. Then drop the
+       now-empty `data/` directory if possible.
+    3. If `notebook/` still doesn't exist (fresh install or just-migrated),
+       copy the contents of `notebook.template/` into it. This is a
+       copy, not a symlink, so editing notes never touches the template.
+
+    The migration only runs when DATA_DIR is the project-default path.
+    When the user has set NOTEBOOK_DATA_DIR they are pointing at a folder
+    of their own choosing and we leave it alone.
+
+    Returns a list of human-readable status lines (empty if nothing notable
+    happened). The `__main__` block prints these for the user; tests pass
+    ``verbose=False`` to keep test output clean.
+    """
+    notes = []
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    if not os.listdir(DATA_DIR):
-        with open(os.path.join(DATA_DIR, "Welcome.md"), "w", encoding="utf-8") as f:
-            f.write(WELCOME_MD)
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
+
+    legacy_data = os.path.join(BASE_DIR, "data")
+    using_default = (DATA_DIR == os.path.join(BASE_DIR, "notebook"))
+    if using_default and os.path.isdir(legacy_data) and not os.path.isdir(DATA_DIR):
+        shutil.move(legacy_data, DATA_DIR)
+        notes.append("Migrated data/ -> notebook/ (one-time)")
+        # Drop the empty source dir if possible; if anything was left
+        # behind (e.g. a stray file), leave it -- .gitignore covers it.
+        try:
+            if os.path.isdir(legacy_data) and not os.listdir(legacy_data):
+                os.rmdir(legacy_data)
+        except OSError:
+            pass
+
+    if not os.path.isdir(DATA_DIR):
+        # copytree creates the destination; don't pre-create it or
+        # copytree will raise FileExistsError.
+        if os.path.isdir(TEMPLATE_DIR):
+            shutil.copytree(TEMPLATE_DIR, DATA_DIR)
+            notes.append("Created notebook/ from notebook.template/")
+        else:
+            os.makedirs(DATA_DIR)
+        # If the template folder is missing, the empty notebook/ is fine --
+        # the user can create files from the UI.
+    return notes
 
 
 # --------------------------------------------------------------------------- #
@@ -87,6 +103,13 @@ def safe_path(rel_path):
 
     Returns the real absolute path if it stays within DATA_DIR, else None.
     Blocks `..` traversal, absolute input, and symlink escapes.
+
+    The boundary is DATA_DIR itself: the user can pass any relative path
+    that resolves to a file under DATA_DIR (after following symlinks).
+    If DATA_DIR itself is a symlink (e.g. ``notebook -> notebook.template``),
+    the comparison is done against the resolved path so that legitimate
+    uses of a top-level symlink still work; only *interior* symlinks that
+    would escape the data dir are blocked.
     """
     if not rel_path or not isinstance(rel_path, str):
         return None
@@ -99,7 +122,9 @@ def safe_path(rel_path):
         return None
     candidate = os.path.normpath(os.path.join(DATA_DIR, rel))
     real = os.path.realpath(candidate)
-    if real == DATA_DIR or real.startswith(DATA_DIR + os.sep):
+    # DATA_DIR_REAL is the realpath-resolved boundary, computed once at
+    # import time. See the assignment below the search constants.
+    if real == DATA_DIR_REAL or real.startswith(DATA_DIR_REAL + os.sep):
         return real
     return None
 
@@ -532,13 +557,15 @@ def _lan_ipv4_addresses():
     return found
 
 
-seed()
+seed_notes = seed()
 
 if __name__ == "__main__":
     args = parse_args()
     print("Markdown notebook server")
-    print("  data  : %s" % DATA_DIR)
-    print("  config: %s" % CONFIG_DIR)
+    print("  notebook: %s" % DATA_DIR)
+    print("  config  : %s" % CONFIG_DIR)
+    for note in seed_notes:
+        print("  " + note)
     print("  -> http://%s:%d  (Ctrl+C to quit)" % (args.host, args.port))
     for url in reachable_urls(args.host, args.port)[1:]:
         print("  -> %s" % url)

@@ -21,5 +21,8 @@ node_modules/
 package-lock.json
 
 # --- Runtime user content (recreated automatically on first run) ---
-/data/
+# Note: the entry for notebook is a path, not a directory pattern, so it
+# matches both a real directory and a symlink (git's directory-only
+# patterns don't follow symlinks).
+/notebook
 /config/

@@ -7,7 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A small, single-user Markdown notebook server: a Flask backend (`app.py`, JSON-only
 API) + a vanilla-JS frontend (`templates/index.html`, `static/js/*.js`) that renders
 Markdown client-side with vendored `marked.js` + `highlight.js`. Notebook content
-and user config live in two deliberately separate folders, `data/` and `config/`.
+and user config live in two deliberately separate folders, `notebook/` (notes)
+and `config/` (user settings). `notebook.template/` ships a tiny starter
+notebook that is copied into `notebook/` on first run.
 
 ## Commands
 
@@ -41,11 +43,15 @@ There is no lint step configured; the only test runners are `unittest` (backend)
 
 **Backend — `app.py` (single file, ~450 lines).** All routes are under `/api/*` and
 return JSON; `GET /` serves `index.html`. The module resolves `DATA_DIR` /
-`CONFIG_DIR` at import time from `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR` (defaulting
-to the project `data/` and `config/` folders) and calls `seed()` on import, which
-creates `data/Welcome.md` and an empty `config/config.json` on first run. Endpoints:
-`/api/config` (GET/POST), `/api/tree` (GET), `/api/file` (GET/POST),
-`/api/create`, `/api/move`, `/api/copy`, `/api/delete`, `/api/search`.
+`CONFIG_DIR` at import time from `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
+(defaulting to the project `notebook/` and `config/` folders) and calls `seed()`
+on import. `seed()` ensures `config/config.json` exists, runs a one-time
+migration of legacy `data/` into `notebook/` if needed, and on a fresh
+install copies the contents of `notebook.template/` into `notebook/`. The
+template ships with a single `Welcome.md`; editing notes never touches the
+template. Endpoints: `/api/config` (GET/POST), `/api/tree` (GET),
+`/api/file` (GET/POST), `/api/create`, `/api/move`, `/api/copy`,
+`/api/delete`, `/api/search`.
 
 `safe_path(rel)` is the security-critical chokepoint: every file route resolves the
 user-supplied relative path through it, which rejects absolute input, `..` traversal,
@@ -66,7 +72,7 @@ namespace (e.g. `NB.tabs`, `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`,
 - `api.js` — fetch wrappers + a tiny pub/sub (`NB.api`).
 - `viewer.js` — renders Markdown with marked+highlight, owns the per-file
   content/edit cache and the edit/view toggle. Notebooks are the user's own files in
-  `data/`, so they are rendered **un-sanitized**; if untrusted content is ever
+  `notebook/`, so they are rendered **un-sanitized**; if untrusted content is ever
   introduced, add vendored DOMPurify and sanitize before `innerHTML`.
 - `tabs.js` — top-bar file tabs; owns the ordered open set + active file, coordinates
   with `viewer.js` (per-file content cache so unsaved edits survive tab switches), and
@@ -89,8 +95,8 @@ It is an opaque JSON object the server stores verbatim — no schema enforcement
 
 Backend tests (`tests/test_app.py`) redirect `NOTEBOOK_DATA_DIR` /
 `NOTEBOOK_CONFIG_DIR` to a temp dir **before** importing `app` (the module resolves
-those at import time and calls `seed()`), so the project's real `data/` / `config/`
-are never touched. `setUp` wipes and re-seeds the temp dirs each test.
+those at import time and calls `seed()`), so the project's real `notebook/` /
+`config/` are never touched. `setUp` wipes and re-seeds the temp dirs each test.
 
 Frontend tests (`tests/dom/test_dom.js`) load the real vendor bundles and all six app
 modules into a jsdom window, stub `fetch`/`matchMedia`/`prompt`, then drive the app by
