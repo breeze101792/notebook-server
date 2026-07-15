@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import socket
 
 from flask import Flask, jsonify, render_template, request
 
@@ -442,9 +443,10 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "-H", "--host",
-        default="127.0.0.1",
-        help="Bind address. Use 0.0.0.0 to expose on the LAN (mind the "
-             "debug-mode warning if you do).",
+        default="0.0.0.0",
+        help="Bind address. Defaults to 0.0.0.0 so the server is reachable "
+             "from other devices on the LAN; pass --host 127.0.0.1 to bind "
+             "loopback only.",
     )
     parser.add_argument(
         "-p", "--port",
@@ -455,10 +457,79 @@ def parse_args(argv=None):
     parser.add_argument(
         "--debug", dest="debug",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Flask debug + auto-reload. Use --no-debug for a quieter server.",
+        default=False,
+        help="Flask debug + auto-reload. Off by default; pass --debug to opt in.",
     )
     return parser.parse_args(argv)
+
+
+def reachable_urls(host, port):
+    """Return the list of http URLs the server is reachable on.
+
+    Always includes the bind address itself plus ``localhost`` (handy when the
+    user passed ``0.0.0.0`` or a numeric IP). Additionally enumerates the
+    host's non-loopback IPv4 addresses so phones / other LAN devices can
+    connect without having to look up the IP themselves.
+
+    Failures (no network, no interfaces, weird hosts) are swallowed: the
+    caller should still get *some* URLs to print.
+    """
+    urls = ["http://%s:%d" % (host, port)]
+    if host not in ("localhost", "127.0.0.1", "::1"):
+        urls.append("http://localhost:%d" % port)
+
+    for ip in _lan_ipv4_addresses():
+        if ip in (host, "127.0.0.1", "localhost"):
+            continue
+        urls.append("http://%s:%d" % (ip, port))
+    return urls
+
+
+def _lan_ipv4_addresses():
+    """Best-effort list of non-loopback IPv4 addresses on this host.
+
+    Tries two strategies:
+
+    1. ``gethostbyname_ex`` against the hostname -- works on most desktops,
+       fails on minimal containers where the hostname resolves only to
+       ``127.0.1.1`` or similar.
+    2. Opening a UDP socket and reading ``getsockname()`` -- a well-known
+       trick that asks the kernel "if I sent a packet to 8.8.8.8 right now,
+       which source IP would you use?", which yields the actual outbound
+       interface IP even when DNS has nothing useful to say.
+
+    Returns a de-duplicated list, preserving discovery order. Any error is
+    swallowed and an empty list is returned.
+    """
+    found = []
+    seen = set()
+
+    def _add(ip):
+        if not ip or ip in seen or ip.startswith("127."):
+            return
+        seen.add(ip)
+        found.append(ip)
+
+    # Strategy 1: hostname resolution.
+    try:
+        _hostname, _aliases, addrs = socket.gethostbyname_ex(socket.gethostname())
+        for ip in addrs:
+            _add(ip)
+    except socket.gaierror:
+        pass
+
+    # Strategy 2: ask the kernel for the outbound interface IP.
+    if not found:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # No packet is actually sent; this just makes the kernel pick
+                # a source address.
+                s.connect(("8.8.8.8", 80))
+                _add(s.getsockname()[0])
+        except OSError:
+            pass
+
+    return found
 
 
 seed()
@@ -469,8 +540,10 @@ if __name__ == "__main__":
     print("  data  : %s" % DATA_DIR)
     print("  config: %s" % CONFIG_DIR)
     print("  -> http://%s:%d  (Ctrl+C to quit)" % (args.host, args.port))
+    for url in reachable_urls(args.host, args.port)[1:]:
+        print("  -> %s" % url)
     if args.debug and args.host not in ("127.0.0.1", "localhost"):
-        print("  WARNING: debug=True with a non-loopback host enables the "
-              "interactive debugger -- anyone reachable can run code. Pass "
-              "--no-debug if exposed.")
+        print("  WARNING: --debug with a non-loopback host exposes the "
+              "interactive debugger to anyone on the network. Pass --no-debug "
+              "if the server is reachable beyond your machine.")
     app.run(host=args.host, port=args.port, debug=args.debug)

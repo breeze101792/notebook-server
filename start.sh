@@ -3,9 +3,10 @@
 # start.sh -- set up the Python venv (if missing) and run the notebook server.
 #
 # Usage:
-#   ./start.sh                 # run with defaults (127.0.0.1:5000, debug on)
-#   ./start.sh --port 8080     # change the port
-#   ./start.sh --host 0.0.0.0 --port 8000 --no-debug
+#   ./start.sh                 # run with defaults (0.0.0.0:5000, debug off, reachable from LAN)
+#   ./start.sh --debug         # enable Flask debug + auto-reload
+#   ./start.sh --host 127.0.0.1 # bind loopback only
+#   ./start.sh --port 8080 --debug
 #   ./start.sh --help          # see all app.py options
 #
 # Any arguments after the flags above are forwarded straight to app.py.

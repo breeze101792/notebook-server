@@ -13,8 +13,10 @@ and user config live in two deliberately separate folders, `data/` and `config/`
 
 ```bash
 # Run the server (creates/refreshes .venv_<hostname>, installs requirements, then runs app.py)
-./start.sh                       # 127.0.0.1:5000, debug on
-./start.sh --port 8080 --no-debug
+./start.sh                       # 0.0.0.0:5000, debug off (reachable from LAN by default)
+./start.sh --host 127.0.0.1      # bind loopback only
+./start.sh --debug               # enable Flask auto-reload (banner prints twice)
+./start.sh --port 8080 --debug
 ./start.sh --help                # all app.py CLI flags
 
 # Run the backend directly (assumes deps installed in the active env)
