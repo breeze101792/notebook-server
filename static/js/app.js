@@ -395,18 +395,33 @@
   }
 
   /* --- deep link ---------------------------------------------------- */
-  // The app honors `?file=<path>&heading=<slug>` on the URL: open
-  // the named note and scroll to the named heading. The function
-  // is a pure URL parser so it's easy to test; the openDeepLink
-  // façade does the activation + scroll + address-bar cleanup.
+  // The app honors two URL forms on boot and on in-app navigation:
+  //   1. ?file=<path>&heading=<slug>  (query string, the original form)
+  //   2. /<path>#<slug>               (path + fragment, the GitHub-style
+  //                                   Markdown link format e.g.
+  //                                   http://server/README.md#core-rules)
+  // The query-string form is tried first so it's deterministic. The
+  // path form is the natural output of a Markdown link like
+  // `[b](notes/b.md#intro)`: the browser navigates to the resolved URL
+  // and the SPA's catch-all server route + this parser handle it.
+  //
+  // The path-form "looks like a notebook" check (`\.md$` or contains
+  // `/`) is what keeps the catch-all from firing on every devtools /
+  // favicon / random URL hit -- anything that doesn't look like a
+  // notebook file falls through to a normal boot.
   function parseDeepLink(url) {
     const u = new URL(url || window.location.href);
-    const file = u.searchParams.get("file");
-    if (!file) return null;
-    return {
-      file,
-      heading: u.searchParams.get("heading") || null,
-    };
+    // Form 1: query string.
+    const qsFile = u.searchParams.get("file");
+    if (qsFile) {
+      return { file: qsFile, heading: u.searchParams.get("heading") || null };
+    }
+    // Form 2: path + fragment.
+    const path = u.pathname.replace(/^\/+/, "");
+    if (!path) return null;
+    if (!/\.md$/i.test(path) && !path.includes("/")) return null;
+    const heading = u.hash ? decodeURIComponent(u.hash.replace(/^#/, "")) : null;
+    return { file: path, heading: heading || null };
   }
 
   // Open the deep-link target. If the file isn't in the tree we log

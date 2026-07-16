@@ -478,5 +478,46 @@
     NB.evt.emit("viewer:conflict", { path, conflict: false });
   });
 
+  /* In-app link interception. A Markdown link like
+   * `[b](notes/b.md#intro)` resolves to a same-origin <a> inside the
+   * rendered viewer. Without interception, clicking it triggers a
+   * full page navigation (slow, drops unsaved edits, resets scroll
+   * position on the new file). With interception, the click is
+   * routed through NB.app.openDeepLink -- the SPA stays mounted, the
+   * target tab opens, the heading scrolls, and history.replaceState
+   * keeps the address bar clean. Same-file in-page anchors (`[#sec]`)
+   * and external links (`[GH](https://...)`) are passed through
+   * unchanged so the browser's native behavior handles them. */
+  viewerContentEl.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("a[href]");
+    if (!a) return;
+    // Respect modifier keys + non-primary buttons: the user's intent
+    // (open in new tab, etc.) goes through the browser's default.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if (e.button !== 0) return;
+    // Same-origin only. new URL(broken) throws -- bail on bad input.
+    let url;
+    try { url = new URL(a.getAttribute("href"), window.location.href); }
+    catch (_) { return; }
+    if (url.origin !== window.location.origin) return;
+    // Same-file in-page anchor: the resolved pathname matches the
+    // current URL's pathname (the boot path replaces the URL with `/`
+    // on first load, so a relative link to a different .md path is
+    // correctly distinguished from an in-page #anchor). The browser
+    // does the scroll natively because we assign slugified ids to
+    // every h1..h6 in render().
+    const currentPath = window.location.pathname.replace(/^\/+/, "");
+    const linkPath = url.pathname.replace(/^\/+/, "");
+    if (linkPath === currentPath) return;
+    // Cross-note deep link: prevent the full navigation and route
+    // through openDeepLink. The link's href may have been a relative
+    // path from the current note (e.g. "b.md" while viewing
+    // "notes/a.md"); the resolved URL has already done the right
+    // thing, so url.pathname is the absolute notebook path.
+    e.preventDefault();
+    const heading = url.hash ? decodeURIComponent(url.hash.replace(/^#/, "")) : null;
+    NB.app.openDeepLink({ file: linkPath, heading });
+  });
+
   NB.viewer = viewer;
 })();

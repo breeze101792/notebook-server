@@ -2795,6 +2795,48 @@ function check(label, cond, extra) {
       parse("http://x/?file=" + encodeURIComponent("notes/sub/My File.md")).file
         === "notes/sub/My File.md");
 
+    // --- parseDeepLink path+fragment form ----------------------------
+    // The Markdown-link form: /<file>#<heading>. The browser navigates
+    // to the resolved URL and the SPA catch-all serves the index shell
+    // for any path; parseDeepLink then turns the URL into a file+heading
+    // pair that openDeepLink can apply.
+    check("parseDeepLink path: /README.md#core-rules -> README.md / core-rules",
+      (() => {
+        const d = parse("http://x/README.md#core-rules");
+        return d && d.file === "README.md" && d.heading === "core-rules";
+      })());
+    check("parseDeepLink path: subfolder /notes/a.md#intro",
+      (() => {
+        const d = parse("http://x/notes/a.md#intro");
+        return d && d.file === "notes/a.md" && d.heading === "intro";
+      })());
+    check("parseDeepLink path: no fragment -> heading null",
+      (() => {
+        const d = parse("http://x/README.md");
+        return d && d.file === "README.md" && d.heading === null;
+      })());
+    check("parseDeepLink path: / is null (no deep link on home)",
+      parse("http://x/") === null);
+    check("parseDeepLink path: /favicon.svg is null (not a notebook file)",
+      parse("http://x/favicon.svg") === null);
+    check("parseDeepLink path: /robots.txt is null",
+      parse("http://x/robots.txt") === null);
+    check("parseDeepLink path: query string wins over path form",
+      (() => {
+        // When both forms are present, the query-string form takes
+        // priority (deterministic; query string is the more explicit
+        // form). Constructed URL: /some-path.md with ?file=other.md in
+        // the search -- the path form would otherwise activate
+        // some-path.md, but the query form should win.
+        const d = parse("http://x/some-path.md?file=other.md&heading=h");
+        return d && d.file === "other.md" && d.heading === "h";
+      })());
+    check("parseDeepLink path: decodes URL-encoded heading",
+      (() => {
+        const d = parse("http://x/README.md#%E4%B8%AD%E6%96%87");
+        return d && d.file === "README.md" && d.heading === "中文";
+      })());
+
     // Re-seed the fixtures this block needs so the heading scroll
     // targets are stable (the earlier edit/save and external-change
     // blocks mutate them in place via the fake fetch). Also reset
@@ -2948,6 +2990,162 @@ function check(label, cond, extra) {
       window.NB.app.parseDeepLink() === null);
 
     // Restore the stubs so later test blocks see the same environment.
+    window.Element.prototype.scrollIntoView = realScroll;
+    window.HTMLElement.prototype.scrollIntoView = realScroll;
+    window.history.replaceState = realHistoryReplace;
+    window.console.warn = realWarn;
+  }
+
+  console.log("== deep link: in-app click interception ==");
+  // A Markdown link to another notebook file (e.g.
+  // `[b](notes/b.md#file-b)`) is rendered as a same-origin <a>.
+  // Without interception, the browser would do a full page navigation
+  // -- slow, drops unsaved edits, resets scroll. With interception,
+  // the click is routed through NB.app.openDeepLink so the SPA
+  // switches tabs in place. Same-file anchors and external links
+  // pass through unchanged.
+  //
+  // We render a fixture with a known set of links, simulate clicks
+  // via the real viewerContentEl click handler, and assert the
+  // active file / tab state matches what the deep-link path should
+  // produce. The path-form catch-all is covered by parseDeepLink
+  // tests in the previous block; here we test the click handler
+  // wired into the rendered viewer.
+  {
+    // Seed a source file that contains the full set of links we
+    // want to click. Re-render notes/a.md so the <a> elements land
+    // in the DOM under our test click handler.
+    FILES["notes/a.md"] = "# File A\n\n" +
+      "TODO fix this bug.\n\n" +
+      "## Sub A\n\nbody\n\n" +
+      // Same-origin relative path: should be intercepted and open
+      // the target file in the SPA.
+      "See also: [File B](notes/b.md#file-b)\n\n" +
+      // Same-file in-page anchor: should NOT be intercepted (let
+      // the browser scroll natively).
+      "Back to [Sub A](#sub-a)\n\n" +
+      // Absolute external URL: should NOT be intercepted.
+      "Visit [GitHub](https://github.com/example)\n\n" +
+      // Mailto: definitely not a notebook link.
+      "Email: [me](mailto:test@example.com)\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    check("setup: notes/a.md active for click-intercept tests",
+      window.NB.tabs.getActive() === "notes/a.md");
+    const anchors = window.document.querySelectorAll("#viewer-content a");
+    check("setup: 4 anchors rendered (relative, in-page, external, mailto)",
+      anchors.length === 4, "got " + anchors.length + " anchors");
+
+    // Spy on scrollIntoView + history.replaceState (the openDeepLink
+    // path triggers both) so the assertions don't have to rely on
+    // the tab state alone. Same approach as the deep-link block.
+    const scrollCalls = [];
+    const realScroll = window.Element.prototype.scrollIntoView;
+    const realHistoryReplace = window.history.replaceState.bind(window.history);
+    const historyCalls = [];
+    window.Element.prototype.scrollIntoView = function () { scrollCalls.push(this.id); };
+    window.HTMLElement.prototype.scrollIntoView = window.Element.prototype.scrollIntoView;
+    window.history.replaceState = function (state, title, url) {
+      historyCalls.push(url);
+      return realHistoryReplace(state, title, url);
+    };
+    const realWarn = window.console.warn;
+    window.console.warn = () => {};
+
+    // Click 1: relative-path link to notes/b.md#file-b. The handler
+    // should preventDefault and route through openDeepLink. The
+    // result: active tab is notes/b.md, scrollIntoView called for
+    // "file-b", history.replaceState called.
+    const rel = window.document.querySelector(
+      '#viewer-content a[href$="notes/b.md#file-b"]');
+    check("click-intercept: relative <a> is in the DOM", !!rel,
+      rel ? rel.getAttribute("href") : "(not found)");
+    // jsdom doesn't fire the default click action (no navigation),
+    // so we have to verify the side effects directly. Resetting
+    // historyCalls / scrollCalls before each click.
+    scrollCalls.length = 0; historyCalls.length = 0;
+    rel.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("click-intercept: relative path -> openDeepLink activates target",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+    check("click-intercept: relative path -> scrollToHeading called for file-b",
+      scrollCalls.filter(id => id === "file-b").length === 1,
+      "calls=" + JSON.stringify(scrollCalls));
+    check("click-intercept: relative path -> history.replaceState strips URL",
+      historyCalls.length === 1, "calls=" + JSON.stringify(historyCalls));
+
+    // After the click, switch back to notes/a.md for the next case.
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+
+    // Click 2: same-file in-page anchor (#sub-a). The handler should
+    // NOT intercept -- the link's resolved pathname matches the
+    // current page (both are /notes/a.md after boot's replaceState),
+    // so we let the browser handle it natively. No tab change, no
+    // scrollIntoView from openDeepLink.
+    scrollCalls.length = 0; historyCalls.length = 0;
+    const inPage = window.document.querySelector(
+      '#viewer-content a[href="#sub-a"]');
+    check("click-intercept: in-page <a> is in the DOM", !!inPage,
+      inPage ? inPage.getAttribute("href") : "(not found)");
+    const beforeActive = window.NB.tabs.getActive();
+    inPage.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("click-intercept: in-page anchor does NOT change the active tab",
+      window.NB.tabs.getActive() === beforeActive);
+    check("click-intercept: in-page anchor does NOT call openDeepLink (no history.replaceState)",
+      historyCalls.length === 0);
+
+    // Click 3: absolute external URL. Same-origin check fails; pass
+    // through. (jsdom doesn't navigate, but the assertion is the
+    // side-effect: no openDeepLink call, no history.replaceState.)
+    scrollCalls.length = 0; historyCalls.length = 0;
+    const ext = window.document.querySelector(
+      '#viewer-content a[href^="https://"]');
+    check("click-intercept: external <a> is in the DOM", !!ext,
+      ext ? ext.getAttribute("href") : "(not found)");
+    ext.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("click-intercept: external link does NOT call openDeepLink",
+      historyCalls.length === 0);
+    check("click-intercept: external link does NOT change the active tab",
+      window.NB.tabs.getActive() === "notes/a.md");
+
+    // Click 4: mailto. Same-origin check fails (mailto: is not
+    // http(s)); pass through.
+    scrollCalls.length = 0; historyCalls.length = 0;
+    const mailto = window.document.querySelector(
+      '#viewer-content a[href^="mailto:"]');
+    check("click-intercept: mailto <a> is in the DOM", !!mailto,
+      mailto ? mailto.getAttribute("href") : "(not found)");
+    mailto.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("click-intercept: mailto does NOT call openDeepLink",
+      historyCalls.length === 0);
+
+    // Modifier-key clicks: open in new tab is the user's intent. The
+    // handler respects meta/ctrl/shift/alt and passes through.
+    scrollCalls.length = 0; historyCalls.length = 0;
+    rel.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true, ctrlKey: true }));
+    await tick(20);
+    check("click-intercept: Ctrl-click passes through (no openDeepLink)",
+      historyCalls.length === 0);
+    check("click-intercept: Ctrl-click does NOT change the active tab",
+      window.NB.tabs.getActive() === "notes/a.md");
+
+    // Middle-click / non-primary button: also a "open in new tab"
+    // intent. Pass through.
+    scrollCalls.length = 0; historyCalls.length = 0;
+    rel.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 1, cancelable: true }));
+    await tick(20);
+    check("click-intercept: middle-click passes through (no openDeepLink)",
+      historyCalls.length === 0);
+
+    // Restore the stubs.
     window.Element.prototype.scrollIntoView = realScroll;
     window.HTMLElement.prototype.scrollIntoView = realScroll;
     window.history.replaceState = realHistoryReplace;

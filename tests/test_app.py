@@ -66,6 +66,60 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("Welcome.md", names)
 
 
+class TestSpaCatchAll(BaseTest):
+    # The notebook is a single-page app: every path that isn't an
+    # /api/* route (or a /static/* file served by Flask's built-in
+    # static handler) should land on index.html so the boot path
+    # can parse the URL as a deep link. This is what makes
+    # `http://server/README.md#core-rules` work -- a fresh load of
+    # any notebook file path serves the SPA shell, and the frontend
+    # opens the file + scrolls to the heading.
+
+    def assert_serves_spa(self, path):
+        r = self.client.get(path)
+        self.assertEqual(r.status_code, 200,
+            f"GET {path} should serve the SPA shell, got {r.status_code}")
+        body = r.get_data(as_text=True)
+        self.assertIn("viewer", body,
+            f"GET {path} should serve index.html (looked for 'viewer')")
+
+    def test_root_serves_spa(self):
+        self.assert_serves_spa("/")
+
+    def test_root_file_path_serves_spa(self):
+        # The user's bug report URL: a fresh load of /README.md
+        # should serve the SPA, not 404.
+        self.assert_serves_spa("/README.md")
+
+    def test_subfolder_file_path_serves_spa(self):
+        self.assert_serves_spa("/notes/a.md")
+        self.assert_serves_spa("/some/deeply/nested/path.md")
+
+    def test_deep_link_with_fragment_serves_spa(self):
+        # The browser never sends the fragment to the server (it's a
+        # client-only concept), but the test client URL strips it
+        # anyway -- what matters is that the path matches the
+        # catch-all and the SPA shell is served.
+        self.assert_serves_spa("/README.md")
+
+    def test_api_routes_unaffected(self):
+        # The catch-all must not shadow /api/*. The BaseTest setUp
+        # doesn't configure a viewer password, so /api/config is
+        # open (read_login_required only fires when reads are
+        # actually gated). Either way, the body must be JSON, not
+        # the SPA HTML.
+        r = self.client.get("/api/config")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.is_json, "/api/config should return JSON, not the SPA shell")
+
+    def test_search_routes_unaffected(self):
+        # Same proof: /api/search is read-gated but open by default;
+        # the body must be JSON, not the SPA HTML.
+        r = self.client.get("/api/search?q=foo")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.is_json)
+
+
 class TestFileRead(BaseTest):
     def test_read_existing(self):
         code, data = self.jget("/api/file?path=Welcome.md")

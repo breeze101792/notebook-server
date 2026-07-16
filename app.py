@@ -770,6 +770,29 @@ def search():
 
 
 # --------------------------------------------------------------------------- #
+# SPA catch-all
+# --------------------------------------------------------------------------- #
+# The notebook is a single-page app: every path that isn't an /api/* route
+# (or a /static/* file served by Flask's built-in static handler) should
+# land on index.html, which boots the app and lets parseDeepLink in app.js
+# decide what to do with the URL. This is what makes
+# `http://server/README.md#core-rules` work -- a fresh load of any
+# notebook file path serves the SPA shell, and the boot path opens the
+# file + scrolls to the heading.
+#
+# Flask matches routes in registration order: the explicit /api/* routes
+# above are tried first; the implicit /static/* handler is registered
+# during `app = Flask(__name__)`; this catch-all only fires for paths
+# that fell through both. The `p` parameter is unused -- the SPA does
+# the routing. The path is captured with `<path:>` so subfolders
+# (`/notes/a.md`) work, not just single segments.
+@app.route("/", defaults={"p": ""})
+@app.route("/<path:p>")
+def spa(p):
+    return render_template("index.html")
+
+
+# --------------------------------------------------------------------------- #
 # CLI / entrypoint
 # --------------------------------------------------------------------------- #
 def parse_args(argv=None):
