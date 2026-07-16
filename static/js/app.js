@@ -7,6 +7,7 @@
   const DEFAULTS = {
     theme: "auto",
     fontSize: "medium",
+    wallpaper: "none",
     lastFile: null,
     recentFiles: [],
     openFiles: [],
@@ -85,11 +86,27 @@
     document.documentElement.style.setProperty("--font-scale", String(mult));
   }
 
+  /* --- wallpaper --------------------------------------------------- */
+  // The preview area (#viewer) gets a CSS class per wallpaper value.
+  // The class is always set (even when off) so the default state is
+  // explicit and the CSS can grow more variants later without JS changes.
+  const WALLPAPERS = ["none", "lines", "grid"];
+  const viewerEl = document.getElementById("viewer");
+  function applyWallpaper(name) {
+    const w = WALLPAPERS.indexOf(name) >= 0 ? name : "none";
+    cfg.wallpaper = w;
+    if (viewerEl) {
+      viewerEl.classList.remove("wallpaper-none", "wallpaper-lines", "wallpaper-grid");
+      viewerEl.classList.add("wallpaper-" + w);
+    }
+  }
+
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
     applyTheme(cfg.theme || "auto");
     applyFontSize(cfg.fontSize || "medium");
+    applyWallpaper(cfg.wallpaper || "none");
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -295,6 +312,8 @@
     setTheme: (pref) => { applyTheme(pref); persistConfig(); },
     setFontSize: (name) => { applyFontSize(name); persistConfig(); },
     getFontSize: () => cfg.fontSize || "medium",
+    setWallpaper: (name) => { applyWallpaper(name); persistConfig(); },
+    getWallpaper: () => cfg.wallpaper || "none",
     save: () => persistConfig(),
   };
 })();

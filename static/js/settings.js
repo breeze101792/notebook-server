@@ -16,6 +16,7 @@
   const cancelBtn = document.getElementById("settings-cancel");
   const themeRadios = Array.from(overlayEl.querySelectorAll('input[name="theme"]'));
   const fontSizeRadios = Array.from(overlayEl.querySelectorAll('input[name="fontSize"]'));
+  const wallpaperRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaper"]'));
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
   const dataDirEl   = document.getElementById("settings-data-dir");
@@ -58,6 +59,7 @@
     if (!draft || !original) return false;
     return draft.theme !== original.theme
         || draft.fontSize !== original.fontSize
+        || draft.wallpaper !== original.wallpaper
         || draft.watchEnabled !== original.watchEnabled;
   }
 
@@ -87,11 +89,13 @@
     original = {
       theme: cfg.theme || "auto",
       fontSize: (NB.app.getFontSize && NB.app.getFontSize()) || "medium",
+      wallpaper: (NB.app.getWallpaper && NB.app.getWallpaper()) || "none",
       watchEnabled: liveWatch,
     };
     draft = { ...original };
     themeRadios.forEach(r => { r.checked = (r.value === draft.theme); });
     fontSizeRadios.forEach(r => { r.checked = (r.value === draft.fontSize); });
+    wallpaperRadios.forEach(r => { r.checked = (r.value === draft.wallpaper); });
     refreshWatchStatus();
     renderWatchToggle();
     refreshFooter();
@@ -127,6 +131,10 @@
     if (draft.fontSize !== original.fontSize) {
       NB.app.setFontSize(draft.fontSize);
     }
+    // Wallpaper
+    if (draft.wallpaper !== original.wallpaper) {
+      NB.app.setWallpaper(draft.wallpaper);
+    }
     // Watch
     if (draft.watchEnabled !== original.watchEnabled) {
       try {
@@ -140,6 +148,7 @@
     original = {
       theme: NB.app.getCfg().theme || "auto",
       fontSize: (NB.app.getFontSize && NB.app.getFontSize()) || "medium",
+      wallpaper: (NB.app.getWallpaper && NB.app.getWallpaper()) || "none",
       watchEnabled: liveWatch,
     };
     draft = { ...original };
@@ -161,6 +170,9 @@
     }
     if (draft.fontSize !== original.fontSize) {
       NB.app.setFontSize(original.fontSize);
+    }
+    if (draft.wallpaper !== original.wallpaper) {
+      NB.app.setWallpaper(original.wallpaper);
     }
     if (draft.watchEnabled !== original.watchEnabled) {
       // The pending state never made it live, so revert means: ensure
@@ -226,6 +238,13 @@
   fontSizeRadios.forEach(r => r.addEventListener("change", () => {
     if (!r.checked || !draft) return;
     draft.fontSize = r.value;
+    refreshFooter();
+  }));
+
+  // wallpaper radio -> mutate the draft. Same pattern as theme.
+  wallpaperRadios.forEach(r => r.addEventListener("change", () => {
+    if (!r.checked || !draft) return;
+    draft.wallpaper = r.value;
     refreshFooter();
   }));
 
