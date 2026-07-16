@@ -113,8 +113,10 @@
       if (NB.viewer && NB.viewer.jumpToMatch) {
         const ok = NB.viewer.jumpToMatch(q, caseSensitive);
         if (!ok) {
-          // Fall back to scrolling to top.
-          document.getElementById("viewer").scrollTop = 0;
+          // Fall back to scrolling to top. The scroll container is
+          // #viewer-content, not #viewer (which is a non-scrolling
+          // shell that wraps it).
+          document.getElementById("viewer-content").scrollTop = 0;
         }
       }
     });

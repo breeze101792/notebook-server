@@ -118,7 +118,27 @@ const html = `<!DOCTYPE html><html><head>
         </div>
         <div id="edit-split" class="edit-split">
           <textarea id="raw-editor" hidden></textarea>
-          <div id="viewer" class="markdown-body"></div>
+          <div id="viewer">
+            <div id="viewer-content" class="markdown-body"></div>
+          </div>
+          <div id="welcome" class="welcome" hidden>
+            <div class="welcome-inner">
+              <div class="welcome-icon">📓</div>
+              <h2 class="welcome-title">Welcome to your notebook</h2>
+              <p class="welcome-subtitle">Create a new note to get started, or pick one from the left.</p>
+              <div class="welcome-actions">
+                <button class="welcome-action" data-act="new">+ New note</button>
+                <button class="welcome-action" data-act="open-welcome" hidden>Open Welcome.md</button>
+              </div>
+              <hr class="welcome-divider">
+              <ul class="welcome-tips">
+                <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li>
+                <li>Right-click the sidebar to create, rename, copy, or delete</li>
+                <li>Use the top search bar to find anything in your notebook</li>
+                <li>The ⚙ button picks theme, font size, and wallpaper</li>
+              </ul>
+            </div>
+          </div>
         </div>
         <div id="search-results" hidden>
           <span id="search-summary"></span><button id="search-close">×</button>
@@ -161,93 +181,140 @@ const html = `<!DOCTYPE html><html><head>
         <button id="settings-close" class="icon-btn">×</button>
       </div>
       <div class="settings-body">
-        <section class="settings-section">
-          <h3>Appearance</h3>
-          <div class="settings-row">
-            <span class="settings-label">Theme</span>
-            <div class="settings-control theme-options">
-              <label><input type="radio" name="theme" value="auto"> Auto</label>
-              <label><input type="radio" name="theme" value="dark"> Dark</label>
-              <label><input type="radio" name="theme" value="light"> Light</label>
+        <nav class="settings-nav" role="tablist" aria-label="Settings sections">
+          <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general">⚙ General</button>
+          <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance">🎨 Appearance</button>
+          <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security">🔒 Security</button>
+          <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about">ℹ About</button>
+        </nav>
+        <div class="settings-sections">
+          <section class="settings-section" data-section="general" id="settings-section-general">
+            <h3>File watching</h3>
+            <div class="settings-row">
+              <span class="settings-label">Status</span>
+              <span id="settings-watch-status" class="settings-value">—</span>
             </div>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Font size</span>
-            <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
-              <label><input type="radio" name="fontSize" value="small"> S</label>
-              <label><input type="radio" name="fontSize" value="medium"> M</label>
-              <label><input type="radio" name="fontSize" value="large"> L</label>
-              <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+            <div class="settings-row">
+              <span class="settings-label"></span>
+              <button id="settings-watch-toggle" class="settings-action">Enable</button>
             </div>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Wallpaper</span>
-            <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
-              <label><input type="radio" name="wallpaper" value="none"> None</label>
-              <label><input type="radio" name="wallpaper" value="lines"> Lines</label>
-              <label><input type="radio" name="wallpaper" value="grid"> Grid</label>
+          </section>
+          <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
+            <h3>Appearance</h3>
+            <div class="settings-row">
+              <span class="settings-label">Theme</span>
+              <div class="settings-control theme-options">
+                <label><input type="radio" name="theme" value="auto"> Auto</label>
+                <label><input type="radio" name="theme" value="dark"> Dark</label>
+                <label><input type="radio" name="theme" value="light"> Light</label>
+              </div>
             </div>
-          </div>
-        </section>
-        <section class="settings-section">
-          <h3>File watching</h3>
-          <div class="settings-row">
-            <span class="settings-label">Status</span>
-            <span id="settings-watch-status" class="settings-value">—</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label"></span>
-            <button id="settings-watch-toggle" class="settings-action">Enable</button>
-          </div>
-        </section>
-        <section class="settings-section" id="settings-auth-section">
-          <h3>Passwords</h3>
-          <p id="settings-auth-help" class="settings-help">Sign in as admin to change passwords.</p>
-          <div class="settings-row">
-            <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
-            <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input" disabled>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">
-              <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-            </span>
-            <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
-          </div>
-          <div class="settings-row">
-            <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
-            <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
-          </div>
-          <div class="settings-row" id="settings-auth-viewer-row" hidden>
-            <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
-            <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input">
-          </div>
-          <div class="settings-row" id="settings-auth-viewer-actions" hidden>
-            <span class="settings-label">
-              <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
-            </span>
-            <span class="settings-control">
-              <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
-              <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
-            </span>
-          </div>
-          <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
-        </section>
-        <section class="settings-section">
-          <h3>About</h3>
-          <div class="settings-row">
-            <span class="settings-label">Data folder</span>
-            <code id="settings-data-dir" class="settings-value settings-mono">…</code>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Config folder</span>
-            <code id="settings-config-dir" class="settings-value settings-mono">…</code>
-          </div>
-        </section>
+            <div class="settings-row">
+              <span class="settings-label">Font size</span>
+              <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
+                <label><input type="radio" name="fontSize" value="small"> S</label>
+                <label><input type="radio" name="fontSize" value="medium"> M</label>
+                <label><input type="radio" name="fontSize" value="large"> L</label>
+                <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Settings modal width</span>
+              <div class="settings-control settings-modal-width-options" role="radiogroup" aria-label="Settings modal width">
+                <label><input type="radio" name="settingsModalWidth" value="compact"> Compact</label>
+                <label><input type="radio" name="settingsModalWidth" value="medium"> Medium</label>
+                <label><input type="radio" name="settingsModalWidth" value="wide"> Wide</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Settings modal height</span>
+              <div class="settings-control settings-modal-height-options" role="radiogroup" aria-label="Settings modal height">
+                <label><input type="radio" name="settingsModalHeight" value="compact"> Compact</label>
+                <label><input type="radio" name="settingsModalHeight" value="medium"> Medium</label>
+                <label><input type="radio" name="settingsModalHeight" value="wide"> Wide</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Wallpaper</span>
+              <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
+                <label><input type="radio" name="wallpaper" value="none"> None</label>
+                <label><input type="radio" name="wallpaper" value="lines"> Lines</label>
+                <label><input type="radio" name="wallpaper" value="grid"> Grid</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Wallpaper scroll</span>
+              <div class="settings-control wallpaper-scroll-options" role="radiogroup" aria-label="Wallpaper scroll behavior">
+                <label><input type="radio" name="wallpaperScroll" value="scroll"> Scroll with content</label>
+                <label><input type="radio" name="wallpaperScroll" value="fixed"> Fixed in viewport</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Wallpaper color</span>
+              <div class="settings-control wallpaper-color-options" role="radiogroup" aria-label="Wallpaper color">
+                <label><input type="radio" name="wallpaperColor" value="neutral"> Neutral</label>
+                <label><input type="radio" name="wallpaperColor" value="blue"> Blue</label>
+                <label><input type="radio" name="wallpaperColor" value="green"> Green</label>
+                <label><input type="radio" name="wallpaperColor" value="purple"> Purple</label>
+                <label><input type="radio" name="wallpaperColor" value="amber"> Amber</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Wallpaper intensity</span>
+              <div class="settings-control wallpaper-intensity-options" role="radiogroup" aria-label="Wallpaper intensity">
+                <label><input type="radio" name="wallpaperIntensity" value="subtle"> Subtle</label>
+                <label><input type="radio" name="wallpaperIntensity" value="medium"> Medium</label>
+                <label><input type="radio" name="wallpaperIntensity" value="bold"> Bold</label>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" data-section="security" id="settings-section-security" hidden>
+            <h3>Passwords</h3>
+            <p id="settings-auth-help" class="settings-help">Sign in as admin to change passwords.</p>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
+              <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input" disabled>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">
+                <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
+              </span>
+              <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
+              <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-row" hidden>
+              <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
+              <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input">
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-actions" hidden>
+              <span class="settings-label">
+                <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
+              </span>
+              <span class="settings-control">
+                <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
+                <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
+              </span>
+            </div>
+            <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+          </section>
+          <section class="settings-section" data-section="about" id="settings-section-about" hidden>
+            <h3>About</h3>
+            <div class="settings-row">
+              <span class="settings-label">Data folder</span>
+              <code id="settings-data-dir" class="settings-value settings-mono">…</code>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Config folder</span>
+              <code id="settings-config-dir" class="settings-value settings-mono">…</code>
+            </div>
+          </section>
+        </div>
       </div>
       <div class="settings-footer">
-        <button id="settings-apply" class="settings-action">Apply</button>
-        <button id="settings-save" class="settings-action">Save</button>
-        <button id="settings-cancel" class="settings-action">Cancel</button>
+        <button id="settings-close-btn" class="settings-action">Close</button>
       </div>
     </div>
   </div>
@@ -405,8 +472,8 @@ function check(label, cond, extra) {
   console.log("== theme ==");
   // The theme control lives in the settings modal. The default body
   // theme is "dark" (auto resolves dark on this jsdom's matchMedia stub).
-  // Under the draft-then-commit model, picking a radio only mutates the
-  // draft; the live data-theme only changes on Apply/Save.
+  // Settings are LIVE now: picking a radio updates the body data-theme
+  // immediately, no Apply/Save step.
   check("default body theme is dark (auto -> dark)", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
   window.NB.settings.open();
@@ -414,41 +481,36 @@ function check(label, cond, extra) {
   const checkedRadio = () => window.document.querySelector('input[name="theme"]:checked');
   check("default theme radio is auto", checkedRadio() && checkedRadio().value === "auto",
     checkedRadio() ? checkedRadio().value : "(none)");
-  // light: pick radio -> only the draft changes; live body stays dark.
+  // light: pick radio -> live body flips to light immediately.
   window.document.querySelector('input[name="theme"][value="light"]').checked = true;
   window.document.querySelector('input[name="theme"][value="light"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("light radio: draft picked but body still dark (no live change yet)",
-    window.document.body.dataset.theme === "dark",
+  check("light radio: live body data-theme=light immediately",
+    window.document.body.dataset.theme === "light",
     "data-theme=" + window.document.body.dataset.theme);
-  // Apply -> live body becomes light, radio stays on light. Apply also
-  // closes the modal, so the next pick must reopen first.
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("Apply: live body data-theme=light", window.document.body.dataset.theme === "light",
-    "data-theme=" + window.document.body.dataset.theme);
-  // dark: pick + apply
-  window.NB.settings.open(); await tick(10);
+  // dark: pick + live update
   window.document.querySelector('input[name="theme"][value="dark"]').checked = true;
   window.document.querySelector('input[name="theme"][value="dark"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(10);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("Apply: dark -> data-theme=dark", window.document.body.dataset.theme === "dark",
+  check("dark radio: live body data-theme=dark immediately",
+    window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
-  // back to auto: pick + apply
-  window.NB.settings.open(); await tick(10);
+  // back to auto: pick + live update
   window.document.querySelector('input[name="theme"][value="auto"]').checked = true;
   window.document.querySelector('input[name="theme"][value="auto"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(10);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("Apply: auto -> data-theme=dark (matchMedia stub)",
+  check("auto radio: live body data-theme=dark (matchMedia stub)",
     window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
+  // Persistence: each change triggers a debounced POST /api/config.
+  await tick(400);
+  const themePosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastThemePost = themePosts[themePosts.length - 1] || "";
+  check("theme: last config POST body has theme=\"auto\"",
+    /"theme":"auto"/.test(lastThemePost), lastThemePost);
   window.NB.settings.close();
   await tick(10);
 
@@ -456,6 +518,9 @@ function check(label, cond, extra) {
   // Selector must use a single compound (#viewer :is(h1,h2,h3,...)) or a
   // union with the scope in EACH branch -- otherwise jsdom parses the
   // unparenthesized second branch as "any h2/h3/... in the document".
+  // The headings live inside #viewer-content (a child of #viewer) after
+  // the wallpaper scroll-sync restructure, so #viewer :is(...) still
+  // matches as a descendant selector.
   const heads = window.document.querySelectorAll("#viewer :is(h1, h2, h3, h4, h5, h6)");
   check("viewer rendered headings", heads.length >= 1, "got " + heads.length);
   check("all headings have ids", Array.from(heads).every(h => h.id), heads.length + " heads");
@@ -485,7 +550,7 @@ function check(label, cond, extra) {
   await window.NB.tabs.activate("notes/a.md");
   await tick(20);
   check("active switches to notes/a.md", activeTabPath() === "notes/a.md");
-  check("viewer shows notes/a.md content", /File A/.test(window.document.getElementById("viewer").textContent));
+  check("viewer shows notes/a.md content", /File A/.test(window.document.getElementById("viewer-content").textContent));
   // re-opening an open file does not duplicate
   await window.NB.tabs.open("notes/a.md");
   await tick(20);
@@ -824,21 +889,23 @@ function check(label, cond, extra) {
   click("edit-toggle"); await tick(10);
   // Stub scroll dimensions so the sync has something to work with.
   // jsdom doesn't compute scrollHeight/clientHeight from content.
+  // The scroller is #viewer-content (the wrapper #viewer is a
+  // non-scrolling shell after the wallpaper scroll-sync restructure).
   Object.defineProperty($("raw-editor"), "scrollHeight", { value: 2000, configurable: true });
   Object.defineProperty($("raw-editor"), "clientHeight", { value: 400, configurable: true });
-  Object.defineProperty($("viewer"), "scrollHeight", { value: 1000, configurable: true });
-  Object.defineProperty($("viewer"), "clientHeight", { value: 400, configurable: true });
+  Object.defineProperty($("viewer-content"), "scrollHeight", { value: 1000, configurable: true });
+  Object.defineProperty($("viewer-content"), "clientHeight", { value: 400, configurable: true });
   // Scroll the editor to 50%.
   $("raw-editor").scrollTop = 800;  // (2000-400)*0.5 = 800
   $("raw-editor").dispatchEvent(new window.Event("scroll", { bubbles: true }));
   await tick(20);
   // Viewer should be at 50% of its range: (1000-400)*0.5 = 300
   check("scroll sync: editor->viewer proportional",
-    Math.abs($("viewer").scrollTop - 300) < 5,
-    "viewer.scrollTop=" + $("viewer").scrollTop);
+    Math.abs($("viewer-content").scrollTop - 300) < 5,
+    "viewer-content.scrollTop=" + $("viewer-content").scrollTop);
   // Scroll the viewer to 75%.
-  $("viewer").scrollTop = 450;  // (1000-400)*0.75 = 450
-  $("viewer").dispatchEvent(new window.Event("scroll", { bubbles: true }));
+  $("viewer-content").scrollTop = 450;  // (1000-400)*0.75 = 450
+  $("viewer-content").dispatchEvent(new window.Event("scroll", { bubbles: true }));
   await tick(20);
   // Editor should be at 75%: (2000-400)*0.75 = 1200
   check("scroll sync: viewer->editor proportional",
@@ -958,7 +1025,22 @@ function check(label, cond, extra) {
   await tick(10);
   window.NB.tabs.close(activeTabPath(), { force: true }); // active, last tab
   await tick(20);
-  check("close last tab -> viewer.clear placeholder", /No file selected/.test($("viewer").textContent));
+  // After closing the last tab the right pane switches from the viewer
+  // to the welcome page (a friendly landing with action buttons), not
+  // the old terse "No file selected" placeholder.
+  check("close last tab -> welcome page is visible",
+    !$("welcome").hidden, "welcome.hidden=" + $("welcome").hidden);
+  check("close last tab -> viewer is hidden", $("viewer").hidden);
+  check("close last tab -> #viewer-content has no rendered markdown",
+    $("viewer-content").textContent.trim() === "",
+    "textContent=" + JSON.stringify($("viewer-content").textContent));
+  // The viewer is hidden when the welcome page is up, but the old
+  // rendered HTML can resurface if a CSS quirk / transition /
+  // devtools toggle briefly un-hides it. showWelcome() must clear
+  // innerHTML so the previous file's content is gone for real.
+  check("close last tab -> #viewer-content.innerHTML is empty (no stale HTML)",
+    $("viewer-content").innerHTML === "",
+    "innerHTML=" + JSON.stringify($("viewer-content").innerHTML));
   check("close last tab -> editor hidden", $("raw-editor").hidden);
   check("close last tab -> edit button loses .editing class", !$("edit-toggle").classList.contains("editing"));
   check("close last tab -> edit bar hidden", $("edit-bar").hidden);
@@ -1318,7 +1400,7 @@ function check(label, cond, extra) {
   await tick(20);
   await window.NB.tabs.open("Welcome.md"); await tick(20);
   check("external: opened Welcome (cache populated)",
-    /old/.test(window.document.getElementById("viewer").textContent));
+    /old/.test(window.document.getElementById("viewer-content").textContent));
 
   // Case 1: not-dirty + external change -> silent reload, content updates.
   FILES["Welcome.md"] = "# Welcome\n\nnew\n";
@@ -1326,7 +1408,7 @@ function check(label, cond, extra) {
   // we make the fetch stub return it.
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: FILES["Welcome.md"], mtime: 9999, size: 99 } });
   await tick(40);
-  check("external: clean file auto-reloads", /new/.test(window.document.getElementById("viewer").textContent));
+  check("external: clean file auto-reloads", /new/.test(window.document.getElementById("viewer-content").textContent));
 
   // Case 2: dirty + external change -> confirm() prompt.
   window.NB.viewer.startEdit();
@@ -1337,7 +1419,7 @@ function check(label, cond, extra) {
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "REMOTE", mtime: 10000, size: 6 } });
   await tick(40);
   check("external: dirty + change -> confirm shown", fetchLog.includes("confirm(yes)"));
-  check("external: confirm(yes) reloads", /REMOTE/.test(window.document.getElementById("viewer").textContent));
+  check("external: confirm(yes) reloads", /REMOTE/.test(window.document.getElementById("viewer-content").textContent));
 
   // Re-dirty, then Cancel.
   window.NB.viewer.startEdit();
@@ -1375,13 +1457,13 @@ function check(label, cond, extra) {
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "FRESH", mtime: 20000, size: 5 } });
   await tick(40);
   check("external: post-window change reloaded",
-    /FRESH/.test($("viewer").textContent),
-    "viewer=" + $("viewer").textContent.slice(0, 60));
+    /FRESH/.test($("viewer-content").textContent),
+    "viewer=" + $("viewer-content").textContent.slice(0, 60));
 
   // Case 4: watch button lives in the settings modal now. Open the modal,
-  // verify the status line and the toggle button, then enable+Apply and
-  // check the status updates. Under the draft-then-commit model, clicking
-  // the toggle only mutates the draft; the live watcher starts on Apply.
+  // verify the status line and the toggle button, then click Enable and
+  // check the live watcher starts immediately. Settings are live: the
+  // toggle commits on click, no Apply/Save step.
   window.NB.settings.open();
   await tick(20);
   check("watch: settings modal opens", window.NB.settings.isOpen());
@@ -1392,41 +1474,99 @@ function check(label, cond, extra) {
     statusEl.textContent);
   check("watch: button starts as 'Enable' (live state)", watchBtn.textContent === "Enable",
     watchBtn.textContent);
-  // Click toggle: draft flips, button text reflects pending state, but the
-  // live watcher is still off (status still 'Watching off').
+  // Click toggle: the live watcher starts (polling fallback in jsdom).
+  // The status updates immediately, the button label flips to "Disable".
   watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("watch: toggle click flips button to 'Disable' (pending)",
+  await tick(40);
+  check("watch: toggle click -> status reports active",
+    /watching|polling/i.test(statusEl.textContent), statusEl.textContent);
+  check("watch: toggle click -> button is 'Disable' (matches live state)",
     watchBtn.textContent === "Disable", watchBtn.textContent);
-  check("watch: live status still 'Watching off' (not yet applied)",
+  // Click again: live watcher disables.
+  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("watch: toggle click again -> status reports off",
     /off/i.test(statusEl.textContent), statusEl.textContent);
-  // Apply: live watcher starts (polling fallback in jsdom). Status flips.
-  // Apply also closes the modal.
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  // (Modal is now closed; we re-grab the elements after reopening below.)
+  check("watch: toggle click again -> button is 'Enable'",
+    watchBtn.textContent === "Enable", watchBtn.textContent);
+  window.NB.settings.close();
+  await tick(10);
+
+  console.log("== settings nav ==");
+  // Left sidebar nav: General / Appearance / Security / About. Clicking
+  // an entry shows its section and hides the rest; the active entry
+  // gets `.active` + `aria-selected="true"`. The four sections live
+  // inside `.settings-sections` and each carries a `data-section="…"`
+  // attribute that matches the nav button's `data-tab="…"`.
+  const navButtons = Array.from(window.document.querySelectorAll(".settings-nav-item"));
+  const navTabs    = navButtons.map(b => b.dataset.tab);
+  const sectionEls = Array.from(window.document.querySelectorAll(".settings-section[data-section]"));
+  check("settings nav: 4 nav buttons present", navButtons.length === 4,
+    "count=" + navButtons.length);
+  check("settings nav: 4 sections present", sectionEls.length === 4,
+    "count=" + sectionEls.length);
+  check("settings nav: every data-tab has a matching data-section",
+    navTabs.every(t => sectionEls.some(s => s.dataset.section === t)),
+    "tabs=" + JSON.stringify(navTabs));
+  check("settings nav: every data-section has a matching data-tab",
+    sectionEls.every(s => navTabs.includes(s.dataset.section)),
+    "sections=" + JSON.stringify(sectionEls.map(s => s.dataset.section)));
+  // Exact ordering matches what the user asked for.
+  check("settings nav: tabs in order [general, appearance, security, about]",
+    JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "security", "about"]),
+    JSON.stringify(navTabs));
+  // Fresh open: General is the default tab.
+  if (window.NB.settings.isOpen()) window.NB.settings.close();
+  await tick(10);
   window.NB.settings.open(); await tick(20);
-  const statusEl2 = $("settings-watch-status");
-  const watchBtn2 = $("settings-watch-toggle");
-  check("watch: apply -> live status reports active",
-    /watching|polling/i.test(statusEl2.textContent),
-    statusEl2.textContent);
-  check("watch: apply -> button is 'Disable' (matches live state)",
-    watchBtn2.textContent === "Disable", watchBtn2.textContent);
-  // Toggle to disable: draft flips, but live is still active.
-  watchBtn2.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("watch: pending disable -> button text 'Enable'",
-    watchBtn2.textContent === "Enable", watchBtn2.textContent);
-  check("watch: pending disable -> live still active",
-    /watching|polling/i.test(statusEl2.textContent), statusEl2.textContent);
-  // Apply: live watcher disables. Status reports off. Modal closes.
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  window.NB.settings.open(); await tick(20);
-  const statusEl3 = $("settings-watch-status");
-  check("watch: apply disable -> status reports off",
-    /off/i.test(statusEl3.textContent), statusEl3.textContent);
+  const generalBtn = navButtons.find(b => b.dataset.tab === "general");
+  check("settings nav: on open, general is the active nav button",
+    generalBtn && generalBtn.classList.contains("active"),
+    "classes=" + generalBtn.className);
+  check("settings nav: on open, general nav button has aria-selected=true",
+    generalBtn && generalBtn.getAttribute("aria-selected") === "true");
+  for (const t of ["appearance", "security", "about"]) {
+    const b = navButtons.find(x => x.dataset.tab === t);
+    check("settings nav: on open, " + t + " nav button is NOT active",
+      b && !b.classList.contains("active"),
+      "classes=" + b.className);
+    check("settings nav: on open, " + t + " nav button has aria-selected=false",
+      b && b.getAttribute("aria-selected") === "false");
+  }
+  // On open, only the general section is visible.
+  for (const s of sectionEls) {
+    const isGeneral = s.dataset.section === "general";
+    check("settings nav: on open, section[" + s.dataset.section + "] is "
+      + (isGeneral ? "visible" : "hidden"),
+      s.hidden === !isGeneral,
+      "hidden=" + s.hidden);
+  }
+  // Click each tab in turn; verify section visibility + nav active class
+  // follow. Modal stays open the whole time.
+  for (const t of ["appearance", "security", "about", "general"]) {
+    const btn = navButtons.find(b => b.dataset.tab === t);
+    btn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("settings nav: click '" + t + "' -> nav button has active class",
+      btn.classList.contains("active"), "classes=" + btn.className);
+    check("settings nav: click '" + t + "' -> nav button has aria-selected=true",
+      btn.getAttribute("aria-selected") === "true");
+    for (const s of sectionEls) {
+      const expectedVisible = (s.dataset.section === t);
+      check("settings nav: click '" + t + "' -> section[" + s.dataset.section
+        + "] is " + (expectedVisible ? "visible" : "hidden"),
+        s.hidden === !expectedVisible, "hidden=" + s.hidden);
+    }
+    // No other nav button should be active.
+    for (const other of navButtons) {
+      if (other === btn) continue;
+      check("settings nav: click '" + t + "' -> nav '" + other.dataset.tab
+        + "' is NOT active",
+        !other.classList.contains("active"));
+    }
+  }
+  // After clicking through all tabs, modal should still be open.
+  check("settings nav: clicking tabs keeps the modal open", window.NB.settings.isOpen());
   window.NB.settings.close();
   await tick(10);
 
@@ -1447,6 +1587,9 @@ function check(label, cond, extra) {
   await tick(20);
   check("settings: gear button opens modal", window.NB.settings.isOpen());
   check("settings: overlay is visible (no hidden attr)", !$("settings-overlay").hidden);
+  // Footer has a single Close button (no Apply/Save/Cancel).
+  check("settings: footer has a Close button (no Apply/Save/Cancel)",
+    !!$("settings-close-btn") && !$("settings-apply") && !$("settings-save") && !$("settings-cancel"));
   // Esc closes.
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   await tick(10);
@@ -1456,6 +1599,11 @@ function check(label, cond, extra) {
   $("settings-close").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("settings: × button closes", !window.NB.settings.isOpen());
+  // Open + close via footer Close button.
+  window.NB.settings.open(); await tick(10);
+  $("settings-close-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("settings: footer Close button closes", !window.NB.settings.isOpen());
   // Open + click on backdrop closes.
   window.NB.settings.open(); await tick(10);
   // dispatch a click whose target IS the overlay (not the modal)
@@ -1750,209 +1898,80 @@ function check(label, cond, extra) {
   window.confirm = () => true;
 
   console.log("== settings footer ==");
-  // The Settings modal has a draft-then-commit footer with three buttons:
-  // Apply (apply + keep open), Save (apply + close), Cancel (revert + close).
-  // The header × (and Esc / backdrop) behave dynamically: Cancel if dirty,
-  // plain close if not. Only the Theme / Font-size / Watch sections are
-  // draftable; the Passwords section is untouched and still owns its own
-  // per-section Save/Remove + reload flow.
-  const applyBtn = $("settings-apply");
-  const saveBtn  = $("settings-save");
-  const cancelBtn = $("settings-cancel");
-  const closeXBtn = $("settings-close");
-  const footerWatchBtn = $("settings-watch-toggle");
-
-  // Make sure the modal is closed before we start.
+  // The Settings modal now has a single Close button in the footer --
+  // settings are live, so there's no Apply/Save/Cancel. The Passwords
+  // section keeps its own per-section Save/Remove buttons (unaffected
+  // by this footer).
   if (window.NB.settings.isOpen()) window.NB.settings.close();
   await tick(10);
 
-  // 1. Fresh open: footer exists, Apply + Save are clickable.
+  // 1. Fresh open: footer has a single Close button. The old
+  //    Apply/Save/Cancel buttons are gone.
   window.NB.settings.open(); await tick(20);
-  check("footer: Apply button is present", !!applyBtn);
-  check("footer: Save button is present", !!saveBtn);
-  check("footer: Cancel button is present", !!cancelBtn);
-  check("footer: Apply is enabled on fresh open",
-    applyBtn.disabled === false, "disabled=" + applyBtn.disabled);
-  check("footer: Save is enabled on fresh open",
-    saveBtn.disabled === false, "disabled=" + saveBtn.disabled);
+  const closeFooterBtn = $("settings-close-btn");
+  check("footer: Close button is present", !!closeFooterBtn);
+  check("footer: Close button is enabled", closeFooterBtn.disabled === false);
+  check("footer: no Apply button (live mode)", !$("settings-apply"));
+  check("footer: no Save button (live mode)",  !$("settings-save"));
+  check("footer: no Cancel button (live mode)", !$("settings-cancel"));
 
-  // 2. Theme radio change keeps Apply + Save enabled (no visual change).
+  // 2. Theme radio change: live body data-theme updates immediately,
+  //    no Apply needed. (This is the headline of the live model.)
+  check("footer: pre-pick body data-theme is dark",
+    window.document.body.dataset.theme === "dark");
   const ftRadio = (v) => window.document.querySelector('input[name="theme"][value="' + v + '"]');
   ftRadio("light").checked = true;
   ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("footer: theme change keeps Apply enabled", applyBtn.disabled === false);
-  check("footer: theme change keeps Save enabled", saveBtn.disabled === false);
-  // Live body data-theme is unchanged (no Apply yet).
-  check("footer: theme change does NOT yet change live data-theme",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
-
-  // 3. Font-size change also keeps Apply/Save enabled.
-  const ftFs = (v) => window.document.querySelector('input[name="fontSize"][value="' + v + '"]');
-  ftFs("xlarge").checked = true;
-  ftFs("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  check("footer: fontSize change keeps Apply enabled", applyBtn.disabled === false);
-  check("footer: fontSize change keeps Save enabled", saveBtn.disabled === false);
-
-  // 4. Watch toggle click keeps Apply/Save enabled.
-  footerWatchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("footer: watch toggle click keeps Apply enabled", applyBtn.disabled === false);
-  check("footer: watch toggle click keeps Save enabled", saveBtn.disabled === false);
-
-  // 5. Cancel reverts all drafts and closes. No /api/config POST.
-  const postsBeforeCancel = fetchLog.filter(l => l.startsWith("POST /api/config")).length;
-  cancelBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("footer: Cancel closes the modal", !window.NB.settings.isOpen());
-  check("footer: Cancel does NOT POST /api/config",
-    fetchLog.filter(l => l.startsWith("POST /api/config")).length === postsBeforeCancel);
-  // Live state should be back to the boot defaults (theme=auto/dark, fontSize=medium).
-  check("footer: Cancel reverts live data-theme to dark",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
-  check("footer: Cancel reverts live --font-scale to 1",
-    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
-
-  // 6. Reopen -> radios re-sync to the *original* (reverted) state, not the draft.
-  window.NB.settings.open(); await tick(20);
-  check("footer: reopen shows theme=auto (clean state)",
-    ftRadio("auto") && ftRadio("auto").checked === true,
-    "checked=" + (ftRadio("auto") && ftRadio("auto").checked));
-  check("footer: reopen shows fontSize=medium (clean state)",
-    ftFs("medium") && ftFs("medium").checked === true,
-    "checked=" + (ftFs("medium") && ftFs("medium").checked));
-
-  // 7. Apply persists drafts and closes the modal (same as Save -- the
-  //    user sees the change immediately when the modal goes away).
-  ftRadio("light").checked = true;
-  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  applyBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("footer: Apply closes the modal", !window.NB.settings.isOpen());
-  check("footer: Apply changes live data-theme to light",
+  check("footer: theme radio change updates live data-theme immediately",
     window.document.body.dataset.theme === "light",
     "data-theme=" + window.document.body.dataset.theme);
-  // Apply also persisted: wait past the 250ms debounce + check the body.
+  // ... and the change persists: wait past the 250ms debounce + check POST.
   await tick(400);
   const lastCfgPost = (fetchLog.filter(l => l.startsWith("POST /api/config")).pop() || "");
-  check("footer: Apply POSTs config with theme=\"light\"",
+  check("footer: theme radio change POSTs config with theme=\"light\"",
     /"theme":"light"/.test(lastCfgPost), lastCfgPost);
-
-  // 8. Save applies + closes. Modal was closed by Apply above, so reopen.
-  window.NB.settings.open(); await tick(20);
+  // Reset.
   ftRadio("dark").checked = true;
   ftRadio("dark").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("footer: Save is clickable", saveBtn.disabled === false);
-  saveBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("footer: Save closes the modal", !window.NB.settings.isOpen());
-  check("footer: Save applies live data-theme=dark",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
 
-  // 9. × with no pending changes just closes (no draft, no revert).
-  window.NB.settings.open(); await tick(20);
-  closeXBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  // 3. Footer Close closes the modal cleanly (live changes are NOT
+  //    reverted -- they were already applied + persisted).
+  closeFooterBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("footer: × with no changes just closes",
-    !window.NB.settings.isOpen());
-  check("footer: × with no changes does not change live data-theme",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
+  check("footer: Close button closes the modal", !window.NB.settings.isOpen());
 
-  // 10. × with pending changes behaves as Cancel: reverts + closes.
-  window.NB.settings.open(); await tick(20);
-  ftRadio("light").checked = true;
-  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  closeXBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("footer: × with dirty draft closes (acts as Cancel)",
-    !window.NB.settings.isOpen());
-  check("footer: × with dirty draft reverts data-theme to dark",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
-
-  // 11. Esc with pending changes also cancels.
-  window.NB.settings.open(); await tick(20);
-  ftFs("xlarge").checked = true;
-  ftFs("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  await tick(20);
-  check("footer: Esc with dirty draft closes", !window.NB.settings.isOpen());
-  check("footer: Esc with dirty draft reverts --font-scale to 1",
-    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
-
-  // 12. Esc with no changes just closes.
-  window.NB.settings.open(); await tick(20);
-  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  // 4. × button closes the modal too.
+  window.NB.settings.open(); await tick(10);
+  $("settings-close").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("footer: Esc with no draft just closes", !window.NB.settings.isOpen());
+  check("footer: × button closes the modal", !window.NB.settings.isOpen());
 
-  // 13. Backdrop click with pending changes cancels.
-  window.NB.settings.open(); await tick(20);
-  ftRadio("light").checked = true;
-  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  const footerBackdropClick = new window.MouseEvent("click", { bubbles: true });
-  Object.defineProperty(footerBackdropClick, "target", { value: $("settings-overlay") });
-  $("settings-overlay").dispatchEvent(footerBackdropClick);
-  await tick(40);
-  check("footer: backdrop click with dirty draft closes", !window.NB.settings.isOpen());
-  check("footer: backdrop click with dirty draft reverts data-theme to dark",
-    window.document.body.dataset.theme === "dark",
-    "data-theme=" + window.document.body.dataset.theme);
-
-  // 14. Backdrop click with no draft just closes.
-  window.NB.settings.open(); await tick(20);
-  const footerBackdropClick2 = new window.MouseEvent("click", { bubbles: true });
-  Object.defineProperty(footerBackdropClick2, "target", { value: $("settings-overlay") });
-  $("settings-overlay").dispatchEvent(footerBackdropClick2);
-  await tick(10);
-  check("footer: backdrop click with no draft just closes", !window.NB.settings.isOpen());
-
-  // 15. Passwords section regression: the per-section Save/Remove buttons
-  //     are still present and still trigger their own page-reload flow.
-  //     The modal footer must not interfere with the per-section Save.
+  // 5. Passwords section regression: the per-section Save/Remove
+  //    buttons are still present and still trigger their own page-
+  //    reload flow. The new live-mode footer must not interfere.
   authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
   authSetPasswordsCalls = [];
-  // (Reload can't be observed in jsdom 24; the per-section Save POSTs
-  // + the footer's lack of POST are what we verify below.)
   window.NB.settings.open(); await tick(40);
-  // Pick a theme radio (make the draft dirty) -- then use the per-section
-  // password Save. The modal footer should NOT trigger a config POST, and
-  // the password Save should still reload.
-  ftRadio("light").checked = true;
-  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
   $("settings-auth-admin-pw").value = "footer-pw";
   $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick(10);
   $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
-  check("footer: per-section admin save still POSTs auth/passwords",
+  check("footer: per-section admin save still POSTs auth/passwords (live mode doesn't break it)",
     authSetPasswordsCalls.length === 1
     && authSetPasswordsCalls[0].admin_password === "footer-pw"
     && authSetPasswordsCalls[0].viewer_password === null,
     JSON.stringify(authSetPasswordsCalls));
-  // (Reload can't be observed in jsdom 24; the POST above is the signal
-  // that the per-section admin Save ran. The reload that would follow
-  // in production is a no-op here.)
-  // Reset
   authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
   authSetPasswordsCalls = [];
   window.NB.settings.close();
 
   console.log("== font size ==");
-  // The Font size radios in Settings set --font-scale on :root. Under the
-  // draft-then-commit model, picking a radio only mutates the draft; the
-  // live CSS variable only updates on Apply/Save.
+  // The Font size radios in Settings set --font-scale on :root. Settings
+  // are LIVE: picking a radio updates the CSS variable immediately, no
+  // Apply/Save step.
   check("font size: default --font-scale is 1 (medium)",
     cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
   // The medium radio is checked on first open.
@@ -1961,91 +1980,32 @@ function check(label, cond, extra) {
   check("font size: medium radio is checked by default",
     fsRadio("medium") && fsRadio("medium").checked === true,
     "checked=" + (fsRadio("medium") && fsRadio("medium").checked));
-  // Pick each size in turn and verify the draft picks the radio, but the
-  // live CSS variable only updates on Apply.
+  // Pick each size and verify the live CSS variable updates immediately.
+  // Each set is wrapped in `before`/`after` to confirm the value is the
+  // picked one, not the previous one.
   const expectScale = { small: "0.9", medium: "1", large: "1.15", xlarge: "1.3" };
   for (const name of ["small", "large", "xlarge", "medium"]) {
     fsRadio(name).checked = true;
     fsRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
     await tick(20);
-    // The CSS variable should be the previous (live) one, NOT the new one,
-    // because Apply hasn't been clicked yet.
-    // (The "current" live scale is whatever was last applied. After each
-    // Apply below, it updates.)
-    check("font size: " + name + " -> radio picks draft",
-      fsRadio(name).checked === true,
-      "checked=" + (fsRadio(name) && fsRadio(name).checked));
-  }
-  // After the loop, draft = medium. Apply to reset live to medium.
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("font size: after apply-medium, --font-scale=1",
-    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
-  // Now exercise the Apply path for each non-default value, verifying
-  // the CSS variable updates and a /api/config POST goes out. Apply
-  // closes the modal, so reopen before each pick.
-  for (const name of ["small", "large", "xlarge"]) {
-    window.NB.settings.open(); await tick(20);
-    const before = fetchLog.filter(l => l.startsWith("POST /api/config")).length;
-    fsRadio(name).checked = true;
-    fsRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
-    await tick(20);
-    // Not yet applied -- the live scale should still be the previous one.
-    check("font size: " + name + " pick -> live scale unchanged until apply",
-      cssVar("--font-scale") !== expectScale[name] || name === "medium",
-      "scale=" + cssVar("--font-scale"));
-    $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-    await tick(40);
-    check("font size: " + name + " apply -> --font-scale=" + expectScale[name],
+    // Live scale is the picked value, immediately.
+    check("font size: " + name + " -> live --font-scale=" + expectScale[name]
+      + " immediately",
       cssVar("--font-scale") === expectScale[name],
       "scale=" + cssVar("--font-scale"));
-    // Apply triggers setFontSize -> persistConfig (debounced). Wait past it.
-    await tick(400);
-    const posts = fetchLog.filter(l => l.startsWith("POST /api/config"));
-    const lastPost = posts[posts.length - 1] || "";
-    check("font size: " + name + " apply -> config body has fontSize:\"" + name + "\"",
-      new RegExp('"fontSize":"' + name + '"').test(lastPost),
-      lastPost);
   }
-
-  // Persist across open/close: after the previous loop the live scale is
-  // xlarge. Reset to medium via Apply so we can dirty the draft with a
-  // subsequent xlarge pick, then Save (apply+close), re-open, and verify
-  // the radio is still XL and the live scale is the XL value.
-  window.NB.settings.open(); await tick(20);
-  ftFs("medium").checked = true;
-  ftFs("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("font size: after reset-to-medium, --font-scale=1",
-    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
-  // Now dirty the draft with xlarge.
-  window.NB.settings.open(); await tick(20);
-  fsRadio("xlarge").checked = true;
-  fsRadio("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  check("font size: pick xlarge (after medium) enables Save",
-    $("settings-save").disabled === false,
-    "disabled=" + $("settings-save").disabled);
-  $("settings-save").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("font size: after save, --font-scale=1.3 (xlarge)",
-    cssVar("--font-scale") === "1.3", "scale=" + cssVar("--font-scale"));
-  // Regression: setting --font-scale on <html> must actually move the
-  // computed root font-size. Earlier the `html, body { font: 1rem/1.5 ... }`
-  // shorthand came AFTER `html { font-size: calc(...) }` and reset the
-  // root size back to 1rem of the initial value (16px), so the chrome
-  // never scaled regardless of the variable. The variable test above
-  // only checks that the custom property is set; this one checks the
-  // production stylesheet to make sure no rule applies a `font:` shorthand
-  // to `html` (the CSS shorthand resets font-size to 1rem of the initial
-  // value on the root, overriding the calc()). jsdom doesn't resolve
-  // var()/calc() in computed style, so the check is source-based.
+  // Persistence: the live change should have POSTed to /api/config with
+  // the latest picked value (medium, the last in the loop).
+  await tick(400);
+  const lastFsPost = (fetchLog.filter(l => l.startsWith("POST /api/config")).pop() || "");
+  check("font size: last config POST body has fontSize:\"medium\"",
+    /"fontSize":"medium"/.test(lastFsPost), lastFsPost);
+  // CSS source checks (regression for the `font:` shorthand on html bug
+  // that resets the root size to 1rem of the initial value). These are
+  // source-based, not behavior-dependent, so they survive the live-mode
+  // rewrite.
   {
     const css = read("static/css/style.css");
-    // Find any rule that targets `html` (possibly with siblings) and uses
-    // the `font:` shorthand. The pre-fix bug was `html, body { font: ... }`.
     const htmlFontShorthand = css.match(/^([^{}]*html[^{}]*)\{([^}]*)\}/gm);
     let htmlFontBug = null;
     if (htmlFontShorthand) {
@@ -2062,113 +2022,303 @@ function check(label, cond, extra) {
     }
     check("font size: no `font:` shorthand on a rule that targets html (would reset root size)",
       !htmlFontBug, htmlFontBug || "(clean)");
-    // Sanity: the `html { font-size: calc(14px * var(--font-scale, 1)) }`
-    // rule is what should be in place to drive rem-based scaling.
     const htmlFontSize = css.match(/^html\s*\{[^}]*font-size\s*:\s*calc\([^)]*var\(--font-scale[^)]*\)[^}]*\}/m);
     check("font size: html { font-size: calc(14px * var(--font-scale, 1)) } is in the stylesheet",
       !!htmlFontSize, htmlFontSize ? htmlFontSize[0].replace(/\s+/g, " ") : "(not found)");
   }
+  window.NB.settings.close();
+  await tick(10);
+
+  console.log("== settings modal width ==");
+  // Live: picking a radio updates --settings-modal-width immediately and
+  // POSTs the choice through the debounced persistConfig. Default is
+  // "medium" (75vw) per DEFAULTS, so the boot value is 75vw even
+  // though we never opened settings before this block. The size is
+  // a CSS unit string (vw), not a pixel value -- the modal scales
+  // with the viewport.
+  const smwRadio = (v) => window.document.querySelector('input[name="settingsModalWidth"][value="' + v + '"]');
+  check("settings modal width: has compact radio", !!smwRadio("compact"));
+  check("settings modal width: has medium radio",  !!smwRadio("medium"));
+  check("settings modal width: has wide radio",    !!smwRadio("wide"));
+  check("settings modal width: default --settings-modal-width is 75vw (medium)",
+    cssVar("--settings-modal-width") === "75vw",
+    "--settings-modal-width=" + cssVar("--settings-modal-width"));
+  check("settings modal width: cfg.settingsModalWidth default is 'medium'",
+    window.NB.app.getCfg().settingsModalWidth === "medium",
+    "settingsModalWidth=" + window.NB.app.getCfg().settingsModalWidth);
+
+  // Open settings + change to compact -> live CSS var updates immediately.
   window.NB.settings.open(); await tick(20);
-  check("font size: XL radio still checked across save+reopen",
-    fsRadio("xlarge").checked === true,
-    "checked=" + fsRadio("xlarge").checked);
-  // Reset to medium before the next test block (clean close + reopen+apply).
-  ftFs("medium").checked = true;
-  ftFs("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
+  // Switch to appearance so the radio is visible (the test only drives
+  // the radio, but matches the real-user path: open, pick tab, pick value).
+  const appearanceTab = window.document.querySelector('.settings-nav-item[data-tab="appearance"]');
+  appearanceTab.click(); await tick(10);
+  smwRadio("compact").checked = true;
+  smwRadio("compact").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  window.NB.settings.close(); await tick(10);
+  check("settings modal width: compact pick -> --settings-modal-width is 60vw immediately",
+    cssVar("--settings-modal-width") === "60vw",
+    "--settings-modal-width=" + cssVar("--settings-modal-width"));
+  check("settings modal width: compact pick -> live cfg.settingsModalWidth is 'compact'",
+    window.NB.app.getCfg().settingsModalWidth === "compact",
+    "settingsModalWidth=" + window.NB.app.getCfg().settingsModalWidth);
+
+  // Wide pick -> 90vw.
+  smwRadio("wide").checked = true;
+  smwRadio("wide").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("settings modal width: wide pick -> --settings-modal-width is 90vw immediately",
+    cssVar("--settings-modal-width") === "90vw",
+    "--settings-modal-width=" + cssVar("--settings-modal-width"));
+
+  // Back to medium -> 75vw. Confirms the path is round-trippable, not
+  // just monotonic in one direction.
+  smwRadio("medium").checked = true;
+  smwRadio("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("settings modal width: medium pick (after compact + wide) -> --settings-modal-width is 75vw again",
+    cssVar("--settings-modal-width") === "75vw",
+    "--settings-modal-width=" + cssVar("--settings-modal-width"));
+
+  // Persisted: after the debounce window the choice shows up in the
+  // latest POST /api/config body. Wide was picked last before medium;
+  // the medium POST should carry the new value.
+  await tick(400);
+  const lastSmwPost = (fetchLog.filter(l => l.startsWith("POST /api/config")).pop() || "");
+  check("settings modal width: last config POST body has settingsModalWidth:\"medium\"",
+    /"settingsModalWidth":"medium"/.test(lastSmwPost), lastSmwPost);
+  // Height is also persisted in the same POST body (same debounce path,
+  // same row-group commit). Default to "medium" on a fresh boot.
+  check("settings modal width: last config POST body has settingsModalHeight:\"medium\"",
+    /"settingsModalHeight":"medium"/.test(lastSmwPost), lastSmwPost);
+
+  // CSS source regression guards: the .settings-modal rule must read
+  // --settings-modal-width (so future edits to the layout actually
+  // respond to the setting). The variable is set as an inline style on
+  // :root by app.js:applySettingsModalWidth; no :root declaration is
+  // required in the stylesheet, but the fall-through default ("75vw")
+  // is what the rule defaults to if the inline style is absent.
+  {
+    const css = read("static/css/style.css");
+    const modalReadsVar = /\.settings-modal\s*\{[^}]*var\(--settings-modal-width/.test(css);
+    check("settings modal width: .settings-modal rule reads --settings-modal-width",
+      modalReadsVar, modalReadsVar ? "(found)" : "(missing)");
+    // The rule's fall-through default should be 75vw so a missing
+    // inline style (e.g. before applyConfig() runs) still renders the
+    // modal at the medium width. Matches the DEFAULTS value.
+    const modalDefault = /\.settings-modal\s*\{[^}]*var\(--settings-modal-width\s*,\s*(\S+?)\s*\)/.exec(css);
+    const defaultV = modalDefault ? modalDefault[1] : null;
+    check("settings modal width: .settings-modal fall-through default is 75vw (matches DEFAULTS medium)",
+      defaultV === "75vw", "default=" + (defaultV || "(missing)"));
+    // The modal must be pinned to its chosen width (flex: 0 0 auto)
+    // so a section with wider intrinsic content doesn't expand the
+    // modal when the user switches tabs. The CSS-source guard is
+    // independent of the layout engine; together with the per-tab
+    // width check below, it covers the regression.
+    const modalFlexNone = /\.settings-modal\s*\{[^}]*flex\s*:\s*0\s+0\s+auto/.test(css);
+    check("settings modal width: .settings-modal is flex:0 0 auto (won't grow to fit content)",
+      modalFlexNone, modalFlexNone ? "(found)" : "(missing)");
+    // Height must also be pinned (NOT derived from content). Each
+    // section has a different number of rows -- without a fixed
+    // height, the modal grows to fit the tallest section (Appearance,
+    // 7 rows) and shrinks for short ones (General / About, 2 rows),
+    // so switching tabs visibly resizes the modal. The new rule
+    // reads --settings-modal-height with an 80vh fall-through, capped
+    // by 92vh -- both axes are now user-controllable percentages.
+    const modalHeightPinned = /\.settings-modal\s*\{[^}]*height\s*:\s*min\(\s*var\(--settings-modal-height\s*,\s*80vh\s*\)\s*,\s*92vh\s*\)/.test(css);
+    check("settings modal width: .settings-modal is height:min(var(--settings-modal-height, 80vh), 92vh) (won't grow to fit content)",
+      modalHeightPinned, modalHeightPinned ? "(found)" : "(missing)");
+  }
+
+  // Layout stability across tabs: with a chosen width, the modal's
+  // rendered width must not change as the user switches between
+  // sections. Earlier, the modal grew to fit the widest section's
+  // intrinsic content (long paths in About, etc.) because the modal
+  // had no flex-basis and the body had no min-width: 0, so each tab
+  // switch could resize the modal by tens of pixels.
+  //
+  // Pick "wide" so we have the most headroom to detect accidental
+  // shrinking, then walk all four tabs and snapshot the rendered
+  // width via getBoundingClientRect (the only thing the user actually
+  // sees).
+  window.NB.settings.open(); await tick(20);
+  window.document.querySelector('.settings-nav-item[data-tab="appearance"]').click();
+  await tick(10);
+  smwRadio("wide").checked = true;
+  smwRadio("wide").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(10);
+  const modalEl = window.document.querySelector("#settings-overlay .settings-modal");
+  const widths = {};
+  const heights = {};
+  for (const tab of ["general", "appearance", "security", "about"]) {
+    window.document.querySelector('.settings-nav-item[data-tab="' + tab + '"]').click();
+    await tick(10);
+    const r = modalEl.getBoundingClientRect();
+    widths[tab]  = r.width;
+    heights[tab] = r.height;
+  }
+  const uniqWidths  = Array.from(new Set(Object.values(widths).map(w  => Math.round(w))));
+  const uniqHeights = Array.from(new Set(Object.values(heights).map(h => Math.round(h))));
+  check("settings modal width: modal width is identical across all four tabs",
+    uniqWidths.length === 1,
+    "widths=" + JSON.stringify(widths) + " uniq=" + JSON.stringify(uniqWidths));
+  // Height also has to be stable across tabs. Without a fixed height,
+  // the modal grows to fit the tallest section (Appearance, 7 rows)
+  // and shrinks for short ones (General / About, 2 rows). The new
+  // `height: min(86vh, 600px)` rule pins the outer size; the inner
+  // .settings-sections pane scrolls if a section overflows.
+  check("settings modal width: modal height is identical across all four tabs",
+    uniqHeights.length === 1,
+    "heights=" + JSON.stringify(heights) + " uniq=" + JSON.stringify(uniqHeights));
+  // Sanity: the test ran at the 'wide' setting (90vw). The actual
+  // pixel width returned by jsdom is 0 (no layout), so we confirm
+  // the sink the modal reads from is the expected value.
+  check("settings modal width: tab-switch test ran at the 'wide' setting",
+    cssVar("--settings-modal-width") === "90vw",
+    "--settings-modal-width=" + cssVar("--settings-modal-width"));
+
+  console.log("== settings modal height ==");
+  // Mirror of the width block above: the new "Settings modal height"
+  // radio group drives --settings-modal-height as a viewport
+  // percentage. The three presets are 80vh / 85vh / 90vh; the
+  // default is "medium" (85vh) per DEFAULTS, matching the CSS
+  // fall-through default on .settings-modal. The floor is 80vh so
+  // even the smallest preset gives the modal most of the viewport.
+  const smhRadio = (v) => window.document.querySelector('input[name="settingsModalHeight"][value="' + v + '"]');
+  check("settings modal height: has compact radio", !!smhRadio("compact"));
+  check("settings modal height: has medium radio",  !!smhRadio("medium"));
+  check("settings modal height: has wide radio",    !!smhRadio("wide"));
+  check("settings modal height: default --settings-modal-height is 85vh (medium)",
+    cssVar("--settings-modal-height") === "85vh",
+    "--settings-modal-height=" + cssVar("--settings-modal-height"));
+  check("settings modal height: cfg.settingsModalHeight default is 'medium'",
+    window.NB.app.getCfg().settingsModalHeight === "medium",
+    "settingsModalHeight=" + window.NB.app.getCfg().settingsModalHeight);
+
+  // Drive each radio and confirm the CSS var updates live. Stay on
+  // the Appearance tab -- the radio is here, and we're already
+  // open.
+  smhRadio("compact").checked = true;
+  smhRadio("compact").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("settings modal height: compact pick -> --settings-modal-height is 80vh immediately",
+    cssVar("--settings-modal-height") === "80vh",
+    "--settings-modal-height=" + cssVar("--settings-modal-height"));
+  check("settings modal height: compact pick -> live cfg.settingsModalHeight is 'compact'",
+    window.NB.app.getCfg().settingsModalHeight === "compact",
+    "settingsModalHeight=" + window.NB.app.getCfg().settingsModalHeight);
+
+  smhRadio("wide").checked = true;
+  smhRadio("wide").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("settings modal height: wide pick -> --settings-modal-height is 90vh immediately",
+    cssVar("--settings-modal-height") === "90vh",
+    "--settings-modal-height=" + cssVar("--settings-modal-height"));
+
+  // Back to medium -> 85vh. Confirms the path is round-trippable.
+  smhRadio("medium").checked = true;
+  smhRadio("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("settings modal height: medium pick (after compact + wide) -> --settings-modal-height is 85vh again",
+    cssVar("--settings-modal-height") === "85vh",
+    "--settings-modal-height=" + cssVar("--settings-modal-height"));
+
+  // Persisted: after the debounce window the choice shows up in the
+  // latest POST /api/config body.
+  await tick(400);
+  const lastSmhPost = (fetchLog.filter(l => l.startsWith("POST /api/config")).pop() || "");
+  check("settings modal height: last config POST body has settingsModalHeight:\"medium\"",
+    /"settingsModalHeight":"medium"/.test(lastSmhPost), lastSmhPost);
+
+  // close: keep the rest of the suite running with a clean modal state.
+  window.NB.settings.close();
+  await tick(10);
 
   console.log("== light code block theme ==");
   // The hljs-dark and hljs-light <link> tags toggle based on the resolved
   // body theme. Dark is the default; switching to Light should disable
-  // the dark link and enable the light link. Under the draft-then-commit
-  // model, picking a radio only mutates the draft; the live data-theme
-  // (and the link swap) only happens on Apply.
+  // the dark link and enable the light link. Settings are LIVE: picking
+  // a radio updates the live data-theme + the link swap immediately.
   const darkLink = window.document.getElementById("hljs-dark");
   const lightLink = window.document.getElementById("hljs-light");
   check("hljs: dark link element exists", !!darkLink);
   check("hljs: light link element exists", !!lightLink);
-  // The previous == font size == block ended with save(xlarge) + close,
-  // so the live theme should still be "dark" (auto) and dark link enabled.
+  // The previous == font size == block ended with live fontSize=medium
+  // and the live theme still auto/dark, so the dark link should be enabled.
   check("hljs: boot state -> dark enabled, light disabled",
     darkLink.disabled === false && lightLink.disabled === true,
     "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
 
   const themeRadio = (v) => window.document.querySelector('input[name="theme"][value="' + v + '"]');
-  // Open settings, pick light, then verify the draft was picked but the
-  // live link state hasn't changed yet.
+  // Open settings, pick light -> live data-theme + links flip immediately.
   window.NB.settings.open(); await tick(20);
   themeRadio("light").checked = true;
   themeRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("hljs: light pick (draft) -> live links still dark-enabled",
-    darkLink.disabled === false && lightLink.disabled === true,
-    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
-  // Apply -> live link state swaps. Apply also closes the modal.
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("hljs: light apply -> light link enabled, dark link disabled",
+  check("hljs: light pick -> live data-theme=light immediately",
+    window.document.body.dataset.theme === "light",
+    "data-theme=" + window.document.body.dataset.theme);
+  check("hljs: light pick -> light link enabled, dark link disabled immediately",
     darkLink.disabled === true && lightLink.disabled === false,
     "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
 
-  // Back to Dark: pick + apply. Reopen first.
-  window.NB.settings.open(); await tick(20);
+  // Back to Dark: live links flip back.
   themeRadio("dark").checked = true;
   themeRadio("dark").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("hljs: dark pick (draft) -> live links still light-enabled (not yet applied)",
-    darkLink.disabled === true && lightLink.disabled === false,
-    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("hljs: dark apply -> dark enabled, light disabled",
+  check("hljs: dark pick -> live data-theme=dark immediately",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+  check("hljs: dark pick -> dark enabled, light disabled immediately",
     darkLink.disabled === false && lightLink.disabled === true,
     "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
 
   // Auto mode: the matchMedia stub returns matches:false (system = dark),
   // so the resolved theme is dark and the dark link is the enabled one.
-  window.NB.settings.open(); await tick(20);
   themeRadio("auto").checked = true;
   themeRadio("auto").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(10);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("hljs: auto apply + matchMedia(dark) -> dark link enabled",
+  check("hljs: auto pick + matchMedia(dark) -> dark link enabled immediately",
     darkLink.disabled === false && lightLink.disabled === true,
     "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
 
-  // The cfg.theme persists as "auto" after the radio + apply.
-  check("hljs: cfg.theme persists as 'auto' after apply",
+  // The cfg.theme persists as "auto" after the radio change.
+  check("hljs: cfg.theme persists as 'auto' after pick",
     window.NB.app.getCfg().theme === "auto", "theme=" + window.NB.app.getCfg().theme);
 
   // The dark link is currently enabled because theme=auto -> dark.
-  check("hljs: after auto apply, dark link is enabled",
+  check("hljs: after auto pick, dark link is enabled",
     darkLink.disabled === false && lightLink.disabled === true);
 
-  // Reset by closing (clean close since draft==original now).
+  // Reset by closing.
   window.NB.settings.close();
   await tick(10);
 
   console.log("== wallpaper ==");
-  // The wallpaper radios in Settings swap a class on #viewer. Under the
-  // draft-then-commit model, picking a radio only mutates the draft; the
-  // live class swap only happens on Apply/Save.
-  const viewerEl = window.document.getElementById("viewer");
+  // The wallpaper radios in Settings swap a class on #viewer-content
+  // (the actual scroller + content element). Settings are LIVE: picking
+  // a radio updates the class immediately, no Apply/Save step. Putting
+  // the wallpaper on the same element that holds the rendered markdown
+  // is what makes the pattern scroll in perfect lockstep with the text
+  // -- the background is anchored to the content, not the scroll viewport.
+  const viewerEl = window.document.getElementById("viewer-content");
   const wpRadio = (v) => window.document.querySelector('input[name="wallpaper"][value="' + v + '"]');
   const hasWpClass = (name) => {
     return Array.from(viewerEl.classList).some(c => c === "wallpaper-" + name);
   };
 
-  // Default: #viewer has wallpaper-none class (app.js always sets one)
-  // and no other wallpaper class. The radio is unselected until open().
-  check("wallpaper: default #viewer has wallpaper-none class",
+  // Default: #viewer-content has wallpaper-none class (app.js always
+  // sets one) and no other wallpaper class. The radio is unselected
+  // until open().
+  check("wallpaper: default #viewer-content has wallpaper-none class",
     hasWpClass("none"), "classes=" + viewerEl.className);
-  check("wallpaper: default #viewer has no wallpaper-lines class",
+  check("wallpaper: default #viewer-content has no wallpaper-lines class",
     !hasWpClass("lines"));
-  check("wallpaper: default #viewer has no wallpaper-grid class",
+  check("wallpaper: default #viewer-content has no wallpaper-grid class",
     !hasWpClass("grid"));
+  // Default: no wallpaper-fixed class (the scroll-with-content default).
+  check("wallpaper: default #viewer-content has no wallpaper-fixed class",
+    !viewerEl.classList.contains("wallpaper-fixed"));
 
   // Open settings, verify the radio group exists and "none" is checked.
   window.NB.settings.open(); await tick(20);
@@ -2178,120 +2328,433 @@ function check(label, cond, extra) {
   check("wallpaper: none radio is checked by default",
     wpRadio("none") && wpRadio("none").checked === true);
 
-  // For each non-default value, pick the radio, Apply, and verify the
-  // class swap + persistence. Apply also closes the modal, so reopen
-  // before each pick. The live class at the start of each iteration is
-  // the value the previous iteration applied: none -> lines -> grid.
-  const previousLive = ["none", "lines"];
-  for (const i in ["lines", "grid"]) {
-    const name = ["lines", "grid"][i];
-    const prev = previousLive[i];
-    window.NB.settings.open(); await tick(20);
+  // Pick each non-default value, verify the live class swap is
+  // immediate (no Apply), and the POST body has the picked value.
+  // No modal reopen between picks because picking doesn't close it.
+  for (const name of ["lines", "grid", "none"]) {
     wpRadio(name).checked = true;
     wpRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
     await tick(20);
-    // Not yet applied: live class should still be the previous one.
-    check("wallpaper: " + name + " pick -> live class unchanged until apply",
-      hasWpClass(prev) && !hasWpClass(name),
-      "classes=" + viewerEl.className);
-    $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-    await tick(40);
-    check("wallpaper: " + name + " apply -> #viewer has wallpaper-" + name,
+    // Live class swap is immediate.
+    check("wallpaper: " + name + " pick -> live wallpaper-" + name + " class immediately",
       hasWpClass(name), "classes=" + viewerEl.className);
-    check("wallpaper: " + name + " apply -> #viewer has no wallpaper-none",
-      !hasWpClass("none"), "classes=" + viewerEl.className);
-    // Apply triggers setWallpaper -> persistConfig (debounced). Wait past it.
+    // Other wallpaper-* classes are removed.
+    const others = ["none", "lines", "grid"].filter(n => n !== name);
+    for (const o of others) {
+      check("wallpaper: " + name + " pick -> no wallpaper-" + o + " class",
+        !hasWpClass(o), "classes=" + viewerEl.className);
+    }
+    // Persistence: wait past the 250ms debounce + check the POST body.
     await tick(400);
     const posts = fetchLog.filter(l => l.startsWith("POST /api/config"));
     const lastPost = posts[posts.length - 1] || "";
-    check("wallpaper: " + name + " apply -> config body has wallpaper:\"" + name + "\"",
+    check("wallpaper: " + name + " pick -> config body has wallpaper:\"" + name + "\"",
       new RegExp('"wallpaper":"' + name + '"').test(lastPost),
       lastPost);
   }
-
-  // Persist across open/close: after the loop above the live wallpaper is
-  // "grid". Pick "lines" + Apply, re-open, verify the radio is still on
-  // Lines and the live class is wallpaper-lines.
-  window.NB.settings.open(); await tick(20);
-  wpRadio("lines").checked = true;
-  wpRadio("lines").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  $("settings-save").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("wallpaper: after save, #viewer has wallpaper-lines",
-    hasWpClass("lines"), "classes=" + viewerEl.className);
-  window.NB.settings.open(); await tick(20);
-  check("wallpaper: lines radio still checked across save+reopen",
-    wpRadio("lines") && wpRadio("lines").checked === true,
-    "checked=" + (wpRadio("lines") && wpRadio("lines").checked));
-
-  // Cancel test: pick "grid", Cancel, verify #viewer is back to the
-  // original (lines) and no POST fired for the change.
-  const cancelBefore = fetchLog.filter(l => l.startsWith("POST /api/config")).length;
-  wpRadio("grid").checked = true;
-  wpRadio("grid").dispatchEvent(new window.Event("change", { bubbles: true }));
-  await tick(20);
-  $("settings-cancel").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("wallpaper: cancel -> #viewer keeps previous wallpaper (lines)",
-    hasWpClass("lines") && !hasWpClass("grid"),
-    "classes=" + viewerEl.className);
-  // Wait past the debounce. cancel() reverts via NB.app.setWallpaper
-  // (which calls persistConfig), so a POST *does* go out -- but the body
-  // must contain the original value, not the cancelled one. This is the
-  // signal that the revert (not the draft) is what got persisted.
-  await tick(400);
-  const cancelPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
-  const lastCancelPost = cancelPosts[cancelPosts.length - 1] || "";
-  check("wallpaper: cancel -> last config POST body has wallpaper:\"lines\" (original, not draft)",
-    /"wallpaper":"lines"/.test(lastCancelPost) && !/"wallpaper":"grid"/.test(lastCancelPost),
-    lastCancelPost);
-
-  // Reset to none so the next test block starts from a clean state.
-  window.NB.settings.open(); await tick(20);
+  // Reset to default (none) for the next block.
   wpRadio("none").checked = true;
   wpRadio("none").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("wallpaper: after reset-to-none, #viewer has wallpaper-none",
+  check("wallpaper: after reset-to-none, #viewer-content has wallpaper-none",
     hasWpClass("none"), "classes=" + viewerEl.className);
+  window.NB.settings.close();
+  await tick(10);
+
+  // --- wallpaperScroll: the second wallpaper setting that picks how
+  //     the pattern behaves when the user scrolls. "scroll" keeps the
+  //     pattern tied to the content; "fixed" keeps it in the viewport.
+  console.log("== wallpaper scroll ==");
+  const wpsRadio = (v) => window.document.querySelector('input[name="wallpaperScroll"][value="' + v + '"]');
+  const hasFixedClass = () => viewerEl.classList.contains("wallpaper-fixed");
+  window.NB.settings.open(); await tick(20);
+  check("wallpaper scroll: settings has scroll radio", !!wpsRadio("scroll"));
+  check("wallpaper scroll: settings has fixed radio", !!wpsRadio("fixed"));
+  check("wallpaper scroll: default 'scroll' radio is checked",
+    wpsRadio("scroll") && wpsRadio("scroll").checked === true);
+  // Pick "fixed": live class swap is immediate.
+  wpsRadio("fixed").checked = true;
+  wpsRadio("fixed").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("wallpaper scroll: fixed pick -> #viewer-content has wallpaper-fixed class immediately",
+    hasFixedClass(), "classes=" + viewerEl.className);
+  await tick(400);
+  const wpsPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastWpsPost = wpsPosts[wpsPosts.length - 1] || "";
+  check("wallpaper scroll: fixed pick -> config body has wallpaperScroll:\"fixed\"",
+    /"wallpaperScroll":"fixed"/.test(lastWpsPost), lastWpsPost);
+  // Revert to "scroll".
+  wpsRadio("scroll").checked = true;
+  wpsRadio("scroll").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("wallpaper scroll: scroll pick -> #viewer-content has no wallpaper-fixed class",
+    !hasFixedClass(), "classes=" + viewerEl.className);
+  await tick(400);
+  const wpsPosts2 = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastWpsPost2 = wpsPosts2[wpsPosts2.length - 1] || "";
+  check("wallpaper scroll: scroll pick -> config body has wallpaperScroll:\"scroll\"",
+    /"wallpaperScroll":"scroll"/.test(lastWpsPost2), lastWpsPost2);
+  window.NB.settings.close();
+  await tick(10);
+
+  // --- wallpaperColor: which stroke color the pattern uses. The base
+  //     CSS uses CSS variables --wp-rgb / --wp-a -- and the wallpaper-
+  //     color-* classes set --wp-rgb. "neutral" removes any color class
+  //     so the CSS default (white in dark / black in light) takes over.
+  console.log("== wallpaper color ==");
+  const wpcRadio = (v) => window.document.querySelector('input[name="wallpaperColor"][value="' + v + '"]');
+  const hasColorClass = (n) => viewerEl.classList.contains("wallpaper-color-" + n);
+  window.NB.settings.open(); await tick(20);
+  check("wallpaper color: settings has neutral radio", !!wpcRadio("neutral"));
+  check("wallpaper color: settings has blue radio", !!wpcRadio("blue"));
+  check("wallpaper color: settings has green radio", !!wpcRadio("green"));
+  check("wallpaper color: settings has purple radio", !!wpcRadio("purple"));
+  check("wallpaper color: settings has amber radio", !!wpcRadio("amber"));
+  check("wallpaper color: default 'neutral' radio is checked",
+    wpcRadio("neutral") && wpcRadio("neutral").checked === true);
+  check("wallpaper color: default #viewer-content has no wallpaper-color-* class",
+    Array.from(viewerEl.classList).every(c => !c.startsWith("wallpaper-color-")),
+    "classes=" + viewerEl.className);
+  // Pick each non-neutral color, verify the live class swap is
+  // immediate (no Apply), and the POST body has the picked value.
+  for (const c of ["blue", "green", "purple", "amber"]) {
+    wpcRadio(c).checked = true;
+    wpcRadio(c).dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    check("wallpaper color: " + c + " pick -> #viewer-content has wallpaper-color-" + c + " class immediately",
+      hasColorClass(c), "classes=" + viewerEl.className);
+    await tick(400);
+    const wpcPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+    const lastWpcPost = wpcPosts[wpcPosts.length - 1] || "";
+    check("wallpaper color: " + c + " pick -> config body has wallpaperColor:\"" + c + "\"",
+      /"wallpaperColor":\s*"' + c + '"/.test(lastWpcPost)
+        || new RegExp('"wallpaperColor":"' + c + '"').test(lastWpcPost),
+      lastWpcPost);
+  }
+  // Revert to neutral: the color-* class is removed.
+  wpcRadio("neutral").checked = true;
+  wpcRadio("neutral").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("wallpaper color: neutral pick -> no wallpaper-color-* class on #viewer-content",
+    !Array.from(viewerEl.classList).some(c => c.startsWith("wallpaper-color-")),
+    "classes=" + viewerEl.className);
+  window.NB.settings.close();
+  await tick(10);
+
+  // --- wallpaperIntensity: how bold the stroke is. "subtle" is barely
+  //     there (alpha 0.05); "medium" and "bold" step it up. The classes
+  //     set --wp-a so the user can dial how visible the pattern is.
+  //     Settings are LIVE: picking a radio updates the class immediately,
+  //     no Apply/Save step.
+  console.log("== wallpaper intensity ==");
+  const wpiRadio = (v) => window.document.querySelector('input[name="wallpaperIntensity"][value="' + v + '"]');
+  const hasIntensityClass = (n) => viewerEl.classList.contains("wallpaper-intensity-" + n);
+  window.NB.settings.open(); await tick(20);
+  check("wallpaper intensity: settings has subtle radio", !!wpiRadio("subtle"));
+  check("wallpaper intensity: settings has medium radio", !!wpiRadio("medium"));
+  check("wallpaper intensity: settings has bold radio", !!wpiRadio("bold"));
+  check("wallpaper intensity: default 'subtle' radio is checked",
+    wpiRadio("subtle") && wpiRadio("subtle").checked === true);
+  check("wallpaper intensity: default #viewer-content has wallpaper-intensity-subtle class",
+    hasIntensityClass("subtle"), "classes=" + viewerEl.className);
+
+  // Pick each non-default value; the class swap is immediate.
+  for (const i of ["medium", "bold"]) {
+    wpiRadio(i).checked = true;
+    wpiRadio(i).dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    check("wallpaper intensity: " + i + " pick -> live wallpaper-intensity-" + i + " class immediately",
+      hasIntensityClass(i), "classes=" + viewerEl.className);
+    check("wallpaper intensity: " + i + " pick -> no other wallpaper-intensity-* class",
+      Array.from(viewerEl.classList).filter(c => c.startsWith("wallpaper-intensity-"))
+        .every(c => c === "wallpaper-intensity-" + i),
+      "classes=" + viewerEl.className);
+    await tick(400);
+    const posts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+    const lastPost = posts[posts.length - 1] || "";
+    check("wallpaper intensity: " + i + " pick -> config body has wallpaperIntensity:\"" + i + "\"",
+      new RegExp('"wallpaperIntensity":"' + i + '"').test(lastPost),
+      lastPost);
+  }
+  // Reset to subtle (the default) and close.
+  wpiRadio("subtle").checked = true;
+  wpiRadio("subtle").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("wallpaper intensity: subtle pick -> #viewer-content has wallpaper-intensity-subtle class",
+    hasIntensityClass("subtle"), "classes=" + viewerEl.className);
   window.NB.settings.close();
   await tick(10);
 
   // CSS source checks. The wallpaper styles are pure CSS gradients; jsdom
   // can't fully resolve the computed style of var()/calc() chains, so we
-  // assert against the production stylesheet source.
+  // assert against the production stylesheet source. The rules live on
+  // #viewer-content (the scroller + content element) and use
+  // background-attachment: local so the pattern actually scrolls with
+  // the content (the default `scroll` value would pin the background to
+  // the border box, which is the windowpane feel the user does NOT
+  // want). The wallpaper-fixed modifier flips it to `fixed` for the
+  // windowpane option.
   {
     const css = read("static/css/style.css");
-    const linesBlock = css.match(/#viewer\.wallpaper-lines\s*\{[^}]*\}/);
-    check("wallpaper: #viewer.wallpaper-lines rule exists in stylesheet",
+    const linesBlock = css.match(/#viewer-content\.wallpaper-lines\s*\{[^}]*\}/);
+    check("wallpaper: #viewer-content.wallpaper-lines rule exists in stylesheet",
       !!linesBlock, linesBlock ? linesBlock[0].slice(0, 80) : "(not found)");
-    check("wallpaper: #viewer.wallpaper-lines sets background-image (repeating-linear-gradient)",
+    check("wallpaper: #viewer-content.wallpaper-lines sets background-image (repeating-linear-gradient)",
       !!linesBlock && /repeating-linear-gradient/.test(linesBlock[0]),
       linesBlock ? linesBlock[0] : "(not found)");
     // Uses 1.5em so the line spacing tracks the body line-height and
     // re-spaces when the user changes the font size.
-    check("wallpaper: #viewer.wallpaper-lines uses 1.5em (font-size aware)",
+    check("wallpaper: #viewer-content.wallpaper-lines uses 1.5em (font-size aware)",
       !!linesBlock && /1\.5em/.test(linesBlock[0]),
       linesBlock ? linesBlock[0] : "(not found)");
+    // background-attachment: local is the load-bearing piece for the
+    // "Scroll with content" option. The default value `scroll` would
+    // pin the background to the element's border box (windowpane feel);
+    // `local` pins it to the element's contents so it actually scrolls
+    // with the text.
+    check("wallpaper: #viewer-content.wallpaper-lines has background-attachment: local (scrolls with content)",
+      !!linesBlock && /background-attachment\s*:\s*local/.test(linesBlock[0]),
+      linesBlock ? linesBlock[0] : "(not found)");
 
-    const gridBlock = css.match(/#viewer\.wallpaper-grid\s*\{[^}]*\}/);
-    check("wallpaper: #viewer.wallpaper-grid rule exists in stylesheet",
+    const gridBlock = css.match(/#viewer-content\.wallpaper-grid\s*\{[^}]*\}/);
+    check("wallpaper: #viewer-content.wallpaper-grid rule exists in stylesheet",
       !!gridBlock, gridBlock ? gridBlock[0].slice(0, 80) : "(not found)");
-    check("wallpaper: #viewer.wallpaper-grid sets background-image (linear-gradient)",
+    check("wallpaper: #viewer-content.wallpaper-grid sets background-image (linear-gradient)",
       !!gridBlock && /linear-gradient/.test(gridBlock[0]),
       gridBlock ? gridBlock[0] : "(not found)");
-    check("wallpaper: #viewer.wallpaper-grid sets background-size: 24px 24px",
+    check("wallpaper: #viewer-content.wallpaper-grid sets background-size: 24px 24px",
       !!gridBlock && /background-size\s*:\s*24px\s+24px/.test(gridBlock[0]),
       gridBlock ? gridBlock[0] : "(not found)");
+    check("wallpaper: #viewer-content.wallpaper-grid has background-attachment: local (scrolls with content)",
+      !!gridBlock && /background-attachment\s*:\s*local/.test(gridBlock[0]),
+      gridBlock ? gridBlock[0] : "(not found)");
 
-    // Both rules should target #viewer specifically (not a global class),
-    // so the wallpaper stays scoped to the preview area and doesn't bleed
-    // into the editor split-pane or other surfaces.
-    check("wallpaper: both wallpaper rules target #viewer specifically",
-      /#viewer\.wallpaper-(lines|grid)/.test(css),
-      "found #viewer.wallpaper-* selectors");
+    // Both rules should target #viewer-content specifically (not a global
+    // class), so the wallpaper stays scoped to the preview area and
+    // doesn't bleed into the editor split-pane or other surfaces.
+    check("wallpaper: both wallpaper rules target #viewer-content specifically",
+      /#viewer-content\.wallpaper-(lines|grid)/.test(css),
+      "found #viewer-content.wallpaper-* selectors");
+    // The fixed-mode rule toggles background-attachment: fixed when the
+    // user picks the "Fixed in viewport" option. Both wallpaper classes
+    // should be covered by the same rule (one rule, two selectors) so
+    // adding a new pattern automatically gets the fixed behavior too.
+    check("wallpaper: #viewer-content.wallpaper-{lines,grid}.wallpaper-fixed sets background-attachment: fixed",
+      /#viewer-content\.wallpaper-lines\.wallpaper-fixed\s*,\s*\n?\s*#viewer-content\.wallpaper-grid\.wallpaper-fixed\s*\{[^}]*background-attachment\s*:\s*fixed/.test(css),
+      "looking for combined .wallpaper-fixed rule");
+
+    // The color + intensity modifiers are one-line CSS variable overrides:
+    // the wallpaper-color-* classes set --wp-rgb (a 3-channel RGB value
+    // used inside rgb(var(--wp-rgb) / var(--wp-a))), and wallpaper-
+    // intensity-* classes set --wp-a (the stroke alpha). Verify the
+    // expected presets exist so picking them actually changes the paint.
+    check("wallpaper: #viewer-content.wallpaper-color-blue sets --wp-rgb",
+      /#viewer-content\.wallpaper-color-blue\s*\{[^}]*--wp-rgb\s*:/.test(css),
+      "looking for #viewer-content.wallpaper-color-blue { --wp-rgb: ... }");
+    check("wallpaper: #viewer-content.wallpaper-color-green sets --wp-rgb",
+      /#viewer-content\.wallpaper-color-green\s*\{[^}]*--wp-rgb\s*:/.test(css));
+    check("wallpaper: #viewer-content.wallpaper-color-purple sets --wp-rgb",
+      /#viewer-content\.wallpaper-color-purple\s*\{[^}]*--wp-rgb\s*:/.test(css));
+    check("wallpaper: #viewer-content.wallpaper-color-amber sets --wp-rgb",
+      /#viewer-content\.wallpaper-color-amber\s*\{[^}]*--wp-rgb\s*:/.test(css));
+    check("wallpaper: #viewer-content.wallpaper-intensity-subtle sets --wp-a",
+      /#viewer-content\.wallpaper-intensity-subtle\s*\{[^}]*--wp-a\s*:/.test(css));
+    check("wallpaper: #viewer-content.wallpaper-intensity-medium sets --wp-a",
+      /#viewer-content\.wallpaper-intensity-medium\s*\{[^}]*--wp-a\s*:/.test(css));
+    check("wallpaper: #viewer-content.wallpaper-intensity-bold sets --wp-a",
+      /#viewer-content\.wallpaper-intensity-bold\s*\{[^}]*--wp-a\s*:/.test(css));
+    // The base wallpaper rules (lines + grid) must actually use the
+    // --wp-rgb / --wp-a variables in their stroke color so the
+    // color/intensity modifiers have an effect. Without this, the
+    // modifiers are dead.
+    const usesRgb = !!linesBlock && /rgb\(\s*var\(--wp-rgb\)/.test(linesBlock[0]);
+    const usesAlpha = !!linesBlock && /var\(--wp-a\)/.test(linesBlock[0]);
+    check("wallpaper: #viewer-content.wallpaper-lines uses --wp-rgb / --wp-a",
+      usesRgb && usesAlpha, linesBlock ? linesBlock[0] : "(not found)");
+    const gridUsesRgb = !!gridBlock && /rgb\(\s*var\(--wp-rgb\)/.test(gridBlock[0]);
+    const gridUsesAlpha = !!gridBlock && /var\(--wp-a\)/.test(gridBlock[0]);
+    check("wallpaper: #viewer-content.wallpaper-grid uses --wp-rgb / --wp-a",
+      gridUsesRgb && gridUsesAlpha, gridBlock ? gridBlock[0] : "(not found)");
+  }
+
+  console.log("== welcome page ==");
+  // The welcome page is the empty-state for the right pane: shown
+  // when there are no open tabs (fresh install with no fallback,
+  // closed the last tab, deleted the only open file). It carries
+  // a small action panel -- "New note" + "Open Welcome.md" (the
+  // latter only when Welcome.md is in the tree) -- and a tips list.
+  // The earlier "close last tab -> welcome page is visible" check
+  // already proved the page renders in the standard close-last-tab
+  // path. Here we exercise the rest of the contract, so we re-enter
+  // the welcome state explicitly: close all open tabs first.
+
+  // Close any currently-open tabs so we're back in the empty state.
+  // We snapshot the open list first and force-close each one (force
+  // skips the dirty-confirm). The very last close fires clear() ->
+  // showWelcome().
+  const openBefore = window.NB.tabs.getOpen().slice();
+  for (const p of openBefore) window.NB.tabs.close(p, { force: true });
+  await tick(40);
+
+  // Verify the structural elements + action buttons.
+  const welcomeEl = $("welcome");
+  check("welcome: <div#welcome> exists", !!welcomeEl);
+  check("welcome: #welcome is visible", !welcomeEl.hidden);
+  check("welcome: #viewer is hidden", $("viewer").hidden);
+  check("welcome: icon present", !!welcomeEl.querySelector(".welcome-icon"));
+  check("welcome: title present",
+    /Welcome to your notebook/.test(welcomeEl.querySelector(".welcome-title").textContent));
+  check("welcome: subtitle present",
+    /Create a new note/.test(welcomeEl.querySelector(".welcome-subtitle").textContent));
+  check("welcome: tips list has 4 entries",
+    welcomeEl.querySelectorAll(".welcome-tips li").length === 4);
+  check("welcome: tips list contains a <kbd> element",
+    welcomeEl.querySelectorAll(".welcome-tips kbd").length >= 1);
+  const newBtn = welcomeEl.querySelector('[data-act="new"]');
+  check("welcome: 'New note' button present", !!newBtn);
+  check("welcome: 'New note' button is visible", !newBtn.hidden);
+  const openWelcomeBtn = welcomeEl.querySelector('[data-act="open-welcome"]');
+  check("welcome: 'Open Welcome.md' button present", !!openWelcomeBtn);
+  // The default notebook fixture ships with Welcome.md, so the button
+  // should be revealed (not hidden) by showWelcome().
+  check("welcome: 'Open Welcome.md' button is visible (Welcome.md in tree)",
+    !openWelcomeBtn.hidden,
+    "hidden=" + openWelcomeBtn.hidden);
+
+  // Override NB.sidebar.getTree() to simulate Welcome.md being deleted.
+  // Re-call showWelcome() to re-evaluate the button visibility.
+  const realGetTree = window.NB.sidebar.getTree;
+  window.NB.sidebar.getTree = () => [];
+  window.NB.viewer.showWelcome && window.NB.viewer.showWelcome();
+  await tick(20);
+  check("welcome: 'Open Welcome.md' button is hidden when Welcome.md not in tree",
+    welcomeEl.querySelector('[data-act="open-welcome"]').hidden,
+    "hidden=" + welcomeEl.querySelector('[data-act="open-welcome"]').hidden);
+  // Restore the real getTree.
+  window.NB.sidebar.getTree = realGetTree;
+
+  // 'New note' button delegates to NB.sidebar.createAtRoot("file").
+  // Stub the create at the api level so we can confirm it's called
+  // with the right type without actually creating a file. Then click
+  // the button.
+  const beforeTree = window.NB.sidebar.getTree();
+  const newBtnAfter = welcomeEl.querySelector('[data-act="new"]');
+  // The prompt is stubbed at the harness level; restore it for a moment
+  // so we can capture the value. The harness default for prompt is "".
+  // We want the new-file path to be created -- so we just assert the
+  // click went through createAtRoot without throwing.
+  let newFileCalled = false;
+  const realCreateAtRoot = window.NB.sidebar.createAtRoot;
+  window.NB.sidebar.createAtRoot = function (type) {
+    newFileCalled = (type === "file");
+  };
+  newBtnAfter.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("welcome: 'New note' click -> sidebar.createAtRoot('file') called",
+    newFileCalled);
+  window.NB.sidebar.createAtRoot = realCreateAtRoot;
+
+  // 'Open Welcome.md' click -> NB.tabs.open("Welcome.md") called.
+  let openCalled = null;
+  const realTabsOpen = window.NB.tabs.open;
+  window.NB.tabs.open = function (path) {
+    openCalled = path;
+    return realTabsOpen.call(window.NB.tabs, path);
+  };
+  // The button was hidden above when we faked an empty tree, so we
+  // need to re-run showWelcome to make it visible first. The real
+  // getTree is restored, so Welcome.md is in the tree.
+  window.NB.viewer.showWelcome();
+  await tick(20);
+  const openWelcomeBtnAfter = welcomeEl.querySelector('[data-act="open-welcome"]');
+  check("welcome: 'Open Welcome.md' button visible again after real tree restored",
+    !openWelcomeBtnAfter.hidden);
+  openWelcomeBtnAfter.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("welcome: 'Open Welcome.md' click -> NB.tabs.open('Welcome.md') called",
+    openCalled === "Welcome.md",
+    "openCalled=" + openCalled);
+  window.NB.tabs.open = realTabsOpen;
+
+  // Opening a file should hide the welcome page and show the viewer.
+  // (This time we use the real open, so the file actually loads.)
+  check("welcome: opening a file hides the welcome page",
+    $("welcome").hidden,
+    "welcome.hidden=" + $("welcome").hidden);
+  check("welcome: opening a file reveals the viewer",
+    !$("viewer").hidden);
+
+  // CSS regression guards. Same pattern as the wallpaper checks: the
+  // welcome styles live in style.css, and we assert against the
+  // production source so jsdom's incomplete style resolution doesn't
+  // hide a regression.
+  {
+    const css = read("static/css/style.css");
+    const welcomeBlock = css.match(/\.welcome\s*\{[^}]*\}/);
+    check("welcome: .welcome rule exists in stylesheet",
+      !!welcomeBlock, welcomeBlock ? welcomeBlock[0].slice(0, 80) : "(not found)");
+    // The page centers its content -- display:flex with the centering
+    // props is the load-bearing piece.
+    check("welcome: .welcome uses display:flex (vertical centering)",
+      !!welcomeBlock && /display\s*:\s*flex/.test(welcomeBlock[0]),
+      welcomeBlock ? welcomeBlock[0] : "(not found)");
+    check("welcome: .welcome uses align-items:center",
+      !!welcomeBlock && /align-items\s*:\s*center/.test(welcomeBlock[0]));
+    check("welcome: .welcome uses justify-content:center",
+      !!welcomeBlock && /justify-content\s*:\s*center/.test(welcomeBlock[0]));
+    // Action buttons: hover state with the accent token so they read
+    // as interactive in both themes.
+    const actionBlock = css.match(/\.welcome-action:hover\s*\{[^}]*\}/);
+    check("welcome: .welcome-action:hover rule exists",
+      !!actionBlock, actionBlock ? actionBlock[0].slice(0, 80) : "(not found)");
+    check("welcome: .welcome-action:hover uses --accent-soft (theme-aware)",
+      !!actionBlock && /var\(--accent-soft\)/.test(actionBlock[0]),
+      actionBlock ? actionBlock[0] : "(not found)");
+    // The kbd element should have a monospace font + border to look
+    // like a key cap.
+    const kbdBlock = css.match(/\.welcome-tips\s+kbd\s*\{[^}]*\}/);
+    check("welcome: .welcome-tips kbd rule exists",
+      !!kbdBlock, kbdBlock ? kbdBlock[0].slice(0, 80) : "(not found)");
+    check("welcome: .welcome-tips kbd uses a monospace font family",
+      !!kbdBlock && /monospace/i.test(kbdBlock[0]),
+      kbdBlock ? kbdBlock[0] : "(not found)");
+    // Defensive: .welcome[hidden] must collapse to display:none so the
+    // standard HTML `hidden` attribute works on the block.
+    check("welcome: .welcome[hidden] sets display:none",
+      /\.welcome\[hidden\]\s*\{\s*display\s*:\s*none/.test(css),
+      "looking for .welcome[hidden] { display: none; }");
+    // Regression guard: #viewer's base rule sets `display: flex`, which
+    // outranks the UA's [hidden] { display: none } (user CSS > UA CSS).
+    // Without an explicit #viewer[hidden] { display: none } override,
+    // setting viewer.hidden = true (when the welcome page is up) leaves
+    // the viewer in the flex column with its full `flex: 1 1 auto` share
+    // of the height -- the element stays in the layout, splits the
+    // column with #welcome, and the welcome centers in the bottom half
+    // instead of the full pane.
+    check("welcome: #viewer[hidden] sets display:none (overrides user CSS display:flex)",
+      /#viewer\[hidden\]\s*\{\s*display\s*:\s*none/.test(css),
+      "looking for #viewer[hidden] { display: none; }");
+    // Regression guard: .edit-split must be a real flex column, NOT
+    // `display: contents`. With `display: contents` the wrapper has
+    // no box, so #raw-editor / #viewer / #welcome become direct flex
+    // items of #editor-pane. Since #raw-editor and #viewer are also
+    // flex: 1 1 auto, the visible welcome ends up sharing the column
+    // with them -- the row height gets split, and the welcome (which
+    // centers in its own box) appears in the bottom half instead of
+    // the full pane. A real flex column wrapper means only the visible
+    // child fills the slot.
+    const editSplitBlock = css.match(/\.edit-split\s*\{[^}]*\}/);
+    check("welcome: .edit-split rule exists in stylesheet",
+      !!editSplitBlock, editSplitBlock ? editSplitBlock[0].slice(0, 80) : "(not found)");
+    check("welcome: .edit-split is NOT display:contents (real flex wrapper)",
+      !!editSplitBlock && !/display\s*:\s*contents/.test(editSplitBlock[0]),
+      editSplitBlock ? editSplitBlock[0] : "(not found)");
+    check("welcome: .edit-split is display:flex (real flex wrapper)",
+      !!editSplitBlock && /display\s*:\s*flex/.test(editSplitBlock[0]),
+      editSplitBlock ? editSplitBlock[0] : "(not found)");
+    check("welcome: .edit-split is flex-direction:column (vertical stack of children)",
+      !!editSplitBlock && /flex-direction\s*:\s*column/.test(editSplitBlock[0]),
+      editSplitBlock ? editSplitBlock[0] : "(not found)");
   }
 
   console.log("== viewer top spacing ==");
@@ -2299,15 +2762,20 @@ function check(label, cond, extra) {
   // the viewer -- otherwise the viewer padding + the heading's own
   // top-margin stack into a large empty band above the title (regression
   // guard for a reported UX bug). We assert on the CSS source directly:
-  // the production stylesheet must (a) keep #viewer's top padding small
-  // and (b) zero out the top margin of the first child of .markdown-body.
+  // the production stylesheet must (a) keep the scroll container's top
+  // padding small and (b) zero out the top margin of the first child of
+  // .markdown-body.
+  //
+  // The padding lives on #viewer-content (the scroller) after the
+  // wallpaper scroll-sync restructure; #viewer is now a non-scrolling
+  // shell that just wraps it.
   {
     const css = read("static/css/style.css");
-    // #viewer padding must not have a 60vh / 50vh / etc. (units relative
-    // to viewport create huge empty bands on tall windows). Top padding
-    // should be a small absolute value.
-    const viewerBlock = css.match(/#viewer\s*\{[^}]*\}/);
-    check("viewer: #viewer rule exists in stylesheet", !!viewerBlock,
+    // #viewer-content padding must not have a 60vh / 50vh / etc. (units
+    // relative to viewport create huge empty bands on tall windows).
+    // Top padding should be a small absolute value.
+    const viewerBlock = css.match(/#viewer-content\s*\{[^}]*\}/);
+    check("viewer: #viewer-content rule exists in stylesheet", !!viewerBlock,
       viewerBlock ? viewerBlock[0].slice(0, 80) : "(not found)");
     const topPadMatch = viewerBlock && viewerBlock[0].match(/padding\s*:\s*([^;]+);/);
     const topPadVal = topPadMatch ? topPadMatch[1].trim() : "";
@@ -2315,7 +2783,7 @@ function check(label, cond, extra) {
     const topPadPx = tokens[0] || "";
     // The first padding token (top) should be a small px value -- not vh,
     // not %, not em, not auto.
-    check("viewer: #viewer padding-top is a small px value (<= 20px)",
+    check("viewer: #viewer-content padding-top is a small px value (<= 20px)",
       /^\d+px$/.test(topPadPx) && parseInt(topPadPx, 10) <= 20,
       "padding=" + topPadVal);
     // The :first-child reset must be present and must come AFTER the

@@ -82,7 +82,39 @@
         </div>
         <div id="edit-split" class="edit-split">
           <textarea id="raw-editor" hidden spellcheck="false"></textarea>
-          <div id="viewer" class="markdown-body"></div>
+          <!-- #viewer is a non-scrolling shell (visibility, flex sizing);
+               the inner #viewer-content is the actual scroller and
+               holds the rendered markdown. Wallpaper lives on
+               #viewer-content so it's anchored to the content itself
+               and scrolls in perfect lockstep with the text. -->
+          <div id="viewer">
+            <div id="viewer-content" class="markdown-body"></div>
+          </div>
+          <!-- #welcome shows when there's no file open. Same shell-scoping
+               idea as #viewer: a single sibling that owns the empty-state
+               presentation. Action buttons (New note, Open Welcome.md)
+               wire through viewer.js so all empty-state logic lives in
+               one module. -->
+          <div id="welcome" class="welcome" hidden>
+            <div class="welcome-inner">
+              <div class="welcome-icon">📓</div>
+              <h2 class="welcome-title">Welcome to your notebook</h2>
+              <p class="welcome-subtitle">
+                Create a new note to get started, or pick one from the left.
+              </p>
+              <div class="welcome-actions">
+                <button class="welcome-action" data-act="new">+ New note</button>
+                <button class="welcome-action" data-act="open-welcome" hidden>Open Welcome.md</button>
+              </div>
+              <hr class="welcome-divider">
+              <ul class="welcome-tips">
+                <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li>
+                <li>Right-click the sidebar to create, rename, copy, or delete</li>
+                <li>Use the top search bar to find anything in your notebook</li>
+                <li>The ⚙ button picks theme, font size, and wallpaper</li>
+              </ul>
+            </div>
+          </div>
         </div>
         <div id="search-results" class="search-results" hidden>
           <div class="search-results-header">
@@ -141,109 +173,162 @@
         <button id="settings-close" class="icon-btn" title="Close" aria-label="Close">×</button>
       </div>
       <div class="settings-body">
-        <section class="settings-section">
-          <h3>Appearance</h3>
-          <div class="settings-row">
-            <label class="settings-label">Theme</label>
-            <div class="settings-control theme-options">
-              <label><input type="radio" name="theme" value="auto"> Auto</label>
-              <label><input type="radio" name="theme" value="dark"> Dark</label>
-              <label><input type="radio" name="theme" value="light"> Light</label>
+        <!-- Left sidebar nav. Each entry maps to a .settings-section in
+             the right column via data-tab ↔ data-section. The active
+             entry gets `.active` + `aria-selected="true"` and the
+             matching section is unhidden. -->
+        <nav class="settings-nav" role="tablist" aria-label="Settings sections">
+          <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general">⚙ General</button>
+          <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance">🎨 Appearance</button>
+          <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security">🔒 Security</button>
+          <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about">ℹ About</button>
+        </nav>
+        <div class="settings-sections">
+          <!-- General: file watching (was its own "File watching" section). -->
+          <section class="settings-section" data-section="general" id="settings-section-general">
+            <h3>File watching</h3>
+            <p class="settings-help">
+              Get notified when files in your notebook are changed by another program
+              (vim, a sync tool, a different browser tab, etc.).
+            </p>
+            <div class="settings-row">
+              <span class="settings-label">Status</span>
+              <span id="settings-watch-status" class="settings-value">—</span>
             </div>
-          </div>
-          <div class="settings-row">
-            <label class="settings-label">Font size</label>
-            <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
-              <label><input type="radio" name="fontSize" value="small"> S</label>
-              <label><input type="radio" name="fontSize" value="medium"> M</label>
-              <label><input type="radio" name="fontSize" value="large"> L</label>
-              <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+            <div class="settings-row">
+              <span class="settings-label"></span>
+              <button id="settings-watch-toggle" class="settings-action">Enable</button>
             </div>
-          </div>
-          <div class="settings-row">
-            <label class="settings-label">Wallpaper</label>
-            <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
-              <label><input type="radio" name="wallpaper" value="none"> None</label>
-              <label><input type="radio" name="wallpaper" value="lines"> Lines</label>
-              <label><input type="radio" name="wallpaper" value="grid"> Grid</label>
+          </section>
+
+          <!-- Appearance: theme, font size, wallpaper (pattern / color / intensity / scroll). -->
+          <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
+            <h3>Appearance</h3>
+            <div class="settings-row">
+              <label class="settings-label">Theme</label>
+              <div class="settings-control theme-options">
+                <label><input type="radio" name="theme" value="auto"> Auto</label>
+                <label><input type="radio" name="theme" value="dark"> Dark</label>
+                <label><input type="radio" name="theme" value="light"> Light</label>
+              </div>
             </div>
-          </div>
-        </section>
+            <div class="settings-row">
+              <label class="settings-label">Font size</label>
+              <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
+                <label><input type="radio" name="fontSize" value="small"> S</label>
+                <label><input type="radio" name="fontSize" value="medium"> M</label>
+                <label><input type="radio" name="fontSize" value="large"> L</label>
+                <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Settings modal width</label>
+              <div class="settings-control settings-modal-width-options" role="radiogroup" aria-label="Settings modal width">
+                <label><input type="radio" name="settingsModalWidth" value="compact"> Compact</label>
+                <label><input type="radio" name="settingsModalWidth" value="medium"> Medium</label>
+                <label><input type="radio" name="settingsModalWidth" value="wide"> Wide</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Settings modal height</label>
+              <div class="settings-control settings-modal-height-options" role="radiogroup" aria-label="Settings modal height">
+                <label><input type="radio" name="settingsModalHeight" value="compact"> Compact</label>
+                <label><input type="radio" name="settingsModalHeight" value="medium"> Medium</label>
+                <label><input type="radio" name="settingsModalHeight" value="wide"> Wide</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Wallpaper</label>
+              <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
+                <label><input type="radio" name="wallpaper" value="none"> None</label>
+                <label><input type="radio" name="wallpaper" value="lines"> Lines</label>
+                <label><input type="radio" name="wallpaper" value="grid"> Grid</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Wallpaper scroll</label>
+              <div class="settings-control wallpaper-scroll-options" role="radiogroup" aria-label="Wallpaper scroll behavior">
+                <label><input type="radio" name="wallpaperScroll" value="scroll"> Scroll with content</label>
+                <label><input type="radio" name="wallpaperScroll" value="fixed"> Fixed in viewport</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Wallpaper color</label>
+              <div class="settings-control wallpaper-color-options" role="radiogroup" aria-label="Wallpaper color">
+                <label><input type="radio" name="wallpaperColor" value="neutral"> Neutral</label>
+                <label><input type="radio" name="wallpaperColor" value="blue"> Blue</label>
+                <label><input type="radio" name="wallpaperColor" value="green"> Green</label>
+                <label><input type="radio" name="wallpaperColor" value="purple"> Purple</label>
+                <label><input type="radio" name="wallpaperColor" value="amber"> Amber</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label">Wallpaper intensity</label>
+              <div class="settings-control wallpaper-intensity-options" role="radiogroup" aria-label="Wallpaper intensity">
+                <label><input type="radio" name="wallpaperIntensity" value="subtle"> Subtle</label>
+                <label><input type="radio" name="wallpaperIntensity" value="medium"> Medium</label>
+                <label><input type="radio" name="wallpaperIntensity" value="bold"> Bold</label>
+              </div>
+            </div>
+          </section>
 
-        <section class="settings-section">
-          <h3>File watching</h3>
-          <p class="settings-help">
-            Get notified when files in your notebook are changed by another program
-            (vim, a sync tool, a different browser tab, etc.).
-          </p>
-          <div class="settings-row">
-            <span class="settings-label">Status</span>
-            <span id="settings-watch-status" class="settings-value">—</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label"></span>
-            <button id="settings-watch-toggle" class="settings-action">Enable</button>
-          </div>
-        </section>
+          <!-- Security: passwords (per-section Save/Remove, reloads the page on success). -->
+          <section class="settings-section" data-section="security" id="settings-section-security" hidden>
+            <h3>Passwords</h3>
+            <p id="settings-auth-help" class="settings-help">
+              Sign in as admin to change passwords.
+            </p>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
+              <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input"
+                     autocomplete="new-password" placeholder="Enter new password" disabled>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">
+                <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
+              </span>
+              <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
+              <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-row" hidden>
+              <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
+              <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input"
+                     autocomplete="new-password" placeholder="Enter new password">
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-actions" hidden>
+              <span class="settings-label">
+                <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
+              </span>
+              <span class="settings-control">
+                <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
+                <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
+              </span>
+            </div>
+            <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+          </section>
 
-        <section class="settings-section" id="settings-auth-section">
-          <h3>Passwords</h3>
-          <p id="settings-auth-help" class="settings-help">
-            Sign in as admin to change passwords.
-          </p>
-          <div class="settings-row">
-            <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
-            <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input"
-                   autocomplete="new-password" placeholder="Enter new password" disabled>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">
-              <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-            </span>
-            <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
-          </div>
-          <div class="settings-row">
-            <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
-            <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
-          </div>
-          <div class="settings-row" id="settings-auth-viewer-row" hidden>
-            <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
-            <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input"
-                   autocomplete="new-password" placeholder="Enter new password">
-          </div>
-          <div class="settings-row" id="settings-auth-viewer-actions" hidden>
-            <span class="settings-label">
-              <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
-            </span>
-            <span class="settings-control">
-              <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
-              <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
-            </span>
-          </div>
-          <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
-        </section>
-
-        <section class="settings-section">
-          <h3>About</h3>
-          <div class="settings-row">
-            <span class="settings-label">Data folder</span>
-            <code id="settings-data-dir" class="settings-value settings-mono">…</code>
-          </div>
-          <div class="settings-row">
-            <span class="settings-label">Config folder</span>
-            <code id="settings-config-dir" class="settings-value settings-mono">…</code>
-          </div>
-        </section>
+          <!-- About: data + config folder paths. -->
+          <section class="settings-section" data-section="about" id="settings-section-about" hidden>
+            <h3>About</h3>
+            <div class="settings-row">
+              <span class="settings-label">Data folder</span>
+              <code id="settings-data-dir" class="settings-value settings-mono">…</code>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Config folder</span>
+              <code id="settings-config-dir" class="settings-value settings-mono">…</code>
+            </div>
+          </section>
+        </div>
       </div>
-      <!-- Footer with draft-then-commit buttons. The Apply/Save buttons are
-           disabled when there are no pending changes; Cancel always
-           discards the draft and closes. The Passwords section above has
-           its own per-section Save/Remove flow and is unaffected by this
-           footer. -->
+      <!-- Footer: just a Close button. All settings are live (changes
+           apply immediately, no Apply/Save step), so the only action
+           left is to dismiss the modal. -->
       <div class="settings-footer">
-        <button id="settings-apply" class="settings-action">Apply</button>
-        <button id="settings-save" class="settings-action">Save</button>
-        <button id="settings-cancel" class="settings-action">Cancel</button>
+        <button id="settings-close-btn" class="settings-action">Close</button>
       </div>
     </div>
   </div>

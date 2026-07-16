@@ -10,7 +10,13 @@
   "use strict";
   window.NB = window.NB || {};
 
-  const viewerEl   = document.getElementById("viewer");
+  // #viewer is the non-scrolling shell; #viewer-content is the scroller
+  // that holds the rendered markdown. Operations on the content (render,
+  // scroll, query) target viewerContentEl; visibility toggles target
+  // viewerEl (the shell) so the whole pane disappears at once.
+  const viewerEl        = document.getElementById("viewer");
+  const viewerContentEl = document.getElementById("viewer-content");
+  const welcomeEl       = document.getElementById("welcome");
   const editorEl   = document.getElementById("raw-editor");
   const editSplit  = document.getElementById("edit-split");
   const topbar     = document.getElementById("topbar");
@@ -55,23 +61,23 @@
    * (it would flicker on every keystroke). */
   function render(content) {
     const src = content !== undefined ? content : (cur() ? cur().content : null);
-    if (src == null) { viewerEl.innerHTML = ""; return; }
+    if (src == null) { viewerContentEl.innerHTML = ""; return; }
     seenIds = {}; // reset dedup per render
     if (window.marked) {
-      viewerEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
+      viewerContentEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
     } else {
-      viewerEl.innerHTML = "<p>marked.js failed to load.</p>";
+      viewerContentEl.innerHTML = "<p>marked.js failed to load.</p>";
       return;
     }
 
     // Heading ids (deduped).
-    viewerEl.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {
+    viewerContentEl.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {
       h.id = slugify(h.textContent);
     });
 
     // Syntax highlighting via highlight.js (vendored).
     if (window.hljs) {
-      viewerEl.querySelectorAll("pre code").forEach(el => {
+      viewerContentEl.querySelectorAll("pre code").forEach(el => {
         try { hljs.highlightElement(el); }
         catch (e) { /* fall back to plain text already in place */ }
       });
@@ -79,8 +85,8 @@
 
     // Only rebuild the outline for the "real" render (not live preview).
     if (content === undefined && NB.outline) {
-      NB.outline.build(viewerEl);
-      NB.outline.startWatching(viewerEl);
+      NB.outline.build(viewerContentEl);
+      NB.outline.startWatching(viewerContentEl);
     }
   }
 
@@ -146,36 +152,88 @@
     requestAnimationFrame(() => { syncing = false; });
   }
 
-  function onEditorScroll() { syncScroll(editorEl, viewerEl); }
-  function onViewerScroll() { syncScroll(viewerEl, editorEl); }
+  function onEditorScroll() { syncScroll(editorEl, viewerContentEl); }
+  function onViewerScroll() { syncScroll(viewerContentEl, editorEl); }
 
   function showViewer() {
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
     editorEl.hidden = true;
     viewerEl.hidden = false;
+    // The welcome page is the empty-state sibling of #viewer; hide it
+    // whenever a file is actually shown, so it doesn't stack on top
+    // of the markdown content visually.
+    if (welcomeEl) welcomeEl.hidden = true;
     editorEl.removeEventListener("scroll", onEditorScroll);
-    viewerEl.removeEventListener("scroll", onViewerScroll);
+    viewerContentEl.removeEventListener("scroll", onViewerScroll);
     refreshTopbar();
     if (NB.editbar) NB.editbar.hide();
   }
   function showEditor() {
     editorEl.hidden = false;
     viewerEl.hidden = !showPreview;
+    if (welcomeEl) welcomeEl.hidden = true;
     previewBtn.classList.toggle("editing", showPreview);
     if (showPreview) {
       editSplit.classList.add("split");
       render(editorEl.value);
       editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
-      viewerEl.addEventListener("scroll", onViewerScroll, { passive: true });
+      viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       editSplit.classList.remove("split");
       editorEl.removeEventListener("scroll", onEditorScroll);
-      viewerEl.removeEventListener("scroll", onViewerScroll);
+      viewerContentEl.removeEventListener("scroll", onViewerScroll);
     }
     refreshTopbar();
     editorEl.focus();
     if (NB.editbar) NB.editbar.show();
+  }
+
+  /* --- empty state: welcome page ------------------------------------ */
+  /* The welcome page is shown whenever there are no open tabs. The
+   * "New note" button delegates to NB.sidebar.createAtRoot("file") so
+   * the user gets the same prompt + create + open flow as the sidebar's
+   * right-click "New file…" action. The "Open Welcome.md" button only
+   * appears when the file actually exists in the tree (a power user
+   * who deleted the starter notebook doesn't see a dead link). */
+  function findInTree(tree, basename) {
+    for (const n of tree) {
+      if (n.type === "file" && n.name === basename) return n;
+      if (n.children && findInTree(n.children, basename)) return n;
+    }
+    return null;
+  }
+  function showWelcome() {
+    active = null;
+    cache.clear();
+    clearTimeout(liveTimer);
+    editSplit.classList.remove("split");
+    editorEl.removeEventListener("scroll", onEditorScroll);
+    viewerContentEl.removeEventListener("scroll", onViewerScroll);
+    editorEl.hidden = true;
+    viewerEl.hidden = true;
+    welcomeEl.hidden = false;
+    // Clear the previous file's rendered markdown from #viewer-content
+    // (and drop the per-render heading-id dedup state via seenIds).
+    // Without this, the old HTML stays in the DOM inside the now-hidden
+    // #viewer and resurfaces whenever something briefly un-hides it
+    // (a CSS transition, a tab switch mid-fade, devtools, etc.). It
+    // also means the next file's outline.build() starts from a clean
+    // slate -- no leftover heading ids to collide with.
+    viewerContentEl.innerHTML = "";
+    seenIds = {};
+    // Reveal "Open Welcome.md" iff Welcome.md is in the current tree.
+    const openWelcomeBtn = welcomeEl.querySelector('[data-act="open-welcome"]');
+    if (openWelcomeBtn) {
+      const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : [];
+      openWelcomeBtn.hidden = !findInTree(tree, "Welcome.md");
+    }
+    // The outline still watches viewerContentEl (which is hidden but
+    // present); rebuild it so the right-pane shows "No headings" rather
+    // than stale entries from the last opened file.
+    if (NB.outline) NB.outline.build(viewerContentEl);
+    refreshTopbar();
+    if (NB.editbar) NB.editbar.hide();
   }
 
   /* --- public API ----------------------------------------------------- */
@@ -218,22 +276,16 @@
       if (active === from) active = to;
     },
 
-    /* No tabs open: show a placeholder. */
-    clear() {
-      active = null;
-      cache.clear();
-      clearTimeout(liveTimer);
-      editSplit.classList.remove("split");
-      editorEl.removeEventListener("scroll", onEditorScroll);
-      viewerEl.removeEventListener("scroll", onViewerScroll);
-      editorEl.hidden = true;
-      viewerEl.hidden = false;
-      viewerEl.innerHTML =
-        '<p style="color:var(--fg-muted)">No file selected.</p>';
-      if (NB.outline) NB.outline.build(viewerEl);
-      refreshTopbar();
-      if (NB.editbar) NB.editbar.hide();
-    },
+    /* No tabs open: show the welcome page. The page is a sibling of
+     * #viewer inside #edit-split, with a small "New note" /
+     * "Open Welcome.md" action panel. The Open-Welcome button is only
+     * revealed when Welcome.md actually exists in the tree, so a power
+     * user who deleted it doesn't see a dead link. */
+    clear() { showWelcome(); },
+    /* Re-enter the empty state (e.g. after a test close). Alias for
+     * clear(); exposed under its own name so callers (and tests) can
+     * be explicit about intent. */
+    showWelcome() { showWelcome(); },
 
     getPath() { return active; },
     getContent() { const t = cur(); return t ? (t.editMode ? editorEl.value : t.content) : ""; },
@@ -311,7 +363,7 @@
       const flags = caseSensitive ? "" : "i";
       const re = new RegExp(escapeRegex(term), flags);
       const walker = document.createTreeWalker(
-        viewerEl, NodeFilter.SHOW_TEXT, null);
+        viewerContentEl, NodeFilter.SHOW_TEXT, null);
       let node;
       while ((node = walker.nextNode())) {
         const txt = node.nodeValue;
@@ -355,16 +407,30 @@
       editSplit.classList.add("split");
       render(editorEl.value);
       editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
-      viewerEl.addEventListener("scroll", onViewerScroll, { passive: true });
+      viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       viewerEl.hidden = true;
       editSplit.classList.remove("split");
       editorEl.removeEventListener("scroll", onEditorScroll);
-      viewerEl.removeEventListener("scroll", onViewerScroll);
+      viewerContentEl.removeEventListener("scroll", onViewerScroll);
     }
   });
   saveBtn.addEventListener("click", () => NB.viewer.save());
   closeEditBtn.addEventListener("click", () => NB.viewer.closeEdit());
+
+  /* Welcome page action buttons. "New note" -> sidebar's create-at-root
+   * flow (same path the right-click context menu uses). "Open
+   * Welcome.md" -> tabs.open() with the standard bootstrap path. */
+  welcomeEl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".welcome-action");
+    if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "new") {
+      if (NB.sidebar && NB.sidebar.createAtRoot) NB.sidebar.createAtRoot("file");
+    } else if (act === "open-welcome") {
+      if (NB.tabs) NB.tabs.open("Welcome.md");
+    }
+  });
 
   /* External file change (watcher or poll). Refetch the file. If the user
    * has unsaved edits, prompt; if they say no, mark the tab as a conflict

@@ -469,21 +469,63 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   align-items: center;
   justify-content: center;
   z-index: 2000;
+  /* The overlay is the centering flex parent. `min-width: 0` on the
+   * row axis (default direction) lets the centered child actually
+   * shrink to its preferred width instead of growing to the viewport
+   * when its content has a wide intrinsic min-size (e.g. a long file
+   * path in the About section's .settings-mono code block). Without
+   * this, the flex item's default min-width:auto would let any
+   * unbreakable child push the modal wider than the chosen size. */
+  min-width: 0;
+  min-height: 0;
 }
 /* The `hidden` attribute is in the markup, but our `display: flex` above
  * outranks the UA's `[hidden] { display: none }`. Re-assert it explicitly
  * so the overlay starts closed and stays closed. */
 .settings-overlay[hidden] { display: none; }
 .settings-modal {
-  width: min(720px, 92vw);
-  max-height: 86vh;
-  overflow-y: auto;
+  /* Width and height are driven by --settings-modal-width /
+   * --settings-modal-height, set on :root by JS
+   * (app.js:applySettingsModalWidth / Height). The user picks from
+   * compact / medium / wide, each of which is a viewport percentage
+   * (vw / vh), so the modal scales with the browser window: on a
+   * 1920x1080 display 75vw = 1440px and 80vh = 864px; on a 1280x768
+   * laptop the same "medium" preset = 960 x 614px. The fall-through
+   * defaults (75vw / 80vh) match the DEFAULTS values, so a missing
+   * inline style (e.g. before applyConfig() runs on first boot)
+   * still renders the modal at the medium size.
+   *
+   * The outer `min(..., 96vw)` and `min(..., 92vh)` clamps keep the
+   * modal slightly inset from the viewport edge on unusually small
+   * screens -- there is always a sliver of dim backdrop visible on
+   * the sides and top/bottom, and the modal can never be pushed off
+   * the visible area.
+   *
+   * `flex: 0 0 auto` pins the modal to its chosen size inside the
+   * overlay's centering flex parent. Without this, the modal would
+   * expand to fit the widest section's intrinsic min-content (a long
+   * file path in About, the Security status row, etc.), so switching
+   * tabs would visibly resize the modal. The body / sections / rows
+   * min-width:0 chain (added in the previous turn) lets any wide
+   * intrinsic child shrink instead of expanding the outer width.
+   *
+   * The inner .settings-body fills the available space, and the
+   * inner .settings-sections pane has overflow-y: auto, so a future
+   * section taller than the chosen height scrolls inside the modal
+   * -- the outer size stays the same. */
+  flex: 0 0 auto;
+  width: min(var(--settings-modal-width, 75vw), 96vw);
+  height: min(var(--settings-modal-height, 80vh), 92vh);
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
   display: flex;
   flex-direction: column;
+  /* Header + footer stay fixed; the body (and its inner sections pane)
+   * owns the scroll. `overflow: hidden` keeps the rounded corners
+   * crisp instead of clipping to a scrollbar. */
+  overflow: hidden;
 }
 .settings-header {
   display: flex;
@@ -491,6 +533,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   justify-content: space-between;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .settings-header h2 {
   margin: 0;
@@ -498,9 +541,77 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   font-weight: 600;
   letter-spacing: .3px;
 }
-.settings-body { padding: 8px 18px 18px; }
-.settings-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
-.settings-section:last-child { border-bottom: none; }
+/* Body: flex row with a sidebar nav on the left and the section pane on
+ * the right. `min-height: 0` is the load-bearing piece that lets the
+ * inner .settings-sections pane scroll instead of pushing the modal
+ * taller than max-height. `min-width: 0` is the cross-axis equivalent:
+ * without it, a wide intrinsic child (a long file path in About, a
+ * long status string in Security) would push the body wider than the
+ * modal, breaking the user's chosen modal width when they switch tabs. */
+.settings-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+}
+/* Left sidebar nav. Vertical list of section entries; the active entry
+ * is highlighted with the same accent treatment as .tree-row /
+ * .outline-item so it feels familiar next to those panes. */
+.settings-nav {
+  flex: 0 0 180px;
+  border-right: 1px solid var(--border);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: .93rem;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.settings-nav-item:hover {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.settings-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.settings-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Right column: holds the four section blocks. Only the section whose
+ * data-section matches the active nav entry is visible; the rest are
+ * hidden via the [hidden] attribute. */
+.settings-sections {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+  min-width: 0;
+}
+.settings-sections .settings-section {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-sections .settings-section:last-child { border-bottom: none; }
+.settings-sections .settings-section[hidden] { display: none; }
 .settings-section h3 {
   margin: 0 0 10px;
   font-size: .79rem;
@@ -515,6 +626,12 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   align-items: center;
   gap: 12px;
   padding: 6px 0;
+  /* `min-width: 0` keeps a wide intrinsic child (a long status string
+   * in Security, a long path in About) from pushing the row, the
+   * section, the body, and finally the modal wider than the user's
+   * chosen width. .settings-mono (About) already has word-break, and
+   * radio rows are short enough to fit, so no flex-wrap is needed. */
+  min-width: 0;
 }
 .settings-label {
   flex: 0 0 130px;
@@ -531,7 +648,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   word-break: break-all;
   user-select: text;
 }
-.settings-control { flex: 1 1 auto; }
+.settings-control { flex: 1 1 auto; min-width: 0; }
 .theme-options { display: flex; gap: 14px; }
 .theme-options label {
   display: inline-flex;
@@ -572,8 +689,9 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: var(--bg-elev);
   border-color: var(--border);
 }
-/* Footer with draft-then-commit buttons (Apply / Save / Cancel). Lives
- * inside the modal below the scrollable body so it stays anchored. */
+/* Footer with a single Close button (settings are live; there's no
+ * Apply / Save / Cancel flow). Lives inside the modal below the
+ * scrollable body so it stays anchored. */
 .settings-footer {
   display: flex;
   justify-content: flex-end;
@@ -642,34 +760,129 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   margin: 4px 0 0;
 }
 
-/* The viewer is the scroll container (IntersectionObserver root). */
+/* The viewer is split into a non-scrolling shell (#viewer) and the
+ * actual scroll container (#viewer-content, which also holds the
+ * rendered markdown and the wallpaper). Splitting them is what makes
+ * the wallpaper actually scroll with the content: putting the pattern
+ * on the same element that scrolls means the background is anchored to
+ * the content, not to the scroll viewport, so it can never drift out
+ * of sync with the text. */
 #viewer {
+  /* Flex column so #viewer-content (the only child) can fill the
+   * available space with `flex: 1` and become a real scroll container.
+   * Without this the inner scroller would collapse to its content size
+   * and there'd be nothing to scroll. */
   flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+/* Same as .edit-bar / .welcome: an explicit [hidden] override because
+ * `display: flex` above outranks the UA's [hidden] { display: none }.
+ * Without this, setting viewer.hidden = true (e.g. when the welcome
+ * page is up) leaves the viewer in the flex column with its full
+ * `flex: 1 1 auto` share of the height -- it disappears visually
+ * because #viewer-content is empty, but the element still competes
+ * with #welcome for the column's space, pushing the welcome into the
+ * bottom half. */
+#viewer[hidden] { display: none; }
+#viewer-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 16px 40px 200px;
   max-width: 100%;
 }
 
-/* Wallpaper patterns for the preview area. Each wallpaper value is a
- * class on #viewer, set by app.js:applyWallpaper. The default "none"
- * leaves background-image unset so the body color shows through. The
- * patterns are deliberately subtle (white at 5% alpha) so they read as
- * paper texture, not competing with the markdown content. */
-#viewer.wallpaper-lines {
+/* Wallpaper patterns for the preview area. The pattern, color, and
+ * intensity are all set by classes on #viewer-content (added by
+ * app.js:applyWallpaper). The default "none" leaves background-image
+ * unset so the body color shows through. The same set of patterns
+ * (none / lines / grid) can be combined with any color (neutral / blue
+ * / green / purple / amber) and any intensity (subtle / medium / bold)
+ * -- three independent controls, so the user can pick the visual
+ * they like without being locked in.
+ *
+ * Two CSS variables drive the actual paint:
+ *   --wp-rgb: space-separated "R G B" components of the stroke color
+ *   --wp-a:   alpha (0..1) for the stroke
+ * The base rules below define the gradient with rgb(var(--wp-rgb) /
+ * var(--wp-a)), so changing either variable is the only thing the
+ * color / intensity classes need to do.
+ *
+ * The colors are mid-saturation so the same RGB works on both dark
+ * and light themes: a faint blue stroke shows on a dark body as a
+ * soft glow and on a light body as a soft tint. The single base
+ * definition is reused; no per-pattern light-theme overrides are
+ * needed.
+ *
+ * background-attachment: local is the load-bearing piece for the
+ * "Scroll with content" option. The default value `scroll` would pin
+ * the background to the element's border box (windowpane feel);
+ * `local` instead pins it to the element's contents, so the pattern
+ * moves with the text as the user scrolls (paper-rolled-along).
+ * Without `local`, the "Scroll with content" option wouldn't actually
+ * scroll the wallpaper -- which is exactly the bug an earlier
+ * iteration shipped.
+ *
+ * The .wallpaper-fixed modifier switches to background-attachment:
+ * fixed, which pins the pattern to the viewport so the text scrolls
+ * past a stationary wallpaper. */
+#viewer-content {
+  /* Defaults: neutral white at subtle intensity. The wallpaper-* classes
+   * override these; the body[data-theme="light"] override below flips
+   * the neutral color to black so the "neutral" preset stays visible
+   * on a light body. The color presets (blue/green/purple/amber) work
+   * on both themes at the same RGB because they're mid-saturation. */
+  --wp-rgb: 255 255 255;
+  --wp-a: 0.05;
+}
+body[data-theme="light"] #viewer-content {
+  --wp-rgb: 0 0 0;
+}
+/* Color presets. Mid-saturation so the same RGB reads on both dark
+ * and light bodies (a faint blue stroke is a soft glow on dark, a
+ * soft tint on light). Adding a new color is one rule. */
+#viewer-content.wallpaper-color-blue   { --wp-rgb: 124 156 255; }
+#viewer-content.wallpaper-color-green  { --wp-rgb:  90 200 120; }
+#viewer-content.wallpaper-color-purple { --wp-rgb: 180 130 230; }
+#viewer-content.wallpaper-color-amber  { --wp-rgb: 230 170  70; }
+/* Intensity presets. Subtle is a barely-there hint, Bold is a clear
+ * but still secondary pattern. The default (subtle) keeps the wallpaper
+ * out of the way unless the user actively dials it up. */
+#viewer-content.wallpaper-intensity-subtle { --wp-a: 0.05; }
+#viewer-content.wallpaper-intensity-medium { --wp-a: 0.10; }
+#viewer-content.wallpaper-intensity-bold   { --wp-a: 0.18; }
+
+#viewer-content.wallpaper-lines {
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
     transparent calc(1.5em - 1px),
-    rgba(255, 255, 255, 0.05) calc(1.5em - 1px),
-    rgba(255, 255, 255, 0.05) 1.5em
+    rgb(var(--wp-rgb) / var(--wp-a)) calc(1.5em - 1px),
+    rgb(var(--wp-rgb) / var(--wp-a)) 1.5em
   );
+  background-attachment: local;
 }
-#viewer.wallpaper-grid {
+#viewer-content.wallpaper-grid {
   background-image:
-    linear-gradient(to right,  rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    linear-gradient(to right,  rgb(var(--wp-rgb) / var(--wp-a)) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--wp-rgb) / var(--wp-a)) 1px, transparent 1px);
   background-size: 24px 24px;
+  background-attachment: local;
+}
+/* "Fixed" mode: the wallpaper stays in the viewport while the text
+ * scrolls past it. Higher specificity than the base rules so the
+ * `background-attachment` change wins without having to repeat the
+ * gradient. */
+#viewer-content.wallpaper-lines.wallpaper-fixed,
+#viewer-content.wallpaper-grid.wallpaper-fixed {
+  background-attachment: fixed;
 }
 #raw-editor {
   flex: 1 1 auto;
@@ -684,13 +897,22 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   outline: none;
 }
 
-/* Split-pane wrapper: transparent in preview mode, flex row in edit mode. */
-.edit-split { display: contents; }
-.edit-split.split {
+/* Split-pane wrapper: a real flex column that owns the right pane in
+ * both preview mode and edit mode. Holds #raw-editor (editor side),
+ * #viewer (preview side), and #welcome (empty state). One of those
+ * three is visible at a time; the others are [hidden], which removes
+ * them from the flex layout, so the visible child fills the whole
+ * slot. In edit mode, .edit-split becomes a flex row (editor +
+ * preview side by side). */
+.edit-split {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+.edit-split.split {
+  flex-direction: row;
 }
 .edit-split.split #raw-editor {
   flex: 1;
@@ -701,8 +923,98 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
 .edit-split.split #viewer {
   flex: 1;
   min-width: 0;
-  overflow-y: auto;
+}
+.edit-split.split #viewer-content {
   padding: 16px 24px 200px;
+}
+
+/* Welcome page: shown when there are no open tabs. Sibling of #viewer
+ * (and #raw-editor) inside .edit-split, which is a flex column wrapper
+ * that owns the right pane. The viewer and editor are hidden via the
+ * [hidden] attribute when the welcome is up -- #viewer has an explicit
+ * [hidden] override because its base rule sets `display: flex`, which
+ * outranks the UA's [hidden] { display: none }. With those two out of
+ * the flex layout, .welcome is the only visible child and fills the
+ * whole slot; `align-items: center; justify-content: center` then
+ * centers the .welcome-inner card in the full height. The whole block
+ * is theme-token-driven so it follows dark / light automatically. */
+.welcome {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 40px 24px;
+}
+.welcome[hidden] { display: none; }
+.welcome-inner {
+  max-width: 480px;
+  text-align: center;
+  color: var(--fg);
+}
+.welcome-icon {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+.welcome-title {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+.welcome-subtitle {
+  margin: 0 0 24px;
+  color: var(--fg-muted);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.welcome-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.welcome-action {
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.welcome-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.welcome-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0 0 20px;
+}
+.welcome-tips {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.welcome-tips li { margin-bottom: 4px; }
+.welcome-tips kbd {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 0.82em;
+  color: var(--fg);
 }
 
 /* Top bar gets a tint when editing so the user can tell at a glance. */
