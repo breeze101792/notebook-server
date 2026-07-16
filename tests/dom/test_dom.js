@@ -2122,6 +2122,47 @@ function check(label, cond, extra) {
   window.NB.settings.close();
   await tick(10);
 
+  console.log("== viewer top spacing ==");
+  // The rendered preview's first heading should sit close to the top of
+  // the viewer -- otherwise the viewer padding + the heading's own
+  // top-margin stack into a large empty band above the title (regression
+  // guard for a reported UX bug). We assert on the CSS source directly:
+  // the production stylesheet must (a) keep #viewer's top padding small
+  // and (b) zero out the top margin of the first child of .markdown-body.
+  {
+    const css = read("static/css/style.css");
+    // #viewer padding must not have a 60vh / 50vh / etc. (units relative
+    // to viewport create huge empty bands on tall windows). Top padding
+    // should be a small absolute value.
+    const viewerBlock = css.match(/#viewer\s*\{[^}]*\}/);
+    check("viewer: #viewer rule exists in stylesheet", !!viewerBlock,
+      viewerBlock ? viewerBlock[0].slice(0, 80) : "(not found)");
+    const topPadMatch = viewerBlock && viewerBlock[0].match(/padding\s*:\s*([^;]+);/);
+    const topPadVal = topPadMatch ? topPadMatch[1].trim() : "";
+    const tokens = topPadVal.split(/\s+/);
+    const topPadPx = tokens[0] || "";
+    // The first padding token (top) should be a small px value -- not vh,
+    // not %, not em, not auto.
+    check("viewer: #viewer padding-top is a small px value (<= 20px)",
+      /^\d+px$/.test(topPadPx) && parseInt(topPadPx, 10) <= 20,
+      "padding=" + topPadVal);
+    // The :first-child reset must be present and must come AFTER the
+    // generic h1-h6 margin rule so it wins the cascade for the first
+    // heading. Same-specificity, later-wins.
+    const firstChildIdx = css.indexOf(":first-child");
+    const h1RuleIdx = css.indexOf(".markdown-body h1,");
+    check("viewer: .markdown-body > :first-child rule exists",
+      firstChildIdx > -1, "firstChildIdx=" + firstChildIdx);
+    check("viewer: :first-child rule sits AFTER the generic h1-h6 margin rule (cascade order)",
+      firstChildIdx > h1RuleIdx && h1RuleIdx > -1,
+      "firstChildIdx=" + firstChildIdx + " h1RuleIdx=" + h1RuleIdx);
+    // And the rule actually zeroes the top margin.
+    const fcBlock = css.match(/\.markdown-body\s*>\s*:first-child\s*\{[^}]*\}/);
+    check("viewer: :first-child rule sets margin-top: 0",
+      !!fcBlock && /margin-top\s*:\s*0\b/.test(fcBlock[0]),
+      fcBlock ? fcBlock[0] : "(not found)");
+  }
+
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);
 })();

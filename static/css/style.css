@@ -647,7 +647,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 32px 40px 60vh;
+  padding: 16px 40px 200px;
   max-width: 100%;
 }
 #raw-editor {
@@ -681,7 +681,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 16px 24px 60vh;
+  padding: 16px 24px 200px;
 }
 
 /* Top bar gets a tint when editing so the user can tell at a glance. */
@@ -850,6 +850,11 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   font-weight: 650;
   line-height: 1.25;
 }
+/* The first heading in a document should sit close to the top of the
+ * viewer; otherwise the viewer padding + the heading's own top-margin
+ * stack into a large empty band above the title. Must come after the
+ * generic h1-h6 rule above so it wins the cascade. */
+.markdown-body > :first-child { margin-top: 0; }
 .markdown-body h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
 .markdown-body h2 { font-size: 1.5em; }
 .markdown-body h3 { font-size: 1.25em; }
