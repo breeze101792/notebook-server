@@ -460,6 +460,16 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   cursor: pointer;
 }
 .icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+/* The disabled variant drops the hover cue and uses the muted fg so
+ * the button reads as inactive (the back button starts in this state
+ * because no in-app nav history has been pushed yet). */
+.icon-btn[disabled],
+.icon-btn[disabled]:hover {
+  color: var(--fg-muted);
+  opacity: 0.4;
+  background: none;
+  cursor: default;
+}
 
 .settings-overlay {
   position: fixed;

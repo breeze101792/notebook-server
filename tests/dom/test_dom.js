@@ -68,6 +68,7 @@ const html = `<!DOCTYPE html><html><head>
       <div class="brand">📓 Notebook</div>
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
+      <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="edit-toggle">Edit</button>
       <button id="logout-btn" class="icon-btn" hidden>⎋</button>
       <button id="settings-btn" class="icon-btn">⚙</button>
@@ -2880,17 +2881,22 @@ function check(label, cond, extra) {
       window.NB.viewer.scrollToHeading("") === false);
 
     // --- openDeepLink integration -----------------------------------
-    // Spy on scrollIntoView + history.replaceState. The boot path
-    // expects scrollIntoView to be called on the deep-linked element,
-    // and replaceState to be called to strip the query string.
+    // Spy on scrollIntoView + history.replaceState. openDeepLink's
+    // contract is now: activate the file, scroll to the heading, and
+    // DO NOT touch history. URL cleanup (replaceState to strip
+    // ?file=...&heading=...) is the boot path's job in app.js --
+    // keeping it out of openDeepLink lets the in-app nav path call
+    // openDeepLink without clobbering the history entry it just
+    // pushed, and lets the popstate handler call it without
+    // overwriting the just-restored state.
     const scrollCalls = [];
     const realScroll = window.Element.prototype.scrollIntoView;
     const realHistoryReplace = window.history.replaceState.bind(window.history);
-    const historyCalls = [];
+    const historyReplaceCalls = [];
     window.Element.prototype.scrollIntoView = function () { scrollCalls.push(this.id); };
     window.HTMLElement.prototype.scrollIntoView = window.Element.prototype.scrollIntoView;
     window.history.replaceState = function (state, title, url) {
-      historyCalls.push(url);
+      historyReplaceCalls.push(url);
       return realHistoryReplace(state, title, url);
     };
 
@@ -2901,7 +2907,7 @@ function check(label, cond, extra) {
     window.console.warn = (...args) => warns.push(args.map(String).join(" "));
 
     // Successful case: file in tree + heading in DOM (notes/b.md / file-b).
-    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    scrollCalls.length = 0; historyReplaceCalls.length = 0; warns.length = 0;
     const ok = await window.NB.app.openDeepLink(
       window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=file-b"));
     check("openDeepLink: returns true on success", ok === true);
@@ -2910,14 +2916,14 @@ function check(label, cond, extra) {
     check("openDeepLink: scrollIntoView called for the right id",
       scrollCalls.length === 1 && scrollCalls[0] === "file-b",
       "calls=" + JSON.stringify(scrollCalls));
-    check("openDeepLink: history.replaceState called (query stripped)",
-      historyCalls.length === 1 && historyCalls[0] === "/",
-      "calls=" + JSON.stringify(historyCalls));
+    check("openDeepLink: does NOT call replaceState (boot's job, not openDeepLink's)",
+      historyReplaceCalls.length === 0,
+      "calls=" + JSON.stringify(historyReplaceCalls));
     check("openDeepLink: no console.warn on success", warns.length === 0,
       warns.join("; "));
 
     // File-not-in-tree case: should log and bail, no scroll, no replace.
-    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    scrollCalls.length = 0; historyReplaceCalls.length = 0; warns.length = 0;
     const beforeActive = window.NB.tabs.getActive();
     const ok2 = await window.NB.app.openDeepLink(
       window.NB.app.parseDeepLink("http://x/?file=ghost.md&heading=file-b"));
@@ -2927,13 +2933,13 @@ function check(label, cond, extra) {
     check("openDeepLink: does NOT scroll on missing file",
       scrollCalls.length === 0);
     check("openDeepLink: does NOT replaceState on missing file",
-      historyCalls.length === 0);
+      historyReplaceCalls.length === 0);
     check("openDeepLink: warns on missing file",
       warns.length === 1 && /ghost\.md/.test(warns[0]),
       warns.join("; "));
 
     // Heading-not-in-file case: file opens, but no scroll.
-    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    scrollCalls.length = 0; historyReplaceCalls.length = 0; warns.length = 0;
     const ok3 = await window.NB.app.openDeepLink(
       window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=ghost-heading"));
     check("openDeepLink: returns true even with missing heading", ok3 === true);
@@ -2941,15 +2947,16 @@ function check(label, cond, extra) {
       window.NB.tabs.getActive() === "notes/b.md");
     check("openDeepLink: does NOT scroll on missing heading",
       scrollCalls.length === 0);
-    check("openDeepLink: still replaceState on missing heading (file was opened)",
-      historyCalls.length === 1);
+    check("openDeepLink: still does NOT replaceState on missing heading",
+      historyReplaceCalls.length === 0);
     check("openDeepLink: warns on missing heading",
       warns.length === 1 && /ghost-heading/.test(warns[0]),
       warns.join("; "));
 
     // Idempotence: calling openDeepLink on an already-active file is
-    // a no-op for tab ops but still scrolls + strips the URL.
-    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    // a no-op for tab ops but still scrolls to the heading. (No
+    // replaceState -- see "does NOT call replaceState" above.)
+    scrollCalls.length = 0; historyReplaceCalls.length = 0; warns.length = 0;
     const openCountBefore = window.NB.tabs.getOpen().length;
     await window.NB.app.openDeepLink(
       window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=file-b"));
@@ -2971,7 +2978,7 @@ function check(label, cond, extra) {
     // <li> elements when the active heading changes -- those calls
     // have no id and aren't part of the deep-link path. Filter them
     // out so we only assert the deep-link scroll target.
-    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    scrollCalls.length = 0; historyReplaceCalls.length = 0; warns.length = 0;
     const dl = window.NB.app.parseDeepLink("http://x/?file=notes%2Fa.md&heading=sub-a");
     const okBoot = await window.NB.app.openDeepLink(dl);
     const deepLinkScrolls = scrollCalls.filter(id => id === "sub-a");
@@ -2981,6 +2988,12 @@ function check(label, cond, extra) {
       deepLinkScrolls.length === 1,
       "calls=" + JSON.stringify(scrollCalls) +
       " deepLinkScrolls=" + JSON.stringify(deepLinkScrolls));
+    // openDeepLink itself doesn't touch history; the boot path's
+    // replaceState lives in app.js (not openDeepLink). So no
+    // replaceState should have fired from this openDeepLink call.
+    check("boot deep-link: openDeepLink did not replaceState (boot's job)",
+      historyReplaceCalls.length === 0,
+      "calls=" + JSON.stringify(historyReplaceCalls));
 
     // parseDeepLink() with no arg defaults to window.location. The
     // test JSDOM was created with url "http://127.0.0.1:5000/" so
@@ -3037,34 +3050,45 @@ function check(label, cond, extra) {
     check("setup: 4 anchors rendered (relative, in-page, external, mailto)",
       anchors.length === 4, "got " + anchors.length + " anchors");
 
-    // Spy on scrollIntoView + history.replaceState (the openDeepLink
-    // path triggers both) so the assertions don't have to rely on
-    // the tab state alone. Same approach as the deep-link block.
+    // Spy on scrollIntoView. The in-app link handler now uses a
+    // module-local navStack (not the browser's history) for the
+    // back button's restore data -- the click handler doesn't call
+    // pushState, and openDeepLink doesn't call replaceState (URL
+    // cleanup moved to the boot path). The back button's enabled
+    // state is what we observe to verify a click did push to the
+    // nav stack.
     const scrollCalls = [];
     const realScroll = window.Element.prototype.scrollIntoView;
-    const realHistoryReplace = window.history.replaceState.bind(window.history);
-    const historyCalls = [];
     window.Element.prototype.scrollIntoView = function () { scrollCalls.push(this.id); };
     window.HTMLElement.prototype.scrollIntoView = window.Element.prototype.scrollIntoView;
-    window.history.replaceState = function (state, title, url) {
-      historyCalls.push(url);
-      return realHistoryReplace(state, title, url);
-    };
+    const backBtn = window.document.getElementById("back-btn");
     const realWarn = window.console.warn;
     window.console.warn = () => {};
+    // Start with a known back-button state. The boot path leaves
+    // navStack empty so the button is disabled, but the previous
+    // test blocks may have left it enabled. We can't reach the
+    // module-scoped navStack directly, but the back button's
+    // disabled flag is exposed via .disabled and follows
+    // navStack.length. Reset to "fresh" for a clean per-click
+    // observation: drain by clicking back until disabled.
+    if (backBtn && !backBtn.disabled) {
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
 
     // Click 1: relative-path link to notes/b.md#file-b. The handler
-    // should preventDefault and route through openDeepLink. The
-    // result: active tab is notes/b.md, scrollIntoView called for
-    // "file-b", history.replaceState called.
+    // should preventDefault, push a "cross-note" entry onto navStack
+    // (enabling the back button), and route through openDeepLink.
+    // The result: active tab is notes/b.md, scrollToHeading called
+    // for "file-b", back button enabled.
     const rel = window.document.querySelector(
       '#viewer-content a[href$="notes/b.md#file-b"]');
     check("click-intercept: relative <a> is in the DOM", !!rel,
       rel ? rel.getAttribute("href") : "(not found)");
-    // jsdom doesn't fire the default click action (no navigation),
-    // so we have to verify the side effects directly. Resetting
-    // historyCalls / scrollCalls before each click.
-    scrollCalls.length = 0; historyCalls.length = 0;
+    scrollCalls.length = 0;
+    const beforeClick1Disabled = backBtn ? backBtn.disabled : null;
     rel.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
     await tick(20);
     check("click-intercept: relative path -> openDeepLink activates target",
@@ -3073,19 +3097,30 @@ function check(label, cond, extra) {
     check("click-intercept: relative path -> scrollToHeading called for file-b",
       scrollCalls.filter(id => id === "file-b").length === 1,
       "calls=" + JSON.stringify(scrollCalls));
-    check("click-intercept: relative path -> history.replaceState strips URL",
-      historyCalls.length === 1, "calls=" + JSON.stringify(historyCalls));
+    check("click-intercept: relative path -> back button enabled (navStack push)",
+      backBtn && !backBtn.disabled,
+      "before=" + beforeClick1Disabled + " after=" + (backBtn ? backBtn.disabled : "n/a"));
 
     // After the click, switch back to notes/a.md for the next case.
     await window.NB.tabs.open("notes/a.md");
     await tick(20);
+    // Drain back to a fresh state (the cross-note push is now
+    // "consumed" by the active b.md tab; clicking back would undo
+    // it, but for the next click we want a clean slate so the
+    // in-page branch's effect is observable on its own).
+    if (backBtn && !backBtn.disabled) {
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
 
-    // Click 2: same-file in-page anchor (#sub-a). The handler should
-    // NOT intercept -- the link's resolved pathname matches the
-    // current page (both are /notes/a.md after boot's replaceState),
-    // so we let the browser handle it natively. No tab change, no
-    // scrollIntoView from openDeepLink.
-    scrollCalls.length = 0; historyCalls.length = 0;
+    // Click 2: same-file in-page anchor (#sub-a). The handler
+    // intercepts and pushes {type:"in-page", file, scroll} onto
+    // navStack (so the back button can restore the pre-click
+    // scroll). The result: scrollToHeading called for "sub-a",
+    // back button enabled, no tab change.
+    scrollCalls.length = 0;
     const inPage = window.document.querySelector(
       '#viewer-content a[href="#sub-a"]');
     check("click-intercept: in-page <a> is in the DOM", !!inPage,
@@ -3095,60 +3130,76 @@ function check(label, cond, extra) {
     await tick(20);
     check("click-intercept: in-page anchor does NOT change the active tab",
       window.NB.tabs.getActive() === beforeActive);
-    check("click-intercept: in-page anchor does NOT call openDeepLink (no history.replaceState)",
-      historyCalls.length === 0);
+    check("click-intercept: in-page anchor -> scrollToHeading called for sub-a",
+      scrollCalls.filter(id => id === "sub-a").length === 1,
+      "calls=" + JSON.stringify(scrollCalls));
+    check("click-intercept: in-page anchor -> back button enabled (navStack push)",
+      backBtn && !backBtn.disabled,
+      "disabled=" + (backBtn ? backBtn.disabled : "n/a"));
+    // Drain again so the next click starts fresh.
+    if (backBtn && !backBtn.disabled) {
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
 
     // Click 3: absolute external URL. Same-origin check fails; pass
     // through. (jsdom doesn't navigate, but the assertion is the
-    // side-effect: no openDeepLink call, no history.replaceState.)
-    scrollCalls.length = 0; historyCalls.length = 0;
+    // side-effect: no openDeepLink call, no navStack push, no
+    // scrollIntoView.)
+    scrollCalls.length = 0;
     const ext = window.document.querySelector(
       '#viewer-content a[href^="https://"]');
     check("click-intercept: external <a> is in the DOM", !!ext,
       ext ? ext.getAttribute("href") : "(not found)");
     ext.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
     await tick(20);
-    check("click-intercept: external link does NOT call openDeepLink",
-      historyCalls.length === 0);
+    check("click-intercept: external link does NOT call scrollToHeading",
+      scrollCalls.length === 0);
     check("click-intercept: external link does NOT change the active tab",
       window.NB.tabs.getActive() === "notes/a.md");
+    check("click-intercept: external link does NOT enable back button",
+      backBtn && backBtn.disabled === true,
+      "disabled=" + (backBtn ? backBtn.disabled : "n/a"));
 
     // Click 4: mailto. Same-origin check fails (mailto: is not
     // http(s)); pass through.
-    scrollCalls.length = 0; historyCalls.length = 0;
+    scrollCalls.length = 0;
     const mailto = window.document.querySelector(
       '#viewer-content a[href^="mailto:"]');
     check("click-intercept: mailto <a> is in the DOM", !!mailto,
       mailto ? mailto.getAttribute("href") : "(not found)");
     mailto.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
     await tick(20);
-    check("click-intercept: mailto does NOT call openDeepLink",
-      historyCalls.length === 0);
+    check("click-intercept: mailto does NOT call scrollToHeading",
+      scrollCalls.length === 0);
+    check("click-intercept: mailto does NOT enable back button",
+      backBtn && backBtn.disabled === true);
 
     // Modifier-key clicks: open in new tab is the user's intent. The
     // handler respects meta/ctrl/shift/alt and passes through.
-    scrollCalls.length = 0; historyCalls.length = 0;
+    scrollCalls.length = 0;
     rel.dispatchEvent(new window.MouseEvent("click",
       { bubbles: true, button: 0, cancelable: true, ctrlKey: true }));
     await tick(20);
-    check("click-intercept: Ctrl-click passes through (no openDeepLink)",
-      historyCalls.length === 0);
+    check("click-intercept: Ctrl-click passes through (no navStack push)",
+      backBtn && backBtn.disabled === true);
     check("click-intercept: Ctrl-click does NOT change the active tab",
       window.NB.tabs.getActive() === "notes/a.md");
 
     // Middle-click / non-primary button: also a "open in new tab"
     // intent. Pass through.
-    scrollCalls.length = 0; historyCalls.length = 0;
+    scrollCalls.length = 0;
     rel.dispatchEvent(new window.MouseEvent("click",
       { bubbles: true, button: 1, cancelable: true }));
     await tick(20);
-    check("click-intercept: middle-click passes through (no openDeepLink)",
-      historyCalls.length === 0);
+    check("click-intercept: middle-click passes through (no navStack push)",
+      backBtn && backBtn.disabled === true);
 
     // Restore the stubs.
     window.Element.prototype.scrollIntoView = realScroll;
     window.HTMLElement.prototype.scrollIntoView = realScroll;
-    window.history.replaceState = realHistoryReplace;
     window.console.warn = realWarn;
   }
 
@@ -3196,6 +3247,204 @@ function check(label, cond, extra) {
     check("viewer: :first-child rule sets margin-top: 0",
       !!fcBlock && /margin-top\s*:\s*0\b/.test(fcBlock[0]),
       fcBlock ? fcBlock[0] : "(not found)");
+  }
+
+  console.log("== back button ==");
+  // The back button (#back-btn) in the topbar returns to the previous
+  // note (cross-note) or the previous scroll position (in-page).
+  // Design: in-app navigation uses a module-local navStack in
+  // viewer.js (not the browser's history). Reasons:
+  //   - popstate fires on the entry being ENTERED, not the one being
+  //     LEFT, so attaching "where to return to" state to the entry
+  //     you're leaving makes it invisible to popstate.
+  //   - The browser's back button (alt+left, etc.) still works for
+  //     out-of-app history (e.g. leaving the SPA entirely); the
+  //     popstate listener inside viewer.js also drains the stack on
+  //     browser-back so the two stay in sync.
+  // Externally visible: the back button's `disabled` flag (true iff
+  // navStack is empty) and the side effects on tabs + scrollTop.
+  {
+    // Re-seed fixtures -- the earlier click-intercept block overwrote
+    // notes/a.md with a link-rich version. We want a clean source file
+    // for the back-button tests, plus a sub-folder structure so
+    // subfolder nav exercises the path resolver.
+    TREE.length = 0;
+    TREE.push({ name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+      { name: "b.md", type: "file", path: "notes/b.md" },
+    ]});
+    TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
+    FILES["Welcome.md"] = "# Welcome\n\nWelcome content.\n\n## One\n\nx\n\n## Two\n\ny\n";
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    FILES["notes/b.md"] = "# File B\n\nAnother TODO fix this here.\n";
+    for (const p of ["notes/a.md", "notes/b.md", "Welcome.md"]) {
+      window.NB.viewer.close(p);
+    }
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+
+    const backBtn = window.document.getElementById("back-btn");
+    // Drain navStack to a known-empty state. Earlier test blocks
+    // (click-intercept) push entries via real clicks; the only way to
+    // pop the stack is to click the back button. Loop until the
+    // button reports disabled.
+    if (backBtn) {
+      while (!backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
+
+    check("back-btn: exists in the topbar", !!backBtn);
+    check("back-btn: initially disabled (navStack empty after drain)",
+      backBtn && backBtn.disabled === true,
+      "backBtn=" + (backBtn ? "found" : "null") +
+      " disabled=" + (backBtn ? backBtn.disabled : "n/a") +
+      " hasAttr=" + (backBtn ? backBtn.hasAttribute("disabled") : "n/a"));
+    check("back-btn: initially has .icon-btn class",
+      backBtn && backBtn.classList.contains("icon-btn"));
+
+    // Set up a controlled scroll-position tracker. The viewer's
+    // rAF-debounced scroll listener updates scrollPositions on every
+    // scroll event; for the test we directly poke viewerContentEl
+    // and dispatch a scroll event so the listener fires.
+    const vc = window.document.getElementById("viewer-content");
+    function setViewerScroll(px) {
+      vc.scrollTop = px;
+      vc.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+    }
+
+    // --- Cross-note nav ------------------------------------------------
+    // Add a link in notes/a.md that points to notes/b.md#file-b. We
+    // re-open notes/a.md to render the new content.
+    FILES["notes/a.md"] = "# File A\n\n" +
+      "TODO fix this bug.\n\n" +
+      "## Sub A\n\nbody\n\n" +
+      "See also: [File B](notes/b.md#file-b)\n\n" +
+      "Back to [Sub A](#sub-a)\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+
+    // Give the viewer a non-zero scroll position so we can verify
+    // back restores it. Then click the cross-note link.
+    setViewerScroll(120);
+    // Force one rAF tick so the debounced scroll tracker records it.
+    await new Promise(r => window.setTimeout(r, 30));
+
+    const rel = window.document.querySelector(
+      '#viewer-content a[href$="notes/b.md#file-b"]');
+    check("back: cross-note link in DOM", !!rel,
+      rel ? rel.getAttribute("href") : "(not found)");
+    rel.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true }));
+    await tick(40);
+
+    // The click should have pushed a "cross-note" entry to the
+    // navStack, switched to notes/b.md, and enabled the back button.
+    check("back: cross-note -> active is notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+    check("back: cross-note -> back-btn enabled (navStack push)",
+      backBtn.disabled === false, "disabled=" + backBtn.disabled);
+
+    // Click the back button -- the click handler pops the stack and
+    // activates the source tab, restoring the scroll.
+    backBtn.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true }));
+    // The cross-note branch awaits NB.tabs.activate/open, which
+    // involves at least one rAF; give it room.
+    await new Promise(r => window.setTimeout(r, 30));
+    await tick(40);
+    await new Promise(r => window.requestAnimationFrame(r));
+
+    check("back: click back-btn -> active is notes/a.md again",
+      window.NB.tabs.getActive() === "notes/a.md",
+      "active=" + window.NB.tabs.getActive());
+    check("back: click back-btn -> scroll restored to 120",
+      vc.scrollTop === 120, "scrollTop=" + vc.scrollTop);
+    check("back: click back-btn -> both tabs still open",
+      window.NB.tabs.isOpen("notes/a.md") && window.NB.tabs.isOpen("notes/b.md"),
+      "open=" + JSON.stringify(window.NB.tabs.getOpen()));
+    check("back: click back-btn -> back-btn re-disabled (stack empty)",
+      backBtn.disabled === true, "disabled=" + backBtn.disabled);
+
+    // --- In-page nav ---------------------------------------------------
+    // From notes/a.md, click an in-page anchor. The in-page branch
+    // pushes {type:"in-page", file, scroll} to the navStack.
+    // First, give the viewer a non-zero scroll so the in-page state
+    // records a meaningful pre-click value.
+    setViewerScroll(80);
+    await new Promise(r => window.setTimeout(r, 30));
+
+    const inPage = window.document.querySelector(
+      '#viewer-content a[href="#sub-a"]');
+    check("back: in-page anchor in DOM", !!inPage,
+      inPage ? inPage.getAttribute("href") : "(not found)");
+    inPage.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true }));
+    await tick(40);
+
+    check("back: in-page -> back-btn enabled (navStack push)",
+      backBtn.disabled === false);
+    // scrollToHeading scrolled to the heading; jsdom's layout doesn't
+    // compute scrollTop in the same way as a real browser, but the
+    // handler at least calls scrollIntoView on the right element.
+    // We don't assert on the new scrollTop because jsdom doesn't
+    // simulate layout; we assert the side effect (push happened).
+
+    // Click back -- the in-page pop handler restores the scroll.
+    backBtn.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true }));
+    await new Promise(r => window.setTimeout(r, 30));
+    await tick(40);
+    await new Promise(r => window.requestAnimationFrame(r));
+    check("back: in-page -> back-btn re-disabled",
+      backBtn.disabled === true);
+    // The scroll restore is the same rAF-wrapped path as the
+    // cross-note case. Same caveat about jsdom layout.
+    check("back: in-page -> scroll restored to 80",
+      vc.scrollTop === 80, "scrollTop=" + vc.scrollTop);
+
+    // --- Browser back also drains the stack --------------------------
+    // Build a fresh cross-note nav, then fire a popstate directly
+    // (which is what the browser's back button does). The viewer's
+    // popstate handler should pop the same navStack the back button
+    // does, so the active tab returns to the source.
+    //
+    // The earlier cross-note section captured `rel` at a specific
+    // render of a.md; since then the in-page test re-rendered the
+    // viewer, so we have to look it up again. (DOM elements from
+    // older renders are detached; dispatching on them is a no-op.)
+    const relFresh = window.document.querySelector(
+      '#viewer-content a[href$="notes/b.md#file-b"]');
+    check("back: popstate-prep cross-note link is in the DOM", !!relFresh,
+      relFresh ? relFresh.getAttribute("href") : "(not found)");
+
+    setViewerScroll(200);
+    await new Promise(r => window.setTimeout(r, 30));
+    relFresh.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, button: 0, cancelable: true }));
+    await tick(40);
+    check("back: prep for popstate -> back-btn enabled",
+      backBtn.disabled === false);
+    check("back: prep for popstate -> active is notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+
+    // Simulate the browser's back button. dispatchEvent is sync; the
+    // handler kicks off an async chain (tabs.activate + rAF).
+    window.dispatchEvent(new window.PopStateEvent("popstate", { state: null }));
+    await new Promise(r => window.setTimeout(r, 30));
+    await tick(40);
+    await new Promise(r => window.requestAnimationFrame(r));
+    check("back: popstate -> active is notes/a.md",
+      window.NB.tabs.getActive() === "notes/a.md",
+      "active=" + window.NB.tabs.getActive());
+    check("back: popstate -> back-btn re-disabled (stack drained)",
+      backBtn.disabled === true, "disabled=" + backBtn.disabled);
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

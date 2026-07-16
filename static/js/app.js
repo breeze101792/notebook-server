@@ -427,9 +427,13 @@
   // Open the deep-link target. If the file isn't in the tree we log
   // and bail (the normal boot already left a working view in place);
   // if the heading doesn't exist the file still opens, just without
-  // a scroll target. Either way, history.replaceState strips the
-  // query string so the address bar shows the actual current view,
-  // and a refresh no longer re-applies the one-time redirect.
+  // a scroll target. The URL cleanup is the caller's job: the boot
+  // path strips the query/path (replaceState, no history push); the
+  // in-app link click path already pushed a state with a clean URL,
+  // so no extra history mutation is needed here. Keeping the two
+  // concerns split lets openDeepLink be safely re-entrant -- the
+  // popstate handler calls it without stomping on the just-restored
+  // history.state.
   async function openDeepLink({ file, heading }) {
     const tree = NB.sidebar.getTree();
     if (!treeHas(tree, file)) {
@@ -445,8 +449,6 @@
       const ok = NB.viewer.scrollToHeading(heading);
       if (!ok) console.warn("Deep link heading not found:", heading);
     }
-    try { history.replaceState(null, "", window.location.pathname); }
-    catch (_) { /* file:// or other restricted env: harmless to skip */ }
     return true;
   }
 
@@ -482,8 +484,15 @@
     // with a valid session.
     const deepLink = parseDeepLink();
     if (deepLink) {
-      try { await openDeepLink(deepLink); }
-      catch (e) { console.warn("deep link failed", e); }
+      try {
+        await openDeepLink(deepLink);
+        // Strip the URL (replaceState, NOT push) so a refresh doesn't
+        // re-apply the deep link and the back button doesn't see this
+        // as a navigation. Boot is a fresh entry point, not a history
+        // event. file:// / restricted env: harmless to skip.
+        try { history.replaceState(null, "", window.location.pathname); }
+        catch (_) {}
+      } catch (e) { console.warn("deep link failed", e); }
     }
   }
 

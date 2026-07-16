@@ -155,6 +155,24 @@
   function onEditorScroll() { syncScroll(editorEl, viewerContentEl); }
   function onViewerScroll() { syncScroll(viewerContentEl, editorEl); }
 
+  /* --- per-file scroll position memory ------------------------------ */
+  /* The back button restores where the user was reading on the source
+   * note. We track scroll position per file in this Map (path -> last
+   * scrollTop) on every scroll event, debounced via rAF. The Map is
+   * updated by both preview-mode and edit-mode scrolling -- the user's
+   * reading position in either case is what back should restore. */
+  const scrollPositions = new Map();
+  let scrollTrackTicking = false;
+  function onViewerScrollTrack() {
+    if (scrollTrackTicking) return;
+    scrollTrackTicking = true;
+    requestAnimationFrame(() => {
+      if (active != null) scrollPositions.set(active, viewerContentEl.scrollTop);
+      scrollTrackTicking = false;
+    });
+  }
+  viewerContentEl.addEventListener("scroll", onViewerScrollTrack, { passive: true });
+
   function showViewer() {
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
@@ -483,11 +501,26 @@
    * rendered viewer. Without interception, clicking it triggers a
    * full page navigation (slow, drops unsaved edits, resets scroll
    * position on the new file). With interception, the click is
-   * routed through NB.app.openDeepLink -- the SPA stays mounted, the
-   * target tab opens, the heading scrolls, and history.replaceState
-   * keeps the address bar clean. Same-file in-page anchors (`[#sec]`)
-   * and external links (`[GH](https://...)`) are passed through
-   * unchanged so the browser's native behavior handles them. */
+   * routed through NB.app.openDeepLink -- the SPA stays mounted and
+   * the target tab opens in place.
+   *
+   * For the back button, we also record the source position in a
+   * module-local `navStack` (defined in the back-button section at
+   * the bottom of this IIFE). Two entry shapes:
+   *   cross-note  -- different file. pushNav({type:"cross-note",
+   *                  fromFile, fromScroll}). The back button pops
+   *                  and restores: activate the source tab + restore
+   *                  its scroll.
+   *   in-page     -- same file, a #anchor. pushNav({type:"in-page",
+   *                  file, scroll}). Back restores the pre-click
+   *                  scroll position.
+   *
+   * We don't use history.pushState for the in-app nav (the
+   * popstate handler fires on the entry being *entered*, which is
+   * the prior entry, not the one we're leaving -- the wrong place
+   * to store source-side info). The navStack is the source of truth
+   * for restore; the browser's popstate is just one signal that
+   * pops from the stack. */
   viewerContentEl.addEventListener("click", (e) => {
     const a = e.target.closest && e.target.closest("a[href]");
     if (!a) return;
@@ -500,24 +533,127 @@
     try { url = new URL(a.getAttribute("href"), window.location.href); }
     catch (_) { return; }
     if (url.origin !== window.location.origin) return;
-    // Same-file in-page anchor: the resolved pathname matches the
-    // current URL's pathname (the boot path replaces the URL with `/`
-    // on first load, so a relative link to a different .md path is
-    // correctly distinguished from an in-page #anchor). The browser
-    // does the scroll natively because we assign slugified ids to
-    // every h1..h6 in render().
-    const currentPath = window.location.pathname.replace(/^\/+/, "");
+    // The boot path replaces the URL with `/`, so the current "active
+    // note" for routing purposes is NB.viewer.getPath() (the file
+    // actually shown in the viewer), not window.location.pathname
+    // (which is always `/` after the first replaceState).
+    const currentPath = (NB.viewer.getPath() || "").replace(/^\/+/, "");
     const linkPath = url.pathname.replace(/^\/+/, "");
-    if (linkPath === currentPath) return;
-    // Cross-note deep link: prevent the full navigation and route
-    // through openDeepLink. The link's href may have been a relative
-    // path from the current note (e.g. "b.md" while viewing
-    // "notes/a.md"); the resolved URL has already done the right
-    // thing, so url.pathname is the absolute notebook path.
+    // In-page anchor: a same-file link with a #fragment. The href
+    // may be a bare "#slug" (resolves to pathname = "/" via the URL
+    // constructor) or "./#slug" (also resolves to the current
+    // pathname). Both should hit this branch when we're viewing
+    // currentPath. Detecting by the resolved pathname matching the
+    // active note (since window.location.pathname is always `/` after
+    // the boot replaceState, we can't compare against that).
+    if (url.hash && (linkPath === "" || linkPath === currentPath) && currentPath) {
+      // Same-file in-page anchor. We own the scroll so we can also
+      // record a navStack entry the back button can pop.
+      e.preventDefault();
+      const preScroll = viewerContentEl.scrollTop;
+      const slug = decodeURIComponent(url.hash.replace(/^#/, ""));
+      pushNav({ type: "in-page", file: currentPath, scroll: preScroll });
+      NB.viewer.scrollToHeading(slug);
+      return;
+    }
+    if (linkPath === currentPath) return;   // bare same-file href: pass through
+    // Cross-note deep link: prevent the full navigation, push a
+    // navStack entry capturing where we are (so back can return),
+    // then route through openDeepLink. The link's href may have been
+    // a relative path from the current note (e.g. "b.md" while
+    // viewing "notes/a.md"); the resolved URL has already done the
+    // right thing, so url.pathname is the absolute notebook path.
     e.preventDefault();
     const heading = url.hash ? decodeURIComponent(url.hash.replace(/^#/, "")) : null;
+    const fromFile = currentPath || null;
+    const fromScroll = viewerContentEl.scrollTop;
+    pushNav({ type: "cross-note", fromFile, fromScroll });
     NB.app.openDeepLink({ file: linkPath, heading });
   });
 
+  /* `pushNav` is defined at the bottom of this IIFE -- it appends to
+   * the navStack and updates the back button's disabled state. The
+   * handler above calls it as a forward declaration; function
+   * declarations are hoisted within the IIFE, so the forward
+   * reference resolves at call time. */
+
   NB.viewer = viewer;
+
+  /* --- back button + navStack popstate handler --------------------- */
+  /* The back button (#back-btn) in the topbar pops the top of
+   * navStack and applies it. The popstate handler does the same
+   * (popping the stack) when the browser fires back, so Alt+Left /
+   * browser back button / history.back() all reach the same code
+   * path.
+   *
+   * navStack is the source of truth for restoration; the browser's
+   * history is just a back-signal. We don't push to history from the
+   * in-app link click handler because (a) the boot path's
+   * replaceState leaves a state-less entry at the bottom of the
+   * stack and (b) popstate fires on the entry being entered (the
+   * prior entry), not the one we're leaving. The cleanest separation
+   * is a local stack: every in-app nav pushes a restore recipe;
+   * back pops it. The boot path leaves navStack empty so canGoBack
+   * is false until the first push. */
+  const navStack = [];
+  const backBtn = document.getElementById("back-btn");
+  function setHasNavHistory(has) {
+    if (backBtn) backBtn.disabled = !has;
+  }
+  function pushNav(entry) {
+    navStack.push(entry);
+    if (navStack.length > 100) navStack.shift();   // hard cap
+    setHasNavHistory(true);
+  }
+  function popNav() {
+    const e = navStack.pop();
+    setHasNavHistory(navStack.length > 0);
+    return e;
+  }
+
+  async function applyNavEntry(entry) {
+    if (!entry) return;
+    if (entry.type === "cross-note") {
+      if (!entry.fromFile) return;
+      try {
+        if (NB.tabs.isOpen(entry.fromFile)) {
+          await NB.tabs.activate(entry.fromFile);
+        } else {
+          await NB.tabs.open(entry.fromFile);
+        }
+        // requestAnimationFrame waits one frame for the render
+        // (activate -> viewer.activate -> render) to settle; setting
+        // scrollTop before then would race the layout.
+        requestAnimationFrame(() => {
+          viewerContentEl.scrollTop = entry.fromScroll || 0;
+        });
+      } catch (err) {
+        console.warn("back cross-note restore failed", err);
+      }
+    } else if (entry.type === "in-page") {
+      // Same file -- just restore the scroll. No tab swap.
+      requestAnimationFrame(() => {
+        viewerContentEl.scrollTop = entry.scroll || 0;
+      });
+    }
+  }
+
+  if (backBtn) {
+    backBtn.addEventListener("click", async () => {
+      if (backBtn.disabled) return;
+      const entry = popNav();
+      await applyNavEntry(entry);
+    });
+  }
+
+  // Browser back (Alt+Left, history.back(), swipe). The browser
+  // changes history.state; we treat that as a back signal and pop
+  // our stack. If the stack is empty (e.g. browser back after a
+  // reload that started with a clean state), this listener is a
+  // no-op and the browser handles the nav as it normally would.
+  window.addEventListener("popstate", () => {
+    if (navStack.length === 0) return;
+    const entry = popNav();
+    applyNavEntry(entry);
+  });
 })();
