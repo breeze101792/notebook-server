@@ -52,8 +52,17 @@ const fetchLog = [];
 // authRole to drive the login flow.
 let authEnabled = false;
 let authRole = null;
+// Password setup state used by the fake /api/auth + /api/auth/passwords
+// stubs. Default: nothing configured. Tests flip these to drive the
+// Settings -> Passwords section.
+let authHasAdmin = false;
+let authHasViewer = false;
+let authSetPasswordsCalls = [];   // last few bodies posted to /api/auth/passwords
 
-const html = `<!DOCTYPE html><html><body data-theme="dark">
+const html = `<!DOCTYPE html><html><head>
+  <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
+  <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
+</head><body data-theme="dark">
   <div id="app">
     <header id="topbar">
       <div class="brand">📓 Notebook</div>
@@ -162,6 +171,15 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
               <label><input type="radio" name="theme" value="light"> Light</label>
             </div>
           </div>
+          <div class="settings-row">
+            <span class="settings-label">Font size</span>
+            <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
+              <label><input type="radio" name="fontSize" value="small"> S</label>
+              <label><input type="radio" name="fontSize" value="medium"> M</label>
+              <label><input type="radio" name="fontSize" value="large"> L</label>
+              <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+            </div>
+          </div>
         </section>
         <section class="settings-section">
           <h3>File watching</h3>
@@ -174,6 +192,38 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
             <button id="settings-watch-toggle" class="settings-action">Enable</button>
           </div>
         </section>
+        <section class="settings-section" id="settings-auth-section">
+          <h3>Passwords</h3>
+          <p id="settings-auth-help" class="settings-help">Sign in as admin to change passwords.</p>
+          <div class="settings-row">
+            <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
+            <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input" disabled>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">
+              <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
+            </span>
+            <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
+            <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
+          </div>
+          <div class="settings-row" id="settings-auth-viewer-row" hidden>
+            <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
+            <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input">
+          </div>
+          <div class="settings-row" id="settings-auth-viewer-actions" hidden>
+            <span class="settings-label">
+              <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
+            </span>
+            <span class="settings-control">
+              <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
+              <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
+            </span>
+          </div>
+          <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+        </section>
         <section class="settings-section">
           <h3>About</h3>
           <div class="settings-row">
@@ -185,6 +235,11 @@ const html = `<!DOCTYPE html><html><body data-theme="dark">
             <code id="settings-config-dir" class="settings-value settings-mono">…</code>
           </div>
         </section>
+      </div>
+      <div class="settings-footer">
+        <button id="settings-apply" class="settings-action">Apply</button>
+        <button id="settings-save" class="settings-action">Save</button>
+        <button id="settings-cancel" class="settings-action">Cancel</button>
       </div>
     </div>
   </div>
@@ -246,8 +301,12 @@ window.fetch = async (url, opts) => {
     body = JSON.parse(opts.body || "{}");
   } else if (p === "/api/auth") {
     // Default: auth disabled. Tests flip authEnabled/authRole to exercise
-    // the login flow.
-    body = { enabled: authEnabled, role: authRole };
+    // the login flow. The shape is {enabled, hasAdmin, hasViewer, role}:
+    //   enabled  = admin password is set
+    //   hasAdmin = admin password is set (alias used by the UI)
+    //   hasViewer = viewer password is set
+    //   role     = session role (null = no session, "admin", "viewer")
+    body = { enabled: authEnabled, hasAdmin: authHasAdmin, hasViewer: authHasViewer, role: authRole };
   } else if (p === "/api/login") {
     const d = JSON.parse(opts.body || "{}");
     if (authEnabled && d.password === "test-pw") {
@@ -261,6 +320,31 @@ window.fetch = async (url, opts) => {
   } else if (p === "/api/logout") {
     authRole = null;
     body = { ok: true };
+  } else if (p === "/api/auth/passwords") {
+    // Admin-only endpoint. Mirrors the server's @admin_required: when no
+    // admin password is configured yet, the route is open (chicken-and-egg
+    // for the first setup). Once an admin is set, only an admin session
+    // can call this.
+    if (authHasAdmin && authRole !== "admin") {
+      return { ok: false, status: 401,
+        text: async () => JSON.stringify({ error: "Authentication required" }),
+        json: async () => ({ error: "Authentication required" }) };
+    }
+    const d = JSON.parse(opts.body || "{}");
+    authSetPasswordsCalls.push(d);
+    // Apply the change to the fake state so the next /api/auth reflects it.
+    // The server contract: null = don't touch, "" = clear (viewer only;
+    // admin is rejected by the server), string = set/change.
+    if (typeof d.admin_password === "string" && d.admin_password !== "") {
+      authEnabled = true;
+      authHasAdmin = true;
+    }
+    if (d.viewer_password === "") {
+      authHasViewer = false;
+    } else if (typeof d.viewer_password === "string" && d.viewer_password !== null) {
+      authHasViewer = true;
+    }
+    body = { ok: true, hasAdmin: authHasAdmin, hasViewer: authHasViewer };
   }
   return { ok: true, status: 200,
     text: async () => JSON.stringify(body),
@@ -311,8 +395,10 @@ function check(label, cond, extra) {
     typeof window.marked === "object" && typeof window.hljs === "object" && !!window.NB.viewer);
 
   console.log("== theme ==");
-  // The theme control now lives in the settings modal. The default body
+  // The theme control lives in the settings modal. The default body
   // theme is "dark" (auto resolves dark on this jsdom's matchMedia stub).
+  // Under the draft-then-commit model, picking a radio only mutates the
+  // draft; the live data-theme only changes on Apply/Save.
   check("default body theme is dark (auto -> dark)", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
   window.NB.settings.open();
@@ -320,26 +406,40 @@ function check(label, cond, extra) {
   const checkedRadio = () => window.document.querySelector('input[name="theme"]:checked');
   check("default theme radio is auto", checkedRadio() && checkedRadio().value === "auto",
     checkedRadio() ? checkedRadio().value : "(none)");
-  // light
+  // light: pick radio -> only the draft changes; live body stays dark.
   window.document.querySelector('input[name="theme"][value="light"]').checked = true;
   window.document.querySelector('input[name="theme"][value="light"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("light radio sets data-theme=light", window.document.body.dataset.theme === "light",
+  check("light radio: draft picked but body still dark (no live change yet)",
+    window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
-  // dark
+  // Apply -> live body becomes light, radio stays on light. Apply also
+  // closes the modal, so the next pick must reopen first.
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("Apply: live body data-theme=light", window.document.body.dataset.theme === "light",
+    "data-theme=" + window.document.body.dataset.theme);
+  // dark: pick + apply
+  window.NB.settings.open(); await tick(10);
   window.document.querySelector('input[name="theme"][value="dark"]').checked = true;
   window.document.querySelector('input[name="theme"][value="dark"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(10);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("dark radio sets data-theme=dark", window.document.body.dataset.theme === "dark",
+  check("Apply: dark -> data-theme=dark", window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
-  // back to auto
+  // back to auto: pick + apply
+  window.NB.settings.open(); await tick(10);
   window.document.querySelector('input[name="theme"][value="auto"]').checked = true;
   window.document.querySelector('input[name="theme"][value="auto"]')
     .dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(10);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("auto radio resolves dark (matchMedia stub)", window.document.body.dataset.theme === "dark",
+  check("Apply: auto -> data-theme=dark (matchMedia stub)",
+    window.document.body.dataset.theme === "dark",
     "data-theme=" + window.document.body.dataset.theme);
   window.NB.settings.close();
   await tick(10);
@@ -1271,8 +1371,9 @@ function check(label, cond, extra) {
     "viewer=" + $("viewer").textContent.slice(0, 60));
 
   // Case 4: watch button lives in the settings modal now. Open the modal,
-  // verify the status line and the toggle button, then enable and check
-  // the status updates.
+  // verify the status line and the toggle button, then enable+Apply and
+  // check the status updates. Under the draft-then-commit model, clicking
+  // the toggle only mutates the draft; the live watcher starts on Apply.
   window.NB.settings.open();
   await tick(20);
   check("watch: settings modal opens", window.NB.settings.isOpen());
@@ -1281,21 +1382,43 @@ function check(label, cond, extra) {
   check("watch: status element exists", !!statusEl);
   check("watch: status starts as 'Watching off'", /off/i.test(statusEl.textContent),
     statusEl.textContent);
-  check("watch: button starts as 'Enable'", watchBtn.textContent === "Enable",
+  check("watch: button starts as 'Enable' (live state)", watchBtn.textContent === "Enable",
     watchBtn.textContent);
-  // Enable: jsdom has no FileSystemObserver, so the polling fallback kicks in.
+  // Click toggle: draft flips, button text reflects pending state, but the
+  // live watcher is still off (status still 'Watching off').
   watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("watch: enable -> status reports active",
-    /watching|polling/i.test(statusEl.textContent),
-    statusEl.textContent);
-  check("watch: button flips to 'Disable'",
+  await tick(20);
+  check("watch: toggle click flips button to 'Disable' (pending)",
     watchBtn.textContent === "Disable", watchBtn.textContent);
-  // Disable
-  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("watch: disable -> status reports off",
+  check("watch: live status still 'Watching off' (not yet applied)",
     /off/i.test(statusEl.textContent), statusEl.textContent);
+  // Apply: live watcher starts (polling fallback in jsdom). Status flips.
+  // Apply also closes the modal.
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  // (Modal is now closed; we re-grab the elements after reopening below.)
+  window.NB.settings.open(); await tick(20);
+  const statusEl2 = $("settings-watch-status");
+  const watchBtn2 = $("settings-watch-toggle");
+  check("watch: apply -> live status reports active",
+    /watching|polling/i.test(statusEl2.textContent),
+    statusEl2.textContent);
+  check("watch: apply -> button is 'Disable' (matches live state)",
+    watchBtn2.textContent === "Disable", watchBtn2.textContent);
+  // Toggle to disable: draft flips, but live is still active.
+  watchBtn2.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("watch: pending disable -> button text 'Enable'",
+    watchBtn2.textContent === "Enable", watchBtn2.textContent);
+  check("watch: pending disable -> live still active",
+    /watching|polling/i.test(statusEl2.textContent), statusEl2.textContent);
+  // Apply: live watcher disables. Status reports off. Modal closes.
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  window.NB.settings.open(); await tick(20);
+  const statusEl3 = $("settings-watch-status");
+  check("watch: apply disable -> status reports off",
+    /off/i.test(statusEl3.textContent), statusEl3.textContent);
   window.NB.settings.close();
   await tick(10);
 
@@ -1446,6 +1569,558 @@ function check(label, cond, extra) {
   // Reset for a clean exit: hide modal, restore defaults.
   window.NB.auth.hideModal();
   authEnabled = false; authRole = null;
+
+  console.log("== passwords ==");
+  // The Passwords section in Settings lets an admin (and only an admin)
+  // set/change the admin password, and toggle the optional viewer
+  // password that gates reads. We exercise the section with a fresh
+  // auth state per scenario so the assertions stay independent.
+  //
+  // Helper: pretend reload() so we can observe the post-save refresh
+  // without actually reloading jsdom (which would wipe our state).
+  let pwdReload = 0;
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { reload() { pwdReload++; } },
+  });
+
+  // Scenario 1: no auth configured. The section should be enabled (this
+  // is the first-time setup path: anyone can set the initial admin pw).
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authSetPasswordsCalls = [];
+  window.NB.settings.open(); await tick(40);
+  check("pwd: status reports enabled=false, hasAdmin=false",
+    $("settings-auth-admin-status").textContent === "Not set",
+    "status=" + $("settings-auth-admin-status").textContent);
+  check("pwd: admin input enabled (no admin set yet)",
+    !$("settings-auth-admin-pw").disabled);
+  check("pwd: admin save disabled (input empty)",
+    $("settings-auth-admin-save").disabled);
+  check("pwd: viewer toggle disabled (no admin set yet)",
+    $("settings-auth-viewer-toggle").disabled);
+  check("pwd: viewer row hidden (no admin set yet)",
+    $("settings-auth-viewer-row").hidden);
+  // Type a password -> save becomes enabled.
+  $("settings-auth-admin-pw").value = "newadmin";
+  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: typing in admin field enables save",
+    !$("settings-auth-admin-save").disabled);
+  // Click save -> POSTs {admin_password:"...", viewer_password:null} and reloads.
+  $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: admin save POSTs to /api/auth/passwords",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_password === "newadmin"
+    && authSetPasswordsCalls[0].viewer_password === null,
+    JSON.stringify(authSetPasswordsCalls));
+  check("pwd: admin save triggers reload", pwdReload === 1, "reload=" + pwdReload);
+  window.NB.settings.close();
+
+  // Scenario 2: viewer field reveal. Simulate post-reload state where
+  // auth is now enabled with admin set, no viewer. The toggle is enabled,
+  // the viewer row is hidden until the toggle is checked.
+  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  window.NB.settings.open(); await tick(40);
+  check("pwd: status reports admin set (post-reload)",
+    /Set/.test($("settings-auth-admin-status").textContent),
+    "status=" + $("settings-auth-admin-status").textContent);
+  check("pwd: viewer toggle enabled (admin can toggle)",
+    !$("settings-auth-viewer-toggle").disabled);
+  check("pwd: viewer toggle off by default (no viewer yet)",
+    $("settings-auth-viewer-toggle").checked === false);
+  // The viewer row is shown for admins (they can set a viewer even with
+  // the toggle off), so the row is visible immediately.
+  check("pwd: viewer row visible for admin (can set even with toggle off)",
+    !$("settings-auth-viewer-row").hidden);
+  check("pwd: viewer save disabled (no password typed)",
+    $("settings-auth-viewer-save").disabled);
+  // Checking the toggle when no viewer is set is a no-op (UI already in
+  // the right state); nothing to assert beyond no errors. We do verify
+  // the save is still disabled until a password is typed.
+  // Type a viewer password -> save becomes enabled.
+  $("settings-auth-viewer-pw").value = "viewpass";
+  $("settings-auth-viewer-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: typing in viewer field enables save",
+    !$("settings-auth-viewer-save").disabled);
+  // Click save -> POSTs {admin_password:null, viewer_password:"..."} and reloads.
+  authSetPasswordsCalls = [];
+  $("settings-auth-viewer-save").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: viewer save POSTs with admin=null, viewer=value",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_password === null
+    && authSetPasswordsCalls[0].viewer_password === "viewpass",
+    JSON.stringify(authSetPasswordsCalls));
+  check("pwd: viewer save triggers reload", pwdReload === 2, "reload=" + pwdReload);
+  window.NB.settings.close();
+
+  // Scenario 3: viewer already set. The section shows the current state,
+  // the toggle starts on, the Remove button is visible, and toggling off
+  // prompts for confirm before POSTing an empty viewer.
+  authEnabled = true; authHasAdmin = true; authHasViewer = true; authRole = "admin";
+  window.NB.settings.open(); await tick(40);
+  check("pwd: viewer toggle on when viewer is set",
+    $("settings-auth-viewer-toggle").checked === true);
+  check("pwd: viewer row visible when viewer is set",
+    !$("settings-auth-viewer-row").hidden);
+  check("pwd: viewer status reflects set state",
+    /Set/.test($("settings-auth-viewer-status").textContent),
+    "status=" + $("settings-auth-viewer-status").textContent);
+  check("pwd: Remove button visible when viewer is set",
+    !$("settings-auth-viewer-remove").hidden);
+  // Uncheck -> confirm shown, user cancels -> toggle stays on.
+  let pwdConfirmCount = 0;
+  window.confirm = () => { pwdConfirmCount++; return false; };
+  $("settings-auth-viewer-toggle").checked = false;
+  $("settings-auth-viewer-toggle").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("pwd: uncheck + cancel -> confirm shown once",
+    pwdConfirmCount === 1, "count=" + pwdConfirmCount);
+  check("pwd: uncheck + cancel -> toggle stays on",
+    $("settings-auth-viewer-toggle").checked === true);
+  check("pwd: uncheck + cancel -> no POST fired",
+    authSetPasswordsCalls.length === 0);
+  // Uncheck -> confirm, user OK -> POSTs empty viewer, reloads.
+  window.confirm = () => { pwdConfirmCount++; return true; };
+  authSetPasswordsCalls = [];
+  $("settings-auth-viewer-toggle").checked = false;
+  $("settings-auth-viewer-toggle").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(40);
+  check("pwd: uncheck + OK -> confirm shown",
+    pwdConfirmCount === 2, "count=" + pwdConfirmCount);
+  check("pwd: uncheck + OK -> POST with viewer_password:\"\"",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_password === null
+    && authSetPasswordsCalls[0].viewer_password === "",
+    JSON.stringify(authSetPasswordsCalls));
+  check("pwd: uncheck + OK -> reloads", pwdReload === 3, "reload=" + pwdReload);
+  window.NB.settings.close();
+
+  // Scenario 4: admin can change the admin password. The form is always
+  // present; entering a new value and clicking Save replaces the hash.
+  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  window.NB.settings.open(); await tick(40);
+  $("settings-auth-admin-pw").value = "rotated-pw";
+  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  authSetPasswordsCalls = [];
+  $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: admin rotate POSTs new value (viewer untouched)",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_password === "rotated-pw"
+    && authSetPasswordsCalls[0].viewer_password === null,
+    JSON.stringify(authSetPasswordsCalls));
+  check("pwd: admin rotate reloads", pwdReload === 4, "reload=" + pwdReload);
+  window.NB.settings.close();
+
+  // Scenario 5: non-admin (viewer) sees the section disabled.
+  authEnabled = true; authHasAdmin = true; authHasViewer = true; authRole = "viewer";
+  window.NB.settings.open(); await tick(40);
+  check("pwd: help text says sign in as admin for non-admins",
+    /Sign in as admin/i.test($("settings-auth-help").textContent),
+    "help=" + $("settings-auth-help").textContent);
+  check("pwd: admin input disabled for non-admin",
+    $("settings-auth-admin-pw").disabled);
+  check("pwd: admin save disabled for non-admin",
+    $("settings-auth-admin-save").disabled);
+  check("pwd: viewer toggle disabled for non-admin",
+    $("settings-auth-viewer-toggle").disabled);
+  check("pwd: viewer row hidden for non-admin",
+    $("settings-auth-viewer-row").hidden);
+  check("pwd: viewer actions hidden for non-admin",
+    $("settings-auth-viewer-actions").hidden);
+  window.NB.settings.close();
+
+  // Reset for a clean exit.
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authSetPasswordsCalls = [];
+  window.NB.settings.close();
+  window.confirm = () => true;
+
+  console.log("== settings footer ==");
+  // The Settings modal has a draft-then-commit footer with three buttons:
+  // Apply (apply + keep open), Save (apply + close), Cancel (revert + close).
+  // The header × (and Esc / backdrop) behave dynamically: Cancel if dirty,
+  // plain close if not. Only the Theme / Font-size / Watch sections are
+  // draftable; the Passwords section is untouched and still owns its own
+  // per-section Save/Remove + reload flow.
+  const applyBtn = $("settings-apply");
+  const saveBtn  = $("settings-save");
+  const cancelBtn = $("settings-cancel");
+  const closeXBtn = $("settings-close");
+  const watchBtn2 = $("settings-watch-toggle");
+
+  // Make sure the modal is closed before we start.
+  if (window.NB.settings.isOpen()) window.NB.settings.close();
+  await tick(10);
+
+  // 1. Fresh open: footer exists, Apply + Save are clickable.
+  window.NB.settings.open(); await tick(20);
+  check("footer: Apply button is present", !!applyBtn);
+  check("footer: Save button is present", !!saveBtn);
+  check("footer: Cancel button is present", !!cancelBtn);
+  check("footer: Apply is enabled on fresh open",
+    applyBtn.disabled === false, "disabled=" + applyBtn.disabled);
+  check("footer: Save is enabled on fresh open",
+    saveBtn.disabled === false, "disabled=" + saveBtn.disabled);
+
+  // 2. Theme radio change keeps Apply + Save enabled (no visual change).
+  const ftRadio = (v) => window.document.querySelector('input[name="theme"][value="' + v + '"]');
+  ftRadio("light").checked = true;
+  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("footer: theme change keeps Apply enabled", applyBtn.disabled === false);
+  check("footer: theme change keeps Save enabled", saveBtn.disabled === false);
+  // Live body data-theme is unchanged (no Apply yet).
+  check("footer: theme change does NOT yet change live data-theme",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+
+  // 3. Font-size change also keeps Apply/Save enabled.
+  const ftFs = (v) => window.document.querySelector('input[name="fontSize"][value="' + v + '"]');
+  ftFs("xlarge").checked = true;
+  ftFs("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("footer: fontSize change keeps Apply enabled", applyBtn.disabled === false);
+  check("footer: fontSize change keeps Save enabled", saveBtn.disabled === false);
+
+  // 4. Watch toggle click keeps Apply/Save enabled.
+  watchBtn2.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("footer: watch toggle click keeps Apply enabled", applyBtn.disabled === false);
+  check("footer: watch toggle click keeps Save enabled", saveBtn.disabled === false);
+
+  // 5. Cancel reverts all drafts and closes. No /api/config POST.
+  const postsBeforeCancel = fetchLog.filter(l => l.startsWith("POST /api/config")).length;
+  cancelBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("footer: Cancel closes the modal", !window.NB.settings.isOpen());
+  check("footer: Cancel does NOT POST /api/config",
+    fetchLog.filter(l => l.startsWith("POST /api/config")).length === postsBeforeCancel);
+  // Live state should be back to the boot defaults (theme=auto/dark, fontSize=medium).
+  check("footer: Cancel reverts live data-theme to dark",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+  check("footer: Cancel reverts live --font-scale to 1",
+    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
+
+  // 6. Reopen -> radios re-sync to the *original* (reverted) state, not the draft.
+  window.NB.settings.open(); await tick(20);
+  check("footer: reopen shows theme=auto (clean state)",
+    ftRadio("auto") && ftRadio("auto").checked === true,
+    "checked=" + (ftRadio("auto") && ftRadio("auto").checked));
+  check("footer: reopen shows fontSize=medium (clean state)",
+    ftFs("medium") && ftFs("medium").checked === true,
+    "checked=" + (ftFs("medium") && ftFs("medium").checked));
+
+  // 7. Apply persists drafts and closes the modal (same as Save -- the
+  //    user sees the change immediately when the modal goes away).
+  ftRadio("light").checked = true;
+  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  applyBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("footer: Apply closes the modal", !window.NB.settings.isOpen());
+  check("footer: Apply changes live data-theme to light",
+    window.document.body.dataset.theme === "light",
+    "data-theme=" + window.document.body.dataset.theme);
+  // Apply also persisted: wait past the 250ms debounce + check the body.
+  await tick(400);
+  const lastCfgPost = (fetchLog.filter(l => l.startsWith("POST /api/config")).pop() || "");
+  check("footer: Apply POSTs config with theme=\"light\"",
+    /"theme":"light"/.test(lastCfgPost), lastCfgPost);
+
+  // 8. Save applies + closes. Modal was closed by Apply above, so reopen.
+  window.NB.settings.open(); await tick(20);
+  ftRadio("dark").checked = true;
+  ftRadio("dark").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("footer: Save is clickable", saveBtn.disabled === false);
+  saveBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("footer: Save closes the modal", !window.NB.settings.isOpen());
+  check("footer: Save applies live data-theme=dark",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+
+  // 9. × with no pending changes just closes (no draft, no revert).
+  window.NB.settings.open(); await tick(20);
+  closeXBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("footer: × with no changes just closes",
+    !window.NB.settings.isOpen());
+  check("footer: × with no changes does not change live data-theme",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+
+  // 10. × with pending changes behaves as Cancel: reverts + closes.
+  window.NB.settings.open(); await tick(20);
+  ftRadio("light").checked = true;
+  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  closeXBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("footer: × with dirty draft closes (acts as Cancel)",
+    !window.NB.settings.isOpen());
+  check("footer: × with dirty draft reverts data-theme to dark",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+
+  // 11. Esc with pending changes also cancels.
+  window.NB.settings.open(); await tick(20);
+  ftFs("xlarge").checked = true;
+  ftFs("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await tick(20);
+  check("footer: Esc with dirty draft closes", !window.NB.settings.isOpen());
+  check("footer: Esc with dirty draft reverts --font-scale to 1",
+    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
+
+  // 12. Esc with no changes just closes.
+  window.NB.settings.open(); await tick(20);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await tick(10);
+  check("footer: Esc with no draft just closes", !window.NB.settings.isOpen());
+
+  // 13. Backdrop click with pending changes cancels.
+  window.NB.settings.open(); await tick(20);
+  ftRadio("light").checked = true;
+  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  const footerBackdropClick = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(footerBackdropClick, "target", { value: $("settings-overlay") });
+  $("settings-overlay").dispatchEvent(footerBackdropClick);
+  await tick(40);
+  check("footer: backdrop click with dirty draft closes", !window.NB.settings.isOpen());
+  check("footer: backdrop click with dirty draft reverts data-theme to dark",
+    window.document.body.dataset.theme === "dark",
+    "data-theme=" + window.document.body.dataset.theme);
+
+  // 14. Backdrop click with no draft just closes.
+  window.NB.settings.open(); await tick(20);
+  const footerBackdropClick2 = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(footerBackdropClick2, "target", { value: $("settings-overlay") });
+  $("settings-overlay").dispatchEvent(footerBackdropClick2);
+  await tick(10);
+  check("footer: backdrop click with no draft just closes", !window.NB.settings.isOpen());
+
+  // 15. Passwords section regression: the per-section Save/Remove buttons
+  //     are still present and still trigger their own page-reload flow.
+  //     The modal footer must not interfere with the per-section Save.
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authSetPasswordsCalls = [];
+  // re-bind reload spy (the previous one was used for password scenarios)
+  let pwdFooterReload = 0;
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { reload() { pwdFooterReload++; } },
+  });
+  window.NB.settings.open(); await tick(40);
+  // Pick a theme radio (make the draft dirty) -- then use the per-section
+  // password Save. The modal footer should NOT trigger a config POST, and
+  // the password Save should still reload.
+  ftRadio("light").checked = true;
+  ftRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  $("settings-auth-admin-pw").value = "footer-pw";
+  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("footer: per-section admin save still POSTs auth/passwords",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_password === "footer-pw"
+    && authSetPasswordsCalls[0].viewer_password === null,
+    JSON.stringify(authSetPasswordsCalls));
+  check("footer: per-section admin save still triggers reload",
+    pwdFooterReload === 1, "reload=" + pwdFooterReload);
+  // Reset
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authSetPasswordsCalls = [];
+  window.NB.settings.close();
+
+  console.log("== font size ==");
+  // The Font size radios in Settings set --font-scale on :root. Under the
+  // draft-then-commit model, picking a radio only mutates the draft; the
+  // live CSS variable only updates on Apply/Save.
+  check("font size: default --font-scale is 1 (medium)",
+    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
+  // The medium radio is checked on first open.
+  window.NB.settings.open(); await tick(40);
+  const fsRadio = (v) => window.document.querySelector('input[name="fontSize"][value="' + v + '"]');
+  check("font size: medium radio is checked by default",
+    fsRadio("medium") && fsRadio("medium").checked === true,
+    "checked=" + (fsRadio("medium") && fsRadio("medium").checked));
+  // Pick each size in turn and verify the draft picks the radio, but the
+  // live CSS variable only updates on Apply.
+  const expectScale = { small: "0.9", medium: "1", large: "1.15", xlarge: "1.3" };
+  for (const name of ["small", "large", "xlarge", "medium"]) {
+    fsRadio(name).checked = true;
+    fsRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    // The CSS variable should be the previous (live) one, NOT the new one,
+    // because Apply hasn't been clicked yet.
+    // (The "current" live scale is whatever was last applied. After each
+    // Apply below, it updates.)
+    check("font size: " + name + " -> radio picks draft",
+      fsRadio(name).checked === true,
+      "checked=" + (fsRadio(name) && fsRadio(name).checked));
+  }
+  // After the loop, draft = medium. Apply to reset live to medium.
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("font size: after apply-medium, --font-scale=1",
+    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
+  // Now exercise the Apply path for each non-default value, verifying
+  // the CSS variable updates and a /api/config POST goes out. Apply
+  // closes the modal, so reopen before each pick.
+  for (const name of ["small", "large", "xlarge"]) {
+    window.NB.settings.open(); await tick(20);
+    const before = fetchLog.filter(l => l.startsWith("POST /api/config")).length;
+    fsRadio(name).checked = true;
+    fsRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    // Not yet applied -- the live scale should still be the previous one.
+    check("font size: " + name + " pick -> live scale unchanged until apply",
+      cssVar("--font-scale") !== expectScale[name] || name === "medium",
+      "scale=" + cssVar("--font-scale"));
+    $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("font size: " + name + " apply -> --font-scale=" + expectScale[name],
+      cssVar("--font-scale") === expectScale[name],
+      "scale=" + cssVar("--font-scale"));
+    // Apply triggers setFontSize -> persistConfig (debounced). Wait past it.
+    await tick(400);
+    const posts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+    const lastPost = posts[posts.length - 1] || "";
+    check("font size: " + name + " apply -> config body has fontSize:\"" + name + "\"",
+      new RegExp('"fontSize":"' + name + '"').test(lastPost),
+      lastPost);
+  }
+
+  // Persist across open/close: after the previous loop the live scale is
+  // xlarge. Reset to medium via Apply so we can dirty the draft with a
+  // subsequent xlarge pick, then Save (apply+close), re-open, and verify
+  // the radio is still XL and the live scale is the XL value.
+  window.NB.settings.open(); await tick(20);
+  ftFs("medium").checked = true;
+  ftFs("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("font size: after reset-to-medium, --font-scale=1",
+    cssVar("--font-scale") === "1", "scale=" + cssVar("--font-scale"));
+  // Now dirty the draft with xlarge.
+  fsRadio("xlarge").checked = true;
+  fsRadio("xlarge").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("font size: pick xlarge (after medium) enables Save",
+    $("settings-save").disabled === false,
+    "disabled=" + $("settings-save").disabled);
+  $("settings-save").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("font size: after save, --font-scale=1.3 (xlarge)",
+    cssVar("--font-scale") === "1.3", "scale=" + cssVar("--font-scale"));
+  // Regression: setting --font-scale on <html> must actually move the
+  // computed root font-size. Earlier the `html, body { font: 1rem/1.5 ... }`
+  // shorthand came AFTER `html { font-size: calc(...) }` and reset the
+  // root size back to 1rem of the initial value (16px), so the chrome
+  // never scaled regardless of the variable. The variable test above
+  // only checks that the custom property is set; this one checks the
+  // computed <html> font-size to catch that class of regression.
+  const htmlFs = window.getComputedStyle(window.document.documentElement).fontSize;
+  check("font size: computed <html> font-size is 18.2px (14*1.3) at xlarge",
+    htmlFs === "18.2px", "htmlFs=" + htmlFs);
+  // Sanity: a rem child of <body> should scale too.
+  const bodyFs = window.getComputedStyle(window.document.body).fontSize;
+  check("font size: computed <body> font-size is 18.2px (1rem of root)",
+    bodyFs === "18.2px", "bodyFs=" + bodyFs);
+  window.NB.settings.open(); await tick(20);
+  check("font size: XL radio still checked across save+reopen",
+    fsRadio("xlarge").checked === true,
+    "checked=" + fsRadio("xlarge").checked);
+  // Reset to medium before the next test block (clean close + reopen+apply).
+  ftFs("medium").checked = true;
+  ftFs("medium").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  window.NB.settings.close(); await tick(10);
+
+  console.log("== light code block theme ==");
+  // The hljs-dark and hljs-light <link> tags toggle based on the resolved
+  // body theme. Dark is the default; switching to Light should disable
+  // the dark link and enable the light link. Under the draft-then-commit
+  // model, picking a radio only mutates the draft; the live data-theme
+  // (and the link swap) only happens on Apply.
+  const darkLink = window.document.getElementById("hljs-dark");
+  const lightLink = window.document.getElementById("hljs-light");
+  check("hljs: dark link element exists", !!darkLink);
+  check("hljs: light link element exists", !!lightLink);
+  // The previous == font size == block ended with save(xlarge) + close,
+  // so the live theme should still be "dark" (auto) and dark link enabled.
+  check("hljs: boot state -> dark enabled, light disabled",
+    darkLink.disabled === false && lightLink.disabled === true,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+
+  const themeRadio = (v) => window.document.querySelector('input[name="theme"][value="' + v + '"]');
+  // Open settings, pick light, then verify the draft was picked but the
+  // live link state hasn't changed yet.
+  window.NB.settings.open(); await tick(20);
+  themeRadio("light").checked = true;
+  themeRadio("light").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("hljs: light pick (draft) -> live links still dark-enabled",
+    darkLink.disabled === false && lightLink.disabled === true,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+  // Apply -> live link state swaps. Apply also closes the modal.
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("hljs: light apply -> light link enabled, dark link disabled",
+    darkLink.disabled === true && lightLink.disabled === false,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+
+  // Back to Dark: pick + apply. Reopen first.
+  window.NB.settings.open(); await tick(20);
+  themeRadio("dark").checked = true;
+  themeRadio("dark").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("hljs: dark pick (draft) -> live links still light-enabled (not yet applied)",
+    darkLink.disabled === true && lightLink.disabled === false,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("hljs: dark apply -> dark enabled, light disabled",
+    darkLink.disabled === false && lightLink.disabled === true,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+
+  // Auto mode: the matchMedia stub returns matches:false (system = dark),
+  // so the resolved theme is dark and the dark link is the enabled one.
+  window.NB.settings.open(); await tick(20);
+  themeRadio("auto").checked = true;
+  themeRadio("auto").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(10);
+  $("settings-apply").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("hljs: auto apply + matchMedia(dark) -> dark link enabled",
+    darkLink.disabled === false && lightLink.disabled === true,
+    "dark.disabled=" + darkLink.disabled + " light.disabled=" + lightLink.disabled);
+
+  // The cfg.theme persists as "auto" after the radio + apply.
+  check("hljs: cfg.theme persists as 'auto' after apply",
+    window.NB.app.getCfg().theme === "auto", "theme=" + window.NB.app.getCfg().theme);
+
+  // The dark link is currently enabled because theme=auto -> dark.
+  check("hljs: after auto apply, dark link is enabled",
+    darkLink.disabled === false && lightLink.disabled === true);
+
+  // Reset by closing (clean close since draft==original now).
+  window.NB.settings.close();
+  await tick(10);
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

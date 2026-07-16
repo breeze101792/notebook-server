@@ -6,6 +6,7 @@
 
   const DEFAULTS = {
     theme: "auto",
+    fontSize: "medium",
     lastFile: null,
     recentFiles: [],
     openFiles: [],
@@ -40,22 +41,55 @@
     if (pref === "auto") return (themeMQ && themeMQ.matches) ? "light" : "dark";
     return pref === "light" ? "light" : "dark";
   }
+  /* Swap the vendored highlight.js stylesheet to match the resolved theme.
+   * Both stylesheets are loaded into the document; we toggle the `disabled`
+   * attribute on each so the browser picks the right one. The light
+   * stylesheet is `disabled` in the HTML, so dark is the default at boot
+   * (matches the body's default `data-theme="dark"`). */
+  function applyHljsTheme(resolved) {
+    const light = document.getElementById("hljs-light");
+    const dark  = document.getElementById("hljs-dark");
+    if (light) light.disabled = resolved !== "light";
+    if (dark)  dark.disabled  = resolved === "light";
+  }
   function applyTheme(pref) {
     cfg.theme = pref;
-    document.body.dataset.theme = resolveTheme(pref);
+    const resolved = resolveTheme(pref);
+    document.body.dataset.theme = resolved;
+    applyHljsTheme(resolved);
   }
   if (themeMQ) {
     themeMQ.addEventListener("change", () => {
       if (cfg.theme === "auto") {
-        document.body.dataset.theme = resolveTheme("auto");
+        const resolved = resolveTheme("auto");
+        document.body.dataset.theme = resolved;
+        applyHljsTheme(resolved);
       }
     });
+  }
+
+  /* --- font size ------------------------------------------------------ */
+  // The base size is 14px (= 1rem); these multipliers are applied to the
+  // html element via --font-scale, so every rem-based font-size in the
+  // app scales together. The chrome (topbar, sidebar, tabs, edit bar,
+  // settings modal) is rem-ified in style.css to take advantage of this.
+  const FONT_SCALES = {
+    small:  0.9,
+    medium: 1.0,
+    large:  1.15,
+    xlarge: 1.3,
+  };
+  function applyFontSize(name) {
+    const mult = FONT_SCALES[name] != null ? FONT_SCALES[name] : 1;
+    cfg.fontSize = (FONT_SCALES[name] != null) ? name : "medium";
+    document.documentElement.style.setProperty("--font-scale", String(mult));
   }
 
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
     applyTheme(cfg.theme || "auto");
+    applyFontSize(cfg.fontSize || "medium");
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -259,6 +293,8 @@
   NB.app = {
     getCfg: () => cfg,
     setTheme: (pref) => { applyTheme(pref); persistConfig(); },
+    setFontSize: (name) => { applyFontSize(name); persistConfig(); },
+    getFontSize: () => cfg.fontSize || "medium",
     save: () => persistConfig(),
   };
 })();

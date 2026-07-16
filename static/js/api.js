@@ -60,6 +60,12 @@
     getAuthStatus: () => request("GET",  "/api/auth"),
     login:         (password)  => request("POST", "/api/login",  { password }),
     logout:        () => request("POST", "/api/logout"),
+    // Save the admin and/or viewer password. Pass null for a field to
+    // leave it unchanged; pass "" to clear the viewer (admin cannot be
+    // cleared once set, the server rejects that).
+    saveAuthPasswords: (adminPassword, viewerPassword) =>
+      request("POST", "/api/auth/passwords",
+        { admin_password: adminPassword, viewer_password: viewerPassword }),
   };
 
   /* Tiny pub/sub so modules decouple. */

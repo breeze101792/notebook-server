@@ -16,6 +16,13 @@
   --sidebar-width: 240px;
   --outline-width: 220px;
   --topbar-h: 46px;
+  /* Multiplier applied to the app's text size. Default 1; the user picks
+   * S/M/L/XL in the Settings modal which maps to 0.9 / 1 / 1.15 / 1.3.
+   * The base font size on <html> scales by this value, so any rem-based
+   * declaration follows automatically. Most of the chrome (sidebar, tabs,
+   * edit bar, settings rows) is rem-ified; only micro-decorations (8-11px
+   * glyphs that would look wrong at 1.3x) stay in px. */
+  --font-scale: 1;
 }
 
 body[data-theme="light"] {
@@ -34,12 +41,17 @@ body[data-theme="light"] {
 
 * { box-sizing: border-box; }
 
-html, body {
+html {
+  /* Browsers derive rem from this; scaling it here is the cleanest way
+   * to make the app-wide font size work. */
+  font-size: calc(14px * var(--font-scale, 1));
+}
+body {
   margin: 0;
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 #app {
@@ -62,7 +74,7 @@ html, body {
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
-.brand { font-weight: 700; letter-spacing: .3px; opacity: .9; }
+.brand { font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
 .topbar-actions { display: flex; gap: 6px; }
 .topbar-spacer { flex: 1 1 auto; }
 
@@ -73,7 +85,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 10px;
-  font-size: 13px;
+  font-size: .93rem;
   cursor: pointer;
 }
 #topbar button:hover { background: var(--accent-soft); border-color: var(--accent); }
@@ -89,12 +101,12 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
-  font-size: 13px;
+  font-size: .93rem;
 }
 #search-input:focus { outline: none; border-color: var(--accent); }
 .case-toggle {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 12px; color: var(--fg-muted); cursor: pointer;
+  font-size: .86rem; color: var(--fg-muted); cursor: pointer;
   user-select: none;
 }
 .case-toggle input { cursor: pointer; }
@@ -127,7 +139,7 @@ html, body {
   gap: 6px;
   padding: 8px 12px;
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: .79rem;
   text-transform: uppercase;
   letter-spacing: .8px;
   color: var(--fg-muted);
@@ -183,7 +195,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 15px;
+  font-size: 1.07rem;
   line-height: 1;
   padding: 2px 4px;
   border-radius: 4px;
@@ -201,7 +213,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: var(--bg-panel);
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 1rem;
   align-items: center;
   justify-content: center;
   z-index: 2;
@@ -269,7 +281,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border-radius: 4px;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: .93rem;
   line-height: 1;
 }
 .edit-bar .eb:hover {
@@ -280,7 +292,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .edit-bar .eb code,
 .edit-bar .eb b,
 .edit-bar .eb i,
-.edit-bar .eb s { font-size: 13px; }
+.edit-bar .eb s { font-size: .93rem; }
 .edit-bar .eb-sep {
   display: inline-block;
   width: 1px;
@@ -355,7 +367,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border-radius: 6px 6px 0 0;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: .89rem;
   color: var(--fg-muted);
   user-select: none;
 }
@@ -428,7 +440,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: .93rem;
   cursor: pointer;
 }
 .watch-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
@@ -441,7 +453,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: none;
   border: none;
   color: var(--fg-muted);
-  font-size: 18px;
+  font-size: 1.3rem;
   line-height: 1;
   padding: 4px 8px;
   border-radius: 6px;
@@ -463,7 +475,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * so the overlay starts closed and stays closed. */
 .settings-overlay[hidden] { display: none; }
 .settings-modal {
-  width: min(520px, 92vw);
+  width: min(720px, 92vw);
   max-height: 86vh;
   overflow-y: auto;
   background: var(--bg-panel);
@@ -482,7 +494,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 .settings-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 1.14rem;
   font-weight: 600;
   letter-spacing: .3px;
 }
@@ -491,13 +503,13 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .settings-section:last-child { border-bottom: none; }
 .settings-section h3 {
   margin: 0 0 10px;
-  font-size: 11px;
+  font-size: .79rem;
   text-transform: uppercase;
   letter-spacing: .8px;
   color: var(--fg-muted);
   font-weight: 600;
 }
-.settings-help { color: var(--fg-muted); font-size: 12.5px; margin: 0 0 10px; }
+.settings-help { color: var(--fg-muted); font-size: .89rem; margin: 0 0 10px; }
 .settings-row {
   display: flex;
   align-items: center;
@@ -507,12 +519,12 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .settings-label {
   flex: 0 0 130px;
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: .93rem;
 }
-.settings-value { color: var(--fg); font-size: 13px; }
+.settings-value { color: var(--fg); font-size: .93rem; }
 .settings-mono {
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: .86rem;
   background: var(--bg-elev);
   padding: 3px 8px;
   border-radius: 4px;
@@ -526,7 +538,19 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   align-items: center;
   gap: 4px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: .93rem;
+}
+/* Font size radios mirror the theme-options row but keep the labels short
+ * ("S" / "M" / "L" / "XL") so the row stays compact even at XL scale. */
+.font-size-options { display: flex; gap: 10px; }
+.font-size-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: .93rem;
+  min-width: 2.4em;
+  justify-content: center;
 }
 .settings-action {
   background: var(--bg-elev);
@@ -534,10 +558,31 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: .93rem;
   cursor: pointer;
 }
 .settings-action:hover { background: var(--accent-soft); border-color: var(--accent); }
+.settings-action:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  background: var(--bg-elev);
+  border-color: var(--border);
+}
+.settings-action:disabled:hover {
+  background: var(--bg-elev);
+  border-color: var(--border);
+}
+/* Footer with draft-then-commit buttons (Apply / Save / Cancel). Lives
+ * inside the modal below the scrollable body so it stays anchored. */
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* Auth: login modal + dim-when-locked state                            */
@@ -547,7 +592,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .auth-modal { width: min(420px, 92vw); }
 .auth-form .auth-help {
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: .93rem;
   margin: 4px 0 12px;
 }
 .auth-form .settings-row { padding: 8px 0; }
@@ -558,7 +603,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 7px 10px;
-  font: 14px "SFMono-Regular", Menlo, Consolas, monospace;
+  font: 1rem "SFMono-Regular", Menlo, Consolas, monospace;
   outline: none;
 }
 .auth-input:focus { border-color: var(--accent); }
@@ -571,7 +616,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .auth-submit:disabled { opacity: .6; cursor: progress; }
 .auth-error {
   color: var(--danger);
-  font-size: 12.5px;
+  font-size: .89rem;
   min-height: 18px;
   margin: 2px 0 4px;
 }
@@ -581,6 +626,21 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 body.auth-locked #app { opacity: .25; pointer-events: none; }
 body.auth-locked #topbar,
 body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
+
+/* Passwords section inside the Settings modal. The inputs reuse the
+ * .auth-input look from the login modal; we just add a max-width so
+ * long fields don't blow out the modal layout. */
+.settings-auth-input {
+  max-width: 260px;
+}
+.settings-auth-input:disabled { opacity: .55; }
+.auth-status-text {
+  font-size: .86rem;
+  color: var(--fg-muted);
+}
+.settings-auth-error {
+  margin: 4px 0 0;
+}
 
 /* The viewer is the scroll container (IntersectionObserver root). */
 #viewer {
@@ -598,7 +658,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   border: none;
   border-top: 1px solid var(--border);
   padding: 16px 40px;
-  font: 14px/1.6 "SFMono-Regular", Menlo, Consolas, monospace;
+  font: 1rem/1.6 "SFMono-Regular", Menlo, Consolas, monospace;
   resize: none;
   outline: none;
 }
@@ -670,7 +730,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 .tree-children { padding-left: 16px; }
 .tree-row.collapsed + .tree-children { display: none; }
-.tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: 12px; }
+.tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
 /* Context menu                                                        */
@@ -694,7 +754,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   color: var(--fg);
   padding: 7px 10px;
   border-radius: 5px;
-  font-size: 13px;
+  font-size: .93rem;
   cursor: pointer;
 }
 .context-menu button:hover { background: var(--accent-soft); }
@@ -717,7 +777,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   text-decoration: none;
   border-left: 2px solid transparent;
   border-radius: 0 4px 4px 0;
-  font-size: 12.5px;
+  font-size: .89rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -729,7 +789,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   background: var(--accent-soft);
   font-weight: 600;
 }
-.outline-empty { padding: 16px 12px; color: var(--fg-muted); font-size: 12px; }
+.outline-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
 /* Search results                                                      */
@@ -748,7 +808,7 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   justify-content: space-between;
   margin-bottom: 10px;
   color: var(--fg-muted);
-  font-size: 13px;
+  font-size: .93rem;
 }
 #search-close {
   background: none; border: 1px solid var(--border);
@@ -765,11 +825,11 @@ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
   background: var(--bg-panel);
 }
 .search-hit:hover { border-color: var(--accent); background: var(--accent-soft); }
-.search-hit .hit-file { font-weight: 600; color: var(--accent); font-size: 13px; }
+.search-hit .hit-file { font-weight: 600; color: var(--accent); font-size: .93rem; }
 .search-hit .hit-meta { color: var(--fg-muted); font-size: 11px; margin-left: 8px; }
 .search-hit .hit-snippet {
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: .86rem;
   margin-top: 4px;
   color: var(--fg);
   white-space: pre-wrap;

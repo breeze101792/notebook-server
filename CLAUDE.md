@@ -41,13 +41,36 @@ There is no lint step configured; the only test runners are `unittest` (backend)
 
 ## Optional: enabling password protection
 
-By default the server is open. To put a two-password gate in front of the API
-(admin = read/write, viewer = read-only), write `config/auth.json`:
+By default the server is open. To put a two-password gate in front of the
+API, open the Settings modal (⚙ button in the top bar) → **Passwords**:
+
+- **Admin password** (required to enable auth): set this first. The
+  next page load will require the password for *all* writes; if you also
+  enable the viewer password, reads are gated too.
+- **Require a password to read** (optional): set a separate viewer
+  password. When unset, reads are open. When set, anyone hitting the
+  site must sign in as a viewer (or admin) to read. The toggle clears
+  the viewer password; it can be re-set any time.
+
+Passwords are sent over the wire as plain text, hashed server-side with
+bcrypt (cost 12), and never stored. The page reloads after a save so
+the new auth state takes effect on the next boot.
+
+A failed-login rate limiter trips 429 after 5 wrong attempts in 60s per
+client IP. **Logout button** in the top bar (visible only when auth is
+on and the user is signed in) ends the current session. Sign out from
+a viewer session and reopen the modal to make changes — non-admins
+can't edit the passwords section.
+
+### Recovery / power-user: hand-writing `config/auth.json`
+
+If you'd rather not use the UI (e.g. headless setup, scripted deploys,
+or a full reset), write the file directly:
 
 ```bash
 # 1. hash your admin password
 HASH_ADMIN=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_ADMIN_PW', bcrypt.gensalt(12)).decode())")
-# 2. (optional) hash a viewer password; omit to disable the read-only role
+# 2. (optional) hash a viewer password; omit the key to keep reads open
 HASH_VIEWER=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_VIEWER_PW', bcrypt.gensalt(12)).decode())")
 # 3. write the file (the server generates the session-signing secret on first start)
 python -c "
@@ -60,8 +83,7 @@ open('config/auth.json', 'w').write(json.dumps({
 # 4. restart the server -- the login modal will appear on next page load
 ```
 
-A failed-login rate limiter trips 429 after 5 wrong attempts in 60s per client IP.
-Delete `config/auth.json` to remove auth.
+To fully remove the auth layer, delete `config/auth.json` and restart.
 
 ## Architecture
 
@@ -73,9 +95,10 @@ on import. `seed()` ensures `config/config.json` exists, runs a one-time
 migration of legacy `data/` into `notebook/` if needed, and on a fresh
 install copies the contents of `notebook.template/` into `notebook/`. The
 template ships with a single `Welcome.md`; editing notes never touches the
-template. Endpoints: `/api/auth` (GET), `/api/login` (POST), `/api/logout`
-(POST), `/api/config` (GET/POST), `/api/tree` (GET), `/api/file` (GET/POST),
-`/api/create`, `/api/move`, `/api/copy`, `/api/delete`, `/api/search`.
+template. Endpoints: `/api/auth` (GET), `/api/auth/passwords` (POST, admin-only),
+`/api/login` (POST), `/api/logout` (POST), `/api/config` (GET/POST),
+`/api/tree` (GET), `/api/file` (GET/POST), `/api/create`, `/api/move`,
+`/api/copy`, `/api/delete`, `/api/search`.
 
 `safe_path(rel)` is the security-critical chokepoint: every file route resolves the
 user-supplied relative path through it, which rejects absolute input, `..` traversal,
@@ -90,17 +113,26 @@ parsing HTML.
 **Auth (optional two-password gate).** `config/auth.json` (separate from
 `config.json` so the UI-prefs blob can never include hashed credentials) holds
 `{"admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>"}`
-plus a generated `secret` used as Flask's session-signing key. If both hashes
-are empty/missing the whole auth layer is bypassed. When configured,
-`@login_required` (401 if no session) gates every API route except `/` and
-`/api/auth`/`/api/login`; `@admin_required` (403 if role != "admin") adds the
-mutating routes on top. Sessions are Flask's signed/encrypted cookies; the
+plus a generated `secret` used as Flask's session-signing key. Auth is "on"
+when the admin password is set; the viewer password is independent and only
+gates reads (admin set, viewer unset → reads open, writes gated). Three
+decorators compose the layer: `@login_required` (401 if no session) gates
+the mutating routes; `@admin_required` (403 if role != "admin") adds the
+write paths; `@read_login_required` (401 if no session AND a viewer
+password is configured) gates the read paths so an admin-only config
+leaves reads open. Sessions are Flask's signed/encrypted cookies; the
 role is `session["role"]` ∈ `{"admin", "viewer"}`. A best-effort in-memory
 rate limiter (5 failures / 60s per client IP) trips 429 on the 6th attempt.
-There is no in-app UI for setup — the user hashes a password with
-`python -c "import bcrypt; print(bcrypt.hashpw(b'pw', bcrypt.gensalt(12)).decode())"`
-and pastes the result into `config/auth.json`. The secret is auto-generated
-on first start and persisted.
+The Settings modal's **Passwords** section is the in-app setup path:
+admin password is set/rotated via a single input, and the optional viewer
+password is set/cleared via a "Require a password to read" toggle. The
+admin-only `POST /api/auth/passwords` route hashes the values (bcrypt
+cost 12) and writes them; the page reloads after every save so the boot
+path runs again with the new state. Empty `admin_password` is rejected
+(cannot disable auth from the UI — delete the file to fully reset);
+empty `viewer_password` clears the viewer. The `GET /api/auth` response
+is `{enabled, hasAdmin, hasViewer, role}` so the UI can render without
+exposing hashes.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
@@ -132,12 +164,35 @@ Module responsibilities:
   (never `innerHTML` on snippet text).
 - `app.js` — bootstrap: loads config (merged over `DEFAULTS`), wires everything,
   drives sidebar/outline collapse + drag-resize (CSS vars `--sidebar-width` /
-  `--outline-width`), theme select.
+  `--outline-width`), theme select, font-size scale (CSS var `--font-scale` on
+  `:root` driven by rem-based chrome), and the code-theme swap that enables
+  either the dark or light vendored highlight.js stylesheet based on the
+  resolved body theme.
+- `settings.js` — Settings modal. Three "live" fields (theme, font size,
+  file-watching toggle) use a **draft-then-commit** model: editing a radio or
+  the watch toggle only mutates an in-memory draft; an `Apply` / `Save` /
+  `Cancel` footer (and the header `×`, Esc, and backdrop click) decides what
+  happens. Both `Apply` and `Save` commit the draft through
+  `NB.app.setTheme` / `setFontSize` / `NB.watcher.enable|disable` (each of
+  which writes through to the same debounced `persistConfig()` the rest of
+  the UI uses) and close the modal — closing immediately is the most reliable
+  way for the user to see the result of a font-size or theme switch, since
+  the modal in front of the dimmed UI makes subtle changes hard to notice.
+  `Cancel` reverts live state to the snapshot taken at `open()` time and
+  closes. The `×` / Esc / backdrop click all delegate to a dynamic `close()`
+  — `Cancel` if the draft is dirty, plain close otherwise. The **Passwords**
+  section is deliberately excluded from this footer flow and keeps its own
+  per-section Save/Remove buttons that reload the page on success.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
-`lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,
+`fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,
 `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`, `searchCaseSensitive`.
-It is an opaque JSON object the server stores verbatim — no schema enforcement.
+`fontSize` ∈ {`"small"`, `"medium"`, `"large"`, `"xlarge"`} drives the
+`--font-scale` CSS variable (0.9 / 1.0 / 1.15 / 1.3); the resolved value applies
+to the whole app via rem-ified chrome. The code-block syntax theme is **not**
+persisted — it follows the body theme at runtime (light theme loads the
+`github.css` hljs stylesheet, dark theme loads `github-dark.css`). It is an
+opaque JSON object the server stores verbatim — no schema enforcement.
 
 ## Testing conventions
 

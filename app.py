@@ -233,9 +233,24 @@ def ensure_auth_secret():
 
 
 def auth_enabled():
-    """True if at least one role's password hash is set."""
+    """True if the admin password hash is set. The auth layer is "on" iff
+    the admin password exists; the viewer password is optional and only
+    affects whether reads also need a session."""
     data = load_auth()
-    return bool(data.get("admin_password_hash") or data.get("viewer_password_hash"))
+    return bool(data.get("admin_password_hash"))
+
+
+def viewer_required():
+    """True if reads need a session: both the admin and the viewer
+    password are set. With only the admin password configured, reads
+    are open (only writes are gated)."""
+    data = load_auth()
+    return bool(data.get("admin_password_hash") and data.get("viewer_password_hash"))
+
+
+def has_viewer_password():
+    """True if the viewer password hash is set (regardless of admin)."""
+    return bool(load_auth().get("viewer_password_hash"))
 
 
 def _check_password(plain, stored_hash):
@@ -311,6 +326,24 @@ def admin_required(view):
     return wrapped
 
 
+def read_login_required(view):
+    """Like @login_required, but only fires when reads are actually gated
+    (admin pw set AND viewer pw set). Without a viewer password, reads
+    are open even with the auth layer on. Used for the read-only routes
+    (tree, file GET, config GET, info, search)."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not viewer_required():
+            return view(*args, **kwargs)
+        if not session.get("role"):
+            return err("Unauthorized", 401)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 # --------------------------------------------------------------------------- #
 # Routes: page + config
 # --------------------------------------------------------------------------- #
@@ -320,7 +353,7 @@ def index():
 
 
 @app.route("/api/config", methods=["GET"])
-@login_required
+@read_login_required
 def get_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -331,7 +364,7 @@ def get_config():
 
 
 @app.route("/api/info", methods=["GET"])
-@login_required
+@read_login_required
 def info():
     """Read-only info used by the settings page. Returns the absolute
     data/config directories; both are already known to the user (they are
@@ -362,13 +395,28 @@ def set_config():
 # --------------------------------------------------------------------------- #
 @app.route("/api/auth", methods=["GET"])
 def auth_status():
-    """Public endpoint: tells the client whether auth is required and, if a
-    session cookie is present, which role is logged in. Always returns 200
-    so the frontend can decide whether to show a login modal without itself
-    being a gated request."""
-    enabled = auth_enabled()
-    role = session.get("role") if enabled else None
-    return jsonify({"enabled": enabled, "role": role})
+    """Public endpoint: tells the client the current auth state without
+    exposing any hashes. Always returns 200 so the frontend can decide
+    whether to show a login modal without itself being a gated request.
+
+    Shape:
+      enabled   -- True if the admin password is set (auth layer is on)
+      hasAdmin  -- True if the admin password hash is non-empty
+      hasViewer -- True if the viewer password hash is non-empty
+                   (independent of admin; the UI shows this as the
+                   "require a password to read" toggle state)
+      role      -- the session role if the user is logged in, else null
+    """
+    data = load_auth()
+    has_admin = bool(data.get("admin_password_hash"))
+    has_viewer = bool(data.get("viewer_password_hash"))
+    role = session.get("role") if has_admin else None
+    return jsonify({
+        "enabled": has_admin,
+        "hasAdmin": has_admin,
+        "hasViewer": has_viewer,
+        "role": role,
+    })
 
 
 @app.route("/api/login", methods=["POST"])
@@ -414,17 +462,92 @@ def auth_logout():
     return jsonify({"ok": True})
 
 
+# Minimum length we accept for any new password. Bcrypt with cost 12 is
+# already slow; a short minimum would just make brute force trivial.
+_MIN_PASSWORD_LEN = 6
+
+
+@app.route("/api/auth/passwords", methods=["POST"])
+@admin_required
+def auth_set_passwords():
+    """Set or change the admin and/or viewer password.
+
+    Body: {"admin_password": "...", "viewer_password": "..."}. Either
+    field may be omitted. Empty `admin_password` is rejected (the admin
+    password cannot be cleared via this route -- once enabled, the auth
+    layer stays on; clearing requires hand-editing the file). Empty
+    `viewer_password` clears the viewer hash. Both fields are bcrypt-
+    hashed server-side before persisting.
+
+    Returns the new state ({hasAdmin, hasViewer}) so the client can
+    update its UI without a follow-up /api/auth call.
+    """
+    data, error = expect_json("admin_password", "viewer_password")
+    if error:
+        return error
+    admin_pw = data["admin_password"]
+    viewer_pw = data["viewer_password"]
+    # None means "don't touch this field"; string means "set/change";
+    # anything else is a type error.
+    if not (admin_pw is None or isinstance(admin_pw, str)):
+        return err("admin_password must be a string or null", 400)
+    if not (viewer_pw is None or isinstance(viewer_pw, str)):
+        return err("viewer_password must be a string or null", 400)
+
+    auth = load_auth()
+    # Admin password is permanent once set; you can change it (provide
+    # a new value) but not clear it. Semantics of each field:
+    #   null  -> don't touch this field
+    #   ""    -> clear this field (only meaningful for viewer; admin
+    #            cannot be cleared once set)
+    #   str   -> bcrypt-hash and set
+    # Length checks only apply to non-empty values; empty is the
+    # "clear" signal for viewer and a guarded "refuse" for admin.
+    if admin_pw not in (None, "") and len(admin_pw) < _MIN_PASSWORD_LEN:
+        return err("Admin password must be at least %d characters"
+                   % _MIN_PASSWORD_LEN, 400)
+    if viewer_pw not in (None, "") and len(viewer_pw) < _MIN_PASSWORD_LEN:
+        return err("Viewer password must be at least %d characters"
+                   % _MIN_PASSWORD_LEN, 400)
+
+    if admin_pw is None:
+        # leave as-is
+        pass
+    elif admin_pw == "":
+        if not auth.get("admin_password_hash"):
+            return err("Admin password is required to enable auth", 400)
+        return err("Admin password cannot be cleared via this route", 400)
+    else:
+        auth["admin_password_hash"] = bcrypt.hashpw(
+            admin_pw.encode("utf-8"), bcrypt.gensalt(12)
+        ).decode()
+    if viewer_pw is None:
+        pass
+    elif viewer_pw == "":
+        auth.pop("viewer_password_hash", None)
+    else:
+        auth["viewer_password_hash"] = bcrypt.hashpw(
+            viewer_pw.encode("utf-8"), bcrypt.gensalt(12)
+        ).decode()
+    save_auth(auth)
+    return jsonify({
+        "ok": True,
+        "hasAdmin": bool(auth.get("admin_password_hash")),
+        "hasViewer": bool(auth.get("viewer_password_hash")),
+    })
+
+
 # --------------------------------------------------------------------------- #
 # Routes: file tree + read/write
 # --------------------------------------------------------------------------- #
 @app.route("/api/tree", methods=["GET"])
-@login_required
+@read_login_required
 def tree():
     return jsonify({"tree": build_tree(DATA_DIR)})
 
 
 @app.route("/api/file", methods=["GET"])
-@login_required
+@read_login_required
 def file_get():
     rel = request.args.get("path", "").strip()
     abs_path = safe_path(rel)
@@ -579,7 +702,7 @@ def delete():
 # Routes: search
 # --------------------------------------------------------------------------- #
 @app.route("/api/search", methods=["GET"])
-@login_required
+@read_login_required
 def search():
     query = request.args.get("q", "")
     case_sensitive = request.args.get("case", "0") == "1"

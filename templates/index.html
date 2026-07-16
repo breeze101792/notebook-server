@@ -6,7 +6,8 @@
   <title>Markdown Notebook</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/style.css">
-  <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css">
+  <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
+  <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head>
 <body data-theme="dark">
   <div id="app">
@@ -150,6 +151,15 @@
               <label><input type="radio" name="theme" value="light"> Light</label>
             </div>
           </div>
+          <div class="settings-row">
+            <label class="settings-label">Font size</label>
+            <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
+              <label><input type="radio" name="fontSize" value="small"> S</label>
+              <label><input type="radio" name="fontSize" value="medium"> M</label>
+              <label><input type="radio" name="fontSize" value="large"> L</label>
+              <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+            </div>
+          </div>
         </section>
 
         <section class="settings-section">
@@ -168,6 +178,43 @@
           </div>
         </section>
 
+        <section class="settings-section" id="settings-auth-section">
+          <h3>Passwords</h3>
+          <p id="settings-auth-help" class="settings-help">
+            Sign in as admin to change passwords.
+          </p>
+          <div class="settings-row">
+            <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
+            <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input"
+                   autocomplete="new-password" placeholder="Enter new password" disabled>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">
+              <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
+            </span>
+            <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+          </div>
+          <div class="settings-row">
+            <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
+            <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
+          </div>
+          <div class="settings-row" id="settings-auth-viewer-row" hidden>
+            <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
+            <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input"
+                   autocomplete="new-password" placeholder="Enter new password">
+          </div>
+          <div class="settings-row" id="settings-auth-viewer-actions" hidden>
+            <span class="settings-label">
+              <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
+            </span>
+            <span class="settings-control">
+              <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
+              <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
+            </span>
+          </div>
+          <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+        </section>
+
         <section class="settings-section">
           <h3>About</h3>
           <div class="settings-row">
@@ -179,6 +226,16 @@
             <code id="settings-config-dir" class="settings-value settings-mono">…</code>
           </div>
         </section>
+      </div>
+      <!-- Footer with draft-then-commit buttons. The Apply/Save buttons are
+           disabled when there are no pending changes; Cancel always
+           discards the draft and closes. The Passwords section above has
+           its own per-section Save/Remove flow and is unaffected by this
+           footer. -->
+      <div class="settings-footer">
+        <button id="settings-apply" class="settings-action">Apply</button>
+        <button id="settings-save" class="settings-action">Save</button>
+        <button id="settings-cancel" class="settings-action">Cancel</button>
       </div>
     </div>
   </div>
