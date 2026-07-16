@@ -356,6 +356,21 @@
       NB.evt.emit("file:saved", active);
     },
 
+    /* Scroll the rendered viewer to a heading by its slugified id.
+     * The id is the same string the renderer's slugify() produces on
+     * each h1..h6 (e.g. "## Core rules" -> "core-rules"). Used by
+     * NB.app.openDeepLink() to honor a `?file=...&heading=...` URL.
+     * Same getElementById + scrollIntoView pattern as the outline
+     * click handler (outline.js:44-48). Returns true on hit, false
+     * on miss (missing id or empty slug). */
+    scrollToHeading(slug) {
+      if (!slug) return false;
+      const el = document.getElementById(slug);
+      if (!el) return false;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      return true;
+    },
+
     /* Jump to the first occurrence of `term` in the rendered DOM and
      * scroll it into view. Used by search.js on result click. */
     jumpToMatch(term, caseSensitive) {

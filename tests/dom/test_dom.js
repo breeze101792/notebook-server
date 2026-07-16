@@ -2757,6 +2757,203 @@ function check(label, cond, extra) {
       editSplitBlock ? editSplitBlock[0] : "(not found)");
   }
 
+  console.log("== deep link ==");
+  // The app honors `?file=<path>&heading=<slug>` URLs: open the named
+  // note and scroll to the named heading on boot. parseDeepLink is a
+  // pure URL parser (easy to test); openDeepLink is the façade that
+  // activates the tab, scrolls the viewer, and strips the query string
+  // from the address bar.
+  //
+  // Test target: notes/b.md. Its content (FILE_B) is `# File B` with
+  // no h2, which slugifies to "file-b". The fixture is read-only
+  // across the test suite (Welcome.md gets overwritten by the
+  // external-change block, notes/a.md gets saved with a new heading),
+  // so notes/b.md is the only file that keeps its original content
+  // and headings for the duration of the run.
+  //
+  // The other fixtures (notes/a.md, Welcome.md) are also exercised,
+  // but we re-set their FILES entries to the original content first
+  // so the deep-link scroll targets are stable.
+  {
+    // --- pure parseDeepLink -----------------------------------------
+    const parse = window.NB.app.parseDeepLink;
+    check("parseDeepLink: exposed", typeof parse === "function");
+    const d1 = parse("http://x/?file=README.md&heading=core-rules");
+    check("parseDeepLink: file + heading",
+      d1 && d1.file === "README.md" && d1.heading === "core-rules",
+      JSON.stringify(d1));
+    const d2 = parse("http://x/?file=README.md");
+    check("parseDeepLink: file only (heading null)",
+      d2 && d2.file === "README.md" && d2.heading === null,
+      JSON.stringify(d2));
+    check("parseDeepLink: no file -> null",
+      parse("http://x/") === null);
+    check("parseDeepLink: unrelated params -> null",
+      parse("http://x/?other=1") === null);
+    check("parseDeepLink: URL-encodes spaces in path",
+      parse("http://x/?file=" + encodeURIComponent("notes/sub/My File.md")) &&
+      parse("http://x/?file=" + encodeURIComponent("notes/sub/My File.md")).file
+        === "notes/sub/My File.md");
+
+    // Re-seed the fixtures this block needs so the heading scroll
+    // targets are stable (the earlier edit/save and external-change
+    // blocks mutate them in place via the fake fetch). Also reset
+    // TREE: several earlier blocks (sidebar drag, DnD, external
+    // change) wipe + repopulate it, so the deep-link check has no
+    // reliable way to find a file in the tree otherwise.
+    TREE.length = 0;
+    TREE.push({ name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+      { name: "b.md", type: "file", path: "notes/b.md" },
+    ]});
+    TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
+    FILES["notes/b.md"] = "# File B\n\nAnother TODO fix this here.\n";
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    // Drop any cached entries so the next viewer.activate re-fetches.
+    for (const p of ["notes/a.md", "notes/b.md", "Welcome.md"]) {
+      window.NB.viewer.close(p);
+    }
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    await window.NB.tabs.open("notes/b.md");
+    await tick(20);
+    check("setup: notes/b.md active for deep-link tests",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive() +
+      " open=" + JSON.stringify(window.NB.tabs.getOpen()));
+    check("setup: heading #file-b is in the DOM",
+      !!window.document.getElementById("file-b"),
+      "heads in viewer: " +
+        Array.from(window.document.querySelectorAll("#viewer-content h1,#viewer-content h2"))
+          .map(h => h.id).join(","));
+
+    // --- scrollToHeading direct -------------------------------------
+    // The viewer's scrollToHeading looks up an element by id (the same
+    // slug the renderer assigns to each h1..h6) and calls scrollIntoView.
+    check("viewer.scrollToHeading: present slug -> true",
+      window.NB.viewer.scrollToHeading("file-b") === true);
+    check("viewer.scrollToHeading: missing slug -> false",
+      window.NB.viewer.scrollToHeading("does-not-exist") === false);
+    check("viewer.scrollToHeading: empty slug -> false",
+      window.NB.viewer.scrollToHeading("") === false);
+
+    // --- openDeepLink integration -----------------------------------
+    // Spy on scrollIntoView + history.replaceState. The boot path
+    // expects scrollIntoView to be called on the deep-linked element,
+    // and replaceState to be called to strip the query string.
+    const scrollCalls = [];
+    const realScroll = window.Element.prototype.scrollIntoView;
+    const realHistoryReplace = window.history.replaceState.bind(window.history);
+    const historyCalls = [];
+    window.Element.prototype.scrollIntoView = function () { scrollCalls.push(this.id); };
+    window.HTMLElement.prototype.scrollIntoView = window.Element.prototype.scrollIntoView;
+    window.history.replaceState = function (state, title, url) {
+      historyCalls.push(url);
+      return realHistoryReplace(state, title, url);
+    };
+
+    // Capture console.warn args (multi-arg warns join with spaces) so
+    // the assertions can match the full message.
+    const warns = [];
+    const realWarn = window.console.warn;
+    window.console.warn = (...args) => warns.push(args.map(String).join(" "));
+
+    // Successful case: file in tree + heading in DOM (notes/b.md / file-b).
+    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    const ok = await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=file-b"));
+    check("openDeepLink: returns true on success", ok === true);
+    check("openDeepLink: activates the deep-linked file",
+      window.NB.tabs.getActive() === "notes/b.md");
+    check("openDeepLink: scrollIntoView called for the right id",
+      scrollCalls.length === 1 && scrollCalls[0] === "file-b",
+      "calls=" + JSON.stringify(scrollCalls));
+    check("openDeepLink: history.replaceState called (query stripped)",
+      historyCalls.length === 1 && historyCalls[0] === "/",
+      "calls=" + JSON.stringify(historyCalls));
+    check("openDeepLink: no console.warn on success", warns.length === 0,
+      warns.join("; "));
+
+    // File-not-in-tree case: should log and bail, no scroll, no replace.
+    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    const beforeActive = window.NB.tabs.getActive();
+    const ok2 = await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=ghost.md&heading=file-b"));
+    check("openDeepLink: returns false when file missing", ok2 === false);
+    check("openDeepLink: does NOT change active tab on missing file",
+      window.NB.tabs.getActive() === beforeActive);
+    check("openDeepLink: does NOT scroll on missing file",
+      scrollCalls.length === 0);
+    check("openDeepLink: does NOT replaceState on missing file",
+      historyCalls.length === 0);
+    check("openDeepLink: warns on missing file",
+      warns.length === 1 && /ghost\.md/.test(warns[0]),
+      warns.join("; "));
+
+    // Heading-not-in-file case: file opens, but no scroll.
+    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    const ok3 = await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=ghost-heading"));
+    check("openDeepLink: returns true even with missing heading", ok3 === true);
+    check("openDeepLink: file still opens on missing heading",
+      window.NB.tabs.getActive() === "notes/b.md");
+    check("openDeepLink: does NOT scroll on missing heading",
+      scrollCalls.length === 0);
+    check("openDeepLink: still replaceState on missing heading (file was opened)",
+      historyCalls.length === 1);
+    check("openDeepLink: warns on missing heading",
+      warns.length === 1 && /ghost-heading/.test(warns[0]),
+      warns.join("; "));
+
+    // Idempotence: calling openDeepLink on an already-active file is
+    // a no-op for tab ops but still scrolls + strips the URL.
+    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    const openCountBefore = window.NB.tabs.getOpen().length;
+    await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=notes%2Fb.md&heading=file-b"));
+    check("openDeepLink: does NOT add a duplicate tab for already-open file",
+      window.NB.tabs.getOpen().length === openCountBefore);
+    check("openDeepLink: still scrolls to the heading on the active file",
+      scrollCalls.length === 1 && scrollCalls[0] === "file-b",
+      "calls=" + JSON.stringify(scrollCalls));
+
+    // Boot-integration: simulate the boot path. The real boot() reads
+    // window.location, parses the URL, and calls openDeepLink. We
+    // exercise the same code path by calling parseDeepLink() with
+    // the explicit URL and openDeepLink with the result. jsdom locks
+    // window.location as a non-configurable property, so we can't
+    // mock it; the parseDeepLink() default-args branch is covered
+    // below by the "no deep link -> null" check.
+    //
+    // The outline (NB.outline) also calls scrollIntoView on its own
+    // <li> elements when the active heading changes -- those calls
+    // have no id and aren't part of the deep-link path. Filter them
+    // out so we only assert the deep-link scroll target.
+    scrollCalls.length = 0; historyCalls.length = 0; warns.length = 0;
+    const dl = window.NB.app.parseDeepLink("http://x/?file=notes%2Fa.md&heading=sub-a");
+    const okBoot = await window.NB.app.openDeepLink(dl);
+    const deepLinkScrolls = scrollCalls.filter(id => id === "sub-a");
+    check("boot deep-link: activates notes/a.md",
+      okBoot && window.NB.tabs.getActive() === "notes/a.md");
+    check("boot deep-link: scrolls to sub-a heading",
+      deepLinkScrolls.length === 1,
+      "calls=" + JSON.stringify(scrollCalls) +
+      " deepLinkScrolls=" + JSON.stringify(deepLinkScrolls));
+
+    // parseDeepLink() with no arg defaults to window.location. The
+    // test JSDOM was created with url "http://127.0.0.1:5000/" so
+    // there is no deep link and the result is null (this is the
+    // "normal boot" branch the app hits when no ?file= is present).
+    check("parseDeepLink: window.location default is null (no deep link)",
+      window.NB.app.parseDeepLink() === null);
+
+    // Restore the stubs so later test blocks see the same environment.
+    window.Element.prototype.scrollIntoView = realScroll;
+    window.HTMLElement.prototype.scrollIntoView = realScroll;
+    window.history.replaceState = realHistoryReplace;
+    window.console.warn = realWarn;
+  }
+
   console.log("== viewer top spacing ==");
   // The rendered preview's first heading should sit close to the top of
   // the viewer -- otherwise the viewer padding + the heading's own

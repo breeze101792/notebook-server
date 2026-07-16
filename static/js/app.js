@@ -394,6 +394,47 @@
     return null;
   }
 
+  /* --- deep link ---------------------------------------------------- */
+  // The app honors `?file=<path>&heading=<slug>` on the URL: open
+  // the named note and scroll to the named heading. The function
+  // is a pure URL parser so it's easy to test; the openDeepLink
+  // façade does the activation + scroll + address-bar cleanup.
+  function parseDeepLink(url) {
+    const u = new URL(url || window.location.href);
+    const file = u.searchParams.get("file");
+    if (!file) return null;
+    return {
+      file,
+      heading: u.searchParams.get("heading") || null,
+    };
+  }
+
+  // Open the deep-link target. If the file isn't in the tree we log
+  // and bail (the normal boot already left a working view in place);
+  // if the heading doesn't exist the file still opens, just without
+  // a scroll target. Either way, history.replaceState strips the
+  // query string so the address bar shows the actual current view,
+  // and a refresh no longer re-applies the one-time redirect.
+  async function openDeepLink({ file, heading }) {
+    const tree = NB.sidebar.getTree();
+    if (!treeHas(tree, file)) {
+      console.warn("Deep link target not in tree:", file);
+      return false;
+    }
+    if (!NB.tabs.isOpen(file)) {
+      await NB.tabs.open(file);
+    } else if (NB.tabs.getActive() !== file) {
+      await NB.tabs.activate(file);
+    }
+    if (heading) {
+      const ok = NB.viewer.scrollToHeading(heading);
+      if (!ok) console.warn("Deep link heading not found:", heading);
+    }
+    try { history.replaceState(null, "", window.location.pathname); }
+    catch (_) { /* file:// or other restricted env: harmless to skip */ }
+    return true;
+  }
+
   /* --- boot ---------------------------------------------------------- */
   let booted = false;
   async function boot() {
@@ -417,6 +458,18 @@
     const pinnedFiles = (cfg.pinnedFiles || []).filter(p => openFiles.includes(p));
     try { await NB.tabs.restore(openFiles, activeFile, fallback, pinnedFiles); }
     catch (e) { console.warn("restore tabs failed", e); }
+
+    // Deep link: if the URL requested a specific file (and optional
+    // heading), override the restored active tab with it. Runs AFTER
+    // restore so session tabs are preserved in the background while
+    // the deep-linked file becomes the visible view. Auth (if any)
+    // reloads the page on success, so this code path is only reached
+    // with a valid session.
+    const deepLink = parseDeepLink();
+    if (deepLink) {
+      try { await openDeepLink(deepLink); }
+      catch (e) { console.warn("deep link failed", e); }
+    }
   }
 
   function treeHas(tree, path) {
@@ -448,6 +501,11 @@
     getWallpaperIntensity: () => cfg.wallpaperIntensity || "subtle",
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
+    // Deep link: parse + apply `?file=...&heading=...` URLs.
+    // parseDeepLink takes an optional URL string; openDeepLink takes
+    // the {file, heading} object it returns. Exposed for tests.
+    parseDeepLink,
+    openDeepLink,
     save: () => persistConfig(),
   };
 })();
