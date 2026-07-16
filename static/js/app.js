@@ -8,6 +8,21 @@
     theme: "auto",
     fontSize: "medium",
     wallpaper: "none",
+    // Pattern stroke color. "neutral" uses the theme default (white in
+    // dark / black in light); the other presets are mid-saturation
+    // RGB values that read on both themes. The default is "neutral"
+    // because the wallpaper itself is off by default -- the color
+    // only matters when the user picks a pattern.
+    wallpaperColor: "neutral",
+    // Pattern stroke alpha. "subtle" is a barely-there hint, the
+    // default -- the wallpaper is meant to be a background detail
+    // that stays out of the way unless the user dials it up.
+    wallpaperIntensity: "subtle",
+    // "scroll" -> pattern scrolls with the content (paper-rolled-along);
+    // "fixed"  -> pattern stays in the viewport, text scrolls over it
+    // (windowpane). Default to "scroll" because the pattern lives on
+    // the same element as the content, so this is the natural feel.
+    wallpaperScroll: "scroll",
     lastFile: null,
     recentFiles: [],
     openFiles: [],
@@ -18,6 +33,18 @@
     sidebarCollapsed: false,
     outlineCollapsed: false,
     searchCaseSensitive: false,
+    // "compact" / "medium" / "wide". Drives the --settings-modal-width
+    // custom property that .settings-modal reads in style.css. Default
+    // is "medium" (75vw) -- the modal scales with the viewport so the
+    // same preset is comfortable on laptops and spacious on a wide
+    // monitor. The two-column settings layout (left nav + right
+    // sections) sits comfortably at this width.
+    settingsModalWidth: "medium",
+    // Same scheme as settingsModalWidth, but for height. Default
+    // "medium" (80vh) leaves room for the Appearance tab's 7 rows on
+    // a 1080p screen without scrolling; shorter viewports trigger the
+    // 92vh outer clamp in the CSS rule.
+    settingsModalHeight: "medium",
   };
 
   // Width used while a sidebar is collapsed (a thin clickable strip).
@@ -86,12 +113,66 @@
     document.documentElement.style.setProperty("--font-scale", String(mult));
   }
 
+  /* --- settings modal width ----------------------------------------- */
+  // The settings modal reads its width and height from
+  // --settings-modal-width / --settings-modal-height (set on :root via
+  // the inline style). Three presets cover the common cases; unknown
+  // values fall back to "medium" so a corrupt config can't leave the
+  // modal at 0 size. Values are CSS unit strings (vw / vh), not px,
+  // so the modal scales with the viewport -- on a 1920x1080 display
+  // 75vw = 1440px and 80vh = 864px, on a 1280x768 laptop the same
+  // 75vw / 80vh = 960 / 614px.
+  //
+  // The 96vw / 92vh outer clamp in the .settings-modal CSS rule
+  // keeps the modal slightly inset from the viewport edge on very
+  // small screens; the chosen preset can never push the modal off
+  // the visible area.
+  const SETTINGS_MODAL_WIDTHS = {
+    compact: "60vw",
+    medium:  "75vw",
+    wide:    "90vw",
+  };
+  const SETTINGS_MODAL_HEIGHTS = {
+    // Floor is 80vh: even the smallest preset gives the modal most of
+    // the viewport's vertical real estate, so the body is always
+    // roomy and the dim backdrop stays a thin strip on the top and
+    // bottom. The three presets are evenly spaced 5vh apart so each
+    // step is a small, predictable jump.
+    compact: "80vh",
+    medium:  "85vh",
+    wide:    "90vh",
+  };
+  function applySettingsModalWidth(name) {
+    const v = SETTINGS_MODAL_WIDTHS[name] != null ? SETTINGS_MODAL_WIDTHS[name] : SETTINGS_MODAL_WIDTHS.medium;
+    cfg.settingsModalWidth = (SETTINGS_MODAL_WIDTHS[name] != null) ? name : "medium";
+    document.documentElement.style.setProperty("--settings-modal-width", v);
+  }
+  function applySettingsModalHeight(name) {
+    const v = SETTINGS_MODAL_HEIGHTS[name] != null ? SETTINGS_MODAL_HEIGHTS[name] : SETTINGS_MODAL_HEIGHTS.medium;
+    cfg.settingsModalHeight = (SETTINGS_MODAL_HEIGHTS[name] != null) ? name : "medium";
+    document.documentElement.style.setProperty("--settings-modal-height", v);
+  }
+
   /* --- wallpaper --------------------------------------------------- */
-  // The preview area (#viewer) gets a CSS class per wallpaper value.
-  // The class is always set (even when off) so the default state is
-  // explicit and the CSS can grow more variants later without JS changes.
+  // The wallpaper lives on #viewer-content (the actual scroller / content
+  // element) so it's anchored to the content and can never drift out of
+  // sync with the text as the user scrolls. The class is always set (even
+  // when off) so the default state is explicit and the CSS can grow more
+  // variants later without JS changes.
+  //
+  // Three independent settings:
+  //   wallpaper  -> pattern (none / lines / grid)
+  //   wallpaperColor    -> stroke color (neutral / blue / green / purple / amber)
+  //   wallpaperIntensity-> stroke alpha (subtle / medium / bold)
+  //   wallpaperScroll   -> scroll behavior (scroll / fixed)
+  // Each is a separate class on #viewer-content. The CSS variables
+  // --wp-rgb and --wp-a drive the actual paint, so the color and
+  // intensity classes are just one-line variable overrides.
   const WALLPAPERS = ["none", "lines", "grid"];
-  const viewerEl = document.getElementById("viewer");
+  const WALLPAPER_COLORS = ["neutral", "blue", "green", "purple", "amber"];
+  const WALLPAPER_INTENSITIES = ["subtle", "medium", "bold"];
+  const WALLPAPER_SCROLL = ["scroll", "fixed"];
+  const viewerEl = document.getElementById("viewer-content");
   function applyWallpaper(name) {
     const w = WALLPAPERS.indexOf(name) >= 0 ? name : "none";
     cfg.wallpaper = w;
@@ -100,13 +181,56 @@
       viewerEl.classList.add("wallpaper-" + w);
     }
   }
+  function applyWallpaperColor(name) {
+    const c = WALLPAPER_COLORS.indexOf(name) >= 0 ? name : "neutral";
+    cfg.wallpaperColor = c;
+    if (viewerEl) {
+      // "neutral" is the absence of a color modifier (the CSS default
+      // is white-in-dark / black-in-light, set by body[data-theme]).
+      // For all other presets, set the explicit color class.
+      viewerEl.classList.remove(
+        "wallpaper-color-neutral",
+        "wallpaper-color-blue",
+        "wallpaper-color-green",
+        "wallpaper-color-purple",
+        "wallpaper-color-amber"
+      );
+      if (c !== "neutral") viewerEl.classList.add("wallpaper-color-" + c);
+    }
+  }
+  function applyWallpaperIntensity(name) {
+    const i = WALLPAPER_INTENSITIES.indexOf(name) >= 0 ? name : "subtle";
+    cfg.wallpaperIntensity = i;
+    if (viewerEl) {
+      viewerEl.classList.remove(
+        "wallpaper-intensity-subtle",
+        "wallpaper-intensity-medium",
+        "wallpaper-intensity-bold"
+      );
+      viewerEl.classList.add("wallpaper-intensity-" + i);
+    }
+  }
+  function applyWallpaperScroll(mode) {
+    const m = WALLPAPER_SCROLL.indexOf(mode) >= 0 ? mode : "scroll";
+    cfg.wallpaperScroll = m;
+    if (viewerEl) {
+      // Always remove + re-add so the class is in a known state even
+      // after the user switches back to "scroll" from "fixed".
+      viewerEl.classList.toggle("wallpaper-fixed", m === "fixed");
+    }
+  }
 
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
     applyTheme(cfg.theme || "auto");
     applyFontSize(cfg.fontSize || "medium");
+    applySettingsModalWidth(cfg.settingsModalWidth || "medium");
+    applySettingsModalHeight(cfg.settingsModalHeight || "medium");
     applyWallpaper(cfg.wallpaper || "none");
+    applyWallpaperColor(cfg.wallpaperColor || "neutral");
+    applyWallpaperIntensity(cfg.wallpaperIntensity || "subtle");
+    applyWallpaperScroll(cfg.wallpaperScroll || "scroll");
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -312,8 +436,18 @@
     setTheme: (pref) => { applyTheme(pref); persistConfig(); },
     setFontSize: (name) => { applyFontSize(name); persistConfig(); },
     getFontSize: () => cfg.fontSize || "medium",
+    setSettingsModalWidth: (name) => { applySettingsModalWidth(name); persistConfig(); },
+    getSettingsModalWidth: () => cfg.settingsModalWidth || "medium",
+    setSettingsModalHeight: (name) => { applySettingsModalHeight(name); persistConfig(); },
+    getSettingsModalHeight: () => cfg.settingsModalHeight || "medium",
     setWallpaper: (name) => { applyWallpaper(name); persistConfig(); },
     getWallpaper: () => cfg.wallpaper || "none",
+    setWallpaperColor: (name) => { applyWallpaperColor(name); persistConfig(); },
+    getWallpaperColor: () => cfg.wallpaperColor || "neutral",
+    setWallpaperIntensity: (name) => { applyWallpaperIntensity(name); persistConfig(); },
+    getWallpaperIntensity: () => cfg.wallpaperIntensity || "subtle",
+    setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
+    getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
     save: () => persistConfig(),
   };
 })();

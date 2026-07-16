@@ -1,8 +1,25 @@
 /* settings.js -- the settings modal. Opened by the ⚙ button in the top
- * bar; closed by the × button, the Esc key, or clicking the dim overlay.
+ * bar; closed by the × button, the Esc key, the dim backdrop, or the
+ * footer's Close button.
  *
- * State is read from / written to the rest of the app via small hooks on
- * NB.app and NB.watcher. We never reach into their internals.
+ * The modal is structured as a left sidebar nav (General / Appearance /
+ * Security / About) plus a right section pane. Clicking a nav entry
+ * shows its section; the others are hidden. The active nav entry gets
+ * `.active` and `aria-selected="true"`.
+ *
+ * All settings on the Appearance + General tabs are LIVE: changing a
+ * radio or toggling file watching updates NB.app / NB.watcher
+ * immediately and persists to config in the same debounced path the
+ * rest of the UI uses. There is no Apply / Save / Cancel flow anymore;
+ * the footer is a single Close button.
+ *
+ * The Security tab (Passwords) keeps its own per-section Save / Remove
+ * buttons that reload the page on success — auth state is too sensitive
+ * to live-update, and a reload is the cleanest way to re-boot the
+ * session with the new credentials.
+ *
+ * State is read from / written to the rest of the app via small hooks
+ * on NB.app and NB.watcher. We never reach into their internals.
  */
 (function () {
   "use strict";
@@ -11,12 +28,17 @@
   const overlayEl = document.getElementById("settings-overlay");
   const modalEl   = overlayEl.querySelector(".settings-modal");
   const closeBtn  = document.getElementById("settings-close");
-  const applyBtn  = document.getElementById("settings-apply");
-  const saveBtn   = document.getElementById("settings-save");
-  const cancelBtn = document.getElementById("settings-cancel");
+  const closeFooterBtn = document.getElementById("settings-close-btn");
+  const navItems = Array.from(overlayEl.querySelectorAll(".settings-nav-item"));
+  const sectionEls = Array.from(overlayEl.querySelectorAll(".settings-section[data-section]"));
   const themeRadios = Array.from(overlayEl.querySelectorAll('input[name="theme"]'));
   const fontSizeRadios = Array.from(overlayEl.querySelectorAll('input[name="fontSize"]'));
+  const settingsModalWidthRadios = Array.from(overlayEl.querySelectorAll('input[name="settingsModalWidth"]'));
+  const settingsModalHeightRadios = Array.from(overlayEl.querySelectorAll('input[name="settingsModalHeight"]'));
   const wallpaperRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaper"]'));
+  const wallpaperScrollRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaperScroll"]'));
+  const wallpaperColorRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaperColor"]'));
+  const wallpaperIntensityRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaperIntensity"]'));
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
   const dataDirEl   = document.getElementById("settings-data-dir");
@@ -38,67 +60,66 @@
 
   let infoLoaded = false;
   let onOpenListeners = [];
+  // The currently visible tab name. Defaults to "general" so the file
+  // watching section shows first; reset on every open() so the user
+  // always lands somewhere predictable.
+  let activeTab = "general";
 
-  /* --- draft-then-commit lifecycle ----------------------------------
-   * The modal holds a `draft` of pending changes for the three
-   * "live" settings (theme, fontSize, watchEnabled). Editing the
-   * radios or the watch toggle only mutates the draft; the live
-   * state (cfg / DOM / watcher) is only updated when the user
-   * clicks Apply or Save. Cancel reverts the draft and the live
-   * state. The × button (and Esc / backdrop) act as Cancel if the
-   * draft is dirty, otherwise they just close.
-   *
-   * The Passwords section is deliberately not part of this flow:
-   * it owns its own per-section Save/Remove buttons that reload
-   * the page on success, so we don't have to coordinate the
-   * reload with the modal's draft state. */
-  let draft = null;       // { theme, fontSize, watchEnabled } when modal open
-  let original = null;    // snapshot at open() time, used by Cancel/Apply
-
-  function isDirty() {
-    if (!draft || !original) return false;
-    return draft.theme !== original.theme
-        || draft.fontSize !== original.fontSize
-        || draft.wallpaper !== original.wallpaper
-        || draft.watchEnabled !== original.watchEnabled;
+  /* --- tab navigation ------------------------------------------------- */
+  // Show the section for `name` and hide the rest. The matching nav
+  // entry gets the `.active` class + `aria-selected="true"` so the
+  // highlight follows.
+  function showTab(name) {
+    if (!sectionEls.some(el => el.dataset.section === name)) return;
+    activeTab = name;
+    for (const item of navItems) {
+      const on = item.dataset.tab === name;
+      item.classList.toggle("active", on);
+      item.setAttribute("aria-selected", on ? "true" : "false");
+    }
+    for (const el of sectionEls) {
+      el.hidden = (el.dataset.section !== name);
+    }
+  }
+  for (const item of navItems) {
+    item.addEventListener("click", () => showTab(item.dataset.tab));
   }
 
-  function refreshFooter() {
-    // Buttons stay enabled the entire time the modal is open. Apply/Save
-    // are no-ops when the draft is clean, and Cancel just closes. Visually
-    // we don't grey them out — the user always has an exit.
-  }
-
-  function renderWatchToggle() {
-    if (!watchToggleBtn) return;
-    if (!draft || !original) return;  // modal closed; nothing to render
-    // Show the *pending* state when the user has flipped the toggle but
-    // hasn't applied it yet; show the live state otherwise.
-    const pending = draft.watchEnabled;
-    const target = pending ? "Disable" : "Enable";
-    watchToggleBtn.textContent = target;
+  // Sync a radio group's `checked` from the current cfg. Each radio's
+  // `value` is the same string the cfg uses for the field, so we walk
+  // the group and check the one whose value matches. Called on open so
+  // the radios always reflect the live state (important for live mode:
+  // a previous open's pick is now persisted in cfg, and the radio
+  // should show it on the next open, not the HTML default).
+  function syncRadios() {
+    if (!NB.app || !NB.app.getCfg) return;
+    const cfg = NB.app.getCfg();
+    const groups = [
+      [themeRadios,             cfg.theme],
+      [fontSizeRadios,          cfg.fontSize],
+      [settingsModalWidthRadios, cfg.settingsModalWidth],
+      [settingsModalHeightRadios, cfg.settingsModalHeight],
+      [wallpaperRadios,         cfg.wallpaper],
+      [wallpaperScrollRadios,   cfg.wallpaperScroll],
+      [wallpaperColorRadios,    cfg.wallpaperColor],
+      [wallpaperIntensityRadios,cfg.wallpaperIntensity],
+    ];
+    for (const [radios, val] of groups) {
+      for (const r of radios) {
+        r.checked = (r.value === val);
+      }
+    }
   }
 
   function open() {
-    // Sync the modal to live state every time it opens (so the user sees
-    // the current theme, watch status, and dir info even if they change
-    // elsewhere). The radios and watch toggle show the live values; the
-    // user can then draft a change and click Apply/Save to commit.
-    const cfg = NB.app.getCfg();
-    const liveWatch = (NB.watcher && NB.watcher.isActive()) || false;
-    original = {
-      theme: cfg.theme || "auto",
-      fontSize: (NB.app.getFontSize && NB.app.getFontSize()) || "medium",
-      wallpaper: (NB.app.getWallpaper && NB.app.getWallpaper()) || "none",
-      watchEnabled: liveWatch,
-    };
-    draft = { ...original };
-    themeRadios.forEach(r => { r.checked = (r.value === draft.theme); });
-    fontSizeRadios.forEach(r => { r.checked = (r.value === draft.fontSize); });
-    wallpaperRadios.forEach(r => { r.checked = (r.value === draft.wallpaper); });
+    // Always start on the General tab so the user lands somewhere
+    // predictable (and sees the file-watching status, which is the
+    // most likely "what's the state of the app" question).
+    showTab(activeTab);
+    // Sync radios from the live cfg so opening the modal shows the
+    // current state, not whatever the HTML defaults to.
+    syncRadios();
     refreshWatchStatus();
-    renderWatchToggle();
-    refreshFooter();
     refreshAuthState();
     if (!infoLoaded) loadInfo();
     overlayEl.hidden = false;
@@ -106,99 +127,57 @@
   }
 
   function close() {
-    // Header × button: dynamic. If there are pending changes, treat it
-    // as Cancel (revert + close). Otherwise just dismiss.
-    if (isDirty()) return cancel();
     overlayEl.hidden = true;
-    draft = null;
-    original = null;
   }
 
   function isOpen() { return !overlayEl.hidden; }
 
-  /* Apply the current draft to live state + persist. Updates `original`
-   * to the post-apply state so a subsequent close() / Cancel is a no-op
-   * (the draft equals the live state). Watcher `enable()` is async and
-   * may surface a directory picker the user can cancel -- in that case
-   * the actual state stays off, and we re-snapshot to reflect reality. */
-  async function applyDraft() {
-    if (!draft || !original) return;
-    // Theme
-    if (draft.theme !== original.theme) {
-      NB.app.setTheme(draft.theme);
-    }
-    // Font size
-    if (draft.fontSize !== original.fontSize) {
-      NB.app.setFontSize(draft.fontSize);
-    }
-    // Wallpaper
-    if (draft.wallpaper !== original.wallpaper) {
-      NB.app.setWallpaper(draft.wallpaper);
-    }
-    // Watch
-    if (draft.watchEnabled !== original.watchEnabled) {
-      try {
-        if (draft.watchEnabled) await NB.watcher.enable();
-        else NB.watcher.disable();
-      } catch (e) { alert("File watching failed: " + e.message); }
-    }
-    // Re-snapshot from live state. The watch flag in particular may
-    // differ from the draft if the user cancelled the directory picker.
-    const liveWatch = (NB.watcher && NB.watcher.isActive()) || false;
-    original = {
-      theme: NB.app.getCfg().theme || "auto",
-      fontSize: (NB.app.getFontSize && NB.app.getFontSize()) || "medium",
-      wallpaper: (NB.app.getWallpaper && NB.app.getWallpaper()) || "none",
-      watchEnabled: liveWatch,
-    };
-    draft = { ...original };
-    refreshWatchStatus();
-    renderWatchToggle();
-    refreshFooter();
-  }
+  /* --- live radio listeners ------------------------------------------
+   * Every radio change calls the matching NB.app.set*() directly. Each
+   * setter writes to the cfg, updates the DOM, and triggers the
+   * debounced persistConfig() so the choice survives a reload. There
+   * is no draft, no Apply, no Cancel. */
+  themeRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setTheme(r.value);
+  }));
+  fontSizeRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setFontSize(r.value);
+  }));
+  settingsModalWidthRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setSettingsModalWidth(r.value);
+  }));
+  settingsModalHeightRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setSettingsModalHeight(r.value);
+  }));
+  wallpaperRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setWallpaper(r.value);
+  }));
+  wallpaperScrollRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setWallpaperScroll(r.value);
+  }));
+  wallpaperColorRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setWallpaperColor(r.value);
+  }));
+  wallpaperIntensityRadios.forEach(r => r.addEventListener("change", () => {
+    if (r.checked) NB.app.setWallpaperIntensity(r.value);
+  }));
 
-  function cancel() {
-    if (!draft || !original) {
-      overlayEl.hidden = true;
-      return;
-    }
-    // Revert any live state that diverged from `original`. The theme and
-    // font-size are always re-applied (cheap); the watch is only touched
-    // if its pending state would have changed the actual state.
-    if (draft.theme !== original.theme) {
-      NB.app.setTheme(original.theme);
-    }
-    if (draft.fontSize !== original.fontSize) {
-      NB.app.setFontSize(original.fontSize);
-    }
-    if (draft.wallpaper !== original.wallpaper) {
-      NB.app.setWallpaper(original.wallpaper);
-    }
-    if (draft.watchEnabled !== original.watchEnabled) {
-      // The pending state never made it live, so revert means: ensure
-      // the live state matches `original.watchEnabled`. (If the user
-      // toggled the radio and then cancelled, the live state may still
-      // be off -- the `original` snapshot is what we want to restore.)
-      if (original.watchEnabled) {
-        if (NB.watcher && !NB.watcher.isActive()) {
-          // Best-effort re-enable; the user can cancel the picker and
-          // the modal will already be closed at that point.
-          try { NB.watcher.enable(); } catch (e) {}
-        }
+  /* Watch toggle: live, but `enable()` is async and may show a
+   * showDirectoryPicker modal the user can cancel. We optimistically
+   * let `enable()` decide the actual state, then re-render the
+   * toggle label + status from the live `isActive()` so the UI
+   * matches reality (cancelled picker -> still "off", button still
+   * reads "Enable"). */
+  if (watchToggleBtn) {
+    watchToggleBtn.addEventListener("click", async () => {
+      if (NB.watcher && NB.watcher.isActive()) {
+        NB.watcher.disable();
       } else {
-        if (NB.watcher && NB.watcher.isActive()) NB.watcher.disable();
+        try { await NB.watcher.enable(); }
+        catch (e) { alert("File watching failed: " + e.message); }
       }
-    }
-    overlayEl.hidden = true;
-    draft = null;
-    original = null;
-  }
-
-  async function applyAndClose() {
-    await applyDraft();
-    overlayEl.hidden = true;
-    draft = null;
-    original = null;
+      refreshWatchStatus();
+    });
   }
 
   function refreshWatchStatus() {
@@ -226,51 +205,9 @@
     }
   }
 
-  // theme radio -> mutate the draft. The live cfg/DOM only changes
-  // when the user clicks Apply or Save.
-  themeRadios.forEach(r => r.addEventListener("change", () => {
-    if (!r.checked || !draft) return;
-    draft.theme = r.value;
-    refreshFooter();
-  }));
-
-  // font size radio -> mutate the draft. Same pattern as theme.
-  fontSizeRadios.forEach(r => r.addEventListener("change", () => {
-    if (!r.checked || !draft) return;
-    draft.fontSize = r.value;
-    refreshFooter();
-  }));
-
-  // wallpaper radio -> mutate the draft. Same pattern as theme.
-  wallpaperRadios.forEach(r => r.addEventListener("change", () => {
-    if (!r.checked || !draft) return;
-    draft.wallpaper = r.value;
-    refreshFooter();
-  }));
-
-  // Watch toggle: flip the draft's watchEnabled and re-render the
-  // toggle's label to show the *pending* state. The actual enable/
-  // disable is deferred to Apply / Save.
-  watchToggleBtn.addEventListener("click", () => {
-    if (!draft) return;
-    draft.watchEnabled = !draft.watchEnabled;
-    renderWatchToggle();
-    refreshFooter();
-  });
-
-  // Footer buttons. Apply and Save both commit the draft and close the
-  // modal — closing immediately is the most reliable way for the user to
-  // see the result of a font-size or theme change, since the modal in
-  // front of the dimmed UI makes subtle changes hard to notice. Both
-  // buttons stay available so the user can pick whichever verb they
-  // prefer; Cancel reverts and closes.
-  if (applyBtn) applyBtn.addEventListener("click", () => { applyAndClose(); });
-  if (saveBtn)  saveBtn.addEventListener("click", () => { applyAndClose(); });
-  if (cancelBtn) cancelBtn.addEventListener("click", () => { cancel(); });
-
-  // close (×) and Esc / backdrop all go through close(), which behaves
-  // dynamically: Cancel if dirty, plain close otherwise.
-  closeBtn.addEventListener("click", close);
+  // Close: × button, footer Close, Esc key, dim-backdrop click.
+  if (closeBtn) closeBtn.addEventListener("click", close);
+  if (closeFooterBtn) closeFooterBtn.addEventListener("click", close);
   overlayEl.addEventListener("click", (e) => {
     // click on the dim backdrop (not the modal) closes
     if (e.target === overlayEl) close();
