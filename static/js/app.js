@@ -45,6 +45,11 @@
     // a 1080p screen without scrolling; shorter viewports trigger the
     // 92vh outer clamp in the CSS rule.
     settingsModalHeight: "medium",
+    // VIM-style keymap (shell keymap + CodeMirror 6's vim mode in
+    // the editor). Off by default -- opt-in via the General settings
+    // tab. The live state is mirrored to NB.vimnav.setEnabled() on
+    // boot + on every toggle.
+    vimMode: false,
   };
 
   // Width used while a sidebar is collapsed (a thin clickable strip).
@@ -466,6 +471,13 @@
     await NB.sidebar.refresh();
     const tree = NB.sidebar.getTree();
 
+    // Init the VIM keymap from the persisted cfg. vimnav.js attaches
+    // its global keydown listener at module-load time (so it can be
+    // called on first paint without a race), but the listener is
+    // gated by an `enabled` flag that setEnabled() flips. Off by
+    // default; only the user opt-in turns it on.
+    if (NB.vimnav) NB.vimnav.setEnabled(!!cfg.vimMode);
+
     // Restore previously open tabs (filtered to files that still exist),
     // then activate the last active file; fall back to lastFile / first file.
     const openFiles = (cfg.openFiles || []).filter(p => treeHas(tree, p));
@@ -524,6 +536,12 @@
     setWallpaperIntensity: (name) => { applyWallpaperIntensity(name); persistConfig(); },
     getWallpaperIntensity: () => cfg.wallpaperIntensity || "subtle",
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
+    setVimMode: (on) => {
+      cfg.vimMode = !!on;
+      if (NB.vimnav) NB.vimnav.setEnabled(cfg.vimMode);
+      persistConfig();
+    },
+    getVimMode: () => !!cfg.vimMode,
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
     // Deep link: parse + apply `?file=...&heading=...` URLs.
     // parseDeepLink takes an optional URL string; openDeepLink takes

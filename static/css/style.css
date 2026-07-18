@@ -894,17 +894,50 @@ body[data-theme="light"] #viewer-content {
 #viewer-content.wallpaper-grid.wallpaper-fixed {
   background-attachment: fixed;
 }
-#raw-editor {
+/* The CodeMirror 6 mount (#cm-host) is a flex item inside
+ * .edit-split. CM6 injects its own .cm-editor / .cm-scroller
+ * structure into this host; we just size + color the host and
+ * (when the split is on) give it the right border to separate it
+ * from the live preview pane. The host is [hidden] by default and
+ * unhidden by viewer.js's showEditor(). */
+#cm-host {
   flex: 1 1 auto;
   width: 100%;
+  height: 100%;
+  min-width: 0;
   background: var(--bg);
   color: var(--fg);
-  border: none;
   border-top: 1px solid var(--border);
-  padding: 16px 40px;
+  overflow: auto;
+}
+/* CM6 itself styles the inner .cm-editor; we override the font /
+ * background so it matches the rest of the chrome. The scroller
+ * is the .cm-scroller child. */
+#cm-host .cm-editor {
   font: 1rem/1.6 "SFMono-Regular", Menlo, Consolas, monospace;
-  resize: none;
-  outline: none;
+  background: var(--bg);
+  color: var(--fg);
+  height: 100%;
+}
+#cm-host .cm-scroller {
+  font-family: inherit;
+  line-height: inherit;
+}
+#cm-host .cm-content {
+  padding: 16px 40px;
+  caret-color: var(--fg);
+}
+#cm-host .cm-gutters {
+  background: var(--bg);
+  color: var(--fg-muted);
+  border-right: 1px solid var(--border);
+}
+#cm-host .cm-activeLine {
+  background: rgba(127, 127, 127, 0.08);
+}
+#cm-host .cm-activeLineGutter {
+  background: rgba(127, 127, 127, 0.08);
+  color: var(--fg);
 }
 
 /* Split-pane wrapper: a real flex column that owns the right pane in
@@ -924,7 +957,7 @@ body[data-theme="light"] #viewer-content {
 .edit-split.split {
   flex-direction: row;
 }
-.edit-split.split #raw-editor {
+.edit-split.split #cm-host {
   flex: 1;
   min-width: 0;
   border-right: 1px solid var(--border);

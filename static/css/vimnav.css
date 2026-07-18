@@ -1,0 +1,102 @@
+/* vimnav.css -- styling for the VIM-mode shell keymap.
+ *
+ * Three small additions:
+ *   1. .vim-active -- a subtle 1-2px focus ring on whichever of the
+ *      three "windows" (sidebar / editor / outline) the user is
+ *      currently navigating. Shows where j/k will move the cursor.
+ *   2. .vim-cursor -- a left-border highlight on the file / heading
+ *      the vim cursor is currently on (in sidebar / outline).
+ *   3. #vimnav-help -- the :help overlay (keymap cheatsheet). Reuses
+ *      the .settings-overlay / .settings-modal classes for visual
+ *      consistency, so the dim + centered modal look is identical to
+ *      Settings.
+ *
+ * Nothing here is interactive; the module (vimnav.js) adds / removes
+ * the .vim-active + .vim-cursor classes as state changes.
+ */
+
+/* When VIM mode is enabled, mark the body so the css knows the
+ * keymap is active. The module toggles this; we just use it as a
+ * hook for any future per-mode overrides. */
+body.vim-enabled .vim-window {
+  position: relative;
+}
+body.vim-enabled .vim-window.vim-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid var(--accent, #5b9dff);
+  border-radius: 4px;
+  opacity: 0.55;
+}
+
+/* The vim cursor highlight (in the file tree and the outline). */
+.tree-row.vim-cursor {
+  /* Different from .selected (the active file). The vim cursor is
+   * a left-border accent + slightly brighter background. */
+  border-left: 2px solid var(--accent, #5b9dff);
+  padding-left: 2px;
+  background: rgba(91, 157, 255, 0.08);
+}
+.outline-item.vim-cursor {
+  border-left: 2px solid var(--accent, #5b9dff);
+  padding-left: 0;
+  background: rgba(91, 157, 255, 0.08);
+}
+.outline-item.vim-cursor > a {
+  /* The outline item has the left padding on the <a>, not the
+   * <li>; shift it to make room for the border. */
+  margin-left: 0;
+}
+
+/* :help overlay -- modal with the keymap. Reuses .settings-overlay
+ * for the dim + centering; we add a small printout-specific tweak
+ * for the keymap table. */
+.vimnav-help-body {
+  padding: 16px 20px;
+  overflow: auto;
+  font: 0.95rem/1.5 ui-sans-serif, system-ui, sans-serif;
+}
+.vimnav-help-body h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.95rem;
+  color: var(--fg);
+}
+.vimnav-help-body h3:not(:first-child) {
+  margin-top: 16px;
+}
+.vimnav-help-body table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.vimnav-help-body th,
+.vimnav-help-body td {
+  text-align: left;
+  padding: 4px 12px 4px 0;
+  vertical-align: top;
+  font-size: 0.9rem;
+}
+.vimnav-help-body th {
+  color: var(--fg-muted);
+  font-weight: 600;
+  width: 30%;
+}
+.vimnav-help-body kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background: var(--bg-elev, rgba(127,127,127,0.1));
+  color: var(--fg);
+  font: 0.85rem/1 ui-monospace, monospace;
+  margin: 0 1px;
+}
+.vimnav-help-footer {
+  padding: 8px 20px;
+  text-align: right;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}

@@ -19,7 +19,7 @@
   function open() {
     resultsEl.hidden = false;
     document.getElementById("viewer").hidden = true;
-    const ed = document.getElementById("raw-editor");
+    const ed = document.getElementById("cm-host");
     if (ed) ed.hidden = true;
   }
   function close() {

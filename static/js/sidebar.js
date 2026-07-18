@@ -94,6 +94,81 @@
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
   }
+
+  /* --- vim-mode cursor (NB.vimnav drives this) ------------------- */
+  /* A separate highlight from .selected (the active file). The vim
+   * cursor is what j/k moves; Enter/l opens. We track it as a path
+   * and re-render its highlight on every move. */
+  let vimCursorPath = null;
+  function vimCursorRows() {
+    // Only the rows that are currently visible in the DOM (we don't
+    // walk the tree model -- the rendered order is what j/k follows,
+    // matching the user's mental model of the tree).
+    return Array.from(document.querySelectorAll(".tree-row"));
+  }
+  function setVimCursor(path) {
+    vimCursorPath = path;
+    document.querySelectorAll(".tree-row.vim-cursor")
+      .forEach(r => r.classList.remove("vim-cursor"));
+    if (!path) return;
+    const row = document.querySelector('.tree-row[data-path="' +
+      cssEscape(path) + '"]');
+    if (row) row.classList.add("vim-cursor");
+  }
+  function getVimCursor() { return vimCursorPath; }
+  function vimCursorNext() {
+    const rows = vimCursorRows();
+    if (rows.length === 0) return null;
+    const idx = vimCursorPath
+      ? rows.findIndex(r => r.dataset.path === vimCursorPath)
+      : -1;
+    const next = rows[Math.min(rows.length - 1, idx + 1)] || rows[0];
+    if (next) setVimCursor(next.dataset.path);
+    return next ? next.dataset.path : null;
+  }
+  function vimCursorPrev() {
+    const rows = vimCursorRows();
+    if (rows.length === 0) return null;
+    const idx = vimCursorPath
+      ? rows.findIndex(r => r.dataset.path === vimCursorPath)
+      : rows.length;
+    const prev = rows[Math.max(0, idx - 1)] || rows[0];
+    if (prev) setVimCursor(prev.dataset.path);
+    return prev ? prev.dataset.path : null;
+  }
+  function vimCursorOpen() {
+    if (!vimCursorPath) return;
+    const row = document.querySelector('.tree-row[data-path="' +
+      cssEscape(vimCursorPath) + '"]');
+    if (!row) return;
+    if (row.classList.contains("collapsed")) {
+      // Expand a folder.
+      collapsed.delete(vimCursorPath);
+      row.classList.remove("collapsed");
+      // The children appear in the DOM; the cursor stays on the
+      // folder. (NB.vimnav's "h" handles collapse.)
+    } else {
+      openFile(vimCursorPath);
+    }
+  }
+  function vimCursorCollapse() {
+    if (!vimCursorPath) return;
+    const row = document.querySelector('.tree-row[data-path="' +
+      cssEscape(vimCursorPath) + '"]');
+    if (!row) return;
+    if (row.classList.contains("dir")) {
+      collapsed.add(vimCursorPath);
+      row.classList.add("collapsed");
+    } else {
+      // File: move cursor to its parent directory, if any.
+      const path = vimCursorPath;
+      const lastSlash = path.lastIndexOf("/");
+      if (lastSlash > 0) {
+        const parent = path.slice(0, lastSlash);
+        setVimCursor(parent);
+      }
+    }
+  }
   function openFile(path) {
     setSelected(path);
     NB.evt.emit("file:open-request", path);
@@ -411,7 +486,11 @@
     clearDropMarks();
   }
 
-  NB.sidebar = { refresh, render, openFile, createAtRoot, getTree };
+  NB.sidebar = {
+    refresh, render, openFile, createAtRoot, getTree,
+    setVimCursor, getVimCursor, vimCursorNext, vimCursorPrev,
+    vimCursorOpen, vimCursorCollapse,
+  };
 
   // Keep the tree highlight in sync whenever a file is shown, regardless of
   // how it was opened (tab click, search result, boot).

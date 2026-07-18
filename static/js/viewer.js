@@ -17,8 +17,11 @@
   const viewerEl        = document.getElementById("viewer");
   const viewerContentEl = document.getElementById("viewer-content");
   const welcomeEl       = document.getElementById("welcome");
-  const editorEl   = document.getElementById("raw-editor");
-  const editSplit  = document.getElementById("edit-split");
+  // #cm-host is the CodeMirror 6 mount point. We no longer talk
+  // to a <textarea> directly; cm-bridge.js owns the view and
+  // exposes a small API at NB.cmEditor.
+  const cmHostEl  = document.getElementById("cm-host");
+  const editSplit = document.getElementById("edit-split");
   const topbar     = document.getElementById("topbar");
   const editBtn    = document.getElementById("edit-toggle");
   const previewBtn = document.getElementById("preview-btn");
@@ -97,7 +100,7 @@
     clearTimeout(liveTimer);
     liveTimer = setTimeout(() => {
       if (!active || !showPreview) return;
-      render(editorEl.value);
+      render(NB.cmEditor.getValue());
     }, 150);
   }
 
@@ -152,8 +155,14 @@
     requestAnimationFrame(() => { syncing = false; });
   }
 
-  function onEditorScroll() { syncScroll(editorEl, viewerContentEl); }
-  function onViewerScroll() { syncScroll(viewerContentEl, editorEl); }
+  function onEditorScroll() {
+    const scroller = NB.cmEditor.scrollDOM();
+    if (scroller) syncScroll(scroller, viewerContentEl);
+  }
+  function onViewerScroll() {
+    const scroller = NB.cmEditor.scrollDOM();
+    if (scroller) syncScroll(viewerContentEl, scroller);
+  }
 
   /* --- per-file scroll position memory ------------------------------ */
   /* The back button restores where the user was reading on the source
@@ -176,34 +185,43 @@
   function showViewer() {
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
-    editorEl.hidden = true;
+    if (cmHostEl) cmHostEl.hidden = true;
+    // Drop CM focus before hiding the host. Otherwise the contentDOM
+    // stays the document.activeElement, and CM6's view.hasFocus keeps
+    // returning true -- which makes the shell keymap (vimnav) keep
+    // yielding to "CM has focus" even after edit mode is gone. jsdom
+    // doesn't auto-blur hidden elements, so we do it explicitly.
+    if (NB.cmEditor) NB.cmEditor.blur();
     viewerEl.hidden = false;
     // The welcome page is the empty-state sibling of #viewer; hide it
     // whenever a file is actually shown, so it doesn't stack on top
     // of the markdown content visually.
     if (welcomeEl) welcomeEl.hidden = true;
-    editorEl.removeEventListener("scroll", onEditorScroll);
+    const scroller = NB.cmEditor.scrollDOM();
+    if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
     viewerContentEl.removeEventListener("scroll", onViewerScroll);
     refreshTopbar();
     if (NB.editbar) NB.editbar.hide();
   }
   function showEditor() {
-    editorEl.hidden = false;
+    if (cmHostEl) cmHostEl.hidden = false;
     viewerEl.hidden = !showPreview;
     if (welcomeEl) welcomeEl.hidden = true;
     previewBtn.classList.toggle("editing", showPreview);
     if (showPreview) {
       editSplit.classList.add("split");
-      render(editorEl.value);
-      editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
+      render(NB.cmEditor.getValue());
+      const scroller = NB.cmEditor.scrollDOM();
+      if (scroller) scroller.addEventListener("scroll", onEditorScroll, { passive: true });
       viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       editSplit.classList.remove("split");
-      editorEl.removeEventListener("scroll", onEditorScroll);
+      const scroller = NB.cmEditor.scrollDOM();
+      if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
       viewerContentEl.removeEventListener("scroll", onViewerScroll);
     }
     refreshTopbar();
-    editorEl.focus();
+    NB.cmEditor.focus();
     if (NB.editbar) NB.editbar.show();
   }
 
@@ -226,9 +244,10 @@
     cache.clear();
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
-    editorEl.removeEventListener("scroll", onEditorScroll);
+    const scroller = NB.cmEditor.scrollDOM();
+    if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
     viewerContentEl.removeEventListener("scroll", onViewerScroll);
-    editorEl.hidden = true;
+    if (cmHostEl) cmHostEl.hidden = true;
     viewerEl.hidden = true;
     welcomeEl.hidden = false;
     // Clear the previous file's rendered markdown from #viewer-content
@@ -263,7 +282,7 @@
     async activate(path) {
       if (active && active !== path) {
         const prev = cache.get(active);
-        if (prev && prev.editMode) prev.content = editorEl.value;
+        if (prev && prev.editMode) prev.content = NB.cmEditor.getValue();
       }
       let t = cache.get(path);
       if (!t) {
@@ -274,7 +293,7 @@
         if (NB.watcher) NB.watcher.noteOpened(path, t.mtime);
       }
       active = path;
-      if (t.editMode) { editorEl.value = t.content; showEditor(); }
+      if (t.editMode) { NB.cmEditor.setValue(t.content); showEditor(); }
       else { showViewer(); render(); }
       NB.evt.emit("file:open", path);
       return t.content;
@@ -306,11 +325,11 @@
     showWelcome() { showWelcome(); },
 
     getPath() { return active; },
-    getContent() { const t = cur(); return t ? (t.editMode ? editorEl.value : t.content) : ""; },
+    getContent() { const t = cur(); return t ? (t.editMode ? NB.cmEditor.getValue() : t.content) : ""; },
     isDirty(path) {
       const t = cache.get(path);
       if (!t) return false;
-      const current = (path === active && t.editMode) ? editorEl.value : t.content;
+      const current = (path === active && t.editMode) ? NB.cmEditor.getValue() : t.content;
       return current !== t.savedContent;
     },
 
@@ -318,13 +337,13 @@
       const t = cur(); if (!t) return;
       t.editMode = true;
       showPreview = true;  // always start with the preview pane visible
-      editorEl.value = t.content;
+      NB.cmEditor.setValue(t.content);
       showEditor();
     },
     /* End edit mode and render the saved content. */
     endEdit() {
       const t = cur(); if (!t) return;
-      t.content = editorEl.value;
+      t.content = NB.cmEditor.getValue();
       t.editMode = false;
       showPreview = true;  // reset for next edit session
       showViewer();
@@ -342,18 +361,26 @@
         if (!ok) return false;
         // Revert the editor to the last saved content so the next edit
         // session starts clean (Save button hidden until they type).
-        editorEl.value = t.savedContent;
+        NB.cmEditor.setValue(t.savedContent);
       }
       this.endEdit();
       return true;
     },
     toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
 
+    /* In-app nav API. The back button (and the H/L vim keys via
+     * vimnav.js) call these. goBack() returns true on success.
+     * goForward() re-applies the last goBack(). */
+    async goBack() { return goBack(); },
+    async goForward() { return goForward(); },
+    canGoBack() { return navStack.length > 0; },
+    canGoForward() { return redoStack.length > 0; },
+
     async save() {
       const t = cur();
       if (!t) { alert("No file open."); return; }
       if (!t.editMode) return;                 // no toolbar in preview mode
-      const content = editorEl.value;
+      const content = NB.cmEditor.getValue();
       await NB.api.saveFile(active, content);
       t.content = content;
       t.savedContent = content;
@@ -421,8 +448,11 @@
   /* Live dirty dot + live preview: while editing, report changed-dirty
    * so the tab bar can mark the active file's tab without a full
    * re-render, keep the Save button in sync, and re-render the preview
-   * pane (debounced) so the user sees their Markdown in real time. */
-  editorEl.addEventListener("input", () => {
+   * pane (debounced) so the user sees their Markdown in real time.
+   *
+   * The CM6 updateListener fires on every doc transaction; the
+   * cm-bridge's onChange() relays those events. */
+  NB.cmEditor.onChange(() => {
     if (!active) return;
     refreshTopbar();
     NB.evt.emit("viewer:dirty-changed", { path: active, dirty: viewer.isDirty(active) });
@@ -435,16 +465,17 @@
   previewBtn.addEventListener("click", () => {
     showPreview = !showPreview;
     previewBtn.classList.toggle("editing", showPreview);
+    const scroller = NB.cmEditor.scrollDOM();
     if (showPreview) {
       viewerEl.hidden = false;
       editSplit.classList.add("split");
-      render(editorEl.value);
-      editorEl.addEventListener("scroll", onEditorScroll, { passive: true });
+      render(NB.cmEditor.getValue());
+      if (scroller) scroller.addEventListener("scroll", onEditorScroll, { passive: true });
       viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       viewerEl.hidden = true;
       editSplit.classList.remove("split");
-      editorEl.removeEventListener("scroll", onEditorScroll);
+      if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
       viewerContentEl.removeEventListener("scroll", onViewerScroll);
     }
   });
@@ -603,6 +634,7 @@
   function pushNav(entry) {
     navStack.push(entry);
     if (navStack.length > 100) navStack.shift();   // hard cap
+    clearRedo();
     setHasNavHistory(true);
   }
   function popNav() {
@@ -639,11 +671,64 @@
   }
 
   if (backBtn) {
-    backBtn.addEventListener("click", async () => {
-      if (backBtn.disabled) return;
-      const entry = popNav();
+    backBtn.addEventListener("click", () => goBack());
+  }
+
+  // A redo stack: H/L in vim navigate in-app history back/forward.
+  // We track a separate stack so "L" (forward) replays the entries
+  // we just popped. Cleared on every push (forward invalidates).
+  const redoStack = [];
+  function clearRedo() { redoStack.length = 0; }
+
+  // Public nav API (used by vimnav.js for H/L).
+  async function goBack() {
+    if (navStack.length === 0) return false;
+    const entry = popNav();
+    // Remember where we are *now* (the destination of the back is
+    // entry.fromFile, so by symmetry the destination of a future
+    // forward is the file we're leaving from). Capture it on the
+    // entry before mirroring it onto the redo stack.
+    const curFile = (NB.viewer.getPath() || "").replace(/^\/+/, "") || null;
+    const curScroll = viewerContentEl.scrollTop;
+    entry._forwardTarget = { file: curFile, scroll: curScroll };
+    // Mirror onto the redo stack so goForward can re-apply it.
+    redoStack.push(entry);
+    await applyNavEntry(entry);
+    // Update the forward button if there is one (currently there
+    // isn't, but the symmetry is here for vimnav's H/L).
+    return true;
+  }
+  async function goForward() {
+    if (redoStack.length === 0) return false;
+    const entry = redoStack.pop();
+    // Re-push onto the back stack so the user can undo a forward.
+    navStack.push(entry);
+    setHasNavHistory(true);
+    // If this entry was a cross-note back, the forward target is the
+    // file we left from at goBack time (stored in _forwardTarget).
+    // applyNavEntry handles the cross-note case using that field.
+    if (entry._forwardTarget) {
+      await applyForwardTarget(entry);
+    } else {
       await applyNavEntry(entry);
-    });
+    }
+    return true;
+  }
+  async function applyForwardTarget(entry) {
+    const t = entry._forwardTarget;
+    if (!t || !t.file) return;
+    try {
+      if (NB.tabs.isOpen(t.file)) {
+        await NB.tabs.activate(t.file);
+      } else {
+        await NB.tabs.open(t.file);
+      }
+      requestAnimationFrame(() => {
+        viewerContentEl.scrollTop = t.scroll || 0;
+      });
+    } catch (err) {
+      console.warn("forward cross-note restore failed", err);
+    }
   }
 
   // Browser back (Alt+Left, history.back(), swipe). The browser

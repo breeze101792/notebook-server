@@ -1,8 +1,17 @@
-/* editbar.js -- formatting toolbar that appears under the tab bar in edit
- * mode. Wraps the active selection (or inserts a placeholder) with the
- * appropriate Markdown syntax. All actions mutate the textarea value
- * directly; the existing viewer input-listener then picks up the change
- * and refreshes the dirty/Save state.
+/* editbar.js -- formatting toolbar that appears under the tab bar in
+ * edit mode. Wraps the active selection (or inserts a placeholder)
+ * with the appropriate Markdown syntax.
+ *
+ * Implementation note: the underlying editor is now CodeMirror 6
+ * (see cm-bridge.js). This module talks to it through the
+ * `NB.cmEditor` API and never reads/writes the underlying <textarea>
+ * directly. CM6's selection is { from, to } (char offsets into the
+ * document); we read it once per action and dispatch a single
+ * transaction per write.
+ *
+ * Public surface (NB.editbar.show/hide, same data-act keys on the
+ * buttons) is unchanged from the textarea era, so the rest of the
+ * app doesn't need to know about the swap.
  *
  * Design notes:
  *   - "Wrap" actions (bold/italic/strike/code/link) use a sensible
@@ -11,98 +20,66 @@
  *     on every line in the selection; if no selection, on the current
  *     line. Each is idempotent: clicking H1 again on an H1 line removes
  *     the prefix.
- *   - The button bar is in the DOM at boot but hidden; viewer.js calls
- *     editbar.show()/hide() when entering/leaving edit mode.
- *   - We listen for clicks on the bar (delegated) and for Ctrl/Cmd+B/I
- *     inside the textarea. Other Ctrl shortcuts (S, Z, Y) are handled by
- *     the existing app.js / textarea defaults.
- *   - Overflow menu ("more") toggles a small popup with the less-common
- *     actions (hr, table, h5/h6, clear formatting).
+ *   - Undo/Redo use the cm-bridge's view().state.facets or, more
+ *     directly, the @codemirror/commands `undo`/`redo` helpers
+ *     (CM6.history is on the state, so we go through the global CM6
+ *     namespace).
  */
 (function () {
   "use strict";
   window.NB = window.NB || {};
 
-  const bar        = document.getElementById("edit-bar");
-  const editor     = document.getElementById("raw-editor");
+  const bar         = document.getElementById("edit-bar");
   const overflowBtn = bar.querySelector(".eb-overflow-btn");
   const overflowMenu = bar.querySelector(".eb-menu");
 
-  /* --- selection helpers -------------------------------------------- */
-
-  /* Get the current selection in the textarea, as { start, end, text }.
-   * start/end are 0-based character offsets in editor.value. */
+  /* Get the current selection as { start, end, text, value }. The
+   * `start`/`end` fields are char offsets into the document
+   * (matches the old textarea's `selectionStart`/`End` shape so the
+   * action code below is symmetric). */
   function sel() {
-    return { start: editor.selectionStart, end: editor.selectionEnd,
-             text: editor.value.slice(editor.selectionStart, editor.selectionEnd) };
+    const s = NB.cmEditor.getSelection();
+    return {
+      start: s.from,
+      end: s.to,
+      text: s.text,
+      value: NB.cmEditor.getValue(),
+    };
   }
 
-  /* Replace editor.value with `text` and restore focus + selection.
-   * `select` is one of:
-   *   "new"     -- select the inserted text (default for wrap actions)
-   *   "caret"   -- put the cursor right after the inserted text
-   *   "offset:N -- position the cursor N chars after the start
-   *   null/undefined -- leave the selection where the textarea puts it
-   * The "new" selection lets the user immediately retype the placeholder.
-   */
-  function setValue(text, select) {
-    editor.focus();
-    // setRangeText handles the value + selection update atomically and
-    // fires an input event when the value actually changes.
-    const before = editor.value;
-    if (select === "new" || select === "caret") {
-      // use the lower-level write path so we can control the selection
-      editor.value = text;
-      // We don't know where the changed region is without doing it
-      // ourselves. Caller can pass offsets via select="offset:N" instead.
-    } else if (typeof select === "string" && select.startsWith("offset:")) {
-      const offset = parseInt(select.slice(7), 10) || 0;
-      editor.value = text;
-      const pos = Math.min(text.length, offset);
-      editor.setSelectionRange(pos, pos);
-    } else {
-      editor.value = text;
-    }
-    if (editor.value !== before) {
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-
-  /* Wrap-or-insert. If text is selected, wraps it; otherwise inserts a
-   * placeholder and selects it. The marker (e.g. "**") is added on both
-   * sides. */
+  /* Wrap the selection with `marker` on each side, or insert a
+   * placeholder if no text is selected. */
   function wrap(marker, placeholder) {
     const { start, end, text } = sel();
     const ph = text || (placeholder || marker);
     const insert = marker + ph + marker;
-    editor.focus();
-    editor.setRangeText(insert, start, end, "select");
-    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    NB.cmEditor.replaceSelection(insert, "select");
   }
 
-  /* Line-prefix action (h1/h2/.../quote/ul/ol/task). Operates on every
-   * line touched by the selection, or the current line if no selection.
-   * Idempotent: clicking the same heading twice removes the prefix. */
+  /* Line-prefix action: operates on every line touched by the
+   * selection, or the current line if no selection. Idempotent:
+   * clicking the same heading twice removes the prefix. */
   function lineAction(prefix, detectRegex) {
-    const { start, end } = sel();
-    const value = editor.value;
+    const { start, end, value } = sel();
     // Expand to whole lines.
     const lineStart = value.lastIndexOf("\n", start - 1) + 1;
     const lineEndIdx = value.indexOf("\n", end);
     const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
     const block = value.slice(lineStart, lineEnd);
     const lines = block.split("\n");
-
-    // Detect "all lines already have this prefix" -> strip instead.
     const allHave = lines.every(l => detectRegex.test(l));
     const newLines = allHave
       ? lines.map(l => l.replace(detectRegex, ""))
       : lines.map(l => prefix + l);
-
     const newBlock = newLines.join("\n");
-    editor.focus();
-    editor.setRangeText(newBlock, lineStart, lineEnd, "select");
-    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    // CM6 doesn't have a direct "replace range" helper; we go
+    // through setValue (which dispatches a full doc change) and
+    // then re-set the selection. For a large doc this is wasteful
+    // (replaces the whole text), but the editbar's actions are
+    // user-initiated (one click at a time) so the cost is fine.
+    const newDoc = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
+    NB.cmEditor.setValue(newDoc);
+    NB.cmEditor.setSelection(lineStart, lineStart + newBlock.length);
   }
 
   /* --- actions ------------------------------------------------------ */
@@ -130,16 +107,15 @@
     task:  () => lineAction("- [ ] ", /^[-*]\s+\[[ x]\]\s/i),
     quote: () => lineAction("> ",     /^>\s/),
 
-    /* Inline code/link/image: ask the user for the URL/alt as needed. */
+    /* Inline link: ask the user for the URL, then wrap. */
     link() {
       const { start, end, text } = sel();
       const label = text || PLACEHOLDER.link;
       const url = prompt("Link URL:", "https://");
-      if (url === null) return;          // user cancelled
+      if (url === null) return;
       const insert = "[" + label + "](" + url + ")";
-      editor.focus();
-      editor.setRangeText(insert, start, end, "select");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      NB.cmEditor.setSelection(start, end);   // ensure selection
+      NB.cmEditor.replaceSelection(insert, "select");
     },
     image() {
       const { start, end, text } = sel();
@@ -147,9 +123,8 @@
       const url = prompt("Image URL:", "https://");
       if (url === null) return;
       const insert = "![" + alt + "](" + url + ")";
-      editor.focus();
-      editor.setRangeText(insert, start, end, "select");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      NB.cmEditor.setSelection(start, end);
+      NB.cmEditor.replaceSelection(insert, "select");
     },
 
     /* Fenced code block: act on the current line / selection. */
@@ -157,110 +132,106 @@
       const { start, end, text } = sel();
       const body = text || "code";
       const insert = "```\n" + body + "\n```";
-      editor.focus();
-      editor.setRangeText(insert, start, end, "select");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      NB.cmEditor.setSelection(start, end);
+      NB.cmEditor.replaceSelection(insert, "select");
     },
 
     /* Horizontal rule on its own line. */
     hr() {
-      const { start, end } = sel();
-      const value = editor.value;
+      const { start, value } = sel();
       const lineStart = value.lastIndexOf("\n", start - 1) + 1;
-      // Insert a blank line + --- + newline, then position the cursor on
-      // the middle line.
       const before = value.slice(0, lineStart);
       const after  = value.slice(lineStart);
       const sep = (after.startsWith("\n") || before.endsWith("\n") || before === "") ? "" : "\n";
       const insert = sep + "\n---\n";
-      editor.focus();
-      // setRangeText's 4th arg is the selection mode (start/end/select/preserve);
-      // we want the cursor right after the inserted text, so use "end".
-      editor.setRangeText(insert, lineStart, lineStart, "end");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      const newDoc = before + insert + after;
+      NB.cmEditor.setValue(newDoc);
+      // Place cursor right after the inserted rule.
+      const cursor = before.length + insert.length;
+      NB.cmEditor.setSelection(cursor, cursor);
     },
 
     /* Tiny GFM table with a 2-col header the user can edit. */
     table() {
-      const { start, end } = sel();
+      const { start, end, value } = sel();
       const insert =
         "\n| Column 1 | Column 2 |\n" +
         "| --- | --- |\n" +
         "| cell | cell |\n";
-      editor.focus();
-      editor.setRangeText(insert, start, end, "end");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      // Insert at the end of the current selection.
+      const newDoc = value.slice(0, end) + insert + value.slice(end);
+      NB.cmEditor.setValue(newDoc);
+      // Place cursor right after the inserted table.
+      const cursor = end + insert.length;
+      NB.cmEditor.setSelection(cursor, cursor);
     },
 
-    /* Undo / Redo: the textarea has its own native history. */
-    undo: () => { editor.focus(); document.execCommand && document.execCommand("undo"); },
-    redo: () => { editor.focus(); document.execCommand && document.execCommand("redo"); },
+    /* Undo / Redo: CM6 has its own history (in basicSetup). We
+     * dispatch via @codemirror/commands' undo/redo. The simplest
+     * way: call the CM6 helpers on the view. */
+    undo() {
+      const v = NB.cmEditor.view();
+      if (v && window.CM6) {
+        window.CM6.undo(v);
+        v.focus();
+      }
+    },
+    redo() {
+      const v = NB.cmEditor.view();
+      if (v && window.CM6) {
+        window.CM6.redo(v);
+        v.focus();
+      }
+    },
 
-    /* Strip leading markdown formatting from every selected line:
-     *   - heading prefixes (#, ##, ...)
-     *   - list markers (-, *, 1., - [ ])
-     *   - quote markers (>)
-     * Inline emphasis (bold/italic/etc) is intentionally left alone --
-     * stripping ** from "**hello** world" turns the rest into literal
-     * asterisks, which is more surprising than useful. */
+    /* Strip leading markdown formatting from every selected line. */
     clear() {
-      const { start, end } = sel();
-      const value = editor.value;
+      const { start, end, value } = sel();
       const lineStart = value.lastIndexOf("\n", start - 1) + 1;
       const lineEndIdx = value.indexOf("\n", end);
       const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
       const block = value.slice(lineStart, lineEnd);
       const stripped = block.split("\n").map(l =>
-        l.replace(/^\s{0,3}#{1,6}\s+/, "")      // heading
-         .replace(/^\s{0,3}>\s?/, "")            // blockquote
-         .replace(/^\s{0,3}([-*+]|\d+\.)\s+/, "") // list
-         .replace(/^\s{0,3}([-*+])\s+\[[ x]\]\s+/i, "") // task
+        l.replace(/^\s{0,3}#{1,6}\s+/, "")
+         .replace(/^\s{0,3}>\s?/, "")
+         .replace(/^\s{0,3}([-*+]|\d+\.)\s+/, "")
+         .replace(/^\s{0,3}([-*+])\s+\[[ x]\]\s+/i, "")
       ).join("\n");
-      editor.focus();
-      editor.setRangeText(stripped, lineStart, lineEnd, "select");
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      const newDoc = value.slice(0, lineStart) + stripped + value.slice(lineEnd);
+      NB.cmEditor.setValue(newDoc);
+      NB.cmEditor.setSelection(lineStart, lineStart + stripped.length);
     },
 
-    /* The overflow trigger: show/hide the popup menu. */
-    more: () => {
+    /* The overflow trigger. */
+    more() {
       overflowMenu.hidden = !overflowMenu.hidden;
     },
   };
 
   /* --- visibility / wiring ---------------------------------------- */
 
-  /* Show / hide the bar. Called by viewer.js. */
   function show() { bar.hidden = false; }
   function hide() { bar.hidden = true; overflowMenu.hidden = true; }
 
-  /* Delegated click handler on the bar. We don't listen for individual
-   * buttons because the overflow menu can contain the same data-act
-   * (e.g. h5/h6/clear/hr/table all live there). */
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
     const fn = actions[act];
     if (fn) fn();
-    // Close the overflow menu after any action that lives inside it.
     if (btn.closest(".eb-menu")) overflowMenu.hidden = true;
   });
 
-  /* Click outside the overflow menu closes it. */
   document.addEventListener("click", (e) => {
     if (overflowMenu.hidden) return;
     if (e.target.closest(".eb-overflow")) return;
     overflowMenu.hidden = true;
   });
 
-  /* Ctrl/Cmd+B and Ctrl/Cmd+I inside the textarea. */
-  editor.addEventListener("keydown", (e) => {
-    if (!(e.ctrlKey || e.metaKey)) return;
-    if (e.altKey) return;
-    const k = e.key.toLowerCase();
-    if (k === "b") { e.preventDefault(); actions.bold(); }
-    else if (k === "i") { e.preventDefault(); actions.italic(); }
-  });
+  /* The Ctrl/Cmd+B and Ctrl/Cmd+I keyboard shortcuts are bound
+   * via cm-bridge.js's Prec.high keymap on the CM view (so they
+   * work even when the vim keymap is active). We don't need a
+   * keydown listener here anymore. */
 
-  NB.editbar = { show, hide };
+  NB.editbar = { show, hide, actions };
 })();

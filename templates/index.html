@@ -6,6 +6,7 @@
   <title>Markdown Notebook</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/vimnav.css">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head>
@@ -82,7 +83,13 @@
           </span>
         </div>
         <div id="edit-split" class="edit-split">
-          <textarea id="raw-editor" hidden spellcheck="false"></textarea>
+          <!-- The CodeMirror 6 editor mounts into #cm-host (created
+               lazily by cm-bridge.js on the first startEdit() call).
+               The host is hidden by default; showEditor() unhides it
+               when entering edit mode. The bridge exposes
+               NB.cmEditor.{getValue,setValue,...} so the rest of the
+               app never touches CM6 directly. -->
+          <div id="cm-host" class="cm-host" hidden></div>
           <!-- #viewer is a non-scrolling shell (visibility, flex sizing);
                the inner #viewer-content is the actual scroller and
                holds the rendered markdown. Wallpaper lives on
@@ -199,6 +206,18 @@
             <div class="settings-row">
               <span class="settings-label"></span>
               <button id="settings-watch-toggle" class="settings-action">Enable</button>
+            </div>
+            <h3>Keyboard</h3>
+            <p class="settings-help">
+              Enable VIM-style keybindings. When on, the sidebar, outline, and editor
+              act as three vim "windows" (Ctrl+W to cycle). Inside the editor itself,
+              CodeMirror 6's vim mode gives you full VIM (normal/insert, motions,
+              text objects, <code>:w</code> to save, <code>:q</code> to exit, etc.).
+              Press <kbd>?</kbd> from the shell for the full keymap.
+            </p>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-vim-toggle">Enable VIM keymap</label>
+              <input type="checkbox" id="settings-vim-toggle">
             </div>
           </section>
 
@@ -337,9 +356,13 @@
   <!-- Vendored libs first (no CDN tags; works offline) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
+  <!-- CodeMirror 6 + @replit/codemirror-vim (single IIFE bundle). Loaded
+       before cm-bridge.js so the bridge can see window.CM6. -->
+  <script src="/static/vendor/codemirror.bundle.js"></script>
   <!-- App modules, in dependency order -->
   <script src="/static/js/api.js"></script>
   <script src="/static/js/auth.js"></script>
+  <script src="/static/js/cm-bridge.js"></script>
   <script src="/static/js/viewer.js"></script>
   <script src="/static/js/editbar.js"></script>
   <script src="/static/js/watcher.js"></script>
@@ -348,6 +371,7 @@
   <script src="/static/js/search.js"></script>
   <script src="/static/js/tabs.js"></script>
   <script src="/static/js/settings.js"></script>
+  <script src="/static/js/vimnav.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

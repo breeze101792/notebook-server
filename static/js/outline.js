@@ -51,6 +51,8 @@
     });
     outlineEl.innerHTML = "";
     outlineEl.appendChild(ul);
+    // New file = new outline; drop the vim cursor.
+    vimCursorId = null;
   }
 
   function setActive(id) {
@@ -67,6 +69,56 @@
         item.scrollIntoView({ block: "nearest" });
       }
     }
+  }
+
+  /* --- vim-mode cursor (NB.vimnav drives this) ------------------- */
+  /* A separate highlight from .active (the scroll-spy'd heading).
+   * j/k move the cursor; Enter/l scrolls the editor to that
+   * heading. */
+  let vimCursorId = null;
+  function setVimCursor(id) {
+    vimCursorId = id;
+    outlineEl.querySelectorAll(".outline-item.vim-cursor")
+      .forEach(el => el.classList.remove("vim-cursor"));
+    if (!id) return;
+    const item = outlineEl.querySelector('.outline-item[data-id="' +
+      cssEscape(id) + '"]');
+    if (item) {
+      item.classList.add("vim-cursor");
+      item.scrollIntoView({ block: "nearest" });
+    }
+  }
+  function getVimCursor() { return vimCursorId; }
+  function vimCursorNext() {
+    if (!headings.length) return null;
+    const idx = vimCursorId
+      ? headings.findIndex(h => h.id === vimCursorId)
+      : -1;
+    const next = headings[Math.min(headings.length - 1, idx + 1)] || headings[0];
+    if (next) setVimCursor(next.id);
+    return next ? next.id : null;
+  }
+  function vimCursorPrev() {
+    if (!headings.length) return null;
+    const idx = vimCursorId
+      ? headings.findIndex(h => h.id === vimCursorId)
+      : headings.length;
+    const prev = headings[Math.max(0, idx - 1)] || headings[0];
+    if (prev) setVimCursor(prev.id);
+    return prev ? prev.id : null;
+  }
+  function vimCursorScrollTo() {
+    if (!vimCursorId) return false;
+    const target = document.getElementById(vimCursorId);
+    if (!target) return false;
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    return true;
+  }
+  function vimCursorReset() {
+    // Drop the cursor (called when the outline is rebuilt for a new file).
+    vimCursorId = null;
+    outlineEl.querySelectorAll(".outline-item.vim-cursor")
+      .forEach(el => el.classList.remove("vim-cursor"));
   }
 
   function cssEscape(s) {
@@ -108,5 +160,9 @@
     scrollEl = null;
   }
 
-  NB.outline = { build, startWatching, stopWatching };
+  NB.outline = {
+    build, startWatching, stopWatching,
+    setVimCursor, getVimCursor, vimCursorNext, vimCursorPrev,
+    vimCursorScrollTo, vimCursorReset,
+  };
 })();

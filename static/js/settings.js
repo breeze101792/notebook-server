@@ -41,6 +41,7 @@
   const wallpaperIntensityRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaperIntensity"]'));
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
+  const vimToggleEl = document.getElementById("settings-vim-toggle");
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
 
@@ -119,6 +120,7 @@
     // Sync radios from the live cfg so opening the modal shows the
     // current state, not whatever the HTML defaults to.
     syncRadios();
+    syncVimToggle();
     refreshWatchStatus();
     refreshAuthState();
     if (!infoLoaded) loadInfo();
@@ -191,6 +193,25 @@
     watchStatusEl.textContent = NB.watcher.describe();
     watchToggleBtn.textContent = active ? "Disable" : "Enable";
     watchToggleBtn.disabled = false;
+  }
+
+  /* Sync the VIM-mode checkbox from the live cfg. */
+  function syncVimToggle() {
+    if (!vimToggleEl) return;
+    if (NB.app && NB.app.getCfg) {
+      vimToggleEl.checked = !!NB.app.getCfg().vimMode;
+    }
+  }
+
+  /* VIM toggle: live, same model as the radios. The actual work
+   * (attaching the global keydown listener + tagging the three
+   * windows) is in NB.vimnav.setEnabled; we just flip the cfg +
+   * call it. */
+  if (vimToggleEl) {
+    vimToggleEl.addEventListener("change", () => {
+      const on = vimToggleEl.checked;
+      if (NB.app && NB.app.setVimMode) NB.app.setVimMode(on);
+    });
   }
 
   async function loadInfo() {

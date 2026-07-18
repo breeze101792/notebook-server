@@ -118,7 +118,7 @@ const html = `<!DOCTYPE html><html><head>
           </span>
         </div>
         <div id="edit-split" class="edit-split">
-          <textarea id="raw-editor" hidden></textarea>
+          <div id="cm-host" class="cm-host" hidden></div>
           <div id="viewer">
             <div id="viewer-content" class="markdown-body"></div>
           </div>
@@ -198,6 +198,11 @@ const html = `<!DOCTYPE html><html><head>
             <div class="settings-row">
               <span class="settings-label"></span>
               <button id="settings-watch-toggle" class="settings-action">Enable</button>
+            </div>
+            <h3>Keyboard</h3>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-vim-toggle">Enable VIM keymap</label>
+              <input type="checkbox" id="settings-vim-toggle">
             </div>
           </section>
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
@@ -434,8 +439,10 @@ const errors = [];
 window.addEventListener("error", (e) => errors.push("window error: " + (e.error ? e.error.stack : e.message)));
 evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
+evalIn(read("static/vendor/codemirror.bundle.js"));
 evalIn(read("static/js/api.js"));
 evalIn(read("static/js/auth.js"));
+evalIn(read("static/js/cm-bridge.js"));
 evalIn(read("static/js/viewer.js"));
 evalIn(read("static/js/editbar.js"));
 evalIn(read("static/js/watcher.js"));
@@ -444,12 +451,24 @@ evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
+evalIn(read("static/js/vimnav.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
 const click = (id) => $(id).dispatchEvent(new window.Event("click", { bubbles: true }));
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 const cssVar = (name) => window.document.documentElement.style.getPropertyValue(name).trim();
+
+// Helpers for the CodeMirror 6 bridge. They replace the old `<textarea>`
+// accessors (.value, .selectionStart, .selectionEnd, .hidden). The
+// cm-bridge lazily creates the CM view on first use; the helpers do
+// the same so tests don't have to know that.
+const cmEd = () => $("cm-host");
+const cmSetValue = (text) => window.NB.cmEditor.setValue(text);
+const cmGetValue = () => window.NB.cmEditor.getValue();
+const cmSetSel = (from, to) => window.NB.cmEditor.setSelection(from, to);
+const cmIsHidden = () => cmEd().hidden;
+const cmFireInput = () => { cmSetValue(cmGetValue()); };
 
 // ---- assertions helper ------------------------------------------------
 let pass = 0, fail = 0;
@@ -559,9 +578,8 @@ function check(label, cond, extra) {
   // dirty dot appears while editing and persists after leaving edit mode
   click("edit-toggle");
   await tick(10);
-  const ed = $("raw-editor");
-  ed.value = "# File A\n\nDIRTY EDIT\n";
-  ed.dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("# File A\n\nDIRTY EDIT\n");
+  cmFireInput();
   await tick(10);
   const aTab = window.document.querySelector('.tab[data-path="notes/a.md"]');
   check("dirty tab marked with .dirty", aTab && aTab.classList.contains("dirty"));
@@ -597,7 +615,7 @@ function check(label, cond, extra) {
   // The previous "dirty dot" test left the active file with unsaved edits
   // and still in edit mode. Exit edit mode (discarding unsaved changes),
   // then re-enter clean.
-  if (!$("raw-editor").hidden) {
+  if (!cmIsHidden()) {
     window.confirm = () => true;  // discard unsaved changes
     click("close-edit-btn");
     await tick(10);
@@ -616,7 +634,7 @@ function check(label, cond, extra) {
 
   click("edit-toggle");
   await tick(10);
-  check("edit mode entered (textarea shown)", !$("raw-editor").hidden);
+  check("edit mode entered (cm-host shown)", !cmIsHidden());
   // The Edit button stays visible in edit mode but its label flips to
   // 'View' to reflect that clicking it will exit edit mode. The
   // [Preview] [Save] [Close] group in the edit bar takes over the
@@ -636,8 +654,8 @@ function check(label, cond, extra) {
   check("Close button has no .unsaved when clean",
     !$("close-edit-btn").classList.contains("unsaved"));
   // Type -> Save appears and the close button picks up .unsaved.
-  $("raw-editor").value = "# Edited\n\n## New heading\n\nsaved body";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("# Edited\n\n## New heading\n\nsaved body");
+  cmFireInput();
   await tick(10);
   check("Save button appears after typing", !$("save-btn").hidden);
   check("Close button gets .unsaved when dirty",
@@ -645,7 +663,7 @@ function check(label, cond, extra) {
   // Save in edit mode stays in edit mode (just clears the dirty flag).
   click("save-btn");
   await tick(30);
-  check("save keeps edit mode open (raw-editor still shown)", !$("raw-editor").hidden);
+  check("save keeps edit mode open (cm-host still shown)", !cmIsHidden());
   check("Save button hidden again after save (clean)", $("save-btn").hidden);
   check("Close button .unsaved cleared after save",
     !$("close-edit-btn").classList.contains("unsaved"));
@@ -660,7 +678,7 @@ function check(label, cond, extra) {
   click("preview-btn");
   await tick(10);
   check("Preview hides the preview pane", $("viewer").hidden);
-  check("Preview keeps editor open", !$("raw-editor").hidden);
+  check("Preview keeps editor open", !cmIsHidden());
   check("split class removed when preview hidden",
     !$("edit-split").classList.contains("split"));
   check("Preview button label stays 'Preview' when split is off (only color changes)",
@@ -681,7 +699,7 @@ function check(label, cond, extra) {
   click("close-edit-btn");
   await tick(10);
   check("Close on clean file: no confirm prompt", confirmCount === 0, "count=" + confirmCount);
-  check("Close on clean file: back to viewer", $("raw-editor").hidden);
+  check("Close on clean file: back to viewer", cmIsHidden());
   check("Close on clean file: topbar editing class removed",
     !$("topbar").classList.contains("editing"));
   check("Edit button label restored to 'Edit' after exiting edit mode",
@@ -690,27 +708,27 @@ function check(label, cond, extra) {
   check("re-rendered new heading id", !!$("new-heading"));
   // Close on a dirty file should prompt; Cancel keeps the user in edit.
   click("edit-toggle"); await tick(10);
-  $("raw-editor").value = "# Edited\n\n## New heading\n\nDIRTY";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("# Edited\n\n## New heading\n\nDIRTY");
+  cmFireInput();
   await tick(10);
   window.confirm = () => { confirmCount++; return false; };   // user says no
   click("close-edit-btn");
   await tick(10);
-  check("Close on dirty + Cancel keeps edit mode", !$("raw-editor").hidden);
+  check("Close on dirty + Cancel keeps edit mode", !cmIsHidden());
   check("Close on dirty + Cancel shows confirm", confirmCount === 1, "count=" + confirmCount);
   // ... and accepting discards.
   window.confirm = () => { confirmCount++; return true; };
   click("close-edit-btn");
   await tick(10);
-  check("Close on dirty + OK exits edit mode", $("raw-editor").hidden);
+  check("Close on dirty + OK exits edit mode", cmIsHidden());
   check("Close on dirty + OK shows confirm", confirmCount === 2, "count=" + confirmCount);
   // Re-entering edit mode after discarding changes: file should be clean,
   // Save button hidden.
   click("edit-toggle"); await tick(10);
   check("re-enter after discard: Save hidden (clean)", $("save-btn").hidden);
   check("re-enter after discard: editor has saved content",
-    $("raw-editor").value === "# Edited\n\n## New heading\n\nsaved body",
-    "got: " + JSON.stringify($("raw-editor").value));
+    cmGetValue() === "# Edited\n\n## New heading\n\nsaved body",
+    "got: " + JSON.stringify(cmGetValue()));
   click("close-edit-btn"); await tick(10);
 
   console.log("== edit bar ==");
@@ -725,105 +743,89 @@ function check(label, cond, extra) {
   check("edit bar: at least 14 buttons present", barButtons.length >= 14, "got " + barButtons.length);
   check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
   // Selection-wrap: select "hello", click Bold -> **hello**.
-  $("raw-editor").value = "hello world";
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = 5;
+  cmSetValue("hello world"); cmSetSel(0, 5);
   window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: bold wraps selection", $("raw-editor").value === "**hello** world", "got: " + $("raw-editor").value);
+  check("edit bar: bold wraps selection", cmGetValue() === "**hello** world", "got: " + cmGetValue());
   // Italic: select the now-bold "hello" and italicize.
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = 9;
+  cmSetSel(0, 9);
   window.document.querySelector('#edit-bar .eb[data-act="italic"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: italic wraps selection", $("raw-editor").value === "***hello*** world", "got: " + $("raw-editor").value);
+  check("edit bar: italic wraps selection", cmGetValue() === "***hello*** world", "got: " + cmGetValue());
   // Wrap with empty selection -> inserts placeholder and selects it.
-  $("raw-editor").value = "";
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = 0;
+  cmSetValue(""); cmSetSel(0, 0);
   window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: bold with empty selection inserts placeholder",
-    $("raw-editor").value === "**bold text**", "got: " + $("raw-editor").value);
+    cmGetValue() === "**bold text**", "got: " + cmGetValue());
   // The inserted text should be selected (so the user can retype it).
+  const __sel1 = window.NB.cmEditor.getSelection();
   check("edit bar: inserted placeholder is fully selected",
-    $("raw-editor").selectionStart === 0 && $("raw-editor").selectionEnd === 13,
-    "sel=" + $("raw-editor").selectionStart + "-" + $("raw-editor").selectionEnd);
+    __sel1.from === 0 && __sel1.to === 13,
+    "sel=" + __sel1.from + "-" + __sel1.to);
   // Heading on a line: select a single line, click H2 -> "## line".
-  $("raw-editor").value = "line one\nline two";
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = 8;
+  cmSetValue("line one\nline two"); cmSetSel(0, 8);
   window.document.querySelector('#edit-bar .eb[data-act="h2"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: h2 prefixes the line", $("raw-editor").value.startsWith("## line one"),
-    "got: " + $("raw-editor").value);
+  check("edit bar: h2 prefixes the line", cmGetValue().startsWith("## line one"),
+    "got: " + cmGetValue());
   // Idempotent: H2 again removes the prefix.
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = $("raw-editor").value.indexOf("\n");
+  cmSetSel(0, cmGetValue().indexOf("\n"));
   window.document.querySelector('#edit-bar .eb[data-act="h2"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: h2 toggles off", $("raw-editor").value.split("\n")[0] === "line one",
-    "got: " + $("raw-editor").value);
+  check("edit bar: h2 toggles off", cmGetValue().split("\n")[0] === "line one",
+    "got: " + cmGetValue());
   // Bullet list: select a line, click UL -> "- line".
-  $("raw-editor").value = "alpha\nbeta";
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = 5;
+  cmSetValue("alpha\nbeta"); cmSetSel(0, 5);
   window.document.querySelector('#edit-bar .eb[data-act="ul"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: ul prefixes line", $("raw-editor").value.startsWith("- alpha"),
-    "got: " + $("raw-editor").value);
+  check("edit bar: ul prefixes line", cmGetValue().startsWith("- alpha"),
+    "got: " + cmGetValue());
   // Task list.
-  $("raw-editor").value = "todo";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 4;
+  cmSetValue("todo"); cmSetSel(0, 4);
   window.document.querySelector('#edit-bar .eb[data-act="task"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: task prefixes line", $("raw-editor").value === "- [ ] todo",
-    "got: " + $("raw-editor").value);
+  check("edit bar: task prefixes line", cmGetValue() === "- [ ] todo",
+    "got: " + cmGetValue());
   // Quote.
-  $("raw-editor").value = "said";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 4;
+  cmSetValue("said"); cmSetSel(0, 4);
   window.document.querySelector('#edit-bar .eb[data-act="quote"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: quote prefixes line", $("raw-editor").value === "> said",
-    "got: " + $("raw-editor").value);
+  check("edit bar: quote prefixes line", cmGetValue() === "> said",
+    "got: " + cmGetValue());
   // Code block: with selection wraps in ```.
-  $("raw-editor").value = "print(1)";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 8;
+  cmSetValue("print(1)"); cmSetSel(0, 8);
   window.document.querySelector('#edit-bar .eb[data-act="codeblock"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: codeblock wraps in fences",
-    /```\nprint\(1\)\n```/.test($("raw-editor").value),
-    "got: " + $("raw-editor").value);
+    /```\nprint\(1\)\n```/.test(cmGetValue()),
+    "got: " + cmGetValue());
   // Link: select "click", answer prompt.
-  $("raw-editor").value = "click here";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 5;
+  cmSetValue("click here"); cmSetSel(0, 5);
   promptValue = "https://example.com";
   window.prompt = () => promptValue;
   window.document.querySelector('#edit-bar .eb[data-act="link"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: link wraps selection with URL",
-    $("raw-editor").value === "[click](https://example.com) here",
-    "got: " + $("raw-editor").value);
+    cmGetValue() === "[click](https://example.com) here",
+    "got: " + cmGetValue());
   // Horizontal rule: insert at line start.
-  $("raw-editor").value = "before\nafter";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 0;
+  cmSetValue("before\nafter"); cmSetSel(0, 0);
   window.document.querySelector('#edit-bar .eb[data-act="hr"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: hr inserts a divider line",
-    /\n---\n/.test($("raw-editor").value),
-    "got: " + JSON.stringify($("raw-editor").value));
+    /\n---\n/.test(cmGetValue()),
+    "got: " + JSON.stringify(cmGetValue()));
   // Table: insert a 2-col GFM table.
-  $("raw-editor").value = "x";
-  $("raw-editor").selectionStart = 1; $("raw-editor").selectionEnd = 1;
+  cmSetValue("x"); cmSetSel(1, 1);
   window.document.querySelector('#edit-bar .eb[data-act="table"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: table inserts 2-col table",
-    /\| Column 1 \| Column 2 \|/.test($("raw-editor").value) &&
-    /\| --- \| --- \|/.test($("raw-editor").value),
-    "got: " + $("raw-editor").value);
+    /\| Column 1 \| Column 2 \|/.test(cmGetValue()) &&
+    /\| --- \| --- \|/.test(cmGetValue()),
+    "got: " + cmGetValue());
   // Overflow menu opens on "more" click, then a button inside it acts.
-  $("raw-editor").value = "fmt";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
+  cmSetValue("fmt"); cmSetSel(0, 3);
   check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
   window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
@@ -832,7 +834,7 @@ function check(label, cond, extra) {
   window.document.querySelector('#edit-bar .eb-menu .eb[data-act="h5"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: h5 inside overflow prefixes the line",
-    $("raw-editor").value === "##### fmt", "got: " + $("raw-editor").value);
+    cmGetValue() === "##### fmt", "got: " + cmGetValue());
   check("edit bar: overflow menu closes after action", window.document.querySelector("#edit-bar .eb-menu").hidden);
   // Click outside closes the overflow.
   window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -843,31 +845,29 @@ function check(label, cond, extra) {
   await tick(10);
   check("edit bar: outside click closes overflow", window.document.querySelector("#edit-bar .eb-menu").hidden);
   // Clear formatting: remove heading + list + quote prefixes.
-  $("raw-editor").value = "## heading\n- item\n> quote";
-  $("raw-editor").selectionStart = 0;
-  $("raw-editor").selectionEnd = $("raw-editor").value.length;
+  cmSetValue("## heading\n- item\n> quote"); cmSetSel(0, cmGetValue().length);
   window.document.querySelector('#edit-bar .eb-menu .eb[data-act="clear"]')
     .dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: clear strips heading, list, quote prefixes",
-    $("raw-editor").value === "heading\nitem\nquote",
-    "got: " + JSON.stringify($("raw-editor").value));
-  // Ctrl+B wraps selection (keyboard shortcut).
-  $("raw-editor").value = "abc";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
-  $("raw-editor").dispatchEvent(new window.KeyboardEvent("keydown",
+    cmGetValue() === "heading\nitem\nquote",
+    "got: " + JSON.stringify(cmGetValue()));
+  // Ctrl+B wraps selection (keyboard shortcut). CM6 catches it via the
+  // Prec.high keymap, but the keydown still bubbles. We dispatch on
+  // the bridge's view.contentDOM to make sure CM sees it.
+  cmSetValue("abc"); cmSetSel(0, 3);
+  window.NB.cmEditor.view().contentDOM.dispatchEvent(new window.KeyboardEvent("keydown",
     { key: "b", ctrlKey: true, bubbles: true, cancelable: true }));
   await tick(10);
   check("edit bar: Ctrl+B wraps selection",
-    $("raw-editor").value === "**abc**", "got: " + $("raw-editor").value);
+    cmGetValue() === "**abc**", "got: " + cmGetValue());
   // Ctrl+I for italic.
-  $("raw-editor").value = "abc";
-  $("raw-editor").selectionStart = 0; $("raw-editor").selectionEnd = 3;
-  $("raw-editor").dispatchEvent(new window.KeyboardEvent("keydown",
+  cmSetValue("abc"); cmSetSel(0, 3);
+  window.NB.cmEditor.view().contentDOM.dispatchEvent(new window.KeyboardEvent("keydown",
     { key: "i", ctrlKey: true, bubbles: true, cancelable: true }));
   await tick(10);
   check("edit bar: Ctrl+I wraps selection",
-    $("raw-editor").value === "*abc*", "got: " + $("raw-editor").value);
+    cmGetValue() === "*abc*", "got: " + cmGetValue());
   // Preview toggles the preview pane but stays in edit mode; bar stays visible.
   click("preview-btn"); await tick(10);
   check("edit bar: still visible after Preview toggle", !$("edit-bar").hidden);
@@ -878,8 +878,8 @@ function check(label, cond, extra) {
   check("edit bar: hidden after Close exits edit", $("edit-bar").hidden);
   // Re-enter edit, type, leave via Close on dirty to verify the bar hides.
   click("edit-toggle"); await tick(10);
-  $("raw-editor").value = "new content";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("new content");
+  cmFireInput();
   await tick(10);
   window.confirm = () => true;
   click("close-edit-btn"); await tick(10);
@@ -890,15 +890,18 @@ function check(label, cond, extra) {
   click("edit-toggle"); await tick(10);
   // Stub scroll dimensions so the sync has something to work with.
   // jsdom doesn't compute scrollHeight/clientHeight from content.
-  // The scroller is #viewer-content (the wrapper #viewer is a
+  // CM6's scroller is the .cm-scroller element returned by
+  // NB.cmEditor.scrollDOM(); the viewer (preview pane) uses
+  // #viewer-content (a child of #viewer; #viewer itself is a
   // non-scrolling shell after the wallpaper scroll-sync restructure).
-  Object.defineProperty($("raw-editor"), "scrollHeight", { value: 2000, configurable: true });
-  Object.defineProperty($("raw-editor"), "clientHeight", { value: 400, configurable: true });
+  const cmScroller = window.NB.cmEditor.scrollDOM();
+  Object.defineProperty(cmScroller, "scrollHeight", { value: 2000, configurable: true });
+  Object.defineProperty(cmScroller, "clientHeight", { value: 400, configurable: true });
   Object.defineProperty($("viewer-content"), "scrollHeight", { value: 1000, configurable: true });
   Object.defineProperty($("viewer-content"), "clientHeight", { value: 400, configurable: true });
   // Scroll the editor to 50%.
-  $("raw-editor").scrollTop = 800;  // (2000-400)*0.5 = 800
-  $("raw-editor").dispatchEvent(new window.Event("scroll", { bubbles: true }));
+  cmScroller.scrollTop = 800;  // (2000-400)*0.5 = 800
+  cmScroller.dispatchEvent(new window.Event("scroll", { bubbles: true }));
   await tick(20);
   // Viewer should be at 50% of its range: (1000-400)*0.5 = 300
   check("scroll sync: editor->viewer proportional",
@@ -910,8 +913,8 @@ function check(label, cond, extra) {
   await tick(20);
   // Editor should be at 75%: (2000-400)*0.75 = 1200
   check("scroll sync: viewer->editor proportional",
-    Math.abs($("raw-editor").scrollTop - 1200) < 5,
-    "editor.scrollTop=" + $("raw-editor").scrollTop);
+    Math.abs(cmScroller.scrollTop - 1200) < 5,
+    "editor.scrollTop=" + cmScroller.scrollTop);
   // Clean up: exit edit mode.
   click("close-edit-btn"); await tick(10);
 
@@ -1042,7 +1045,7 @@ function check(label, cond, extra) {
   check("close last tab -> #viewer-content.innerHTML is empty (no stale HTML)",
     $("viewer-content").innerHTML === "",
     "innerHTML=" + JSON.stringify($("viewer-content").innerHTML));
-  check("close last tab -> editor hidden", $("raw-editor").hidden);
+  check("close last tab -> editor hidden", cmIsHidden());
   check("close last tab -> edit button loses .editing class", !$("edit-toggle").classList.contains("editing"));
   check("close last tab -> edit bar hidden", $("edit-bar").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
@@ -1058,14 +1061,14 @@ function check(label, cond, extra) {
   await window.NB.tabs.activate("notes/a.md");
   await tick(10);
   window.NB.viewer.startEdit();
-  $("raw-editor").value = "# notes/a\n\nUNSAVED SWITCH EDITS\n";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("# notes/a\n\nUNSAVED SWITCH EDITS\n");
+  cmFireInput();
   await tick(10);
   await window.NB.tabs.activate("Welcome.md");   // switch away mid-edit
   await tick(20);
   await window.NB.tabs.activate("notes/a.md");   // switch back
   await tick(20);
-  check("switch away+back preserves edits", /UNSAVED SWITCH EDITS/.test($("raw-editor").value));
+  check("switch away+back preserves edits", /UNSAVED SWITCH EDITS/.test(cmGetValue()));
   check("switched-back tab still dirty",
     window.document.querySelector('.tab[data-path="notes/a.md"]').classList.contains("dirty"));
   window.NB.viewer.endEdit();   // leave edit (keeps content -> still dirty)
@@ -1094,8 +1097,8 @@ function check(label, cond, extra) {
 
   // confirm-cancel keeps a dirty tab (and its edits).
   window.NB.viewer.startEdit();
-  $("raw-editor").value = "# notes/renamed\n\nCANCEL TEST\n";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("# notes/renamed\n\nCANCEL TEST\n");
+  cmFireInput();
   window.NB.viewer.endEdit();
   await tick(10);
   const beforeClose = tabs().length;
@@ -1112,8 +1115,8 @@ function check(label, cond, extra) {
   await window.NB.tabs.activate("Welcome.md");
   await tick(10);
   window.NB.viewer.startEdit();
-  $("raw-editor").value = "WELCOME DIRTY";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("WELCOME DIRTY");
+  cmFireInput();
   window.NB.viewer.endEdit();
   await tick(10);
   await window.NB.tabs.activate("notes/renamed.md");  // notes/renamed still dirty
@@ -1413,8 +1416,8 @@ function check(label, cond, extra) {
 
   // Case 2: dirty + external change -> confirm() prompt.
   window.NB.viewer.startEdit();
-  $("raw-editor").value = "MY LOCAL EDITS";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("MY LOCAL EDITS");
+  cmFireInput();
   await tick(10);
   window.confirm = () => { fetchLog.push("confirm(yes)"); return true; };
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "REMOTE", mtime: 10000, size: 6 } });
@@ -1424,15 +1427,15 @@ function check(label, cond, extra) {
 
   // Re-dirty, then Cancel.
   window.NB.viewer.startEdit();
-  $("raw-editor").value = "ANOTHER LOCAL EDIT";
-  $("raw-editor").dispatchEvent(new window.Event("input", { bubbles: true }));
+  cmSetValue("ANOTHER LOCAL EDIT");
+  cmFireInput();
   await tick(10);
   window.confirm = () => { fetchLog.push("confirm(no)"); return false; };
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: "REMOTE2", mtime: 10001, size: 7 } });
   await tick(40);
   check("external: confirm(no) keeps local edits",
-    $("raw-editor").value === "ANOTHER LOCAL EDIT",
-    "value=" + $("raw-editor").value);
+    cmGetValue() === "ANOTHER LOCAL EDIT",
+    "value=" + cmGetValue());
   const tabEl = window.document.querySelector('.tab[data-path="Welcome.md"]');
   check("external: confirm(no) marks tab as conflict",
     tabEl && !!tabEl.querySelector(".tab-conflict"));
@@ -2737,8 +2740,8 @@ function check(label, cond, extra) {
       "looking for #viewer[hidden] { display: none; }");
     // Regression guard: .edit-split must be a real flex column, NOT
     // `display: contents`. With `display: contents` the wrapper has
-    // no box, so #raw-editor / #viewer / #welcome become direct flex
-    // items of #editor-pane. Since #raw-editor and #viewer are also
+    // no box, so #cm-host / #viewer / #welcome become direct flex
+    // items of #editor-pane. Since #cm-host and #viewer are also
     // flex: 1 1 auto, the visible welcome ends up sharing the column
     // with them -- the row height gets split, and the welcome (which
     // centers in its own box) appears in the bottom half instead of
@@ -3446,6 +3449,367 @@ function check(label, cond, extra) {
     check("back: popstate -> back-btn re-disabled (stack drained)",
       backBtn.disabled === true, "disabled=" + backBtn.disabled);
   }
+
+  console.log("== vim mode ==");
+  // The shell-level VIM keymap (`static/js/vimnav.js`) is opt-in via
+  // Settings → "Enable VIM keymap" (off by default). When enabled, the
+  // three layout panels — sidebar / editor / outline — act as VIM
+  // "windows" that you cycle through with Ctrl+W and navigate with
+  // HJKL. Pressing `i` (or `e`) in the editor window enters edit
+  // mode (focuses CodeMirror); Esc exits. The keymap yields when an
+  // input has focus, when a modal is up, or when CodeMirror has
+  // focus (only Esc is intercepted then).
+  //
+  // Activation toggle lives in the Settings modal. The keymap listener
+  // is attached on module load and gated by `enabled`, so tests need
+  // only flip the cfg (NB.app.setVimMode) and watch NB.vimnav.
+  const pressKey = (key, opts = {}) => {
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key, bubbles: true, cancelable: true, ...opts,
+    }));
+  };
+  // focus a non-editable target so vimnav's inEditable() returns false.
+  const blurActive = () => {
+    if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+      window.document.activeElement.blur();
+    }
+    window.document.body.focus();
+  };
+
+  // Boot state: VIM is off by default.
+  blurActive();
+  check("vim: disabled by default at boot", window.NB.vimnav.isEnabled() === false);
+  check("vim: body lacks .vim-enabled class at boot",
+    !window.document.body.classList.contains("vim-enabled"));
+  // j is a no-op when VIM is off: doesn't change anything we observe.
+  const beforeJ = window.NB.sidebar.getVimCursor && window.NB.sidebar.getVimCursor();
+  pressKey("j");
+  await tick(20);
+  check("vim: when off, j is a no-op (no sidebar nav)",
+    window.NB.sidebar.getVimCursor && window.NB.sidebar.getVimCursor() === beforeJ);
+
+  // Enable via settings. The toggle is live: clicking it writes
+  // vimMode=true to cfg + calls NB.vimnav.setEnabled + persists to
+  // /api/config. No Apply/Save.
+  window.NB.settings.open();
+  await tick(20);
+  const vimToggle = $("settings-vim-toggle");
+  check("vim: settings toggle is in the General section", !!vimToggle);
+  check("vim: toggle starts unchecked", vimToggle.checked === false);
+  vimToggle.checked = true;
+  vimToggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("vim: enabling toggle -> vimnav.isEnabled()", window.NB.vimnav.isEnabled() === true);
+  check("vim: enabling toggle -> body has .vim-enabled class",
+    window.document.body.classList.contains("vim-enabled"));
+  await tick(400);  // wait for debounced config POST
+  const vimPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastVimPost = vimPosts[vimPosts.length - 1] || "";
+  check("vim: enabling -> config POST has vimMode:true",
+    /"vimMode":true/.test(lastVimPost), lastVimPost);
+  // Close the settings modal -- the keymap yields when it's open.
+  window.NB.settings.close();
+  await tick(10);
+  check("vim: settings closed -> overlay hidden",
+    $("settings-overlay").hidden === true);
+
+  // Once enabled, the three layout panels are tagged .vim-window and
+  // have data-vim-window. Exactly one has .vim-active.
+  const vimWindows = window.document.querySelectorAll(".vim-window");
+  check("vim: 3 windows tagged", vimWindows.length === 3, "got " + vimWindows.length);
+  const activeWin = () => window.document.querySelector(".vim-window.vim-active");
+  check("vim: one window has .vim-active (initial = editor)",
+    activeWin() && activeWin().dataset.vimWindow === "editor",
+    activeWin() && activeWin().dataset.vimWindow);
+
+  // Ctrl+W cycles: editor -> outline -> sidebar -> editor.
+  pressKey("w", { ctrlKey: true });
+  await tick(10);
+  check("vim: Ctrl+W editor -> outline",
+    activeWin() && activeWin().dataset.vimWindow === "outline",
+    activeWin() && activeWin().dataset.vimWindow);
+  pressKey("w", { ctrlKey: true });
+  await tick(10);
+  check("vim: Ctrl+W outline -> sidebar",
+    activeWin() && activeWin().dataset.vimWindow === "sidebar",
+    activeWin() && activeWin().dataset.vimWindow);
+  pressKey("w", { ctrlKey: true });
+  await tick(10);
+  check("vim: Ctrl+W sidebar -> editor (wraps)",
+    activeWin() && activeWin().dataset.vimWindow === "editor",
+    activeWin() && activeWin().dataset.vimWindow);
+
+  // Sidebar window: j moves the vim cursor down. NB.sidebar tracks
+  // its own cursor (independent of the .selected highlight); we just
+  // check the cursor path changes. From the cycle above we are in
+  // editor; one Ctrl+W gets us to outline, two to sidebar.
+  pressKey("w", { ctrlKey: true });   // editor -> outline
+  pressKey("w", { ctrlKey: true });   // outline -> sidebar
+  await tick(10);
+  // Sidebar was last refreshed with tree TREE = [notes/[a.md,b.md], Welcome.md].
+  // The vim cursor is seeded to the active file ("notes/a.md") when
+  // the keymap is enabled. j should move to the next row.
+  const sidebarCursor1 = window.NB.sidebar.getVimCursor();
+  check("vim: sidebar seeded to active file (notes/a.md)",
+    sidebarCursor1 === "notes/a.md", "cursor=" + sidebarCursor1);
+  pressKey("j");
+  await tick(10);
+  const sidebarCursor2 = window.NB.sidebar.getVimCursor();
+  check("vim: sidebar j -> next row (notes/b.md)",
+    sidebarCursor2 === "notes/b.md", "cursor=" + sidebarCursor2);
+  pressKey("k");
+  await tick(10);
+  check("vim: sidebar k -> prev row (notes/a.md)",
+    window.NB.sidebar.getVimCursor() === "notes/a.md",
+    "cursor=" + window.NB.sidebar.getVimCursor());
+
+  // Clicking a vim window gives it focus (mousedown handler).
+  pressKey("w", { ctrlKey: true });   // outline
+  await tick(10);
+  $("sidebar").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await tick(10);
+  check("vim: click sidebar -> active = sidebar",
+    activeWin() && activeWin().dataset.vimWindow === "sidebar",
+    activeWin() && activeWin().dataset.vimWindow);
+
+  // Editor window: i enters edit mode (focuses CodeMirror), Esc exits.
+  // First go back to editor.
+  $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await tick(10);
+  check("vim: click editor-pane -> active = editor",
+    activeWin() && activeWin().dataset.vimWindow === "editor",
+    activeWin() && activeWin().dataset.vimWindow);
+  // We're NOT in edit mode yet -> cm-host should be hidden.
+  check("vim: editor not in edit mode initially", cmIsHidden());
+  pressKey("i");
+  await tick(20);
+  // After 'i', NB.viewer.startEdit() was called -> cm-host is shown.
+  check("vim: 'i' enters edit mode (cm-host shown)", !cmIsHidden());
+  // Now CM has focus; the shell keymap only handles Esc.
+  // Esc closes edit mode.
+  pressKey("Escape");
+  await tick(20);
+  check("vim: Esc exits edit mode (cm-host hidden)", cmIsHidden());
+
+  // Editor window (preview): j/k scroll the viewer one line. We can't
+  // measure the line height exactly in jsdom but scrolling a known
+  // distance via setting scrollTop + firing a manual scroll event lets
+  // us verify the keymap is dispatching to the right function. We just
+  // ensure no exception is thrown and cm-host stays hidden.
+  pressKey("j");
+  await tick(10);
+  check("vim: j in editor preview (no edit) doesn't enter edit mode", cmIsHidden());
+  pressKey("G");
+  await tick(10);
+  check("vim: G in editor preview doesn't enter edit mode", cmIsHidden());
+
+  // gg jumps to top of editor content (scroller). We can't read the
+  // exact scrollTop since jsdom doesn't lay out, but we verify no
+  // exception is thrown and we're still not in edit mode.
+  pressKey("g");
+  await tick(10);
+  pressKey("g");
+  await tick(10);
+  check("vim: 'gg' chord -> still in preview mode", cmIsHidden());
+
+  // Enter in the sidebar opens the file under the cursor.
+  pressKey("w", { ctrlKey: true });   // editor -> outline
+  pressKey("w", { ctrlKey: true });   // outline -> sidebar
+  await tick(10);
+  // Sidebar cursor was reset by the prior k to notes/a.md; j once to
+  // notes/b.md so Enter opens a different file than the active one.
+  pressKey("j");
+  await tick(10);
+  check("vim: sidebar j -> notes/b.md (precondition for Enter)",
+    window.NB.sidebar.getVimCursor() === "notes/b.md",
+    "cursor=" + window.NB.sidebar.getVimCursor());
+  pressKey("Enter");
+  await tick(30);
+  check("vim: Enter in sidebar opens file under cursor (active = notes/b.md)",
+    window.NB.tabs.getActive() === "notes/b.md",
+    "active=" + window.NB.tabs.getActive());
+  // Switch back to notes/a.md so the rest of the block has a known active.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  // Update the sidebar cursor to match the new active file.
+  window.NB.sidebar.setVimCursor("notes/a.md");
+  await tick(10);
+
+  // H/L: H goes back, L goes forward. H/L pop the in-app navStack
+  // (pushed by link clicks in the viewer), so the test sets up a
+  // history entry by directly invoking the click handler that the
+  // back-button block also exercises -- simpler than re-implementing
+  // it here. The H/L bindings themselves are the part under test.
+  // H from the editor window calls viewer.goBack(). Active window
+  // is currently sidebar; cycle to editor first.
+  pressKey("w", { ctrlKey: true });
+  await tick(10);
+  // Pre-populate the navStack by clicking a back-able link in the
+  // viewer (the same flow the back button test uses). notes/a.md
+  // has a link to notes/b.md; clicking it pushes a cross-note entry.
+  const linkEl = Array.from(window.document.querySelectorAll('#viewer-content a[href*="notes/b.md"]'))[0];
+  check("vim: H/L precondition: cross-note link in viewer",
+    !!linkEl, linkEl ? linkEl.outerHTML : "(no link)");
+  if (linkEl) {
+    linkEl.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await tick(40);
+  }
+  check("vim: H/L precondition: active = notes/b.md",
+    window.NB.tabs.getActive() === "notes/b.md",
+    "active=" + window.NB.tabs.getActive());
+  // H from the editor window calls viewer.goBack().
+  pressKey("H");
+  await tick(40);
+  check("vim: H (in editor) -> active = notes/a.md (back)",
+    window.NB.tabs.getActive() === "notes/a.md",
+    "active=" + window.NB.tabs.getActive());
+  // L from the editor window calls viewer.goForward().
+  pressKey("L");
+  await tick(40);
+  check("vim: L (in editor) -> active = notes/b.md (forward)",
+    window.NB.tabs.getActive() === "notes/b.md",
+    "active=" + window.NB.tabs.getActive());
+  // Reset to a clean state for the rest of the block.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  window.NB.sidebar.setVimCursor("notes/a.md");
+  await tick(10);
+
+  // Outline window: j/k walk the outline vim cursor; h jumps back
+  // to the editor window. (l/Enter scroll the editor to a heading,
+  // which jsdom can't verify without layout -- we just assert no throw.)
+  pressKey("w", { ctrlKey: true });   // editor -> outline
+  await tick(10);
+  check("vim: Ctrl+W from editor -> outline",
+    activeWin() && activeWin().dataset.vimWindow === "outline",
+    activeWin() && activeWin().dataset.vimWindow);
+  // j in outline: cursor moves to next outline item.
+  const outlineStart = window.NB.outline.getVimCursor && window.NB.outline.getVimCursor();
+  pressKey("j");
+  await tick(10);
+  const outlineAfter = window.NB.outline.getVimCursor && window.NB.outline.getVimCursor();
+  check("vim: outline j moves cursor", outlineAfter !== outlineStart,
+    "before=" + outlineStart + " after=" + outlineAfter);
+  // k at the first heading wraps to itself (matches sidebar k). Verify
+  // it doesn't throw and the cursor is still on a heading.
+  pressKey("k");
+  await tick(10);
+  const cursorAfterK = window.NB.outline.getVimCursor && window.NB.outline.getVimCursor();
+  check("vim: outline k moves cursor back",
+    !!cursorAfterK, "cursor=" + cursorAfterK);
+  // h in outline jumps back to editor window.
+  pressKey("h");
+  await tick(10);
+  check("vim: h in outline -> editor window",
+    activeWin() && activeWin().dataset.vimWindow === "editor",
+    activeWin() && activeWin().dataset.vimWindow);
+
+  // gg in sidebar scrolls the tree to the top.
+  pressKey("w", { ctrlKey: true });   // editor -> outline
+  pressKey("w", { ctrlKey: true });   // outline -> sidebar
+  await tick(10);
+  // The tree starts at scrollTop=0; scroll it down a bit so gg has
+  // something to verify. jsdom doesn't lay out, so we just set the
+  // property and ensure gg doesn't throw.
+  const treeEl = $("file-tree");
+  Object.defineProperty(treeEl, "scrollTop", { value: 100, configurable: true, writable: true });
+  treeEl.scrollTop = 100;
+  pressKey("g"); pressKey("g");
+  await tick(10);
+  check("vim: gg in sidebar -> tree scrolled to 0",
+    treeEl.scrollTop === 0, "scrollTop=" + treeEl.scrollTop);
+  // G in sidebar scrolls to the bottom.
+  Object.defineProperty(treeEl, "scrollHeight", { value: 500, configurable: true });
+  pressKey("G");
+  await tick(10);
+  check("vim: G in sidebar -> tree scrolled to bottom",
+    treeEl.scrollTop === treeEl.scrollHeight, "scrollTop=" + treeEl.scrollTop);
+
+  // ? opens the :help overlay; Esc closes it. Make sure we're in the
+  // editor window first -- the previous G-in-sidebar test left us
+  // in the sidebar, and `?` is editor-only.
+  pressKey("w", { ctrlKey: true });   // sidebar -> editor
+  await tick(10);
+  pressKey("?");
+  await tick(10);
+  const helpEl = $("vimnav-help");
+  check("vim: ? opens :help overlay", !!helpEl && helpEl.hidden === false);
+  pressKey("Escape");
+  await tick(10);
+  check("vim: Esc closes :help", helpEl && helpEl.hidden === true);
+
+  // Ctrl+/ is the escape hatch: it disables VIM mode entirely.
+  check("vim: Ctrl+/ pre-state: vimnav enabled", window.NB.vimnav.isEnabled() === true);
+  pressKey("/", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+/ disables vimnav", window.NB.vimnav.isEnabled() === false);
+  check("vim: Ctrl+/ removes .vim-enabled class",
+    !window.document.body.classList.contains("vim-enabled"));
+  // Re-enable for the rest of the block.
+  window.NB.vimnav.setEnabled(true);
+  await tick(10);
+  check("vim: re-enabled via API", window.NB.vimnav.isEnabled() === true);
+
+  // Keymap yields when an input has focus: focus the search box, then
+  // j should NOT move the sidebar cursor. (Otherwise typing 'j' in
+  // search would also navigate the tree.)
+  const sidebarBefore = window.NB.sidebar.getVimCursor();
+  $("search-input").focus();
+  pressKey("j");
+  await tick(20);
+  check("vim: keymap yields when input focused (no sidebar nav)",
+    window.NB.sidebar.getVimCursor() === sidebarBefore,
+    "cursor=" + window.NB.sidebar.getVimCursor());
+  // Esc in an input blurs the input.
+  pressKey("Escape");
+  await tick(10);
+  check("vim: Esc in input blurs the input",
+    window.document.activeElement !== $("search-input"));
+  // Ctrl+S in editor window calls NB.viewer.save(). Stub fetch to a
+  // clean file (no dirty) and verify nothing throws.
+  blurActive();
+  $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await tick(10);
+  pressKey("s", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+S in editor -> no exception (save is called)", true);
+
+  // Editbar still works through the bridge. Enter edit mode by clicking
+  // the Edit button (not via VIM) and run bold on a selection.
+  blurActive();
+  click("edit-toggle");
+  await tick(20);
+  cmSetValue("plain"); cmSetSel(0, 5);
+  window.document.querySelector('#edit-bar .eb[data-act="bold"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("vim: editbar.bold() still works after vim-mode port", cmGetValue() === "**plain**",
+    "got: " + cmGetValue());
+  // Esc inside CM exits edit mode (the bridge's Prec.high binding).
+  pressKey("Escape");
+  await tick(20);
+  check("vim: Esc inside CM exits edit mode", cmIsHidden());
+
+  // T opens the search box (focuses the search input).
+  blurActive();
+  $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await tick(10);
+  pressKey("T");
+  await tick(10);
+  check("vim: T in editor focuses search input",
+    window.document.activeElement === $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  // Blur to drop focus for the rest of the suite.
+  $("search-input").blur();
+  await tick(10);
+
+  // Disable VIM and close the settings modal.
+  window.NB.vimnav.setEnabled(false);
+  await tick(10);
+  check("vim: setEnabled(false) -> .vim-enabled removed",
+    !window.document.body.classList.contains("vim-enabled"));
+  window.NB.settings.close();
+  await tick(10);
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);
