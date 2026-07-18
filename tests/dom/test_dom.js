@@ -3572,7 +3572,8 @@ function check(label, cond, extra) {
     activeWin() && activeWin().dataset.vimWindow === "sidebar",
     activeWin() && activeWin().dataset.vimWindow);
 
-  // Editor window: i enters edit mode (focuses CodeMirror), Esc exits.
+  // Editor window: Ctrl+E toggles edit mode (focuses CodeMirror),
+  // Esc exits. (i / e used to enter edit mode; now reserved for VIM.)
   // First go back to editor.
   $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
   await tick(10);
@@ -3581,15 +3582,28 @@ function check(label, cond, extra) {
     activeWin() && activeWin().dataset.vimWindow);
   // We're NOT in edit mode yet -> cm-host should be hidden.
   check("vim: editor not in edit mode initially", cmIsHidden());
+  // 'i' alone should NOT enter edit mode (it's a VIM insert-mode key,
+  // owned by CodeMirror when the editor is focused -- but in preview
+  // mode it should be a no-op for the shell).
   pressKey("i");
   await tick(20);
-  // After 'i', NB.viewer.startEdit() was called -> cm-host is shown.
-  check("vim: 'i' enters edit mode (cm-host shown)", !cmIsHidden());
+  check("vim: 'i' in preview does NOT enter edit mode (VIM key reserved)", cmIsHidden());
+  // Ctrl+E enters edit mode.
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E enters edit mode (cm-host shown)", !cmIsHidden());
   // Now CM has focus; the shell keymap only handles Esc.
   // Esc closes edit mode.
   pressKey("Escape");
   await tick(20);
   check("vim: Esc exits edit mode (cm-host hidden)", cmIsHidden());
+  // Ctrl+E from preview again enters edit mode (toggle behavior).
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E re-enters edit mode (toggle)", !cmIsHidden());
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E exits edit mode (toggle from edit)", cmIsHidden());
 
   // Editor window (preview): j/k scroll the viewer one line. We can't
   // measure the line height exactly in jsdom but scrolling a known
@@ -3635,45 +3649,60 @@ function check(label, cond, extra) {
   window.NB.sidebar.setVimCursor("notes/a.md");
   await tick(10);
 
-  // H/L: H goes back, L goes forward. H/L pop the in-app navStack
-  // (pushed by link clicks in the viewer), so the test sets up a
-  // history entry by directly invoking the click handler that the
-  // back-button block also exercises -- simpler than re-implementing
-  // it here. The H/L bindings themselves are the part under test.
-  // H from the editor window calls viewer.goBack(). Active window
-  // is currently sidebar; cycle to editor first.
-  pressKey("w", { ctrlKey: true });
-  await tick(10);
-  // Pre-populate the navStack by clicking a back-able link in the
-  // viewer (the same flow the back button test uses). notes/a.md
-  // has a link to notes/b.md; clicking it pushes a cross-note entry.
-  const linkEl = Array.from(window.document.querySelectorAll('#viewer-content a[href*="notes/b.md"]'))[0];
-  check("vim: H/L precondition: cross-note link in viewer",
-    !!linkEl, linkEl ? linkEl.outerHTML : "(no link)");
-  if (linkEl) {
-    linkEl.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  // Ctrl+H / Ctrl+L: previous / next tab. The test verifies that
+  // Ctrl+L moves to the next open tab and Ctrl+H moves to the
+  // previous. The bindings are global (work in any focus context,
+  // including when CM is focused in edit mode) so they take
+  // precedence over the per-window dispatch tables.
+  if (window.NB.tabs.isOpen("notes/b.md")) {
+    // Reset to a known state: active = notes/a.md.
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    // Make sure we're in the editor window.
+    pressKey("w", { ctrlKey: true });
+    await tick(10);
+    const startActive = window.NB.tabs.getActive();
+    const openTabs = window.NB.tabs.getOpen();
+    const nextIdx = (openTabs.indexOf(startActive) + 1) % openTabs.length;
+    const prevIdx = (openTabs.indexOf(startActive) - 1 + openTabs.length) % openTabs.length;
+    const nextTab = openTabs[nextIdx];
+    const prevTab = openTabs[prevIdx];
+    check("vim: Ctrl+H/L precondition: active = notes/a.md",
+      startActive === "notes/a.md", "active=" + startActive);
+    // Ctrl+L moves to the next tab.
+    pressKey("l", { ctrlKey: true });
     await tick(40);
+    check("vim: Ctrl+L -> next tab (" + nextTab + ")",
+      window.NB.tabs.getActive() === nextTab,
+      "active=" + window.NB.tabs.getActive());
+    // Ctrl+H moves to the previous tab.
+    pressKey("h", { ctrlKey: true });
+    await tick(40);
+    check("vim: Ctrl+H -> previous tab (" + startActive + ")",
+      window.NB.tabs.getActive() === startActive,
+      "active=" + window.NB.tabs.getActive());
+    // From the first tab, Ctrl+H should wrap to the last.
+    if (openTabs.length > 1) {
+      // Make sure the first tab is the active one, so Ctrl+H actually
+      // wraps. If the test happened to land somewhere else, activate
+      // the first tab first.
+      const firstTab = openTabs[0];
+      if (window.NB.tabs.getActive() !== firstTab) {
+        await window.NB.tabs.activate(firstTab);
+        await tick(20);
+      }
+      pressKey("h", { ctrlKey: true });
+      await tick(40);
+      check("vim: Ctrl+H wraps to last tab (" + openTabs[openTabs.length - 1] + ")",
+        window.NB.tabs.getActive() === openTabs[openTabs.length - 1],
+        "active=" + window.NB.tabs.getActive());
+    }
+    // Reset.
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    window.NB.sidebar.setVimCursor("notes/a.md");
+    await tick(10);
   }
-  check("vim: H/L precondition: active = notes/b.md",
-    window.NB.tabs.getActive() === "notes/b.md",
-    "active=" + window.NB.tabs.getActive());
-  // H from the editor window calls viewer.goBack().
-  pressKey("H");
-  await tick(40);
-  check("vim: H (in editor) -> active = notes/a.md (back)",
-    window.NB.tabs.getActive() === "notes/a.md",
-    "active=" + window.NB.tabs.getActive());
-  // L from the editor window calls viewer.goForward().
-  pressKey("L");
-  await tick(40);
-  check("vim: L (in editor) -> active = notes/b.md (forward)",
-    window.NB.tabs.getActive() === "notes/b.md",
-    "active=" + window.NB.tabs.getActive());
-  // Reset to a clean state for the rest of the block.
-  await window.NB.tabs.activate("notes/a.md");
-  await tick(20);
-  window.NB.sidebar.setVimCursor("notes/a.md");
-  await tick(10);
 
   // Outline window: j/k walk the outline vim cursor; h jumps back
   // to the editor window. (l/Enter scroll the editor to a heading,

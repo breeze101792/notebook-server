@@ -94,10 +94,11 @@
     if (e.altKey) return false;     // alt is always the browser's
     if (e.metaKey) return true;     // we own Cmd on Mac
     if (e.ctrlKey) {
-      // We own Ctrl+W, Ctrl+S, Ctrl+D, Ctrl+U, Ctrl+/, Ctrl+Enter.
-      // Other Ctrl+? fall through (browsers use them for tabs, find, etc.)
+      // We own Ctrl+W (cycle window), Ctrl+E (toggle edit), Ctrl+H/L
+      // (prev/next tab), Ctrl+S (save), Ctrl+/ (disable VIM). Other
+      // Ctrl+? fall through (browsers use them for tabs, find, etc.)
       const k = e.key.toLowerCase();
-      return ["w", "s", "d", "u", "/", "enter"].includes(k);
+      return ["w", "e", "h", "l", "s", "/"].includes(k);
     }
     return true;
   }
@@ -127,6 +128,51 @@
       }
       return;
     }
+    // --- global app-level bindings (work in any focus context, including
+    // when CodeMirror has focus in edit mode) ---
+    // These are app-level actions the user expects to work no matter
+    // which sub-editor is focused. We process them before the CM / input
+    // early returns below.
+    if (e.ctrlKey || e.metaKey) {
+      const k = e.key.toLowerCase();
+      if (k === "e") {
+        e.preventDefault();
+        const v = NB.viewer;
+        if (!v) return;
+        const cmHost = document.getElementById("cm-host");
+        const inEdit = cmHost && !cmHost.hidden;
+        if (inEdit) { if (v.closeEdit) v.closeEdit(); }
+        else { if (v.startEdit) v.startEdit(); }
+        return;
+      }
+      if (k === "h") {
+        // Previous tab. Wraps.
+        e.preventDefault();
+        if (NB.tabs && NB.tabs.prev) NB.tabs.prev();
+        return;
+      }
+      if (k === "l") {
+        // Next tab. Wraps.
+        e.preventDefault();
+        if (NB.tabs && NB.tabs.next) NB.tabs.next();
+        return;
+      }
+      if (k === "s") {
+        e.preventDefault();
+        if (NB.viewer) NB.viewer.save();
+        return;
+      }
+      if (k === "/") {
+        e.preventDefault();
+        setEnabled(false);
+        return;
+      }
+      if (k === "w") {
+        e.preventDefault();
+        cycleWindow();
+        return;
+      }
+    }
     if (cmHasFocus()) {
       // While CM6 has focus, only Esc is ours (exits edit mode).
       // Everything else goes to CM6's vim keymap.
@@ -151,26 +197,13 @@
     else e.preventDefault();
 
     // --- owner-modifier keys ---
+    // (Ctrl+W/S/E/H/L// are handled above, before the cmHasFocus early
+    // return, so they work even when the editor is focused.)
     if (e.key === "Escape") {
       // Shell-level Esc: close help if open, else clear chord, else
       // no-op (CM6's Esc is its own thing).
       chord = null;
       if (ourHelpIsOpen()) closeHelp();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "w") {
-      e.preventDefault();
-      cycleWindow();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      if (NB.viewer) NB.viewer.save();
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "/") {
-      e.preventDefault();
-      setEnabled(false);
       return;
     }
 
@@ -268,27 +301,15 @@
   function dispatchEditor(k, e) {
     const v = NB.viewer;
     if (!v) return;
-    if (k === "i" || k === "e") {
-      if (v.startEdit) v.startEdit();
-      return;
-    }
+    // (i / e used to enter edit mode; that's now Ctrl+E in the shell,
+    // so Esc stays free for VIM's mode switch. See isOwnerModifier +
+    // the Ctrl+E branch in handleKey.)
     if (k === "j" || k === "ArrowDown") { scrollEditor("down"); return; }
     if (k === "k" || k === "ArrowUp")   { scrollEditor("up"); return; }
     if (k === "G")                      { editorJump("bottom"); return; }
-    if (k === "H") {
-      // Note: H is normally "top of screen" in vim. In the editor
-      // window we override to mean "back" (more useful for an app
-      // that's a notebook, not a code file). Documented in :help.
-      v.goBack && v.goBack();
-      return;
-    }
-    if (k === "L") {
-      v.goForward && v.goForward();
-      return;
-    }
     if (k === "h") {
-      // In editor window, h is "left half-page" (vim H/L are
-      // overridden above; h/l is not, so h here means what vim means).
+      // h in the editor window: scroll half-page up (vim's H/L would
+      // be top/bottom of screen; Ctrl+H/L are reserved for tab nav).
       scrollEditorHalf("up");
       return;
     }
@@ -340,7 +361,8 @@
           <h3>App shell</h3>
           <table>
             <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: sidebar → editor → outline</td></tr>
-            <tr><th><kbd>i</kbd> / <kbd>e</kbd></th><td>Enter edit mode (focus the editor)</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>L</kbd></th><td>Previous / next tab</td></tr>
             <tr><th><kbd>Esc</kbd></th><td>Close this help, blur any input, or exit edit mode</td></tr>
             <tr><th><kbd>?</kbd></th><td>Show this :help</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>/</kbd></th><td>Disable VIM mode for this session (escape hatch)</td></tr>
@@ -366,8 +388,7 @@
             <tr><th><kbd>j</kbd> / <kbd>k</kbd></th><td>Scroll one line down / up</td></tr>
             <tr><th><kbd>l</kbd> / <kbd>h</kbd></th><td>Scroll half-page down / up</td></tr>
             <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>Scroll to top / bottom</td></tr>
-            <tr><th><kbd>i</kbd> / <kbd>e</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
-            <tr><th><kbd>H</kbd> / <kbd>L</kbd></th><td>Back / forward in in-app history</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
             <tr><th><kbd>t</kbd></th><td>New note</td></tr>
             <tr><th><kbd>T</kbd></th><td>Open the search box</td></tr>
           </table>

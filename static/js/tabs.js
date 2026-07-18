@@ -390,9 +390,26 @@
   function getOpen() { return ordered.slice(); }
   function isOpen(path) { return openSet.has(path); }
 
+  // Cycle to the previous / next tab. No-op if there's only one
+  // (or zero) tab. Returns the new active path, or null.
+  async function prev() {
+    if (ordered.length < 2) return activePath;
+    const i = ordered.indexOf(activePath);
+    const ni = (i <= 0) ? ordered.length - 1 : i - 1;
+    await activate(ordered[ni]);
+    return ordered[ni];
+  }
+  async function next() {
+    if (ordered.length < 2) return activePath;
+    const i = ordered.indexOf(activePath);
+    const ni = (i < 0 || i === ordered.length - 1) ? 0 : i + 1;
+    await activate(ordered[ni]);
+    return ordered[ni];
+  }
+
   NB.tabs = {
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
-    togglePin, isPinned, closeOthers, closeRight, closeLeft,
+    togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next,
   };
 
   /* --- keep the bar in sync with viewer-driven changes --------------- */
