@@ -3,20 +3,22 @@
  * Two layers of VIM in this app:
  *   1. App shell (this module): sidebar / editor / outline act as
  *      three vim "windows". Ctrl+W cycles focus. j/k/gg/G navigate
- *      within the active window. i enters edit mode. Esc exits.
- *      H/L use the back button. o/r/d mutate the file tree.
+ *      within the active window. Ctrl+E enters/exits edit mode.
+ *      Ctrl+H/L cycle to the previous/next tab. o/r/d mutate the
+ *      file tree.
  *   2. Editor textarea (CodeMirror 6 + @replit/codemirror-vim):
  *      real VIM inside the raw editor (dd/dw/cw/:/etc.). The bridge
- *      (cm-bridge.js) registers the high-priority Ctrl+B / Ctrl+I /
- *      Escape bindings; everything else is CM6's vim keymap.
+ *      (cm-bridge.js) registers the high-priority Ctrl+B / Ctrl+I
+ *      bindings (bold/italic over the vim keymap); everything else
+ *      is CM6's vim keymap, including Esc (insert -> normal mode).
  *
  * The two layers hand off cleanly: when CodeMirror has focus, this
- * module only handles Escape (which exits edit mode and returns the
- * shell keymap to "normal mode" in the editor window). Otherwise
+ * module only handles the global Ctrl+? bindings (Ctrl+E exit edit,
+ * Ctrl+H/L switch tabs, Ctrl+S save, Ctrl+/ disable VIM, Ctrl+W
+ * cycle window). Esc is NOT intercepted while CM has focus -- it
+ * belongs to the VIM keymap (insert -> normal mode). Otherwise
  * (anywhere else in the app), this module is the sole owner of the
- * keymap. Modifier keys we own (Ctrl+W, Ctrl+S, Ctrl+D, Ctrl+U,
- * Ctrl+/) are preventDefault'd; modifiers we don't own fall through
- * to the browser.
+ * keymap.
  *
  * Activation: opt-in via Settings → "Enable VIM keymap" (off by
  * default). When OFF, no global keydown listener is attached and
@@ -54,7 +56,10 @@
 
   /* --- focus detection -------------------------------------------- */
   /* CodeMirror's contentDOM is the actual editable element. When it
-   * has focus, CM6 owns the keys (we only handle Esc). */
+   * has focus, CM6's vim keymap owns all keys (Esc, i, a, o, :, etc.).
+   * The only app-level keys that still work are the global Ctrl+?
+   * bindings handled in handleKey above (Ctrl+E to exit edit, Ctrl+H/L
+   * to switch tabs, etc.). */
   function cmHasFocus() {
     const v = NB.cmEditor && NB.cmEditor.view && NB.cmEditor.view();
     return !!(v && v.hasFocus);
@@ -174,12 +179,11 @@
       }
     }
     if (cmHasFocus()) {
-      // While CM6 has focus, only Esc is ours (exits edit mode).
-      // Everything else goes to CM6's vim keymap.
-      if (e.key === "Escape") {
-        e.preventDefault();
-        if (NB.viewer) NB.viewer.closeEdit();
-      }
+      // CodeMirror has focus -- in edit mode. CM6's vim keymap owns
+      // all keys now (Esc switches insert->normal mode, i/a/o enter
+      // insert, :w saves, etc.). The only app-level keys are handled
+      // in the global Ctrl+? block above (Ctrl+E to exit edit, Ctrl+H/L
+      // to switch tabs). We do nothing here.
       return;
     }
     if (inEditable()) {
@@ -363,7 +367,7 @@
             <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: sidebar → editor → outline</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>L</kbd></th><td>Previous / next tab</td></tr>
-            <tr><th><kbd>Esc</kbd></th><td>Close this help, blur any input, or exit edit mode</td></tr>
+            <tr><th><kbd>Esc</kbd></th><td>Close this help, blur any input (in edit mode, Esc is VIM's insert → normal switch and stays in edit mode)</td></tr>
             <tr><th><kbd>?</kbd></th><td>Show this :help</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>/</kbd></th><td>Disable VIM mode for this session (escape hatch)</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>S</kbd></th><td>Save</td></tr>

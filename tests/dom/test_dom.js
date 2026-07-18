@@ -3572,8 +3572,11 @@ function check(label, cond, extra) {
     activeWin() && activeWin().dataset.vimWindow === "sidebar",
     activeWin() && activeWin().dataset.vimWindow);
 
-  // Editor window: Ctrl+E toggles edit mode (focuses CodeMirror),
-  // Esc exits. (i / e used to enter edit mode; now reserved for VIM.)
+  // Editor window: Ctrl+E toggles edit mode (focuses CodeMirror).
+  // Esc is VIM's insert->normal mode key and is owned by the
+  // CodeMirror vim keymap while the editor has focus -- it does NOT
+  // exit edit mode. (i / e used to enter edit mode; now reserved
+  // for VIM.)
   // First go back to editor.
   $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
   await tick(10);
@@ -3592,18 +3595,25 @@ function check(label, cond, extra) {
   pressKey("e", { ctrlKey: true });
   await tick(20);
   check("vim: Ctrl+E enters edit mode (cm-host shown)", !cmIsHidden());
-  // Now CM has focus; the shell keymap only handles Esc.
-  // Esc closes edit mode.
+  // While CM has focus, Esc is VIM's mode switch (insert -> normal),
+  // NOT an exit-edit-mode signal. Press Esc and confirm we're still
+  // in edit mode (cm-host still shown).
   pressKey("Escape");
   await tick(20);
-  check("vim: Esc exits edit mode (cm-host hidden)", cmIsHidden());
-  // Ctrl+E from preview again enters edit mode (toggle behavior).
-  pressKey("e", { ctrlKey: true });
-  await tick(20);
-  check("vim: Ctrl+E re-enters edit mode (toggle)", !cmIsHidden());
+  check("vim: Esc in edit mode does NOT exit edit mode (VIM key)",
+    !cmIsHidden());
+  // Ctrl+E exits edit mode (toggle).
   pressKey("e", { ctrlKey: true });
   await tick(20);
   check("vim: Ctrl+E exits edit mode (toggle from edit)", cmIsHidden());
+  // And back in.
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E re-enters edit mode (toggle)", !cmIsHidden());
+  // Drop back to preview for the rest of the block.
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E exits edit mode (cleanup)", cmIsHidden());
 
   // Editor window (preview): j/k scroll the viewer one line. We can't
   // measure the line height exactly in jsdom but scrolling a known
@@ -3814,10 +3824,15 @@ function check(label, cond, extra) {
   await tick(10);
   check("vim: editbar.bold() still works after vim-mode port", cmGetValue() === "**plain**",
     "got: " + cmGetValue());
-  // Esc inside CM exits edit mode (the bridge's Prec.high binding).
+  // Esc inside CM is VIM's insert->normal mode key and does NOT
+  // exit edit mode. Press Esc and confirm we stay in edit mode.
   pressKey("Escape");
   await tick(20);
-  check("vim: Esc inside CM exits edit mode", cmIsHidden());
+  check("vim: Esc inside CM does NOT exit edit mode (VIM key)", !cmIsHidden());
+  // Ctrl+E exits edit mode.
+  pressKey("e", { ctrlKey: true });
+  await tick(20);
+  check("vim: Ctrl+E exits edit mode (after editbar test)", cmIsHidden());
 
   // T opens the search box (focuses the search input).
   blurActive();

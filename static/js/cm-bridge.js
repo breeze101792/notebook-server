@@ -55,9 +55,14 @@
         // explicit about the bold/italic on `Mod-b`/`Mod-i`).
         cm.vim(),
         cm.Prec.high(cm.keymap.of([
+          // Bold / italic are app-level toolbar actions, so we bind
+          // them at Prec.high over the vim keymap (Mod-b / Mod-i
+          // aren't vim bindings, but we keep the explicit priority so
+          // they can't drift later). Escape is NOT bound here -- it's
+          // a VIM key (insert -> normal mode). Exiting edit mode is
+          // Ctrl+E, handled in the shell (vimnav.js).
           { key: "Mod-b", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.bold(); return true; } },
           { key: "Mod-i", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.italic(); return true; } },
-          { key: "Escape", run: () => { if (NB.viewer) NB.viewer.closeEdit(); return true; } },
         ])),
         // updateListener fires on every doc change; route to the
         // onChange handlers. viewer.js hooks this for dirty tracking
