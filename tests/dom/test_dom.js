@@ -3659,11 +3659,11 @@ function check(label, cond, extra) {
   window.NB.sidebar.setVimCursor("notes/a.md");
   await tick(10);
 
-  // Ctrl+H / Ctrl+L: previous / next tab. The test verifies that
-  // Ctrl+L moves to the next open tab and Ctrl+H moves to the
-  // previous. The bindings are global (work in any focus context,
-  // including when CM is focused in edit mode) so they take
-  // precedence over the per-window dispatch tables.
+  // Alt+H / Alt+L: previous / next tab. These are global (work in any
+  // focus context, including when CM is focused in edit mode) so
+  // they take precedence over the per-window dispatch tables. We
+  // use Alt (not Ctrl) so the browser's Ctrl+L (address bar) and
+  // Ctrl+H (history) stay intact.
   if (window.NB.tabs.isOpen("notes/b.md")) {
     // Reset to a known state: active = notes/a.md.
     await window.NB.tabs.activate("notes/a.md");
@@ -3674,41 +3674,104 @@ function check(label, cond, extra) {
     const startActive = window.NB.tabs.getActive();
     const openTabs = window.NB.tabs.getOpen();
     const nextIdx = (openTabs.indexOf(startActive) + 1) % openTabs.length;
-    const prevIdx = (openTabs.indexOf(startActive) - 1 + openTabs.length) % openTabs.length;
     const nextTab = openTabs[nextIdx];
-    const prevTab = openTabs[prevIdx];
-    check("vim: Ctrl+H/L precondition: active = notes/a.md",
+    check("vim: Alt+H/L precondition: active = notes/a.md",
       startActive === "notes/a.md", "active=" + startActive);
-    // Ctrl+L moves to the next tab.
-    pressKey("l", { ctrlKey: true });
+    // Alt+L moves to the next tab.
+    pressKey("l", { altKey: true });
     await tick(40);
-    check("vim: Ctrl+L -> next tab (" + nextTab + ")",
+    check("vim: Alt+L -> next tab (" + nextTab + ")",
       window.NB.tabs.getActive() === nextTab,
       "active=" + window.NB.tabs.getActive());
-    // Ctrl+H moves to the previous tab.
-    pressKey("h", { ctrlKey: true });
+    // Alt+H moves to the previous tab.
+    pressKey("h", { altKey: true });
     await tick(40);
-    check("vim: Ctrl+H -> previous tab (" + startActive + ")",
+    check("vim: Alt+H -> previous tab (" + startActive + ")",
       window.NB.tabs.getActive() === startActive,
       "active=" + window.NB.tabs.getActive());
-    // From the first tab, Ctrl+H should wrap to the last.
+    // From the first tab, Alt+H should wrap to the last.
     if (openTabs.length > 1) {
-      // Make sure the first tab is the active one, so Ctrl+H actually
-      // wraps. If the test happened to land somewhere else, activate
-      // the first tab first.
       const firstTab = openTabs[0];
       if (window.NB.tabs.getActive() !== firstTab) {
         await window.NB.tabs.activate(firstTab);
         await tick(20);
       }
-      pressKey("h", { ctrlKey: true });
+      pressKey("h", { altKey: true });
       await tick(40);
-      check("vim: Ctrl+H wraps to last tab (" + openTabs[openTabs.length - 1] + ")",
+      check("vim: Alt+H wraps to last tab (" + openTabs[openTabs.length - 1] + ")",
         window.NB.tabs.getActive() === openTabs[openTabs.length - 1],
         "active=" + window.NB.tabs.getActive());
     }
     // Reset.
     await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    window.NB.sidebar.setVimCursor("notes/a.md");
+    await tick(10);
+
+    // Alt+L in edit mode with a CLEAN editor: just exits edit mode
+    // and switches tabs (no prompt).
+    pressKey("e", { ctrlKey: true });              // enter edit mode
+    await tick(20);
+    check("vim: Alt+H/L edit-mode-clean precondition: in edit mode",
+      !cmIsHidden());
+    // Editor is empty/clean, no prompt expected.
+    pressKey("l", { altKey: true });
+    await tick(40);
+    check("vim: Alt+L in clean edit mode -> switches tab (no prompt)",
+      window.NB.tabs.getActive() === nextTab && cmIsHidden(),
+      "active=" + window.NB.tabs.getActive() + " cmHidden=" + cmIsHidden());
+    // Alt+H back.
+    pressKey("h", { altKey: true });
+    await tick(40);
+
+    // Alt+L in edit mode with DIRTY content: prompts to save. We
+    // stub confirm() to return true (save). The save fires a fetch
+    // (already stubbed) and then endEdit() runs. Verify the tab
+    // switched and we're out of edit mode.
+    pressKey("e", { ctrlKey: true });              // back into edit mode
+    await tick(20);
+    // Capture the original content so we can restore it after the
+    // test (the dirty + save replaces the file on disk, and the
+    // outline test that runs later relies on the original headings
+    // existing).
+    const originalContent = window.NB.cmEditor.getValue();
+    // Make the editor dirty.
+    cmSetValue("plain"); cmSetSel(0, 5);
+    await tick(10);
+    check("vim: Alt+H/L edit-mode-dirty precondition: dirty",
+      window.NB.viewer.isDirty(window.NB.tabs.getActive()),
+      "dirty=" + window.NB.viewer.isDirty(window.NB.tabs.getActive()));
+    let confirmCalls = 0;
+    const origConfirm = window.confirm;
+    window.confirm = () => { confirmCalls++; return true; };
+    try {
+      pressKey("l", { altKey: true });
+      await tick(60);
+    } finally {
+      window.confirm = origConfirm;
+    }
+    check("vim: Alt+L in dirty edit mode -> prompt asked",
+      confirmCalls === 1, "confirmCalls=" + confirmCalls);
+    check("vim: Alt+L in dirty edit mode -> switches tab + exits edit",
+      window.NB.tabs.getActive() === nextTab && cmIsHidden(),
+      "active=" + window.NB.tabs.getActive() + " cmHidden=" + cmIsHidden());
+    // Reset: restore the original content of notes/a.md so later
+    // tests (outline headings) see the original headings.
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    pressKey("e", { ctrlKey: true });
+    await tick(20);
+    cmSetValue(originalContent);
+    await tick(10);
+    const origConfirm2 = window.confirm;
+    window.confirm = () => true;
+    try {
+      pressKey("s", { ctrlKey: true });
+      await tick(40);
+    } finally {
+      window.confirm = origConfirm2;
+    }
+    pressKey("e", { ctrlKey: true });
     await tick(20);
     window.NB.sidebar.setVimCursor("notes/a.md");
     await tick(10);
@@ -3844,6 +3907,20 @@ function check(label, cond, extra) {
     window.document.activeElement === $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   // Blur to drop focus for the rest of the suite.
+  $("search-input").blur();
+  await tick(10);
+
+  // / (VIM-style search) in preview mode also focuses the search
+  // input. In edit mode, / is owned by CM6's vim keymap (we don't
+  // intercept it). Verify the preview case.
+  blurActive();
+  $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
+  await tick(10);
+  pressKey("/");
+  await tick(10);
+  check("vim: / in preview focuses search input",
+    window.document.activeElement === $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
   $("search-input").blur();
   await tick(10);
 

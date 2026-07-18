@@ -4,21 +4,21 @@
  *   1. App shell (this module): sidebar / editor / outline act as
  *      three vim "windows". Ctrl+W cycles focus. j/k/gg/G navigate
  *      within the active window. Ctrl+E enters/exits edit mode.
- *      Ctrl+H/L cycle to the previous/next tab. o/r/d mutate the
- *      file tree.
+ *      Alt+H/L cycle to the previous/next tab. o/r/d mutate the
+ *      file tree. / focuses the search box.
  *   2. Editor textarea (CodeMirror 6 + @replit/codemirror-vim):
  *      real VIM inside the raw editor (dd/dw/cw/:/etc.). The bridge
  *      (cm-bridge.js) registers the high-priority Ctrl+B / Ctrl+I
  *      bindings (bold/italic over the vim keymap); everything else
- *      is CM6's vim keymap, including Esc (insert -> normal mode).
+ *      is CM6's vim keymap, including Esc (insert -> normal mode)
+ *      and `/` (search within the note).
  *
  * The two layers hand off cleanly: when CodeMirror has focus, this
- * module only handles the global Ctrl+? bindings (Ctrl+E exit edit,
- * Ctrl+H/L switch tabs, Ctrl+S save, Ctrl+/ disable VIM, Ctrl+W
- * cycle window). Esc is NOT intercepted while CM has focus -- it
- * belongs to the VIM keymap (insert -> normal mode). Otherwise
- * (anywhere else in the app), this module is the sole owner of the
- * keymap.
+ * module only handles the global modifier bindings (Ctrl+E exit
+ * edit, Alt+H/L switch tabs, Ctrl+S save, Ctrl+/ disable VIM,
+ * Ctrl+W cycle window). Esc and `/` are NOT intercepted while CM
+ * has focus -- they belong to the VIM keymap. Otherwise (anywhere
+ * else in the app), this module is the sole owner of the keymap.
  *
  * Activation: opt-in via Settings → "Enable VIM keymap" (off by
  * default). When OFF, no global keydown listener is attached and
@@ -90,20 +90,43 @@
     const idx = order.indexOf(activeWindow);
     setActiveWindow(order[(idx + 1) % order.length]);
   }
+  // Cycle to prev / next tab. If we're in edit mode with unsaved
+  // changes, prompt the user to save first; a failed save aborts
+  // the cycle (stays in edit mode). Clean edit sessions just exit
+  // edit mode and switch.
+  async function cycleTabWithCommit(direction) {
+    if (!NB.tabs) return;
+    if (NB.viewer && NB.viewer.commitForTabSwitch) {
+      const ok = await NB.viewer.commitForTabSwitch();
+      if (!ok) return;
+    }
+    if (direction === "prev" && NB.tabs.prev) await NB.tabs.prev();
+    else if (direction === "next" && NB.tabs.next) await NB.tabs.next();
+  }
 
   /* --- keymap ----------------------------------------------------- */
   /* For each active window, the keymap is a flat object:
    *   key (in our normalized form, lowercase letter) -> handler.
    * Modifier keys (Ctrl/Alt/Meta) we own are handled separately. */
   function isOwnerModifier(e) {
-    if (e.altKey) return false;     // alt is always the browser's
+    if (e.altKey) {
+      // Alt+H / Alt+L cycle to the previous / next tab. We claim
+      // these so the browser's Alt+Left/Right (browser back/forward)
+      // doesn't fire instead -- the user said they don't want to
+      // break browser shortcuts, so we use Alt (which the browser
+      // mostly ignores) rather than Ctrl (which the browser uses
+      // for many things).
+      const k = e.key.toLowerCase();
+      return ["h", "l"].includes(k);
+    }
     if (e.metaKey) return true;     // we own Cmd on Mac
     if (e.ctrlKey) {
-      // We own Ctrl+W (cycle window), Ctrl+E (toggle edit), Ctrl+H/L
-      // (prev/next tab), Ctrl+S (save), Ctrl+/ (disable VIM). Other
-      // Ctrl+? fall through (browsers use them for tabs, find, etc.)
+      // We own Ctrl+W (cycle window), Ctrl+E (toggle edit), Ctrl+S
+      // (save), Ctrl+/ (disable VIM). Ctrl+H/L are NOT ours -- many
+      // browsers use Ctrl+L for the address bar. The tab cycle is
+      // Alt+H/L instead.
       const k = e.key.toLowerCase();
-      return ["w", "e", "h", "l", "s", "/"].includes(k);
+      return ["w", "e", "s", "/"].includes(k);
     }
     return true;
   }
@@ -138,6 +161,22 @@
     // These are app-level actions the user expects to work no matter
     // which sub-editor is focused. We process them before the CM / input
     // early returns below.
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      const k = e.key.toLowerCase();
+      if (k === "h") {
+        // Previous tab. Wraps. If we're in edit mode with unsaved
+        // changes, prompt to save / discard first.
+        e.preventDefault();
+        cycleTabWithCommit("prev");
+        return;
+      }
+      if (k === "l") {
+        // Next tab. Wraps. Same dirty-check as Alt+H.
+        e.preventDefault();
+        cycleTabWithCommit("next");
+        return;
+      }
+    }
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase();
       if (k === "e") {
@@ -148,18 +187,6 @@
         const inEdit = cmHost && !cmHost.hidden;
         if (inEdit) { if (v.closeEdit) v.closeEdit(); }
         else { if (v.startEdit) v.startEdit(); }
-        return;
-      }
-      if (k === "h") {
-        // Previous tab. Wraps.
-        e.preventDefault();
-        if (NB.tabs && NB.tabs.prev) NB.tabs.prev();
-        return;
-      }
-      if (k === "l") {
-        // Next tab. Wraps.
-        e.preventDefault();
-        if (NB.tabs && NB.tabs.next) NB.tabs.next();
         return;
       }
       if (k === "s") {
@@ -201,8 +228,9 @@
     else e.preventDefault();
 
     // --- owner-modifier keys ---
-    // (Ctrl+W/S/E/H/L// are handled above, before the cmHasFocus early
-    // return, so they work even when the editor is focused.)
+    // (Ctrl+W/S/E// and Alt+H/L are handled above, before the
+    // cmHasFocus early return, so they work even when the editor is
+    // focused.)
     if (e.key === "Escape") {
       // Shell-level Esc: close help if open, else clear chord, else
       // no-op (CM6's Esc is its own thing).
@@ -224,6 +252,18 @@
       // raw key string (e.g. "j", "k", "g", "?").
     } else {
       return;  // F-keys, arrows, etc. ignored
+    }
+
+    // `/` in preview mode (not in an input, not in CM edit mode) is
+    // VIM-style search: focus the search input. CM6's vim keymap owns
+    // `/` in edit mode, so this is only reached when cmHasFocus() is
+    // false (the cmHasFocus early return above caught that case).
+    // The search input is an <input> so inEditable() returns true and
+    // yields to it on subsequent keystrokes.
+    if (k === "/") {
+      const searchInput = document.getElementById("search-input");
+      if (searchInput) { searchInput.focus(); searchInput.select(); }
+      return;
     }
 
     // --- chord handling ---
@@ -366,7 +406,7 @@
           <table>
             <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: sidebar → editor → outline</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
-            <tr><th><kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>L</kbd></th><td>Previous / next tab</td></tr>
+            <tr><th><kbd>Alt</kbd>+<kbd>H</kbd> / <kbd>Alt</kbd>+<kbd>L</kbd></th><td>Previous / next tab (prompts to save if dirty in edit mode)</td></tr>
             <tr><th><kbd>Esc</kbd></th><td>Close this help, blur any input (in edit mode, Esc is VIM's insert → normal switch and stays in edit mode)</td></tr>
             <tr><th><kbd>?</kbd></th><td>Show this :help</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>/</kbd></th><td>Disable VIM mode for this session (escape hatch)</td></tr>
@@ -393,8 +433,8 @@
             <tr><th><kbd>l</kbd> / <kbd>h</kbd></th><td>Scroll half-page down / up</td></tr>
             <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>Scroll to top / bottom</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
+            <tr><th><kbd>/</kbd></th><td>Focus the search box (VIM-style search)</td></tr>
             <tr><th><kbd>t</kbd></th><td>New note</td></tr>
-            <tr><th><kbd>T</kbd></th><td>Open the search box</td></tr>
           </table>
           <h3>Editor (in edit mode -- CodeMirror VIM)</h3>
           <table>

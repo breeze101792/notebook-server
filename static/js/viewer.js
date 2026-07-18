@@ -368,6 +368,36 @@
     },
     toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
 
+    /* Commit before navigating away (tab switch via Alt+H/L or the
+     * browser back button). If the current file is in edit mode:
+     *   - clean: just exit edit mode, no prompt.
+     *   - dirty: confirm; on OK save (failure aborts the nav), on
+     *     Cancel revert the editor to the last saved content.
+     * Returns true if the caller may proceed with the nav, false if
+     * the user (or a failed save) wants to stay in edit mode. */
+    async commitForTabSwitch() {
+      const t = cur(); if (!t) return true;
+      if (!t.editMode) return true;
+      if (!viewer.isDirty(active)) {
+        this.endEdit();
+        return true;
+      }
+      const ok = confirm('Save changes to "' + active + '" before switching?');
+      if (ok) {
+        try { await this.save(); }
+        catch (e) {
+          alert("Save failed: " + (e && e.message ? e.message : e));
+          return false;
+        }
+      } else {
+        // Revert the editor to the last saved content so the next
+        // edit session starts clean.
+        NB.cmEditor.setValue(t.savedContent);
+      }
+      this.endEdit();
+      return true;
+    },
+
     /* In-app nav API. The back button (and the H/L vim keys via
      * vimnav.js) call these. goBack() returns true on success.
      * goForward() re-applies the last goBack(). */
