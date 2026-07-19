@@ -43,13 +43,19 @@
 
   const DEFAULTS = {
     save:         "Mod+S",
-    openSearch:   "Mod+F",
+    // / is the canonical "open search" chord; the "Mod" wrapper keeps
+    // it out of the way of typing / into a text input.
+    openSearch:   "Mod+/",
+    tabPrev:      "Alt+H",
+    tabNext:      "Alt+L",
     toggleEdit:   "Mod+E",
     openSettings: "Mod+comma",
   };
   const ACTION_LABELS = {
     save:         "Save current file",
     openSearch:   "Open search",
+    tabPrev:      "Previous tab",
+    tabNext:      "Next tab",
     toggleEdit:   "Toggle edit mode",
     openSettings: "Open Settings",
   };
@@ -261,7 +267,7 @@
     if (window.NB && NB.vimnav && NB.vimnav.isEnabled && NB.vimnav.isEnabled()) return;
     // Resolve the binding for each action in a fixed order so a
     // collision is deterministic (first match wins).
-    const order = ["save", "openSearch", "toggleEdit", "openSettings"];
+    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "openSettings"];
     const cfg = (window.NB && NB.app && NB.app.getCfg) ? NB.app.getCfg() : null;
     const overrides = (cfg && cfg.shortcuts) || {};
     for (const action of order) {

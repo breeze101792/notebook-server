@@ -217,6 +217,13 @@
       }
       if (k === "/") {
         e.preventDefault();
+        e.stopImmediatePropagation();
+        // Ctrl+/ turns VIM mode off. The state change is what makes
+        // this handler special: without stopImmediatePropagation the
+        // shortcuts module (registered after vimnav) would also see
+        // the event, observe that vim is now off, and fire its own
+        // default binding (openSearch on Ctrl+/) -- a confusing
+        // "vim disables AND search opens" double action.
         setEnabled(false);
         return;
       }

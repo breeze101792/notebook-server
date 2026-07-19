@@ -326,17 +326,31 @@
     // App-level keyboard shortcuts (active when VIM mode is off; see
     // static/js/shortcuts.js). The module owns the keydown listener
     // and the per-action chord (default + user override) lookup; we
-    // just hand it the handler map. openSearch / openSettings are
-    // new -- previously these had no app-level shortcut (only the
-    // buttons). save was the lone Ctrl+S binding before; it now
+    // just hand it the handler map. openSearch / openSettings /
+    // tabPrev / tabNext are new -- previously these had no app-level
+    // shortcut (only the buttons, or in VIM mode, the vimnav
+    // bindings). save was the lone Ctrl+S binding before; it now
     // lives here too so the user can rebind it.
     if (NB.shortcuts) {
+      // Cycle to the previous / next tab with the same dirty-aware
+      // commit logic vimnav uses (commitForTabSwitch prompts to save
+      // a dirty file first; a failed save aborts the cycle).
+      const cycleTab = async (direction) => {
+        if (!NB.tabs || !NB.tabs[direction]) return;
+        if (NB.viewer && NB.viewer.commitForTabSwitch) {
+          const ok = await NB.viewer.commitForTabSwitch();
+          if (!ok) return;
+        }
+        await NB.tabs[direction]();
+      };
       NB.shortcuts.install({
         save: () => NB.viewer.save(),
         openSearch: () => {
           const si = document.getElementById("search-input");
           if (si) { si.focus(); si.select(); }
         },
+        tabPrev: () => cycleTab("prev"),
+        tabNext: () => cycleTab("next"),
         toggleEdit: () => NB.viewer && NB.viewer.toggleEdit
           ? NB.viewer.toggleEdit() : null,
         openSettings: () => NB.settings && NB.settings.open

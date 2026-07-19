@@ -1682,16 +1682,19 @@ function check(label, cond, extra) {
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
   check("shortcuts: NB.shortcuts module loaded", !!sc);
-  check("shortcuts: 4 default actions",
-    sc.getActionOrder().length === 4 &&
+  check("shortcuts: 6 default actions",
+    sc.getActionOrder().length === 6 &&
     sc.getDefaults().save === "Mod+S" &&
-    sc.getDefaults().openSearch === "Mod+F" &&
+    sc.getDefaults().openSearch === "Mod+/" &&
+    sc.getDefaults().tabPrev === "Alt+H" &&
+    sc.getDefaults().tabNext === "Alt+L" &&
     sc.getDefaults().toggleEdit === "Mod+E" &&
     sc.getDefaults().openSettings === "Mod+comma");
   // The list helpers expose the same set the UI renders.
   const labels = sc.getActionLabels();
   check("shortcuts: labels exist for all actions",
-    labels.save && labels.openSearch && labels.toggleEdit && labels.openSettings);
+    labels.save && labels.openSearch && labels.tabPrev && labels.tabNext &&
+    labels.toggleEdit && labels.openSettings);
 
   // Open the Shortcuts tab and verify the rendered rows.
   window.NB.settings.open();
@@ -1700,8 +1703,15 @@ function check(label, cond, extra) {
   navBtns.find(b => b.dataset.tab === "shortcuts").click();
   await tick(20);
   let scRows = shortcutsList.querySelectorAll(".shortcut-row");
-  check("shortcuts: 4 rows rendered", scRows.length === 4, "got " + scRows.length);
-  const expFmt = { save: "Ctrl+S", openSearch: "Ctrl+F", toggleEdit: "Ctrl+E", openSettings: "Ctrl+Comma" };
+  check("shortcuts: 6 rows rendered", scRows.length === 6, "got " + scRows.length);
+  const expFmt = {
+    save: "Ctrl+S",
+    openSearch: "Ctrl+/",
+    tabPrev: "Alt+H",
+    tabNext: "Alt+L",
+    toggleEdit: "Ctrl+E",
+    openSettings: "Ctrl+Comma",
+  };
   for (const r of scRows) {
     const a = r.dataset.action;
     const txt = r.querySelector(".shortcut-binding").textContent;
@@ -1716,7 +1726,7 @@ function check(label, cond, extra) {
   check("shortcuts: help text mentions VIM is separate",
     shortcutsHelp && /VIM/i.test(shortcutsHelp.textContent));
 
-  // --- a default binding actually fires (Ctrl+F -> openSearch) ---
+  // --- a default binding actually fires (Ctrl+/ -> openSearch) ---
   // Close the modal so the global shortcut dispatch is unblocked.
   window.NB.settings.close();
   await tick(10);
@@ -1726,10 +1736,10 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: Ctrl+F (default openSearch) focuses #search-input",
+  check("shortcuts: Ctrl+/ (default openSearch) focuses #search-input",
     window.document.activeElement === $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   $("search-input").blur(); await tick(10);
@@ -1753,10 +1763,10 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: old binding (Ctrl+F) no longer fires after rebind",
+  check("shortcuts: old binding (Ctrl+/) no longer fires after rebind",
     window.document.activeElement !== $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
 
@@ -1767,12 +1777,76 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: resetBinding restores default (Ctrl+F fires again)",
+  check("shortcuts: resetBinding restores default (Ctrl+/ fires again)",
     window.document.activeElement === $("search-input"));
   $("search-input").blur(); await tick(10);
+
+  // --- tabPrev / tabNext (Alt+H / Alt+L) actually cycle tabs ---
+  // The suite has Welcome.md open from the earlier "external change"
+  // block. Open a second tab (notes/a.md) so cycling has somewhere
+  // to go, capture the state, and restore it at the end so the rest
+  // of the suite is unaffected.
+  const preCycleTabs = window.NB.tabs.getOpen().slice();
+  const preCycleActive = window.NB.tabs.getActive();
+  await window.NB.tabs.open("notes/a.md");
+  await tick(20);
+  // Make notes/a.md the active tab so Alt+L is the well-defined next.
+  if (window.NB.tabs.getActive() !== "notes/a.md") {
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+  }
+  check("shortcuts: tab cycle precondition: two tabs open",
+    window.NB.tabs.getOpen().length >= 2);
+  // Alt+L (tabNext) -> moves to the next tab.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "h", code: "KeyL", altKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Alt+L (default tabNext) cycles to the next tab",
+    window.NB.tabs.getActive() !== "notes/a.md",
+    "active=" + window.NB.tabs.getActive());
+  const afterNext = window.NB.tabs.getActive();
+  // Alt+H (tabPrev) -> moves back.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "h", code: "KeyH", altKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Alt+H (default tabPrev) cycles to the previous tab",
+    window.NB.tabs.getActive() === "notes/a.md",
+    "active=" + window.NB.tabs.getActive());
+  // Restore the pre-test tab set so later blocks see a clean state.
+  for (const p of window.NB.tabs.getOpen().slice()) {
+    if (!preCycleTabs.includes(p)) {
+      await window.NB.tabs.close(p, { force: true });
+      await tick(10);
+    }
+  }
+  if (preCycleActive && window.NB.tabs.getActive() !== preCycleActive) {
+    await window.NB.tabs.activate(preCycleActive);
+    await tick(20);
+  }
+  $("search-input").blur(); await tick(10);
+
+  // --- openSettings (Ctrl+,) actually fires ---
+  // Make sure the modal is closed so the global dispatch runs.
+  if (window.NB.settings.isOpen()) window.NB.settings.close();
+  await tick(10);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  check("shortcuts: openSettings precondition: modal closed",
+    !window.NB.settings.isOpen());
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: ",", code: "Comma", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Ctrl+, (default openSettings) opens the Settings modal",
+    window.NB.settings.isOpen());
+  window.NB.settings.close();
+  await tick(10);
 
   // --- capture flow: Change -> press a key -> row updates ---
   window.NB.settings.open();
@@ -1821,7 +1895,7 @@ function check(label, cond, extra) {
   $("settings-shortcuts-reset-all").click();
   await tick(20);
   check("shortcuts: reset all -> openSearch back to default",
-    sc.getBinding("openSearch") === "Mod+F");
+    sc.getBinding("openSearch") === "Mod+/");
   const allRows = shortcutsList.querySelectorAll(".shortcut-row");
   let allResetHidden = true;
   for (const r of allRows) {
@@ -1830,20 +1904,20 @@ function check(label, cond, extra) {
   check("shortcuts: reset all -> every row's Reset is hidden", allResetHidden);
   // And the UI shows the formatted defaults again.
   const osRowFinal = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
-  check("shortcuts: reset all -> openSearch row shows Ctrl+F",
-    osRowFinal.querySelector(".shortcut-binding").textContent === "Ctrl+F");
+  check("shortcuts: reset all -> openSearch row shows Ctrl+/",
+    osRowFinal.querySelector(".shortcut-binding").textContent === "Ctrl+/");
 
   // --- modal blocks the global dispatch ---
-  // With settings open, Ctrl+F should NOT focus the search input
+  // With settings open, Ctrl+/ should NOT focus the search input
   // (the module yields when a modal is up).
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: settings open -> Ctrl+F does NOT fire (modal blocks)",
+  check("shortcuts: settings open -> Ctrl+/ does NOT fire (modal blocks)",
     window.document.activeElement !== $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   // But the capture flow still works inside the modal (the Change
@@ -1871,13 +1945,35 @@ function check(label, cond, extra) {
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
+  // Sanity: vim mode is on (the shortcuts module should yield).
+  check("shortcuts: vim mode on precondition: NB.vimnav.isEnabled()",
+    window.NB.vimnav && window.NB.vimnav.isEnabled() === true,
+    "isEnabled=" + (window.NB.vimnav && window.NB.vimnav.isEnabled()));
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: vim mode on -> Ctrl+F does NOT fire openSearch",
+  check("shortcuts: vim mode on -> Ctrl+/ does NOT fire openSearch",
     window.document.activeElement !== $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
+  // And the cross-module regression: Ctrl+/ with vim on should
+  // disable vim WITHOUT also triggering the non-vim openSearch
+  // (vimnav turns vim off in its handler, which used to let the
+  // shortcuts module then fire on the now-off vim flag).
+  window.NB.app.setVimMode(true);
+  await tick(20);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: vim on + Ctrl+/ -> vim disables AND search does NOT open",
+    !window.NB.vimnav.isEnabled() &&
+    window.document.activeElement !== $("search-input"),
+    "vimEnabled=" + window.NB.vimnav.isEnabled() +
+    " active=" + (window.document.activeElement && window.document.activeElement.id));
   window.NB.app.setVimMode(false);
   await tick(20);
 
