@@ -539,6 +539,10 @@
     setVimMode: (on) => {
       cfg.vimMode = !!on;
       if (NB.vimnav) NB.vimnav.setEnabled(cfg.vimMode);
+      // VIM mode is the whole stack: the shell keymap (vimnav, above)
+      // AND the editor's vim keymap (cm-bridge compartment). Toggling
+      // the setting flips both so vim can be disabled completely.
+      if (NB.cmEditor && NB.cmEditor.setVimMode) NB.cmEditor.setVimMode(cfg.vimMode);
       persistConfig();
     },
     getVimMode: () => !!cfg.vimMode,

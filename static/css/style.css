@@ -924,13 +924,22 @@ body[data-theme="light"] #viewer-content {
   line-height: inherit;
 }
 #cm-host .cm-content {
-  padding: 16px 40px;
+  /* Left padding hugs the line-number gutter (editor-style, like vim's
+   * number column); the right keeps prose off the edge, matching the
+   * preview pane's inset. */
+  padding: 16px 40px 16px 8px;
   caret-color: var(--fg);
 }
 #cm-host .cm-gutters {
   background: var(--bg);
   color: var(--fg-muted);
   border-right: 1px solid var(--border);
+}
+/* basicSetup's fold gutter renders as an empty column between the line
+ * numbers and the text -- it reads as a stray gap (we don't use code
+ * folding in this app), so remove it from the layout entirely. */
+#cm-host .cm-foldGutter {
+  display: none;
 }
 #cm-host .cm-activeLine {
   background: rgba(127, 127, 127, 0.08);

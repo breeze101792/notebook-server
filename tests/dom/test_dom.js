@@ -201,7 +201,7 @@ const html = `<!DOCTYPE html><html><head>
             </div>
             <h3>Keyboard</h3>
             <div class="settings-row">
-              <label class="settings-label" for="settings-vim-toggle">Enable VIM keymap</label>
+              <label class="settings-label" for="settings-vim-toggle">VIM mode</label>
               <input type="checkbox" id="settings-vim-toggle">
             </div>
           </section>
@@ -349,6 +349,18 @@ window.matchMedia = () => ({
   addEventListener() {}, removeEventListener() {},
   dispatchEvent() { return false; },
 });
+// jsdom has no layout engine: Range.getClientRects /
+// getBoundingClientRect are unimplemented. CM6's vim plugin measures
+// text coordinates after vim ops (charCoords + scrollIntoView), which
+// crashes without them. Give every Range a fixed fake rect -- exact
+// geometry doesn't matter for the assertions (per-element rect stubs
+// for the drag-resize tests live at their call sites below).
+const fakeRangeRect = {
+  left: 0, top: 0, right: 10, bottom: 10, width: 10, height: 10,
+  x: 0, y: 0, toJSON() { return {}; },
+};
+window.Range.prototype.getClientRects = function () { return [fakeRangeRect]; };
+window.Range.prototype.getBoundingClientRect = function () { return fakeRangeRect; };
 
 // Fake fetch routing for every endpoint api.js calls.
 window.fetch = async (url, opts) => {
@@ -3452,7 +3464,7 @@ function check(label, cond, extra) {
 
   console.log("== vim mode ==");
   // The shell-level VIM keymap (`static/js/vimnav.js`) is opt-in via
-  // Settings → "Enable VIM keymap" (off by default). When enabled, the
+  // Settings → "VIM mode" (off by default). When enabled, the
   // three layout panels — sidebar / editor / outline — act as VIM
   // "windows" that you cycle through with Ctrl+W and navigate with
   // HJKL. Pressing `i` (or `e`) in the editor window enters edit
@@ -3489,7 +3501,8 @@ function check(label, cond, extra) {
     window.NB.sidebar.getVimCursor && window.NB.sidebar.getVimCursor() === beforeJ);
 
   // Enable via settings. The toggle is live: clicking it writes
-  // vimMode=true to cfg + calls NB.vimnav.setEnabled + persists to
+  // vimMode=true to cfg + calls NB.vimnav.setEnabled (shell keymap) +
+  // NB.cmEditor.setVimMode (editor vim keymap) + persists to
   // /api/config. No Apply/Save.
   window.NB.settings.open();
   await tick(20);
@@ -3661,6 +3674,71 @@ function check(label, cond, extra) {
   pressKey("e", { ctrlKey: true });
   await tick(20);
   check("vim: Ctrl+E re-enters edit mode (toggle)", !cmIsHidden());
+
+  // --- editor wrap (TODO: "vim mode should impl with wrap") ---
+  // Long lines wrap instead of overflowing horizontally
+  // (EditorView.lineWrapping). Observable directly on the view.
+  check("vim: editor wraps long lines (lineWrapping on)",
+    !!window.NB.cmEditor.view() && window.NB.cmEditor.view().lineWrapping === true);
+
+  // --- VIM mode gates the editor vim too (TODO: "VIM mode" toggle
+  // should enable/disable vim mode completely) ---
+  // CM6.getCM(view) returns the CM5 adapter only when the vim plugin
+  // is active. We're in edit mode with vim on (enabled via the
+  // settings toggle above).
+  const cmVimActive = () => {
+    const v = window.NB.cmEditor.view();
+    return !!(v && window.CM6.getCM(v));
+  };
+  check("vim: VIM mode on -> CM vim plugin active", cmVimActive());
+  window.NB.app.setVimMode(false);
+  await tick(20);
+  check("vim: setVimMode(false) -> CM vim plugin removed (vim fully off)",
+    !cmVimActive());
+  window.NB.app.setVimMode(true);
+  await tick(20);
+  check("vim: setVimMode(true) -> CM vim plugin restored", cmVimActive());
+
+  // --- visual-line cursor (TODO: "shift+v shouldn't move the cursor
+  // to the last word") ---
+  // Stock @replit/codemirror-vim renders the visual-line selection
+  // with the head pinned at end-of-line, so the cursor teleports to
+  // the last character. The bridge patches the adapter so the head
+  // (cursor) stays at the entry column; the line is still the unit of
+  // selection (linewise y/d unaffected).
+  cmSetValue("hello world foo\nsecond line here\nthird line end");
+  cmSetSel(5, 5);
+  await tick(10);
+  const cmV = window.NB.cmEditor.view();
+  const cmKey = (k, opts) => cmV.contentDOM.dispatchEvent(new window.KeyboardEvent("keydown",
+    Object.assign({ key: k, bubbles: true, cancelable: true }, opts || {})));
+  cmKey("V", { shiftKey: true });
+  await tick(20);
+  const selAfterV = cmV.state.selection.main;
+  check("vim: V keeps cursor at its column (no jump to last word)",
+    selAfterV.head === 5 && selAfterV.anchor === 0,
+    "head=" + selAfterV.head + " anchor=" + selAfterV.anchor);
+  const vimSt = window.CM6.getCM(cmV).state.vim;
+  check("vim: V entered visual-line mode", !!(vimSt.visualMode && vimSt.visualLine));
+  // Esc exits visual mode; the cursor returns to the entry column.
+  cmKey("Escape");
+  await tick(20);
+  check("vim: Esc after V restores cursor to entry column",
+    cmV.state.selection.main.head === 5,
+    "head=" + cmV.state.selection.main.head);
+  // V at column 0 would collapse the range if we rewrote it, so the
+  // bridge keeps the plugin's full-line highlight there.
+  cmSetSel(0, 0);
+  await tick(10);
+  cmKey("V", { shiftKey: true });
+  await tick(20);
+  const selV0 = cmV.state.selection.main;
+  check("vim: V at column 0 keeps the full-line highlight",
+    selV0.anchor === 0 && selV0.head === 15,
+    "anchor=" + selV0.anchor + " head=" + selV0.head);
+  cmKey("Escape");
+  await tick(20);
+
   // Drop back to preview for the rest of the block.
   pressKey("e", { ctrlKey: true });
   await tick(20);

@@ -27,6 +27,13 @@
 
   let view = null;
   const onChangeHandlers = [];
+  // The vim extension lives in a Compartment so Settings → "VIM mode"
+  // can turn ALL of vim (shell keymap AND the editor's vim) on/off at
+  // runtime. `vimOn` mirrors cfg.vimMode; ensureView() also seeds it
+  // from NB.app so a view created before any setVimMode() call still
+  // starts in the right state.
+  let vimCompartment = null;
+  let vimOn = false;
 
   function getCm() {
     if (!window.CM6) {
@@ -35,11 +42,62 @@
     return window.CM6;
   }
 
+  /* Visual-line cursor fix (@replit/codemirror-vim).
+   *
+   * Stock behavior: pressing V renders the selection with the head
+   * pinned at end-of-line (makeCmSelection 'line' mode), so the fat
+   * cursor teleports to the last character of the line even though
+   * vim.sel keeps the entry column internally. That jump is what the
+   * user sees as "shift+v moves the cursor to the last word".
+   *
+   * The fix wraps the CM5 adapter's setSelections: whenever vim is in
+   * visual-LINE mode and the call is the plugin's linewise *render*
+   * (single range, anchor at line start / head at line end, lines
+   * matching vim.sel), we put the head back at vim.sel.head's column
+   * so the cursor stays where the user put it. Linewise OPERATORS
+   * (yank/delete) pass a range whose head is the NEXT line's column 0,
+   * which fails the render-shape check, so dd-style operations on the
+   * visual selection are unaffected (verified: Vy pastes the full
+   * line, Vd deletes the full line). If the entry column is 0 the
+   * rewrite would collapse the range (losing the line highlight), so
+   * we keep the plugin's render in that case. */
+  function patchVisualLineCursor(cm5) {
+    if (cm5.__vlCursorPatched) return;   // idempotent
+    cm5.__vlCursorPatched = true;
+    const orig = cm5.setSelections.bind(cm5);
+    cm5.setSelections = function (ranges, primIndex) {
+      const vim = cm5.state && cm5.state.vim;
+      if (vim && vim.visualMode && vim.visualLine && vim.sel &&
+          ranges && ranges.length === 1) {
+        const r = ranges[0];
+        if (r.head.line === vim.sel.head.line &&
+            r.anchor.line === vim.sel.anchor.line) {
+          const headTxt = cm5.getLine(r.head.line) || "";
+          const anchorTxt = cm5.getLine(r.anchor.line) || "";
+          const fwd = r.anchor.ch === 0 && r.head.ch === headTxt.length;
+          const bwd = r.head.ch === 0 && r.anchor.ch === anchorTxt.length &&
+                      headTxt.length > 0;
+          const wantCh = Math.max(0, Math.min(vim.sel.head.ch, headTxt.length));
+          const collapses =
+            r.anchor.line === r.head.line && r.anchor.ch === wantCh;
+          if ((fwd || bwd) && !collapses && wantCh !== r.head.ch) {
+            ranges = [{ anchor: r.anchor, head: { line: r.head.line, ch: wantCh } }];
+          }
+        }
+      }
+      return orig(ranges, primIndex);
+    };
+  }
+
   function ensureView() {
     if (view) return view;
     const cm = getCm();
     const host = document.getElementById("cm-host");
     if (!host) throw new Error("cm-bridge: #cm-host not in DOM");
+    // Seed the vim compartment from the live cfg (in case setVimMode
+    // hasn't been called yet this session).
+    vimOn = !!(NB.app && NB.app.getVimMode && NB.app.getVimMode());
+    vimCompartment = new cm.Compartment();
     const startState = cm.EditorState.create({
       doc: "",
       extensions: [
@@ -48,12 +106,20 @@
         // search panel is opt-in; we expose our own shortcut).
         cm.basicSetup,
         cm.markdown(),
-        // Vim keymap. Use the high-priority Prec.high for our
+        // Wrap long lines instead of overflowing horizontally. This
+        // is a markdown notebook -- prose lines are long and wrapping
+        // is what the preview does too, so the two panes stay
+        // visually consistent.
+        cm.EditorView.lineWrapping,
+        // Vim keymap -- only when VIM mode is on (Settings → "VIM
+        // mode"). Off means the editor is a plain CM6 instance. The
+        // Compartment lets setVimMode() flip this live.
+        vimCompartment.of(vimOn ? cm.vim() : []),
+        // Use the high-priority Prec.high for our
         // own bindings so they win over the vim keymap (otherwise
         // `Mod-b` would insert "b" in insert mode if vim's bindings
         // didn't already claim it -- they do, but we want to be
         // explicit about the bold/italic on `Mod-b`/`Mod-i`).
-        cm.vim(),
         cm.Prec.high(cm.keymap.of([
           // Bold / italic are app-level toolbar actions, so we bind
           // them at Prec.high over the vim keymap (Mod-b / Mod-i
@@ -84,7 +150,19 @@
         }
       });
     } catch (_) { /* already registered -- fine */ }
+    // Keep the cursor at its column in visual-line mode (see the long
+    // comment on patchVisualLineCursor). getCM returns null when the
+    // vim plugin isn't active, so only patch when vim is on.
+    if (vimOn) patchVimAdapter();
     return view;
+  }
+
+  /* Patch the live CM5 adapter (if the vim plugin is active) with the
+   * visual-line cursor fix. Safe to call repeatedly. */
+  function patchVimAdapter() {
+    if (!view) return;
+    const cm5 = getCm().getCM(view);
+    if (cm5) patchVisualLineCursor(cm5);
   }
 
   /* Public API. All read-only methods are safe to call when the
@@ -145,6 +223,23 @@
     },
     /** Register a change handler. Called once per transaction. */
     onChange(fn) { onChangeHandlers.push(fn); },
+    /** Enable/disable the editor's vim keymap (Settings → "VIM mode").
+     *  When the view doesn't exist yet the flag is stored and applied
+     *  at creation; otherwise the vim Compartment is reconfigured live
+     *  (toggling vim on mid-edit drops the user into normal mode, off
+     *  restores the plain CM6 keymap). */
+    setVimMode(on) {
+      vimOn = !!on;
+      if (view && vimCompartment) {
+        const cm = getCm();
+        view.dispatch({
+          effects: vimCompartment.reconfigure(vimOn ? cm.vim() : []),
+        });
+        // The vim plugin (and its CM5 adapter) is (re)created by the
+        // reconfigure above, so (re)apply the visual-line cursor fix.
+        if (vimOn) patchVimAdapter();
+      }
+    },
     /** Focus the editor. Creates the view on first call. */
     focus() { ensureView().focus(); },
     /** Blur the editor. */

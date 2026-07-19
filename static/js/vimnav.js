@@ -20,9 +20,10 @@
  * has focus -- they belong to the VIM keymap. Otherwise (anywhere
  * else in the app), this module is the sole owner of the keymap.
  *
- * Activation: opt-in via Settings → "Enable VIM keymap" (off by
- * default). When OFF, no global keydown listener is attached and
- * nothing changes.
+ * Activation: opt-in via Settings → "VIM mode" (off by default). The
+ * same toggle also gates the editor's vim keymap (cm-bridge.js), so
+ * vim can be enabled/disabled completely. When OFF, the global keymap
+ * is inert and nothing changes.
  *
  * Public surface: NB.vimnav = { isEnabled, setEnabled, getWindow,
  *   setWindow, isInEditable, openHelp, closeHelp }
