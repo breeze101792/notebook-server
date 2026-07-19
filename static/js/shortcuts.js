@@ -43,9 +43,11 @@
 
   const DEFAULTS = {
     save:         "Mod+S",
-    // / is the canonical "open search" chord; the "Mod" wrapper keeps
-    // it out of the way of typing / into a text input.
-    openSearch:   "Mod+/",
+    // / is the canonical "open search" chord. The dispatcher guards
+    // modifierless chords (see `bareChordWouldSteal`) so a bare "/"
+    // doesn't fire while the user is typing in an input -- the
+    // same intuition vim's own / follows in the shell keymap.
+    openSearch:   "/",
     tabPrev:      "Alt+H",
     tabNext:      "Alt+L",
     toggleEdit:   "Mod+E",
@@ -276,6 +278,13 @@
         : DEFAULTS[action];
       if (!chord) continue;
       if (matches(chord, e)) {
+        // A modifierless chord (e.g. "/") would steal the character
+        // the user is typing in an input. Let the keystroke pass
+        // through to the focused input/textarea/contenteditable --
+        // the user is typing, not invoking a shortcut. The same
+        // intuition vim's own / follows in the shell keymap (it
+        // only fires when no input has focus).
+        if (chordHasNoModifiers(chord) && typingTargetHasFocus()) continue;
         const fn = handlers[action];
         if (fn) {
           e.preventDefault();
@@ -284,6 +293,26 @@
         return;
       }
     }
+  }
+
+  // A chord is "modifierless" when it has no Ctrl/Mod/Alt/Shift --
+  // just a bare key. These are the only chords that can collide
+  // with typing into a text field, so the dispatcher yields on them
+  // when a typing target has focus.
+  function chordHasNoModifiers(chord) {
+    if (!chord) return false;
+    for (const p of chord.split("+")) {
+      const low = p.toLowerCase();
+      if (low === "ctrl" || low === "mod" || low === "alt" || low === "shift") return false;
+    }
+    return true;
+  }
+  function typingTargetHasFocus() {
+    const a = document.activeElement;
+    if (!a || a === document.body) return false;
+    if (a.isContentEditable) return true;
+    const tag = a.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
   }
 
   function install(map) {

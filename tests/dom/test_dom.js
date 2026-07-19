@@ -1677,7 +1677,7 @@ function check(label, cond, extra) {
 
   console.log("== shortcuts ==");
   // The non-vim app keymap (Settings -> Shortcuts). Defaults:
-  // Mod+S save, Mod+F openSearch, Mod+E toggleEdit, Mod+comma
+  // Mod+S save, / openSearch, Mod+E toggleEdit, Mod+comma
   // openSettings. Active when VIM mode is off and no modal is up.
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
@@ -1685,7 +1685,7 @@ function check(label, cond, extra) {
   check("shortcuts: 6 default actions",
     sc.getActionOrder().length === 6 &&
     sc.getDefaults().save === "Mod+S" &&
-    sc.getDefaults().openSearch === "Mod+/" &&
+    sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
     sc.getDefaults().tabNext === "Alt+L" &&
     sc.getDefaults().toggleEdit === "Mod+E" &&
@@ -1706,7 +1706,7 @@ function check(label, cond, extra) {
   check("shortcuts: 6 rows rendered", scRows.length === 6, "got " + scRows.length);
   const expFmt = {
     save: "Ctrl+S",
-    openSearch: "Ctrl+/",
+    openSearch: "/",
     tabPrev: "Alt+H",
     tabNext: "Alt+L",
     toggleEdit: "Ctrl+E",
@@ -1726,7 +1726,7 @@ function check(label, cond, extra) {
   check("shortcuts: help text mentions VIM is separate",
     shortcutsHelp && /VIM/i.test(shortcutsHelp.textContent));
 
-  // --- a default binding actually fires (Ctrl+/ -> openSearch) ---
+  // --- a default binding actually fires ( / -> openSearch) ---
   // Close the modal so the global shortcut dispatch is unblocked.
   window.NB.settings.close();
   await tick(10);
@@ -1736,12 +1736,27 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: Ctrl+/ (default openSearch) focuses #search-input",
+  check("shortcuts: / (default openSearch) focuses #search-input",
     window.document.activeElement === $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
+  $("search-input").blur(); await tick(10);
+
+  // --- modifierless / must NOT fire when an input has focus ---
+  // The user is typing, not invoking a shortcut -- the dispatcher
+  // guards bare-chord matches so the keystroke passes through.
+  $("search-input").focus();
+  await tick(10);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "/", code: "Slash", bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: / in an input does NOT fire openSearch (typing guard)",
+    window.document.activeElement === $("search-input") &&
+    window.document.getElementById("search-results").hidden,
+    "results.hidden=" + window.document.getElementById("search-results").hidden);
   $("search-input").blur(); await tick(10);
 
   // --- rebind via the API and verify the new binding fires (and the
@@ -1763,10 +1778,10 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: old binding (Ctrl+/) no longer fires after rebind",
+  check("shortcuts: old binding (/) no longer fires after rebind",
     window.document.activeElement !== $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
 
@@ -1777,10 +1792,10 @@ function check(label, cond, extra) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: resetBinding restores default (Ctrl+/ fires again)",
+  check("shortcuts: resetBinding restores default (/ fires again)",
     window.document.activeElement === $("search-input"));
   $("search-input").blur(); await tick(10);
 
@@ -1895,7 +1910,7 @@ function check(label, cond, extra) {
   $("settings-shortcuts-reset-all").click();
   await tick(20);
   check("shortcuts: reset all -> openSearch back to default",
-    sc.getBinding("openSearch") === "Mod+/");
+    sc.getBinding("openSearch") === "/");
   const allRows = shortcutsList.querySelectorAll(".shortcut-row");
   let allResetHidden = true;
   for (const r of allRows) {
@@ -1904,20 +1919,20 @@ function check(label, cond, extra) {
   check("shortcuts: reset all -> every row's Reset is hidden", allResetHidden);
   // And the UI shows the formatted defaults again.
   const osRowFinal = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
-  check("shortcuts: reset all -> openSearch row shows Ctrl+/",
-    osRowFinal.querySelector(".shortcut-binding").textContent === "Ctrl+/");
+  check("shortcuts: reset all -> openSearch row shows /",
+    osRowFinal.querySelector(".shortcut-binding").textContent === "/");
 
   // --- modal blocks the global dispatch ---
-  // With settings open, Ctrl+/ should NOT focus the search input
+  // With settings open, / should NOT focus the search input
   // (the module yields when a modal is up).
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
+    key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: settings open -> Ctrl+/ does NOT fire (modal blocks)",
+  check("shortcuts: settings open -> / does NOT fire (modal blocks)",
     window.document.activeElement !== $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   // But the capture flow still works inside the modal (the Change
@@ -1942,26 +1957,18 @@ function check(label, cond, extra) {
   // separate toggle.
   window.NB.app.setVimMode(true);
   await tick(20);
-  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
-    window.document.activeElement.blur();
-  }
-  // Sanity: vim mode is on (the shortcuts module should yield).
+  // Sanity: vim mode is on.
   check("shortcuts: vim mode on precondition: NB.vimnav.isEnabled()",
     window.NB.vimnav && window.NB.vimnav.isEnabled() === true,
     "isEnabled=" + (window.NB.vimnav && window.NB.vimnav.isEnabled()));
-  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-    key: "/", code: "Slash", ctrlKey: true, bubbles: true, cancelable: true,
-  }));
-  await tick(20);
-  check("shortcuts: vim mode on -> Ctrl+/ does NOT fire openSearch",
-    window.document.activeElement !== $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  // And the cross-module regression: Ctrl+/ with vim on should
-  // disable vim WITHOUT also triggering the non-vim openSearch
-  // (vimnav turns vim off in its handler, which used to let the
-  // shortcuts module then fire on the now-off vim flag).
-  window.NB.app.setVimMode(true);
-  await tick(20);
+  // Cross-module regression: Ctrl+/ with vim on should disable vim
+  // WITHOUT also triggering the non-vim openSearch. To exercise
+  // the double-fire path, rebind openSearch to Ctrl+/ first -- then
+  // without the stopImmediatePropagation fix, the shortcuts module
+  // would observe the now-off vim flag and fire its (rebound) Ctrl+/
+  // binding, opening search as a side effect of disabling vim.
+  sc.setBinding("openSearch", "Ctrl+/");
+  await tick(10);
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
@@ -1974,6 +1981,11 @@ function check(label, cond, extra) {
     window.document.activeElement !== $("search-input"),
     "vimEnabled=" + window.NB.vimnav.isEnabled() +
     " active=" + (window.document.activeElement && window.document.activeElement.id));
+  // Restore for the next block (the big vim mode test that runs
+  // later in the suite enables vim via the settings toggle and
+  // expects the default off state at boot of that block).
+  sc.resetBinding("openSearch");
+  await tick(10);
   window.NB.app.setVimMode(false);
   await tick(20);
 
