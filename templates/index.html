@@ -188,6 +188,7 @@
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general">⚙ General</button>
           <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance">🎨 Appearance</button>
+          <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts">⌨ Shortcuts</button>
           <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security">🔒 Security</button>
           <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about">ℹ About</button>
         </nav>
@@ -292,6 +293,30 @@
             </div>
           </section>
 
+          <!-- Shortcuts: the non-vim app keymap. Live, with a per-row
+               "Change" (capture-next-key) and "Reset" flow. The VIM
+               keymap is deliberately not editable here -- it's its
+               own thing, see Settings -> VIM mode and the :help
+               overlay for VIM's bindings. -->
+          <section class="settings-section" data-section="shortcuts" id="settings-section-shortcuts" hidden>
+            <h3>Shortcuts</h3>
+            <p class="settings-help">
+              Customize the app's keyboard shortcuts. These bindings are active when
+              VIM mode is off; VIM's own keymap is documented in the
+              <kbd>?</kbd> :help overlay and is configured separately under VIM mode.
+            </p>
+            <div id="settings-shortcuts-list" class="shortcuts-list" role="list">
+              <!-- rows are rendered by settings.js (it reads the
+                   action list from NB.shortcuts). Each row is a
+                   .shortcut-row with a label, the current binding
+                   (kbd-styled), and Change / Reset buttons. -->
+            </div>
+            <div class="settings-row shortcuts-footer">
+              <span class="settings-label"></span>
+              <button id="settings-shortcuts-reset-all" class="settings-action">Reset all to defaults</button>
+            </div>
+          </section>
+
           <!-- Security: passwords (per-section Save/Remove, reloads the page on success). -->
           <section class="settings-section" data-section="security" id="settings-section-security" hidden>
             <h3>Passwords</h3>
@@ -372,6 +397,9 @@
   <script src="/static/js/tabs.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/vimnav.js"></script>
+  <!-- shortcuts.js defines NB.shortcuts; loaded just before app.js
+       (which calls shortcuts.install during boot). -->
+  <script src="/static/js/shortcuts.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

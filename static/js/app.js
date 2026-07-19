@@ -50,6 +50,11 @@
     // tab. The live state is mirrored to NB.vimnav.setEnabled() on
     // boot + on every toggle.
     vimMode: false,
+    // Per-action keyboard bindings for the non-vim keymap. See
+    // static/js/shortcuts.js for the chord format and the list of
+    // actions. Missing keys fall back to that module's DEFAULTS,
+    // so a fresh `{}` here means "use the shipped defaults".
+    shortcuts: {},
   };
 
   // Width used while a sidebar is collapsed (a thin clickable strip).
@@ -318,14 +323,26 @@
     document.getElementById("outline-expand").addEventListener("click",
       () => { cfg.outlineCollapsed = false; applyOutlineState(); persistConfig(); });
 
-    // keyboard: Ctrl/Cmd+S saves (no-op outside edit mode; viewer.save
-    // checks the flag itself).
-    document.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
-        e.preventDefault();
-        NB.viewer.save();
-      }
-    });
+    // App-level keyboard shortcuts (active when VIM mode is off; see
+    // static/js/shortcuts.js). The module owns the keydown listener
+    // and the per-action chord (default + user override) lookup; we
+    // just hand it the handler map. openSearch / openSettings are
+    // new -- previously these had no app-level shortcut (only the
+    // buttons). save was the lone Ctrl+S binding before; it now
+    // lives here too so the user can rebind it.
+    if (NB.shortcuts) {
+      NB.shortcuts.install({
+        save: () => NB.viewer.save(),
+        openSearch: () => {
+          const si = document.getElementById("search-input");
+          if (si) { si.focus(); si.select(); }
+        },
+        toggleEdit: () => NB.viewer && NB.viewer.toggleEdit
+          ? NB.viewer.toggleEdit() : null,
+        openSettings: () => NB.settings && NB.settings.open
+          ? NB.settings.open() : null,
+      });
+    }
 
     // Settings: the gear button opens a modal. The modal lives in its own
     // module (settings.js) and reads/writes the cfg through these hooks.
@@ -543,6 +560,14 @@
       // AND the editor's vim keymap (cm-bridge compartment). Toggling
       // the setting flips both so vim can be disabled completely.
       if (NB.cmEditor && NB.cmEditor.setVimMode) NB.cmEditor.setVimMode(cfg.vimMode);
+      persistConfig();
+    },
+    // Replace the full shortcut override map (called by shortcuts.js
+    // when the user changes a binding or hits "Reset all"). Live:
+    // the shortcuts listener reads cfg.shortcuts on every keydown, so
+    // the new bindings take effect on the next press.
+    setShortcuts: (map) => {
+      cfg.shortcuts = (map && typeof map === "object") ? { ...map } : {};
       persistConfig();
     },
     getVimMode: () => !!cfg.vimMode,

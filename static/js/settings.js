@@ -45,6 +45,14 @@
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
 
+  // Shortcuts section handles. The rows themselves are rendered into
+  // #settings-shortcuts-list by renderShortcuts() (the action list
+  // and defaults come from NB.shortcuts). `capturingAction` is the
+  // id of the action currently in capture mode, or null.
+  const shortcutsListEl  = document.getElementById("settings-shortcuts-list");
+  const shortcutsResetAllBtn = document.getElementById("settings-shortcuts-reset-all");
+  let capturingAction = null;
+
   // Passwords section handles
   const authHelpEl       = document.getElementById("settings-auth-help");
   const adminPwEl        = document.getElementById("settings-auth-admin-pw");
@@ -123,6 +131,7 @@
     syncVimToggle();
     refreshWatchStatus();
     refreshAuthState();
+    renderShortcuts();
     if (!infoLoaded) loadInfo();
     overlayEl.hidden = false;
     onOpenListeners.forEach(fn => { try { fn(); } catch (e) {} });
@@ -163,6 +172,116 @@
   wallpaperIntensityRadios.forEach(r => r.addEventListener("change", () => {
     if (r.checked) NB.app.setWallpaperIntensity(r.value);
   }));
+
+  /* --- shortcuts tab --------------------------------------------------
+   * The Shortcuts tab lists every configurable app action with its
+   * current binding. The user can rebind (one-shot key capture) or
+   * reset to the default. Changes are live: shortcuts.js reads the
+   * current cfg.shortcuts on every keydown, so a freshly set
+   * binding takes effect on the next press.
+   *
+   * The VIM keymap is deliberately not in this list -- it's its own
+   * thing, configured under VIM mode and documented in the :help
+   * overlay. */
+  function buildShortcutRow(action) {
+    const labels = NB.shortcuts.getActionLabels();
+    const label = labels[action] || action;
+    const row = document.createElement("div");
+    row.className = "shortcut-row";
+    row.dataset.action = action;
+    row.setAttribute("role", "listitem");
+    row.innerHTML =
+      '<span class="shortcut-label"></span>' +
+      '<span class="shortcut-binding-wrap">' +
+        '<kbd class="shortcut-binding"></kbd>' +
+        '<button type="button" class="settings-action shortcut-change">Change…</button>' +
+        '<button type="button" class="settings-action shortcut-reset" hidden>Reset</button>' +
+      '</span>';
+    row.querySelector(".shortcut-label").textContent = label;
+    const changeBtn = row.querySelector(".shortcut-change");
+    const resetBtn = row.querySelector(".shortcut-reset");
+    changeBtn.addEventListener("click", () => beginCapture(action, row));
+    resetBtn.addEventListener("click", () => {
+      NB.shortcuts.resetBinding(action);
+      renderShortcuts();
+    });
+    return row;
+  }
+
+  function renderShortcuts() {
+    if (!shortcutsListEl || !NB.shortcuts) return;
+    shortcutsListEl.innerHTML = "";
+    const actions = NB.shortcuts.getActionOrder();
+    for (const action of actions) {
+      const row = buildShortcutRow(action);
+      const bindingEl = row.querySelector(".shortcut-binding");
+      const resetBtn = row.querySelector(".shortcut-reset");
+      const defaults = NB.shortcuts.getDefaults();
+      const current = NB.shortcuts.getBinding(action);
+      bindingEl.textContent = NB.shortcuts.format(current);
+      // Mark "Reset" as available only when the binding differs from
+      // the default (so unchanged rows don't show a no-op button).
+      resetBtn.hidden = (current === (defaults[action] || ""));
+      shortcutsListEl.appendChild(row);
+    }
+  }
+
+  // One row at a time can be capturing. We arm the shortcuts module's
+  // capture, swap the row's binding cell + button into a "press a key"
+  // state, and disarm on keypress (which fires the callback) or when
+  // the user clicks the now-"Cancel" button.
+  function beginCapture(action, row) {
+    if (!NB.shortcuts) return;
+    if (capturingAction && capturingAction !== action) {
+      // Cancel any in-flight capture on another row.
+      cancelCapture();
+    }
+    capturingAction = action;
+    const bindingEl = row.querySelector(".shortcut-binding");
+    const changeBtn = row.querySelector(".shortcut-change");
+    const resetBtn = row.querySelector(".shortcut-reset");
+    bindingEl.textContent = "Press a key… (Esc to cancel)";
+    bindingEl.classList.add("shortcut-binding-capturing");
+    changeBtn.textContent = "Cancel";
+    changeBtn.onclick = (e) => { e.preventDefault(); cancelCapture(); };
+    resetBtn.hidden = true;
+    NB.shortcuts.captureNext((chord) => {
+      // chord === null means Esc (cancel); otherwise the new binding.
+      capturingAction = null;
+      if (chord === null) {
+        renderShortcuts();
+        return;
+      }
+      NB.shortcuts.setBinding(action, chord);
+      renderShortcuts();
+    });
+  }
+  function cancelCapture() {
+    if (!capturingAction) return;
+    // Fire the capture callback with null to disarm the module. We
+    // dispatch a no-op key (Escape) would also work, but going
+    // through the module's API is cleaner: we can't directly clear
+    // captureCb, so we ask the module to cancel by sending Esc.
+    // Easier: just re-render (the row's binding/button reset) and
+    // the next keydown will be handled normally -- but captureCb
+    // is still armed. So we MUST disarm it. The cleanest way is to
+    // call captureNext(null)... but captureNext(cb) sets it. The
+    // module doesn't expose a cancel. Workaround: dispatch a
+    // synthetic Escape on the document, which the capture branch
+    // handles (calls cb(null)).
+    document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "Escape", bubbles: true, cancelable: true,
+    }));
+    capturingAction = null;
+  }
+
+  if (shortcutsResetAllBtn) {
+    shortcutsResetAllBtn.addEventListener("click", () => {
+      cancelCapture();
+      NB.shortcuts.resetAll();
+      renderShortcuts();
+    });
+  }
 
   /* Watch toggle: live, but `enable()` is async and may show a
    * showDirectoryPicker modal the user can cancel. We optimistically

@@ -185,6 +185,7 @@ const html = `<!DOCTYPE html><html><head>
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general">⚙ General</button>
           <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance">🎨 Appearance</button>
+          <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts">⌨ Shortcuts</button>
           <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security">🔒 Security</button>
           <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about">ℹ About</button>
         </nav>
@@ -272,6 +273,19 @@ const html = `<!DOCTYPE html><html><head>
                 <label><input type="radio" name="wallpaperIntensity" value="medium"> Medium</label>
                 <label><input type="radio" name="wallpaperIntensity" value="bold"> Bold</label>
               </div>
+            </div>
+          </section>
+          <section class="settings-section" data-section="shortcuts" id="settings-section-shortcuts" hidden>
+            <h3>Shortcuts</h3>
+            <p class="settings-help">
+              Customize the app's keyboard shortcuts. These bindings are active when
+              VIM mode is off; VIM's own keymap is documented in the
+              <kbd>?</kbd> :help overlay and is configured separately under VIM mode.
+            </p>
+            <div id="settings-shortcuts-list" class="shortcuts-list" role="list"></div>
+            <div class="settings-row shortcuts-footer">
+              <span class="settings-label"></span>
+              <button id="settings-shortcuts-reset-all" class="settings-action">Reset all to defaults</button>
             </div>
           </section>
           <section class="settings-section" data-section="security" id="settings-section-security" hidden>
@@ -464,6 +478,7 @@ evalIn(read("static/js/search.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/vimnav.js"));
+evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
@@ -1591,9 +1606,9 @@ function check(label, cond, extra) {
   const navButtons = Array.from(window.document.querySelectorAll(".settings-nav-item"));
   const navTabs    = navButtons.map(b => b.dataset.tab);
   const sectionEls = Array.from(window.document.querySelectorAll(".settings-section[data-section]"));
-  check("settings nav: 4 nav buttons present", navButtons.length === 4,
+  check("settings nav: 5 nav buttons present", navButtons.length === 5,
     "count=" + navButtons.length);
-  check("settings nav: 4 sections present", sectionEls.length === 4,
+  check("settings nav: 5 sections present", sectionEls.length === 5,
     "count=" + sectionEls.length);
   check("settings nav: every data-tab has a matching data-section",
     navTabs.every(t => sectionEls.some(s => s.dataset.section === t)),
@@ -1602,8 +1617,8 @@ function check(label, cond, extra) {
     sectionEls.every(s => navTabs.includes(s.dataset.section)),
     "sections=" + JSON.stringify(sectionEls.map(s => s.dataset.section)));
   // Exact ordering matches what the user asked for.
-  check("settings nav: tabs in order [general, appearance, security, about]",
-    JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "security", "about"]),
+  check("settings nav: tabs in order [general, appearance, shortcuts, security, about]",
+    JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "shortcuts", "security", "about"]),
     JSON.stringify(navTabs));
   // Fresh open: General is the default tab.
   if (window.NB.settings.isOpen()) window.NB.settings.close();
@@ -1659,6 +1674,212 @@ function check(label, cond, extra) {
   check("settings nav: clicking tabs keeps the modal open", window.NB.settings.isOpen());
   window.NB.settings.close();
   await tick(10);
+
+  console.log("== shortcuts ==");
+  // The non-vim app keymap (Settings -> Shortcuts). Defaults:
+  // Mod+S save, Mod+F openSearch, Mod+E toggleEdit, Mod+comma
+  // openSettings. Active when VIM mode is off and no modal is up.
+  const sc = window.NB.shortcuts;
+  const shortcutsList = $("settings-shortcuts-list");
+  check("shortcuts: NB.shortcuts module loaded", !!sc);
+  check("shortcuts: 4 default actions",
+    sc.getActionOrder().length === 4 &&
+    sc.getDefaults().save === "Mod+S" &&
+    sc.getDefaults().openSearch === "Mod+F" &&
+    sc.getDefaults().toggleEdit === "Mod+E" &&
+    sc.getDefaults().openSettings === "Mod+comma");
+  // The list helpers expose the same set the UI renders.
+  const labels = sc.getActionLabels();
+  check("shortcuts: labels exist for all actions",
+    labels.save && labels.openSearch && labels.toggleEdit && labels.openSettings);
+
+  // Open the Shortcuts tab and verify the rendered rows.
+  window.NB.settings.open();
+  await tick(20);
+  const navBtns = Array.from(window.document.querySelectorAll(".settings-nav-item"));
+  navBtns.find(b => b.dataset.tab === "shortcuts").click();
+  await tick(20);
+  let scRows = shortcutsList.querySelectorAll(".shortcut-row");
+  check("shortcuts: 4 rows rendered", scRows.length === 4, "got " + scRows.length);
+  const expFmt = { save: "Ctrl+S", openSearch: "Ctrl+F", toggleEdit: "Ctrl+E", openSettings: "Ctrl+Comma" };
+  for (const r of scRows) {
+    const a = r.dataset.action;
+    const txt = r.querySelector(".shortcut-binding").textContent;
+    check("shortcuts: " + a + " default displays as " + expFmt[a],
+      txt === expFmt[a], "got " + JSON.stringify(txt));
+    // Unchanged rows hide the Reset button.
+    check("shortcuts: " + a + " reset hidden at default",
+      r.querySelector(".shortcut-reset").hidden);
+  }
+  // The help text makes it clear the VIM keymap is a separate thing.
+  const shortcutsHelp = $("settings-section-shortcuts").querySelector(".settings-help");
+  check("shortcuts: help text mentions VIM is separate",
+    shortcutsHelp && /VIM/i.test(shortcutsHelp.textContent));
+
+  // --- a default binding actually fires (Ctrl+F -> openSearch) ---
+  // Close the modal so the global shortcut dispatch is unblocked.
+  window.NB.settings.close();
+  await tick(10);
+  // Make sure no input is holding focus (so the post-press focus
+  // change to #search-input is attributable to the shortcut).
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Ctrl+F (default openSearch) focuses #search-input",
+    window.document.activeElement === $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  $("search-input").blur(); await tick(10);
+
+  // --- rebind via the API and verify the new binding fires (and the
+  // old one stops firing) ---
+  sc.setBinding("openSearch", "Mod+G");
+  await tick(20);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "g", code: "KeyG", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: new binding (Mod+G) fires openSearch",
+    window.document.activeElement === $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  $("search-input").blur(); await tick(10);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: old binding (Ctrl+F) no longer fires after rebind",
+    window.document.activeElement !== $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+
+  // --- reset a single binding ---
+  sc.resetBinding("openSearch");
+  await tick(10);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: resetBinding restores default (Ctrl+F fires again)",
+    window.document.activeElement === $("search-input"));
+  $("search-input").blur(); await tick(10);
+
+  // --- capture flow: Change -> press a key -> row updates ---
+  window.NB.settings.open();
+  await tick(20);
+  navBtns.find(b => b.dataset.tab === "shortcuts").click();
+  await tick(20);
+  const osRow = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
+  osRow.querySelector(".shortcut-change").click();
+  await tick(20);
+  check("shortcuts: capture -> binding cell shows prompt",
+    /Press a key/.test(osRow.querySelector(".shortcut-binding").textContent));
+  check("shortcuts: capture -> change button is now 'Cancel'",
+    osRow.querySelector(".shortcut-change").textContent === "Cancel");
+  check("shortcuts: capture -> row has capturing class",
+    osRow.querySelector(".shortcut-binding").classList.contains("shortcut-binding-capturing"));
+  // Press Ctrl+H -> new binding stored, row re-renders.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "h", code: "KeyH", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: capture -> new binding stored",
+    sc.getBinding("openSearch") === "Mod+H");
+  const osRowAfter = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
+  check("shortcuts: capture -> row now displays Ctrl+H",
+    osRowAfter.querySelector(".shortcut-binding").textContent === "Ctrl+H");
+  // Reset button is visible for changed rows.
+  check("shortcuts: changed row shows Reset button",
+    !osRowAfter.querySelector(".shortcut-reset").hidden);
+
+  // --- Esc during capture cancels ---
+  osRowAfter.querySelector(".shortcut-change").click();
+  await tick(20);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Esc during capture -> binding unchanged (still Mod+H)",
+    sc.getBinding("openSearch") === "Mod+H");
+  const osRowAfterEsc = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
+  check("shortcuts: Esc -> button text back to 'Change…'",
+    osRowAfterEsc.querySelector(".shortcut-change").textContent === "Change…");
+  check("shortcuts: Esc -> capturing class removed",
+    !osRowAfterEsc.querySelector(".shortcut-binding").classList.contains("shortcut-binding-capturing"));
+
+  // --- Reset all ---
+  $("settings-shortcuts-reset-all").click();
+  await tick(20);
+  check("shortcuts: reset all -> openSearch back to default",
+    sc.getBinding("openSearch") === "Mod+F");
+  const allRows = shortcutsList.querySelectorAll(".shortcut-row");
+  let allResetHidden = true;
+  for (const r of allRows) {
+    if (!r.querySelector(".shortcut-reset").hidden) allResetHidden = false;
+  }
+  check("shortcuts: reset all -> every row's Reset is hidden", allResetHidden);
+  // And the UI shows the formatted defaults again.
+  const osRowFinal = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
+  check("shortcuts: reset all -> openSearch row shows Ctrl+F",
+    osRowFinal.querySelector(".shortcut-binding").textContent === "Ctrl+F");
+
+  // --- modal blocks the global dispatch ---
+  // With settings open, Ctrl+F should NOT focus the search input
+  // (the module yields when a modal is up).
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: settings open -> Ctrl+F does NOT fire (modal blocks)",
+    window.document.activeElement !== $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  // But the capture flow still works inside the modal (the Change
+  // button armed capture, and a key inside the modal is captured).
+  const osRowInModal = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
+  osRowInModal.querySelector(".shortcut-change").click();
+  await tick(20);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "j", code: "KeyJ", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: capture works while settings modal is open",
+    sc.getBinding("openSearch") === "Mod+J");
+  $("settings-shortcuts-reset-all").click(); await tick(20);
+  window.NB.settings.close();
+  await tick(10);
+
+  // --- VIM mode disables the non-vim shortcuts ---
+  // With vim on, the shell keymap (vimnav) owns the keyboard and
+  // the shortcuts module yields. The VIM keymap itself is NOT
+  // configurable here -- that's the whole point of the "VIM mode"
+  // separate toggle.
+  window.NB.app.setVimMode(true);
+  await tick(20);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "f", code: "KeyF", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: vim mode on -> Ctrl+F does NOT fire openSearch",
+    window.document.activeElement !== $("search-input"),
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  window.NB.app.setVimMode(false);
+  await tick(20);
 
   console.log("== settings modal ==");
   // Closed by default.
