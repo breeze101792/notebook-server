@@ -183,11 +183,11 @@ const html = `<!DOCTYPE html><html><head>
       </div>
       <div class="settings-body">
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
-          <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general">⚙ General</button>
-          <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance">🎨 Appearance</button>
-          <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts">⌨ Shortcuts</button>
-          <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security">🔒 Security</button>
-          <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about">ℹ About</button>
+          <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general"><span class="nav-icon" aria-hidden="true">⚙</span>General</button>
+          <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance"><span class="nav-icon" aria-hidden="true">🎨</span>Appearance</button>
+          <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts"><span class="nav-icon" aria-hidden="true">⌨</span>Shortcuts</button>
+          <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security"><span class="nav-icon" aria-hidden="true">🔒</span>Security</button>
+          <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about"><span class="nav-icon" aria-hidden="true">ℹ</span>About</button>
         </nav>
         <div class="settings-sections">
           <section class="settings-section" data-section="general" id="settings-section-general">
@@ -1620,6 +1620,26 @@ function check(label, cond, extra) {
   check("settings nav: tabs in order [general, appearance, shortcuts, security, about]",
     JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "shortcuts", "security", "about"]),
     JSON.stringify(navTabs));
+  // Each nav button wraps its leading icon in a .nav-icon span so
+  // the label text starts at a consistent x position regardless of
+  // the emoji's glyph width. Verify the wrapper exists and is
+  // hidden from a11y (decorative); the actual fixed-width style
+  // lives in the real stylesheet which the harness doesn't load
+  // (so we can't test computed style here).
+  const iconEls = navButtons.map(b => b.querySelector(".nav-icon"));
+  check("settings nav: every button has a .nav-icon wrapper",
+    iconEls.every(el => !!el),
+    "missing=" + iconEls.map((el, i) => el ? null : navTabs[i]).filter(Boolean).join(","));
+  check("settings nav: .nav-icon is aria-hidden (decorative)",
+    iconEls.every(el => el && el.getAttribute("aria-hidden") === "true"));
+  // The label text (after the icon span) should be the same set the
+  // user sees -- no extra emoji baked into the string.
+  const navLabels = navButtons.map(b =>
+    (b.querySelector(".nav-icon") && b.querySelector(".nav-icon").nextSibling
+      ? b.querySelector(".nav-icon").nextSibling.nodeValue : b.textContent));
+  check("settings nav: labels are the plain words (no emoji in text)",
+    JSON.stringify(navLabels) === JSON.stringify(["General","Appearance","Shortcuts","Security","About"]),
+    JSON.stringify(navLabels));
   // Fresh open: General is the default tab.
   if (window.NB.settings.isOpen()) window.NB.settings.close();
   await tick(10);

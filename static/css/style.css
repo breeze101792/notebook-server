@@ -594,6 +594,17 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   user-select: none;
   white-space: nowrap;
 }
+/* The leading icon span reserves a fixed-width column so every nav
+ * row's label (General, Appearance, ...) starts at the same x
+ * position regardless of the emoji's glyph width. em units scale
+ * with the row's font-size. */
+.nav-icon {
+  display: inline-block;
+  min-width: 1.4em;
+  text-align: center;
+  flex: 0 0 auto;
+  line-height: 1;
+}
 .settings-nav-item:hover {
   background: var(--accent-soft);
   color: var(--fg);
