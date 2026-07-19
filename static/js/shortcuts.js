@@ -265,33 +265,51 @@
       // Unrecognized (e.g. a bare modifier) -- keep capture armed.
       return;
     }
-    if (modalIsOpen()) return;
-    if (window.NB && NB.vimnav && NB.vimnav.isEnabled && NB.vimnav.isEnabled()) return;
-    // Resolve the binding for each action in a fixed order so a
-    // collision is deterministic (first match wins).
-    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "openSettings"];
+    // Find the first configured action whose chord matches this
+    // event. "First match wins" is the collision policy.
     const cfg = (window.NB && NB.app && NB.app.getCfg) ? NB.app.getCfg() : null;
     const overrides = (cfg && cfg.shortcuts) || {};
+    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "openSettings"];
+    let matchAction = null;
+    let matchChord = null;
     for (const action of order) {
       const chord = Object.prototype.hasOwnProperty.call(overrides, action)
         ? overrides[action]
         : DEFAULTS[action];
       if (!chord) continue;
       if (matches(chord, e)) {
-        // A modifierless chord (e.g. "/") would steal the character
-        // the user is typing in an input. Let the keystroke pass
-        // through to the focused input/textarea/contenteditable --
-        // the user is typing, not invoking a shortcut. The same
-        // intuition vim's own / follows in the shell keymap (it
-        // only fires when no input has focus).
-        if (chordHasNoModifiers(chord) && typingTargetHasFocus()) continue;
-        const fn = handlers[action];
-        if (fn) {
-          e.preventDefault();
-          try { fn(e); } catch (err) { console.error("shortcut handler error", err); }
-        }
-        return;
+        matchAction = action;
+        matchChord = chord;
+        break;
       }
+    }
+    // Not one of our chords -- let the browser handle it. This is
+    // deliberate: we only preventDefault on keys the app claims,
+    // so things like Ctrl+L (focus address bar) and Ctrl+F (find)
+    // keep working as long as the user hasn't rebound them.
+    if (!matchAction) return;
+    // Typing guard: a modifierless chord in a text input is the user
+    // typing, not invoking a shortcut. Don't claim (no preventDefault)
+    // and don't fire -- the keystroke passes through to the input.
+    // Same intuition vim's own / follows in the shell keymap.
+    if (chordHasNoModifiers(matchChord) && typingTargetHasFocus()) return;
+    // Claim the chord for the app. preventDefault tells the browser
+    // "we handle this key", which is important even when we don't
+    // run the handler below (vim mode on, or a modal is up): in
+    // those cases the keyboard is owned by vimnav or the modal,
+    // but the browser should still not act on the chord (e.g. so
+    // Ctrl+, with vim on doesn't get consumed by a browser default
+    // or by a future Chrome update that adds a Ctrl+, binding).
+    e.preventDefault();
+    // Only fire the handler when the app is actually driving the
+    // keyboard. With vim on, vimnav owns the keys (and has already
+    // preventDefaulted its own chords); with a modal up, the modal
+    // owns the keys. Either way, our handler shouldn't run.
+    if (modalIsOpen()) return;
+    if (window.NB && NB.vimnav && NB.vimnav.isEnabled && NB.vimnav.isEnabled()) return;
+    const fn = handlers[matchAction];
+    if (fn) {
+      try { fn(e); } catch (err) { console.error("shortcut handler error", err); }
     }
   }
 

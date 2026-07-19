@@ -351,10 +351,8 @@
         },
         tabPrev: () => cycleTab("prev"),
         tabNext: () => cycleTab("next"),
-        toggleEdit: () => NB.viewer && NB.viewer.toggleEdit
-          ? NB.viewer.toggleEdit() : null,
-        openSettings: () => NB.settings && NB.settings.open
-          ? NB.settings.open() : null,
+        toggleEdit: () => { if (NB.viewer && NB.viewer.toggleEdit) NB.viewer.toggleEdit(); },
+        openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }
 

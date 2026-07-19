@@ -2009,6 +2009,114 @@ function check(label, cond, extra) {
   window.NB.app.setVimMode(false);
   await tick(20);
 
+  // --- the app CLAIMS its configured chords (preventDefault) ---
+  // Even when the handler doesn't fire (vim on, modal open), the
+  // module preventDefaults on every configured chord so the browser
+  // knows the app owns the key and doesn't act on it. The only
+  // exception is the typing guard (modifierless chord in a text
+  // input), which lets the keystroke through.
+  //
+  // We test by dispatching a keydown and reading event.defaultPrevented
+  // after dispatchEvent returns -- a reliable signal that some
+  // listener called preventDefault.
+  if (window.NB.settings.isOpen()) window.NB.settings.close();
+  await tick(10);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  // 1) Default save (Ctrl+S) with vim off -> preventDefault + fires.
+  {
+    const e = new window.KeyboardEvent("keydown", {
+      key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> default save (Ctrl+S) is preventDefaulted",
+      e.defaultPrevented === true);
+  }
+  // 2) Rebound openSearch (Ctrl+,) with vim off -> preventDefault.
+  {
+    const e = new window.KeyboardEvent("keydown", {
+      key: ",", code: "Comma", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> Ctrl+, is preventDefaulted (regression)",
+      e.defaultPrevented === true);
+  }
+  // 3) With vim ON, a configured chord is STILL preventDefaulted
+  // (the handler doesn't fire, but the chord is claimed so the
+  // browser doesn't act on it).
+  window.NB.app.setVimMode(true);
+  await tick(20);
+  if (window.document.activeElement && window.document.activeElement !== window.document.body) {
+    window.document.activeElement.blur();
+  }
+  {
+    // Rebind openSettings to Ctrl+L (a chord the browser uses for
+    // "focus address bar"). The app claims it regardless of vim.
+    sc.setBinding("openSettings", "Ctrl+L");
+    await tick(10);
+    const e = new window.KeyboardEvent("keydown", {
+      key: "l", code: "KeyL", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> Ctrl+L preventDefaulted even with vim on (browser wouldn't focus address bar)",
+      e.defaultPrevented === true);
+    // Restore.
+    sc.resetBinding("openSettings");
+    await tick(10);
+  }
+  // 4) Modal open -> configured chord is still preventDefaulted
+  // (the handler doesn't fire because the modal owns the keys,
+  // but the app still claims the chord).
+  window.NB.app.setVimMode(false);
+  await tick(20);
+  window.NB.settings.open();
+  await tick(20);
+  {
+    const savesBefore = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
+    const e = new window.KeyboardEvent("keydown", {
+      key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> Ctrl+S preventDefaulted even with settings open",
+      e.defaultPrevented === true);
+    // The handler should NOT have fired (modal blocks) -- no new
+    // save POST should have been logged. Snapshot fetchLog before
+    // the dispatch and compare after.
+    const savesAfter = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
+    check("shortcuts: modal open -> handler does NOT fire (no new save POST)",
+      savesAfter === savesBefore,
+      "before=" + savesBefore + " after=" + savesAfter);
+  }
+  window.NB.settings.close();
+  await tick(10);
+  // 5) Typing guard: modifierless chord in an input is NOT
+  // preventDefaulted -- the keystroke passes through to the input.
+  {
+    $("search-input").focus();
+    await tick(10);
+    const e = new window.KeyboardEvent("keydown", {
+      key: "/", code: "Slash", bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> / in an input is NOT preventDefaulted (typing guard)",
+      e.defaultPrevented === false);
+    $("search-input").blur();
+    await tick(10);
+  }
+  // 6) A key the app does NOT claim (e.g. Ctrl+L with no binding)
+  // is not preventDefaulted -- the browser should handle it normally.
+  {
+    // First, make sure no action is bound to Ctrl+L. openSettings was
+    // reset to default Mod+comma above, so Ctrl+L is unclaimed.
+    const e = new window.KeyboardEvent("keydown", {
+      key: "l", code: "KeyL", ctrlKey: true, bubbles: true, cancelable: true,
+    });
+    window.document.dispatchEvent(e);
+    check("shortcuts: claim -> unclaimed chord (Ctrl+L with no binding) NOT preventDefaulted",
+      e.defaultPrevented === false);
+  }
+
   console.log("== settings modal ==");
   // Closed by default.
   check("settings: closed initially", !window.NB.settings.isOpen());
