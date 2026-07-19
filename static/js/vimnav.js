@@ -37,6 +37,9 @@
   // Two-key chord state (e.g. gg). Set on first key, consumed on second.
   let chord = null;              // { key, t }
   const CHORD_MS = 800;
+  // Set on Esc keydown when CM has focus; consumed on the matching
+  // keyup. See onKeyUp for why.
+  let pendingEscRestore = false;
 
   /* --- modal detection -------------------------------------------- */
   /* The shell keymap yields whenever an overlay is up (Settings,
@@ -210,7 +213,11 @@
       // all keys now (Esc switches insert->normal mode, i/a/o enter
       // insert, :w saves, etc.). The only app-level keys are handled
       // in the global Ctrl+? block above (Ctrl+E to exit edit, Ctrl+H/L
-      // to switch tabs). We do nothing here.
+      // to switch tabs).
+      //
+      // We also stash "had focus at keydown" for the keyup handler
+      // below -- see onKeyUp for why.
+      pendingEscRestore = (e.key === "Escape");
       return;
     }
     if (inEditable()) {
@@ -504,11 +511,36 @@
 
   /* --- listener attachment ---------------------------------------- */
   function onKeyDown(e) { handleKey(e); }
+  function onKeyUp(e) {
+    if (!enabled) return;
+    // Esc on a contentEditable element has a browser-default side
+    // effect: the editor blurs on keyup. CM6 still receives the
+    // keydown and switches insert->normal mode, but the contentDOM
+    // loses focus before the next keystroke (j/k) so the shell
+    // keymap takes over -- j scrolls the page instead of moving
+    // the cursor in CM6's normal mode. The user reported this as:
+    // "i lose focus on vim window" / "i don't even use keyboard to
+    // control it". We re-focus CM on the Esc keyup when CM had
+    // focus at keydown time. (Keyup fires AFTER the browser's
+    // default blur, so we put focus back here.)
+    if (e.key === "Escape" && pendingEscRestore && NB.cmEditor) {
+      pendingEscRestore = false;
+      // Guard: only restore if we're still in edit mode (cm-host
+      // is shown). If the user pressed Ctrl+E to exit edit mode
+      // in the meantime, we shouldn't yank focus back into CM.
+      const cmHost = document.getElementById("cm-host");
+      if (cmHost && !cmHost.hidden) {
+        NB.cmEditor.focus();
+      }
+    }
+  }
   function attach() {
     document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keyup", onKeyUp, true);
   }
   function detach() {
     document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("keyup", onKeyUp, true);
   }
   // We attach the listener once on module load, and `enabled` gates
   // whether it acts on events. This way we don't have to add/remove

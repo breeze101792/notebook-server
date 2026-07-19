@@ -3598,10 +3598,61 @@ function check(label, cond, extra) {
   // While CM has focus, Esc is VIM's mode switch (insert -> normal),
   // NOT an exit-edit-mode signal. Press Esc and confirm we're still
   // in edit mode (cm-host still shown).
+  check("vim: pre-Esc CM has focus (precondition)",
+    window.NB.cmEditor.hasFocus(), "hasFocus=" + window.NB.cmEditor.hasFocus());
   pressKey("Escape");
   await tick(20);
   check("vim: Esc in edit mode does NOT exit edit mode (VIM key)",
     !cmIsHidden());
+  // The 'vim window' is the editor pane -- it should still be the
+  // active vim window after Esc (the user wants to keep working in CM's
+  // normal mode). CM keeps focus (CM6 is now in normal mode and still
+  // owns the keyboard), and the editor pane still has .vim-active.
+  check("vim: Esc keeps .vim-active on editor window",
+    activeWin() && activeWin().dataset.vimWindow === "editor",
+    "activeWin=" + (activeWin() && activeWin().dataset.vimWindow));
+  // CM should KEEP focus so the user can use CM6's normal-mode
+  // keybindings (j/k for cursor motion, dd, :, etc.). If CM loses
+  // focus, the shell keymap takes over -- and 'j' would scroll the
+  // preview, not move the cursor in CM. The user reported this
+  // as a bug: "i lose focus on vim window".
+  check("vim: Esc keeps CM focus (user can use normal-mode keys)",
+    window.NB.cmEditor.hasFocus(),
+    "hasFocus=" + window.NB.cmEditor.hasFocus() +
+    " activeElement=" + (window.document.activeElement && window.document.activeElement.tagName));
+  // The shell re-focuses CM after the keyup-induced blur that some
+  // browsers trigger on a contentEditable Esc (CM6 switches
+  // insert->normal mode, but the editor blurs on the browser
+  // default). Without the re-focus, the next keystroke would go to
+  // the shell keymap, not CM6's normal mode. We simulate the blur
+  // by calling .blur() on the contentDOM after keydown, then
+  // dispatching keyup -- the shell's onKeyUp should re-focus.
+  window.NB.cmEditor.focus();
+  await tick(10);
+  check("vim: refocused CM has focus (precondition for blur-recovery test)",
+    window.NB.cmEditor.hasFocus());
+  // Dispatch keydown Esc. CM is focused, so the shell records
+  // pendingEscRestore=true and yields.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  // Simulate the browser's contentEditable-on-Esc blur.
+  if (window.NB.cmEditor.view()) {
+    window.NB.cmEditor.view().contentDOM.blur();
+  }
+  check("vim: blur simulated -> CM not focused (precondition)",
+    !window.NB.cmEditor.hasFocus(),
+    "hasFocus=" + window.NB.cmEditor.hasFocus());
+  // Dispatch keyup -- shell's onKeyUp should re-focus CM (since
+  // we're still in edit mode: cm-host is shown).
+  window.document.dispatchEvent(new window.KeyboardEvent("keyup", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("vim: shell re-focuses CM on Esc keyup (so normal-mode keys still work)",
+    window.NB.cmEditor.hasFocus(),
+    "hasFocus=" + window.NB.cmEditor.hasFocus() +
+    " activeElement=" + (window.document.activeElement && window.document.activeElement.tagName));
   // Ctrl+E exits edit mode (toggle).
   pressKey("e", { ctrlKey: true });
   await tick(20);
