@@ -143,7 +143,7 @@ const html = `<!DOCTYPE html><html><head>
         </div>
         <div id="search-results" hidden>
           <span id="search-summary"></span><button id="search-close">×</button>
-          <ul id="search-list"></ul>
+          <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
         </div>
       </section>
       <aside id="outline-pane">
@@ -619,6 +619,80 @@ function check(label, cond, extra) {
   const hits = window.document.querySelectorAll("#search-list .search-hit");
   check("search returns 2 hits", hits.length === 2, "got " + hits.length);
   check("search panel visible", !$("search-results").hidden);
+
+  // --- search results list: Enter -> focus the list, hjkl nav ---
+  // After typing a query, pressing Enter in the search input hands
+  // focus to the results list. j/k (and arrows) move the active hit,
+  // Enter/l opens it, Esc pops back to the input (overlay stays open).
+  // Esc from the input itself still closes the overlay.
+  const searchListEl = $("search-list");
+  const listHits = () => window.document.querySelectorAll("#search-list .search-hit");
+  const activeHit = () => window.document.querySelector("#search-list .search-hit.is-active");
+  const fireOnList = (k) => searchListEl.dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: k, bubbles: true, cancelable: true }));
+
+  const preActive = activeTabPath();
+  si.focus();
+  si.dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: "Enter", bubbles: true, cancelable: true }));
+  await tick(50);
+  check("search: Enter -> focus moves to #search-list",
+    window.document.activeElement === searchListEl,
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  check("search: Enter -> first hit is active",
+    listHits().length > 0 && activeHit() === listHits()[0],
+    "active=" + (activeHit() && activeHit().querySelector(".hit-file").textContent));
+
+  fireOnList("j"); await tick(10);
+  check("search: j -> next hit is active", activeHit() === listHits()[1]);
+  fireOnList("k"); await tick(10);
+  check("search: k -> previous hit is active", activeHit() === listHits()[0]);
+  fireOnList("ArrowDown"); await tick(10);
+  check("search: ArrowDown -> next hit is active", activeHit() === listHits()[1]);
+  fireOnList("ArrowUp"); await tick(10);
+  check("search: ArrowUp -> previous hit is active", activeHit() === listHits()[0]);
+  fireOnList("G"); await tick(10);
+  check("search: G -> last hit is active",
+    activeHit() === listHits()[listHits().length - 1]);
+  fireOnList("g"); await tick(10);
+  fireOnList("g"); await tick(10);
+  check("search: gg -> first hit is active", activeHit() === listHits()[0]);
+  // Esc on the list pops back to the input (does NOT close the overlay).
+  fireOnList("Escape"); await tick(20);
+  check("search: Esc on list -> input focused, overlay still open",
+    window.document.activeElement === si && !$("search-results").hidden);
+  // No matches -> there's nothing to navigate to, so focus stays on input.
+  si.value = "zzzznomatch";
+  si.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(350);
+  check("search: no matches -> focus stays on input",
+    window.document.activeElement === si,
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  // Enter on the list opens the active hit. Restore the query, focus
+  // the list via Enter, move to the second hit, then Enter to open.
+  si.value = "fix this";
+  si.dispatchEvent(new window.Event("input", { bubbles: true }));
+  si.dispatchEvent(new window.KeyboardEvent("keydown",
+    { key: "Enter", bubbles: true, cancelable: true }));
+  await tick(50);
+  check("search: re-Enter -> focus back on #search-list",
+    window.document.activeElement === searchListEl);
+  fireOnList("j"); await tick(10);
+  const expectedFile = listHits()[1].querySelector(".hit-file").textContent;
+  fireOnList("Enter"); await tick(50);
+  check("search: Enter on list -> overlay closes", $("search-results").hidden);
+  check("search: Enter on list -> opens active hit (" + expectedFile + ")",
+    activeTabPath() === expectedFile, "active=" + activeTabPath());
+  // The hit may have opened a tab that wasn't open before the search
+  // block. Close any tab we didn't start with, then restore the
+  // pre-test active file so the rest of the suite is unaffected.
+  if (expectedFile !== preActive) {
+    await window.NB.tabs.close(expectedFile, { force: true });
+    await tick(20);
+  }
+  await window.NB.tabs.open(preActive);
+  await tick(20);
+
   click("search-close");
   await tick(10);
   check("search panel hides on close", $("search-results").hidden);

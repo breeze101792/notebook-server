@@ -1201,6 +1201,10 @@ body[data-theme="light"] #viewer-content {
 }
 #search-close:hover { border-color: var(--accent); }
 #search-list { list-style: none; margin: 0; padding: 0; }
+/* The list is the keyboard-nav container (focused after pressing
+ * Enter in the search input). The active hit carries the visual
+ * highlight, so the list itself doesn't need a focus ring. */
+#search-list:focus { outline: none; }
 .search-hit {
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -1210,6 +1214,14 @@ body[data-theme="light"] #viewer-content {
   background: var(--bg-panel);
 }
 .search-hit:hover { border-color: var(--accent); background: var(--accent-soft); }
+/* The "vim cursor" hit -- the one j/k/Enter will act on. A 3px inset
+ * accent bar on the left so it stands out from the plain hover state
+ * and echoes the file-tree/outline .vim-cursor look. */
+.search-hit.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .search-hit .hit-file { font-weight: 600; color: var(--accent); font-size: .93rem; }
 .search-hit .hit-meta { color: var(--fg-muted); font-size: 11px; margin-left: 8px; }
 .search-hit .hit-snippet {

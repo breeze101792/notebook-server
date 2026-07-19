@@ -57,6 +57,14 @@
     const el = document.getElementById("search-results");
     return el && !el.hidden;
   }
+  /* True when the search RESULTS list (not the input) owns focus, so
+   * the list's own keydown handler can decide what Esc means (pop back
+   * to the input) instead of having the shell close the overlay. */
+  function searchListHasFocus() {
+    const list = document.getElementById("search-list");
+    const a = document.activeElement;
+    return !!(list && a && (a === list || list.contains(a)));
+  }
 
   /* --- focus detection -------------------------------------------- */
   /* CodeMirror's contentDOM is the actual editable element. When it
@@ -146,7 +154,16 @@
     if (!enabled) return;
     if (modalIsOpen() && !ourHelpIsOpen()) return;
     if (searchIsOpen()) {
-      // Only Esc closes the search (the search input owns keys).
+      // While the search overlay is open the shell keymap yields (the
+      // search input and the results list each handle their own keys
+      // in the bubble phase). Esc is the one global binding: it closes
+      // the overlay when the search INPUT has focus (the input's own
+      // handler also clears the query and blurs), but when the focus
+      // is on the RESULTS LIST we hand Esc to the list so it can pop
+      // the user back to the input without closing -- a two-stage
+      // "back" vs. "close" that matches the new / -> Enter -> hjkl
+      // flow.
+      if (e.key === "Escape" && searchListHasFocus()) return;
       if (e.key === "Escape") {
         e.preventDefault();
         if (NB.search) NB.search.close();
@@ -441,8 +458,15 @@
             <tr><th><kbd>l</kbd> / <kbd>h</kbd></th><td>Scroll half-page down / up</td></tr>
             <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>Scroll to top / bottom</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
-            <tr><th><kbd>/</kbd></th><td>Focus the search box (VIM-style search)</td></tr>
+            <tr><th><kbd>/</kbd></th><td>Focus the search box (VIM-style search). Press <kbd>Enter</kbd> to hand focus to the results list and navigate with hjkl.</td></tr>
             <tr><th><kbd>t</kbd></th><td>New note</td></tr>
+          </table>
+          <h3>Search results list</h3>
+          <table>
+            <tr><th><kbd>j</kbd> / <kbd>k</kbd> / <kbd>↓</kbd> / <kbd>↑</kbd></th><td>Next / previous match</td></tr>
+            <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>First / last match</td></tr>
+            <tr><th><kbd>Enter</kbd> / <kbd>l</kbd></th><td>Open the active match</td></tr>
+            <tr><th><kbd>Esc</kbd> / <kbd>/</kbd></th><td>Pop back to the search input (don't close the overlay). <kbd>Esc</kbd> from the input closes the search.</td></tr>
           </table>
           <h3>Editor (in edit mode -- CodeMirror VIM)</h3>
           <table>
