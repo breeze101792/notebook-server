@@ -183,15 +183,21 @@
     // which sub-editor is focused. We process them before the CM / input
     // early returns below.
     if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      const k = e.key.toLowerCase();
-      if (k === "h") {
+      // Use e.code for the letter check: on macOS the Option key composes
+      // special Unicode characters into e.key (e.g. Alt+H -> "˙"), so
+      // e.key.toLowerCase() never matches "h". e.code is the physical key
+      // ("KeyH"), layout- and modifier-independent, so it works on every
+      // platform. On Linux/Windows, e.key still gives us the right answer
+      // too, but e.code is the reliable one and is what we use here.
+      const code = e.code;
+      if (code === "KeyH") {
         // Previous tab. Wraps. If we're in edit mode with unsaved
         // changes, prompt to save / discard first.
         e.preventDefault();
         cycleTabWithCommit("prev");
         return;
       }
-      if (k === "l") {
+      if (code === "KeyL") {
         // Next tab. Wraps. Same dirty-check as Alt+H.
         e.preventDefault();
         cycleTabWithCommit("next");
@@ -252,6 +258,16 @@
         e.preventDefault();
         document.activeElement.blur();
       }
+      return;
+    }
+    // Paste (Cmd+V on Mac, Ctrl+V on Linux/Win) is the browser's job.
+    // We don't have a handler for it, and the blanket preventDefault
+    // below would otherwise swallow it. Let it through so the user's
+    // paste works in preview/sidebar/outline. In CodeMirror (edit mode)
+    // the cmHasFocus() check above already returned; in an <input> the
+    // inEditable() check above already returned.
+    if ((e.metaKey || e.ctrlKey) && e.key && e.key.toLowerCase() === "v"
+        && !e.altKey && !e.shiftKey) {
       return;
     }
     // From here on, we own the key. Block browser defaults for the

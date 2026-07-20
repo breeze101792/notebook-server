@@ -174,8 +174,7 @@ const html = `<!DOCTYPE html><html><head>
           <input id="auth-password" type="password" class="auth-input" autofocus>
         </div>
         <div id="auth-error" class="auth-error" role="alert"></div>
-        <div class="settings-row">
-          <span class="settings-label"></span>
+        <div class="settings-form-actions">
           <button id="auth-submit" type="button" class="settings-action auth-submit">Sign in</button>
         </div>
       </form>
@@ -4170,8 +4169,18 @@ function check(label, cond, extra) {
   // is attached on module load and gated by `enabled`, so tests need
   // only flip the cfg (NB.app.setVimMode) and watch NB.vimnav.
   const pressKey = (key, opts = {}) => {
+    // Derive a sensible e.code when the test didn't supply one. In
+    // real browsers, "Alt+H" on macOS sets e.code to "KeyH" regardless
+    // of the composed e.key ("˙"). Vimnav now keys the Alt+H/L tab
+    // cycle off e.code so it works on Mac; mirror that here so the
+    // tests cover the production path.
+    let code = opts.code;
+    if (code === undefined) {
+      if (typeof key === "string" && /^[a-z]$/i.test(key)) code = "Key" + key.toUpperCase();
+      else if (typeof key === "string" && /^[0-9]$/.test(key)) code = "Digit" + key;
+    }
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-      key, bubbles: true, cancelable: true, ...opts,
+      key, bubbles: true, cancelable: true, code, ...opts,
     }));
   };
   // focus a non-editable target so vimnav's inEditable() returns false.
@@ -4746,6 +4755,49 @@ function check(label, cond, extra) {
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   $("search-input").blur();
   await tick(10);
+
+  // Mac Option-key compose: on macOS, Alt+H composes a special character
+  // (e.g. "˙") into e.key, so e.key.toLowerCase() never matches "h".
+  // The shell keymap must key the tab cycle off e.code (KeyH/KeyL),
+  // which is the physical key and is layout-/modifier-independent.
+  // Re-running the Alt+H/L cycle with a mismatched e.key but a real
+  // e.code verifies the Mac path works.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  pressKey("˙", { altKey: true, code: "KeyH" });   // Mac Alt+H
+  await tick(40);
+  const macAltHTarget = (() => {
+    const t = window.NB.tabs.getOpen();
+    const i = t.indexOf("notes/a.md");
+    return t[(i - 1 + t.length) % t.length];
+  })();
+  check("vim: Mac Alt+H (composed key, code=KeyH) -> previous tab",
+    window.NB.tabs.getActive() === macAltHTarget,
+    "active=" + window.NB.tabs.getActive());
+  pressKey("˙", { altKey: true, code: "KeyL" });   // Mac Alt+L
+  await tick(40);
+  check("vim: Mac Alt+L (composed key, code=KeyL) -> next tab",
+    window.NB.tabs.getActive() === "notes/a.md",
+    "active=" + window.NB.tabs.getActive());
+
+  // Paste (Cmd+V on Mac, Ctrl+V on Linux/Win) must pass through to the
+  // browser in VIM shell keymap (preview / sidebar / outline). Vimnav
+  // used to swallow it via a blanket preventDefault, breaking paste.
+  // The check: dispatching Ctrl+V (or Cmd+V) must NOT call preventDefault
+  // on the event (defaultPrevented === false), and the active tab must
+  // not change.
+  blurActive();
+  const beforePaste = window.NB.tabs.getActive();
+  const ev = new window.KeyboardEvent("keydown", {
+    key: "v", code: "KeyV", ctrlKey: true, bubbles: true, cancelable: true,
+  });
+  window.document.dispatchEvent(ev);
+  await tick(20);
+  check("vim: Ctrl+V in shell keymap -> browser default NOT prevented (paste passes through)",
+    !ev.defaultPrevented, "defaultPrevented=" + ev.defaultPrevented);
+  check("vim: Ctrl+V in shell keymap -> does not switch tabs",
+    window.NB.tabs.getActive() === beforePaste,
+    "active=" + window.NB.tabs.getActive());
 
   // Disable VIM and close the settings modal.
   window.NB.vimnav.setEnabled(false);
