@@ -258,19 +258,14 @@ def ensure_auth_secret():
 
 
 def auth_enabled():
-    """True if the admin password hash is set. The auth layer is "on" iff
-    the admin password exists; the viewer password is optional and only
-    affects whether reads also need a session."""
+    """True if the admin password hash is set. The auth layer is "on"
+    iff the admin password exists; the viewer password is now only a
+    secondary login option (it lets the admin hand out a read-only
+    password without exposing the admin one). Both reads and writes
+    are gated when this is true -- the server must not hand any
+    notebook data to a client that hasn't logged in."""
     data = load_auth()
     return bool(data.get("admin_password_hash"))
-
-
-def viewer_required():
-    """True if reads need a session: both the admin and the viewer
-    password are set. With only the admin password configured, reads
-    are open (only writes are gated)."""
-    data = load_auth()
-    return bool(data.get("admin_password_hash") and data.get("viewer_password_hash"))
 
 
 def has_viewer_password():
@@ -352,15 +347,27 @@ def admin_required(view):
 
 
 def read_login_required(view):
-    """Like @login_required, but only fires when reads are actually gated
-    (admin pw set AND viewer pw set). Without a viewer password, reads
-    are open even with the auth layer on. Used for the read-only routes
-    (tree, file GET, config GET, info, search)."""
+    """Require either no auth configured, or a session with a role.
+
+    Used for the read-only routes (tree, file GET, config GET, info,
+    search). The auth layer being "on" means an admin password is set;
+    in that case the server must not hand any notebook data to a
+    client that hasn't logged in, regardless of whether a separate
+    viewer password is configured. The earlier "admin-only, reads
+    open" mode leaked the full file tree + file bodies + search hits
+    to anyone who hit the site, with only a CSS blur in front of the
+    render. The blur was cosmetic; the data was already on the wire.
+
+    The viewer password is now a secondary login option (you can
+    choose to log in as a viewer role with a different password) but
+    it is no longer the switch that gates reads. Once the admin
+    password is set, every read is gated.
+    """
     from functools import wraps
 
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not viewer_required():
+        if not auth_enabled():
             return view(*args, **kwargs)
         if not session.get("role"):
             return err("Unauthorized", 401)
@@ -425,11 +432,14 @@ def auth_status():
     whether to show a login modal without itself being a gated request.
 
     Shape:
-      enabled   -- True if the admin password is set (auth layer is on)
+      enabled   -- True if the admin password is set (auth layer is on,
+                   and reads + writes both require a session)
       hasAdmin  -- True if the admin password hash is non-empty
-      hasViewer -- True if the viewer password hash is non-empty
-                   (independent of admin; the UI shows this as the
-                   "require a password to read" toggle state)
+      hasViewer -- True if the viewer password hash is non-empty.
+                   The viewer password is now a secondary login option
+                   only; the admin password is what gates reads. The
+                   UI shows this as the state of the "viewer password"
+                   section, not as a read-gating toggle.
       role      -- the session role if the user is logged in, else null
     """
     data = load_auth()

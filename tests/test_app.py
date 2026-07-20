@@ -111,6 +111,36 @@ class TestIndexAndSeed(BaseTest):
                 "%s 401 leaked note content: %r" % (path, body[:200]))
             self.assertEqual(r.headers.get("Cache-Control"), "no-store, private")
 
+    def test_admin_only_gated_reads_return_401_with_no_content(self):
+        # The "admin password set, viewer password NOT set" mode used
+        # to leave all read endpoints open with only a cosmetic blur in
+        # front of the rendered content. The actual file bodies / tree
+        # / search hits were on the wire. After the read-gating policy
+        # change, the admin password alone is enough to gate every
+        # read; the server must return 401 with no note content in the
+        # body, regardless of whether the viewer password is set.
+        # This is the regression test for that fix.
+        import bcrypt as _bcrypt
+        from urllib.parse import quote as _quote
+        os.makedirs(nb.CONFIG_DIR, exist_ok=True)
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(b"admin-pw", _bcrypt.gensalt(4)).decode(),
+                # no viewer_password_hash -- this is the admin-only mode
+            }, f)
+        for path in ("/api/tree", "/api/file?path=" + _quote("Welcome.md"),
+                     "/api/search?q=Welcome", "/api/config", "/api/info"):
+            r = self.client.get(path)
+            self.assertEqual(r.status_code, 401,
+                "admin-only mode: %s should be 401, got %s" % (path, r.status_code))
+            body = r.get_data(as_text=True)
+            self.assertNotIn("Welcome content", body,
+                "%s 401 leaked file content: %r" % (path, body[:200]))
+            self.assertNotIn("## One", body,
+                "%s 401 leaked note content: %r" % (path, body[:200]))
+            self.assertEqual(r.headers.get("Cache-Control"), "no-store, private")
+
 
 class TestSpaCatchAll(BaseTest):
     # The notebook is a single-page app: every path that isn't an
@@ -616,7 +646,14 @@ class TestAuth(BaseTest):
 
 class TestAuthNoViewer(BaseTest):
     """Admin password set, viewer password NOT set: auth layer is on,
-    writes need a session, but reads are open."""
+    so both reads and writes require a session. The viewer password
+    is now a secondary login option, not a read-gating switch: as
+    soon as the admin password exists, the server must not hand any
+    notebook data to a client that hasn't logged in. Earlier this
+    class asserted that reads were open in the admin-only mode; the
+    CSS blur in front of the render was cosmetic, the data was
+    already on the wire. See the read_login_required docstring in
+    app.py for the policy."""
 
     ADMIN_PW = "admin-only-pw"
 
@@ -641,8 +678,11 @@ class TestAuthNoViewer(BaseTest):
         self.assertFalse(data["hasViewer"])
         self.assertIsNone(data["role"])
 
-    def test_reads_open_without_session(self):
-        # No login, but reads are 200.
+    def test_reads_require_session(self):
+        # Admin set, no viewer -> reads are still 401 without a session.
+        # The admin-only mode used to leave reads open (with only a
+        # cosmetic blur on the rendered content), which leaked the full
+        # file tree + bodies + search hits to any visitor. That's gone.
         for path in [
             "/api/tree",
             "/api/file?path=Welcome.md",
@@ -650,11 +690,31 @@ class TestAuthNoViewer(BaseTest):
             "/api/config",
             "/api/info",
         ]:
-            code, _ = self.jget(path)
+            r = self.client.get(path)
             self.assertEqual(
-                code, 200,
-                "expected 200 on %s, got %s" % (path, code),
+                r.status_code, 401,
+                "expected 401 on %s, got %s" % (path, r.status_code),
             )
+            body = r.get_data(as_text=True)
+            # The 401 body is just an error message; it must not contain
+            # any note content the server is protecting.
+            self.assertNotIn("Welcome content", body,
+                "%s 401 leaked file content: %r" % (path, body[:200]))
+            self.assertNotIn("## One", body,
+                "%s 401 leaked note content: %r" % (path, body[:200]))
+
+    def test_admin_can_read_after_login(self):
+        # Logging in (with the admin password) unlocks the reads.
+        client = self._login_session(self.ADMIN_PW)
+        r = client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Welcome", r.get_json()["content"])
+        r = client.get("/api/tree")
+        self.assertEqual(r.status_code, 200)
+        r = client.get("/api/config")
+        self.assertEqual(r.status_code, 200)
+        r = client.get("/api/info")
+        self.assertEqual(r.status_code, 200)
 
     def test_writes_still_require_admin(self):
         r = self.client.post("/api/file", json={"path": "x.md", "content": "y"})
@@ -675,6 +735,13 @@ class TestAuthNoViewer(BaseTest):
         # is just a 401 (we don't reveal that the role is missing).
         r = self.client.post("/api/login", json={"password": "anything"})
         self.assertEqual(r.status_code, 401)
+
+    # Used by this class. Not in BaseTest.
+    def _login_session(self, password):
+        client = nb.app.test_client()
+        r = client.post("/api/login", json={"password": password})
+        self.assertEqual(r.status_code, 200, "login failed: %s" % r.get_data(as_text=True))
+        return client
 
 
 class TestAuthSetPasswords(BaseTest):
@@ -836,8 +903,17 @@ class TestAuthSetPasswords(BaseTest):
         r = self._set(client, {"admin_password": None, "viewer_password": ""})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertFalse(r.get_json()["hasViewer"])
-        # Reads are open now (no viewer pw + admin still set).
+        # Reads are still gated: the admin password is what gates reads
+        # now, not the viewer password. Clearing the viewer only means
+        # the secondary login option is gone; admin logins still work
+        # and reads without a session still 401.
         r = self.client.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 401)
+        # Admin can still log in and read.
+        admin_client = nb.app.test_client()
+        r = admin_client.post("/api/login", json={"password": self.ADMIN_PW})
+        self.assertEqual(r.status_code, 200)
+        r = admin_client.get("/api/file?path=Welcome.md")
         self.assertEqual(r.status_code, 200)
 
     def test_admin_pw_only_save_keeps_viewer_unchanged(self):
