@@ -69,8 +69,6 @@
   const adminConfirmEl     = document.getElementById("settings-auth-admin-confirm");
   const adminSaveBtn       = document.getElementById("settings-auth-admin-save");
   const adminChangeBlock   = document.getElementById("settings-auth-admin-change");
-  const adminChangeRow     = document.getElementById("settings-auth-admin-change-row");
-  const adminChangeBtn     = document.getElementById("settings-auth-admin-change-btn");
   const adminCurrentEl     = document.getElementById("settings-auth-admin-current");
   const adminNew2El        = document.getElementById("settings-auth-admin-new2");
   const adminConfirm2El    = document.getElementById("settings-auth-admin-confirm2");
@@ -89,9 +87,8 @@
   const viewerSaveBtn      = document.getElementById("settings-auth-viewer-save");
   const viewerRemoveBtn    = document.getElementById("settings-auth-viewer-remove");
   const authErrorEl        = document.getElementById("settings-auth-error");
-  // Whether the "Change admin password" form is currently revealed.
-  // Reset on every open() and on successful save.
-  let adminChangeOpen = false;
+  // No toggle state needed: the change form is always shown when the
+  // admin password is set, and always hidden when it isn't.
 
   let infoLoaded = false;
   let onOpenListeners = [];
@@ -429,36 +426,31 @@
     if (!authHelpEl) return;
     setAuthError("");
     const canEdit = isAdmin();
-    // Reset the change form collapse every time we re-render so a
-    // successful save or a tab switch doesn't leave it hanging open.
-    if (!canEdit) adminChangeOpen = false;
     const hasAdmin = !!(authState && authState.enabled);
     if (!hasAdmin) {
       // No admin password configured. Anyone can set the initial one.
       authHelpEl.textContent = "Set an admin password to require a password for writing.";
       adminStatusValueEl.textContent = "Not set";
       adminSetBlock.hidden = false;
-      adminChangeRow.hidden = true;
       adminChangeBlock.hidden = true;
       if (adminNewEl) { adminNewEl.disabled = false; adminNewEl.value = ""; }
       if (adminConfirmEl) { adminConfirmEl.disabled = false; adminConfirmEl.value = ""; }
       refreshAdminSetSaveEnabled();
     } else {
-      // Admin password already configured. Only admins may change it.
+      // Admin password already configured. The change form is always
+      // shown (no toggle button): admins see it directly, non-admins
+      // see it disabled. Only admins may submit.
       authHelpEl.textContent = canEdit
         ? "Change the admin password, or toggle the read-only role below."
         : "Sign in as admin to change passwords.";
       adminStatusValueEl.textContent = "Set";
       adminSetBlock.hidden = true;
-      // The "Change admin password…" button row is hidden when the
-      // change form is already open (the form itself replaces it) and
-      // when the user can't edit.
-      adminChangeRow.hidden = !canEdit || adminChangeOpen;
-      // Only show the change form if the user explicitly opened it.
-      adminChangeBlock.hidden = !canEdit || !adminChangeOpen;
-      if (!canEdit || !adminChangeOpen) {
-        // Clear sensitive fields when the form is hidden so a stale
-        // current/new password isn't sitting in the DOM.
+      // The change form is shown when an admin is configured and the
+      // current user is an admin; hidden for non-admins.
+      adminChangeBlock.hidden = !canEdit;
+      // Clear sensitive fields when the form is hidden so a stale
+      // current/new password isn't sitting in the DOM.
+      if (!canEdit) {
         if (adminCurrentEl) adminCurrentEl.value = "";
         if (adminNew2El) adminNew2El.value = "";
         if (adminConfirm2El) adminConfirm2El.value = "";
@@ -497,16 +489,6 @@
     catch (e) { authState = null; }
     refreshAuthSection();
   }
-  // Also reset the change-form collapse on every open so the user
-  // lands in a clean state.
-  if (open) {
-    // Wrap the existing open so the auth section collapses on each
-    // open. The original open is defined above in this IIFE; we
-    // can't reassign the const, so we attach an onOpen listener
-    // (the module exposes onOpen for exactly this kind of hook).
-    onOpenListeners.push(() => { adminChangeOpen = false; });
-  }
-
   // --- admin "set" form: live + new + confirm ---
   if (adminNewEl) adminNewEl.addEventListener("input", refreshAdminSetSaveEnabled);
   if (adminConfirmEl) adminConfirmEl.addEventListener("input", refreshAdminSetSaveEnabled);
@@ -533,17 +515,13 @@
   if (adminCurrentEl) adminCurrentEl.addEventListener("input", refreshAdminChangeSaveEnabled);
   if (adminNew2El) adminNew2El.addEventListener("input", refreshAdminChangeSaveEnabled);
   if (adminConfirm2El) adminConfirm2El.addEventListener("input", refreshAdminChangeSaveEnabled);
-  if (adminChangeBtn) {
-    adminChangeBtn.addEventListener("click", () => {
-      adminChangeOpen = true;
-      refreshAuthSection();
-      if (adminCurrentEl) adminCurrentEl.focus();
-    });
-  }
   if (adminCancelBtn) {
     adminCancelBtn.addEventListener("click", () => {
-      adminChangeOpen = false;
-      refreshAuthSection();
+      if (adminCurrentEl) adminCurrentEl.value = "";
+      if (adminNew2El) adminNew2El.value = "";
+      if (adminConfirm2El) adminConfirm2El.value = "";
+      refreshAdminChangeSaveEnabled();
+      setAuthError("");
     });
   }
   if (adminSave2Btn) {
@@ -558,8 +536,7 @@
       setAuthError("");
       try {
         await NB.api.saveAuthPasswords(newPw, cur, null);
-        // Close the change form so the post-reload UI lands clean.
-        adminChangeOpen = false;
+        // Page reloads on success; clear sensitive fields just in case.
         window.location.reload();
       } catch (e) {
         setAuthError(e.message || "Failed to change password");

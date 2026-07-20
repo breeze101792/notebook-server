@@ -330,9 +330,6 @@ const html = `<!DOCTYPE html><html><head>
                   <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
                 </div>
               </div>
-              <div class="settings-form-actions" id="settings-auth-admin-change-row" hidden>
-                <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
-              </div>
             </div>
             <div class="settings-note" id="settings-auth-viewer-status-note">Viewer password: <span id="settings-auth-viewer-status-value">Not set</span></div>
             <div class="settings-row">
@@ -2366,8 +2363,7 @@ function check(label, cond, extra) {
     "status=" + JSON.stringify($("settings-auth-admin-status").textContent));
   check("pwd: not-set -> 'set' form is shown, 'change' form is hidden",
     !$("settings-auth-admin-set").hidden
-    && $("settings-auth-admin-change").hidden
-    && $("settings-auth-admin-change-row").hidden);
+    && $("settings-auth-admin-change").hidden);
   check("pwd: not-set -> new + confirm inputs are enabled",
     !$("settings-auth-admin-new").disabled
     && !$("settings-auth-admin-confirm").disabled);
@@ -2400,38 +2396,26 @@ function check(label, cond, extra) {
     JSON.stringify(authSetPasswordsCalls));
   window.NB.settings.close();
 
-  // Scenario 2: admin set, not changing. The section shows the status
-  // + a "Change admin password" button; the change form is hidden.
+  // Scenario 2: admin set, current user is admin. The section shows
+  // the status + the 3-field change form directly (no toggle button).
   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
   adminCurrentPw = "newadmin";  // the value the previous scenario just set
   window.NB.settings.open(); await tick(40);
   check("pwd: set -> status reports 'Set'",
     /Admin password: Set\b/.test($("settings-auth-admin-status").textContent),
     "status=" + JSON.stringify($("settings-auth-admin-status").textContent));
-  check("pwd: set -> 'set' form hidden, 'change' form hidden, change button shown",
+  check("pwd: set -> 'set' form hidden, 'change' form shown directly",
     $("settings-auth-admin-set").hidden
-    && $("settings-auth-admin-change").hidden
-    && !$("settings-auth-admin-change-row").hidden);
+    && !$("settings-auth-admin-change").hidden);
   // The current/new2/confirm2 inputs are cleared so a stale password
-  // doesn't sit in the DOM when the change form is hidden.
+  // doesn't sit in the DOM when the change form first appears.
   check("pwd: set -> change-form inputs are cleared (no stale password in DOM)",
     window.document.getElementById("settings-auth-admin-current")
     && window.document.getElementById("settings-auth-admin-current").value === ""
     && window.document.getElementById("settings-auth-admin-new2").value === ""
     && window.document.getElementById("settings-auth-admin-confirm2").value === "");
-
-  // Click the change button -> reveals the 3-field form. Save starts
-  // disabled (all fields empty); current/new/confirm enable it when
-  // current is non-empty AND new == confirm.
-  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
-  check("pwd: change button reveals the 3-field form",
-    !$("settings-auth-admin-change").hidden
-    && $("settings-auth-admin-change-row").hidden);
   check("pwd: change form -> save disabled (all fields empty)",
     $("settings-auth-admin-save2").disabled);
-  check("pwd: change form -> current is empty / focused",
-    $("settings-auth-admin-current").value === "");
   // Type current only -> still disabled (new empty).
   $("settings-auth-admin-current").value = "newadmin";
   $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -2471,8 +2455,6 @@ function check(label, cond, extra) {
   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
   adminCurrentPw = "rotated-pw";  // the new value the previous scenario set
   window.NB.settings.open(); await tick(40);
-  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
   $("settings-auth-admin-current").value = "WRONG";
   $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
   $("settings-auth-admin-new2").value = "another-pw";
@@ -2500,13 +2482,12 @@ function check(label, cond, extra) {
     && $("settings-auth-error").textContent === "");
   window.NB.settings.close();
 
-  // Scenario 4: Cancel closes the change form without a POST and clears
-  // the inputs (so a stale password doesn't sit in the DOM).
+  // Scenario 4: Cancel clears the change form's inputs without a POST
+  // and without hiding the form (the form stays visible — there's no
+  // toggle state any more).
   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
   adminCurrentPw = "another-pw";
   window.NB.settings.open(); await tick(40);
-  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(20);
   $("settings-auth-admin-current").value = "another-pw";
   $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
   $("settings-auth-admin-new2").value = "leaked-pw";
@@ -2516,8 +2497,8 @@ function check(label, cond, extra) {
   await tick(10);
   $("settings-auth-admin-cancel").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("pwd: Cancel hides the change form and clears the inputs",
-    $("settings-auth-admin-change").hidden
+  check("pwd: Cancel clears the inputs but the form stays visible",
+    !$("settings-auth-admin-change").hidden
     && $("settings-auth-admin-current").value === ""
     && $("settings-auth-admin-new2").value === ""
     && $("settings-auth-admin-confirm2").value === "");
@@ -2595,17 +2576,24 @@ function check(label, cond, extra) {
     JSON.stringify(authSetPasswordsCalls));
   window.NB.settings.close();
 
-  // Scenario 7: non-admin sees the section disabled. The change button
-  // and the set/change forms are hidden; viewer toggle is disabled.
+  // Scenario 7: non-admin sees the section disabled. The set form is
+  // hidden; the change form is visible but all fields are disabled
+  // and cleared; viewer toggle is disabled.
   authEnabled = true; authHasAdmin = true; authHasViewer = true; authRole = "viewer";
   adminCurrentPw = "another-pw";
   window.NB.settings.open(); await tick(40);
   check("pwd: non-admin -> help text says sign in as admin",
     /Sign in as admin/i.test($("settings-auth-help").textContent));
-  check("pwd: non-admin -> set form hidden, change form hidden, change button hidden",
+  check("pwd: non-admin -> set form hidden, change form visible but disabled",
     $("settings-auth-admin-set").hidden
-    && $("settings-auth-admin-change").hidden
-    && $("settings-auth-admin-change-row").hidden);
+    && !$("settings-auth-admin-change").hidden
+    && $("settings-auth-admin-current").disabled
+    && $("settings-auth-admin-new2").disabled
+    && $("settings-auth-admin-confirm2").disabled);
+  check("pwd: non-admin -> change-form inputs are cleared",
+    $("settings-auth-admin-current").value === ""
+    && $("settings-auth-admin-new2").value === ""
+    && $("settings-auth-admin-confirm2").value === "");
   check("pwd: non-admin -> viewer toggle disabled",
     $("settings-auth-viewer-toggle").disabled);
   window.NB.settings.close();
