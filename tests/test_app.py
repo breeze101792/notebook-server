@@ -65,6 +65,52 @@ class TestIndexAndSeed(BaseTest):
         names = [n["name"] for n in data["tree"]]
         self.assertIn("Welcome.md", names)
 
+    def test_gated_reads_have_no_store_cache_header(self):
+        # The gated read endpoints (tree, file, search, config GET,
+        # info) must never be cacheable: a previously-authorized
+        # browser holding a cached response would re-display the
+        # content after the auth state tightens (e.g. admin enables
+        # the viewer password). The server prevents this with
+        # `Cache-Control: no-store, private` so the browser drops the
+        # response and re-validates with the server.
+        from urllib.parse import quote
+        for path in ("/api/tree", "/api/info",
+                     "/api/config", "/api/search?q=foo",
+                     "/api/file?path=" + quote("Welcome.md")):
+            r = self.client.get(path)
+            self.assertEqual(r.headers.get("Cache-Control"), "no-store, private",
+                "missing/incorrect Cache-Control on %s: %r" % (path, r.headers.get("Cache-Control")))
+
+    def test_gated_reads_with_viewer_required_return_401_with_no_content(self):
+        # When the viewer password is set and there's no admin session,
+        # gated reads return 401 with NO body (the server must not leak
+        # the content to an unauthorized client, regardless of caching).
+        # The Cache-Control header is still set so the browser doesn't
+        # hold onto the 401 (or any prior cached 200) in a way that
+        # could re-display content.
+        import bcrypt as _bcrypt
+        from urllib.parse import quote as _quote
+        os.makedirs(nb.CONFIG_DIR, exist_ok=True)
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(b"admin-pw", _bcrypt.gensalt(4)).decode(),
+                "viewer_password_hash": _bcrypt.hashpw(b"viewer-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        for path in ("/api/tree", "/api/file?path=" + _quote("Welcome.md"),
+                     "/api/search?q=foo", "/api/config"):
+            r = self.client.get(path)
+            self.assertEqual(r.status_code, 401,
+                "%s should be 401, got %s" % (path, r.status_code))
+            # The 401 body is just an error message -- but it must NOT
+            # contain the file/tree content the server is protecting.
+            body = r.get_data(as_text=True)
+            self.assertNotIn("Welcome content", body,
+                "%s 401 leaked file content: %r" % (path, body[:200]))
+            self.assertNotIn("## One", body,
+                "%s 401 leaked note content: %r" % (path, body[:200]))
+            self.assertEqual(r.headers.get("Cache-Control"), "no-store, private")
+
 
 class TestSpaCatchAll(BaseTest):
     # The notebook is a single-page app: every path that isn't an

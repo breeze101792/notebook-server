@@ -47,6 +47,31 @@ SNIPPET_PAD = 60  # chars of context each side of a match
 
 app = Flask(__name__)
 
+# Paths whose responses must never be cached by the browser or any
+# intermediary. These are the gated read endpoints (tree, file, search,
+# config GET, info) -- caching them would let a previously-authorized
+# client re-display the content after the auth state tightens (e.g. the
+# admin enables the viewer password), which is exactly the leak the
+# user reported. `no-store` makes the response treat the cache as
+# forbidden; `private` prevents shared caches from holding it.
+_GATED_READ_PATHS = (
+    "/api/tree", "/api/file", "/api/search", "/api/config", "/api/info",
+)
+
+@app.after_request
+def _no_store_gated_reads(resp):
+    """Send Cache-Control: no-store on gated read responses so a
+    previously-authorized browser can't keep showing the content
+    after the auth state tightens (e.g. admin enables the viewer
+    password). Without this, a cached GET would re-render the
+    notebook on the next navigation even though the server would
+    have returned 401. This is belt-and-suspenders on top of the
+    request-time auth check: the request still 401s, and the cache
+    is also told to drop the response. """
+    if request.path in _GATED_READ_PATHS:
+        resp.headers["Cache-Control"] = "no-store, private"
+    return resp
+
 
 # --------------------------------------------------------------------------- #
 # Startup seeding

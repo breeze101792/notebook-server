@@ -298,10 +298,7 @@ const html = `<!DOCTYPE html><html><head>
             <h3>Passwords</h3>
             <p id="settings-auth-help" class="settings-help">Sign in as admin to change passwords.</p>
             <div class="settings-auth-admin-block">
-              <div class="settings-row settings-auth-admin-status-row">
-                <span class="settings-label">Admin password</span>
-                <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-              </div>
+              <div class="settings-note" id="settings-auth-admin-status">Admin password: <span id="settings-auth-admin-status-value">Not set</span></div>
               <div id="settings-auth-admin-set" class="settings-auth-admin-form" hidden>
                 <div class="settings-row">
                   <label class="settings-label" for="settings-auth-admin-new">New password</label>
@@ -311,8 +308,7 @@ const html = `<!DOCTYPE html><html><head>
                   <label class="settings-label" for="settings-auth-admin-confirm">Confirm new password</label>
                   <input id="settings-auth-admin-confirm" type="password" class="auth-input settings-auth-input" disabled>
                 </div>
-                <div class="settings-row">
-                  <span class="settings-label"></span>
+                <div class="settings-form-actions">
                   <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
                 </div>
               </div>
@@ -329,16 +325,12 @@ const html = `<!DOCTYPE html><html><head>
                   <label class="settings-label" for="settings-auth-admin-confirm2">Confirm new password</label>
                   <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input" disabled>
                 </div>
-                <div class="settings-row">
-                  <span class="settings-label"></span>
-                  <span class="settings-control">
-                    <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
-                    <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
-                  </span>
+                <div class="settings-form-actions">
+                  <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                  <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
                 </div>
               </div>
-              <div class="settings-row" id="settings-auth-admin-change-row" hidden>
-                <span class="settings-label"></span>
+              <div class="settings-form-actions" id="settings-auth-admin-change-row" hidden>
                 <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
               </div>
             </div>
@@ -2374,8 +2366,8 @@ function check(label, cond, extra) {
   authSetPasswordsCalls = [];
   window.NB.settings.open(); await tick(40);
   check("pwd: not-set -> status reports 'Not set'",
-    $("settings-auth-admin-status").textContent === "Not set",
-    "status=" + $("settings-auth-admin-status").textContent);
+    $("settings-auth-admin-status").textContent === "Admin password: Not set",
+    "status=" + JSON.stringify($("settings-auth-admin-status").textContent));
   check("pwd: not-set -> 'set' form is shown, 'change' form is hidden",
     !$("settings-auth-admin-set").hidden
     && $("settings-auth-admin-change").hidden
@@ -2418,8 +2410,8 @@ function check(label, cond, extra) {
   adminCurrentPw = "newadmin";  // the value the previous scenario just set
   window.NB.settings.open(); await tick(40);
   check("pwd: set -> status reports 'Set'",
-    /Set\b/.test($("settings-auth-admin-status").textContent) && $("settings-auth-admin-status").textContent !== "Not set",
-    "status=" + $("settings-auth-admin-status").textContent);
+    /Admin password: Set\b/.test($("settings-auth-admin-status").textContent),
+    "status=" + JSON.stringify($("settings-auth-admin-status").textContent));
   check("pwd: set -> 'set' form hidden, 'change' form hidden, change button shown",
     $("settings-auth-admin-set").hidden
     && $("settings-auth-admin-change").hidden

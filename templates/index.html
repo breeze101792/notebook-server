@@ -324,19 +324,17 @@
               Sign in as admin to change passwords.
             </p>
 
-            <!-- Admin password: a single section that adapts to state.
-                 When not set: a "Set admin password" form (new + confirm).
-                 When set: a status line + a "Change admin password" button
-                 that reveals a 3-field form (current + new + confirm)
-                 to actually rotate the password. The backend verifies
-                 the current password on every change so an unattended
-                 / shared-machine admin session can't be used to silently
+            <!-- Admin password: a single block that adapts to state.
+                 When not set: an inline "Set" form (new + confirm) with a
+                 right-aligned Save button. When set: a short status note
+                 + a right-aligned "Change admin password…" button; clicking
+                 it reveals a 3-field form (current + new + confirm) with
+                 Save + Cancel, also right-aligned. The backend verifies
+                 the current password on every change so an unattended /
+                 shared-machine admin session can't be used to silently
                  rotate the password. -->
             <div class="settings-auth-admin-block">
-              <div class="settings-row settings-auth-admin-status-row">
-                <span class="settings-label">Admin password</span>
-                <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-              </div>
+              <div class="settings-note" id="settings-auth-admin-status">Admin password: <span id="settings-auth-admin-status-value">Not set</span></div>
               <!-- "Set" form: shown only when no admin password is configured. -->
               <div id="settings-auth-admin-set" class="settings-auth-admin-form" hidden>
                 <div class="settings-row">
@@ -349,8 +347,7 @@
                   <input id="settings-auth-admin-confirm" type="password" class="auth-input settings-auth-input"
                          autocomplete="new-password" placeholder="Type the new password again" disabled>
                 </div>
-                <div class="settings-row">
-                  <span class="settings-label"></span>
+                <div class="settings-form-actions">
                   <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
                 </div>
               </div>
@@ -372,18 +369,14 @@
                   <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input"
                          autocomplete="new-password" placeholder="Type the new password again" disabled>
                 </div>
-                <div class="settings-row">
-                  <span class="settings-label"></span>
-                  <span class="settings-control">
-                    <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
-                    <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
-                  </span>
+                <div class="settings-form-actions">
+                  <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                  <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
                 </div>
               </div>
               <!-- The "Change admin password" trigger: visible only when an admin
-                   password already exists. Clicking it reveals the change form. -->
-              <div class="settings-row" id="settings-auth-admin-change-row" hidden>
-                <span class="settings-label"></span>
+                   password already exists. Right-aligned via .settings-form-actions. -->
+              <div class="settings-form-actions" id="settings-auth-admin-change-row" hidden>
                 <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
               </div>
             </div>

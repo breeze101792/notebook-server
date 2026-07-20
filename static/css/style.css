@@ -659,6 +659,21 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   color: var(--fg-muted);
   font-size: .93rem;
 }
+/* A settings row that holds form actions (Save / Cancel / etc.) with
+ * no label. The buttons sit flush right instead of stretching the
+ * full width of the row (which is what would happen with the default
+ * .settings-row + an empty 130px label + flex:1 control). */
+.settings-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 6px 0;
+}
+.settings-note {
+  font-size: .86rem;
+  color: var(--fg-muted);
+  margin: 4px 0 8px;
+}
 .settings-value { color: var(--fg); font-size: .93rem; }
 .settings-mono {
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;

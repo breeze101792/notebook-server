@@ -61,6 +61,9 @@
   // place -- to "change" the viewer, clear and set again).
   const authHelpEl         = document.getElementById("settings-auth-help");
   const adminStatusEl      = document.getElementById("settings-auth-admin-status");
+  // The status note is "Admin password: <value>" where <value> is a
+  // child span -- the label is fixed and the value is what we update.
+  const adminStatusValueEl = document.getElementById("settings-auth-admin-status-value");
   const adminSetBlock      = document.getElementById("settings-auth-admin-set");
   const adminNewEl         = document.getElementById("settings-auth-admin-new");
   const adminConfirmEl     = document.getElementById("settings-auth-admin-confirm");
@@ -430,7 +433,7 @@
     if (!hasAdmin) {
       // No admin password configured. Anyone can set the initial one.
       authHelpEl.textContent = "Set an admin password to require a password for writing.";
-      adminStatusEl.textContent = "Not set";
+      adminStatusValueEl.textContent = "Not set";
       adminSetBlock.hidden = false;
       adminChangeRow.hidden = true;
       adminChangeBlock.hidden = true;
@@ -442,7 +445,7 @@
       authHelpEl.textContent = canEdit
         ? "Change the admin password, or toggle the read-only role below."
         : "Sign in as admin to change passwords.";
-      adminStatusEl.textContent = "Set";
+      adminStatusValueEl.textContent = "Set";
       adminSetBlock.hidden = true;
       // The "Change admin password…" button row is hidden when the
       // change form is already open (the form itself replaces it) and
