@@ -53,19 +53,39 @@
   const shortcutsResetAllBtn = document.getElementById("settings-shortcuts-reset-all");
   let capturingAction = null;
 
-  // Passwords section handles
-  const authHelpEl       = document.getElementById("settings-auth-help");
-  const adminPwEl        = document.getElementById("settings-auth-admin-pw");
-  const adminStatusEl    = document.getElementById("settings-auth-admin-status");
-  const adminSaveBtn     = document.getElementById("settings-auth-admin-save");
-  const viewerToggleEl   = document.getElementById("settings-auth-viewer-toggle");
-  const viewerRowEl      = document.getElementById("settings-auth-viewer-row");
-  const viewerActionsEl  = document.getElementById("settings-auth-viewer-actions");
-  const viewerPwEl       = document.getElementById("settings-auth-viewer-pw");
-  const viewerStatusEl   = document.getElementById("settings-auth-viewer-status");
-  const viewerSaveBtn    = document.getElementById("settings-auth-viewer-save");
-  const viewerRemoveBtn  = document.getElementById("settings-auth-viewer-remove");
-  const authErrorEl      = document.getElementById("settings-auth-error");
+  // Passwords section handles. The admin section adapts to state:
+  // not-set shows a "Set" form (new + confirm); set shows a "Change
+  // password" button that reveals a 3-field form (current + new +
+  // confirm). The viewer section keeps a single field plus a confirm
+  // row (the viewer is set/cleared by the admin, never rotated in
+  // place -- to "change" the viewer, clear and set again).
+  const authHelpEl         = document.getElementById("settings-auth-help");
+  const adminStatusEl      = document.getElementById("settings-auth-admin-status");
+  const adminSetBlock      = document.getElementById("settings-auth-admin-set");
+  const adminNewEl         = document.getElementById("settings-auth-admin-new");
+  const adminConfirmEl     = document.getElementById("settings-auth-admin-confirm");
+  const adminSaveBtn       = document.getElementById("settings-auth-admin-save");
+  const adminChangeBlock   = document.getElementById("settings-auth-admin-change");
+  const adminChangeRow     = document.getElementById("settings-auth-admin-change-row");
+  const adminChangeBtn     = document.getElementById("settings-auth-admin-change-btn");
+  const adminCurrentEl     = document.getElementById("settings-auth-admin-current");
+  const adminNew2El        = document.getElementById("settings-auth-admin-new2");
+  const adminConfirm2El    = document.getElementById("settings-auth-admin-confirm2");
+  const adminSave2Btn      = document.getElementById("settings-auth-admin-save2");
+  const adminCancelBtn     = document.getElementById("settings-auth-admin-cancel");
+  const viewerToggleEl     = document.getElementById("settings-auth-viewer-toggle");
+  const viewerRowEl        = document.getElementById("settings-auth-viewer-row");
+  const viewerConfirmRowEl = document.getElementById("settings-auth-viewer-confirm-row");
+  const viewerActionsEl    = document.getElementById("settings-auth-viewer-actions");
+  const viewerPwEl         = document.getElementById("settings-auth-viewer-pw");
+  const viewerConfirmEl    = document.getElementById("settings-auth-viewer-confirm");
+  const viewerStatusEl     = document.getElementById("settings-auth-viewer-status");
+  const viewerSaveBtn      = document.getElementById("settings-auth-viewer-save");
+  const viewerRemoveBtn    = document.getElementById("settings-auth-viewer-remove");
+  const authErrorEl        = document.getElementById("settings-auth-error");
+  // Whether the "Change admin password" form is currently revealed.
+  // Reset on every open() and on successful save.
+  let adminChangeOpen = false;
 
   let infoLoaded = false;
   let onOpenListeners = [];
@@ -371,64 +391,130 @@
   function isAdmin() {
     return !!(authState && authState.enabled && authState.role === "admin");
   }
+  // Enable the "Save" button on the admin "set" form when new and
+  // confirm are both non-empty and match.
+  function refreshAdminSetSaveEnabled() {
+    if (!adminNewEl || !adminConfirmEl || !adminSaveBtn) return;
+    const newPw = adminNewEl.value;
+    const confirm = adminConfirmEl.value;
+    const canEdit = isAdmin() || !authState || !authState.enabled;
+    adminSaveBtn.disabled = !canEdit || newPw.length === 0 || newPw !== confirm;
+  }
+  // Enable the "Save" button on the admin "change" form when current
+  // is non-empty, new is non-empty, and new matches confirm.
+  function refreshAdminChangeSaveEnabled() {
+    if (!adminCurrentEl || !adminNew2El || !adminConfirm2El || !adminSave2Btn) return;
+    const cur = adminCurrentEl.value;
+    const newPw = adminNew2El.value;
+    const confirm = adminConfirm2El.value;
+    adminSave2Btn.disabled =
+      isAdmin() === false
+      || cur.length === 0
+      || newPw.length === 0
+      || newPw !== confirm;
+  }
+  // Render the admin section for the current auth state. When no
+  // admin password is configured, show the inline "Set" form (new +
+  // confirm). When one exists, show the status + a "Change admin
+  // password" button; clicking it reveals the 3-field "change" form
+  // (current + new + confirm). The "change" form is collapsed on
+  // open() and on successful save so the user lands in a clean state.
   function refreshAuthSection() {
     if (!authHelpEl) return;
     setAuthError("");
     const canEdit = isAdmin();
-    if (!authState || !authState.enabled) {
-      // Auth not configured. Anyone can set the first admin password.
+    // Reset the change form collapse every time we re-render so a
+    // successful save or a tab switch doesn't leave it hanging open.
+    if (!canEdit) adminChangeOpen = false;
+    const hasAdmin = !!(authState && authState.enabled);
+    if (!hasAdmin) {
+      // No admin password configured. Anyone can set the initial one.
       authHelpEl.textContent = "Set an admin password to require a password for writing.";
       adminStatusEl.textContent = "Not set";
-      adminPwEl.disabled = false;
-      adminSaveBtn.disabled = !adminPwEl.value;
-      viewerToggleEl.checked = false;
-      viewerToggleEl.disabled = true;
-      viewerRowEl.hidden = true;
-      viewerActionsEl.hidden = true;
-      viewerPwEl.value = "";
-      viewerSaveBtn.disabled = true;
+      adminSetBlock.hidden = false;
+      adminChangeRow.hidden = true;
+      adminChangeBlock.hidden = true;
+      if (adminNewEl) { adminNewEl.disabled = false; adminNewEl.value = ""; }
+      if (adminConfirmEl) { adminConfirmEl.disabled = false; adminConfirmEl.value = ""; }
+      refreshAdminSetSaveEnabled();
     } else {
+      // Admin password already configured. Only admins may change it.
       authHelpEl.textContent = canEdit
         ? "Change the admin password, or toggle the read-only role below."
         : "Sign in as admin to change passwords.";
-      adminStatusEl.textContent = "Set (enter a new value to change)";
-      adminPwEl.disabled = !canEdit;
-      adminSaveBtn.disabled = !canEdit || !adminPwEl.value;
-      viewerToggleEl.checked = !!authState.hasViewer;
-      viewerToggleEl.disabled = !canEdit;
-      // Show the viewer row whenever the toggle is on OR the user is
-      // admin (admins can set a viewer even from the off state).
-      viewerRowEl.hidden = !canEdit;
-      viewerActionsEl.hidden = !canEdit;
-      viewerStatusEl.textContent = authState.hasViewer
-        ? "Set (enter a new value to change)"
-        : "Not set";
-      viewerSaveBtn.disabled = !viewerPwEl.value;
-      viewerRemoveBtn.hidden = !authState.hasViewer;
-      viewerRemoveBtn.disabled = !canEdit;
+      adminStatusEl.textContent = "Set";
+      adminSetBlock.hidden = true;
+      // The "Change admin password…" button row is hidden when the
+      // change form is already open (the form itself replaces it) and
+      // when the user can't edit.
+      adminChangeRow.hidden = !canEdit || adminChangeOpen;
+      // Only show the change form if the user explicitly opened it.
+      adminChangeBlock.hidden = !canEdit || !adminChangeOpen;
+      if (!canEdit || !adminChangeOpen) {
+        // Clear sensitive fields when the form is hidden so a stale
+        // current/new password isn't sitting in the DOM.
+        if (adminCurrentEl) adminCurrentEl.value = "";
+        if (adminNew2El) adminNew2El.value = "";
+        if (adminConfirm2El) adminConfirm2El.value = "";
+      }
+      if (adminCurrentEl) adminCurrentEl.disabled = !canEdit;
+      if (adminNew2El) adminNew2El.disabled = !canEdit;
+      if (adminConfirm2El) adminConfirm2El.disabled = !canEdit;
+      refreshAdminChangeSaveEnabled();
     }
+    // Viewer section: admins can toggle + set; others see the toggle
+    // disabled and the field hidden.
+    viewerToggleEl.checked = !!(authState && authState.hasViewer);
+    viewerToggleEl.disabled = !canEdit;
+    const viewerVisible = canEdit || (authState && authState.hasViewer);
+    viewerRowEl.hidden = !viewerVisible;
+    viewerConfirmRowEl.hidden = !canEdit;
+    viewerActionsEl.hidden = !canEdit;
+    viewerStatusEl.textContent = (authState && authState.hasViewer)
+      ? "Set (clear it via the toggle, or set a new one)"
+      : "Not set";
+    refreshViewerSaveEnabled();
+    viewerRemoveBtn.hidden = !(authState && authState.hasViewer);
+    viewerRemoveBtn.disabled = !canEdit;
+  }
+  // Enable the viewer "Save" button when new + confirm are both
+  // non-empty and match.
+  function refreshViewerSaveEnabled() {
+    if (!viewerPwEl || !viewerConfirmEl || !viewerSaveBtn) return;
+    const canEdit = isAdmin();
+    const newPw = viewerPwEl.value;
+    const confirm = viewerConfirmEl.value;
+    viewerSaveBtn.disabled = !canEdit || newPw.length === 0 || newPw !== confirm;
   }
   async function refreshAuthState() {
     try { authState = await NB.api.getAuthStatus(); }
     catch (e) { authState = null; }
     refreshAuthSection();
   }
-
-  // admin password input -> Save enable
-  if (adminPwEl) {
-    adminPwEl.addEventListener("input", () => {
-      adminSaveBtn.disabled = adminPwEl.value.length === 0
-        || (authState && authState.enabled && !isAdmin());
-    });
+  // Also reset the change-form collapse on every open so the user
+  // lands in a clean state.
+  if (open) {
+    // Wrap the existing open so the auth section collapses on each
+    // open. The original open is defined above in this IIFE; we
+    // can't reassign the const, so we attach an onOpen listener
+    // (the module exposes onOpen for exactly this kind of hook).
+    onOpenListeners.push(() => { adminChangeOpen = false; });
   }
+
+  // --- admin "set" form: live + new + confirm ---
+  if (adminNewEl) adminNewEl.addEventListener("input", refreshAdminSetSaveEnabled);
+  if (adminConfirmEl) adminConfirmEl.addEventListener("input", refreshAdminSetSaveEnabled);
   if (adminSaveBtn) {
     adminSaveBtn.addEventListener("click", async () => {
-      const pw = adminPwEl.value;
-      if (!pw) return;
+      const newPw = adminNewEl.value;
+      if (!newPw || newPw !== adminConfirmEl.value) {
+        setAuthError("New password and confirmation must match");
+        return;
+      }
       adminSaveBtn.disabled = true;
       setAuthError("");
       try {
-        await NB.api.saveAuthPasswords(pw, null);
+        await NB.api.saveAuthPasswords(newPw, null, null);
         window.location.reload();
       } catch (e) {
         setAuthError(e.message || "Failed to save");
@@ -436,12 +522,59 @@
       }
     });
   }
-  // viewer password input -> Save enable + listen for Enter
-  if (viewerPwEl) {
-    viewerPwEl.addEventListener("input", () => {
-      viewerSaveBtn.disabled = viewerPwEl.value.length === 0;
+  // --- admin "change" form: current + new + confirm ---
+  // Enter on any of the three fields submits the form.
+  if (adminCurrentEl) adminCurrentEl.addEventListener("input", refreshAdminChangeSaveEnabled);
+  if (adminNew2El) adminNew2El.addEventListener("input", refreshAdminChangeSaveEnabled);
+  if (adminConfirm2El) adminConfirm2El.addEventListener("input", refreshAdminChangeSaveEnabled);
+  if (adminChangeBtn) {
+    adminChangeBtn.addEventListener("click", () => {
+      adminChangeOpen = true;
+      refreshAuthSection();
+      if (adminCurrentEl) adminCurrentEl.focus();
     });
+  }
+  if (adminCancelBtn) {
+    adminCancelBtn.addEventListener("click", () => {
+      adminChangeOpen = false;
+      refreshAuthSection();
+    });
+  }
+  if (adminSave2Btn) {
+    adminSave2Btn.addEventListener("click", async () => {
+      const cur = adminCurrentEl.value;
+      const newPw = adminNew2El.value;
+      if (newPw !== adminConfirm2El.value) {
+        setAuthError("New password and confirmation must match");
+        return;
+      }
+      adminSave2Btn.disabled = true;
+      setAuthError("");
+      try {
+        await NB.api.saveAuthPasswords(newPw, cur, null);
+        // Close the change form so the post-reload UI lands clean.
+        adminChangeOpen = false;
+        window.location.reload();
+      } catch (e) {
+        setAuthError(e.message || "Failed to change password");
+        adminSave2Btn.disabled = false;
+      }
+    });
+  }
+
+  // --- viewer password: new + confirm ---
+  if (viewerPwEl) {
+    viewerPwEl.addEventListener("input", refreshViewerSaveEnabled);
     viewerPwEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !viewerSaveBtn.disabled) {
+        e.preventDefault();
+        viewerSaveBtn.click();
+      }
+    });
+  }
+  if (viewerConfirmEl) {
+    viewerConfirmEl.addEventListener("input", refreshViewerSaveEnabled);
+    viewerConfirmEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !viewerSaveBtn.disabled) {
         e.preventDefault();
         viewerSaveBtn.click();
@@ -450,12 +583,15 @@
   }
   if (viewerSaveBtn) {
     viewerSaveBtn.addEventListener("click", async () => {
-      const pw = viewerPwEl.value;
-      if (!pw) return;
+      const newPw = viewerPwEl.value;
+      if (!newPw || newPw !== viewerConfirmEl.value) {
+        setAuthError("Viewer password and confirmation must match");
+        return;
+      }
       viewerSaveBtn.disabled = true;
       setAuthError("");
       try {
-        await NB.api.saveAuthPasswords(null, pw);
+        await NB.api.saveAuthPasswords(null, null, newPw);
         window.location.reload();
       } catch (e) {
         setAuthError(e.message || "Failed to save");
@@ -464,30 +600,24 @@
     });
   }
   // Viewer toggle:
-  //   unchecked -> checked: reveal the viewer password field, let user
-  //     type a new one and click Save (we don't auto-save on toggle so
-  //     the user can decide the password).
+  //   unchecked -> checked: reveal the viewer fields (new + confirm)
+  //     so the user can type a new password. The toggle is a UI
+  //     reveal only; we do NOT save on toggle. The user still has to
+  //     type and click Save. (Toggling on with no password is a
+  //     no-op; reads stay open. This avoids accidentally requiring a
+  //     password for reads without actually setting one.)
   //   checked -> unchecked: confirm + clear the viewer password.
   if (viewerToggleEl) {
     viewerToggleEl.addEventListener("change", async () => {
       if (viewerToggleEl.checked) {
-        // Reveal the field so the user can type a new viewer password.
-        // We do NOT save yet -- the user still has to type and click
-        // Save. (Toggling on with no password is a no-op; reads stay
-        // open. This avoids accidentally requiring a password for
-        // reads without actually setting one.)
-        viewerRowEl.hidden = false;
-        viewerActionsEl.hidden = false;
-        viewerStatusEl.textContent = "Not set";
-        viewerSaveBtn.disabled = !viewerPwEl.value;
-        viewerRemoveBtn.hidden = true;
-        viewerPwEl.focus();
+        if (viewerPwEl) viewerPwEl.value = "";
+        if (viewerConfirmEl) viewerConfirmEl.value = "";
+        refreshViewerSaveEnabled();
+        if (viewerPwEl) viewerPwEl.focus();
         return;
       }
       // Uncheck path: clear the viewer password, but only if one is set.
       if (!authState || !authState.hasViewer) {
-        // Nothing to clear; the UI shouldn't really have allowed this,
-        // but if it does, just sync the state.
         await refreshAuthState();
         return;
       }
@@ -502,28 +632,11 @@
       }
       setAuthError("");
       try {
-        await NB.api.saveAuthPasswords(null, "");
+        await NB.api.saveAuthPasswords(null, null, "");
         window.location.reload();
       } catch (e) {
         setAuthError(e.message || "Failed to clear viewer password");
         viewerToggleEl.checked = true;
-      }
-    });
-  }
-  if (viewerRemoveBtn) {
-    viewerRemoveBtn.addEventListener("click", async () => {
-      if (!authState || !authState.hasViewer) return;
-      const ok = window.confirm(
-        "Remove the viewer password?\n\n" +
-        "Reads will no longer require a password. " +
-        "Writes still require the admin password.");
-      if (!ok) return;
-      setAuthError("");
-      try {
-        await NB.api.saveAuthPasswords(null, "");
-        window.location.reload();
-      } catch (e) {
-        setAuthError(e.message || "Failed to clear viewer password");
       }
     });
   }

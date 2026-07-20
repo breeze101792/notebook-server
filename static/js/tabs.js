@@ -303,6 +303,18 @@
     paths.slice().forEach(p => close(p, { force: true }));
   }
 
+  // Close every open tab without prompting (used when the session
+  // expires or the notebook is locked: we drop all paths so the tab
+  // bar doesn't keep showing files the user can no longer read).
+  function clearAll() {
+    if (!ordered.length) return;
+    ordered.slice().forEach(p => dropTab(p));
+    activePath = null;
+    if (NB.viewer && NB.viewer.clear) NB.viewer.clear();
+    render();
+    emitChanged();
+  }
+
   function closeOthers(path) {
     closeMany(ordered.filter(p => p !== path && !pinned.has(p)));
   }
@@ -409,7 +421,7 @@
 
   NB.tabs = {
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
-    togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next,
+    togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next, clearAll,
   };
 
   /* --- keep the bar in sync with viewer-driven changes --------------- */
@@ -446,4 +458,9 @@
   NB.evt.on("tabs:changed", () => {
     ordered.forEach(p => { if (!openSet.has(p)) conflictSet.delete(p); });
   });
+  // When the notebook is locked (auth required, session gone), drop
+  // every open tab so the bar doesn't keep showing files the user
+  // is no longer authorized to read. The viewer / tree / search
+  // content is wiped by auth.js on the same event.
+  NB.evt.on("auth:locked", () => { clearAll(); });
 })();

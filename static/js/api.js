@@ -62,10 +62,15 @@
     logout:        () => request("POST", "/api/logout"),
     // Save the admin and/or viewer password. Pass null for a field to
     // leave it unchanged; pass "" to clear the viewer (admin cannot be
-    // cleared once set, the server rejects that).
-    saveAuthPasswords: (adminPassword, viewerPassword) =>
-      request("POST", "/api/auth/passwords",
-        { admin_password: adminPassword, viewer_password: viewerPassword }),
+    // cleared once set, the server rejects that). When changing the
+    // admin password (i.e. an admin already exists), adminCurrentPassword
+    // is required and verified server-side.
+    saveAuthPasswords: (adminPassword, adminCurrentPassword, viewerPassword) =>
+      request("POST", "/api/auth/passwords", {
+        admin_password: adminPassword,
+        admin_current_password: adminCurrentPassword,
+        viewer_password: viewerPassword,
+      }),
   };
 
   /* Tiny pub/sub so modules decouple. */

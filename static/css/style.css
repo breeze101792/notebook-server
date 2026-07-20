@@ -829,11 +829,16 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   margin: 2px 0 4px;
 }
 /* While the login modal is up, dim the rest of the UI so the user can
- * tell nothing is interactive behind the overlay. Pointer events stay on
- * (the modal is the only thing they can hit) -- this is just visual. */
-body.auth-locked #app { opacity: .25; pointer-events: none; }
-body.auth-locked #topbar,
-body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
+  * tell nothing is interactive behind the overlay. Pointer events stay on
+  * (the modal is the only thing they can hit) -- this is just visual. */
+ body.auth-locked #app { opacity: .25; pointer-events: none; }
+ body.auth-locked #topbar,
+ body.auth-locked #auth-overlay { opacity: 1; pointer-events: auto; }
+ /* Belt-and-suspenders: blur the content panes so a stale render
+  * that survived auth.js's content wipe is still unreadable. */
+ body.auth-locked #editor-pane,
+ body.auth-locked #sidebar,
+ body.auth-locked #search-results { filter: blur(6px); }
 
 /* Passwords section inside the Settings modal. The inputs reuse the
  * .auth-input look from the login modal; we just add a max-width so

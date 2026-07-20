@@ -23,8 +23,48 @@
   const errEl   = () => document.getElementById("auth-error");
   const logoutBtn = () => document.getElementById("logout-btn");
 
-  function lock()  { document.body.classList.add("auth-locked"); }
+  function lock()  {
+    document.body.classList.add("auth-locked");
+    // Wipe sensitive content from the DOM. The 401 that triggered
+    // this lock means the server refused to send us the data, so we
+    // must not leave a previously-loaded copy visible. This catches
+    // the case where the notebook was loaded before auth was enabled
+    // (or before the session expired) and the new gating kicks in
+    // mid-session: the stale render goes away, and the auth modal
+    // covers the now-blank panes. After login we reload the page, so
+    // fresh data is fetched with a known-good session.
+    clearSensitiveContent();
+  }
   function unlock() { document.body.classList.remove("auth-locked"); }
+
+  // Remove rendered notebook content, file tree, and search results.
+  // The auth modal + body.auth-locked (with a CSS blur on the content
+  // regions) handle the visual side; this function is the data side.
+  function clearSensitiveContent() {
+    try {
+      // Viewer pane: the rendered markdown for the active file. Clear
+      // text content and innerHTML so a previously-cached file body
+      // isn't sitting in the DOM.
+      const vc = document.getElementById("viewer-content");
+      if (vc) { vc.textContent = ""; vc.innerHTML = ""; }
+      // File tree (sidebar): the list of notes/folders.
+      const ft = document.getElementById("file-tree");
+      if (ft) ft.innerHTML = "";
+      // Search results list.
+      const sl = document.getElementById("search-list");
+      if (sl) sl.innerHTML = "";
+      // Search summary text.
+      const ss = document.getElementById("search-summary");
+      if (ss) ss.textContent = "";
+      // Tabs: leave the tab bar itself (the layout) but clear open
+      // files by telling the tabs module to clear its state, so the
+      // bar doesn't list paths the user is no longer authorized to
+      // see. Best-effort -- the tabs module owns this.
+      if (window.NB && NB.evt && NB.evt.emit) {
+        try { NB.evt.emit("auth:locked"); } catch (_) {}
+      }
+    } catch (_) { /* best-effort: lock must not throw */ }
+  }
 
   function showModal() {
     const o = overlay();

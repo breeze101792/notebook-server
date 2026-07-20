@@ -728,7 +728,12 @@ class TestAuthSetPasswords(BaseTest):
     def test_admin_can_change_admin_password(self):
         self._set_initial_admin()
         client = self._admin_client()
-        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW, "viewer_password": None})
+        # Changing the admin password requires the current one
+        # (guards against an unattended / shared-machine admin
+        # session silently rotating the password).
+        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW,
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         # Old password no longer works.
         old_client = nb.app.test_client()
@@ -739,6 +744,36 @@ class TestAuthSetPasswords(BaseTest):
         r = new_client.post("/api/login", json={"password": self.NEW_ADMIN_PW})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["role"], "admin")
+
+    def test_change_admin_password_requires_current(self):
+        # Changing the admin password requires admin_current_password and
+        # verifies it against the stored hash. A missing or wrong current
+        # is rejected; the stored hash is unchanged.
+        self._set_initial_admin()
+        client = self._admin_client()
+        # Missing current -> 400.
+        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW,
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Current admin password", r.get_json()["error"])
+        # Wrong current -> 400.
+        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW,
+                               "admin_current_password": "wrong-pw",
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Current admin password", r.get_json()["error"])
+        # Confirm the original admin still works (no partial change).
+        c = nb.app.test_client()
+        r = c.post("/api/login", json={"password": self.ADMIN_PW})
+        self.assertEqual(r.status_code, 200)
+        # Correct current -> 200 and the new password takes effect.
+        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW,
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        new_client = nb.app.test_client()
+        r = new_client.post("/api/login", json={"password": self.NEW_ADMIN_PW})
+        self.assertEqual(r.status_code, 200)
 
     def test_admin_can_clear_viewer_password(self):
         self._set_initial_admin()
@@ -771,7 +806,10 @@ class TestAuthSetPasswords(BaseTest):
             json.dump(auth, f)
         client = self._admin_client()
         # Save only the admin password (viewer_password: null = don't touch).
-        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW, "viewer_password": None})
+        # Current admin password is required to change it.
+        r = self._set(client, {"admin_password": self.NEW_ADMIN_PW,
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertTrue(r.get_json()["hasViewer"])
         # Viewer still logs in with the old password.
@@ -783,7 +821,12 @@ class TestAuthSetPasswords(BaseTest):
     def test_short_passwords_rejected(self):
         self._set_initial_admin()
         client = self._admin_client()
-        r = self._set(client, {"admin_password": "abc", "viewer_password": None})
+        # The length check runs after the current-password check on a
+        # change, so we include admin_current_password to get past that
+        # gate and reach the length validation.
+        r = self._set(client, {"admin_password": "abc",
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
         self.assertEqual(r.status_code, 400)
         self.assertIn("Admin password", r.get_json()["error"])
         r = self._set(client, {"admin_password": None, "viewer_password": "abc"})

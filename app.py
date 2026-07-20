@@ -472,12 +472,21 @@ _MIN_PASSWORD_LEN = 6
 def auth_set_passwords():
     """Set or change the admin and/or viewer password.
 
-    Body: {"admin_password": "...", "viewer_password": "..."}. Either
-    field may be omitted. Empty `admin_password` is rejected (the admin
-    password cannot be cleared via this route -- once enabled, the auth
-    layer stays on; clearing requires hand-editing the file). Empty
-    `viewer_password` clears the viewer hash. Both fields are bcrypt-
-    hashed server-side before persisting.
+    Body: {"admin_password": "...", "viewer_password": "...",
+    "admin_current_password": "..."}. Either password field may be
+    omitted (null). Empty `admin_password` is rejected (the admin
+    password cannot be cleared via this route -- once enabled, the
+    auth layer stays on; clearing requires hand-editing the file).
+    Empty `viewer_password` clears the viewer hash. Both password
+    fields are bcrypt-hashed server-side before persisting.
+
+    Changing the admin password (i.e. an admin already exists and
+    `admin_password` is provided) requires `admin_current_password`
+    and verifies it against the stored admin hash. This prevents a
+    shoulder-surfing / unattended-tab scenario where the admin is
+    already logged in but someone else changes the password: the
+    current password must be re-typed to confirm. Setting the
+    initial admin password (no admin yet) does not require it.
 
     Returns the new state ({hasAdmin, hasViewer}) so the client can
     update its UI without a follow-up /api/auth call.
@@ -487,12 +496,19 @@ def auth_set_passwords():
         return error
     admin_pw = data["admin_password"]
     viewer_pw = data["viewer_password"]
+    # admin_current_password is optional; the business logic below
+    # requires it only when the admin password is being changed
+    # (i.e. an admin already exists and a new non-empty value is
+    # provided). Treat an absent key as None.
+    admin_current_pw = data.get("admin_current_password")
     # None means "don't touch this field"; string means "set/change";
     # anything else is a type error.
     if not (admin_pw is None or isinstance(admin_pw, str)):
         return err("admin_password must be a string or null", 400)
     if not (viewer_pw is None or isinstance(viewer_pw, str)):
         return err("viewer_password must be a string or null", 400)
+    if not (admin_current_pw is None or isinstance(admin_current_pw, str)):
+        return err("admin_current_password must be a string or null", 400)
 
     auth = load_auth()
     # Admin password is permanent once set; you can change it (provide
@@ -509,6 +525,22 @@ def auth_set_passwords():
     if viewer_pw not in (None, "") and len(viewer_pw) < _MIN_PASSWORD_LEN:
         return err("Viewer password must be at least %d characters"
                    % _MIN_PASSWORD_LEN, 400)
+
+    # When the admin password is being changed (admin already set AND
+    # a new non-empty value is provided), require and verify the
+    # current password. This is belt-and-suspenders on top of the
+    # @admin_required session check: the session already proves the
+    # caller is admin, but the explicit current-password confirmation
+    # guards against an unattended / shared-machine session.
+    changing_admin = (
+        admin_pw not in (None, "")
+        and bool(auth.get("admin_password_hash"))
+    )
+    if changing_admin:
+        if not admin_current_pw:
+            return err("Current admin password is required to change the admin password", 400)
+        if not _check_password(admin_current_pw, auth.get("admin_password_hash")):
+            return err("Current admin password is incorrect", 400)
 
     if admin_pw is None:
         # leave as-is

@@ -57,6 +57,12 @@ let authRole = null;
 // Settings -> Passwords section.
 let authHasAdmin = false;
 let authHasViewer = false;
+// The "current" admin password the stub knows about. Set when the
+// initial admin is configured so the stub can verify admin_current_password
+// on subsequent changes. The test resets this alongside the other auth
+// state; it starts as the literal that the original "Set admin
+// password" test used.
+let adminCurrentPw = null;
 let authSetPasswordsCalls = [];   // last few bodies posted to /api/auth/passwords
 
 const html = `<!DOCTYPE html><html><head>
@@ -291,15 +297,50 @@ const html = `<!DOCTYPE html><html><head>
           <section class="settings-section" data-section="security" id="settings-section-security" hidden>
             <h3>Passwords</h3>
             <p id="settings-auth-help" class="settings-help">Sign in as admin to change passwords.</p>
-            <div class="settings-row">
-              <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
-              <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input" disabled>
-            </div>
-            <div class="settings-row">
-              <span class="settings-label">
+            <div class="settings-auth-admin-block">
+              <div class="settings-row settings-auth-admin-status-row">
+                <span class="settings-label">Admin password</span>
                 <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-              </span>
-              <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+              </div>
+              <div id="settings-auth-admin-set" class="settings-auth-admin-form" hidden>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-new">New password</label>
+                  <input id="settings-auth-admin-new" type="password" class="auth-input settings-auth-input" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-confirm">Confirm new password</label>
+                  <input id="settings-auth-admin-confirm" type="password" class="auth-input settings-auth-input" disabled>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label"></span>
+                  <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+                </div>
+              </div>
+              <div id="settings-auth-admin-change" class="settings-auth-admin-form" hidden>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-current">Current password</label>
+                  <input id="settings-auth-admin-current" type="password" class="auth-input settings-auth-input" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-new2">New password</label>
+                  <input id="settings-auth-admin-new2" type="password" class="auth-input settings-auth-input" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-confirm2">Confirm new password</label>
+                  <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input" disabled>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label"></span>
+                  <span class="settings-control">
+                    <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                    <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
+                  </span>
+                </div>
+              </div>
+              <div class="settings-row" id="settings-auth-admin-change-row" hidden>
+                <span class="settings-label"></span>
+                <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
+              </div>
             </div>
             <div class="settings-row">
               <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
@@ -308,6 +349,10 @@ const html = `<!DOCTYPE html><html><head>
             <div class="settings-row" id="settings-auth-viewer-row" hidden>
               <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
               <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input">
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-confirm-row" hidden>
+              <label class="settings-label" for="settings-auth-viewer-confirm">Confirm viewer password</label>
+              <input id="settings-auth-viewer-confirm" type="password" class="auth-input settings-auth-input">
             </div>
             <div class="settings-row" id="settings-auth-viewer-actions" hidden>
               <span class="settings-label">
@@ -439,10 +484,25 @@ window.fetch = async (url, opts) => {
     }
     const d = JSON.parse(opts.body || "{}");
     authSetPasswordsCalls.push(d);
-    // Apply the change to the fake state so the next /api/auth reflects it.
-    // The server contract: null = don't touch, "" = clear (viewer only;
-    // admin is rejected by the server), string = set/change.
+    // Changing the admin password (admin already set + a new non-empty
+    // value) requires admin_current_password and verifies it. The stub
+    // mirrors the server's bcrypt-style check: the "current" password
+    // is the last one set (compared in cleartext since we're in jsdom;
+    // the real server uses bcrypt).
     if (typeof d.admin_password === "string" && d.admin_password !== "") {
+      if (authHasAdmin) {
+        if (typeof d.admin_current_password !== "string"
+            || d.admin_current_password === ""
+            || d.admin_current_password !== adminCurrentPw) {
+          return { ok: false, status: 400,
+            text: async () => JSON.stringify({ error: "Current admin password is incorrect" }),
+            json: async () => ({ error: "Current admin password is incorrect" }) };
+        }
+        adminCurrentPw = d.admin_password;
+      } else {
+        // First-time setup: no current password required.
+        adminCurrentPw = d.admin_password;
+      }
       authEnabled = true;
       authHasAdmin = true;
     }
@@ -2247,14 +2307,23 @@ function check(label, cond, extra) {
     authRole === null, "authRole=" + authRole);
   check("auth: logout -> modal re-shown directly", !$("auth-overlay").hidden);
 
-  // 401 path: a gated endpoint returning 401 must emit auth:required and
-  // throw. Replace fetch temporarily to simulate the server returning 401.
+  // 401 path: a gated endpoint returning 401 must emit auth:required,
+  // throw, AND wipe sensitive content from the DOM (the user must not
+  // be able to keep reading a file that was already loaded when auth
+  // was enabled). Replace fetch temporarily to simulate 401, and
+  // seed the DOM with content to confirm it gets wiped.
   const realFetch = window.fetch;
   window.fetch = async () => ({
     ok: false, status: 401,
     text: async () => JSON.stringify({ error: "Unauthorized" }),
     json: async () => ({ error: "Unauthorized" }),
   });
+  // Seed the content regions so we can verify they're cleared. In a
+  // real session these would be populated by a prior successful
+  // read; the auth-required handler must not leave them visible.
+  $("viewer-content").textContent = "secret notebook content";
+  $("file-tree").textContent = "secret tree";
+  $("search-list").textContent = "secret matches";
   let emitted = 0;
   const evtHandler = () => { emitted++; };
   window.NB.evt.on("auth:required", evtHandler);
@@ -2265,6 +2334,21 @@ function check(label, cond, extra) {
   window.fetch = realFetch;
   check("auth: 401 -> auth:required event emitted", emitted === 1, "count=" + emitted);
   check("auth: 401 -> request throws", threw);
+  // Sensitive content must be gone -- the user should not be able to
+  // keep reading a previously-loaded file after the session expired.
+  check("auth: 401 -> viewer content wiped (textContent empty)",
+    $("viewer-content").textContent === "",
+    "textContent=" + JSON.stringify($("viewer-content").textContent));
+  check("auth: 401 -> file tree wiped (textContent empty)",
+    $("file-tree").textContent === "",
+    "textContent=" + JSON.stringify($("file-tree").textContent));
+  check("auth: 401 -> search list wiped (textContent empty)",
+    $("search-list").textContent === "",
+    "textContent=" + JSON.stringify($("search-list").textContent));
+  // And the body has the locked class so the auth-locked CSS rules
+  // (opacity + blur) kick in for any content that survived.
+  check("auth: 401 -> body has .auth-locked class",
+    window.document.body.classList.contains("auth-locked"));
 
   // Reset for a clean exit: hide modal, restore defaults.
   window.NB.auth.hideModal();
@@ -2283,97 +2367,222 @@ function check(label, cond, extra) {
   // /api/auth/passwords POST + state-change assertions below to verify
   // each save/remove path was taken.
 
-  // Scenario 1: no auth configured. The section should be enabled (this
-  // is the first-time setup path: anyone can set the initial admin pw).
-  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  // Scenario 1: no auth configured. The section shows the inline
+  // "Set admin password" form (new + confirm). Anyone can set the
+  // initial admin password (the chicken-and-egg setup).
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
   authSetPasswordsCalls = [];
   window.NB.settings.open(); await tick(40);
-  check("pwd: status reports enabled=false, hasAdmin=false",
+  check("pwd: not-set -> status reports 'Not set'",
     $("settings-auth-admin-status").textContent === "Not set",
     "status=" + $("settings-auth-admin-status").textContent);
-  check("pwd: admin input enabled (no admin set yet)",
-    !$("settings-auth-admin-pw").disabled);
-  check("pwd: admin save disabled (input empty)",
+  check("pwd: not-set -> 'set' form is shown, 'change' form is hidden",
+    !$("settings-auth-admin-set").hidden
+    && $("settings-auth-admin-change").hidden
+    && $("settings-auth-admin-change-row").hidden);
+  check("pwd: not-set -> new + confirm inputs are enabled",
+    !$("settings-auth-admin-new").disabled
+    && !$("settings-auth-admin-confirm").disabled);
+  check("pwd: not-set -> save disabled (inputs empty)",
     $("settings-auth-admin-save").disabled);
-  check("pwd: viewer toggle disabled (no admin set yet)",
+  check("pwd: not-set -> viewer toggle disabled",
     $("settings-auth-viewer-toggle").disabled);
-  check("pwd: viewer row hidden (no admin set yet)",
-    $("settings-auth-viewer-row").hidden);
-  // Type a password -> save becomes enabled.
-  $("settings-auth-admin-pw").value = "newadmin";
-  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  // Type mismatched new + confirm -> save stays disabled.
+  $("settings-auth-admin-new").value = "newadmin";
+  $("settings-auth-admin-new").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-confirm").value = "different";
+  $("settings-auth-admin-confirm").dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick(10);
-  check("pwd: typing in admin field enables save",
+  check("pwd: not-set -> save stays disabled when new != confirm",
+    $("settings-auth-admin-save").disabled);
+  // Make them match -> save enabled.
+  $("settings-auth-admin-confirm").value = "newadmin";
+  $("settings-auth-admin-confirm").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: not-set -> save enabled when new == confirm",
     !$("settings-auth-admin-save").disabled);
-  // Click save -> POSTs {admin_password:"...", viewer_password:null} and reloads.
+  // Click save -> POSTs admin_password + admin_current_password:null.
   $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
-  check("pwd: admin save POSTs to /api/auth/passwords",
+  check("pwd: not-set save POSTs {admin_password, admin_current_password:null, viewer_password:null}",
     authSetPasswordsCalls.length === 1
     && authSetPasswordsCalls[0].admin_password === "newadmin"
+    && authSetPasswordsCalls[0].admin_current_password === null
     && authSetPasswordsCalls[0].viewer_password === null,
     JSON.stringify(authSetPasswordsCalls));
-  // (The production code calls window.location.reload() after this POST;
-  // jsdom 24 can't spy on reload(), so the POST + state change above is
-  // the best we can verify here. The post-reload effect is simulated by
-  // the test resetting auth state below.)
   window.NB.settings.close();
 
-  // Scenario 2: viewer field reveal. Simulate post-reload state where
-  // auth is now enabled with admin set, no viewer. The toggle is enabled,
-  // the viewer row is hidden until the toggle is checked.
+  // Scenario 2: admin set, not changing. The section shows the status
+  // + a "Change admin password" button; the change form is hidden.
   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  adminCurrentPw = "newadmin";  // the value the previous scenario just set
   window.NB.settings.open(); await tick(40);
-  check("pwd: status reports admin set (post-reload)",
-    /Set/.test($("settings-auth-admin-status").textContent),
+  check("pwd: set -> status reports 'Set'",
+    /Set\b/.test($("settings-auth-admin-status").textContent) && $("settings-auth-admin-status").textContent !== "Not set",
     "status=" + $("settings-auth-admin-status").textContent);
-  check("pwd: viewer toggle enabled (admin can toggle)",
+  check("pwd: set -> 'set' form hidden, 'change' form hidden, change button shown",
+    $("settings-auth-admin-set").hidden
+    && $("settings-auth-admin-change").hidden
+    && !$("settings-auth-admin-change-row").hidden);
+  // The current/new2/confirm2 inputs are cleared so a stale password
+  // doesn't sit in the DOM when the change form is hidden.
+  check("pwd: set -> change-form inputs are cleared (no stale password in DOM)",
+    window.document.getElementById("settings-auth-admin-current")
+    && window.document.getElementById("settings-auth-admin-current").value === ""
+    && window.document.getElementById("settings-auth-admin-new2").value === ""
+    && window.document.getElementById("settings-auth-admin-confirm2").value === "");
+
+  // Click the change button -> reveals the 3-field form. Save starts
+  // disabled (all fields empty); current/new/confirm enable it when
+  // current is non-empty AND new == confirm.
+  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("pwd: change button reveals the 3-field form",
+    !$("settings-auth-admin-change").hidden
+    && $("settings-auth-admin-change-row").hidden);
+  check("pwd: change form -> save disabled (all fields empty)",
+    $("settings-auth-admin-save2").disabled);
+  check("pwd: change form -> current is empty / focused",
+    $("settings-auth-admin-current").value === "");
+  // Type current only -> still disabled (new empty).
+  $("settings-auth-admin-current").value = "newadmin";
+  $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: change form -> save disabled when new/confirm empty",
+    $("settings-auth-admin-save2").disabled);
+  // Type new and confirm that DON'T match -> disabled.
+  $("settings-auth-admin-new2").value = "rotated-pw";
+  $("settings-auth-admin-new2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-confirm2").value = "rotated-pw-different";
+  $("settings-auth-admin-confirm2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: change form -> save disabled when new != confirm",
+    $("settings-auth-admin-save2").disabled);
+  // Make them match -> enabled.
+  $("settings-auth-admin-confirm2").value = "rotated-pw";
+  $("settings-auth-admin-confirm2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: change form -> save enabled when current set, new == confirm",
+    !$("settings-auth-admin-save2").disabled);
+  // Click save -> POSTs admin_password + admin_current_password.
+  authSetPasswordsCalls = [];
+  $("settings-auth-admin-save2").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: change save POSTs admin_current_password + new admin_password",
+    authSetPasswordsCalls.length === 1
+    && authSetPasswordsCalls[0].admin_current_password === "newadmin"
+    && authSetPasswordsCalls[0].admin_password === "rotated-pw"
+    && authSetPasswordsCalls[0].viewer_password === null,
+    JSON.stringify(authSetPasswordsCalls));
+  window.NB.settings.close();
+
+  // Scenario 3: wrong current password. The form is filled in with a
+  // correct-shape but wrong current, save POSTs and the stub returns
+  // 400; the UI shows the error and stays in the change form so the
+  // user can correct the mistake.
+  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  adminCurrentPw = "rotated-pw";  // the new value the previous scenario set
+  window.NB.settings.open(); await tick(40);
+  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  $("settings-auth-admin-current").value = "WRONG";
+  $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-new2").value = "another-pw";
+  $("settings-auth-admin-new2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-confirm2").value = "another-pw";
+  $("settings-auth-admin-confirm2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  authSetPasswordsCalls = [];
+  $("settings-auth-admin-save2").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: change with wrong current -> POST sent and error shown",
+    authSetPasswordsCalls.length === 1
+    && /Current admin password is incorrect/.test($("settings-auth-error").textContent),
+    "err=" + $("settings-auth-error").textContent);
+  check("pwd: change with wrong current -> form stays open so user can retry",
+    !$("settings-auth-admin-change").hidden);
+  // Now correct the current and re-submit -> succeeds.
+  $("settings-auth-admin-current").value = "rotated-pw";
+  $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  $("settings-auth-admin-save2").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("pwd: change with correct current -> POST succeeds, error cleared",
+    authSetPasswordsCalls.length === 2
+    && $("settings-auth-error").textContent === "");
+  window.NB.settings.close();
+
+  // Scenario 4: Cancel closes the change form without a POST and clears
+  // the inputs (so a stale password doesn't sit in the DOM).
+  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  adminCurrentPw = "another-pw";
+  window.NB.settings.open(); await tick(40);
+  $("settings-auth-admin-change-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  $("settings-auth-admin-current").value = "another-pw";
+  $("settings-auth-admin-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-new2").value = "leaked-pw";
+  $("settings-auth-admin-new2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-confirm2").value = "leaked-pw";
+  $("settings-auth-admin-confirm2").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  $("settings-auth-admin-cancel").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("pwd: Cancel hides the change form and clears the inputs",
+    $("settings-auth-admin-change").hidden
+    && $("settings-auth-admin-current").value === ""
+    && $("settings-auth-admin-new2").value === ""
+    && $("settings-auth-admin-confirm2").value === "");
+  window.NB.settings.close();
+
+  // Scenario 5: viewer flow. When an admin is set, the viewer toggle
+  // becomes enabled. Toggling on reveals new + confirm; save requires
+  // both filled and matching.
+  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+  adminCurrentPw = "another-pw";
+  window.NB.settings.open(); await tick(40);
+  check("pwd: viewer toggle enabled (admin set)",
     !$("settings-auth-viewer-toggle").disabled);
-  check("pwd: viewer toggle off by default (no viewer yet)",
-    $("settings-auth-viewer-toggle").checked === false);
-  // The viewer row is shown for admins (they can set a viewer even with
-  // the toggle off), so the row is visible immediately.
-  check("pwd: viewer row visible for admin (can set even with toggle off)",
-    !$("settings-auth-viewer-row").hidden);
-  check("pwd: viewer save disabled (no password typed)",
-    $("settings-auth-viewer-save").disabled);
-  // Checking the toggle when no viewer is set is a no-op (UI already in
-  // the right state); nothing to assert beyond no errors. We do verify
-  // the save is still disabled until a password is typed.
-  // Type a viewer password -> save becomes enabled.
+  // Toggling on reveals the new + confirm rows; save disabled.
+  $("settings-auth-viewer-toggle").checked = true;
+  $("settings-auth-viewer-toggle").dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("pwd: viewer toggle on -> new + confirm rows visible, save disabled",
+    !$("settings-auth-viewer-row").hidden
+    && !$("settings-auth-viewer-confirm-row").hidden
+    && $("settings-auth-viewer-save").disabled);
   $("settings-auth-viewer-pw").value = "viewpass";
   $("settings-auth-viewer-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-viewer-confirm").value = "mismatch";
+  $("settings-auth-viewer-confirm").dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick(10);
-  check("pwd: typing in viewer field enables save",
+  check("pwd: viewer save disabled when new != confirm",
+    $("settings-auth-viewer-save").disabled);
+  $("settings-auth-viewer-confirm").value = "viewpass";
+  $("settings-auth-viewer-confirm").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("pwd: viewer save enabled when new == confirm",
     !$("settings-auth-viewer-save").disabled);
-  // Click save -> POSTs {admin_password:null, viewer_password:"..."} and reloads.
   authSetPasswordsCalls = [];
   $("settings-auth-viewer-save").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
-  check("pwd: viewer save POSTs with admin=null, viewer=value",
+  check("pwd: viewer save POSTs admin_current_password:null, viewer_password=value",
     authSetPasswordsCalls.length === 1
-    && authSetPasswordsCalls[0].admin_password === null
+    && authSetPasswordsCalls[0].admin_current_password === null
     && authSetPasswordsCalls[0].viewer_password === "viewpass",
     JSON.stringify(authSetPasswordsCalls));
-  // (Reload can't be observed in jsdom 24; POST + state change above
-  // is the verifiable signal.)
   window.NB.settings.close();
 
-  // Scenario 3: viewer already set. The section shows the current state,
-  // the toggle starts on, the Remove button is visible, and toggling off
-  // prompts for confirm before POSTing an empty viewer.
+  // Scenario 6: viewer already set -> toggle on, Remove visible, uncheck
+  // + confirm clears the viewer.
   authEnabled = true; authHasAdmin = true; authHasViewer = true; authRole = "admin";
+  adminCurrentPw = "another-pw";
   window.NB.settings.open(); await tick(40);
   check("pwd: viewer toggle on when viewer is set",
     $("settings-auth-viewer-toggle").checked === true);
-  check("pwd: viewer row visible when viewer is set",
-    !$("settings-auth-viewer-row").hidden);
-  check("pwd: viewer status reflects set state",
-    /Set/.test($("settings-auth-viewer-status").textContent),
-    "status=" + $("settings-auth-viewer-status").textContent);
   check("pwd: Remove button visible when viewer is set",
     !$("settings-auth-viewer-remove").hidden);
-  // Uncheck -> confirm shown, user cancels -> toggle stays on.
+  // Uncheck + cancel -> toggle stays on, no POST.
   authSetPasswordsCalls = [];
   let pwdConfirmCount = 0;
   window.confirm = () => { pwdConfirmCount++; return false; };
@@ -2381,65 +2590,40 @@ function check(label, cond, extra) {
   $("settings-auth-viewer-toggle").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
   check("pwd: uncheck + cancel -> confirm shown once",
-    pwdConfirmCount === 1, "count=" + pwdConfirmCount);
-  check("pwd: uncheck + cancel -> toggle stays on",
-    $("settings-auth-viewer-toggle").checked === true);
-  check("pwd: uncheck + cancel -> no POST fired",
-    authSetPasswordsCalls.length === 0);
-  // Uncheck -> confirm, user OK -> POSTs empty viewer, reloads.
+    pwdConfirmCount === 1);
+  check("pwd: uncheck + cancel -> toggle stays on, no POST",
+    $("settings-auth-viewer-toggle").checked === true
+    && authSetPasswordsCalls.length === 0);
+  // Uncheck + OK -> POST viewer_password:"" to clear.
   window.confirm = () => { pwdConfirmCount++; return true; };
   authSetPasswordsCalls = [];
   $("settings-auth-viewer-toggle").checked = false;
   $("settings-auth-viewer-toggle").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(40);
-  check("pwd: uncheck + OK -> confirm shown",
-    pwdConfirmCount === 2, "count=" + pwdConfirmCount);
-  check("pwd: uncheck + OK -> POST with viewer_password:\"\"",
+  check("pwd: uncheck + OK -> POST viewer_password:\"\"",
     authSetPasswordsCalls.length === 1
-    && authSetPasswordsCalls[0].admin_password === null
-    && authSetPasswordsCalls[0].viewer_password === "",
+    && authSetPasswordsCalls[0].viewer_password === ""
+    && authSetPasswordsCalls[0].admin_current_password === null,
     JSON.stringify(authSetPasswordsCalls));
-  // (Reload can't be observed in jsdom 24; POST above is the signal.)
   window.NB.settings.close();
 
-  // Scenario 4: admin can change the admin password. The form is always
-  // present; entering a new value and clicking Save replaces the hash.
-  authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
-  window.NB.settings.open(); await tick(40);
-  $("settings-auth-admin-pw").value = "rotated-pw";
-  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
-  await tick(10);
-  authSetPasswordsCalls = [];
-  $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("pwd: admin rotate POSTs new value (viewer untouched)",
-    authSetPasswordsCalls.length === 1
-    && authSetPasswordsCalls[0].admin_password === "rotated-pw"
-    && authSetPasswordsCalls[0].viewer_password === null,
-    JSON.stringify(authSetPasswordsCalls));
-  // (Reload can't be observed in jsdom 24; POST above is the signal.)
-  window.NB.settings.close();
-
-  // Scenario 5: non-admin (viewer) sees the section disabled.
+  // Scenario 7: non-admin sees the section disabled. The change button
+  // and the set/change forms are hidden; viewer toggle is disabled.
   authEnabled = true; authHasAdmin = true; authHasViewer = true; authRole = "viewer";
+  adminCurrentPw = "another-pw";
   window.NB.settings.open(); await tick(40);
-  check("pwd: help text says sign in as admin for non-admins",
-    /Sign in as admin/i.test($("settings-auth-help").textContent),
-    "help=" + $("settings-auth-help").textContent);
-  check("pwd: admin input disabled for non-admin",
-    $("settings-auth-admin-pw").disabled);
-  check("pwd: admin save disabled for non-admin",
-    $("settings-auth-admin-save").disabled);
-  check("pwd: viewer toggle disabled for non-admin",
+  check("pwd: non-admin -> help text says sign in as admin",
+    /Sign in as admin/i.test($("settings-auth-help").textContent));
+  check("pwd: non-admin -> set form hidden, change form hidden, change button hidden",
+    $("settings-auth-admin-set").hidden
+    && $("settings-auth-admin-change").hidden
+    && $("settings-auth-admin-change-row").hidden);
+  check("pwd: non-admin -> viewer toggle disabled",
     $("settings-auth-viewer-toggle").disabled);
-  check("pwd: viewer row hidden for non-admin",
-    $("settings-auth-viewer-row").hidden);
-  check("pwd: viewer actions hidden for non-admin",
-    $("settings-auth-viewer-actions").hidden);
   window.NB.settings.close();
 
   // Reset for a clean exit.
-  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
   authSetPasswordsCalls = [];
   window.NB.settings.close();
   window.confirm = () => true;
@@ -2498,20 +2682,23 @@ function check(label, cond, extra) {
   // 5. Passwords section regression: the per-section Save/Remove
   //    buttons are still present and still trigger their own page-
   //    reload flow. The new live-mode footer must not interfere.
-  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
   authSetPasswordsCalls = [];
   window.NB.settings.open(); await tick(40);
-  $("settings-auth-admin-pw").value = "footer-pw";
-  $("settings-auth-admin-pw").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-new").value = "footer-pw";
+  $("settings-auth-admin-new").dispatchEvent(new window.Event("input", { bubbles: true }));
+  $("settings-auth-admin-confirm").value = "footer-pw";
+  $("settings-auth-admin-confirm").dispatchEvent(new window.Event("input", { bubbles: true }));
   await tick(10);
   $("settings-auth-admin-save").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
   check("footer: per-section admin save still POSTs auth/passwords (live mode doesn't break it)",
     authSetPasswordsCalls.length === 1
     && authSetPasswordsCalls[0].admin_password === "footer-pw"
+    && authSetPasswordsCalls[0].admin_current_password === null
     && authSetPasswordsCalls[0].viewer_password === null,
     JSON.stringify(authSetPasswordsCalls));
-  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
   authSetPasswordsCalls = [];
   window.NB.settings.close();
 

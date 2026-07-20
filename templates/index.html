@@ -323,17 +323,71 @@
             <p id="settings-auth-help" class="settings-help">
               Sign in as admin to change passwords.
             </p>
-            <div class="settings-row">
-              <label class="settings-label" for="settings-auth-admin-pw">Admin password</label>
-              <input id="settings-auth-admin-pw" type="password" class="auth-input settings-auth-input"
-                     autocomplete="new-password" placeholder="Enter new password" disabled>
-            </div>
-            <div class="settings-row">
-              <span class="settings-label">
+
+            <!-- Admin password: a single section that adapts to state.
+                 When not set: a "Set admin password" form (new + confirm).
+                 When set: a status line + a "Change admin password" button
+                 that reveals a 3-field form (current + new + confirm)
+                 to actually rotate the password. The backend verifies
+                 the current password on every change so an unattended
+                 / shared-machine admin session can't be used to silently
+                 rotate the password. -->
+            <div class="settings-auth-admin-block">
+              <div class="settings-row settings-auth-admin-status-row">
+                <span class="settings-label">Admin password</span>
                 <span id="settings-auth-admin-status" class="auth-status-text">Not set</span>
-              </span>
-              <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+              </div>
+              <!-- "Set" form: shown only when no admin password is configured. -->
+              <div id="settings-auth-admin-set" class="settings-auth-admin-form" hidden>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-new">New password</label>
+                  <input id="settings-auth-admin-new" type="password" class="auth-input settings-auth-input"
+                         autocomplete="new-password" placeholder="At least 6 characters" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-confirm">Confirm new password</label>
+                  <input id="settings-auth-admin-confirm" type="password" class="auth-input settings-auth-input"
+                         autocomplete="new-password" placeholder="Type the new password again" disabled>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label"></span>
+                  <button id="settings-auth-admin-save" class="settings-action" disabled>Save</button>
+                </div>
+              </div>
+              <!-- "Change" form: shown only when an admin password already exists.
+                   Hidden by default; the "Change admin password" button reveals it. -->
+              <div id="settings-auth-admin-change" class="settings-auth-admin-form" hidden>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-current">Current password</label>
+                  <input id="settings-auth-admin-current" type="password" class="auth-input settings-auth-input"
+                         autocomplete="current-password" placeholder="Enter the current password" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-new2">New password</label>
+                  <input id="settings-auth-admin-new2" type="password" class="auth-input settings-auth-input"
+                         autocomplete="new-password" placeholder="At least 6 characters" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="settings-auth-admin-confirm2">Confirm new password</label>
+                  <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input"
+                         autocomplete="new-password" placeholder="Type the new password again" disabled>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label"></span>
+                  <span class="settings-control">
+                    <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                    <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
+                  </span>
+                </div>
+              </div>
+              <!-- The "Change admin password" trigger: visible only when an admin
+                   password already exists. Clicking it reveals the change form. -->
+              <div class="settings-row" id="settings-auth-admin-change-row" hidden>
+                <span class="settings-label"></span>
+                <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
+              </div>
             </div>
+
             <div class="settings-row">
               <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
               <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
@@ -342,6 +396,11 @@
               <label class="settings-label" for="settings-auth-viewer-pw">Viewer password</label>
               <input id="settings-auth-viewer-pw" type="password" class="auth-input settings-auth-input"
                      autocomplete="new-password" placeholder="Enter new password">
+            </div>
+            <div class="settings-row" id="settings-auth-viewer-confirm-row" hidden>
+              <label class="settings-label" for="settings-auth-viewer-confirm">Confirm viewer password</label>
+              <input id="settings-auth-viewer-confirm" type="password" class="auth-input settings-auth-input"
+                     autocomplete="new-password" placeholder="Type the viewer password again">
             </div>
             <div class="settings-row" id="settings-auth-viewer-actions" hidden>
               <span class="settings-label">
