@@ -445,10 +445,10 @@
         : "Sign in as admin to change passwords.";
       adminStatusValueEl.textContent = "Set";
       adminSetBlock.hidden = true;
-      // The change form is shown when an admin is configured and the
-      // current user is an admin; hidden for non-admins.
-      adminChangeBlock.hidden = !canEdit;
-      // Clear sensitive fields when the form is hidden so a stale
+      // The change form is always shown when the admin password is set:
+      // admins can use it, non-admins see it disabled and cleared.
+      adminChangeBlock.hidden = false;
+      // Clear sensitive fields when the user can't edit so a stale
       // current/new password isn't sitting in the DOM.
       if (!canEdit) {
         if (adminCurrentEl) adminCurrentEl.value = "";
