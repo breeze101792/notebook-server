@@ -812,7 +812,25 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 /* ------------------------------------------------------------------ */
 /* The modal reuses .settings-overlay / .settings-modal; only the bits
  * specific to the password form live here. */
-.auth-modal { width: min(420px, 92vw); }
+.auth-modal {
+  width: min(420px, 92vw);
+  /* The auth modal only has a few short rows; size to its content
+   * instead of inheriting .settings-modal's fixed 80vh (which leaves
+   * a tall empty band on the login screen). Keep a 92vh cap as a
+   * safety net for tiny viewports. */
+  height: auto;
+  max-height: 92vh;
+}
+/* The form reuses .settings-body, which is a flex row meant for the
+ * Settings modal's nav + sections pane layout. Override to a vertical
+ * column so the help text, input row, error, and button row stack the
+ * way the auth form is supposed to read. */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 18px 18px;
+}
 .auth-form .auth-help {
   color: var(--fg-muted);
   font-size: .93rem;
