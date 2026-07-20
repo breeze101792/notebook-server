@@ -334,6 +334,7 @@ const html = `<!DOCTYPE html><html><head>
                 <button id="settings-auth-admin-change-btn" class="settings-action">Change admin password…</button>
               </div>
             </div>
+            <div class="settings-note" id="settings-auth-viewer-status-note">Viewer password: <span id="settings-auth-viewer-status-value">Not set</span></div>
             <div class="settings-row">
               <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
               <input type="checkbox" id="settings-auth-viewer-toggle" disabled>
@@ -346,14 +347,9 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-auth-viewer-confirm">Confirm viewer password</label>
               <input id="settings-auth-viewer-confirm" type="password" class="auth-input settings-auth-input">
             </div>
-            <div class="settings-row" id="settings-auth-viewer-actions" hidden>
-              <span class="settings-label">
-                <span id="settings-auth-viewer-status" class="auth-status-text">Not set</span>
-              </span>
-              <span class="settings-control">
-                <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
-                <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
-              </span>
+            <div class="settings-form-actions" id="settings-auth-viewer-actions" hidden>
+              <button id="settings-auth-viewer-remove" class="settings-action" hidden>Remove</button>
+              <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
             </div>
             <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>

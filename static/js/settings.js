@@ -82,7 +82,10 @@
   const viewerActionsEl    = document.getElementById("settings-auth-viewer-actions");
   const viewerPwEl         = document.getElementById("settings-auth-viewer-pw");
   const viewerConfirmEl    = document.getElementById("settings-auth-viewer-confirm");
-  const viewerStatusEl     = document.getElementById("settings-auth-viewer-status");
+  // The viewer status note is "Viewer password: <value>" where
+  // <value> is a child span. The label is fixed and the value is
+  // what the JS updates.
+  const viewerStatusValueEl = document.getElementById("settings-auth-viewer-status-value");
   const viewerSaveBtn      = document.getElementById("settings-auth-viewer-save");
   const viewerRemoveBtn    = document.getElementById("settings-auth-viewer-remove");
   const authErrorEl        = document.getElementById("settings-auth-error");
@@ -473,7 +476,7 @@
     viewerRowEl.hidden = !viewerVisible;
     viewerConfirmRowEl.hidden = !canEdit;
     viewerActionsEl.hidden = !canEdit;
-    viewerStatusEl.textContent = (authState && authState.hasViewer)
+    viewerStatusValueEl.textContent = (authState && authState.hasViewer)
       ? "Set (clear it via the toggle, or set a new one)"
       : "Not set";
     refreshViewerSaveEnabled();
