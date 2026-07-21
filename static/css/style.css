@@ -1261,6 +1261,121 @@ body[data-theme="light"] #viewer-content {
 .tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
+/* Bookmarks                                                           */
+/* ------------------------------------------------------------------ */
+/* The bookmarks section sits at the top of the sidebar, above the file
+ * tree. It's a sibling of #file-tree inside #sidebar; both share the
+ * pane's vertical space via a column flex layout (see #sidebar's
+ * display below), and the tree takes the remaining space. The bookmark
+ * list itself scrolls when it gets long. The header echoes the .tree-row
+ * look (icon, name) so a bookmarked file reads the same way it does in
+ * the tree -- the only differences are the leading ⭐ and the fact
+ * that these rows don't have a caret/icon column. */
+.bookmarks {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  /* The list scrolls; the header stays fixed. Cap the section at ~45%
+   * of the sidebar so a packed bookmark list can't push the tree out
+   * of view. */
+  max-height: 45%;
+  min-height: 0;
+}
+/* Section header: small uppercase label that matches the panel-header
+ * font + casing so the bookmarks section reads as a peer of "Files"
+ * rather than as a one-off widget. */
+.bookmarks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  font-size: .79rem;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+.bookmarks-title { overflow: hidden; text-overflow: ellipsis; }
+.bookmarks-add {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: .93rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.bookmarks-add:hover { color: var(--warn); background: var(--accent-soft); }
+.bookmarks-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  padding: 0 4px 6px;
+  margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
+}
+.bookmarks-empty {
+  padding: 10px 12px;
+  color: var(--fg-muted);
+  font-size: .86rem;
+  font-style: italic;
+}
+/* A bookmark row uses the same flex layout as .tree-row (caret-spacer,
+ * icon, name) so it sits visually next to a tree row in the same pane
+ * without looking out of place. The leading ⭐ is a real icon (not a
+ * column) so the row stays a single horizontal flex line; the
+ * .tree-caret/ .tree-icon placeholders reserve the same width their
+ * counterparts in the tree use. */
+.bookmark-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.bookmark-row:hover { background: var(--accent-soft); }
+.bookmark-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.bookmark-row.dragging { opacity: .4; }
+/* Drop markers mirror the tree's drag affordance. drop-before/ drop-after
+ * are used for the empty-space-between-rows case (the row resolves to
+ * drop above/below the hovered row). The folder-target / empty drop
+ * markers don't apply here -- bookmarks can only be reordered within
+ * the list, never dropped onto a tree row. */
+.bookmark-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+.bookmark-row.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
+.bookmarks-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+.bookmark-pin { width: 14px; text-align: center; font-size: 11px; line-height: 1; color: var(--warn); }
+.bookmark-name { overflow: hidden; text-overflow: ellipsis; }
+/* The inline ⭐ toggle on tree rows. Hidden by default; the row's
+ * :hover + the file's "is bookmarked" state control visibility (the
+ * sidebar module flips a class on the row to keep the star lit for
+ * already-bookmarked files so the user can see the state at a glance,
+ * not just on hover). */
+.tree-star {
+  display: none;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.tree-row:hover .tree-star { display: inline-block; }
+.tree-row .tree-star.is-bookmarked {
+  display: inline-block;
+  color: var(--warn);
+}
+.tree-row .tree-star:hover { color: var(--warn); }
+
+/* ------------------------------------------------------------------ */
 /* Context menu                                                        */
 /* ------------------------------------------------------------------ */
 .context-menu {

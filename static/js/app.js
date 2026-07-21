@@ -33,6 +33,11 @@
     sidebarCollapsed: false,
     outlineCollapsed: false,
     searchCaseSensitive: false,
+    // Bookmarks: an ordered array of file paths the user has pinned in
+    // the sidebar's bookmarks section. Insertion order; the sidebar
+    // module reorders them via drag-and-drop. Missing files (e.g. after
+    // a delete) are pruned silently on the next tree refresh.
+    bookmarks: [],
     // "compact" / "medium" / "wide". Drives the --settings-modal-width
     // custom property that .settings-modal reads in style.css. Default
     // is "medium" (75vw) -- the modal scales with the viewport so the
@@ -244,6 +249,13 @@
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
+    // Hand the loaded bookmarks to the sidebar module so the list
+    // renders before the first tree refresh arrives. Done here, not
+    // in boot(), so any cfg source (load from server, future sync,
+    // tests) goes through the same path.
+    if (NB.sidebar && NB.sidebar.setBookmarks) {
+      NB.sidebar.setBookmarks(cfg.bookmarks || []);
+    }
   }
 
   /* Sidebar minimize: toggle between the saved width and a thin strip.
@@ -584,6 +596,15 @@
     },
     getVimMode: () => !!cfg.vimMode,
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
+    // Replace the full bookmark list. The sidebar module is the only
+    // caller on the user-mutation path; the config load path also
+    // calls it through setBookmarks, but that goes via the sidebar
+    // directly (applyConfig). Persists + emits config:changed so any
+    // listener can react.
+    setBookmarks: (list) => {
+      cfg.bookmarks = Array.isArray(list) ? list.slice() : [];
+      persistConfig();
+    },
     // Deep link: parse + apply `?file=...&heading=...` URLs.
     // parseDeepLink takes an optional URL string; openDeepLink takes
     // the {file, heading} object it returns. Exposed for tests.

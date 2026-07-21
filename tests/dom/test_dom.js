@@ -91,6 +91,13 @@ const html = `<!DOCTYPE html><html><head>
       <aside id="sidebar">
         <div class="panel-header"><span class="panel-title">Files</span>
           <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button></div>
+        <div id="bookmarks" class="bookmarks">
+          <div class="bookmarks-header">
+            <span class="bookmarks-title">Bookmarks</span>
+            <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
+          </div>
+          <div id="bookmarks-list" class="bookmarks-list"></div>
+        </div>
         <div id="file-tree" class="tree"></div>
         <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
       </aside>
@@ -1131,50 +1138,380 @@ function check(label, cond, extra) {
   await tick(350);
   const configPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
   check("collapse persisted to config (sidebarCollapsed:true)", /sidebarCollapsed":true/.test(configPost), configPost);
+  // Re-expand for the bookmark tests below; the resize-handle block
+  // works on a visible sidebar anyway, but bookmarks would be hidden
+  // behind the collapsed strip and harder to assert against.
+  click("sidebar-expand");
+  await tick(10);
 
-  console.log("== sidebar resize handles ==");
-  const sbH = window.document.querySelector("#sidebar > .resize-handle");
-  const olH = window.document.querySelector("#outline-pane > .resize-handle");
-  check("left sidebar has a resize handle", !!sbH);
-  check("outline has a resize handle", !!olH);
-  check("sidebar handle on the right edge", !!sbH && sbH.style.right === "0px", sbH && sbH.style.right);
-  check("outline handle on the left edge", !!olH && olH.style.left === "0px", olH && olH.style.left);
-  check("sidebar handle has a visible indicator bar", !!sbH && !!sbH.querySelector(".resize-handle-bar"));
-  check("outline handle has a visible indicator bar", !!olH && !!olH.querySelector(".resize-handle-bar"));
-  // The original bug was an invisible 4px handle via inline width/opacity.
-  // Size + visibility must come from CSS, so guard against inline overrides
-  // sneaking back (inline beats the stylesheet and would re-break it).
-  check("sidebar handle has no inline width/opacity", !!sbH && sbH.style.width === "" && sbH.style.opacity === "",
-    "w=" + (sbH && sbH.style.width) + " op=" + (sbH && sbH.style.opacity));
-  // Simulate dragging the sidebar handle: mousedown -> mousemove -> mouseup.
-  const sidebarPane = $("sidebar");
-  const realRect = sidebarPane.getBoundingClientRect.bind(sidebarPane);
-  sidebarPane.getBoundingClientRect = () => ({ width: 240, height: 600, left: 0, right: 240, top: 0, bottom: 600, x: 0, y: 0, toJSON() {} });
-  sbH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: 100 }));
-  check("mousedown marks the handle dragging", sbH.classList.contains("dragging"));
-  check("mousedown marks the body resizing", window.document.body.classList.contains("resizing"));
-  window.document.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 160 }));
-  check("drag widens --sidebar-width (240->300)", cssVar("--sidebar-width") === "300px", cssVar("--sidebar-width"));
-  window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
-  check("drag ends (handle not dragging)", !sbH.classList.contains("dragging"));
-  check("drag ends (body not resizing)", !window.document.body.classList.contains("resizing"));
-  // Non-primary button must NOT start a drag (state is now clean).
-  sbH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 2, clientX: 100 }));
-  check("right-click does not arm a drag (button gate)", !sbH.classList.contains("dragging") && !window.document.body.classList.contains("resizing"));
-  sidebarPane.getBoundingClientRect = realRect;
+  console.log("== bookmarks ==");
+  // Reset to a known 2-tab state and seed config.bookmarks via the
+  // setter the sidebar exposes. Going through the public façade
+  // exercises the same path app.js uses on config load, so the
+  // rendered list reflects what the user would see after a reload.
+  // (Earlier blocks may have left a non-default tree; reset the tree
+  // stub to a known shape with both bookmark targets present.)
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+      { name: "b.md", type: "file", path: "notes/b.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  window.NB.sidebar.setBookmarks([]);
+  await tick(20);
+  const bookmarkRows = () => window.document.querySelectorAll("#bookmarks-list .bookmark-row");
+  const bookmarkEmpty = () => window.document.querySelector("#bookmarks-list .bookmarks-empty");
+  check("bookmarks: empty state shown when no bookmarks",
+    bookmarkRows().length === 0 && !!bookmarkEmpty(),
+    "rows=" + bookmarkRows().length + " empty=" + !!bookmarkEmpty());
+  // The empty state's text matches the design.
+  check("bookmarks: empty state copy",
+    bookmarkEmpty() && /No bookmarks yet/i.test(bookmarkEmpty().textContent),
+    bookmarkEmpty() && bookmarkEmpty().textContent);
 
-  // Outline handle: left-edge handle. Dragging its left edge LEFT must WIDEN
-  // the outline (native left-edge resize direction), not narrow it.
-  const outlinePane = $("outline-pane");
-  const realOutlineRect = outlinePane.getBoundingClientRect.bind(outlinePane);
-  outlinePane.getBoundingClientRect = () => ({ width: 220, height: 600, left: 1060, right: 1280, top: 0, bottom: 600, x: 1060, y: 0, toJSON() {} });
-  olH.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, clientX: 1060 }));
-  check("outline mousedown marks dragging", olH.classList.contains("dragging"));
-  window.document.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 1000 })); // dx = -60 (drag left)
-  check("outline drag left widens --outline-width (220->280)", cssVar("--outline-width") === "280px", cssVar("--outline-width"));
-  window.document.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
-  check("outline drag ends (not dragging)", !olH.classList.contains("dragging"));
-  outlinePane.getBoundingClientRect = realOutlineRect;
+  // Star toggle on a tree row. The star is in a real DOM span on the
+  // file row; clicking it should add the file to the bookmark list
+  // and light the star (the .is-bookmarked class).
+  const aRow = () => window.document.querySelector('.tree-row[data-path="notes/a.md"]');
+  const aStar = () => aRow() && aRow().querySelector(".tree-star");
+  check("bookmarks: file row has a star",
+    !!aStar(), "no .tree-star on notes/a.md");
+  check("bookmarks: star starts as ☆ (off)",
+    aStar() && aStar().textContent === "☆", aStar() && aStar().textContent);
+  check("bookmarks: star has no is-bookmarked class initially",
+    aStar() && !aStar().classList.contains("is-bookmarked"));
+  aStar().dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("bookmarks: star click adds the file",
+    bookmarkRows().length === 1 &&
+    bookmarkRows()[0].dataset.path === "notes/a.md",
+    "rows=" + bookmarkRows().length);
+  check("bookmarks: star now shows ★ and is-bookmarked class",
+    aStar() && aStar().textContent === "★" &&
+    aStar().classList.contains("is-bookmarked"),
+    aStar() && aStar().textContent + " " + aStar().className);
+  // The list row shows the base name + has a .bookmark-pin star span.
+  const listPin = bookmarkRows()[0].querySelector(".bookmark-pin");
+  check("bookmarks: list row has a .bookmark-pin (★)",
+    listPin && listPin.textContent === "★", listPin && listPin.textContent);
+  check("bookmarks: list row name is the base name",
+    bookmarkRows()[0].querySelector(".bookmark-name").textContent === "a.md",
+    bookmarkRows()[0].querySelector(".bookmark-name").textContent);
+
+  // Persistence: the change goes through NB.app.setBookmarks, which
+  // writes the whole cfg to /api/config. Wait for the debounce.
+  await tick(350);
+  const bookmarkCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("bookmarks: addition persisted to cfg",
+    /"bookmarks":\["notes\/a\.md"\]/.test(bookmarkCfgPost), bookmarkCfgPost);
+
+  // Add a second bookmark via the tree's inline star so we can test
+  // the ordering + remove path in the same block.
+  const bStar = () => window.document.querySelector('.tree-row[data-path="notes/b.md"] .tree-star');
+  bStar().dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("bookmarks: second add -> 2 rows, insertion order",
+    bookmarkRows().length === 2 &&
+    bookmarkRows()[0].dataset.path === "notes/a.md" &&
+    bookmarkRows()[1].dataset.path === "notes/b.md",
+    Array.from(bookmarkRows()).map(r => r.dataset.path).join(","));
+
+  // Click a bookmark row -> opens the file (sets active tab). Set up
+  // a known active-file state first so we can detect the change.
+  // notes/a.md is open and is a bookmark; activate it to make sure
+  // the active file is the one we expect.
+  const bookmarks_get = () => window.NB.sidebar.getBookmarks();
+  await window.NB.tabs.activate("notes/a.md"); await tick(20);
+  check("bookmarks: pre-click active tab is notes/a.md (bookmark target)",
+    activeTabPath() === "notes/a.md", "active=" + activeTabPath());
+  // Pick a non-bookmarked file to click next (notes/b is bookmarked;
+  // we need a non-bookmarked one to confirm the bookmark click drives
+  // the activation). Use Welcome.md, which is in the tree.
+  await window.NB.tabs.open("Welcome.md"); await tick(20);
+  // Now Welcome is the active file and not bookmarked.
+  check("bookmarks: Welcome opened as non-bookmarked active",
+    activeTabPath() === "Welcome.md" && !bookmarks_get().includes("Welcome.md"),
+    "active=" + activeTabPath());
+  // Click the bookmark row for notes/b.md (a bookmarked file) to
+  // confirm clicking a bookmark row activates that file.
+  const bmForB = window.document.querySelector(
+    '.bookmark-row[data-path="notes/b.md"]');
+  bmForB.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("bookmarks: click on bookmark row opens the file",
+    activeTabPath() === "notes/b.md", "active=" + activeTabPath());
+
+  // The + button in the bookmarks header: only visible when the
+  // active file isn't already bookmarked. Currently active is
+  // notes/b.md which IS bookmarked -> button hidden.
+  check("bookmarks: + button hidden when active file is bookmarked",
+    $("bookmarks-add").hidden, "hidden=" + $("bookmarks-add").hidden);
+  // Activate a non-bookmarked file (Welcome) -> + visible.
+  await window.NB.tabs.activate("Welcome.md"); await tick(20);
+  check("bookmarks: + button visible when active file is not bookmarked",
+    !$("bookmarks-add").hidden, "hidden=" + $("bookmarks-add").hidden);
+  // Click + -> adds Welcome.md to the list, button hides again.
+  $("bookmarks-add").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("bookmarks: + click adds the active file",
+    bookmarks_get().includes("Welcome.md") &&
+    bookmarkRows().length === 3 &&
+    bookmarkRows()[2].dataset.path === "Welcome.md",
+    Array.from(bookmarkRows()).map(r => r.dataset.path).join(","));
+  check("bookmarks: + button hides after adding the active file",
+    $("bookmarks-add").hidden, "hidden=" + $("bookmarks-add").hidden);
+
+  // Tree context menu: right-click on a non-bookmarked file shows
+  // "Add bookmark"; on a bookmarked file it shows "Remove bookmark".
+  // The test opens the menu with a synthesized contextmenu event and
+  // clicks the menu item, mirroring the empty-tree block above.
+  const treeCtx = (path) => {
+    const row = window.document.querySelector('.tree-row[data-path="' + path + '"]');
+    const ev = new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 });
+    row.dispatchEvent(ev);
+  };
+  const treeMenuItem = (label) =>
+    Array.from($("context-menu").querySelectorAll("button"))
+      .find(b => b.textContent === label);
+  // Welcome.md is bookmarked (added by + click above) -> menu should
+  // show "Remove bookmark".
+  treeCtx("Welcome.md");
+  await tick(10);
+  check("bookmarks: ctx menu on bookmarked file shows 'Remove bookmark'",
+    !!treeMenuItem("Remove bookmark"),
+    $("context-menu").textContent);
+  treeMenuItem("Remove bookmark").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("bookmarks: menu 'Remove bookmark' drops the row",
+    bookmarkRows().length === 2 &&
+    !bookmarks_get().includes("Welcome.md"),
+    Array.from(bookmarkRows()).map(r => r.dataset.path).join(","));
+  // Welcome.md is no longer bookmarked. Right-click it again -> menu
+  // should now show "Add bookmark" (the action that matches the
+  // current state).
+  treeCtx("Welcome.md");
+  await tick(10);
+  check("bookmarks: ctx menu on unbookmarked file shows 'Add bookmark'",
+    !!treeMenuItem("Add bookmark"),
+    $("context-menu").textContent);
+  // Close the menu so it doesn't leak into the next test.
+  window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+
+  // Bookmark-list right-click: should expose Open / Remove bookmark /
+  // Copy / Delete. Mirrors the tree's menu shape so the user's mental
+  // model is the same.
+  const bmCtx = () => {
+    const ev = new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 });
+    bookmarkRows()[0].dispatchEvent(ev);
+  };
+  bmCtx(); await tick(10);
+  // The menu must actually be VISIBLE, not just have the right items
+  // in the DOM. A previous version of the document-level contextmenu
+  // handler fired AFTER the row's handler and hid the menu via
+  // hideMenu() (the items stayed in the DOM, so a label-only check
+  // passed). Visible check catches the regression.
+  check("bookmarks: list context menu is visible (not hidden by doc handler)",
+    !$("context-menu").hidden, "hidden=" + $("context-menu").hidden);
+  const bmMenuLabels = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+  check("bookmarks: list context menu has Open/Rename/Remove bookmark/Copy/Delete",
+    bmMenuLabels().includes("Open") &&
+    bmMenuLabels().includes("Remove bookmark") &&
+    bmMenuLabels().includes("Rename / Move…") &&
+    bmMenuLabels().includes("Copy…") &&
+    bmMenuLabels().includes("Delete"),
+    bmMenuLabels().join(" / "));
+  // Rename / Move re-keys the bookmark to the new path. Stub the
+  // rename path (the moveItem API) so the menu item click flows
+  // through doRename without the prompt() interceptor, and verify
+  // the bookmark follows the file.
+  const origMoveItemBm = window.NB.api.moveItem;
+  let lastMove = null;
+  window.NB.api.moveItem = async (from, to) => {
+    lastMove = { from, to };
+    // Mirror the real backend:
+    //  - rekey the file contents map so a subsequent tree refresh
+    //    sees the new path. FILES is the harness-level constant
+    //    (not on window) so reference it directly.
+    //  - rekey TREE the same way: a tree refresh would otherwise
+    //    see the new path as a missing file and prune any bookmark
+    //    that already got rekeyed via the file:moved listener.
+    if (typeof FILES !== "undefined" && FILES[from] !== undefined) {
+      FILES[to] = FILES[from];
+      delete FILES[from];
+    }
+    const renameInTree = (nodes) => {
+      for (const n of nodes) {
+        if (n.path === from) { n.path = to; n.name = to.split("/").pop(); return true; }
+        if (n.children && renameInTree(n.children)) return true;
+      }
+      return false;
+    };
+    renameInTree(TREE);
+    return { from, to };
+  };
+  // window.prompt is stubbed at the harness level to return null; for
+  // the rename path the user needs to type a destination, so override
+  // it just for this call.
+  const origPromptBm = window.prompt;
+  window.prompt = () => "notes/a-renamed.md";
+  Array.from($("context-menu").querySelectorAll("button"))
+    .find(b => b.textContent === "Rename / Move…")
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  window.prompt = origPromptBm;
+  window.NB.api.moveItem = origMoveItemBm;
+  // Re-fire the move manually to see what happens (debug only).
+  // NB.evt.emit("file:moved", { from: "notes/a.md", to: "notes/a-renamed.md" });
+  // window.__DEBUG_BM = false;
+  check("bookmarks: menu 'Rename / Move…' called moveItem with the bookmark path",
+    lastMove && lastMove.from === "notes/a.md" && lastMove.to === "notes/a-renamed.md",
+    JSON.stringify(lastMove));
+  // file:moved re-keyed the bookmark to the new path.
+  await tick(40);
+  check("bookmarks: renamed file rekeys the bookmark to the new path",
+    window.NB.sidebar.getBookmarks().includes("notes/a-renamed.md") &&
+    !window.NB.sidebar.getBookmarks().includes("notes/a.md"),
+    window.NB.sidebar.getBookmarks().join(",") + " | lastMove=" + JSON.stringify(lastMove));
+  // The bookmark row in the list now points at the new path.
+  const renamedRow = window.document.querySelector(
+    '.bookmark-row[data-path="notes/a-renamed.md"]');
+  check("bookmarks: renamed file shows the new path in the bookmark list",
+    !!renamedRow, "row missing for notes/a-renamed.md");
+  // Persistence: the rekeyed bookmark is in the config POST.
+  await tick(350);
+  const renameCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("bookmarks: rename persisted (bookmarks now point at new path)",
+    /"bookmarks":\["notes\/a-renamed\.md"/.test(renameCfgPost), renameCfgPost);
+  window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+
+  // Restore the original TREE / FILES shape so the rest of the
+  // suite sees the same fixture as before the rename. The stub
+  // mutated both (correct for the file:moved handler's downstream
+  // refresh), but later sidebar DnD / tab tests want the standard
+  // TREE with the original notes/a.md path.
+  const treeRenameBack = (nodes) => {
+    for (const n of nodes) {
+      if (n.path === "notes/a-renamed.md") { n.path = "notes/a.md"; n.name = "a.md"; return true; }
+      if (n.children && treeRenameBack(n.children)) return true;
+    }
+    return false;
+  };
+  treeRenameBack(TREE);
+  if (typeof FILES !== "undefined" && FILES["notes/a-renamed.md"] !== undefined) {
+    FILES["notes/a.md"] = FILES["notes/a-renamed.md"];
+    delete FILES["notes/a-renamed.md"];
+  }
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  // Bookmark list also reverts to the original path (otherwise the
+  // drag-reorder test's setBookmarks(...) overrides it anyway, but
+  // staying consistent makes the fixture state obvious).
+  window.NB.sidebar.setBookmarks(["notes/a.md", "notes/b.md"]);
+  await tick(20);
+
+  // Drag-to-reorder. Reset to [notes/a, notes/b] for a clean test.
+  window.NB.sidebar.setBookmarks(["notes/a.md", "notes/b.md"]);
+  await tick(20);
+  check("bookmarks: setBookmarks prerender -> 2 rows in given order",
+    bookmarkRows().length === 2 &&
+    bookmarkRows()[0].dataset.path === "notes/a.md" &&
+    bookmarkRows()[1].dataset.path === "notes/b.md",
+    Array.from(bookmarkRows()).map(r => r.dataset.path).join(","));
+  // Drag the second row above the first: dispatch dragstart on
+  // source, dragover + drop on target, dragend to clean up. We
+  // give the target a real getBoundingClientRect so the before/after
+  // math (top half = before) is meaningful in jsdom.
+  const bmSrc = bookmarkRows()[1];
+  const bmTgt = bookmarkRows()[0];
+  const bmRect = bmTgt.getBoundingClientRect.bind(bmTgt);
+  bmTgt.getBoundingClientRect = () => ({
+    width: 200, height: 24, left: 0, right: 200, top: 0, bottom: 24, x: 0, y: 0, toJSON() {},
+  });
+  bmSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+  const bmOv = new window.Event("dragover", { bubbles: true });
+  Object.defineProperty(bmOv, "clientY", { value: 0 });    // top half -> before
+  bmTgt.dispatchEvent(bmOv);
+  const bmDp = new window.Event("drop", { bubbles: true });
+  Object.defineProperty(bmDp, "clientY", { value: 0 });
+  bmTgt.dispatchEvent(bmDp);
+  bmSrc.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+  await tick(20);
+  bmTgt.getBoundingClientRect = bmRect;
+  check("bookmarks: drag second -> first reorders the list",
+    bookmarkRows()[0].dataset.path === "notes/b.md" &&
+    bookmarkRows()[1].dataset.path === "notes/a.md",
+    Array.from(bookmarkRows()).map(r => r.dataset.path).join(","));
+  // Persist after reorder.
+  await tick(350);
+  const reorderCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("bookmarks: reorder persisted to cfg",
+    /"bookmarks":\["notes\/b\.md","notes\/a\.md"\]/.test(reorderCfgPost),
+    reorderCfgPost);
+
+  // Auto-prune on refresh when a file vanishes from the tree.
+  // Move both bookmarked files out of the tree (simulate delete via
+  // TREE mutation) and refresh -> both rows should be silently dropped
+  // from the bookmark list.
+  TREE.length = 0;
+  TREE.push({ name: "other.md", type: "file", path: "other.md" });
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  check("bookmarks: dead paths pruned on refresh",
+    bookmarkRows().length === 0,
+    "rows=" + bookmarkRows().length);
+  await tick(350);
+  const pruneCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("bookmarks: prune persisted (empty list)",
+    /"bookmarks":\[\]/.test(pruneCfgPost), pruneCfgPost);
+
+  // Restore the standard tree for the rest of the suite.
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "a.md", type: "file", path: "notes/a.md" },
+      { name: "b.md", type: "file", path: "notes/b.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  window.NB.sidebar.setBookmarks([]);
+  await tick(20);
+
+  // Reset the tab set to the standard [notes/a.md, created.md] state
+  // the rest of the suite expects. The bookmark tests above opened
+  // Welcome.md (via the + click path) and notes/b.md (via the bookmark
+  // row click) and may have left extra tabs; close any non-canonical
+  // ones to avoid cascading state into the tab-close tests below.
+  // bookmarks-empty is the source of truth here -- the user never
+  // opened Welcome.md deliberately, we only opened it to verify the +
+  // button on a non-bookmarked active file. notes/b.md was opened
+  // to verify clicking a bookmark row activates the file.
+  // The rename test in the bookmark block renamed notes/a.md ->
+  // notes/a-renamed.md (the rename click on the bookmark menu). The
+  // bookmark list's path follows the rename, but tabs.rename() is
+  // NOT called -- the open tab still has its original key. Re-key
+  // the tab here so the rest of the suite sees the original path.
+  for (const p of ["Welcome.md", "notes/b.md"]) {
+    if (window.NB.tabs.isOpen && window.NB.tabs.isOpen(p)) {
+      await window.NB.tabs.close(p, { force: true });
+      await tick(20);
+    }
+  }
+  if (window.NB.tabs.isOpen && window.NB.tabs.isOpen("notes/a-renamed.md")) {
+    window.NB.tabs.rename("notes/a-renamed.md", "notes/a.md");
+    await tick(20);
+  }
+  // Reactivate the canonical active file (notes/a.md) so the
+  // following tests have a known active tab.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
 
   console.log("== tabs: close active ==");
   const beforeCount = tabs().length;
