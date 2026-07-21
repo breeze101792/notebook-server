@@ -44,6 +44,14 @@ const FILES = {
   "notes/a.md": FILE_A,
   "notes/b.md": FILE_B,
 };
+// Per-file mtimes, mirrored by the /api/file stub. Starts at 1 so the
+// poller's "ifModifiedSince=0" query gets a 200 and seeds the cache;
+// bumps on every POST so a save is visible to the next poll tick.
+const MTIMES = {
+  "Welcome.md": 1,
+  "notes/a.md": 1,
+  "notes/b.md": 1,
+};
 let config = {};
 let promptValue = null;
 const fetchLog = [];
@@ -419,8 +427,20 @@ window.fetch = async (url, opts) => {
   } else if (p === "/api/tree") {
     body = { tree: TREE };
   } else if (p === "/api/file") {
-    if (method === "POST") { const d = JSON.parse(opts.body); FILES[d.path] = d.content; body = { path: d.path, size: d.content.length }; }
-    else { const fp = u.searchParams.get("path"); body = { path: fp, content: FILES[fp] || "", size: (FILES[fp] || "").length }; }
+    if (method === "POST") {
+      const d = JSON.parse(opts.body);
+      FILES[d.path] = d.content;
+      MTIMES[d.path] = (MTIMES[d.path] || 0) + 1;   // bump on every save
+      body = { path: d.path, size: d.content.length, mtime: MTIMES[d.path] };
+    } else {
+      const fp = u.searchParams.get("path");
+      // The poller passes ifModifiedSince=<ts>; honour it so the
+      // polling fallback doesn't fire spurious change events.
+      const since = parseInt(u.searchParams.get("ifModifiedSince") || "0", 10);
+      const cur = MTIMES[fp] || 1;
+      if (cur <= since) { return { status: 304, ok: false, text: async () => "", json: async () => ({}) }; }
+      body = { path: fp, content: FILES[fp] || "", size: (FILES[fp] || "").length, mtime: cur };
+    }
   } else if (p === "/api/search") {
     const q = u.searchParams.get("q") || "";
     const matches = [];
@@ -1610,34 +1630,57 @@ function check(label, cond, extra) {
     "viewer=" + $("viewer-content").textContent.slice(0, 60));
 
   // Case 4: watch button lives in the settings modal now. Open the modal,
-  // verify the status line and the toggle button, then click Enable and
-  // check the live watcher starts immediately. Settings are live: the
-  // toggle commits on click, no Apply/Save step.
+  // verify the status line and the toggle button, then click Disable and
+  // check the live watcher stops. Settings are live: the toggle commits
+  // on click, no Apply/Save step.
+  //
+  // File watching auto-starts in the polling fallback on app load
+  // (so external change detection is on by default). The status text
+  // is "Polling (5s)" and the button reads "Disable" until the user
+  // turns it off; after that the status is "Watching off" in the
+  // warning color and the button reads "Enable" again.
   window.NB.settings.open();
   await tick(20);
   check("watch: settings modal opens", window.NB.settings.isOpen());
   const statusEl = $("settings-watch-status");
   const watchBtn = $("settings-watch-toggle");
   check("watch: status element exists", !!statusEl);
-  check("watch: status starts as 'Watching off'", /off/i.test(statusEl.textContent),
-    statusEl.textContent);
-  check("watch: button starts as 'Enable' (live state)", watchBtn.textContent === "Enable",
+  check("watch: status starts as 'Polling (5s)' (auto-started fallback)",
+    /polling/i.test(statusEl.textContent), statusEl.textContent);
+  check("watch: status starts in the watch-on color class",
+    statusEl.classList.contains("watch-on") &&
+    !statusEl.classList.contains("watch-off"),
+    [...statusEl.classList].join(" "));
+  check("watch: button starts as 'Disable' (live state)", watchBtn.textContent === "Disable",
     watchBtn.textContent);
-  // Click toggle: the live watcher starts (polling fallback in jsdom).
-  // The status updates immediately, the button label flips to "Disable".
+  // Click toggle: live watcher disables. Status flips to "Watching off"
+  // in the warning color, button back to "Enable".
   watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
-  check("watch: toggle click -> status reports active",
-    /watching|polling/i.test(statusEl.textContent), statusEl.textContent);
-  check("watch: toggle click -> button is 'Disable' (matches live state)",
-    watchBtn.textContent === "Disable", watchBtn.textContent);
-  // Click again: live watcher disables.
-  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(40);
-  check("watch: toggle click again -> status reports off",
+  check("watch: toggle click -> status reports off",
     /off/i.test(statusEl.textContent), statusEl.textContent);
-  check("watch: toggle click again -> button is 'Enable'",
+  check("watch: toggle click -> status flips to watch-off color class",
+    statusEl.classList.contains("watch-off") &&
+    !statusEl.classList.contains("watch-on"),
+    [...statusEl.classList].join(" "));
+  check("watch: toggle click -> button is 'Enable'",
     watchBtn.textContent === "Enable", watchBtn.textContent);
+  // Click again: re-enables (polling fallback in jsdom, since
+  // FileSystemObserver isn't available).
+  watchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  check("watch: toggle click again -> status reports active",
+    /watching|polling/i.test(statusEl.textContent), statusEl.textContent);
+  check("watch: toggle click again -> status is back in watch-on color",
+    statusEl.classList.contains("watch-on"),
+    [...statusEl.classList].join(" "));
+  check("watch: toggle click again -> button is 'Disable'",
+    watchBtn.textContent === "Disable", watchBtn.textContent);
+  // NB.watcher.state() exposes the coarse "off|polling|watching" for
+  // any future UI that wants more detail than the binary isActive().
+  check("watch: state() reports 'polling' (native observer not in jsdom)",
+    window.NB.watcher.state() === "polling",
+    window.NB.watcher.state());
   window.NB.settings.close();
   await tick(10);
 

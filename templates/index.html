@@ -197,14 +197,18 @@
             <h3>File watching</h3>
             <p class="settings-help">
               Get notified when files in your notebook are changed by another program
-              (vim, a sync tool, a different browser tab, etc.).
+              (vim, a sync tool, a different browser tab, etc.). Detection runs by
+              default using a 5-second poll. Click <em>Enable</em> below to upgrade
+              to the native folder observer, which is push-based and uses no
+              network -- the browser will ask for permission to read your notebook
+              folder.
             </p>
             <div class="settings-row">
               <span class="settings-label">Status</span>
-              <span id="settings-watch-status" class="settings-value">—</span>
+              <span id="settings-watch-status" class="settings-value settings-watch-status">—</span>
             </div>
             <div class="settings-row">
-              <span class="settings-label"></span>
+              <span class="settings-label">Native observer</span>
               <button id="settings-watch-toggle" class="settings-action">Enable</button>
             </div>
             <h3>Keyboard</h3>

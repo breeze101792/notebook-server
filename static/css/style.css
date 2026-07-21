@@ -13,6 +13,8 @@
   --outline-active: #7c9cff;
   --code-bg: #14151a;
   --danger: #ff6b6b;
+  --ok: #5fd49a;       /* "watching is on" -- green for the active state */
+  --warn: #f3b454;     /* "watching is off" -- amber draws the eye */
   --sidebar-width: 240px;
   --outline-width: 220px;
   --topbar-h: 46px;
@@ -37,6 +39,8 @@ body[data-theme="light"] {
   --outline-active: #2f5fd0;
   --code-bg: #f0f2f5;
   --danger: #c0392b;
+  --ok: #2faa66;
+  --warn: #c9831d;
 }
 
 * { box-sizing: border-box; }
@@ -675,6 +679,27 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   margin: 4px 0 8px;
 }
 .settings-value { color: var(--fg); font-size: .93rem; }
+/* File-watching status indicator in Settings. The text is always
+ * shown; the color and a small leading dot signal whether external
+ * change detection is actually running, so the user never has to
+ * wonder whether the feature is on. */
+.settings-watch-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.settings-watch-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.settings-watch-status.watch-on  { color: var(--ok); }
+.settings-watch-status.watch-off { color: var(--warn); }
 .settings-mono {
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: .86rem;

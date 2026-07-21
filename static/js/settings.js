@@ -327,12 +327,22 @@
   function refreshWatchStatus() {
     if (!NB.watcher) {
       watchStatusEl.textContent = "Unavailable";
+      watchStatusEl.classList.remove("watch-on", "watch-off");
       watchToggleBtn.textContent = "Enable";
       watchToggleBtn.disabled = true;
       return;
     }
     const active = NB.watcher.isActive();
     watchStatusEl.textContent = NB.watcher.describe();
+    // Color-code the status so the user can never be unsure whether
+    // external change detection is on. Both the native observer and
+    // the polling fallback count as "on" (green); only the truly
+    // off state gets the warning color.
+    watchStatusEl.classList.toggle("watch-on",  active);
+    watchStatusEl.classList.toggle("watch-off", !active);
+    // "Enable" / "Disable" stays the same shape as before -- the user
+    // can always turn detection on or off. The only difference vs.
+    // the old opt-in model is that it now starts ON by default.
     watchToggleBtn.textContent = active ? "Disable" : "Enable";
     watchToggleBtn.disabled = false;
   }
