@@ -400,6 +400,38 @@ window.HTMLElement.prototype.scrollIntoView = function () {};
 window.prompt = () => promptValue;
 window.confirm = () => true;
 window.alert = () => {};
+// Clipboard stub. jsdom doesn't ship navigator.clipboard. We
+// record the last write so tests can assert what got copied, and
+// expose a __fail flag for tests that want to exercise the
+// fallback path.
+const __clipboard = { lastText: null, writes: 0, failNext: false };
+if (!window.navigator.clipboard) {
+  Object.defineProperty(window.navigator, "clipboard", {
+    configurable: true,
+    value: {
+      writeText: async (text) => {
+        if (__clipboard.failNext) {
+          __clipboard.failNext = false;
+          throw new Error("clipboard permission denied (stub)");
+        }
+        __clipboard.lastText = text;
+        __clipboard.writes++;
+      },
+    },
+  });
+} else {
+  // If jsdom ever ships clipboard, wrap it so the recording still
+  // works without a separate API.
+  const orig = window.navigator.clipboard;
+  window.navigator.clipboard = {
+    writeText: async (text) => {
+      if (__clipboard.failNext) { __clipboard.failNext = false; throw new Error("forced fail"); }
+      __clipboard.lastText = text;
+      __clipboard.writes++;
+      if (orig && orig.writeText) return orig.writeText(text);
+    },
+  };
+}
 // matchMedia stub: report a dark system preference (auto -> dark).
 window.matchMedia = () => ({
   matches: false, media: "", onchange: null,
@@ -648,6 +680,110 @@ function check(label, cond, extra) {
     Array.from(items).every(i => i.dataset.level), "first=" + (items[0] && items[0].dataset.level));
   const codeEl = window.document.querySelector("#viewer pre code");
   check("code block highlighted", !!codeEl && /hljs/.test(codeEl.innerHTML), codeEl && codeEl.className);
+
+  console.log("== code block Copy button ==");
+  // The Copy button is appended to each <pre> in view mode. By the
+  // time the viewer test runs, the seeded Welcome.md (or notes/a.md)
+  // has been rendered; we just look at whichever pre is currently
+  // visible in the viewer.
+  const viewerPre = () => window.document.querySelector("#viewer pre");
+  const viewerCopyBtn = () => viewerPre() && viewerPre().querySelector(".code-copy-btn");
+  check("code block: copy button appended to <pre>",
+    !!viewerCopyBtn(), "no .code-copy-btn on the rendered <pre>");
+  check("code block: copy button starts as 'Copy'",
+    viewerCopyBtn() && viewerCopyBtn().textContent === "Copy",
+    viewerCopyBtn() && viewerCopyBtn().textContent);
+  // Hidden by default (CSS opacity:0). The test harness doesn't
+  // link style.css into the jsdom document, so we read the file
+  // directly and grep for the rule. This guards against the
+  // "I added the button but forgot the opacity:0" regression
+  // without depending on a layout engine.
+  const cssText = read("static/css/style.css");
+  check("code block: copy button hidden by default (CSS opacity:0 rule)",
+    /\.code-copy-btn\s*\{[^}]*opacity:\s*0\b/.test(cssText),
+    "no .code-copy-btn{opacity:0} rule in style.css");
+  // Clicking the button writes the raw code (pre-hljs) to the
+  // clipboard stub, flips the label to 'Copied!', and triggers a
+  // shared toast via NB.app.notify.
+  const clipboardBefore = __clipboard.writes;
+  viewerCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("code block: click writes to navigator.clipboard",
+    __clipboard.writes === clipboardBefore + 1, "writes=" + __clipboard.writes);
+  check("code block: clipboard receives the raw code (not post-hljs markup)",
+    typeof __clipboard.lastText === "string" &&
+    __clipboard.lastText.length > 0 &&
+    !/<span\s+class="hljs/.test(__clipboard.lastText),
+    "len=" + (__clipboard.lastText || "").length + " | first120=" + JSON.stringify((__clipboard.lastText || "").slice(0, 120)));
+  check("code block: click flips label to 'Copied!'",
+    viewerCopyBtn() && viewerCopyBtn().textContent === "Copied!",
+    viewerCopyBtn() && viewerCopyBtn().textContent);
+  check("code block: 'Copied!' state has .copied class",
+    viewerCopyBtn() && viewerCopyBtn().classList.contains("copied"),
+    viewerCopyBtn() && viewerCopyBtn().className);
+  // The shared toast also fires. NB.app.notify is the single-line
+  // toast helper; the toast element gets a .show class on each call.
+  const toast = window.document.querySelector(".toast");
+  check("code block: shared toast appears with 'Copied to clipboard'",
+    !!toast && toast.classList.contains("show") &&
+    /Copied/.test(toast.textContent),
+    toast ? "textContent=" + JSON.stringify(toast.textContent) + " class=" + toast.className : "no toast");
+  // After ~1.2s the label reverts to 'Copy'. The notify timeout
+  // default is 1500ms; wait a touch longer to be safe.
+  await tick(1500);
+  check("code block: label reverts to 'Copy' after timeout",
+    viewerCopyBtn() && viewerCopyBtn().textContent === "Copy",
+    viewerCopyBtn() && viewerCopyBtn().textContent);
+  check("code block: .copied class removed after timeout",
+    viewerCopyBtn() && !viewerCopyBtn().classList.contains("copied"),
+    viewerCopyBtn() && viewerCopyBtn().className);
+
+  // Clipboard failure path: stub a write error, click again, expect
+  // the button to NOT flip and the notify toast to show 'Copy failed'.
+  // Reset clipboard state and arm a one-shot failure.
+  __clipboard.failNext = true;
+  viewerCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("code block: clipboard failure leaves label as 'Copy'",
+    viewerCopyBtn() && viewerCopyBtn().textContent === "Copy",
+    viewerCopyBtn() && viewerCopyBtn().textContent);
+  const failToast = window.document.querySelector(".toast");
+  check("code block: clipboard failure shows 'Copy failed' toast",
+    !!failToast && /Copy failed/.test(failToast.textContent),
+    failToast ? "textContent=" + JSON.stringify(failToast.textContent) : "no toast");
+
+  // Edit-mode live preview must NOT get a Copy button. The viewer
+  // render() path takes `content` as an argument for live preview
+  // and the button is only attached in the no-content (view mode)
+  // branch. Enter edit mode + change the editor; the live preview
+  // re-renders into #viewer-content, and the re-rendered pre must
+  // have no copy button.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  window.NB.viewer.startEdit();
+  await tick(20);
+  // Type into the editor -- this fires NB.cmEditor.onChange ->
+  // scheduleLivePreview -> render(content), which is the live
+  // preview path. After the debounce, the pre in #viewer-content
+  // should be a re-render that has no copy button.
+  cmSetValue("```py\nprint('live preview')\n```\n");
+  await tick(220);
+  const livePres = Array.from(window.document.querySelectorAll("#viewer-content pre"));
+  const liveHasBtn = livePres.some(p => p.querySelector(".code-copy-btn"));
+  check("code block: edit-mode live preview has no Copy button",
+    !liveHasBtn,
+    "pres=" + livePres.length + " any-with-btn=" + liveHasBtn);
+  // Restore the original content + leave edit mode so the rest of
+  // the suite sees the original file. cmSetValue uses the same
+  // mechanism as a user edit, which leaves the cache dirty.
+  // closeEdit() discards the editor content (revert to last saved),
+  // and the window.confirm stub returns true. This leaves the
+  // cache's savedContent untouched, so the next view-mode render
+  // shows the original file.
+  cmSetValue("dirty edit that will be discarded");
+  await tick(40);
+  window.NB.viewer.closeEdit();
+  await tick(40);
 
   console.log("== file tabs ==");
   const barEl = window.document.getElementById("tab-bar");

@@ -559,10 +559,88 @@
 
   document.addEventListener("DOMContentLoaded", boot);
 
+  /* --- shared helpers ----------------------------------------------- */
+  /* notify(message)
+   *   A tiny toast used by ad-hoc "Copied!" / "Saved!" style feedback.
+   *   Reuses a single DOM element so we never pile up toasts; the
+   *   element lives at a fixed spot in the viewport (bottom-right),
+   *   is hidden by default, and animates a fade-in on each call.
+   *
+   *   Future: this is the seed of a notification system. If more
+   *   modules start needing toasts, this is the place to grow the
+   *   API (multi-toast queue, action buttons, etc.) -- until then
+   *   a single-element "last write wins" is plenty. */
+  let toastEl = null;
+  let toastTimer = null;
+  function notify(message, ms) {
+    if (!toastEl) {
+      toastEl = document.createElement("div");
+      toastEl.className = "toast";
+      toastEl.setAttribute("role", "status");
+      toastEl.setAttribute("aria-live", "polite");
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = message;
+    // Force a reflow between successive identical messages so the
+    // CSS transition re-runs and the toast visibly re-appears.
+    toastEl.classList.remove("show");
+    void toastEl.offsetWidth;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove("show");
+    }, ms || 1500);
+  }
+
+  /* copyToClipboard(text)
+   *   Modern path: navigator.clipboard.writeText. Works in secure
+   *   contexts (https, localhost) which covers the app's default
+   *   bind of 127.0.0.1. Returns a Promise that resolves on success.
+   *   Fallback: a hidden <textarea> + document.execCommand("copy").
+   *   That second path is the universal path -- it works in insecure
+   *   contexts and older browsers where the Clipboard API is gated
+   *   or missing. The fallback is the deprecated execCommand API,
+   *   but the deprecation is one of those "still works everywhere"
+   *   ones; we use it only when the modern API isn't available.
+   *
+   *   Throws on the rare path where both fail (e.g. permissions
+   *   denied in a sandboxed iframe with no DOM) so callers can
+   *   surface a clear error instead of silently swallowing it. */
+  async function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch (_) {
+      // Fall through to the textarea path. The Clipboard API can
+      // throw (permission denied, user gesture required) -- the
+      // textarea+execCommand path doesn't need a user gesture, so
+      // it covers those cases.
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand && document.execCommand("copy"); }
+    catch (_) { ok = false; }
+    document.body.removeChild(ta);
+    if (!ok) throw new Error("Clipboard write failed");
+  }
+
   /* Tiny façade so other modules (settings.js) can read live config and
    * trigger a persist without reaching into our module-scoped state. */
   NB.app = {
     getCfg: () => cfg,
+    // Shared helpers used by ad-hoc UX (code-block Copy button, etc.).
+    // notify() is the single-line toast; copyToClipboard() is the
+    // Clipboard-API-with-fallback writer.
+    notify, copyToClipboard,
     setTheme: (pref) => { applyTheme(pref); persistConfig(); },
     setFontSize: (name) => { applyFontSize(name); persistConfig(); },
     getFontSize: () => cfg.fontSize || "medium",
