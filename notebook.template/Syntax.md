@@ -138,17 +138,6 @@ pie title Where the bytes go
   "Tests" : 6
 ```
 
-### Broken diagram → error fallback
-
-This block is intentionally invalid Mermaid. The notebook replaces it
-with a red-bordered "Mermaid error:" header plus the source in a
-styled `<pre>`, so you can see the error and copy the source back
-into the editor to fix it.
-
-```mermaid
-this is not valid mermaid syntax at all
-```
-
 ---
 
 ## File tree + context menu (left panel)
