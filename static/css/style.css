@@ -676,8 +676,50 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 .settings-note {
   font-size: .86rem;
   color: var(--fg-muted);
-  margin: 4px 0 8px;
+  margin-top: 4px;
 }
+/* VIM initial script (vimrc) row. The default .settings-row is a
+ * horizontal flex (label | control), but the vimrc needs a stacked
+ * layout: label on top, textarea filling the rest of the row, then
+ * the Save button + status line BELOW the textarea (not next to it
+ * -- the user said the inline button looked weird). Override
+ * flex-direction to column so the label, the .vimrc-body wrapper,
+ * and the row's child .settings-vimrc-actions all stack vertically.
+ * The label width no longer needs the 130px column the other rows
+ * use, so it falls back to its natural width on its own line. */
+.settings-vimrc {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-vimrc .settings-label { flex: 0 0 auto; }
+.settings-vimrc-area {
+  flex: 0 0 auto;
+  min-height: 0;
+  width: 100%;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: .86rem;
+  line-height: 1.45;
+  padding: 8px 10px;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+}
+.settings-vimrc-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* No top margin: the parent column already gaps children by 6px. */
+  margin: 0;
+}
+.settings-vimrc-status {
+  font-size: .85rem;
+  color: var(--fg-muted);
+}
+.settings-vimrc-status.ok    { color: var(--accent); }
+.settings-vimrc-status.error { color: var(--warn); }
 .settings-value { color: var(--fg); font-size: .93rem; }
 /* File-watching status indicator in Settings. The text is always
  * shown; the color and a small leading dot signal whether external

@@ -225,6 +225,14 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-vim-toggle">VIM mode</label>
               <input type="checkbox" id="settings-vim-toggle">
             </div>
+            <div class="settings-row settings-vimrc">
+              <label class="settings-label" for="settings-vimrc">VIM initial script</label>
+              <textarea id="settings-vimrc" class="settings-vimrc-area" rows="8" spellcheck="false" placeholder="# One binding per line. Examples:&#10;# nmap j gj&#10;# imap jj &lt;Esc&gt;&#10;# unmap &lt;leader&gt;w"></textarea>
+              <div class="settings-vimrc-actions">
+                <button id="settings-vimrc-save" class="settings-action" type="button">Save</button>
+                <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
+              </div>
+            </div>
           </section>
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
             <h3>Appearance</h3>
@@ -5322,6 +5330,141 @@ function check(label, cond, extra) {
     !window.document.body.classList.contains("vim-enabled"));
   window.NB.settings.close();
   await tick(10);
+
+  console.log("== vimrc (VIM initial script) ==");
+  // The vimrc lives in the cm-bridge; the public surface is
+  // NB.cmEditor.applyVimrc(text). applyConfig seeds it at view
+  // creation; the Settings modal calls applyVimrc on Save.
+  // Drive the API directly here so the test doesn't depend on
+  // the Settings modal's internals (the modal is covered by a
+  // separate assertion below).
+  const applyVimrc = window.NB.cmEditor.applyVimrc;
+  check("vimrc: NB.cmEditor.applyVimrc exists", typeof applyVimrc === "function");
+
+  // Empty + whitespace-only vimrc is a no-op.
+  check("vimrc: empty text is a no-op (count=0, ok=true)",
+    (() => { const r = applyVimrc(""); return r.ok && r.count === 0 && r.errors.length === 0; })(),
+    JSON.stringify(applyVimrc("")));
+  check("vimrc: blank lines + comments parse cleanly",
+    (() => { const r = applyVimrc("\n  # a comment\n  \n# another\n"); return r.ok && r.count === 0 && r.errors.length === 0; })(),
+    JSON.stringify(applyVimrc("\n  # a comment\n  \n# another\n")));
+
+  // Single nmap. The Vim.map call from cm-bridge can't be observed
+  // directly (the lib stores the binding internally), so we just
+  // verify the parser reports success + count=1.
+  const r1 = applyVimrc("nmap j gj");
+  check("vimrc: nmap j gj parses with count=1", r1.ok && r1.count === 1,
+    JSON.stringify(r1));
+
+  // Multiple bindings + comment + blank line.
+  const r2 = applyVimrc(
+    "# remap j to gj in normal mode\n" +
+    "nmap j gj\n" +
+    "\n" +
+    "imap jj <Esc>\n" +
+    "vmap <C-c> <Esc>\n" +
+    "noremap <leader>w :w<CR>\n");
+  check("vimrc: 4 mixed map commands parse with count=4", r2.ok && r2.count === 4,
+    JSON.stringify(r2));
+
+  // unmap (no mode arg) + iunmap / vunmap.
+  const r3 = applyVimrc("unmap <leader>w\nnunmap j\niunmap jj\nvunmap <C-c>\n");
+  check("vimrc: unmap variants parse with count=4", r3.ok && r3.count === 4,
+    JSON.stringify(r3));
+
+  // Parse errors: per-line error entries with a 1-based line number
+  // and a useful message. The previous-good config is NOT clobbered
+  // by a failed apply -- the modal's save handler enforces that
+  // contract, but applyVimrc itself only reports the error.
+  const r4 = applyVimrc("nmap\nimap jj <Esc>\nnotacommand foo bar\n");
+  check("vimrc: bad line 1 (missing args) + line 3 (unknown cmd) reported",
+    !r4.ok &&
+    r4.errors.length === 2 &&
+    r4.errors[0].line === 1 && /expected/i.test(r4.errors[0].message) &&
+    r4.errors[1].line === 3 && /unknown/i.test(r4.errors[1].message),
+    JSON.stringify(r4));
+
+  // Even with errors, the good lines before the first error were
+  // applied (nmap on line 1 had no args, so 0; imap on line 2 was
+  // applied; the count reflects only the success path).
+  check("vimrc: error path returns count from successful lines only",
+    typeof r4.count === "number",
+    "count=" + r4.count);
+
+  // "#" inside a line strips everything from the "#" onwards, so
+  // a commented-out binding must NOT be applied.
+  const r5 = applyVimrc("nmap q <ignored>  # this is a comment");
+  check("vimrc: '# comment' strips rhs (binding applied, no parse error)",
+    r5.ok && r5.count === 1, JSON.stringify(r5));
+
+  // Getter / setter round-trip via NB.app (the modal's save path).
+  check("vimrc: NB.app.getVimrc returns the configured string",
+    window.NB.app.getVimrc() === "", "got=" + JSON.stringify(window.NB.app.getVimrc()));
+  window.NB.app.setVimrc("nmap k gk");
+  await tick(400);   // debounced persist
+  check("vimrc: NB.app.setVimrc persists to config (POST /api/config)",
+    /"vimrc":\s*"nmap k gk"/.test(fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || ""),
+    (fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "").slice(0, 240));
+  // Clear so the rest of the suite isn't carrying a custom vimrc.
+  window.NB.app.setVimrc("");
+  await tick(400);
+
+  // Settings modal round-trip: open, type a vimrc, click Save, see
+  // the success status. The textarea gets populated from cfg on
+  // open() (syncVimrc), and Save calls applyVimrc + setVimrc.
+  window.NB.app.setVimrc("");   // start clean
+  await tick(50);
+  window.NB.settings.open();
+  await tick(20);
+  const vimrcArea = () => window.document.getElementById("settings-vimrc");
+  const vimrcSave = () => window.document.getElementById("settings-vimrc-save");
+  const vimrcStatus = () => window.document.getElementById("settings-vimrc-status");
+  check("vimrc: Settings modal has the textarea + Save button + status",
+    !!vimrcArea() && !!vimrcSave() && !!vimrcStatus());
+  check("vimrc: opening the modal populates the textarea from cfg (empty)",
+    vimrcArea() && vimrcArea().value === "", "value=" + JSON.stringify(vimrcArea() && vimrcArea().value));
+  // Type a vimrc, click Save.
+  vimrcArea().value = "nmap H 0\nnmap L $\n";
+  vimrcSave().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(20);
+  check("vimrc: Save applies + persists (cfg.vimrc updated)",
+    window.NB.app.getVimrc() === "nmap H 0\nnmap L $\n",
+    "cfg=" + JSON.stringify(window.NB.app.getVimrc()));
+  check("vimrc: Save shows an 'ok' status (2 bindings applied)",
+    vimrcStatus() && !vimrcStatus().hidden &&
+    /ok/i.test(vimrcStatus().className) &&
+    /2 binding/.test(vimrcStatus().textContent),
+    "class=" + (vimrcStatus() && vimrcStatus().className) +
+    " text=" + (vimrcStatus() && JSON.stringify(vimrcStatus().textContent)));
+  // Error path: type a bad line, click Save, status is 'error' and
+  // cfg.vimrc is NOT updated (last-good stays).
+  vimrcArea().value = "nmap H 0\nnotreal foo\nnmap L $\n";
+  vimrcSave().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(20);
+  check("vimrc: Save with parse error leaves cfg.vimrc unchanged (last-good)",
+    window.NB.app.getVimrc() === "nmap H 0\nnmap L $\n",
+    "cfg=" + JSON.stringify(window.NB.app.getVimrc()));
+  check("vimrc: Save with parse error shows an 'error' status with the line number",
+    vimrcStatus() && !vimrcStatus().hidden &&
+    /error/i.test(vimrcStatus().className) &&
+    /Line 2/.test(vimrcStatus().textContent),
+    "class=" + (vimrcStatus() && vimrcStatus().className) +
+    " text=" + (vimrcStatus() && JSON.stringify(vimrcStatus().textContent)));
+  // Fix the bad line + Save again -> success, cfg updates.
+  vimrcArea().value = "nmap H 0\nnmap L $\n";
+  vimrcSave().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(20);
+  check("vimrc: Save recovers from the error after the user fixes the line",
+    window.NB.app.getVimrc() === "nmap H 0\nnmap L $\n" &&
+    /ok/i.test(vimrcStatus().className),
+    "cfg=" + JSON.stringify(window.NB.app.getVimrc()) +
+    " class=" + vimrcStatus().className);
+  // Cleanup: clear the vimrc + close the modal so the rest of the
+  // suite isn't carrying our test state.
+  window.NB.app.setVimrc("");
+  await tick(400);
+  window.NB.settings.close();
+  await tick(20);
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

@@ -38,6 +38,12 @@
     // module reorders them via drag-and-drop. Missing files (e.g. after
     // a delete) are pruned silently on the next tree refresh.
     bookmarks: [],
+    // User-supplied vimrc: lines of VIM initial script applied to the
+    // editor's vim plugin (cm-bridge.compileVimrc). Empty by default;
+    // populated via the Settings modal's VIM script pane. Stored as
+    // a plain string so the user can hand-edit config.json without
+    // going through the UI.
+    vimrc: "",
     // "compact" / "medium" / "wide". Drives the --settings-modal-width
     // custom property that .settings-modal reads in style.css. Default
     // is "medium" (75vw) -- the modal scales with the viewport so the
@@ -683,6 +689,17 @@
       cfg.bookmarks = Array.isArray(list) ? list.slice() : [];
       persistConfig();
     },
+    // Update the user's vimrc. The Settings modal calls this on save;
+    // applyConfig already pulls cfg.vimrc into the editor when the
+    // view is created (and when setVimMode(true) re-creates the
+    // plugin), so this method just persists. Re-apply is the modal's
+    // responsibility (it can call NB.cmEditor.applyVimrc(text) to
+    // surface parse errors before persisting).
+    setVimrc: (text) => {
+      cfg.vimrc = typeof text === "string" ? text : "";
+      persistConfig();
+    },
+    getVimrc: () => cfg.vimrc || "",
     // Deep link: parse + apply `?file=...&heading=...` URLs.
     // parseDeepLink takes an optional URL string; openDeepLink takes
     // the {file, heading} object it returns. Exposed for tests.

@@ -150,6 +150,18 @@
         }
       });
     } catch (_) { /* already registered -- fine */ }
+    // Apply the user's vimrc (cfg.vimrc) now that the vim plugin
+    // is live. Reading from cfg at view-creation time means a
+    // boot-time vimrc is applied before the first keystroke. The
+    // Settings modal re-applies on save so edits to the vimrc take
+    // effect immediately without recreating the view.
+    if (NB.app && NB.app.getCfg) {
+      const cfg = NB.app.getCfg();
+      if (cfg && typeof cfg.vimrc === "string" && cfg.vimrc.length > 0) {
+        try { compileVimrc(cfg.vimrc); }
+        catch (_) { /* compile errors are surfaced via applyVimrc, not here */ }
+      }
+    }
     // Keep the cursor at its column in visual-line mode (see the long
     // comment on patchVisualLineCursor). getCM returns null when the
     // vim plugin isn't active, so only patch when vim is on.
@@ -163,6 +175,105 @@
     if (!view) return;
     const cm5 = getCm().getCM(view);
     if (cm5) patchVisualLineCursor(cm5);
+  }
+
+  /* --- custom VIM initial script (vimrc) --------------------------- */
+  /* The vendored @replit/codemirror-vim exposes a small vimscript-
+   * shaped API: Vim.map / Vim.unmap / Vim.defineEx. The user's
+   * "initial script" (a Settings-modal textarea persisted as
+   * cfg.vimrc) is parsed here line-by-line and compiled into calls
+   * against that API. We support the common subset of the vimrc
+   * mapping commands (map / nmap / imap / vmap / noremap + the
+   * nnoremap/inoremap/vnoremap variants / unmap + the nunmap/iunmap/
+   * vunmap variants) -- enough for "remap j to gj", "map <leader>w
+   * :w<CR>", and similar everyday tweaks. Ex-command definitions
+   * (`:command`) are intentionally not exposed: the browser host has
+   * no general-purpose vimscript engine, so a custom :foo command
+   * would have nowhere to dispatch to. The parser is permissive on
+   * comments and blank lines so users can annotate their config. */
+  //
+  // Map-command table. Each entry: [parser-token, vim-mode-arg-to-Vim.map].
+  // The `noremap` variants use the same backing call as `map` because
+  // the lib's Vim.map is already non-recursive (Vim.map = Vim.noremap
+  // in this plugin's API). Documenting both names keeps the user's
+  // muscle memory intact.
+  const MAP_CMDS = {
+    map:      "normal",
+    nmap:     "normal",
+    noremap:  "normal",
+    nnoremap: "normal",
+    imap:     "insert",
+    inoremap: "insert",
+    vmap:     "visual",
+    vnoremap: "visual",
+  };
+  const UNMAP_CMDS = {
+    unmap:  null,   // null = all modes
+    nunmap: "normal",
+    iunmap: "insert",
+    vunmap: "visual",
+  };
+
+  /* compileVimrc(text) -> { ok, count, errors }
+   *   Parses the user's vimrc and applies each line. Idempotent in
+   *   the sense that it can be called repeatedly with the same text
+   *   (the lib's map/unmap are no-ops on a duplicate lhs). Returns
+   *   a count of bindings applied + any per-line errors so the
+   *   Settings modal can surface them inline. */
+  function compileVimrc(text) {
+    const result = { ok: true, count: 0, errors: [] };
+    if (text == null || text === "") return result;
+    const lines = String(text).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      // Strip comments (# or ") and trim. Real vim also recognises
+      // `"` as a comment introducer; supporting both means a user
+      // can paste an example from either a shell-script or a vim
+      // tutorial without translating it.
+      const raw = lines[i];
+      const stripped = raw.replace(/(?:#|").*$/, "").trim();
+      if (stripped === "") continue;
+      const parts = stripped.split(/\s+/);
+      const cmd = parts[0].toLowerCase();
+      try {
+        if (MAP_CMDS.hasOwnProperty(cmd)) {
+          // map / nmap / imap / vmap / noremap / nnoremap /
+          // inoremap / vnoremap: <lhs> <rhs>
+          if (parts.length < 3) {
+            throw new Error("expected <lhs> <rhs>");
+          }
+          const lhs = parts[1];
+          const rhs = parts.slice(2).join(" ");
+          const mode = MAP_CMDS[cmd];
+          getCm().Vim.map(lhs, rhs, mode);
+          result.count++;
+        } else if (UNMAP_CMDS.hasOwnProperty(cmd)) {
+          // unmap / nunmap / iunmap / vunmap: <lhs>
+          if (parts.length < 2) {
+            throw new Error("expected <lhs>");
+          }
+          const lhs = parts[1];
+          const mode = UNMAP_CMDS[cmd];   // may be null (= all modes)
+          getCm().Vim.unmap(lhs, mode);
+          // unmap doesn't add a binding, but we count it as a
+          // "handled line" so the success metric reflects that the
+          // user provided a complete, parseable script.
+          result.count++;
+        } else {
+          throw new Error(`unknown command: ${parts[0]}`);
+        }
+      } catch (e) {
+        result.ok = false;
+        // Use the line number the user sees (1-based). We point
+        // at the original line text too so the error message is
+        // self-contained when the modal renders it.
+        result.errors.push({
+          line: i + 1,
+          text: raw,
+          message: (e && e.message) || String(e),
+        });
+      }
+    }
+    return result;
   }
 
   /* Public API. All read-only methods are safe to call when the
@@ -236,8 +347,19 @@
           effects: vimCompartment.reconfigure(vimOn ? cm.vim() : []),
         });
         // The vim plugin (and its CM5 adapter) is (re)created by the
-        // reconfigure above, so (re)apply the visual-line cursor fix.
-        if (vimOn) patchVimAdapter();
+        // reconfigure above, so (re)apply the visual-line cursor fix
+        // and re-apply the user's vimrc (the new plugin instance
+        // starts with no user bindings).
+        if (vimOn) {
+          patchVimAdapter();
+          if (NB.app && NB.app.getCfg) {
+            const cfg = NB.app.getCfg();
+            if (cfg && typeof cfg.vimrc === "string" && cfg.vimrc.length > 0) {
+              try { compileVimrc(cfg.vimrc); }
+              catch (_) { /* see applyVimrc */ }
+            }
+          }
+        }
       }
     },
     /** Focus the editor. Creates the view on first call. */
@@ -250,6 +372,9 @@
     view() { return view; },
     /** Return the editor's scroll container (the .cm-scroller el). */
     scrollDOM() { return view ? view.scrollDOM : null; },
+    /** Parse + apply a user-supplied vimrc. Returns
+     *  { ok, count, errors } so the caller can show the result. */
+    applyVimrc(text) { return compileVimrc(text); },
     /** Test-only: tear down and re-create. Resets the host element
      *  + the onChange registry. The next access will re-create. */
     _reset() {

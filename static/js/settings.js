@@ -42,6 +42,9 @@
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
   const vimToggleEl = document.getElementById("settings-vim-toggle");
+  const vimrcEl     = document.getElementById("settings-vimrc");
+  const vimrcSaveEl = document.getElementById("settings-vimrc-save");
+  const vimrcStatus = document.getElementById("settings-vimrc-status");
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
 
@@ -152,6 +155,7 @@
     // current state, not whatever the HTML defaults to.
     syncRadios();
     syncVimToggle();
+    syncVimrc();
     refreshWatchStatus();
     refreshAuthState();
     renderShortcuts();
@@ -363,6 +367,67 @@
     vimToggleEl.addEventListener("change", () => {
       const on = vimToggleEl.checked;
       if (NB.app && NB.app.setVimMode) NB.app.setVimMode(on);
+    });
+  }
+
+  /* VIM initial script (vimrc). The textarea holds the user's
+   * custom bindings; Save parses + applies them. We keep this
+   * explicit (Save button + status line) instead of the live-
+   * on-edit model used for the radios because the parser can
+   * report line-level errors that the user needs to see, and
+   * a partial / half-typed line shouldn't be applied mid-keystroke.
+   * On success we apply via NB.cmEditor.applyVimrc (which goes
+   * through cm-bridge.compileVimrc) so the user gets the same
+   * result here as at boot. On failure the previous good
+   * config is left in place and the status line shows which
+   * line(s) broke. */
+  function showVimrcStatus(kind, text) {
+    if (!vimrcStatus) return;
+    vimrcStatus.hidden = false;
+    vimrcStatus.className = "settings-vimrc-status " + (kind || "");
+    vimrcStatus.textContent = text;
+  }
+  function syncVimrc() {
+    if (!vimrcEl) return;
+    vimrcEl.value = NB.app && NB.app.getVimrc ? NB.app.getVimrc() : "";
+    // Don't auto-show a status on every open: only after a save
+    // (or if a previous open's save error is still on screen).
+  }
+  if (vimrcSaveEl) {
+    vimrcSaveEl.addEventListener("click", () => {
+      if (!vimrcEl) return;
+      const text = vimrcEl.value;
+      // Try to apply first. If the parser returns ok:false, we
+      // surface the errors and DO NOT persist -- the user's
+      // last-known-good config stays in cfg + active in the
+      // editor. This matches the "Show error, keep last good
+      // config" choice.
+      let result = null;
+      try {
+        if (NB.cmEditor && NB.cmEditor.applyVimrc) {
+          result = NB.cmEditor.applyVimrc(text);
+        }
+      } catch (e) {
+        showVimrcStatus("error", "Save failed: " + (e.message || e));
+        return;
+      }
+      if (!result || !result.ok) {
+        const errs = (result && result.errors) || [];
+        const first = errs[0];
+        const msg = first
+          ? `Line ${first.line}: ${first.message}` +
+            (errs.length > 1 ? ` (+${errs.length - 1} more)` : "")
+          : "Save failed: unknown error";
+        showVimrcStatus("error", msg);
+        return;
+      }
+      // Success: persist the new vimrc.
+      if (NB.app && NB.app.setVimrc) NB.app.setVimrc(text);
+      const n = result.count;
+      showVimrcStatus("ok",
+        n === 0
+          ? "Saved (0 bindings; the editor is unchanged)"
+          : `Saved (${n} binding${n === 1 ? "" : "s"} applied)`);
     });
   }
 

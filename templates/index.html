@@ -230,6 +230,16 @@
               <label class="settings-label" for="settings-vim-toggle">VIM mode</label>
               <input type="checkbox" id="settings-vim-toggle">
             </div>
+            <div class="settings-row settings-vimrc">
+              <label class="settings-label" for="settings-vimrc">VIM initial script</label>
+              <textarea id="settings-vimrc" class="settings-vimrc-area"
+                rows="8" spellcheck="false"
+                placeholder="# One binding per line. Examples:&#10;# nmap j gj&#10;# imap jj &lt;Esc&gt;&#10;# unmap &lt;leader&gt;w"></textarea>
+              <div class="settings-vimrc-actions">
+                <button id="settings-vimrc-save" class="settings-action" type="button">Save</button>
+                <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
+              </div>
+            </div>
           </section>
 
           <!-- Appearance: theme, font size, wallpaper (pattern / color / intensity / scroll). -->
