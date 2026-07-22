@@ -1611,6 +1611,47 @@ body[data-theme="light"] #viewer-content {
 }
 .code-copy-btn:hover { background: var(--accent-soft); color: var(--fg); }
 .code-copy-btn.copied { color: var(--accent); border-color: var(--accent); }
+/* Mermaid diagrams. The .mermaid-container wraps a rendered SVG
+ * produced by the mermaid library; the .mermaid-error block is
+ * the fallback shown when mermaid fails to parse a block. We use
+ * a tinted background to distinguish the diagram area from plain
+ * code blocks (which use --code-bg) and align it with the panel
+ * surface so the diagram "lives" inside the notebook. */
+.mermaid-container {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+  text-align: center;
+}
+.mermaid-container svg { display: inline-block; }
+.mermaid-error {
+  margin: 12px 0;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mermaid-error-head {
+  background: var(--warn);
+  color: var(--bg);
+  font-size: .86rem;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+.mermaid-source {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: .85rem;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
 .markdown-body table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 10px; }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }

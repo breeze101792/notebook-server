@@ -106,6 +106,13 @@
     const resolved = resolveTheme(pref);
     document.body.dataset.theme = resolved;
     applyHljsTheme(resolved);
+    // Mermaid bakes the theme into the rendered SVG, so theme
+    // changes don't propagate to already-rendered diagrams
+    // automatically. Force the next render() to reinitialize
+    // mermaid so the new theme is picked up. The viewer's render
+    // pipeline (which runs on every file open + live preview
+    // tick) will then produce SVGs in the right theme.
+    if (NB.mermaid && NB.mermaid.reinit) NB.mermaid.reinit(resolved);
   }
   if (themeMQ) {
     themeMQ.addEventListener("change", () => {
@@ -113,6 +120,7 @@
         const resolved = resolveTheme("auto");
         document.body.dataset.theme = resolved;
         applyHljsTheme(resolved);
+        if (NB.mermaid && NB.mermaid.reinit) NB.mermaid.reinit(resolved);
       }
     });
   }

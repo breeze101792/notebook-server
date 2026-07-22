@@ -23,6 +23,15 @@ plain `.md` files on disk — no database, no build step.
 - All UI state (open files, widths, theme, recent files) is persisted
   to `config/config.json` and restored on next launch.
 
+## Live demo
+
+Open **`Syntax.md`** in the notebook sidebar — it's a working
+demonstration of every feature above: code blocks with hover-**Copy**
+buttons, Mermaid diagrams (with a broken-block error fallback), the
+heading outline, search, bookmarks, VIM mode, settings, deep links,
+and so on. Each section has a "How to use" note under it that
+tells you where to click to exercise the feature.
+
 ## Quick start
 
 ```bash

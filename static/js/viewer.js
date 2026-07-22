@@ -137,12 +137,27 @@
       h.id = slugify(h.textContent);
     });
 
-    // Syntax highlighting via highlight.js (vendored).
+    // Syntax highlighting via highlight.js (vendored). Highlight
+    // FIRST so the <code> elements get their hljs classes; the
+    // mermaid pass below looks for `code.language-mermaid` and
+    // skips non-mermaid blocks (so the order is fine -- hljs
+    // doesn't touch language-mermaid blocks meaningfully, they
+    // are still rendered as code).
     if (window.hljs) {
       viewerContentEl.querySelectorAll("pre code").forEach(el => {
         try { hljs.highlightElement(el); }
         catch (e) { /* fall back to plain text already in place */ }
       });
+    }
+
+    // Mermaid diagrams: blocks tagged ```mermaid are replaced with
+    // rendered SVGs (or a small error block + source on parse
+    // failure). Runs in BOTH view mode and live preview so the
+    // user sees the diagram update as they type. renderAll awaits
+    // each block sequentially -- mermaid.render is heavy and
+    // Promise.all-ing 10 blocks would spike the main thread.
+    if (NB.mermaid && NB.mermaid.renderAll) {
+      NB.mermaid.renderAll(viewerContentEl);
     }
 
     // Copy buttons on code blocks. Only in view mode (content is

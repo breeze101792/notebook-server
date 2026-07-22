@@ -440,6 +440,37 @@ if (!window.navigator.clipboard) {
     },
   };
 }
+// Mermaid stub. We don't ship the 3.5MB UMD bundle into the test
+// (jsdom can't load the script tag the page would, and the lib
+// needs a real browser DOM). Instead, install a mock that records
+// the calls and returns predictable SVG. Tests that need to
+// control the outcome set __mermaid.failNext / __mermaid.nextSvg
+// before the call.
+const __mermaid = {
+  inits: 0,
+  initThemes: [],
+  renders: 0,             // total render() calls
+  lastSource: null,       // last source string
+  lastId: null,
+  failNext: false,        // throw on the next render()
+  nextSvg: '<svg viewBox="0 0 100 50"><text>mock</text></svg>',
+};
+window.mermaid = {
+  initialize(cfg) {
+    __mermaid.inits++;
+    __mermaid.initThemes.push((cfg && cfg.theme) || "default");
+  },
+  async render(id, source) {
+    __mermaid.renders++;
+    __mermaid.lastId = id;
+    __mermaid.lastSource = source;
+    if (__mermaid.failNext) {
+      __mermaid.failNext = false;
+      throw new Error("Syntax error in diagram (test stub)");
+    }
+    return { svg: __mermaid.nextSvg };
+  },
+};
 // matchMedia stub: report a dark system preference (auto -> dark).
 window.matchMedia = () => ({
   matches: false, media: "", onchange: null,
@@ -580,6 +611,7 @@ evalIn(read("static/vendor/codemirror.bundle.js"));
 evalIn(read("static/js/api.js"));
 evalIn(read("static/js/auth.js"));
 evalIn(read("static/js/cm-bridge.js"));
+evalIn(read("static/js/mermaid.js"));
 evalIn(read("static/js/viewer.js"));
 evalIn(read("static/js/editbar.js"));
 evalIn(read("static/js/watcher.js"));
@@ -792,6 +824,196 @@ function check(label, cond, extra) {
   await tick(40);
   window.NB.viewer.closeEdit();
   await tick(40);
+
+  console.log("== mermaid ==");
+  // The mermaid integration is in static/js/mermaid.js + the
+  // viewer's render() pipeline. The vendored UMD bundle is not
+  // loaded in the test (3.5MB + needs a real browser DOM); the
+  // test relies on the window.mermaid stub installed in the
+  // harness. Render the test by opening a tab that contains a
+  // mermaid block, and watch the .mermaid-container appear.
+  //
+  // Reset the stub state so prior tests' render counts don't
+  // pollute the assertions.
+  __mermaid.inits = 0;
+  __mermaid.renders = 0;
+  __mermaid.initThemes = [];
+  __mermaid.failNext = false;
+  __mermaid.nextSvg = '<svg viewBox="0 0 100 50" width="100" height="50"><text>mock</text></svg>';
+
+  // Open a tab whose body has a mermaid block. We add a synthetic
+  // file to FILES (the test's filesystem stub) and open it; the
+  // viewer renders it through marked, hljs, then NB.mermaid.renderAll.
+  const MERMAID_BODY = "# Notes\n\n" +
+    "Some prose.\n\n" +
+    "```mermaid\n" +
+    "graph TD; A-->B; B-->C;\n" +
+    "```\n\n" +
+    "More prose.\n";
+  FILES["notes/mermaid.md"] = MERMAID_BODY;
+  // Add the file to TREE so the sidebar can refresh and see it.
+  // The existing TREE already has a `notes` dir -- we just need to
+  // give it a child.
+  const notesDir = (TREE.find(n => n.path === "notes"));
+  if (notesDir && !notesDir.children.some(c => c.path === "notes/mermaid.md")) {
+    notesDir.children.push({ name: "mermaid.md", type: "file", path: "notes/mermaid.md" });
+  } else {
+    TREE.push({ name: "mermaid.md", type: "file", path: "notes/mermaid.md" });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+
+  await window.NB.tabs.open("notes/mermaid.md");
+  await tick(60);
+  // The viewer's render() is async (mermaid.renderAll awaits each
+  // block sequentially). Wait a touch longer to be sure.
+  await tick(80);
+  const mermaidContainers = () => window.document.querySelectorAll("#viewer .mermaid-container");
+  const mermaidErrs = () => window.document.querySelectorAll("#viewer .mermaid-error");
+  check("mermaid: NB.mermaid module is loaded", !!window.NB.mermaid);
+  check("mermaid: rendering a ```mermaid block produces a .mermaid-container",
+    mermaidContainers().length === 1,
+    "containers=" + mermaidContainers().length + " errors=" + mermaidErrs().length);
+  check("mermaid: the original <pre> was replaced (no orphan code.language-mermaid left)",
+    window.document.querySelectorAll("#viewer pre > code.language-mermaid").length === 0,
+    "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-mermaid").length);
+  check("mermaid: the container's data-mermaid is 'ok'",
+    mermaidContainers()[0] && mermaidContainers()[0].dataset.mermaid === "ok",
+    "data=" + (mermaidContainers()[0] && mermaidContainers()[0].dataset.mermaid));
+  check("mermaid: the stub's render() was called once with the diagram source",
+    __mermaid.renders === 1 &&
+    /graph TD/.test(__mermaid.lastSource || ""),
+    "renders=" + __mermaid.renders + " source=" + JSON.stringify((__mermaid.lastSource || "").slice(0, 60)));
+  check("mermaid: the stub's render() got a unique id (counter bumps per call)",
+    typeof __mermaid.lastId === "string" && /^mermaid-svg-\d+$/.test(__mermaid.lastId),
+    "id=" + __mermaid.lastId);
+  // The SVG was inserted; check the inner HTML contains it.
+  check("mermaid: container.innerHTML contains the SVG from mermaid.render",
+    mermaidContainers()[0] && /<svg/.test(mermaidContainers()[0].innerHTML),
+    "html=" + (mermaidContainers()[0] && mermaidContainers()[0].innerHTML.slice(0, 80)));
+  // The SVG is responsive: height attr removed, viewBox set so the
+  // aspect ratio is preserved when the pane narrows.
+  const svg = mermaidContainers()[0] && mermaidContainers()[0].querySelector("svg");
+  check("mermaid: svg has its height attribute removed (CSS scales it)",
+    svg && !svg.getAttribute("height"),
+    "height=" + (svg && svg.getAttribute("height")));
+  check("mermaid: svg has a viewBox so the browser preserves the aspect ratio",
+    svg && /^\d+ \d+ \d+ \d+$/.test(svg.getAttribute("viewBox") || ""),
+    "viewBox=" + (svg && svg.getAttribute("viewBox")));
+
+  // Theme sync: mermaid.initialize was called with the current
+  // theme. The default at this point in the test suite is "dark"
+  // (body.dataset.theme was set when applyConfig ran earlier). The
+  // stub records initThemes so we can assert it.
+  check("mermaid: initialize was called at least once",
+    __mermaid.inits >= 1, "inits=" + __mermaid.inits);
+  check("mermaid: initialize was called with the current body theme",
+    __mermaid.initThemes[__mermaid.initThemes.length - 1] === "dark",
+    "initThemes=" + JSON.stringify(__mermaid.initThemes));
+
+  // Theme switch forces a reinit. Apply a new theme, then render
+  // again, and the stub's initialize must have been called with
+  // the new theme.
+  const initsBefore = __mermaid.inits;
+  const lastThemeBefore = __mermaid.initThemes[__mermaid.initThemes.length - 1];
+  // Flip the body theme (the app's applyTheme would normally do
+  // this, but we want to test the reinit path in isolation).
+  window.NB.app.setTheme("light");
+  await tick(40);
+  // The next viewer.render() (e.g. re-open the same file) should
+  // re-initialize mermaid with the new theme.
+  await window.NB.tabs.activate("notes/mermaid.md");
+  await tick(80);
+  check("mermaid: theme switch re-initializes mermaid (inits went up)",
+    __mermaid.inits > initsBefore, "inits before/after: " + initsBefore + "/" + __mermaid.inits);
+  // The new init is recorded AFTER the previous one; the latest
+  // entry should be the new theme.
+  const lastThemeAfter = __mermaid.initThemes[__mermaid.initThemes.length - 1];
+  check("mermaid: latest init theme is the new theme (light)",
+    lastThemeAfter === "light" || lastThemeAfter !== lastThemeBefore,
+    "lastTheme before/after: " + lastThemeBefore + "/" + lastThemeAfter +
+    " all=" + JSON.stringify(__mermaid.initThemes));
+
+  // Error fallback: arm the stub to throw on the next render.
+  // The viewer should replace the <pre> with a .mermaid-error
+  // block (header + source). We swap the file's body to a new
+  // (syntactically invalid) mermaid block; activating it triggers
+  // a fresh render.
+  __mermaid.failNext = true;
+  const BAD_BODY = "```mermaid\nthis is not valid mermaid\n```\n";
+  FILES["notes/bad.md"] = BAD_BODY;
+  TREE.push({ name: "bad.md", type: "file", path: "notes/bad.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/bad.md");
+  await tick(80);
+  check("mermaid: parse error falls back to .mermaid-error block",
+    mermaidErrs().length === 1,
+    "errs=" + mermaidErrs().length);
+  check("mermaid: error block has a 'Mermaid error:' header",
+    mermaidErrs()[0] &&
+    /Mermaid error:/.test(mermaidErrs()[0].querySelector(".mermaid-error-head").textContent),
+    "head=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-error-head").textContent));
+  check("mermaid: error block has a <pre> with the original source",
+    mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-source") &&
+    /not valid mermaid/.test(mermaidErrs()[0].querySelector(".mermaid-source").textContent),
+    "src=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-source").textContent));
+  // The error is multi-line in the stub; we collapse to the first
+  // line for the header. The full message is the first line of
+  // the err.message.
+  check("mermaid: error header is single-line (no newlines in textContent)",
+    mermaidErrs()[0] && !/\n/.test(mermaidErrs()[0].querySelector(".mermaid-error-head").textContent),
+    "head=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-error-head").textContent));
+
+  // Recovery: a subsequent valid render on the same file should
+  // re-create the .mermaid-container. NB.mermaid.renderAll is
+  // idempotent on already-rendered blocks (they no longer match
+  // the `pre > code.language-mermaid` query), so a clean re-render
+  // via viewer.render requires a fresh document. We do that by
+  // re-activating the original (good) file.
+  await window.NB.tabs.activate("notes/mermaid.md");
+  await tick(80);
+  // The error block from the previous render is now replaced by a
+  // .mermaid-container for the good file.
+  const errsAfter = window.document.querySelectorAll("#viewer .mermaid-error");
+  const containersAfter = window.document.querySelectorAll("#viewer .mermaid-container");
+  check("mermaid: re-activating the good file clears the error",
+    errsAfter.length === 0 && containersAfter.length === 1,
+    "errs=" + errsAfter.length + " containers=" + containersAfter.length);
+
+  // NB.mermaid façade surface -- the public methods exist.
+  check("mermaid: NB.mermaid.renderAll is a function", typeof window.NB.mermaid.renderAll === "function");
+  check("mermaid: NB.mermaid.reinit is a function", typeof window.NB.mermaid.reinit === "function");
+  check("mermaid: NB.mermaid.whenReady is a function", typeof window.NB.mermaid.whenReady === "function");
+
+  // CSS sanity: the diagram + error styles exist in the stylesheet.
+  // (We read the file directly -- the test HTML doesn't link
+  // style.css, so we can't use getComputedStyle.)
+  const mermaidCssText = read("static/css/style.css");
+  check("mermaid: .mermaid-container style is in style.css",
+    /\.mermaid-container\s*\{/.test(mermaidCssText),
+    "no .mermaid-container rule");
+  check("mermaid: .mermaid-error style is in style.css",
+    /\.mermaid-error\s*\{/.test(mermaidCssText),
+    "no .mermaid-error rule");
+  check("mermaid: .mermaid-source style is in style.css",
+    /\.mermaid-source\s*\{/.test(mermaidCssText),
+    "no .mermaid-source rule");
+
+  // Cleanup: close the test files we opened so the rest of the
+  // suite isn't carrying them. The TREE / FILES changes stay
+  // (they're the test fixture), but the open tabs should match
+  // the rest-of-suite expectations.
+  await window.NB.tabs.close("notes/bad.md", { force: true });
+  await window.NB.tabs.close("notes/mermaid.md", { force: true });
+  // Re-activate the canonical active file.
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(40);
+  // The theme-switch test above flipped body[data-theme] to
+  // "light". The rest of the suite expects the default ("dark"),
+  // and the footer test asserts that. Reset here.
+  window.NB.app.setTheme("dark");
+  await tick(20);
 
   console.log("== file tabs ==");
   const barEl = window.document.getElementById("tab-bar");
