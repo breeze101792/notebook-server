@@ -441,6 +441,20 @@
     </div>
   </div>
 
+  <!-- Mermaid lightbox overlay: borderless full-screen backdrop with zoom
+       controls. The SVG is cloned into #mermaid-lightbox-body on click;
+       the toolbar floats over the top-right corner. -->
+  <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="mlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="mlb-zoom-pct">100%</span>
+      <button id="mlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+      <button id="mlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="mlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+  </div>
+
   <!-- Vendored libs first (no CDN tags; works offline) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>

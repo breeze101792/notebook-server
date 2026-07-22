@@ -1000,6 +1000,185 @@ function check(label, cond, extra) {
     /\.mermaid-source\s*\{/.test(mermaidCssText),
     "no .mermaid-source rule");
 
+  // --- lightbox: click a diagram to see it full-size ---------------
+  const lightboxOverlay = () => window.document.getElementById("mermaid-lightbox");
+  const lightboxBody    = () => window.document.getElementById("mermaid-lightbox-body");
+  const lightboxClose   = () => window.document.getElementById("mlb-close");
+  check("lightbox: overlay element exists", !!lightboxOverlay());
+  check("lightbox: body element exists", !!lightboxBody());
+  check("lightbox: close button exists", !!lightboxClose());
+  check("lightbox: zoom in button exists",
+    !!document.getElementById("mlb-zoom-in"));
+  check("lightbox: zoom out button exists",
+    !!document.getElementById("mlb-zoom-out"));
+  check("lightbox: fit button exists",
+    !!document.getElementById("mlb-fit"));
+  check("lightbox: zoom percentage indicator exists",
+    !!document.getElementById("mlb-zoom-pct"));
+  check("lightbox: overlay is hidden by default",
+    lightboxOverlay() && lightboxOverlay().hidden,
+    "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
+  check("lightbox: body is empty by default",
+    lightboxBody() && lightboxBody().innerHTML === "",
+    "html=" + JSON.stringify(lightboxBody() && lightboxBody().innerHTML));
+  // The mermaid container from the previous test block is still in
+  // the DOM (we're before the cleanup section). Click it.
+  const mc = mermaidContainers();
+  check("lightbox: mermaid container exists (precondition)", mc.length >= 1,
+    "count=" + mc.length);
+  // Click the container (not a child link). The handler clones the SVG.
+  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(20);
+  check("lightbox: click on .mermaid-container reveals the lightbox",
+    lightboxOverlay() && !lightboxOverlay().hidden,
+    "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
+  check("lightbox: body has an SVG clone",
+    lightboxBody() && lightboxBody().querySelector("svg") &&
+    lightboxBody().querySelector("svg").textContent === "mock",
+    "svg_text=" + (lightboxBody() && lightboxBody().querySelector("svg")
+      ? lightboxBody().querySelector("svg").textContent : "(no svg)"));
+  check("lightbox: clone does not replace the original container (still in DOM)",
+    mermaidContainers().length >= 1,
+    "containers=" + mermaidContainers().length);
+  // The original SVG should still be in the viewer.
+  check("lightbox: original SVG is still in the viewer container",
+    !!mermaidContainers()[0].querySelector("svg"),
+    "original svg=" + !!mermaidContainers()[0].querySelector("svg"));
+  // Starts in fit-to-page mode.
+  check("lightbox: body has svg-fit class on open",
+    lightboxBody().classList.contains("svg-fit"),
+    "classes=" + lightboxBody().className);
+  check("lightbox: zoom display shows 'Fit'",
+    document.getElementById("mlb-zoom-pct").textContent === "Fit",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Zoom in leaves fit mode and shows 100%.
+  window.NB.mermaid.zoomIn();
+  await tick(10);
+  check("lightbox: zoomIn removes svg-fit class",
+    !lightboxBody().classList.contains("svg-fit"),
+    "classes=" + lightboxBody().className);
+  check("lightbox: zoom display shows 100%",
+    document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Zoom in again → 125%.
+  window.NB.mermaid.zoomIn();
+  await tick(10);
+  check("lightbox: zoomIn to 125%",
+    document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Fit to page restores fit mode.
+  window.NB.mermaid.fitToPage();
+  await tick(10);
+  check("lightbox: fitToPage restores svg-fit class",
+    lightboxBody().classList.contains("svg-fit"),
+    "classes=" + lightboxBody().className);
+  check("lightbox: fit display shows 'Fit'",
+    document.getElementById("mlb-zoom-pct").textContent === "Fit",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Zoom out from fit → leaves fit at 100%.
+  window.NB.mermaid.zoomOut();
+  await tick(10);
+  check("lightbox: zoomOut from fit goes to 100%",
+    document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Ctrl++ keyboard shortcut.
+  const ctrlPlus = new window.KeyboardEvent("keydown", {
+    key: "=", ctrlKey: true, bubbles: true, cancelable: true,
+  });
+  window.document.dispatchEvent(ctrlPlus);
+  await tick(10);
+  check("lightbox: Ctrl++ zooms in to 125%",
+    document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Ctrl+- keyboard shortcut.
+  const ctrlMinus = new window.KeyboardEvent("keydown", {
+    key: "-", ctrlKey: true, bubbles: true, cancelable: true,
+  });
+  window.document.dispatchEvent(ctrlMinus);
+  await tick(10);
+  check("lightbox: Ctrl+- zooms out to 100%",
+    document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Mouse wheel zooms.
+  const wheelUp = new window.WheelEvent("wheel", {
+    deltaY: -120, bubbles: true, cancelable: true,
+  });
+  lightboxOverlay().dispatchEvent(wheelUp);
+  await tick(10);
+  check("lightbox: wheel up zooms in to 125%",
+    document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+  // Close via the close button.
+  lightboxClose().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("lightbox: close button hides the overlay",
+    lightboxOverlay() && lightboxOverlay().hidden);
+  check("lightbox: close hides the SVG",
+    lightboxBody() && lightboxBody().innerHTML === "",
+    "html=" + JSON.stringify(lightboxBody() && lightboxBody().innerHTML));
+  // Re-open then close via Escape.
+  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  check("lightbox: re-open precondition (overlay visible)",
+    lightboxOverlay() && !lightboxOverlay().hidden);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("lightbox: Escape closes the overlay",
+    lightboxOverlay() && lightboxOverlay().hidden);
+  // Backdrop click closes.
+  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  check("lightbox: backdrop precondition (overlay visible)",
+    lightboxOverlay() && !lightboxOverlay().hidden);
+  const backdrop = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(backdrop, "target", { value: lightboxOverlay() });
+  lightboxOverlay().dispatchEvent(backdrop);
+  await tick(10);
+  check("lightbox: backdrop click closes the overlay",
+    lightboxOverlay() && lightboxOverlay().hidden);
+  // Click on the SVG itself should NOT close.
+  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  check("lightbox: re-open for svg-click test",
+    lightboxOverlay() && !lightboxOverlay().hidden);
+  const svgInBody = lightboxBody().querySelector("svg");
+  check("lightbox: SVG exists in body (precondition)", !!svgInBody,
+    "svg=" + !!svgInBody);
+  if (svgInBody) {
+    svgInBody.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(10);
+    check("lightbox: click on SVG does NOT close",
+      lightboxOverlay() && !lightboxOverlay().hidden,
+      "hidden=" + lightboxOverlay().hidden);
+  }
+  // Click on the body (blank area around the SVG) should close.
+  const bodyClick = new window.MouseEvent("click", { bubbles: true });
+  Object.defineProperty(bodyClick, "target", { value: lightboxBody() });
+  lightboxBody().dispatchEvent(bodyClick);
+  await tick(10);
+  check("lightbox: click on body blank area closes the overlay",
+    lightboxOverlay() && lightboxOverlay().hidden,
+    "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
+  // Close cleanly for the cleanup section.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("lightbox: final close via Escape",
+    lightboxOverlay() && lightboxOverlay().hidden);
+  // CSS source checks.
+  check("lightbox: .mermaid-lightbox-overlay style is in style.css",
+    /\.mermaid-lightbox-overlay\s*\{/.test(mermaidCssText),
+    "no .mermaid-lightbox-overlay rule");
+  check("lightbox: .mermaid-lightbox-body style is in style.css",
+    /\.mermaid-lightbox-body\s*\{/.test(mermaidCssText),
+    "no .mermaid-lightbox-body rule");
+  check("lightbox: .mlb-btn style is in style.css",
+    /\.mlb-btn\s*\{/.test(mermaidCssText),
+    "no .mlb-btn rule");
+
   // Cleanup: close the test files we opened so the rest of the
   // suite isn't carrying them. The TREE / FILES changes stay
   // (they're the test fixture), but the open tabs should match

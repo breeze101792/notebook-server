@@ -228,5 +228,171 @@
     }
   }
 
-  NB.mermaid = { renderAll, reinit, whenReady };
+  /* --- lightbox: click a rendered diagram to see it full-size -------- */
+  /* openLightbox(svg) clones the SVG into the lightbox overlay and
+   * shows it. We clone the node so the original in the viewer remains
+   * untouched; the clone carries all inline styles, classes, and the
+   * viewBox that mermaid set during rendering. The SVG starts in
+   * "fit-to-page" mode (constrained to the viewport). */
+  let lightboxOpen = false;
+  let zoomLevel = 1;          // 1 = 100%
+  let zoomFit   = true;       // true when constrained to viewport
+
+  function openLightbox(svg) {
+    const overlay = document.getElementById("mermaid-lightbox");
+    const body    = document.getElementById("mermaid-lightbox-body");
+    if (!overlay || !body) return;
+    body.innerHTML = "";
+    const clone = svg.cloneNode(true);
+    clone.removeAttribute("style");
+    body.appendChild(clone);
+    // Start in fit-to-page mode.
+    zoomLevel = 1;
+    zoomFit   = true;
+    body.classList.add("svg-fit");
+    overlay.hidden = false;
+    lightboxOpen = true;
+    document.body.classList.add("mermaid-lightbox-active");
+    updateZoomDisplay();
+  }
+
+  function closeLightbox() {
+    if (!lightboxOpen) return;
+    const overlay = document.getElementById("mermaid-lightbox");
+    if (overlay) overlay.hidden = true;
+    lightboxOpen = false;
+    document.body.classList.remove("mermaid-lightbox-active");
+  }
+
+  /* --- zoom controls ------------------------------------------------- */
+  const ZOOM_STEP = 0.25;
+  const ZOOM_MIN  = 0.25;
+  const ZOOM_MAX  = 5;
+
+  function getSvg() {
+    const body = document.getElementById("mermaid-lightbox-body");
+    return body ? body.querySelector("svg") : null;
+  }
+
+  function applyZoom() {
+    const body = document.getElementById("mermaid-lightbox-body");
+    const svg  = getSvg();
+    if (!body || !svg) return;
+    if (zoomFit) {
+      body.classList.add("svg-fit");
+      svg.style.transform = "none";
+    } else {
+      body.classList.remove("svg-fit");
+      svg.style.transform = "scale(" + zoomLevel + ")";
+    }
+    updateZoomDisplay();
+  }
+
+  function updateZoomDisplay() {
+    const pct = document.getElementById("mlb-zoom-pct");
+    if (!pct) return;
+    pct.textContent = zoomFit ? "Fit" : Math.round(zoomLevel * 100) + "%";
+  }
+
+  function zoomIn() {
+    if (!lightboxOpen) return;
+    if (zoomFit) {
+      // Leave fit mode and start at 100%.
+      zoomFit   = false;
+      zoomLevel = 1;
+    } else {
+      zoomLevel = Math.min(zoomLevel + ZOOM_STEP, ZOOM_MAX);
+    }
+    applyZoom();
+  }
+
+  function zoomOut() {
+    if (!lightboxOpen) return;
+    if (zoomFit) {
+      zoomFit   = false;
+      zoomLevel = 1;
+    }
+    zoomLevel = Math.max(zoomLevel - ZOOM_STEP, ZOOM_MIN);
+    applyZoom();
+  }
+
+  function fitToPage() {
+    if (!lightboxOpen) return;
+    zoomFit   = true;
+    zoomLevel = 1;
+    applyZoom();
+  }
+
+  /* Wire up the lightbox's close/zoom/backdrop/Escape. Called once at
+   * module init. */
+  function wireLightbox() {
+    const overlay = document.getElementById("mermaid-lightbox");
+    if (!overlay) return;
+    // Close button.
+    const closeBtn = document.getElementById("mlb-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeLightbox);
+    // Zoom buttons.
+    const zoomInBtn  = document.getElementById("mlb-zoom-in");
+    const zoomOutBtn = document.getElementById("mlb-zoom-out");
+    const fitBtn     = document.getElementById("mlb-fit");
+    if (zoomInBtn)  zoomInBtn.addEventListener("click", zoomIn);
+    if (zoomOutBtn) zoomOutBtn.addEventListener("click", zoomOut);
+    if (fitBtn)     fitBtn.addEventListener("click", fitToPage);
+    // Backdrop click: close when clicking the overlay background or any
+    // blank area around the SVG (the body container). Clicks on the SVG
+    // itself or the controls toolbar are ignored.
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay || e.target === document.getElementById("mermaid-lightbox-body")) closeLightbox();
+    });
+    // Mouse wheel: zoom in/out over the overlay.
+    overlay.addEventListener("wheel", (e) => {
+      if (!lightboxOpen) return;
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn();
+      else              zoomOut();
+    }, { passive: false });
+  }
+
+  /* Set up delegated click handler on #viewer-content so that clicking
+   * any rendered .mermaid-container opens the lightbox. We skip clicks
+   * on <a> elements inside the SVG (mermaid disables links with
+   * securityLevel:"strict" but be defensive). */
+  function setupClickHandler() {
+    const viewerContent = document.getElementById("viewer-content");
+    if (!viewerContent) return;
+    viewerContent.addEventListener("click", (e) => {
+      const container = e.target.closest(".mermaid-container");
+      if (!container) return;
+      if (e.target.closest("a")) return;
+      const svg = container.querySelector("svg");
+      if (!svg) return;
+      e.stopPropagation();
+      openLightbox(svg);
+    });
+  }
+
+  /* Keyboard: Escape closes the lightbox. Ctrl++ / Ctrl+- for zoom. */
+  document.addEventListener("keydown", (e) => {
+    if (!lightboxOpen) return;
+    if (e.key === "Escape") {
+      closeLightbox();
+      e.preventDefault();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        zoomIn();
+      } else if (e.key === "-") {
+        e.preventDefault();
+        zoomOut();
+      }
+    }
+  });
+
+  wireLightbox();
+  setupClickHandler();
+
+  NB.mermaid = { renderAll, reinit, whenReady,
+    openLightbox, closeLightbox, zoomIn, zoomOut, fitToPage };
 })();
