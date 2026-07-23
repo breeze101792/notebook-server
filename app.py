@@ -22,11 +22,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
 # point the data and config folders elsewhere. Default to the project folders.
 DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebook")
-# Resolve symlinks once at import time so safe_path() can compare against
-# the real boundary. This lets the user symlink DATA_DIR itself (e.g. as a
-# shortcut to a different folder) without every file read failing; only
-# *interior* symlinks that escape DATA_DIR are still blocked.
-DATA_DIR_REAL = os.path.realpath(DATA_DIR)
+
 CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 # Auth lives in its own file so the UI-prefs blob (POSTed by any client) can
@@ -136,14 +132,9 @@ def safe_path(rel_path):
     """Resolve a user-supplied relative path against DATA_DIR safely.
 
     Returns the real absolute path if it stays within DATA_DIR, else None.
-    Blocks `..` traversal, absolute input, and symlink escapes.
-
-    The boundary is DATA_DIR itself: the user can pass any relative path
-    that resolves to a file under DATA_DIR (after following symlinks).
-    If DATA_DIR itself is a symlink (e.g. ``notebook -> notebook.template``),
-    the comparison is done against the resolved path so that legitimate
-    uses of a top-level symlink still work; only *interior* symlinks that
-    would escape the data dir are blocked.
+    Blocks `..` traversal and absolute input. Interior symlinks that point
+    outside the resolved DATA_DIR are allowed (the user created them
+    intentionally via the filesystem).
     """
     if not rel_path or not isinstance(rel_path, str):
         return None
@@ -155,11 +146,13 @@ def safe_path(rel_path):
     if os.path.isabs(rel):
         return None
     candidate = os.path.normpath(os.path.join(DATA_DIR, rel))
-    real = os.path.realpath(candidate)
-    # DATA_DIR_REAL is the realpath-resolved boundary, computed once at
-    # import time. See the assignment below the search constants.
-    if real == DATA_DIR_REAL or real.startswith(DATA_DIR_REAL + os.sep):
-        return real
+    # Boundary check against the unresolved DATA_DIR so that interior
+    # symlinks (e.g. notebook/projects -> /some/other/folder) are not
+    # blocked — the normalized path still starts with DATA_DIR before
+    # symlink resolution.
+    norm_data = os.path.normpath(DATA_DIR)
+    if candidate == norm_data or candidate.startswith(norm_data + os.sep):
+        return os.path.realpath(candidate)
     return None
 
 
