@@ -69,7 +69,7 @@
   };
 
   // Width used while a sidebar is collapsed (a thin clickable strip).
-  const COLLAPSED_W = 24;
+  const COLLAPSED_W = 12;
 
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
