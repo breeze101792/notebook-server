@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Notebook">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Markdown Notebook</title>
+  <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon-precomposed" href="/static/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/vimnav.css">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
@@ -486,5 +493,10 @@
        (which calls shortcuts.install during boot). -->
   <script src="/static/js/shortcuts.js"></script>
   <script src="/static/js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/static/sw.js');
+    }
+  </script>
 </body>
 </html>

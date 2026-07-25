@@ -1,0 +1,17 @@
+{
+  "name": "Notebook",
+  "short_name": "Notebook",
+  "description": "A personal Markdown notebook server",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a1b1f",
+  "theme_color": "#22232a",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "/static/icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
