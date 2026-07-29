@@ -374,7 +374,18 @@ def read_login_required(view):
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    return render_template("index.html")
+    theme = _read_theme_preference()
+    return render_template("index.html", theme=theme)
+
+
+def _read_theme_preference():
+    """Read the user's saved theme from config, defaulting to 'auto'."""
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        return cfg.get("theme", "auto")
+    except (OSError, ValueError):
+        return "auto"
 
 
 @app.route("/api/config", methods=["GET"])
@@ -865,7 +876,8 @@ def search():
 @app.route("/", defaults={"p": ""})
 @app.route("/<path:p>")
 def spa(p):
-    return render_template("index.html")
+    theme = _read_theme_preference()
+    return render_template("index.html", theme=theme)
 
 
 # --------------------------------------------------------------------------- #

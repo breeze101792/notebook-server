@@ -17,7 +17,10 @@
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head>
-<body data-theme="dark">
+<body>
+<script>
+(function(){var t="{{ theme }}",r=t==="auto"?(window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):t==="light"?"light":"dark";document.body.dataset.theme=r;var l=document.getElementById("hljs-light"),d=document.getElementById("hljs-dark");if(l)l.disabled=r!=="light";if(d)d.disabled=r==="light"})();
+</script>
   <div id="app">
     <header id="topbar">
       <div class="brand">📓 Notebook</div>
