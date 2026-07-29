@@ -347,12 +347,26 @@ const html = `<!DOCTYPE html><html><head>
                   <label class="settings-label" for="settings-auth-admin-confirm2">Confirm new password</label>
                   <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input" disabled>
                 </div>
-                <div class="settings-form-actions">
-                  <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
-                  <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
-                </div>
-              </div>
-            </div>
+               <div class="settings-form-actions">
+                   <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                   <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
+                 </div>
+               </div>
+
+               <!-- "Remove" form: reveals a current-password field to disable auth. -->
+               <div id="settings-auth-admin-remove" class="settings-auth-admin-form" hidden>
+                 <div class="settings-row">
+                   <label class="settings-label" for="settings-auth-admin-remove-current">Current password</label>
+                   <input id="settings-auth-admin-remove-current" type="password" class="auth-input settings-auth-input" disabled>
+                 </div>
+                 <div class="settings-form-actions">
+                   <button id="settings-auth-admin-remove-confirm" class="settings-action" disabled>Disable auth</button>
+                 </div>
+               </div>
+               <div class="settings-row">
+                 <button id="settings-auth-admin-remove-btn" class="settings-action" hidden>Remove admin password</button>
+               </div>
+             </div>
             <div class="settings-note" id="settings-auth-viewer-status-note">Viewer password: <span id="settings-auth-viewer-status-value">Not set</span></div>
             <div class="settings-row">
               <label class="settings-label" for="settings-auth-viewer-toggle">Require a password to read</label>
@@ -388,6 +402,17 @@ const html = `<!DOCTYPE html><html><head>
       <div class="settings-footer">
         <button id="settings-close-btn" class="settings-action">Close</button>
       </div>
+    </div>
+  </div>
+  <!-- Mermaid lightbox overlay -->
+  <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="mlb-zoom-out" class="mlb-btn" title="Zoom Out" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="mlb-zoom-pct">100%</span>
+      <button id="mlb-zoom-in" class="mlb-btn" title="Zoom In" aria-label="Zoom In">+</button>
+      <button id="mlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="mlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
 </body></html>`;
@@ -587,6 +612,22 @@ window.fetch = async (url, opts) => {
       }
       authEnabled = true;
       authHasAdmin = true;
+    } else if (d.admin_password === "") {
+      // Clearing the admin password disables auth. Requires the current
+      // password (verified below) and also clears the viewer password.
+      if (authHasAdmin) {
+        if (typeof d.admin_current_password !== "string"
+            || d.admin_current_password === ""
+            || d.admin_current_password !== adminCurrentPw) {
+          return { ok: false, status: 400,
+            text: async () => JSON.stringify({ error: "Current admin password is incorrect" }),
+            json: async () => ({ error: "Current admin password is incorrect" }) };
+        }
+        authEnabled = false;
+        authHasAdmin = false;
+        authHasViewer = false;
+        adminCurrentPw = null;
+      }
     }
     if (d.viewer_password === "") {
       authHasViewer = false;
@@ -1008,13 +1049,13 @@ function check(label, cond, extra) {
   check("lightbox: body element exists", !!lightboxBody());
   check("lightbox: close button exists", !!lightboxClose());
   check("lightbox: zoom in button exists",
-    !!document.getElementById("mlb-zoom-in"));
+    !!window.document.getElementById("mlb-zoom-in"));
   check("lightbox: zoom out button exists",
-    !!document.getElementById("mlb-zoom-out"));
+    !!window.document.getElementById("mlb-zoom-out"));
   check("lightbox: fit button exists",
-    !!document.getElementById("mlb-fit"));
+    !!window.document.getElementById("mlb-fit"));
   check("lightbox: zoom percentage indicator exists",
-    !!document.getElementById("mlb-zoom-pct"));
+    !!window.document.getElementById("mlb-zoom-pct"));
   check("lightbox: overlay is hidden by default",
     lightboxOverlay() && lightboxOverlay().hidden,
     "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
@@ -1049,8 +1090,8 @@ function check(label, cond, extra) {
     lightboxBody().classList.contains("svg-fit"),
     "classes=" + lightboxBody().className);
   check("lightbox: zoom display shows 'Fit'",
-    document.getElementById("mlb-zoom-pct").textContent === "Fit",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "Fit",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Zoom in leaves fit mode and shows 100%.
   window.NB.mermaid.zoomIn();
   await tick(10);
@@ -1058,14 +1099,14 @@ function check(label, cond, extra) {
     !lightboxBody().classList.contains("svg-fit"),
     "classes=" + lightboxBody().className);
   check("lightbox: zoom display shows 100%",
-    document.getElementById("mlb-zoom-pct").textContent === "100%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Zoom in again → 125%.
   window.NB.mermaid.zoomIn();
   await tick(10);
   check("lightbox: zoomIn to 125%",
-    document.getElementById("mlb-zoom-pct").textContent === "125%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Fit to page restores fit mode.
   window.NB.mermaid.fitToPage();
   await tick(10);
@@ -1073,14 +1114,14 @@ function check(label, cond, extra) {
     lightboxBody().classList.contains("svg-fit"),
     "classes=" + lightboxBody().className);
   check("lightbox: fit display shows 'Fit'",
-    document.getElementById("mlb-zoom-pct").textContent === "Fit",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "Fit",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Zoom out from fit → leaves fit at 100%.
   window.NB.mermaid.zoomOut();
   await tick(10);
   check("lightbox: zoomOut from fit goes to 100%",
-    document.getElementById("mlb-zoom-pct").textContent === "100%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Ctrl++ keyboard shortcut.
   const ctrlPlus = new window.KeyboardEvent("keydown", {
     key: "=", ctrlKey: true, bubbles: true, cancelable: true,
@@ -1088,8 +1129,8 @@ function check(label, cond, extra) {
   window.document.dispatchEvent(ctrlPlus);
   await tick(10);
   check("lightbox: Ctrl++ zooms in to 125%",
-    document.getElementById("mlb-zoom-pct").textContent === "125%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Ctrl+- keyboard shortcut.
   const ctrlMinus = new window.KeyboardEvent("keydown", {
     key: "-", ctrlKey: true, bubbles: true, cancelable: true,
@@ -1097,8 +1138,8 @@ function check(label, cond, extra) {
   window.document.dispatchEvent(ctrlMinus);
   await tick(10);
   check("lightbox: Ctrl+- zooms out to 100%",
-    document.getElementById("mlb-zoom-pct").textContent === "100%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Mouse wheel zooms.
   const wheelUp = new window.WheelEvent("wheel", {
     deltaY: -120, bubbles: true, cancelable: true,
@@ -1106,8 +1147,8 @@ function check(label, cond, extra) {
   lightboxOverlay().dispatchEvent(wheelUp);
   await tick(10);
   check("lightbox: wheel up zooms in to 125%",
-    document.getElementById("mlb-zoom-pct").textContent === "125%",
-    "got=" + document.getElementById("mlb-zoom-pct").textContent);
+    window.document.getElementById("mlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
   // Close via the close button.
   lightboxClose().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await tick(10);
@@ -3518,15 +3559,87 @@ function check(label, cond, extra) {
     $("settings-auth-admin-current").value === ""
     && $("settings-auth-admin-new2").value === ""
     && $("settings-auth-admin-confirm2").value === "");
-  check("pwd: non-admin -> viewer toggle disabled",
-    $("settings-auth-viewer-toggle").disabled);
-  window.NB.settings.close();
+   check("pwd: non-admin -> viewer toggle disabled",
+     $("settings-auth-viewer-toggle").disabled);
+   window.NB.settings.close();
 
-  // Reset for a clean exit.
-  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
-  authSetPasswordsCalls = [];
-  window.NB.settings.close();
-  window.confirm = () => true;
+   // Scenario 8: admin removes the admin password to disable auth.
+   // The "Remove admin password" button is shown when the admin
+   // password is set and the current user is an admin. Clicking it
+   // reveals a current-password form; submitting with the correct
+   // current password POSTs admin_password="" and disables auth.
+   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+   adminCurrentPw = "another-pw";
+   authSetPasswordsCalls = [];
+   window.NB.settings.open(); await tick(40);
+   check("pwd: remove -> 'Remove admin password' button visible (admin set + admin role)",
+     !!$("settings-auth-admin-remove-btn") && !$("settings-auth-admin-remove-btn").hidden,
+     "hidden=" + ($("settings-auth-admin-remove-btn") && $("settings-auth-admin-remove-btn").hidden));
+   check("pwd: remove -> removal form is hidden initially",
+     !!$("settings-auth-admin-remove") && $("settings-auth-admin-remove").hidden);
+   check("pwd: remove -> confirm button is disabled (no current password)",
+     !!$("settings-auth-admin-remove-confirm") && $("settings-auth-admin-remove-confirm").disabled);
+   // Click the button -> form revealed, current password field focused.
+   $("settings-auth-admin-remove-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+   await tick(20);
+   check("pwd: remove -> clicking button reveals the removal form",
+     !$("settings-auth-admin-remove").hidden);
+   check("pwd: remove -> current password field is enabled",
+     !$("settings-auth-admin-remove-current").disabled,
+     "disabled=" + $("settings-auth-admin-remove-current").disabled);
+   check("pwd: remove -> confirm still disabled (empty current password)",
+     $("settings-auth-admin-remove-confirm").disabled);
+    // Type the correct current password -> confirm enabled (field is non-empty).
+    $("settings-auth-admin-remove-current").value = "another-pw";
+    $("settings-auth-admin-remove-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("pwd: remove -> confirm enabled when current password is non-empty",
+      !$("settings-auth-admin-remove-confirm").disabled);
+    // Click confirm -> window.confirm dialog appears; stub returns true.
+    let confirmCalls = 0;
+    window.confirm = () => { confirmCalls++; return true; };
+    $("settings-auth-admin-remove-confirm").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("pwd: remove -> confirm dialog shown", confirmCalls === 1, "calls=" + confirmCalls);
+    check("pwd: remove -> POSTs admin_password:'' + admin_current_password",
+      authSetPasswordsCalls.length === 1
+      && authSetPasswordsCalls[0].admin_password === ""
+      && authSetPasswordsCalls[0].admin_current_password === "another-pw"
+      && authSetPasswordsCalls[0].viewer_password === null,
+      JSON.stringify(authSetPasswordsCalls));
+   // The stub should have disabled auth (authEnabled=false, authHasAdmin=false).
+   check("pwd: remove -> auth disabled after successful clear",
+     authEnabled === false && authHasAdmin === false,
+     "enabled=" + authEnabled + " hasAdmin=" + authHasAdmin);
+   window.NB.settings.close();
+
+   // Scenario 8b: wrong current password -> error shown, no state change.
+   authEnabled = true; authHasAdmin = true; authHasViewer = false; authRole = "admin";
+   adminCurrentPw = "another-pw";
+   authSetPasswordsCalls = [];
+   window.NB.settings.open(); await tick(40);
+   $("settings-auth-admin-remove-btn").click();
+   await tick(20);
+   $("settings-auth-admin-remove-current").value = "wrong-pw";
+   $("settings-auth-admin-remove-current").dispatchEvent(new window.Event("input", { bubbles: true }));
+   await tick(10);
+   window.confirm = () => true;
+   $("settings-auth-admin-remove-confirm").click();
+   await tick(40);
+   // The stub returns 400 for wrong current password; the UI shows the error.
+   check("pwd: remove wrong-current -> error shown",
+     !!$("settings-auth-error").textContent && /Current admin password is incorrect/.test($("settings-auth-error").textContent),
+     "err=" + $("settings-auth-error").textContent);
+   check("pwd: remove wrong-current -> auth still enabled (no state change)",
+     authEnabled === true && authHasAdmin === true,
+     "enabled=" + authEnabled + " hasAdmin=" + authHasAdmin);
+   window.NB.settings.close();
+
+   // Reset for a clean exit.
+   authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null; adminCurrentPw = null;
+   authSetPasswordsCalls = [];
+   window.NB.settings.close();
+   window.confirm = () => true;
 
   console.log("== settings footer ==");
   // The Settings modal now has a single Close button in the footer --

@@ -498,23 +498,34 @@ _MIN_PASSWORD_LEN = 6
 @app.route("/api/auth/passwords", methods=["POST"])
 @admin_required
 def auth_set_passwords():
-    """Set or change the admin and/or viewer password.
+    """Set, change, or clear the admin and/or viewer password.
 
     Body: {"admin_password": "...", "viewer_password": "...",
     "admin_current_password": "..."}. Either password field may be
-    omitted (null). Empty `admin_password` is rejected (the admin
-    password cannot be cleared via this route -- once enabled, the
-    auth layer stays on; clearing requires hand-editing the file).
-    Empty `viewer_password` clears the viewer hash. Both password
-    fields are bcrypt-hashed server-side before persisting.
+    omitted (null).
+
+    Admin password semantics:
+      null  -> leave as-is
+      ""    -> clear it (disables the auth layer entirely; also clears
+               the viewer password since it is meaningless once auth
+               is off). Requires `admin_current_password` and verifies
+               it against the stored admin hash -- this is a destructive
+               operation, so the current password must be re-typed.
+      str   -> bcrypt-hash and set. When an admin already exists this
+               also requires `admin_current_password` (see below).
+
+    Viewer password semantics:
+      null  -> leave as-is
+      ""    -> clear the viewer hash
+      str   -> bcrypt-hash and set
 
     Changing the admin password (i.e. an admin already exists and
-    `admin_password` is provided) requires `admin_current_password`
-    and verifies it against the stored admin hash. This prevents a
-    shoulder-surfing / unattended-tab scenario where the admin is
-    already logged in but someone else changes the password: the
-    current password must be re-typed to confirm. Setting the
-    initial admin password (no admin yet) does not require it.
+    `admin_password` is provided as a non-empty value) requires
+    `admin_current_password` and verifies it against the stored admin
+    hash. This prevents a shoulder-surfing / unattended-tab scenario
+    where the admin is already logged in but someone else changes the
+    password: the current password must be re-typed to confirm. Setting
+    the initial admin password (no admin yet) does not require it.
 
     Returns the new state ({hasAdmin, hasViewer}) so the client can
     update its UI without a follow-up /api/auth call.
@@ -542,11 +553,11 @@ def auth_set_passwords():
     # Admin password is permanent once set; you can change it (provide
     # a new value) but not clear it. Semantics of each field:
     #   null  -> don't touch this field
-    #   ""    -> clear this field (only meaningful for viewer; admin
-    #            cannot be cleared once set)
+    #   ""    -> clear this field (disables auth for admin; clears the
+    #            viewer hash for viewer)
     #   str   -> bcrypt-hash and set
     # Length checks only apply to non-empty values; empty is the
-    # "clear" signal for viewer and a guarded "refuse" for admin.
+    # "clear" signal.
     if admin_pw not in (None, "") and len(admin_pw) < _MIN_PASSWORD_LEN:
         return err("Admin password must be at least %d characters"
                    % _MIN_PASSWORD_LEN, 400)
@@ -554,19 +565,22 @@ def auth_set_passwords():
         return err("Viewer password must be at least %d characters"
                    % _MIN_PASSWORD_LEN, 400)
 
-    # When the admin password is being changed (admin already set AND
-    # a new non-empty value is provided), require and verify the
-    # current password. This is belt-and-suspenders on top of the
-    # @admin_required session check: the session already proves the
-    # caller is admin, but the explicit current-password confirmation
-    # guards against an unattended / shared-machine session.
+    # Both changing the admin password to a new value AND clearing it
+    # (admin_pw == "") require the current password: changing guards
+    # against an unattended / shared-machine admin session silently
+    # rotating the password, and clearing is destructive (disables the
+    # entire auth layer), so it must be confirmed too.
     changing_admin = (
         admin_pw not in (None, "")
         and bool(auth.get("admin_password_hash"))
     )
-    if changing_admin:
+    clearing_admin = (
+        admin_pw == ""
+        and bool(auth.get("admin_password_hash"))
+    )
+    if changing_admin or clearing_admin:
         if not admin_current_pw:
-            return err("Current admin password is required to change the admin password", 400)
+            return err("Current admin password is required to change or clear the admin password", 400)
         if not _check_password(admin_current_pw, auth.get("admin_password_hash")):
             return err("Current admin password is incorrect", 400)
 
@@ -574,9 +588,11 @@ def auth_set_passwords():
         # leave as-is
         pass
     elif admin_pw == "":
-        if not auth.get("admin_password_hash"):
-            return err("Admin password is required to enable auth", 400)
-        return err("Admin password cannot be cleared via this route", 400)
+        # Clear the admin password (disables the auth layer entirely).
+        # Also clear the viewer password since it is meaningless once
+        # auth is off -- leaving it would just be stale data.
+        auth.pop("admin_password_hash", None)
+        auth.pop("viewer_password_hash", None)
     else:
         auth["admin_password_hash"] = bcrypt.hashpw(
             admin_pw.encode("utf-8"), bcrypt.gensalt(12)

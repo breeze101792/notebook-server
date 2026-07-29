@@ -968,17 +968,87 @@ class TestAuthSetPasswords(BaseTest):
         self.assertFalse(body["hasAdmin"])
         self.assertFalse(body["hasViewer"])
 
-    def test_explicit_clear_admin_rejected(self):
-        # Once the admin password is set, sending "" (clear) is rejected.
+    def test_clear_admin_password_with_current(self):
+        # Clearing the admin password (admin_password: "") is now allowed
+        # when admin_current_password is provided and verified. This
+        # disables the auth layer entirely.
+        self._set_initial_admin()
+        client = self._admin_client()
+        r = self._set(client, {"admin_password": "",
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        body = r.get_json()
+        self.assertFalse(body["hasAdmin"])
+        # Auth is now disabled: reads and writes work without a session.
+        anon = nb.app.test_client()
+        r = anon.get("/api/auth")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["enabled"])
+        r = anon.get("/api/file?path=Welcome.md")
+        self.assertEqual(r.status_code, 200)
+        r = anon.post("/api/file", json={"path": "x.md", "content": "y"})
+        self.assertEqual(r.status_code, 200)
+
+    def test_clear_admin_password_requires_current(self):
+        # Clearing without admin_current_password is rejected.
         self._set_initial_admin()
         client = self._admin_client()
         r = self._set(client, {"admin_password": "", "viewer_password": None})
         self.assertEqual(r.status_code, 400)
-        self.assertIn("cannot be cleared", r.get_json()["error"])
+        self.assertIn("Current admin password", r.get_json()["error"])
         # Admin can still log in (hash not changed).
         c = nb.app.test_client()
         r = c.post("/api/login", json={"password": self.ADMIN_PW})
         self.assertEqual(r.status_code, 200)
+
+    def test_clear_admin_password_wrong_current(self):
+        # Clearing with a wrong current password is rejected.
+        self._set_initial_admin()
+        client = self._admin_client()
+        r = self._set(client, {"admin_password": "",
+                               "admin_current_password": "wrong-pw",
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Current admin password", r.get_json()["error"])
+        # Admin can still log in (hash not changed).
+        c = nb.app.test_client()
+        r = c.post("/api/login", json={"password": self.ADMIN_PW})
+        self.assertEqual(r.status_code, 200)
+
+    def test_clear_admin_also_clears_viewer(self):
+        # Clearing the admin password also clears the viewer password,
+        # since it is meaningless once auth is off.
+        self._set_initial_admin()
+        # Add a viewer password first.
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "r", encoding="utf-8") as f:
+            auth = json.load(f)
+        auth["viewer_password_hash"] = _bcrypt.hashpw(
+            self.VIEWER_PW.encode("utf-8"), _bcrypt.gensalt(12)
+        ).decode()
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(auth, f)
+        client = self._admin_client()
+        r = self._set(client, {"admin_password": "",
+                               "admin_current_password": self.ADMIN_PW,
+                               "viewer_password": None})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertFalse(r.get_json()["hasAdmin"])
+        self.assertFalse(r.get_json()["hasViewer"])
+        # The viewer password no longer works (auth is disabled).
+        v = nb.app.test_client()
+        r = v.post("/api/login", json={"password": self.VIEWER_PW})
+        self.assertEqual(r.status_code, 400)  # auth not enabled
+
+    def test_clear_admin_when_no_admin_is_noop(self):
+        # If no admin password is set, sending admin_password: "" is a
+        # no-op (nothing to clear). The route is open when auth is off.
+        r = self.client.post("/api/auth/passwords",
+                             json={"admin_password": "", "viewer_password": None})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["hasAdmin"])
+        self.assertFalse(r.get_json()["hasViewer"])
 
     def test_non_string_passwords_rejected(self):
         self._set_initial_admin()

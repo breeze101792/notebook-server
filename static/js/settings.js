@@ -76,7 +76,11 @@
   const adminNew2El        = document.getElementById("settings-auth-admin-new2");
   const adminConfirm2El    = document.getElementById("settings-auth-admin-confirm2");
   const adminSave2Btn      = document.getElementById("settings-auth-admin-save2");
-  const adminCancelBtn     = document.getElementById("settings-auth-admin-cancel");
+   const adminCancelBtn     = document.getElementById("settings-auth-admin-cancel");
+   const adminRemoveBtn     = document.getElementById("settings-auth-admin-remove-btn");
+   const adminRemoveBlock   = document.getElementById("settings-auth-admin-remove");
+   const adminRemoveCurrentEl = document.getElementById("settings-auth-admin-remove-current");
+   const adminRemoveConfirmBtn = document.getElementById("settings-auth-admin-remove-confirm");
   const viewerToggleEl     = document.getElementById("settings-auth-viewer-toggle");
   const viewerRowEl        = document.getElementById("settings-auth-viewer-row");
   const viewerConfirmRowEl = document.getElementById("settings-auth-viewer-confirm-row");
@@ -510,32 +514,46 @@
       adminChangeBlock.hidden = true;
       if (adminNewEl) { adminNewEl.disabled = false; adminNewEl.value = ""; }
       if (adminConfirmEl) { adminConfirmEl.disabled = false; adminConfirmEl.value = ""; }
-      refreshAdminSetSaveEnabled();
-    } else {
+       refreshAdminSetSaveEnabled();
+       // No admin password: hide the removal button + form.
+       if (adminRemoveBtn) adminRemoveBtn.hidden = true;
+       if (adminRemoveBlock) adminRemoveBlock.hidden = true;
+       if (adminRemoveCurrentEl) { adminRemoveCurrentEl.disabled = true; adminRemoveCurrentEl.value = ""; }
+     } else {
       // Admin password already configured. The change form is always
       // shown (no toggle button): admins see it directly, non-admins
       // see it disabled. Only admins may submit.
-      authHelpEl.textContent = canEdit
-        ? "Change the admin password, or toggle the read-only role below."
-        : "Sign in as admin to change passwords.";
-      adminStatusValueEl.textContent = "Set";
-      adminSetBlock.hidden = true;
-      // The change form is always shown when the admin password is set:
-      // admins can use it, non-admins see it disabled and cleared.
-      adminChangeBlock.hidden = false;
-      // Clear sensitive fields when the user can't edit so a stale
-      // current/new password isn't sitting in the DOM.
-      if (!canEdit) {
-        if (adminCurrentEl) adminCurrentEl.value = "";
-        if (adminNew2El) adminNew2El.value = "";
-        if (adminConfirm2El) adminConfirm2El.value = "";
-      }
-      if (adminCurrentEl) adminCurrentEl.disabled = !canEdit;
-      if (adminNew2El) adminNew2El.disabled = !canEdit;
-      if (adminConfirm2El) adminConfirm2El.disabled = !canEdit;
-      refreshAdminChangeSaveEnabled();
-    }
-    // Viewer section: admins can toggle + set; others see the toggle
+       authHelpEl.textContent = canEdit
+         ? "Change the admin password, or remove it to disable auth."
+         : "Sign in as admin to change passwords.";
+       adminStatusValueEl.textContent = "Set";
+       adminSetBlock.hidden = true;
+       // The change form is always shown when the admin password is set:
+       // admins can use it, non-admins see it disabled and cleared.
+       adminChangeBlock.hidden = false;
+       // Clear sensitive fields when the user can't edit so a stale
+       // current/new password isn't sitting in the DOM.
+       if (!canEdit) {
+         if (adminCurrentEl) adminCurrentEl.value = "";
+         if (adminNew2El) adminNew2El.value = "";
+         if (adminConfirm2El) adminConfirm2El.value = "";
+       }
+       if (adminCurrentEl) adminCurrentEl.disabled = !canEdit;
+       if (adminNew2El) adminNew2El.disabled = !canEdit;
+       if (adminConfirm2El) adminConfirm2El.disabled = !canEdit;
+       refreshAdminChangeSaveEnabled();
+       // Removal button + form: only visible to admins when the admin
+       // password is set. The form starts collapsed; clicking the
+       // button reveals it.
+       if (adminRemoveBtn) adminRemoveBtn.hidden = !canEdit;
+       if (adminRemoveBlock) adminRemoveBlock.hidden = true;
+       if (adminRemoveCurrentEl) {
+         adminRemoveCurrentEl.disabled = !canEdit;
+         adminRemoveCurrentEl.value = "";
+       }
+        refreshAdminRemoveEnabled();
+     }
+     // Viewer section: admins can toggle + set; others see the toggle
     // disabled and the field hidden.
     viewerToggleEl.checked = !!(authState && authState.hasViewer);
     viewerToggleEl.disabled = !canEdit;
@@ -549,8 +567,15 @@
     refreshViewerSaveEnabled();
     viewerRemoveBtn.hidden = !(authState && authState.hasViewer);
     viewerRemoveBtn.disabled = !canEdit;
-  }
-  // Enable the viewer "Save" button when new + confirm are both
+   }
+   // Enable the admin "remove" confirm button when the current password
+   // field is non-empty (and the user is an admin).
+   function refreshAdminRemoveEnabled() {
+     if (!adminRemoveCurrentEl || !adminRemoveConfirmBtn) return;
+     const canEdit = isAdmin();
+     adminRemoveConfirmBtn.disabled = !canEdit || adminRemoveCurrentEl.value.length === 0;
+   }
+   // Enable the viewer "Save" button when new + confirm are both
   // non-empty and match.
   function refreshViewerSaveEnabled() {
     if (!viewerPwEl || !viewerConfirmEl || !viewerSaveBtn) return;
@@ -618,9 +643,56 @@
         adminSave2Btn.disabled = false;
       }
     });
-  }
+   }
 
-  // --- viewer password: new + confirm ---
+   // --- admin "remove" (disable auth): current password + confirm ---
+   // The button toggles the removal form. The confirm button sends
+   // admin_password:"" + admin_current_password to clear the admin
+   // hash (and the viewer hash, since auth is being disabled).
+   if (adminRemoveBtn) {
+     adminRemoveBtn.addEventListener("click", () => {
+       if (adminRemoveBlock) adminRemoveBlock.hidden = false;
+       if (adminRemoveCurrentEl) { adminRemoveCurrentEl.disabled = false; adminRemoveCurrentEl.value = ""; adminRemoveCurrentEl.focus(); }
+       refreshAdminRemoveEnabled();
+     });
+   }
+   if (adminRemoveCurrentEl) {
+     adminRemoveCurrentEl.addEventListener("input", refreshAdminRemoveEnabled);
+     adminRemoveCurrentEl.addEventListener("keydown", (e) => {
+       if (e.key === "Enter" && !adminRemoveConfirmBtn.disabled) {
+         e.preventDefault();
+         adminRemoveConfirmBtn.click();
+       }
+     });
+   }
+   if (adminRemoveConfirmBtn) {
+     adminRemoveConfirmBtn.addEventListener("click", async () => {
+       const cur = adminRemoveCurrentEl.value;
+       if (!cur) {
+         setAuthError("Current admin password is required to disable auth");
+         return;
+       }
+       const ok = window.confirm(
+         "Disable auth?\n\n" +
+         "This removes the admin password and turns off the password gate.\n" +
+         "Anyone with the URL will be able to read and edit the notebook.\n" +
+         "The viewer password is also removed.\n\n" +
+         "Are you sure?"
+       );
+       if (!ok) return;
+       adminRemoveConfirmBtn.disabled = true;
+       setAuthError("");
+       try {
+         await NB.api.saveAuthPasswords("", cur, null);
+         window.location.reload();
+       } catch (e) {
+         setAuthError(e.message || "Failed to disable auth");
+         adminRemoveConfirmBtn.disabled = false;
+       }
+     });
+   }
+
+   // --- viewer password: new + confirm ---
   if (viewerPwEl) {
     viewerPwEl.addEventListener("input", refreshViewerSaveEnabled);
     viewerPwEl.addEventListener("keydown", (e) => {

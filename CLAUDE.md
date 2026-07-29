@@ -128,11 +128,12 @@ admin password is set/rotated via a single input, and the optional viewer
 password is set/cleared via a "Require a password to read" toggle. The
 admin-only `POST /api/auth/passwords` route hashes the values (bcrypt
 cost 12) and writes them; the page reloads after every save so the boot
-path runs again with the new state. Empty `admin_password` is rejected
-(cannot disable auth from the UI — delete the file to fully reset);
-empty `viewer_password` clears the viewer. The `GET /api/auth` response
-is `{enabled, hasAdmin, hasViewer, role}` so the UI can render without
-exposing hashes.
+path runs again with the new state. Empty `admin_password` (with a
+verified `admin_current_password`) clears the admin hash and disables
+auth entirely (the viewer hash is also cleared); this is the UI path
+to turn auth back off. Empty `viewer_password` clears the viewer. The
+`GET /api/auth` response is `{enabled, hasAdmin, hasViewer, role}` so
+the UI can render without exposing hashes.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →

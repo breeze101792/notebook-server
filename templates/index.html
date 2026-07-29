@@ -396,12 +396,31 @@
                   <input id="settings-auth-admin-confirm2" type="password" class="auth-input settings-auth-input"
                          autocomplete="new-password" placeholder="Type the new password again" disabled>
                 </div>
-                <div class="settings-form-actions">
-                  <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
-                  <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
-                </div>
-              </div>
-            </div>
+               <div class="settings-form-actions">
+                   <button id="settings-auth-admin-save2" class="settings-action" disabled>Save</button>
+                   <button id="settings-auth-admin-cancel" class="settings-action">Cancel</button>
+                 </div>
+               </div>
+
+               <!-- "Remove" form: reveals a current-password field to disable auth
+                    entirely. Destructive: requires the current password and
+                    clears both the admin and viewer hashes. -->
+               <div id="settings-auth-admin-remove" class="settings-auth-admin-form" hidden>
+                 <div class="settings-row">
+                   <label class="settings-label" for="settings-auth-admin-remove-current">Current password</label>
+                   <input id="settings-auth-admin-remove-current" type="password" class="auth-input settings-auth-input"
+                          autocomplete="current-password" placeholder="Enter the current admin password" disabled>
+                 </div>
+                 <div class="settings-form-actions">
+                   <button id="settings-auth-admin-remove-confirm" class="settings-action" disabled>Disable auth</button>
+                 </div>
+               </div>
+               <!-- Button to reveal the removal form. Shown only when the admin
+                    password is set and the current user is an admin. -->
+               <div class="settings-row">
+                 <button id="settings-auth-admin-remove-btn" class="settings-action" hidden>Remove admin password</button>
+               </div>
+             </div>
 
             <div class="settings-note" id="settings-auth-viewer-status-note">Viewer password: <span id="settings-auth-viewer-status-value">Not set</span></div>
             <div class="settings-row">
