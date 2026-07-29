@@ -133,25 +133,39 @@
       container.innerHTML = result.svg;
       // Make the SVG responsive: mermaid emits fixed pixel width /
       // height attributes that don't scale with the pane. We strip
-      // the height and let the CSS aspect-ratio + max-width do the
-      // work, then re-derive the height from the SVG's viewBox so
-      // the aspect ratio stays correct.
+      // the height and pin aspect-ratio from the viewBox so the
+      // browser scales the SVG element uniformly when either max-
+      // width or max-height kicks in (otherwise height: auto + a
+      // max-height clips the bottom instead of rescaling).
       const svg = container.querySelector("svg");
       if (svg) {
         svg.removeAttribute("height");
-        svg.style.maxWidth = "100%";
-        svg.style.height = "auto";
         // mermaid emits width/height attributes. Use the viewBox if
         // present, else fall back to the original width/height. The
         // CSS then scales the SVG to the container width and the
         // browser preserves the aspect ratio.
         const vb = svg.getAttribute("viewBox");
-        if (!vb) {
-          const w = parseFloat(svg.getAttribute("width")) || 0;
-          const h = parseFloat(svg.getAttribute("height")) || 0;
-          if (w > 0 && h > 0) {
-            svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+        let vbW = 0, vbH = 0;
+        if (vb) {
+          const parts = vb.split(/\s+/).map(Number);
+          if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+            vbW = parts[2];
+            vbH = parts[3];
           }
+        }
+        if (!vbW || !vbH) {
+          vbW = parseFloat(svg.getAttribute("width")) || 0;
+          vbH = parseFloat(svg.getAttribute("height")) || 0;
+          if (vbW > 0 && vbH > 0) {
+            svg.setAttribute("viewBox", `0 0 ${vbW} ${vbH}`);
+          }
+        }
+        // Pin the aspect ratio on the SVG element so max-width and
+        // max-height both scale the element (not clip it). Browsers
+        // respect aspect-ratio even when one dimension is constrained
+        // and the other is "auto".
+        if (vbW > 0 && vbH > 0) {
+          svg.style.aspectRatio = `${vbW} / ${vbH}`;
         }
       }
       pre.replaceWith(container);

@@ -1625,10 +1625,35 @@ body[data-theme="light"] #viewer-content {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow-x: auto;
   text-align: center;
 }
-.mermaid-container svg { display: inline-block; }
+/* Cap the inline diagram to the reading content width and the viewer
+ * window height. mermaid emits SVGs at fixed pixel sizes (width="..."
+ * + viewBox); without a cap a tall graph runs off the bottom and only
+ * the top half is visible. The SVG has `aspect-ratio` set from the
+ * viewBox (see mermaid.js), so max-width + max-height both scale the
+ * element uniformly instead of clipping. The diagram shows at its
+ * natural size when it fits, and scales down to fit otherwise. The
+ * lightbox still gives a full-size + zoomable view on click. */
+.mermaid-container {
+  /* dvh avoids the iOS Safari "URL bar inflating 100vh" jump; the
+   * subtraction covers the top bar (--topbar-h) plus the viewer
+   * content's top/bottom padding. The container stays auto-height
+   * (no `height: ...`) so small diagrams don't leave an empty card. */
+  overflow: auto;
+}
+.mermaid-container svg {
+  display: inline-block;
+  max-width: 100%;
+  /* Absolute max-height: percentages don't work here because the
+   * parent (.mermaid-container) has no definite height. Combined
+   * with the aspect-ratio pinned in mermaid.js, the browser scales
+   * the SVG element to fit when this cap binds. */
+  max-height: calc(100dvh - var(--topbar-h) - 64px);
+  height: auto;
+  width: auto;
+  cursor: zoom-in;
+}
 .mermaid-error {
   margin: 12px 0;
   border: 1px solid var(--warn);
