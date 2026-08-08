@@ -46,7 +46,7 @@
       return;
     }
     tree.forEach((node, i) => {
-      treeEl.appendChild(renderNode(node, i === tree.length - 1, []));
+      treeEl.appendChild(renderNode(node, i === tree.length - 1, [], true));
     });
   }
 
@@ -58,7 +58,7 @@
    * unbroken stroke (text glyphs like │ leave a gap between rows).
    * ancestors[] holds one boolean per ancestor level, set true when the
    * pipe must continue past this row. */
-  function renderNode(node, isLast, ancestors) {
+  function renderNode(node, isLast, ancestors, isRoot) {
     const wrap = document.createElement("div");
     const row = document.createElement("div");
     row.className = "tree-row";
@@ -71,9 +71,12 @@
       cell.className = "tcell" + (pipe ? " vert" : "");
       guide.appendChild(cell);
     }
-    const corner = document.createElement("span");
-    corner.className = "tcell" + (isLast ? " cnr-last" : " cnr");
-    guide.appendChild(corner);
+    // Root-level rows are flat -- no corner cell, no branch above them.
+    if (!isRoot) {
+      const corner = document.createElement("span");
+      corner.className = "tcell" + (isLast ? " cnr-last" : " cnr");
+      guide.appendChild(corner);
+    }
     row.appendChild(guide);
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
@@ -96,9 +99,12 @@
       const childWrap = document.createElement("div");
       childWrap.className = "tree-children";
       if (node.children) {
-        const childAncestors = ancestors.concat(!isLast);
+        // Root rows are flat, so they contribute no ancestor column --
+        // their children start at their own corner. Every deeper level
+        // adds one pipe cell that tracks whether the branch continues.
+        const childAncestors = isRoot ? [] : ancestors.concat(!isLast);
         node.children.forEach((c, i) => {
-          childWrap.appendChild(renderNode(c, i === node.children.length - 1, childAncestors));
+          childWrap.appendChild(renderNode(c, i === node.children.length - 1, childAncestors, false));
         });
       }
       wrap.appendChild(childWrap);
