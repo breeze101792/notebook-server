@@ -45,15 +45,36 @@
       treeEl.appendChild(empty);
       return;
     }
-    tree.forEach(node => treeEl.appendChild(renderNode(node, 0)));
+    tree.forEach((node, i) => {
+      treeEl.appendChild(renderNode(node, i === tree.length - 1, []));
+    });
   }
 
-  function renderNode(node) {
+  /* Build the leading "tree-command" guide for a row: one 18px cell per
+   * ancestor level (drawing a vertical pipe when that level keeps
+   * branching below) plus one last cell with the row's own corner
+   * ("├──" branch / "└── end). The verticals are CSS-drawn 1px lines
+   * that overlap rows' padding, so consecutive rows read as one
+   * unbroken stroke (text glyphs like │ leave a gap between rows).
+   * ancestors[] holds one boolean per ancestor level, set true when the
+   * pipe must continue past this row. */
+  function renderNode(node, isLast, ancestors) {
     const wrap = document.createElement("div");
     const row = document.createElement("div");
     row.className = "tree-row";
     row.dataset.path = node.path;
     row.draggable = true;
+    const guide = document.createElement("span");
+    guide.className = "tree-guide";
+    for (const pipe of ancestors) {
+      const cell = document.createElement("span");
+      cell.className = "tcell" + (pipe ? " vert" : "");
+      guide.appendChild(cell);
+    }
+    const corner = document.createElement("span");
+    corner.className = "tcell" + (isLast ? " cnr-last" : " cnr");
+    guide.appendChild(corner);
+    row.appendChild(guide);
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
@@ -75,7 +96,10 @@
       const childWrap = document.createElement("div");
       childWrap.className = "tree-children";
       if (node.children) {
-        node.children.forEach(c => childWrap.appendChild(renderNode(c)));
+        const childAncestors = ancestors.concat(!isLast);
+        node.children.forEach((c, i) => {
+          childWrap.appendChild(renderNode(c, i === node.children.length - 1, childAncestors));
+        });
       }
       wrap.appendChild(childWrap);
       if (isCollapsed) childWrap.style.display = "none";

@@ -1300,7 +1300,53 @@ body[data-theme="light"] #viewer-content {
 .tree-row.collapsed .tree-caret { transform: rotate(-90deg); }
 .tree-icon { width: 16px; opacity: .85; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
-.tree-children { padding-left: 16px; }
+/* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
+ * corners with a continuous ── column in between). Each cell is a fixed
+ * 18px column; ancestor cells that keep branching below draw a real
+ * 1px vertical stroke that starts/ends 3px outside the row so the lines
+ * of adjacent rows overlap and read as one unbroken stroke (text glyphs
+ * like │ can't do that -- a row's padding leaves a gap between them).
+ * The last cell in a row is the corner: a horizontal segment plus a
+ * vertical stem that stops at the junction for the └ corner. */
+.tree-guide {
+  display: inline-flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+.tree-guide .tcell {
+  position: relative;
+  width: 18px;
+  height: 100%;
+}
+/* ──  vertical pipe: spans the full cell height and overlaps the row's
+ * top/bottom padding (3px each) so the pipe is continuous across rows. */
+.tree-guide .tcell.vert::after,
+.tree-guide .tcell.cnr::after,
+.tree-guide .tcell.cnr-last::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 8px;
+  width: 1px;
+  background: var(--border);
+}
+/* ┌  horizontal "──" segment that joins the vertical stem to the node. */
+.tree-guide .tcell.cnr::before,
+.tree-guide .tcell.cnr-last::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+/* └  last corner: the stem stops at the junction (branch ends). */
+.tree-guide .tcell.cnr-last::after {
+  bottom: 50%;
+}
+.tree-children { display: block; }
 .tree-row.collapsed + .tree-children { display: none; }
 .tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
