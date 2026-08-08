@@ -1751,6 +1751,68 @@ function check(label, cond, extra) {
   click("sidebar-expand");
   await tick(10);
 
+  console.log("== sidebar: collapse-all folders from root context menu ==");
+  // Build a nested-folder tree, open the root context menu (right-click
+  // the empty tree area), and run "Collapse all folders".
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "sub", type: "dir", path: "notes/sub", children: [
+        { name: "deep.md", type: "file", path: "notes/sub/deep.md" },
+      ]},
+      { name: "a.md", type: "file", path: "notes/a.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  const treeRow = (p) => window.document.querySelector('.tree-row[data-path="' + p + '"]');
+  check("collapse-all: folders start expanded",
+    treeRow("notes") && !treeRow("notes").classList.contains("collapsed") &&
+    treeRow("notes/sub") && !treeRow("notes/sub").classList.contains("collapsed"),
+    "notes=" + (treeRow("notes") && treeRow("notes").className) + " sub=" + (treeRow("notes/sub") && treeRow("notes/sub").className));
+  const rootEv = new window.MouseEvent("contextmenu", { bubbles: true, clientX: 5, clientY: 5 });
+  Object.defineProperty(rootEv, "target", { value: $("file-tree") });
+  $("file-tree").dispatchEvent(rootEv);
+  await tick(10);
+  const rootBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+  check("collapse-all: root menu offers 'Collapse all folders' when folders exist",
+    rootBtns().includes("Collapse all folders"),
+    rootBtns().join(" / "));
+  const collapseBtn = Array.from($("context-menu").querySelectorAll("button"))
+    .find(b => b.textContent === "Collapse all folders");
+  collapseBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  const notesWrap = treeRow("notes") ? treeRow("notes").nextElementSibling : null;
+  const subWrap = treeRow("notes/sub") ? treeRow("notes/sub").nextElementSibling : null;
+  check("collapse-all: every folder row carries .collapsed",
+    treeRow("notes").classList.contains("collapsed") &&
+    treeRow("notes/sub").classList.contains("collapsed"),
+    "notes=" + treeRow("notes").className + " sub=" + treeRow("notes/sub").className);
+  check("collapse-all: collapsed folders hide their children",
+    notesWrap && notesWrap.style.display === "none" &&
+    subWrap && subWrap.style.display === "none",
+    "notesWrap=" + (notesWrap && notesWrap.style.display) + " subWrap=" + (subWrap && subWrap.style.display));
+
+  // The action is also reachable from a file/folder row's own context
+  // menu (not just the empty-area root menu).
+  treeRow("notes").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+  await tick(10);
+  const rowBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+  check("collapse-all: folder row menu also offers 'Collapse all folders'",
+    rowBtns().includes("Collapse all folders"),
+    rowBtns().join(" / "));
+  const bRowCtx = treeRow("notes/a.md");
+  if (bRowCtx) {
+    bRowCtx.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+    await tick(10);
+    check("collapse-all: file row menu also offers 'Collapse all folders'",
+      rowBtns().includes("Collapse all folders"),
+      rowBtns().join(" / "));
+  }
+  window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+
   console.log("== bookmarks ==");
   // Reset to a known 2-tab state and seed config.bookmarks via the
   // setter the sidebar exposes. Going through the public façade
@@ -2627,6 +2689,31 @@ function check(label, cond, extra) {
     window.NB.watcher.state());
   window.NB.settings.close();
   await tick(10);
+
+  console.log("== watcher: polling pauses while the tab is hidden ==");
+  // Ensure the polling fallback is the active mechanism (native observer
+  // isn't available in jsdom).
+  check("visibility: polling is active before hiding",
+    window.NB.watcher.state() === "polling", window.NB.watcher.state());
+  const treeFetches = () => fetchLog.filter(x => x === "GET /api/tree").length;
+  const fetchBeforeHide = treeFetches();
+  // Hide the tab: polling must stop (pollTimer cleared -> state() "off").
+  Object.defineProperty(window.document, "hidden", { value: true, configurable: true });
+  window.document.dispatchEvent(new window.Event("visibilitychange"));
+  await tick(20);
+  check("visibility: hidden tab stops the poller (state 'off')",
+    window.NB.watcher.state() === "off", window.NB.watcher.state());
+  // Return to the tab: polling restarts with an immediate tick, so the
+  // /api/tree fetch count advances right away.
+  const fetchAfterHide = treeFetches();
+  Object.defineProperty(window.document, "hidden", { value: false, configurable: true });
+  window.document.dispatchEvent(new window.Event("visibilitychange"));
+  await tick(20);
+  check("visibility: returning to the tab restarts polling (state 'polling')",
+    window.NB.watcher.state() === "polling", window.NB.watcher.state());
+  check("visibility: resume triggers an immediate tree check",
+    treeFetches() > fetchAfterHide,
+    "fetches after hide=" + fetchAfterHide + " after resume=" + treeFetches());
 
   console.log("== watcher -> sidebar tree sync ==");
   // A note created on disk should show up in the sidebar without a page

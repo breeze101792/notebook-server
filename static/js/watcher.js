@@ -10,10 +10,12 @@
  * file tree changed (new / renamed / deleted notes) and refreshes the
  * sidebar when it did, then re-checks any open file's mtime via a
  * conditional GET -- a notebook with nothing open costs just one small
- * tree fetch per tick. The native observer is still opt-in: enabling
- * it asks for folder access via showDirectoryPicker(), which only
- * fires from a user gesture, so upgrading to native mode is a one-click
- * action in Settings. */
+ * tree fetch per tick. Polling (and the native observer) pause while
+ * the tab is hidden and resume with an immediate check when the user
+ * returns, so the page never pulls data nobody is looking at. The
+ * native observer is still opt-in: enabling it asks for folder access
+ * via showDirectoryPicker(), which only fires from a user gesture, so
+ * upgrading to native mode is a one-click action in Settings. */
 (function () {
   "use strict";
   window.NB = window.NB || {};
@@ -26,11 +28,12 @@
   // path -> until-ts: changes within this window are our own save's echo
   const selfSaveUntil = new Map();
 
-  // Native observer state
+// Native observer state
   let observer = null;
   let watching = false;                  // true iff an observer is active
-  let pollTimer = null;                  // active when native isn't available
-  let watchedRoot = null;                // user-visible label, for the UI button
+  let pollTimer = null;                 // active when native isn't available
+  let watchedRoot = null;              // user-visible label, for the UI button
+  let nativeHandle = null;             // the directory handle we're observing
 
   /* --- public API ----------------------------------------------------- */
 
@@ -102,6 +105,8 @@
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       watching = false;
       watchedRoot = null;
+      nativeHandle = null;
+      suspendedMode = null;   // a hidden-tab resume must not restart it
     },
 
     /* Called by viewer.save() so the observer can swallow the echo. */
@@ -125,6 +130,7 @@
     });
     await observer.observe(handle, { recursive: true });
     watching = true;
+    nativeHandle = handle;
     watchedRoot = handle.name || "folder";
   }
 
@@ -245,10 +251,35 @@
     return true;
   }
 
-  /* --- stop polling when the tab is hidden --------------------------- */
+  /* --- pause while hidden, resume when visible -----------------------
+   * When the tab is hidden there's nothing on screen to repaint, so
+   * the 5s poll (and the native observer) would be pure waste -- network
+   * requests and observer work for a page nobody is looking at. On hide
+   * we tear down whichever mechanism is running and remember which one
+   * it was; on return we restart it with an immediate check so any
+   * changes that happened while the user was away are picked up the
+   * moment they look at the page again. */
+  let suspendedMode = null;             // "watching" | "polling" | null
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && observer) {
-      try { observer.disconnect(); } catch (_) {}
+    if (document.hidden) {
+      suspendedMode = watching ? "watching"
+                    : pollTimer ? "polling"
+                    : null;
+      if (observer) { try { observer.disconnect(); } catch (_) {} }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      return;
+    }
+    if (!suspendedMode) return;
+    const mode = suspendedMode;
+    suspendedMode = null;
+    if (mode === "watching" && observer && nativeHandle) {
+      // Re-observe the same handle we disconnected on hide. If the
+      // permission was revoked while hidden, fall back to polling so
+      // change detection keeps working.
+      Promise.resolve(observer.observe(nativeHandle, { recursive: true }))
+        .catch(() => { watching = false; startPolling_(); });
+    } else if (mode === "polling") {
+      startPolling_();   // immediate first tick covers time spent away
     }
   });
 
