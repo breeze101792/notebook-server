@@ -165,6 +165,34 @@
     }
   }
 
+  /* Collapse every folder in the tree. Backs the root context menu's
+   * "Collapse all folders" item; reuses the same `collapsed` set that
+   * manual toggles populate, so a later refresh() keeps the tree
+   * collapsed. */
+  function collapseAll() {
+    const walk = (nodes) => {
+      for (const n of nodes) {
+        if (n.type === "dir") {
+          collapsed.add(n.path);
+          if (n.children) walk(n.children);
+        }
+      }
+    };
+    walk(treeCache);
+    render(treeCache);
+  }
+
+  /* True when the tree contains at least one folder (root-level or
+   * nested) -- gates the "Collapse all folders" menu item so the
+   * no-op action doesn't show on a file-only / empty tree. */
+  function treeHasDir(tree) {
+    for (const n of tree) {
+      if (n.type === "dir") return true;
+      if (n.children && treeHasDir(n.children)) return true;
+    }
+    return false;
+  }
+
   /* --- bookmarks ------------------------------------------------------ */
   /* The bookmark section is a fixed list rendered above the file tree.
    * State lives in module-scope `bookmarks` (an array of file paths in
@@ -424,6 +452,10 @@
     // event (see below) so the row follows the file to its new path.
     addMenuItem("Rename / Move…", () => doRename({ path, type: "file" }));
     addMenuItem("Copy…", () => doCopy({ path, type: "file" }));
+    if (treeHasDir(treeCache)) {
+      menuEl.appendChild(document.createElement("hr"));
+      addMenuItem("Collapse all folders", () => collapseAll());
+    }
     menuEl.appendChild(document.createElement("hr"));
     addMenuItem("Delete", () => doDelete({ path, type: "file" }), true);
 
@@ -568,6 +600,10 @@
       addMenuItem(isBookmarked ? "Remove bookmark" : "Add bookmark",
                   () => toggleBookmark(node.path));
     }
+    if (treeHasDir(treeCache)) {
+      menuEl.appendChild(document.createElement("hr"));
+      addMenuItem("Collapse all folders", () => collapseAll());
+    }
     menuEl.appendChild(document.createElement("hr"));
     addMenuItem("Delete", () => doDelete(node), true);
 
@@ -610,6 +646,10 @@
     menuEl.innerHTML = "";
     addMenuItem("New file…", () => createAtRoot("file"));
     addMenuItem("New folder…", () => createAtRoot("dir"));
+    if (treeHasDir(treeCache)) {
+      menuEl.appendChild(document.createElement("hr"));
+      addMenuItem("Collapse all folders", () => collapseAll());
+    }
     menuEl.hidden = false;
     const x = Math.min(e.clientX, window.innerWidth - 190);
     const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
@@ -880,6 +920,7 @@
 
   NB.sidebar = {
     refresh, render, openFile, createAtRoot, getTree,
+    collapseAll,
     setVimCursor, getVimCursor, vimCursorNext, vimCursorPrev,
     vimCursorOpen, vimCursorCollapse,
     // Bookmark façade. setBookmarks is called by app.js after a config
