@@ -12,10 +12,10 @@
   const bookmarksListEl = document.getElementById("bookmarks-list");
   const bookmarksAddBtn = document.getElementById("bookmarks-add");
   const DIR_ICON = "📁";
+  const DIR_ICON_OPEN = "📂";
   const FILE_ICON = "📄";
   const STAR_ON = "★";
   const STAR_OFF = "☆";
-  const CARET = "▾";
 
   const collapsed = new Set();      // collapsed dir paths (relative)
   let selectedPath = null;
@@ -81,16 +81,13 @@
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
-      const caret = document.createElement("span");
-      caret.className = "tree-caret";
-      caret.textContent = CARET;
       const icon = document.createElement("span");
       icon.className = "tree-icon";
-      icon.textContent = DIR_ICON;
+      icon.textContent = isCollapsed ? DIR_ICON : DIR_ICON_OPEN;
       const name = document.createElement("span");
       name.className = "tree-name";
       name.textContent = node.name;
-      row.append(caret, icon, name);
+      row.append(icon, name);
       row.addEventListener("click", () => toggleDir(node));
       row.addEventListener("contextmenu", (e) => {
         e.preventDefault(); openMenu(e, node);
@@ -110,8 +107,6 @@
       wrap.appendChild(childWrap);
       if (isCollapsed) childWrap.style.display = "none";
     } else {
-      const caret = document.createElement("span");
-      caret.className = "tree-caret";
       const icon = document.createElement("span");
       icon.className = "tree-icon";
       icon.textContent = FILE_ICON;
@@ -133,7 +128,7 @@
       });
       star.addEventListener("mousedown", (e) => e.stopPropagation());
       star.addEventListener("dragstart", (e) => e.preventDefault());
-      row.append(caret, icon, name, star);
+      row.append(icon, name, star);
       if (node.path === selectedPath) row.classList.add("selected");
       row.addEventListener("click", () => openFile(node.path));
       row.addEventListener("contextmenu", (e) => {
@@ -178,11 +173,9 @@
     row.className = "bookmark-row";
     row.dataset.path = path;
     row.draggable = true;
-    // Reserve the same width the tree's caret + icon column pair uses so
-    // the file name aligns across the two sections. Empty strings keep
+    // Reserve the same width the tree uses for its leading icon so the
+    // file name aligns across the two sections. Empty strings keep
     // the row's name at the same x position a .tree-row would put it.
-    const caret = document.createElement("span");
-    caret.className = "tree-caret";
     const pin = document.createElement("span");
     pin.className = "bookmark-pin";
     pin.textContent = STAR_ON;
@@ -192,7 +185,7 @@
     // from data-path. baseName() is the existing helper further down.
     name.textContent = baseName(path);
     name.title = path;
-    row.append(caret, pin, name);
+    row.append(pin, name);
     if (path === selectedPath) row.classList.add("selected");
     row.addEventListener("click", () => openFile(path));
     row.addEventListener("contextmenu", (e) => {

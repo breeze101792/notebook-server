@@ -1289,15 +1289,6 @@ body[data-theme="light"] #viewer-content {
 }
 .tree-row:hover { background: var(--accent-soft); }
 .tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.tree-caret {
-  width: 14px;
-  display: inline-block;
-  text-align: center;
-  color: var(--fg-muted);
-  font-size: 10px;
-  transition: transform .12s;
-}
-.tree-row.collapsed .tree-caret { transform: rotate(-90deg); }
 .tree-icon { width: 16px; opacity: .85; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 /* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
@@ -1414,12 +1405,11 @@ body[data-theme="light"] #viewer-content {
   font-size: .86rem;
   font-style: italic;
 }
-/* A bookmark row uses the same flex layout as .tree-row (caret-spacer,
- * icon, name) so it sits visually next to a tree row in the same pane
- * without looking out of place. The leading ⭐ is a real icon (not a
- * column) so the row stays a single horizontal flex line; the
- * .tree-caret/ .tree-icon placeholders reserve the same width their
- * counterparts in the tree use. */
+/* A bookmark row uses the same flex layout as .tree-row (icon, name) so
+ * it sits visually next to a tree row in the same pane without looking
+ * out of place. The leading ⭐ is a real icon (not a column) so the row
+ * stays a single horizontal flex line; the .bookmark-pin reserves the
+ * same width its counterpart .tree-icon uses in the tree. */
 .bookmark-row {
   display: flex;
   align-items: center;
