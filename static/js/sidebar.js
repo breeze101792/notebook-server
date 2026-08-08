@@ -140,9 +140,29 @@
   }
 
   function toggleDir(node) {
-    if (collapsed.has(node.path)) collapsed.delete(node.path);
-    else collapsed.add(node.path);
+    if (collapsed.has(node.path)) {
+      collapsed.delete(node.path);
+      // Expanding a folder shows just one level down; everything beneath
+      // the newly-revealed subfolders stays closed, so the tree looks fresh
+      // instead of replaying whatever sub-state lingered before the parent
+      // was collapsed.
+      collapseUnder(node);
+    } else {
+      collapsed.add(node.path);
+      // Closing a folder also closes every subfolder underneath it.
+      collapseUnder(node);
+    }
     refresh();
+  }
+
+  /* Collapse all subfolders nested under `node` (recursively). */
+  function collapseUnder(node) {
+    if (!node.children) return;
+    for (const c of node.children) {
+      if (c.type !== "dir") continue;
+      collapsed.add(c.path);
+      collapseUnder(c);
+    }
   }
 
   /* --- bookmarks ------------------------------------------------------ */

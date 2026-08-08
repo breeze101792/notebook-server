@@ -170,6 +170,13 @@
 
   function close() {
     overlayEl.hidden = true;
+    // Release focus held by any field inside the modal. In the browser
+    // hiding the overlay blurs its inputs automatically, but doing it
+    // explicitly keeps keyboard state sane (e.g. VIM mode, which yields
+    // to editable fields) in every environment.
+    if (document.activeElement && overlayEl.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
   }
 
   function isOpen() { return !overlayEl.hidden; }
