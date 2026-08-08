@@ -186,6 +186,13 @@
       if (NB.app && NB.app.notify) {
         NB.app.notify("Mermaid error: " + firstLine, 4000, "warn");
       }
+      // When render() rejects, mermaid appends a stray
+      // <div id="d<render-id>"> (holding a big "Syntax error" SVG)
+      // to the end of <body>. Remove it so the error doesn't linger
+      // at the bottom of the page -- we surface our own block +
+      // toast instead.
+      const stray = document.getElementById("d" + id);
+      if (stray) stray.remove();
       const wrap = document.createElement("div");
       wrap.className = "mermaid-error";
       const head = document.createElement("div");

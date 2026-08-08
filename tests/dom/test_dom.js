@@ -493,6 +493,14 @@ window.mermaid = {
     __mermaid.lastSource = source;
     if (__mermaid.failNext) {
       __mermaid.failNext = false;
+      // Real mermaid appends a stray error <div id="d<render-id>">
+      // (a big "Syntax error" SVG) to the end of <body> when
+      // render() rejects. Mimic that so the cleanup path in
+      // NB.mermaid is exercised.
+      const stray = window.document.createElement("div");
+      stray.id = "d" + id;
+      stray.textContent = "Syntax error in text";
+      window.document.body.appendChild(stray);
       throw new Error("Syntax error in diagram (test stub)");
     }
     return { svg: __mermaid.nextSvg };
@@ -1012,6 +1020,12 @@ function check(label, cond, extra) {
     !!window.document.querySelector(".toast.show.warn") &&
     /Mermaid error:/.test(window.document.querySelector(".toast.show.warn").textContent),
     "toast=" + (window.document.querySelector(".toast.show.warn") || {}).textContent);
+  // The stray error <div id="d<mermaid-svg-N>"> that real mermaid
+  // appends to <body> on failure must be cleaned up so it doesn't
+  // linger at the very bottom of the page.
+  check("mermaid: stray body error div is removed after failure",
+    !window.document.getElementById("d" + __mermaid.lastId),
+    "stray=" + (window.document.getElementById("d" + __mermaid.lastId) || "(none)"));
 
   // Recovery: a subsequent valid render on the same file should
   // re-create the .mermaid-container. NB.mermaid.renderAll is
