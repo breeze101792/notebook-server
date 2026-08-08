@@ -110,8 +110,9 @@
    *
    * On error: fire a toast notification (NB.app.notify) with the
    * first line of mermaid's error message and replace the <pre>
-   * with a plain source block so the user can fix the syntax. The
-   * raw source stays on screen instead of an inline error box.
+   * with a warning error box (header + raw source) so the failed
+   * block is visibly marked in place while the source stays
+   * readable/copyable for fixing.
    */
   async function renderOne(pre) {
     const code = pre.querySelector("code");
@@ -170,24 +171,32 @@
       pre.replaceWith(container);
     } catch (err) {
       // Parse / render failure. Surface the problem as a toast
-      // notification (via NB.app.notify) instead of an inline error
-      // box; the diagram area keeps the raw source as a plain code
-      // block so the user can still read and copy it. Because the
-      // replacement <pre> has no code.language-mermaid child (like
-      // a successful render's .mermaid-container), renderAll stays
-      // idempotent -- a failed block won't be re-rendered (and
-      // re-toasted) on the next pass.
+      // notification (via NB.app.notify) AND replace the diagram
+      // area with a warning error box (header + raw source) so the
+      // failed block is clearly marked in place and the user can
+      // read/copy the source. Because the replacement has no
+      // code.language-mermaid child (like a successful render's
+      // .mermaid-container), renderAll stays idempotent -- a failed
+      // block won't be re-rendered (and re-toasted) on the next
+      // pass.
       const msg = (err && err.message) ? String(err.message) : "Render failed";
       // mermaid's error messages are usually multi-line. Collapse
-      // them to a single line for the toast.
+      // them to a single line for the header / toast.
       const firstLine = msg.split(/\r?\n/)[0].slice(0, 200);
       if (NB.app && NB.app.notify) {
         NB.app.notify("Mermaid error: " + firstLine, 4000, "warn");
       }
+      const wrap = document.createElement("div");
+      wrap.className = "mermaid-error";
+      const head = document.createElement("div");
+      head.className = "mermaid-error-head";
+      head.textContent = "Mermaid error: " + firstLine;
       const src = document.createElement("pre");
       src.className = "mermaid-source";
       src.textContent = source;
-      pre.replaceWith(src);
+      wrap.appendChild(head);
+      wrap.appendChild(src);
+      pre.replaceWith(wrap);
     }
   }
 
@@ -198,10 +207,10 @@
    * don't want to fight the event loop.
    *
    * Idempotency: a <pre> that's already been replaced with a
-   * .mermaid-container (or downgraded to a .mermaid-source block
-   * on failure) no longer has a <code class="language-mermaid">
-   * inside it, so the query below won't pick it up again. We
-   * don't need to track which blocks we've already processed.
+   * .mermaid-container (or a .mermaid-error box on failure) no
+   * longer has a <code class="language-mermaid"> inside it, so the
+   * query below won't pick it up again. We don't need to track
+   * which blocks we've already processed.
    */
   async function renderAll(container) {
     if (!container) return;
