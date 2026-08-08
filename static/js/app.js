@@ -574,11 +574,13 @@
   document.addEventListener("DOMContentLoaded", boot);
 
   /* --- shared helpers ----------------------------------------------- */
-  /* notify(message)
+  /* notify(message, ms, cls?)
    *   A tiny toast used by ad-hoc "Copied!" / "Saved!" style feedback.
    *   Reuses a single DOM element so we never pile up toasts; the
    *   element lives at a fixed spot in the viewport (bottom-right),
    *   is hidden by default, and animates a fade-in on each call.
+   *   Optional `cls` is a modifier class (e.g. "warn") for error
+   *   or attention kinds of feedback.
    *
    *   Future: this is the seed of a notification system. If more
    *   modules start needing toasts, this is the place to grow the
@@ -586,14 +588,14 @@
    *   a single-element "last write wins" is plenty. */
   let toastEl = null;
   let toastTimer = null;
-  function notify(message, ms) {
+  function notify(message, ms, cls) {
     if (!toastEl) {
       toastEl = document.createElement("div");
-      toastEl.className = "toast";
       toastEl.setAttribute("role", "status");
       toastEl.setAttribute("aria-live", "polite");
       document.body.appendChild(toastEl);
     }
+    toastEl.className = "toast" + (cls ? " " + cls : "");
     toastEl.textContent = message;
     // Force a reflow between successive identical messages so the
     // CSS transition re-runs and the toast visibly re-appears.

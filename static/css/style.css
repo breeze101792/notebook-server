@@ -1650,11 +1650,12 @@ body[data-theme="light"] #viewer-content {
 .code-copy-btn:hover { background: var(--accent-soft); color: var(--fg); }
 .code-copy-btn.copied { color: var(--accent); border-color: var(--accent); }
 /* Mermaid diagrams. The .mermaid-container wraps a rendered SVG
- * produced by the mermaid library; the .mermaid-error block is
- * the fallback shown when mermaid fails to parse a block. We use
- * a tinted background to distinguish the diagram area from plain
- * code blocks (which use --code-bg) and align it with the panel
- * surface so the diagram "lives" inside the notebook. */
+ * produced by the mermaid library; on a parse failure the block is
+ * replaced with a plain source <pre> and a toast notification fires
+ * (see mermaid.js). We use a tinted background to distinguish the
+ * diagram area from plain code blocks (which use --code-bg) and
+ * align it with the panel surface so the diagram "lives" inside
+ * the notebook. */
 .mermaid-container {
   margin: 12px 0;
   padding: 14px 16px;
@@ -1690,30 +1691,11 @@ body[data-theme="light"] #viewer-content {
   width: auto;
   cursor: zoom-in;
 }
-.mermaid-error {
-  margin: 12px 0;
-  border: 1px solid var(--warn);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.mermaid-error-head {
-  background: var(--warn);
-  color: var(--bg);
-  font-size: .86rem;
-  padding: 6px 12px;
-  font-weight: 600;
-}
 .mermaid-source {
-  margin: 0;
-  background: var(--code-bg);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  padding: 10px 12px;
-  font-size: .85rem;
-  line-height: 1.4;
-  white-space: pre;
-  overflow-x: auto;
+  /* On a parse failure the diagram area is replaced with a plain
+   * <pre> holding the raw source (see mermaid.js). It inherits the
+   * .markdown-body pre code-block look; this class just keeps the
+   * element identifiable for tests/selectors. */
 }
 /* Mermaid lightbox: borderless full-screen overlay with a blurred
  * backdrop. The SVG sits centered in the body; a floating toolbar
@@ -1825,7 +1807,8 @@ body[data-theme="light"] #viewer-content {
 /* A single element appended to <body> by app.js, fixed to the        */
 /* bottom-right of the viewport, opacity-animated. .show toggles the */
 /* visible state. Single-element design keeps things simple; future   */
-/* queueing lives in app.js notify(). */
+/* queueing lives in app.js notify(). The optional modifier class    */
+/* (notify(message, ms, cls)) restyles the toast for warning kinds.  */
 .toast {
   position: fixed;
   right: 20px;
@@ -1845,3 +1828,4 @@ body[data-theme="light"] #viewer-content {
   max-width: 80vw;
 }
 .toast.show { opacity: 1; transform: translateY(0); }
+.toast.warn { border-color: var(--warn); color: var(--warn); }

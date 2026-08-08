@@ -108,11 +108,10 @@
    * (mermaid returns it as a string of trusted markup that the lib
    * itself generated; we don't pass user content to innerHTML).
    *
-   * On error: replace the <pre> with a small "Mermaid error" header +
-   * a <pre> holding the raw source so the user can fix the syntax
-   * (matches the GitHub-style fallback). The error message comes
-   * from mermaid; we surface the first line to keep the layout
-   * tidy.
+   * On error: fire a toast notification (NB.app.notify) with the
+   * first line of mermaid's error message and replace the <pre>
+   * with a plain source block so the user can fix the syntax. The
+   * raw source stays on screen instead of an inline error box.
    */
   async function renderOne(pre) {
     const code = pre.querySelector("code");
@@ -170,26 +169,25 @@
       }
       pre.replaceWith(container);
     } catch (err) {
-      // Parse / render failure. Replace the original <pre> with a
-      // small error block + the source so the user can see what
-      // was wrong and copy the source back into the editor.
-      const wrap = document.createElement("div");
-      wrap.className = "mermaid-error";
-      const head = document.createElement("div");
-      head.className = "mermaid-error-head";
+      // Parse / render failure. Surface the problem as a toast
+      // notification (via NB.app.notify) instead of an inline error
+      // box; the diagram area keeps the raw source as a plain code
+      // block so the user can still read and copy it. Because the
+      // replacement <pre> has no code.language-mermaid child (like
+      // a successful render's .mermaid-container), renderAll stays
+      // idempotent -- a failed block won't be re-rendered (and
+      // re-toasted) on the next pass.
       const msg = (err && err.message) ? String(err.message) : "Render failed";
       // mermaid's error messages are usually multi-line. Collapse
-      // them to a single line for the header so the layout is
-      // compact; the full message is still on the err object in
-      // devtools.
+      // them to a single line for the toast.
       const firstLine = msg.split(/\r?\n/)[0].slice(0, 200);
-      head.textContent = "Mermaid error: " + firstLine;
+      if (NB.app && NB.app.notify) {
+        NB.app.notify("Mermaid error: " + firstLine, 4000, "warn");
+      }
       const src = document.createElement("pre");
       src.className = "mermaid-source";
       src.textContent = source;
-      wrap.appendChild(head);
-      wrap.appendChild(src);
-      pre.replaceWith(wrap);
+      pre.replaceWith(src);
     }
   }
 
@@ -200,10 +198,10 @@
    * don't want to fight the event loop.
    *
    * Idempotency: a <pre> that's already been replaced with a
-   * .mermaid-container or .mermaid-error no longer has a
-   * <code class="language-mermaid"> inside it, so the query
-   * below won't pick it up again. We don't need to track which
-   * blocks we've already processed.
+   * .mermaid-container (or downgraded to a .mermaid-source block
+   * on failure) no longer has a <code class="language-mermaid">
+   * inside it, so the query below won't pick it up again. We
+   * don't need to track which blocks we've already processed.
    */
   async function renderAll(container) {
     if (!container) return;
@@ -273,7 +271,9 @@
   function closeLightbox() {
     if (!lightboxOpen) return;
     const overlay = document.getElementById("mermaid-lightbox");
+    const body    = document.getElementById("mermaid-lightbox-body");
     if (overlay) overlay.hidden = true;
+    if (body) body.innerHTML = "";
     lightboxOpen = false;
     document.body.classList.remove("mermaid-lightbox-active");
   }
@@ -323,10 +323,13 @@
   function zoomOut() {
     if (!lightboxOpen) return;
     if (zoomFit) {
+      // Leave fit mode and start at 100% (same as zoomIn) rather than
+      // immediately stepping down from an arbitrary previous level.
       zoomFit   = false;
       zoomLevel = 1;
+    } else {
+      zoomLevel = Math.max(zoomLevel - ZOOM_STEP, ZOOM_MIN);
     }
-    zoomLevel = Math.max(zoomLevel - ZOOM_STEP, ZOOM_MIN);
     applyZoom();
   }
 

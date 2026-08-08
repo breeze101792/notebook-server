@@ -912,11 +912,11 @@ function check(label, cond, extra) {
   // block sequentially). Wait a touch longer to be sure.
   await tick(80);
   const mermaidContainers = () => window.document.querySelectorAll("#viewer .mermaid-container");
-  const mermaidErrs = () => window.document.querySelectorAll("#viewer .mermaid-error");
+  const mermaidSources = () => window.document.querySelectorAll("#viewer pre.mermaid-source");
   check("mermaid: NB.mermaid module is loaded", !!window.NB.mermaid);
   check("mermaid: rendering a ```mermaid block produces a .mermaid-container",
     mermaidContainers().length === 1,
-    "containers=" + mermaidContainers().length + " errors=" + mermaidErrs().length);
+    "containers=" + mermaidContainers().length + " sources=" + mermaidSources().length);
   check("mermaid: the original <pre> was replaced (no orphan code.language-mermaid left)",
     window.document.querySelectorAll("#viewer pre > code.language-mermaid").length === 0,
     "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-mermaid").length);
@@ -978,10 +978,10 @@ function check(label, cond, extra) {
     " all=" + JSON.stringify(__mermaid.initThemes));
 
   // Error fallback: arm the stub to throw on the next render.
-  // The viewer should replace the <pre> with a .mermaid-error
-  // block (header + source). We swap the file's body to a new
-  // (syntactically invalid) mermaid block; activating it triggers
-  // a fresh render.
+  // The viewer should now fire a toast notification through
+  // NB.app.notify and replace the <pre> with a plain source block.
+  // We swap the file's body to a new (syntactically invalid)
+  // mermaid block; activating it triggers a fresh render.
   __mermaid.failNext = true;
   const BAD_BODY = "```mermaid\nthis is not valid mermaid\n```\n";
   FILES["notes/bad.md"] = BAD_BODY;
@@ -990,23 +990,17 @@ function check(label, cond, extra) {
   await tick(40);
   await window.NB.tabs.open("notes/bad.md");
   await tick(80);
-  check("mermaid: parse error falls back to .mermaid-error block",
-    mermaidErrs().length === 1,
-    "errs=" + mermaidErrs().length);
-  check("mermaid: error block has a 'Mermaid error:' header",
-    mermaidErrs()[0] &&
-    /Mermaid error:/.test(mermaidErrs()[0].querySelector(".mermaid-error-head").textContent),
-    "head=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-error-head").textContent));
-  check("mermaid: error block has a <pre> with the original source",
-    mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-source") &&
-    /not valid mermaid/.test(mermaidErrs()[0].querySelector(".mermaid-source").textContent),
-    "src=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-source").textContent));
-  // The error is multi-line in the stub; we collapse to the first
-  // line for the header. The full message is the first line of
-  // the err.message.
-  check("mermaid: error header is single-line (no newlines in textContent)",
-    mermaidErrs()[0] && !/\n/.test(mermaidErrs()[0].querySelector(".mermaid-error-head").textContent),
-    "head=" + (mermaidErrs()[0] && mermaidErrs()[0].querySelector(".mermaid-error-head").textContent));
+  check("mermaid: parse error falls back to a plain source block",
+    mermaidSources().length === 1,
+    "sources=" + mermaidSources().length);
+  check("mermaid: error toast fires with the mermaid message",
+    !!window.document.querySelector(".toast.show.warn") &&
+    /Mermaid error:/.test(window.document.querySelector(".toast.show.warn").textContent),
+    "toast=" + (window.document.querySelector(".toast.show.warn") || {}).textContent);
+  check("mermaid: error source block keeps the original source",
+    mermaidSources()[0] &&
+    /not valid mermaid/.test(mermaidSources()[0].textContent),
+    "src=" + (mermaidSources()[0] || {}).textContent);
 
   // Recovery: a subsequent valid render on the same file should
   // re-create the .mermaid-container. NB.mermaid.renderAll is
@@ -1016,9 +1010,9 @@ function check(label, cond, extra) {
   // re-activating the original (good) file.
   await window.NB.tabs.activate("notes/mermaid.md");
   await tick(80);
-  // The error block from the previous render is now replaced by a
-  // .mermaid-container for the good file.
-  const errsAfter = window.document.querySelectorAll("#viewer .mermaid-error");
+  // The source block from the previous (failed) render is replaced
+  // by a .mermaid-container when the good file is re-activated.
+  const errsAfter = window.document.querySelectorAll("#viewer pre.mermaid-source");
   const containersAfter = window.document.querySelectorAll("#viewer .mermaid-container");
   check("mermaid: re-activating the good file clears the error",
     errsAfter.length === 0 && containersAfter.length === 1,
@@ -1036,9 +1030,9 @@ function check(label, cond, extra) {
   check("mermaid: .mermaid-container style is in style.css",
     /\.mermaid-container\s*\{/.test(mermaidCssText),
     "no .mermaid-container rule");
-  check("mermaid: .mermaid-error style is in style.css",
-    /\.mermaid-error\s*\{/.test(mermaidCssText),
-    "no .mermaid-error rule");
+  check("mermaid: error toast warn style is in style.css",
+    /\.toast\.warn/.test(mermaidCssText),
+    "no .toast.warn rule");
   check("mermaid: .mermaid-source style is in style.css",
     /\.mermaid-source\s*\{/.test(mermaidCssText),
     "no .mermaid-source rule");
@@ -1707,7 +1701,7 @@ function check(label, cond, extra) {
   click("sidebar-collapse");
   await tick(10);
   check("left sidebar gets .collapsed", $("sidebar").classList.contains("collapsed"));
-  check("left sidebar width -> 24px", cssVar("--sidebar-width") === "24px", cssVar("--sidebar-width"));
+  check("left sidebar width -> 12px", cssVar("--sidebar-width") === "12px", cssVar("--sidebar-width"));
   click("sidebar-expand");
   await tick(10);
   check("left sidebar .collapsed removed", !$("sidebar").classList.contains("collapsed"));
@@ -1716,7 +1710,7 @@ function check(label, cond, extra) {
   click("outline-collapse");
   await tick(10);
   check("outline gets .collapsed", $("outline-pane").classList.contains("collapsed"));
-  check("outline width -> 24px", cssVar("--outline-width") === "24px", cssVar("--outline-width"));
+  check("outline width -> 12px", cssVar("--outline-width") === "12px", cssVar("--outline-width"));
   click("outline-expand");
   await tick(10);
   check("outline .collapsed removed", !$("outline-pane").classList.contains("collapsed"));

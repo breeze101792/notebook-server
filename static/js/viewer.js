@@ -151,10 +151,10 @@
     }
 
     // Mermaid diagrams: blocks tagged ```mermaid are replaced with
-    // rendered SVGs (or a small error block + source on parse
-    // failure). Runs in BOTH view mode and live preview so the
-    // user sees the diagram update as they type. renderAll awaits
-    // each block sequentially -- mermaid.render is heavy and
+    // rendered SVGs (or a plain source block + toast notification
+    // on parse failure). Runs in BOTH view mode and live preview so
+    // the user sees the diagram update as they type. renderAll
+    // awaits each block sequentially -- mermaid.render is heavy and
     // Promise.all-ing 10 blocks would spike the main thread.
     if (NB.mermaid && NB.mermaid.renderAll) {
       NB.mermaid.renderAll(viewerContentEl);
