@@ -6,12 +6,14 @@
  * that don't have it.
  *
  * The polling fallback starts automatically on app load so external
- * changes are detected by default; pollOnce() is a no-op until the
- * viewer has at least one open file in its cache, so the cost is
- * effectively zero for users who never open anything. The native
- * observer is still opt-in -- enabling it asks for folder access via
- * showDirectoryPicker(), which only fires from a user gesture, so
- * upgrading to native mode is a one-click action in Settings. */
+ * changes are detected by default. Each tick first checks whether the
+ * file tree changed (new / renamed / deleted notes) and refreshes the
+ * sidebar when it did, then re-checks any open file's mtime via a
+ * conditional GET -- a notebook with nothing open costs just one small
+ * tree fetch per tick. The native observer is still opt-in: enabling
+ * it asks for folder access via showDirectoryPicker(), which only
+ * fires from a user gesture, so upgrading to native mode is a one-click
+ * action in Settings. */
 (function () {
   "use strict";
   window.NB = window.NB || {};
@@ -104,6 +106,10 @@
 
     /* Called by viewer.save() so the observer can swallow the echo. */
     noteSelfSave(path) { selfSaveUntil.set(path, Date.now() + SELF_SAVE_WINDOW_MS); },
+
+    /* Re-check the file tree and refresh the sidebar if it changed.
+     * Public so callers (and tests) can trigger a sync on demand. */
+    refreshTree,
   };
 
   /* --- native observer ------------------------------------------------ */
@@ -135,9 +141,14 @@
     if (!rel.toLowerCase().endsWith(".md")) return;
     if (r.type === "disappeared") {
       // The viewer's tabs.js already listens for the explicit file:deleted
-      // event from the sidebar; we don't want to double-fire here.
+      // event from the sidebar; we don't want to double-fire here. But the
+      // row should still vanish from the tree.
+      refreshTreeSoon();
       return;
     }
+    // Structural changes (a note created, or moved/renamed) belong in the
+    // file sidebar too; content edits go through the viewer reload below.
+    if (r.type === "appeared" || r.type === "moved") refreshTreeSoon();
     notifyChange(rel);
   }
 
@@ -156,10 +167,15 @@
   }
 
   async function pollOnce() {
+    // First, detect structural changes (new / renamed / deleted files and
+    // folders) and refresh the sidebar tree when they happen. This is what
+    // makes externally-created notes show up in the file list without a
+    // page reload. The JSON comparison inside refreshTree() keeps it a
+    // cheap no-op (aside from the fetch itself) when nothing changed.
+    await refreshTree();
+    // Then re-check any open file's mtime via a conditional GET. Gated on
+    // the viewer having something cached -- no open files, no work.
     if (!knownMtime.size) return;
-    // Re-fetch the tree so we also notice newly appeared files; we
-    // don't act on those here (the sidebar will pick them up on its own
-    // refresh), but we seed mtimes for any that overlap the cache.
     for (const [path, mtime] of knownMtime) {
       // No baseline mtime (never opened cleanly, or a response came
       // back without one) -- we'd treat every poll as a "change" and
@@ -177,6 +193,43 @@
         notifyChange(path, data);
       } catch (e) { /* network blip; try again next tick */ }
     }
+  }
+
+  /* --- sidebar tree sync ---------------------------------------------- */
+  /* External file operations (creating / renaming / deleting a note in
+   * another app, or on the server machine) shouldn't need a page reload
+   * to show up in the file sidebar. Both detection paths funnel into
+   * refreshTree(): the polling fallback calls it every tick (cheap -- the
+   * fetched tree is JSON-compared against the one the sidebar last
+   * rendered, so a no-op when nothing structural changed), and the native
+   * observer calls refreshTreeSoon(), a debounced wrapper so a burst of
+   * records (e.g. a git checkout creating many files at once) coalesces
+   * into a single fetch. */
+  async function refreshTree() {
+    if (!NB.sidebar || typeof NB.sidebar.getTree !== "function" ||
+        typeof NB.sidebar.refresh !== "function") return;
+    let fresh;
+    try {
+      const r = await fetch("/api/tree");
+      if (!r.ok) return;
+      const data = await r.json();
+      fresh = data.tree || [];
+    } catch (e) { /* network blip; try again next tick */ return; }
+    // The tree only encodes structure (names / paths / folders), so a
+    // content-only edit of an open file compares equal and skips the
+    // re-render. Deferring the render to the sidebar's own refresh()
+    // keeps bookmark pruning and the row re-build in one place.
+    if (JSON.stringify(fresh) === JSON.stringify(NB.sidebar.getTree())) return;
+    await NB.sidebar.refresh();
+  }
+
+  let treeRefreshTimer = null;
+  function refreshTreeSoon() {
+    if (treeRefreshTimer) return;
+    treeRefreshTimer = setTimeout(() => {
+      treeRefreshTimer = null;
+      refreshTree();
+    }, 300);
   }
 
   /* --- shared notify path -------------------------------------------- */
@@ -202,13 +255,15 @@
   NB.watcher = watcher;
 
   /* --- auto-start the polling fallback --------------------------------
-   * External file-change detection is on by default: every 5s we
-   * re-check any file in the viewer's cache via a conditional GET.
-   * pollOnce() is a cheap no-op until the viewer has opened at least
-   * one file (knownMtime is empty), so this costs nothing for users
-   * who never open a note. Users who want push-style native
-   * notifications (no polling, no network) can grant folder access
-   * via the "Enable" button in Settings -- that upgrades them to
-   * the FileSystemObserver path and tears down the poller. */
+   * External file-change detection is on by default: every 5s we check
+   * whether the file tree changed (refreshing the sidebar when a note
+   * was added / renamed / deleted elsewhere) and re-check any file in
+   * the viewer's cache via a conditional GET. The tree check is one
+   * small fetch per tick even with nothing open -- that's what lets a
+   * new note appear in the sidebar without a page reload. Users who
+   * want push-style native notifications (no polling, no network) can
+   * grant folder access via the "Enable" button in Settings -- that
+   * upgrades them to the FileSystemObserver path and tears down the
+   * poller. */
   watcher.startPolling();
 })();

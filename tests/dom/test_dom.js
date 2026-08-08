@@ -32,7 +32,9 @@ const { JSDOM } = require(resolveJsdom());
 // ---- fixtures ----------------------------------------------------------
 const FILE_A = "# File A\n\nTODO fix this bug.\n\n```python\ndef f():\n    return 1\n```\n\n## Sub A\n\nbody\n";
 const FILE_B = "# File B\n\nAnother TODO fix this here.\n";
-const TREE = [
+// Mutable: the watcher -> sidebar sync tests mutate it to simulate a file
+// being created / deleted on disk, then restore it.
+let TREE = [
   { name: "notes", type: "dir", path: "notes", children: [
     { name: "a.md", type: "file", path: "notes/a.md" },
     { name: "b.md", type: "file", path: "notes/b.md" },
@@ -2606,6 +2608,37 @@ function check(label, cond, extra) {
     window.NB.watcher.state());
   window.NB.settings.close();
   await tick(10);
+
+  console.log("== watcher -> sidebar tree sync ==");
+  // A note created on disk should show up in the sidebar without a page
+  // reload. The watcher's refreshTree() (called every poll tick) fetches
+  // /api/tree, JSON-compares it to the tree the sidebar last rendered,
+  // and refreshes when it differs. Simulate an external create by mutating
+  // the stub's TREE, then drive a sync manually (the real 5s interval
+  // would be too slow for a unit test).
+  const rowCount = () => window.document.querySelectorAll("#file-tree .tree-row").length;
+  const rowsBefore = rowCount();
+  TREE.push({ name: "extern.md", type: "file", path: "extern.md" });
+  await window.NB.watcher.refreshTree();
+  await tick(20);
+  check("watcher tree: externally-created file appears in sidebar",
+    rowCount() === rowsBefore + 1, "rows " + rowsBefore + " -> " + rowCount());
+  check("watcher tree: new file row is in the DOM",
+    !!window.document.querySelector('#file-tree .tree-row[data-path="extern.md"]'),
+    "extern.md row missing");
+  // A content-only edit (FILES changed, TREE didn't) must not re-render
+  // the sidebar -- the JSON comparison short-circuits the refresh.
+  const htmlBefore = window.document.getElementById("file-tree").innerHTML;
+  await window.NB.watcher.refreshTree();
+  await tick(20);
+  check("watcher tree: content-only edit does not re-render the sidebar",
+    window.document.getElementById("file-tree").innerHTML === htmlBefore);
+  // Deleting the file on disk removes the row.
+  TREE.pop();
+  await window.NB.watcher.refreshTree();
+  await tick(20);
+  check("watcher tree: externally-deleted file disappears from sidebar",
+    rowCount() === rowsBefore, "rows=" + rowCount());
 
   console.log("== settings nav ==");
   // Left sidebar nav: General / Appearance / Security / About. Clicking
