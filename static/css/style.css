@@ -1813,6 +1813,8 @@ body[data-theme="light"] #viewer-content {
 }
 .markdown-body table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 10px; }
+.markdown-body tbody tr:nth-child(odd) { background: var(--bg-panel); }
+.markdown-body tbody tr:nth-child(even) { background: var(--bg); }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .markdown-body img { max-width: 100%; }
 .markdown-body mark.search-highlight {
