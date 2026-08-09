@@ -579,6 +579,20 @@
     NB.evt.emit("file:open-request", path);
   }
 
+  /* Reveal a file in the sidebar tree: expand every ancestor folder on
+   * the path and highlight the file's row. Backs the tab context menu's
+   * "Show in file sidebar" item. Any folder that's collapsed along the
+   * path is opened so the file's location is visible. */
+  function revealFile(path) {
+    if (!path) return;
+    const parts = path.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      collapsed.delete(parts.slice(0, i).join("/"));
+    }
+    selectedPath = path;
+    refresh();
+  }
+
   /* --- context menu --------------------------------------------------- */
   function openMenu(e, node) {
     menuCtx = node;
@@ -930,7 +944,7 @@
 
   NB.sidebar = {
     refresh, render, openFile, createAtRoot, getTree,
-    collapseAll,
+    collapseAll, revealFile,
     setVimCursor, getVimCursor, vimCursorNext, vimCursorPrev,
     vimCursorOpen, vimCursorCollapse,
     // Bookmark façade. setBookmarks is called by app.js after a config

@@ -342,6 +342,9 @@
     const left   = ordered.slice(0, i).filter(p => !pinned.has(p));
 
     addMenuItem(pinned.has(path) ? "Unpin" : "Pin", () => togglePin(path));
+    addMenuItem("Show in file sidebar", () => {
+      if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path);
+    });
     menuEl.appendChild(document.createElement("hr"));
     addMenuItem("Close", () => close(path), { danger: true });
     addMenuItem("Close others", () => closeOthers(path), { disabled: !others.length });

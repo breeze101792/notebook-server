@@ -2412,6 +2412,43 @@ function check(label, cond, extra) {
   await tick(10);
   check("tab context menu hides on outside click", $("tab-context-menu").hidden);
 
+  console.log("== tab: Show in file sidebar ==");
+  // Right-clicking a tab offers "Show in file sidebar", which expands
+  // every parent folder along the file's path and highlights its row.
+  TREE.length = 0;
+  TREE.push(
+    { name: "notes", type: "dir", path: "notes", children: [
+      { name: "sub", type: "dir", path: "notes/sub", children: [
+        { name: "deep.md", type: "file", path: "notes/sub/deep.md" },
+      ]},
+      { name: "a.md", type: "file", path: "notes/a.md" },
+    ]},
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  await tick(20);
+  // Collapse everything so reveal has actual work to do.
+  window.NB.sidebar.collapseAll();
+  await tick(20);
+  await window.NB.tabs.open("notes/sub/deep.md");
+  await tick(20);
+  check("reveal: tab menu offers 'Show in file sidebar'",
+    ctxOpen('.tab[data-path="notes/sub/deep.md"]', 50) ||
+    !!(menuBtn("Show in file sidebar")),
+    "menu=" + Array.from($("tab-context-menu").querySelectorAll("button")).map(b => b.textContent).join(" / "));
+  menuBtn("Show in file sidebar").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(40);
+  const revealNotes = window.document.querySelector('.tree-row[data-path="notes"]');
+  const revealSub = window.document.querySelector('.tree-row[data-path="notes/sub"]');
+  const revealDeep = window.document.querySelector('.tree-row[data-path="notes/sub/deep.md"]');
+  check("reveal: parent folders expanded in the sidebar",
+    revealNotes && !revealNotes.classList.contains("collapsed") &&
+    revealSub && !revealSub.classList.contains("collapsed"),
+    "notes=" + (revealNotes && revealNotes.className) + " sub=" + (revealSub && revealSub.className));
+  check("reveal: the file's row is selected",
+    !!revealDeep && revealDeep.classList.contains("selected"),
+    revealDeep ? revealDeep.className : "no deep row");
+
   console.log("== tab drag reorder ==");
   // reset to a clean 3 unpinned-tab state
   window.NB.tabs.togglePin("notes/a.md"); // unpin it
