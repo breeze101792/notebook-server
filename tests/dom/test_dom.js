@@ -707,6 +707,12 @@ function check(label, cond, extra) {
   console.log("== sidebar tree ==");
   const rows = window.document.querySelectorAll("#file-tree .tree-row");
   check("tree has 4 rows", rows.length === 4, "got " + rows.length);
+  // New-session default: every folder starts collapsed on load, so a
+  // page reload lands on a tidy (closed) tree.
+  const bootNotes = window.document.querySelector('.tree-row[data-path="notes"]');
+  check("tree folders start collapsed by default",
+    !!bootNotes && bootNotes.classList.contains("collapsed"),
+    bootNotes ? "class=" + bootNotes.className : "no notes row");
   check("globals loaded (marked/hljs/NB)",
     typeof window.marked === "object" && typeof window.hljs === "object" && !!window.NB.viewer);
 
@@ -1767,7 +1773,15 @@ function check(label, cond, extra) {
   await window.NB.sidebar.refresh();
   await tick(20);
   const treeRow = (p) => window.document.querySelector('.tree-row[data-path="' + p + '"]');
-  check("collapse-all: folders start expanded",
+  // Reach a known fully-expanded state before exercising the menu. The
+  // session default is all-collapsed (see the boot block), and the
+  // legacy path in `collapsed` from earlier refreshes may still hold
+  // "notes". Expand top-down: expanding a parent re-collapses its
+  // children, so open "notes" first, then "notes/sub".
+  treeRow("notes").dispatchEvent(new window.Event("click", { bubbles: true }));
+  treeRow("notes/sub").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("collapse-all: folders can be expanded again",
     treeRow("notes") && !treeRow("notes").classList.contains("collapsed") &&
     treeRow("notes/sub") && !treeRow("notes/sub").classList.contains("collapsed"),
     "notes=" + (treeRow("notes") && treeRow("notes").className) + " sub=" + (treeRow("notes/sub") && treeRow("notes/sub").className));

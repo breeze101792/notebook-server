@@ -165,21 +165,22 @@
     }
   }
 
-  /* Collapse every folder in the tree. Backs the root context menu's
-   * "Collapse all folders" item; reuses the same `collapsed` set that
-   * manual toggles populate, so a later refresh() keeps the tree
-   * collapsed. */
+  /* Collapse every folder in the tree. Backs the "Collapse all folders"
+   * context-menu item; reuses the same `collapsed` set that manual
+   * toggles populate, so a later refresh() keeps the tree collapsed. */
   function collapseAll() {
-    const walk = (nodes) => {
-      for (const n of nodes) {
-        if (n.type === "dir") {
-          collapsed.add(n.path);
-          if (n.children) walk(n.children);
-        }
-      }
-    };
-    walk(treeCache);
+    markAllCollapsed(treeCache);
     render(treeCache);
+  }
+
+  /* Add every folder in `nodes` to the `collapsed` set (recursive). */
+  function markAllCollapsed(nodes) {
+    for (const n of nodes || []) {
+      if (n.type === "dir") {
+        collapsed.add(n.path);
+        markAllCollapsed(n.children);
+      }
+    }
   }
 
   /* True when the tree contains at least one folder (root-level or
@@ -752,9 +753,18 @@
 
   /* --- helpers -------------------------------------------------------- */
   let treeCache = [];
+  let didInitialCollapse = false;   // collapse every folder on first load
   async function refresh() {
     try {
       treeCache = await NB.api.getTree();
+      // On the first load of the session the tree starts fully collapsed:
+      // every folder closed, so a page reload lands on a tidy sidebar
+      // instead of replaying every expansion. Only the first fetch -- the
+      // user's manual expands/collapses drive the state from then on.
+      if (!didInitialCollapse) {
+        didInitialCollapse = true;
+        markAllCollapsed(treeCache);
+      }
       // Prune any bookmarks whose file vanished (delete, rename) BEFORE
       // render so the row never appears against a missing file. Skipped
       // when the bookmark list is empty to avoid the no-op work.
