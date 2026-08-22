@@ -285,6 +285,52 @@
     }
   }
 
+  /* Copy the current selection to the clipboard. Tries the async
+   * Clipboard API first (navigator.clipboard.writeText), falling back
+   * to document.execCommand("copy"). Either way the user's selection
+   * stays intact so a subsequent Paste re-inserts at the cursor. */
+  async function doCopy() {
+    const sel = window.getSelection();
+    const text = sel && sel.rangeCount ? sel.toString() : "";
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); }
+      catch (_) { try { document.execCommand("copy"); } catch (__) {} }
+    } else {
+      try { document.execCommand("copy"); } catch (_) {}
+    }
+    viewerContentEl.focus();
+  }
+
+  /* Paste from the clipboard at the current selection. Tries the async
+   * Clipboard API (navigator.clipboard.readText) first; falls back to
+   * document.execCommand("paste") which is often blocked outside the
+   * user-gesture path, then to inserting the text as a plain text node.
+   * Falls back gracefully in jsdom where the Clipboard API is absent. */
+  async function doPaste() {
+    viewerContentEl.focus();
+    let text = null;
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      try { text = await navigator.clipboard.readText(); }
+      catch (_) { text = null; }
+    }
+    if (text != null) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(text));
+        sel.collapseToEnd();
+      }
+      onContentChange();
+      return;
+    }
+    // execCommand fallback (may be blocked by the browser).
+    try { document.execCommand("paste"); }
+    catch (_) {}
+    onContentChange();
+  }
+
   /* --- dirty tracking -------------------------------------------- */
 
   let dirty = false;
@@ -556,6 +602,12 @@
 
   function buildMenu() {
     menuEl.innerHTML = "";
+
+    // Clipboard (top-level)
+    addMenuItem("Copy", () => doCopy());
+    addMenuItem("Paste", () => doPaste());
+
+    addMenuSep();
 
     // Inline formatting submenu
     addSubmenu("Inline", (fly) => {

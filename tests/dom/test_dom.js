@@ -1850,7 +1850,9 @@ function check(label, cond, extra) {
       topLabels.includes("List") &&
       topLabels.includes("Insert") &&
       topLabels.includes("History") &&
-      topLabels.includes("Save"),
+      topLabels.includes("Save") &&
+      topLabels.includes("Copy") &&
+      topLabels.includes("Paste"),
       topLabels.join(" / "));
 
     // Each submenu should contain a nested .context-menu flyout with
