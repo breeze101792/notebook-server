@@ -43,6 +43,8 @@
   const DAMPING = 0.82;
   const SLEEP_EPS = 0.4;
   const MAX_SPEED = 16;
+  const MIN_SCALE = 0.2;
+  const MAX_SCALE = 5;
 
   // --- view state -----------------------------------------------------
   let nodes = [];
@@ -252,12 +254,14 @@
   function seedAround(i, n) {
     const r = Math.min(width, height) * 0.35 || 120;
     const a = (i / Math.max(1, n)) * Math.PI * 2;
-    return { x: width / 2 + Math.cos(a) * r, y: height / 2 + Math.sin(a) * r };
+    return { x: Math.cos(a) * r, y: Math.sin(a) * r };
   }
 
   function resetView() {
-    pan = { x: 0, y: 0 };
+    // World-space: nodes live around (0, 0). The view is positioned so
+    // (0, 0) lands at the canvas center.
     scale = 1;
+    pan = { x: width / 2, y: height / 2 };
     nodes.forEach((n, i) => {
       const s = seedAround(i, nodes.length);
       n.x = s.x; n.y = s.y; n.vx = 0; n.vy = 0;
@@ -268,8 +272,7 @@
   // --- physics step -----------------------------------------------------
   function step() {
     if (!nodes.length) return;
-    const cx = width / 2 + pan.x;
-    const cy = height / 2 + pan.y;
+    // World-space: the centering force pulls nodes toward world (0, 0).
     let maxSpeed = 0;
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i];
@@ -302,8 +305,8 @@
       b._fy -= uy * f;
     }
     for (const n of nodes) {
-      n._fx += (cx - n.x) * CENTER_K;
-      n._fy += (cy - n.y) * CENTER_K;
+      n._fx += -n.x * CENTER_K;
+      n._fy += -n.y * CENTER_K;
       if (n.fixed || n === dragNode) {
         n.vx = 0; n.vy = 0;
         continue;
@@ -332,15 +335,23 @@
     // the canvas backing store matches the CSS pixel dimensions, so
     // pointer-event picking math stays correct.
     sizeCanvas();
+    // dpr scaling was set once in sizeCanvas(); don't reset to identity
+    // or the dpr multiplier would be lost.
     ctx.clearRect(0, 0, width, height);
+    // Apply the view transform: world (n.x, n.y) -> screen pixels.
+    // ctx is already scaled by dpr, so on top of that we translate by
+    // pan and scale by `scale`.
+    ctx.save();
+    ctx.translate(pan.x, pan.y);
+    ctx.scale(scale, scale);
     const neighbours = hoverId ? neighbourSet(hoverId) : null;
     for (const e of edges) {
       if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
         ctx.strokeStyle = "rgba(127,140,160,0.07)";
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 / scale;
       } else {
         ctx.strokeStyle = "rgba(124,156,255,0.5)";
-        ctx.lineWidth = 1.5;
+        ctx.lineWidth = 1.5 / scale;
       }
       ctx.beginPath();
       ctx.moveTo(e.source.x, e.source.y);
@@ -372,7 +383,7 @@
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
         ctx.strokeStyle = isDragged ? "rgba(243,180,84,0.4)" : "rgba(124,156,255,0.4)";
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2 / scale;
         ctx.stroke();
       }
       ctx.beginPath();
@@ -381,11 +392,14 @@
       ctx.fill();
       if (n.id === hoverId || n.degree >= 3 || (nodes.length <= 30 && !filterQuery)) {
         const label = n.name.replace(/\.md$/i, "");
-        ctx.font = "12px -apple-system, sans-serif";
+        // Font size + label offset stay in screen pixels: undo the
+        // scale so a 12px font reads as 12px regardless of zoom.
+        ctx.font = (12 / scale) + "px -apple-system, sans-serif";
         ctx.fillStyle = dim || isFiltered ? "rgba(127,140,160,0.4)" : "rgba(230,230,234,0.92)";
-        ctx.fillText(label, n.x + r + 4, n.y + 4);
+        ctx.fillText(label, n.x + r + 4 / scale, n.y + 4 / scale);
       }
     }
+    ctx.restore();
   }
 
   function neighbourSet(id) {
@@ -430,11 +444,16 @@
   function pickNode(e) {
     if (!nodes.length) return null;
     const p = eventPos(e);
-    const w = worldFromScreen(p.x, p.y);
+    // Pick in screen space so the click hitbox matches the visible
+    // radius at any zoom level. Each node has a baseline world radius
+    // (4 + small boost by degree); multiplied by `scale` gives its
+    // current on-screen radius.
     let best = null, bestD = Infinity;
     for (const n of nodes) {
-      const dx = n.x - w.x, dy = n.y - w.y;
-      const r = 5 + Math.min(10, Math.sqrt(n.degree) * 2) + 3;
+      const sx = pan.x + n.x * scale;
+      const sy = pan.y + n.y * scale;
+      const dx = sx - p.x, dy = sy - p.y;
+      const r = (5 + Math.min(10, Math.sqrt(n.degree) * 2) + 3) * scale;
       const d = dx * dx + dy * dy;
       if (d < r * r && d < bestD) { best = n; bestD = d; }
     }
@@ -468,6 +487,8 @@
       dragNode.vx = 0; dragNode.vy = 0;
       simulating = true; wake();
     } else if (panning) {
+      // Pan moves the view, not the nodes: shift pan by the screen
+      // pixel delta and nodes follow via draw().
       pan.x += p.x - lastMouse.x;
       pan.y += p.y - lastMouse.y;
       // Use requestRedraw so the panned view repaints immediately even
@@ -508,11 +529,14 @@
     requestRedraw();
   }
   function zoomBy(factor, sx, sy) {
-    const newScale = Math.max(0.2, Math.min(5, scale * factor));
-    const ratio = newScale / scale;
-    pan.x = sx - (sx - pan.x) * ratio;
-    pan.y = sy - (sy - pan.y) * ratio;
+    // Anchor the zoom on the world point under the cursor: solve for
+    // the new pan so (sx, sy) maps to the same world coords as before.
+    const wx = (sx - pan.x) / scale;
+    const wy = (sy - pan.y) / scale;
+    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
     scale = newScale;
+    pan.x = sx - wx * scale;
+    pan.y = sy - wy * scale;
     requestRedraw();
   }
 

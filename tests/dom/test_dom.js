@@ -610,6 +610,63 @@ const fakeRangeRect = {
 window.Range.prototype.getClientRects = function () { return [fakeRangeRect]; };
 window.Range.prototype.getBoundingClientRect = function () { return fakeRangeRect; };
 
+// jsdom doesn't ship a CanvasRenderingContext2D, but the graph view
+// draws to one. Install a recording stub on every canvas so the
+// existing graph tests keep working AND so a regression in the
+// drawing pipeline (e.g. forgetting to apply the pan/scale transform
+// or to set transform after resizing) is observable in tests. The
+// recording tracks the current 2D transform (a/b/c/d/e/f) so an
+// assertion can verify the view matrix is actually being applied.
+function makeFakeCtx(canvasEl) {
+  const log = {
+    calls: [], ops: {}, clears: 0,
+    transforms: [],           // stack snapshots from save()
+    current: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+  };
+  const apply = (name) => (...args) => {
+    log.calls.push(name);
+    log.ops[name] = (log.ops[name] || 0) + 1;
+    if (name === "clearRect") log.clears++;
+    const t = log.current;
+    if (name === "translate") {
+      t.e += args[0] * t.a + args[1] * t.c;
+      t.f += args[0] * t.b + args[1] * t.d;
+    }
+    if (name === "scale") {
+      t.a *= args[0]; t.b *= args[0]; t.c *= args[1]; t.d *= args[1];
+    }
+    if (name === "save") log.transforms.push({ ...t });
+    if (name === "restore") {
+      const prev = log.transforms.pop();
+      if (prev) { t.a = prev.a; t.b = prev.b; t.c = prev.c; t.d = prev.d; t.e = prev.e; t.f = prev.f; }
+    }
+    if (name === "setTransform") {
+      t.a = args[0]; t.b = args[1]; t.c = args[2]; t.d = args[3]; t.e = args[4]; t.f = args[5];
+    }
+  };
+  const ctx = {
+    log,
+    canvas: canvasEl || null,
+    fillStyle: "", strokeStyle: "", lineWidth: 1, font: "",
+    save: apply("save"), restore: apply("restore"),
+    translate: apply("translate"), scale: apply("scale"), setTransform: apply("setTransform"),
+    clearRect: apply("clearRect"),
+    beginPath: apply("beginPath"), moveTo: apply("moveTo"), lineTo: apply("lineTo"),
+    arc: apply("arc"), fill: apply("fill"), stroke: apply("stroke"),
+    fillText: apply("fillText"),
+  };
+  return ctx;
+}
+const origGetContext = window.HTMLCanvasElement.prototype.getContext;
+window.HTMLCanvasElement.prototype.getContext = function (type) {
+  if (type === "2d") {
+    const ctx = makeFakeCtx(this);
+    this.__fakeCtx = ctx;
+    return ctx;
+  }
+  return origGetContext ? origGetContext.call(this, type) : null;
+};
+
 // Fake fetch routing for every endpoint api.js calls.
 window.fetch = async (url, opts) => {
   const u = new URL(url, "http://127.0.0.1:5000");
@@ -2437,6 +2494,87 @@ function check(label, cond, extra) {
     check("graph: zoom-out button decreases scale",
       window.NB.graph.scale < scaleBeforeBtn2,
       "before=" + scaleBeforeBtn2.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+
+    // --- canvas transform: the bug that hid drag/zoom was that draw()
+    // never applied pan/scale to the canvas. jsdom stubs the 2D context,
+    // so we can inspect the recorded transform matrix after a redraw
+    // and confirm it actually reflects the view state. ---
+    // Force a redraw: pan to a known offset, then ask the graph to
+    // draw again via the public surface.
+    window.NB.graph.pan.x = 200;
+    window.NB.graph.pan.y = 150;
+    window.NB.graph.refresh(); // re-loads data; resets pan via onTabActivate path only on tab open
+    await tick(50);
+    // After refresh, the recorded ctx should have at least one frame
+    // that translated by pan and scaled by scale. setTransform is
+    // called in sizeCanvas() (for dpr), save/translate/scale/restore
+    // wrap the draw block. Look for save followed by translate+scale.
+    const ctx = canvasEl.__fakeCtx;
+    if (ctx) {
+      check("graph: ctx was used (calls recorded)", ctx.log.calls.length > 0,
+        "callCount=" + ctx.log.calls.length);
+      check("graph: ctx has had at least one clearRect", ctx.log.clears > 0,
+        "clears=" + ctx.log.clears);
+      // After a save + translate + scale + restore, the current
+      // transform should match the transform on the stack at the
+      // save point (which is dpr scaling, identity for dpr=1).
+      check("graph: ctx recorded save/restore pairs",
+        ctx.log.ops.save === ctx.log.ops.restore,
+        "save=" + ctx.log.ops.save + " restore=" + ctx.log.ops.restore);
+      check("graph: ctx recorded translate calls", ctx.log.ops.translate > 0,
+        "translate=" + ctx.log.ops.translate);
+      check("graph: ctx recorded scale calls (for zoom)", ctx.log.ops.scale > 0,
+        "scale=" + ctx.log.ops.scale);
+      check("graph: ctx drew node arcs", ctx.log.ops.arc > 0,
+        "arc=" + ctx.log.ops.arc);
+    } else {
+      check("graph: ctx was created on canvas", false,
+        "no __fakeCtx attached to " + (canvasEl && canvasEl.id));
+    }
+
+    // --- pickNode + drag actually moves a node in world space ---
+    // Place a known node near the cursor and verify dragging the node
+    // updates its world coords (so the rendering would follow the
+    // cursor). pickNode runs in screen space at the current scale, so
+    // the world coord it stores should match the screen point.
+    const someNode = window.NB.graph.nodes[0];
+    if (someNode) {
+      // Put the node at world (0, 0) so we know its screen position
+      // exactly: it will be drawn at (pan.x, pan.y).
+      someNode.x = 0;
+      someNode.y = 0;
+      // Wait for next draw frame so pickNode sees the new layout.
+      await tick(20);
+      // Cursor at the screen point where the node should appear:
+      // (pan.x + 0 * scale, pan.y + 0 * scale) = (pan.x, pan.y).
+      const mdAtNode = new window.MouseEvent("mousedown", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+      });
+      canvasEl.dispatchEvent(mdAtNode);
+      // Move the cursor 30 px right / 20 px down; the node should
+      // follow in world space: x = (30)/scale, y = (20)/scale.
+      const mm = new window.MouseEvent("mousemove", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: window.NB.graph.pan.x + 30, clientY: window.NB.graph.pan.y + 20,
+      });
+      canvasEl.dispatchEvent(mm);
+      const expectedX = 30 / window.NB.graph.scale;
+      const expectedY = 20 / window.NB.graph.scale;
+      check("graph: dragging node updates world x with current scale",
+        Math.abs(someNode.x - expectedX) < 0.01,
+        "got x=" + someNode.x.toFixed(3) + " expected=" + expectedX.toFixed(3) +
+        " (scale=" + window.NB.graph.scale.toFixed(3) + ")");
+      check("graph: dragging node updates world y with current scale",
+        Math.abs(someNode.y - expectedY) < 0.01,
+        "got y=" + someNode.y.toFixed(3) + " expected=" + expectedY.toFixed(3) +
+        " (scale=" + window.NB.graph.scale.toFixed(3) + ")");
+      // Release the mouse so subsequent tests aren't affected.
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: window.NB.graph.pan.x + 30, clientY: window.NB.graph.pan.y + 20,
+      }));
+    }
 
     // Close the graph tab before subsequent tests run so it doesn't
     // interfere with tab-close / restore assertions below.
