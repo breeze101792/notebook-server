@@ -85,24 +85,29 @@ const html = `<!DOCTYPE html><html><head>
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="back-btn" class="icon-btn" disabled>←</button>
-      <button id="edit-toggle">Edit</button>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
+      <button id="edit-toggle">Edit</button>
       <button id="logout-btn" class="icon-btn" hidden>⎋</button>
-      <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
     <main id="layout">
-      <aside id="sidebar">
-        <div class="panel-header"><span class="panel-title">Files</span>
-          <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button></div>
-        <div id="bookmarks" class="bookmarks">
-          <div class="bookmarks-header">
-            <span class="bookmarks-title">Bookmarks</span>
-            <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
+      <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
+        <div class="activity-bar-spacer"></div>
+        <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+      <aside id="side-panel">
+        <div id="sidebar" class="side-panel-view" data-view="explorer">
+          <div class="panel-header"><span class="panel-title">Files</span>
+            <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button></div>
+          <div id="bookmarks" class="bookmarks">
+            <div class="bookmarks-header">
+              <span class="bookmarks-title">Bookmarks</span>
+              <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
+            </div>
+            <div id="bookmarks-list" class="bookmarks-list"></div>
           </div>
-          <div id="bookmarks-list" class="bookmarks-list"></div>
+          <div id="file-tree" class="tree"></div>
         </div>
-        <div id="file-tree" class="tree"></div>
-        <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
+        <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar"></div>
@@ -677,6 +682,7 @@ evalIn(read("static/js/search.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/vimnav.js"));
+evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/app.js"));
 
@@ -2205,15 +2211,17 @@ function check(label, cond, extra) {
   TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
 
   console.log("== sidebar minimize (collapse/expand) ==");
-  // left file sidebar
+  // left file sidebar (now the #side-panel hosting the Explorer view)
   click("sidebar-collapse");
   await tick(10);
-  check("left sidebar gets .collapsed", $("sidebar").classList.contains("collapsed"));
-  check("left sidebar width -> 12px", cssVar("--sidebar-width") === "12px", cssVar("--sidebar-width"));
-  click("sidebar-expand");
+  check("left sidebar gets .collapsed", $("side-panel").classList.contains("collapsed"));
+  check("left sidebar width -> 0px", cssVar("--side-panel-width") === "0px", cssVar("--side-panel-width"));
+  // Re-expand via the activity bar's Explorer icon (no strip button now).
+  const explorerBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+  explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("left sidebar .collapsed removed", !$("sidebar").classList.contains("collapsed"));
-  check("left sidebar width restored (240px)", cssVar("--sidebar-width") === "240px", cssVar("--sidebar-width"));
+  check("left sidebar .collapsed removed", !$("side-panel").classList.contains("collapsed"));
+  check("left sidebar width restored (240px)", cssVar("--side-panel-width") === "240px", cssVar("--side-panel-width"));
   // right outline
   click("outline-collapse");
   await tick(10);
@@ -2231,7 +2239,7 @@ function check(label, cond, extra) {
   // Re-expand for the bookmark tests below; the resize-handle block
   // works on a visible sidebar anyway, but bookmarks would be hidden
   // behind the collapsed strip and harder to assert against.
-  click("sidebar-expand");
+  explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
 
   console.log("== sidebar: collapse-all folders from root context menu ==");
@@ -3806,8 +3814,8 @@ function check(label, cond, extra) {
     check("settings: overlay hidden-by-attr is display:none on load",
       overlayStyle.display === "none", "computed display=" + overlayStyle.display);
   }
-  // Open via the gear button in the top bar.
-  $("settings-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+  // Open via the gear button in the activity bar.
+  $("activity-settings-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
   check("settings: gear button opens modal", window.NB.settings.isOpen());
   check("settings: overlay is visible (no hidden attr)", !$("settings-overlay").hidden);

@@ -15,8 +15,16 @@
   --danger: #ff6b6b;
   --ok: #5fd49a;       /* "watching is on" -- green for the active state */
   --warn: #f3b454;     /* "watching is off" -- amber draws the eye */
-  --sidebar-width: 240px;
+  --sidebar-width: 240px;   /* legacy alias; kept for any external callers */
   --outline-width: 220px;
+  /* The activity bar is a fixed-width icon strip pinned to the far-left
+   * edge. It never resizes; the side panel next to it does. */
+  --activity-bar-width: 48px;
+  /* Width of the side panel that hosts the active activity view. Renamed
+   * from --sidebar-width so the resize + collapse logic reads clearly
+   * (the panel now hosts more than just the file tree). The Explorer
+   * view reuses this width since it lives inside the panel. */
+  --side-panel-width: 240px;
   --topbar-h: 46px;
   /* Multiplier applied to the app's text size. Default 1; the user picks
    * S/M/L/XL in the Settings modal which maps to 0.9 / 1 / 1.15 / 1.3.
@@ -122,22 +130,110 @@ body {
 /* ------------------------------------------------------------------ */
 #layout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr var(--outline-width);
+  /* Activity bar (fixed) | side panel (resizable) | editor | outline. */
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr var(--outline-width);
   flex: 1 1 auto;
   min-height: 0;
 }
-#sidebar, #outline-pane {
+/* The activity bar: a narrow vertical strip of icon buttons. It is the
+ * leftmost grid column and never scrolls; icons stack top-to-bottom. */
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 0;
+}
+.activity-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0;
+  position: relative;
+  transition: background .12s ease, color .12s ease;
+}
+.activity-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active { color: var(--fg); background: var(--accent-soft); }
+/* A left accent bar on the active icon, mirroring VS Code's indicator. */
+.activity-btn.active::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.activity-icon { pointer-events: none; }
+
+/* A flex spacer pushes the bottom-pinned actions (settings) to the
+ * bottom of the bar, away from the view icons at the top. */
+.activity-bar-spacer { flex: 1 1 auto; }
+/* An action button (settings) is visually the same as a view button but
+ * has no active/toggle state -- it just fires a one-shot action. */
+.activity-action.active::before { display: none; }
+
+/* Side panel: hosts the active activity view. Shares one resize handle
+ * and one --side-panel-width var; individual views never resize
+ * independently. */
+#side-panel {
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow: hidden;          /* the pane never scrolls; inner content does, so
-                              the resize handle on the pane edge is never
-                              buried under a scrollbar */
+  overflow: hidden;
   min-width: 0;
-  position: relative;        /* anchor for the collapsed strip + resize handle */
+  position: relative;
 }
-#outline-pane { border-right: none; border-left: 1px solid var(--border); }
+/* A side-panel view fills the panel. Only one is shown at a time; the
+ * others carry [hidden]. */
+.side-panel-view {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.side-panel-view[hidden] { display: none; }
+
+/* The original #sidebar is now a side-panel-view. It reuses the
+ * .side-panel-view flex layout; this rule only adds the background +
+ * position context it had before. We deliberately do NOT set `display`
+ * here -- the .side-panel-view[hidden] rule must win so a non-active
+ * view hides cleanly (an ID selector setting display:flex would
+ * override the [hidden] attribute selector and both views would show
+ * at once). */
+#sidebar {
+  background: var(--bg-panel);
+  overflow: hidden;
+  min-width: 0;
+  position: relative;
+}
+#outline-pane {
+  background: var(--bg-panel);
+  border-right: none;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  position: relative;
+}
 .panel-header {
   display: flex;
   align-items: center;
@@ -226,13 +322,13 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 .expand-btn:hover { color: var(--fg); background: var(--accent-soft); }
 
-#sidebar.collapsed .expand-btn,
+#side-panel.collapsed .expand-btn,
 #outline-pane.collapsed .expand-btn { display: flex; }
-#sidebar.collapsed .panel-header,
-#sidebar.collapsed #file-tree,
+#side-panel.collapsed .side-panel-view,
+#side-panel.collapsed .panel-header,
 #outline-pane.collapsed .panel-header,
 #outline-pane.collapsed #outline { display: none; }
-#sidebar.collapsed .resize-handle,
+#side-panel.collapsed .resize-handle,
 #outline-pane.collapsed .resize-handle { display: none; }
 
 #editor-pane {
@@ -940,6 +1036,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   * that survived auth.js's content wipe is still unreadable. */
  body.auth-locked #editor-pane,
  body.auth-locked #sidebar,
+ body.auth-locked #side-panel,
+ body.auth-locked #activity-bar,
  body.auth-locked #search-results { filter: blur(6px); }
 
 /* Passwords section inside the Settings modal. The inputs reuse the
@@ -1941,3 +2039,55 @@ body[data-theme="light"] #viewer-content {
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.warn { border-color: var(--warn); color: var(--warn); }
+
+/* ------------------------------------------------------------------ */
+/* Recent / Quick open view                                            */
+/* ------------------------------------------------------------------ */
+/* Lives inside #side-panel as a .side-panel-view. The filter input is
+ * pinned to the top under the panel header; the list scrolls below. */
+.recent-filter {
+  flex: 0 0 auto;
+  margin: 8px 10px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: .9rem;
+}
+.recent-filter:focus { outline: none; border-color: var(--accent); }
+.recent-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  padding: 0 6px 8px;
+  margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
+}
+.recent-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.recent-row:hover, .recent-row.selected { background: var(--accent-soft); }
+.recent-row.selected { color: var(--accent); }
+.recent-name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.recent-dir {
+  font-size: .78rem;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+  max-width: 40%;
+}
+.recent-empty {
+  padding: 16px 12px;
+  color: var(--fg-muted);
+  font-size: .86rem;
+  font-style: italic;
+}

@@ -68,15 +68,23 @@
     shortcuts: {},
   };
 
-  // Width used while a sidebar is collapsed (a thin clickable strip).
-  const COLLAPSED_W = 12;
+  // Width used while the side panel is collapsed. 0 -- the activity
+  // bar's icons are the re-expand affordance, so the panel itself hides
+  // completely instead of leaving a thin strip.
+  const PANEL_COLLAPSED_W = 0;
+  // The outline pane has no activity-bar icon, so it keeps a thin strip
+  // to click for re-expanding.
+  const OUTLINE_COLLAPSED_W = 12;
 
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
 
   const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
-  const sidebarEl  = document.getElementById("sidebar");
+  // The outer side panel (hosts the active activity view). The old
+  // #sidebar is now a view inside it; resize + collapse operate on the
+  // panel, not the view, so every activity view shares one width.
+  const sidePanelEl = document.getElementById("side-panel");
   const outlineEl  = document.getElementById("outline-pane");
 
   /* --- theme ---------------------------------------------------------- */
@@ -272,20 +280,25 @@
     }
   }
 
-  /* Sidebar minimize: toggle between the saved width and a thin strip.
-   * The collapsed state is persisted in config. */
+  /* Side panel minimize: toggle between the saved width and a thin strip.
+   * The collapsed state is persisted in config. NB.activity owns the
+   * activity-bar icon highlighting and the activate/toggle-on-click
+   * behavior; this function just applies the width + class from the
+   * persisted config on boot. The live toggle goes through the icon
+   * click -> NB.activity.activate(id, true) -> collapse()/expand() and
+   * is persisted by the listener below. */
   function applySidebarState() {
     if (cfg.sidebarCollapsed) {
-      document.documentElement.style.setProperty("--sidebar-width", COLLAPSED_W + "px");
-      sidebarEl.classList.add("collapsed");
+      document.documentElement.style.setProperty("--side-panel-width", PANEL_COLLAPSED_W + "px");
+      sidePanelEl.classList.add("collapsed");
     } else {
-      document.documentElement.style.setProperty("--sidebar-width", (cfg.sidebarWidth || 240) + "px");
-      sidebarEl.classList.remove("collapsed");
+      document.documentElement.style.setProperty("--side-panel-width", (cfg.sidebarWidth || 240) + "px");
+      sidePanelEl.classList.remove("collapsed");
     }
   }
   function applyOutlineState() {
     if (cfg.outlineCollapsed) {
-      document.documentElement.style.setProperty("--outline-width", COLLAPSED_W + "px");
+      document.documentElement.style.setProperty("--outline-width", OUTLINE_COLLAPSED_W + "px");
       outlineEl.classList.add("collapsed");
     } else {
       document.documentElement.style.setProperty("--outline-width", (cfg.outlineWidth || 220) + "px");
@@ -339,11 +352,24 @@
     // Save stays in one place.
     editBtn.addEventListener("click", () => NB.viewer.toggleEdit());
 
-    // sidebar minimize (collapse / expand) for both sidebars
+    // side panel minimize (collapse). The collapse button lives inside
+    // the Explorer view's header. Re-expansion is via the activity bar's
+    // icons (clicking any icon expands the panel and shows that view),
+    // so there's no separate expand button on the panel itself.
     document.getElementById("sidebar-collapse").addEventListener("click",
       () => { cfg.sidebarCollapsed = true; applySidebarState(); persistConfig(); });
-    document.getElementById("sidebar-expand").addEventListener("click",
-      () => { cfg.sidebarCollapsed = false; applySidebarState(); persistConfig(); });
+    // The activity-bar icon toggle path: clicking the active icon
+    // collapses the panel via NB.activity; persist that state so a
+    // reload lands on the same shape. Activating a different icon from
+    // a collapsed panel expands it -- persist that too.
+    if (NB.evt) {
+      NB.evt.on("activity:collapsed", () => {
+        cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
+      });
+      NB.evt.on("activity:expanded", () => {
+        cfg.sidebarCollapsed = false; applySidebarState(); persistConfig();
+      });
+    }
     document.getElementById("outline-collapse").addEventListener("click",
       () => { cfg.outlineCollapsed = true; applyOutlineState(); persistConfig(); });
     document.getElementById("outline-expand").addEventListener("click",
@@ -384,11 +410,11 @@
 
     // Settings: the gear button opens a modal. The modal lives in its own
     // module (settings.js) and reads/writes the cfg through these hooks.
-    document.getElementById("settings-btn").addEventListener("click",
+    document.getElementById("activity-settings-btn").addEventListener("click",
       () => NB.settings && NB.settings.open());
 
     // resizable sidebars (drag the inner edge)
-    setupResize("sidebar", "--sidebar-width", "right");
+    setupResize("side-panel", "--side-panel-width", "right");
     setupResize("outline-pane", "--outline-width", "left");
   }
 
@@ -413,7 +439,7 @@
       handle.classList.remove("dragging");
       document.body.classList.remove("resizing");
       const w = pane.getBoundingClientRect().width;
-      if (id === "sidebar") cfg.sidebarWidth = w;
+      if (id === "side-panel") cfg.sidebarWidth = w;
       else cfg.outlineWidth = w;
       persistConfig();
     }
@@ -653,6 +679,10 @@
    * trigger a persist without reaching into our module-scoped state. */
   NB.app = {
     getCfg: () => cfg,
+    // The canonical side-panel width, read by NB.activity.expand() to
+    // restore the panel to the user's last-dragged size after a
+    // collapse cycle. Kept here so the width has one owner.
+    getSidePanelWidth: () => (cfg.sidebarWidth || 240),
     // Shared helpers used by ad-hoc UX (code-block Copy button, etc.).
     // notify() is the single-line toast; copyToClipboard() is the
     // Clipboard-API-with-fallback writer.

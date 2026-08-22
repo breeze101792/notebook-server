@@ -33,28 +33,64 @@
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
         <button id="back-btn" class="icon-btn" title="Back" aria-label="Back" disabled>←</button>
-        <button id="edit-toggle">Edit</button>
         <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode (edit rendered markdown directly)" aria-label="WYSIWYG" hidden>✎</button>
+        <button id="edit-toggle">Edit</button>
       </div>
       <button id="logout-btn" class="icon-btn" title="Log out" aria-label="Log out" hidden>⎋</button>
-      <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
     </header>
 
     <main id="layout">
-      <aside id="sidebar">
-        <div class="panel-header">
-          <span class="panel-title">Files</span>
-          <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
-        </div>
-        <div id="bookmarks" class="bookmarks">
-          <div class="bookmarks-header">
-            <span class="bookmarks-title">Bookmarks</span>
-            <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
+      <!-- Activity bar: narrow vertical strip of icon buttons pinned to
+           the far-left edge. Each icon swaps the #side-panel's content;
+           clicking the active icon again collapses the panel so only the
+           strip remains. Icons are rendered by activity.js via
+           NB.activity.register(); the bar itself is static markup so the
+           grid column exists before the module boots. -->
+      <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
+        <!-- View icons are injected by activity.js (NB.activity.register).
+             The settings button below is a bottom-pinned action, not a
+             view: clicking it just opens the Settings modal, no panel
+             swap. -->
+        <div class="activity-bar-spacer"></div>
+        <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+
+      <!-- Side panel: hosts the currently-active activity view. The
+           Explorer view (#sidebar) ships here by default; further views
+           (Recent, future plugins) are mounted on demand by activity.js
+           and live as siblings that are shown/hidden as the active
+           view changes. The panel shares one resize handle and one
+           --side-panel-width CSS var; individual views never resize
+           independently. -->
+      <aside id="side-panel">
+        <!-- Explorer view: the original file tree + bookmarks. Stays in
+             the DOM so its state (collapsed folders, selection, scroll)
+             survives view switches; hidden via [hidden] when inactive. -->
+        <div id="sidebar" class="side-panel-view" data-view="explorer">
+          <div class="panel-header">
+            <span class="panel-title">Files</span>
+            <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
           </div>
-          <div id="bookmarks-list" class="bookmarks-list"></div>
+          <div id="bookmarks" class="bookmarks">
+            <div class="bookmarks-header">
+              <span class="bookmarks-title">Bookmarks</span>
+              <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
+            </div>
+            <div id="bookmarks-list" class="bookmarks-list"></div>
+          </div>
+          <div id="file-tree" class="tree"></div>
+          <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
         </div>
-        <div id="file-tree" class="tree"></div>
-        <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
+
+        <!-- Recent view: quick-open list of recently edited files with a
+             fuzzy filter. Mounted lazily by activity.js the first time
+             the Recent icon is activated. The placeholder below is
+             replaced on mount. -->
+        <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
+
+        <!-- Collapsed-strip affordance removed: the activity bar's icons
+             are the re-expand trigger, so the panel hides completely
+             (width 0) when collapsed. -->
       </aside>
 
       <section id="editor-pane">
@@ -521,8 +557,11 @@
   <script src="/static/js/tabs.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/vimnav.js"></script>
-  <!-- shortcuts.js defines NB.shortcuts; loaded just before app.js
-       (which calls shortcuts.install during boot). -->
+  <!-- activity.js registers the activity-bar views (Explorer, Recent)
+       and owns the icon<->panel swap + collapse. Loaded before app.js
+       so NB.activity.register() calls during boot land on the live
+       registry. -->
+  <script src="/static/js/activity.js"></script>
   <script src="/static/js/shortcuts.js"></script>
   <script src="/static/js/app.js"></script>
   <script>

@@ -87,7 +87,7 @@ const { chromium } = require("playwright-core");
     console.log("  before:", before.trim(), "| during:", during.trim(), "| after:", after.trim());
     return { before: before.trim(), during: during.trim(), after: after.trim() };
   }
-  const sd = await dragTest("sidebar", "right", "--sidebar-width");
+  const sd = await dragTest("side-panel", "right", "--side-panel-width");
   const od = await dragTest("outline-pane", "left", "--outline-width");
   console.log("\n=== SUMMARY ===");
   console.log("sidebar  drag worked:", sd.before !== sd.during, `( ${sd.before} -> ${sd.during} )`);
