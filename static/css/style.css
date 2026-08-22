@@ -2091,3 +2091,85 @@ body[data-theme="light"] #viewer-content {
   font-size: .86rem;
   font-style: italic;
 }
+
+/* ------------------------------------------------------------------ */
+/* Search view (side panel)                                           */
+/* ------------------------------------------------------------------ */
+/* Independent from the top-bar search overlay. Shares the same
+ * NB.api.search backend; the UI is self-contained in the side panel. */
+.search-panel-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+}
+.search-panel-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: .9rem;
+}
+.search-panel-input:focus { outline: none; border-color: var(--accent); }
+.search-panel-case {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: .8rem;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.search-panel-case input { margin: 0; }
+.search-panel-summary {
+  flex: 0 0 auto;
+  padding: 2px 12px 6px;
+  font-size: .78rem;
+  color: var(--fg-muted);
+}
+.search-panel-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  padding: 0 6px 8px;
+  margin-right: 8px;
+}
+.search-panel-empty {
+  padding: 16px 12px;
+  color: var(--fg-muted);
+  font-size: .86rem;
+  font-style: italic;
+}
+.search-panel-hit {
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.search-panel-hit:hover, .search-panel-hit.is-active { background: var(--accent-soft); }
+.search-panel-hit-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sp-file { overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: .86rem; }
+.sp-meta { font-size: .74rem; color: var(--fg-muted); flex: 0 0 auto; white-space: nowrap; }
+.search-panel-hit-snippet {
+  font-size: .8rem;
+  color: var(--fg-muted);
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.search-panel-hit-snippet mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+}

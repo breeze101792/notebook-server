@@ -88,6 +88,12 @@
              replaced on mount. -->
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
 
+        <!-- Search view: a self-contained search panel with its own input
+             and results list. Mounted lazily by activity.js. Independent
+             from the top-bar search, which keeps its overlay behavior;
+             both call the same NB.api.search backend. -->
+        <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
+
         <!-- Collapsed-strip affordance removed: the activity bar's icons
              are the re-expand trigger, so the panel hides completely
              (width 0) when collapsed. -->

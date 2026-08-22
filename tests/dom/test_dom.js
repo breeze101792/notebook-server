@@ -108,6 +108,7 @@ const html = `<!DOCTYPE html><html><head>
           <div id="file-tree" class="tree"></div>
         </div>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
+        <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar"></div>
