@@ -459,9 +459,17 @@
      *   - clean: just exit edit mode, no prompt.
      *   - dirty: confirm; on OK save (failure aborts the nav), on
      *     Cancel revert the editor to the last saved content.
+     * Also delegates to NB.hybrid.commitForTabSwitch when hybrid mode
+     * is active (the hybrid module owns its own dirty + exit logic).
      * Returns true if the caller may proceed with the nav, false if
-     * the user (or a failed save) wants to stay in edit mode. */
+     * the user (or a failed save) wants to stay. */
     async commitForTabSwitch() {
+      // Hybrid mode takes priority -- it sits on top of preview mode,
+      // so editMode is false while hybrid is active.
+      if (NB.hybrid && NB.hybrid.isActive) {
+        const ok = await NB.hybrid.commitForTabSwitch();
+        if (!ok) return false;
+      }
       const t = cur(); if (!t) return true;
       if (!t.editMode) return true;
       if (!viewer.isDirty(active)) {

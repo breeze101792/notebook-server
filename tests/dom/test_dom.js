@@ -86,6 +86,7 @@ const html = `<!DOCTYPE html><html><head>
       <input type="checkbox" id="search-case">
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="edit-toggle">Edit</button>
+      <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
       <button id="logout-btn" class="icon-btn" hidden>⎋</button>
       <button id="settings-btn" class="icon-btn">⚙</button>
     </header>
@@ -179,6 +180,7 @@ const html = `<!DOCTYPE html><html><head>
   </div>
   <div id="context-menu" class="context-menu" hidden></div>
   <div id="tab-context-menu" class="context-menu" hidden></div>
+  <div id="hybrid-context-menu" class="context-menu" hidden></div>
   <div id="auth-overlay" class="settings-overlay" hidden>
     <div class="settings-modal auth-modal">
       <div class="settings-header">
@@ -658,13 +660,16 @@ const errors = [];
 window.addEventListener("error", (e) => errors.push("window error: " + (e.error ? e.error.stack : e.message)));
 evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
-evalIn(read("static/vendor/codemirror.bundle.js"));
-evalIn(read("static/js/api.js"));
-evalIn(read("static/js/auth.js"));
-evalIn(read("static/js/cm-bridge.js"));
-evalIn(read("static/js/mermaid.js"));
-evalIn(read("static/js/viewer.js"));
-evalIn(read("static/js/editbar.js"));
+  evalIn(read("static/vendor/codemirror.bundle.js"));
+  evalIn(read("static/vendor/turndown.browser.js"));
+  evalIn(read("static/vendor/turndown-plugin-gfm.browser.js"));
+  evalIn(read("static/js/api.js"));
+  evalIn(read("static/js/auth.js"));
+  evalIn(read("static/js/cm-bridge.js"));
+  evalIn(read("static/js/mermaid.js"));
+  evalIn(read("static/js/viewer.js"));
+  evalIn(read("static/js/editbar.js"));
+  evalIn(read("static/js/hybrid.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -1702,6 +1707,478 @@ function check(label, cond, extra) {
     "editor.scrollTop=" + cmScroller.scrollTop);
   // Clean up: exit edit mode.
   click("close-edit-btn"); await tick(10);
+
+  console.log("== hybrid (WYSIWYG) mode ==");
+  // Hybrid mode: contentEditable on #viewer-content + edit bar, no CM6.
+  // Pre-condition: a file is open in preview mode, hybrid button visible.
+  {
+    const hb = $("hybrid-toggle");
+    const vc = $("viewer-content");
+    check("hybrid: NB.hybrid module exists", !!window.NB.hybrid);
+    check("hybrid: button visible when file open in preview", !hb.hidden);
+    check("hybrid: not active initially", !window.NB.hybrid.isActive());
+    check("hybrid: contenteditable not set initially", vc.getAttribute("contenteditable") === null);
+
+    // Enter hybrid mode.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    check("hybrid: isActive after enter()", window.NB.hybrid.isActive());
+    check("hybrid: contenteditable=true after enter", vc.getAttribute("contenteditable") === "true");
+    check("hybrid: .hybrid-editing class on viewer-content", vc.classList.contains("hybrid-editing"));
+    check("hybrid: edit bar visible", !$("edit-bar").hidden);
+    check("hybrid: topbar has .editing class", $("topbar").classList.contains("editing"));
+    check("hybrid: button has .active class", hb.classList.contains("active"));
+    check("hybrid: Preview button hidden (CM6-only)", $("preview-btn").hidden);
+    check("hybrid: Close button visible", !$("close-edit-btn").hidden);
+
+    // domToMarkdown should produce valid markdown from the rendered content.
+    // The file content may have been modified by earlier tests, so we
+    // check against the actual current content rather than a hardcoded string.
+    const currentContent = window.NB.viewer.getContent();
+    const md = window.NB.hybrid.domToMarkdown();
+    check("hybrid: domToMarkdown returns non-empty string", typeof md === "string" && md.length > 0);
+    check("hybrid: domToMarkdown contains heading text",
+      md.includes("Edited") || md.includes("File A") || md.includes("heading"),
+      JSON.stringify(md).slice(0, 120));
+
+    // Edit bar H2 button should convert a <p> to <h2> (DOM operation,
+    // not CM6). Select the first <p>, click H2, verify.
+    const pBefore = vc.querySelector("p");
+    if (pBefore) {
+      const range = window.document.createRange();
+      range.selectNodeContents(pBefore);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      const h2Btn = $("edit-bar").querySelector('[data-act="h2"]');
+      h2Btn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      // The <p> should now be an <h2>.
+      check("hybrid: H2 button converts <p> to <h2>",
+        vc.querySelectorAll("h2").length > 0,
+        "h2 count=" + vc.querySelectorAll("h2").length);
+    } else {
+      check("hybrid: H2 button converts <p> to <h2>", false, "no <p> found");
+    }
+
+    // domToMarkdown after the edit should still be valid.
+    const md2 = window.NB.hybrid.domToMarkdown();
+    check("hybrid: domToMarkdown after edit still has content",
+      md2.includes("Edited") || md2.includes("File A") || md2.includes("heading"));
+
+    // Dirty state should be true after the edit bar action.
+    check("hybrid: isDirty true after edit", window.NB.hybrid.isDirty());
+    check("hybrid: Save button visible when dirty", !$("save-btn").hidden);
+
+    // Exit hybrid mode (discard changes).
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+    check("hybrid: not active after exit()", !window.NB.hybrid.isActive());
+    check("hybrid: contenteditable removed after exit", vc.getAttribute("contenteditable") === null);
+    check("hybrid: .hybrid-editing class removed", !vc.classList.contains("hybrid-editing"));
+    check("hybrid: edit bar hidden after exit", $("edit-bar").hidden);
+    check("hybrid: topbar .editing removed", !$("topbar").classList.contains("editing"));
+    check("hybrid: button .active removed", !hb.classList.contains("active"));
+
+    // After exit, the file should re-render as normal preview.
+    check("hybrid: viewer-content has rendered content after exit",
+      vc.innerHTML.length > 0 && vc.querySelector("h1") !== null);
+
+    // --- hybrid save flow ---
+    // Re-enter hybrid mode, type a change, save, and verify the save
+    // POST was sent to the server.
+    const saveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    await window.NB.hybrid.enter();
+    await tick(20);
+    // Simulate a user edit by appending text to the contentEditable.
+    vc.innerHTML += "<p>hybrid save test</p>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    check("hybrid: dirty after manual edit", window.NB.hybrid.isDirty());
+    // Click Save (the hybrid module's onSave handler fires).
+    const saveBtnEl = $("save-btn");
+    saveBtnEl.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(50);
+    const saveAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid: save POST fired", saveAfter - saveBefore === 1,
+      "delta=" + (saveAfter - saveBefore));
+    check("hybrid: not dirty after save", !window.NB.hybrid.isDirty());
+    // Exit hybrid mode (clean now).
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+    check("hybrid: clean exit after save", !window.NB.hybrid.isActive());
+
+    // --- hybrid context menu ---
+    // Right-clicking inside #viewer-content while hybrid mode is active
+    // should open a formatting context menu.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const hcm = $("hybrid-context-menu");
+    check("hybrid menu: hidden before right-click", hcm.hidden);
+
+    // Simulate a right-click inside #viewer-content.
+    const ctxEv2 = new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 });
+    vc.dispatchEvent(ctxEv2);
+    await tick(10);
+    check("hybrid menu: visible after right-click in viewer-content", !hcm.hidden);
+
+    // The top-level menu should have submenu groups (Inline, Heading,
+    // List, Insert, History) plus a Save button -- not a flat list.
+    // We check direct children of the menu (not nested flyout buttons).
+    const topChildren = Array.from(hcm.children).filter(el => el.tagName === "BUTTON" || el.tagName === "HR");
+    const topBtns = topChildren.filter(el => el.tagName === "BUTTON");
+    const topLabels = topBtns.map(b => {
+      // For submenu buttons, textContent includes the flyout's text.
+      // Read only the immediate text node (before the flyout div).
+      let label = "";
+      for (const node of b.childNodes) {
+        if (node.nodeType === 3) label += node.textContent;  // text node
+        else break;
+      }
+      return label.trim();
+    });
+    check("hybrid menu: top-level has submenu groups",
+      topLabels.includes("Inline") &&
+      topLabels.includes("Heading") &&
+      topLabels.includes("List") &&
+      topLabels.includes("Insert") &&
+      topLabels.includes("History") &&
+      topLabels.includes("Save"),
+      topLabels.join(" / "));
+
+    // Each submenu should contain a nested .context-menu flyout with
+    // the expected items.
+    const inlineSub = topBtns.find(b => {
+      let l = ""; for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
+      return l.trim() === "Inline";
+    });
+    check("hybrid menu: Inline submenu has flyout",
+      inlineSub && inlineSub.querySelector(".context-menu") !== null);
+    if (inlineSub) {
+      const flyBtns = Array.from(inlineSub.querySelector(".context-menu").querySelectorAll("button"));
+      const flyLabels = flyBtns.map(b => b.textContent.trim());
+      check("hybrid menu: Inline submenu has Bold/Italic/Strikethrough/Code/Clear",
+        flyLabels.includes("Bold") &&
+        flyLabels.includes("Italic") &&
+        flyLabels.includes("Strikethrough") &&
+        flyLabels.includes("Inline code") &&
+        flyLabels.includes("Clear formatting"),
+        flyLabels.join(" / "));
+    }
+
+    const headingSub = topBtns.find(b => {
+      let l = ""; for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
+      return l.trim() === "Heading";
+    });
+    if (headingSub) {
+      const fly = headingSub.querySelector(".context-menu");
+      const flyLabels = Array.from(fly.querySelectorAll("button")).map(b => b.textContent.trim());
+      check("hybrid menu: Heading submenu has H1-H6",
+        flyLabels.includes("Heading 1") && flyLabels.includes("Heading 6"),
+        flyLabels.join(" / "));
+    }
+
+    const insertSub = topBtns.find(b => {
+      let l = ""; for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
+      return l.trim() === "Insert";
+    });
+    if (insertSub) {
+      const fly = insertSub.querySelector(".context-menu");
+      const flyLabels = Array.from(fly.querySelectorAll("button")).map(b => b.textContent.trim());
+      check("hybrid menu: Insert submenu has Link/Image/Table/HR/Code block",
+        flyLabels.includes("Link…") &&
+        flyLabels.includes("Image…") &&
+        flyLabels.includes("Code block") &&
+        flyLabels.includes("Table") &&
+        flyLabels.includes("Horizontal rule"),
+        flyLabels.join(" / "));
+    }
+
+    // Clicking a submenu item should close the menu and apply formatting.
+    // Select the first <p> text, then click "Bold" inside the Inline submenu.
+    const pEl = vc.querySelector("p");
+    if (pEl && inlineSub) {
+      const range2 = window.document.createRange();
+      range2.selectNodeContents(pEl);
+      const sel2 = window.getSelection();
+      sel2.removeAllRanges();
+      sel2.addRange(range2);
+      const fly = inlineSub.querySelector(".context-menu");
+      const boldBtn = Array.from(fly.querySelectorAll("button"))
+        .find(b => b.textContent.trim() === "Bold");
+      boldBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid menu: hidden after clicking submenu item", hcm.hidden);
+      check("hybrid menu: dirty after bold via submenu", window.NB.hybrid.isDirty());
+    } else {
+      check("hybrid menu: bold via submenu (skipped)", true);
+    }
+
+    // Right-clicking outside #viewer-content should close the menu.
+    // Re-open the menu first.
+    vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
+    await tick(10);
+    check("hybrid menu: re-opened", !hcm.hidden);
+    // Simulate a contextmenu event on the sidebar (outside viewer-content).
+    $("sidebar").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 5, clientY: 5 }));
+    await tick(10);
+    check("hybrid menu: closes on outside contextmenu", hcm.hidden);
+
+    // Esc should close the menu.
+    vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
+    await tick(10);
+    check("hybrid menu: re-opened for Esc test", !hcm.hidden);
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick(10);
+    check("hybrid menu: closes on Esc", hcm.hidden);
+
+    // Clicking outside should close the menu.
+    vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
+    await tick(10);
+    check("hybrid menu: re-opened for click-outside test", !hcm.hidden);
+    window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("hybrid menu: closes on outside click", hcm.hidden);
+
+    // Menu should be hidden after exiting hybrid mode.
+    vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
+    await tick(10);
+    check("hybrid menu: open before exit", !hcm.hidden);
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+    check("hybrid menu: hidden after exit", hcm.hidden);
+
+    // Right-click in preview mode (hybrid off) should NOT open the
+    // hybrid menu.
+    vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
+    await tick(10);
+    check("hybrid menu: does not open when hybrid is inactive", hcm.hidden);
+
+    // --- hybrid tab-switch blocking ---
+    // When hybrid mode has unsaved changes, switching tabs should be
+    // blocked with a confirm prompt. On Cancel, stay in hybrid mode.
+    // On OK, save and switch.
+    {
+      // Open notes/b.md so we have two tabs to switch between.
+      await window.NB.tabs.open("notes/b.md");
+      await tick(30);
+      // The active tab is now notes/b.md. Switch back to notes/a.md.
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(30);
+      const pathA = "notes/a.md";
+      check("hybrid tab-block: active file is notes/a.md",
+        window.NB.viewer.getPath() === pathA,
+        "got: " + window.NB.viewer.getPath());
+
+      // Enter hybrid mode and make a change (dirty).
+      await window.NB.hybrid.enter();
+      await tick(20);
+      vc.innerHTML += "<p>unsaved hybrid edit</p>";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      check("hybrid tab-block: dirty before switch", window.NB.hybrid.isDirty());
+
+      // Try to switch tabs -- confirm() returns false (Cancel).
+      // The switch should be blocked.
+      const origConfirm = window.confirm;
+      let confirmCalled = false;
+      window.confirm = () => { confirmCalled = true; return false; };
+      await window.NB.tabs.activate("notes/b.md");
+      await tick(30);
+      check("hybrid tab-block: confirm prompted on switch", confirmCalled);
+      check("hybrid tab-block: still on notes/a.md after Cancel",
+        window.NB.viewer.getPath() === pathA,
+        "got: " + window.NB.viewer.getPath());
+      check("hybrid tab-block: hybrid still active after Cancel",
+        window.NB.hybrid.isActive());
+      window.confirm = origConfirm;
+
+      // Now switch with confirm() returning true (Save). The switch
+      // should proceed: hybrid exits, the file saves, and the tab
+      // changes to notes/b.md.
+      const saveBeforeBlock = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      window.confirm = () => true;
+      await window.NB.tabs.activate("notes/b.md");
+      await tick(50);
+      window.confirm = origConfirm;
+      check("hybrid tab-block: hybrid not active after Save+switch",
+        !window.NB.hybrid.isActive());
+      check("hybrid tab-block: switched to notes/b.md",
+        window.NB.viewer.getPath() === "notes/b.md",
+        "got: " + window.NB.viewer.getPath());
+      check("hybrid tab-block: save POST fired during switch",
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock === 1,
+        "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock));
+
+      // Clean: exit hybrid (should be already exited) and switch back.
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
+
+    // --- hybrid mermaid round-trip ---
+    // When hybrid mode saves a file containing rendered mermaid diagrams,
+    // domToMarkdown must convert each .mermaid-container back to a
+    // ```mermaid code block, not lose the diagram source to turndown's
+    // SVG-to-text stripping. This is a regression guard: a previous
+    // bug destroyed mermaid diagrams when the user saved from hybrid
+    // mode because turndown stripped the SVG and kept only text nodes.
+    {
+      // A file with TWO mermaid blocks + surrounding prose, so we can
+      // verify that all blocks survive the round-trip (not just the
+      // first one).
+      const MERMAID_BODY =
+        "# Mermaid Test\n\n" +
+        "Intro text.\n\n" +
+        "```mermaid\ngraph TD\n  A --> B\n  B --> C\n```\n\n" +
+        "Between diagrams.\n\n" +
+        "```mermaid\nsequenceDiagram\n  U->>N: hi\n```\n\n" +
+        "After both.\n";
+      FILES["notes/mermaid.md"] = MERMAID_BODY;
+      const notesDir = TREE.find(n => n.path === "notes");
+      if (notesDir) {
+        if (!notesDir.children.some(c => c.path === "notes/mermaid.md")) {
+          notesDir.children.push({ name: "mermaid.md", type: "file", path: "notes/mermaid.md" });
+        }
+      } else {
+        TREE.push({ name: "mermaid.md", type: "file", path: "notes/mermaid.md" });
+      }
+      await window.NB.sidebar.refresh();
+      await tick(20);
+
+      // Force a fresh activation: clear the viewer cache + reopen so
+      // the viewer's render() + NB.mermaid.renderAll both run.
+      window.NB.viewer.close("notes/mermaid.md");
+      await window.NB.tabs.open("notes/mermaid.md");
+      await tick(100);   // wait for async mermaid render
+
+      // Pre-condition: the viewer rendered both mermaid blocks into
+      // .mermaid-container elements.
+      const containers = $("viewer-content").querySelectorAll(".mermaid-container");
+      check("hybrid mermaid: two containers rendered",
+        containers.length === 2,
+        "containers=" + containers.length);
+      check("hybrid mermaid: first container has data-mermaid-source",
+        containers[0] && !!containers[0].dataset.mermaidSource,
+        "source=" + JSON.stringify((containers[0] && containers[0].dataset.mermaidSource || "").slice(0, 60)));
+      check("hybrid mermaid: second container has data-mermaid-source",
+        containers[1] && !!containers[1].dataset.mermaidSource,
+        "source=" + JSON.stringify((containers[1] && containers[1].dataset.mermaidSource || "").slice(0, 60)));
+
+      if (containers.length >= 2) {
+        // --- domToMarkdown round-trip ---
+        await window.NB.hybrid.enter();
+        await tick(20);
+        const md = window.NB.hybrid.domToMarkdown();
+        check("hybrid mermaid: domToMarkdown preserves first ```mermaid block",
+          md.includes("```mermaid"),
+          "md slice: " + JSON.stringify(md.slice(0, 200)));
+        check("hybrid mermaid: domToMarkdown preserves graph TD source",
+          md.includes("graph TD"),
+          "md slice: " + JSON.stringify(md.slice(0, 300)));
+        check("hybrid mermaid: domToMarkdown preserves sequenceDiagram source",
+          md.includes("sequenceDiagram"),
+          "md slice: " + JSON.stringify(md));
+        check("hybrid mermaid: domToMarkdown preserves prose between blocks",
+          md.includes("Between diagrams"),
+          "md slice: " + JSON.stringify(md));
+        check("hybrid mermaid: domToMarkdown preserves prose after blocks",
+          md.includes("After both"),
+          "md slice: " + JSON.stringify(md));
+
+        // --- full save round-trip ---
+        // Click Save; the fetch stub stores the saved content in
+        // FILES["notes/mermaid.md"]. Then verify the saved content
+        // contains the ```mermaid blocks (not the stripped SVG text).
+        const saveBtnEl = $("save-btn");
+        // Make the content dirty so Save is visible.
+        $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(60);
+        saveBtnEl.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(50);
+
+        const savedContent = FILES["notes/mermaid.md"] || "";
+        check("hybrid mermaid: saved file contains ```mermaid (not SVG text)",
+          savedContent.includes("```mermaid"),
+          "saved=" + JSON.stringify(savedContent.slice(0, 200)));
+        check("hybrid mermaid: saved file preserves graph TD",
+          savedContent.includes("graph TD"),
+          "saved=" + JSON.stringify(savedContent.slice(0, 300)));
+        check("hybrid mermaid: saved file preserves sequenceDiagram",
+          savedContent.includes("sequenceDiagram"),
+          "saved=" + JSON.stringify(savedContent));
+        check("hybrid mermaid: saved file preserves heading",
+          savedContent.includes("# Mermaid Test"),
+          "saved=" + JSON.stringify(savedContent.slice(0, 100)));
+        check("hybrid mermaid: saved file does NOT contain stripped SVG text",
+          !savedContent.includes("mock"),
+          "saved=" + JSON.stringify(savedContent));
+
+        // --- re-open after save: mermaid renders again ---
+        // Exit hybrid mode, close + reopen the file, and verify the
+        // mermaid containers reappear (the saved content is valid
+        // markdown with ```mermaid blocks).
+        await window.NB.hybrid.exit(false);
+        await tick(30);
+        window.NB.viewer.close("notes/mermaid.md");
+        await window.NB.tabs.open("notes/mermaid.md");
+        await tick(100);
+        const reContainers = $("viewer-content").querySelectorAll(".mermaid-container");
+        check("hybrid mermaid: re-open after save renders both diagrams",
+          reContainers.length === 2,
+          "containers=" + reContainers.length);
+      }
+
+      // Clean up: close the mermaid tab so later tests don't see it.
+      window.NB.tabs.close("notes/mermaid.md", { force: true });
+      await tick(20);
+    }
+
+    // --- hybrid mermaid error block round-trip ---
+    // A mermaid block that failed to render (syntax error) becomes a
+    // .mermaid-error element with a .mermaid-source <pre> inside it.
+    // domToMarkdown must restore that back to a ```mermaid block too.
+    {
+      const BAD_BODY = "# Bad Mermaid\n\n```mermaid\nthis is not valid\n```\n\nAfter.\n";
+      FILES["notes/bad-mermaid.md"] = BAD_BODY;
+      TREE.push({ name: "bad-mermaid.md", type: "file", path: "notes/bad-mermaid.md" });
+      await window.NB.sidebar.refresh();
+      await tick(20);
+
+      // Arm the stub to fail on the next render so the block becomes
+      // a .mermaid-error element.
+      __mermaid.failNext = true;
+      window.NB.viewer.close("notes/bad-mermaid.md");
+      await window.NB.tabs.open("notes/bad-mermaid.md");
+      await tick(100);
+
+      const errEl = $("viewer-content").querySelector(".mermaid-error");
+      check("hybrid mermaid: error block exists for failed render",
+        !!errEl, "errors=" + $("viewer-content").querySelectorAll(".mermaid-error").length);
+
+      if (errEl) {
+        await window.NB.hybrid.enter();
+        await tick(20);
+        const md = window.NB.hybrid.domToMarkdown();
+        check("hybrid mermaid: error block round-trips to ```mermaid",
+          md.includes("```mermaid"),
+          "md=" + JSON.stringify(md.slice(0, 200)));
+        check("hybrid mermaid: error block preserves original source",
+          md.includes("this is not valid"),
+          "md=" + JSON.stringify(md));
+        await window.NB.hybrid.exit(false);
+        await tick(30);
+      }
+
+      // Clean up.
+      window.NB.tabs.close("notes/bad-mermaid.md", { force: true });
+      // Remove from TREE so later tests don't see it.
+      const idx = TREE.findIndex(n => n.path === "notes/bad-mermaid.md");
+      if (idx >= 0) TREE.splice(idx, 1);
+      delete FILES["notes/bad-mermaid.md"];
+      await window.NB.sidebar.refresh();
+      await tick(20);
+    }
+  }
 
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;

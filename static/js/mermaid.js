@@ -125,6 +125,10 @@
       const container = document.createElement("div");
       container.className = "mermaid-container";
       container.dataset.mermaid = "ok";
+      // Store the original source so hybrid mode's domToMarkdown can
+      // round-trip the diagram back to a ```mermaid code block instead
+      // of losing it to turndown's SVG-to-text stripping.
+      container.dataset.mermaidSource = source;
       // result.svg is the rendered diagram. innerHTML is safe here:
       // the lib generated the string from parsing `source`, which
       // IS user content, but the lib has already sanitised it

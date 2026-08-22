@@ -34,6 +34,7 @@
       <div class="topbar-actions">
         <button id="back-btn" class="icon-btn" title="Back" aria-label="Back" disabled>←</button>
         <button id="edit-toggle">Edit</button>
+        <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode (edit rendered markdown directly)" aria-label="WYSIWYG" hidden>✎</button>
       </div>
       <button id="logout-btn" class="icon-btn" title="Log out" aria-label="Log out" hidden>⎋</button>
       <button id="settings-btn" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
@@ -188,6 +189,9 @@
 
   <!-- Right-click context menu for file tabs -->
   <div id="tab-context-menu" class="context-menu" hidden></div>
+
+  <!-- Right-click context menu for hybrid/WYSIWYG edit mode -->
+  <div id="hybrid-context-menu" class="context-menu" hidden></div>
 
   <!-- Settings modal. Opened by the ⚙ button in the top bar. -->
   <div id="settings-overlay" class="settings-overlay" hidden>
@@ -497,6 +501,11 @@
   <!-- CodeMirror 6 + @replit/codemirror-vim (single IIFE bundle). Loaded
        before cm-bridge.js so the bridge can see window.CM6. -->
   <script src="/static/vendor/codemirror.bundle.js"></script>
+  <!-- Turndown (HTML→Markdown) + GFM plugin, used by the hybrid/WYSIWYG
+       edit mode to convert contentEditable edits back to Markdown source.
+       IIFE bundles that attach to window.TurndownService / window.TurndownPluginGfm. -->
+  <script src="/static/vendor/turndown.browser.js"></script>
+  <script src="/static/vendor/turndown-plugin-gfm.browser.js"></script>
   <!-- App modules, in dependency order -->
   <script src="/static/js/api.js"></script>
   <script src="/static/js/auth.js"></script>
@@ -504,6 +513,7 @@
   <script src="/static/js/mermaid.js"></script>
   <script src="/static/js/viewer.js"></script>
   <script src="/static/js/editbar.js"></script>
+  <script src="/static/js/hybrid.js"></script>
   <script src="/static/js/watcher.js"></script>
   <script src="/static/js/outline.js"></script>
   <script src="/static/js/sidebar.js"></script>

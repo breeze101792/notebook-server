@@ -125,6 +125,13 @@
   /* --- open / activate / close --------------------------------------- */
   async function activate(path) {
     if (!openSet.has(path)) return;
+    // Block tab switching when hybrid mode has unsaved changes, so the
+    // user doesn't silently lose their WYSIWYG edits. Prompt to save;
+    // on Cancel, stay on the current tab. On OK, save then proceed.
+    if (path !== activePath && NB.hybrid && NB.hybrid.isActive) {
+      const ok = await NB.hybrid.commitForTabSwitch();
+      if (!ok) return;
+    }
     try {
       await NB.viewer.activate(path);
       // The tab may have been closed while we were awaiting the fetch

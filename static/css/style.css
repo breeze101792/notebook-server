@@ -1275,6 +1275,65 @@ body[data-theme="light"] #viewer-content {
 }
 
 /* ------------------------------------------------------------------ */
+/* Hybrid / WYSIWYG edit mode                                          */
+/* ------------------------------------------------------------------ */
+/* The ✎ button in the top bar toggles hybrid mode. It's only visible
+ * when a file is open in preview mode (hidden during CM6 edit mode).
+ * When active, it gets the accent fill like the Edit button does. */
+#hybrid-toggle {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 8px;
+}
+#hybrid-toggle.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* When hybrid mode is on, #viewer-content becomes contentEditable. The
+ * .hybrid-editing class adds a subtle focus outline so the user can see
+ * the editable region, and ensures the cursor + selection colors read
+ * well against the wallpaper. */
+#viewer-content.hybrid-editing {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: -2px;
+  cursor: text;
+}
+#viewer-content.hybrid-editing:focus {
+  outline-color: var(--accent);
+}
+
+/* The .hybrid-active class on #viewer (the shell) signals that the
+ * content pane is editable. We use it to bump the padding slightly so
+ * the outline doesn't hug the content. */
+#viewer.hybrid-active #viewer-content {
+  padding-top: 20px;
+  padding-bottom: 200px;
+}
+
+/* In hybrid mode, headings and paragraphs should be clearly editable.
+ * A faint hover highlight on block elements helps the user see where
+ * their cursor will land. */
+#viewer-content.hybrid-editing h1,
+#viewer-content.hybrid-editing h2,
+#viewer-content.hybrid-editing h3,
+#viewer-content.hybrid-editing h4,
+#viewer-content.hybrid-editing h5,
+#viewer-content.hybrid-editing h6,
+#viewer-content.hybrid-editing p,
+#viewer-content.hybrid-editing li,
+#viewer-content.hybrid-editing blockquote {
+  border-radius: 2px;
+}
+
+/* Placeholder for empty contentEditable (browsers that support it). */
+#viewer-content.hybrid-editing:empty::before {
+  content: "Start typing…";
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ */
 /* File tree                                                           */
 /* ------------------------------------------------------------------ */
 .tree { padding: 6px 4px; user-select: none; }
@@ -1486,6 +1545,40 @@ body[data-theme="light"] #viewer-content {
   border: none;
   border-top: 1px solid var(--border);
   margin: 4px 0;
+}
+
+/* Submenu (flyout) support for context menus. A .submenu item is a
+ * <button> that contains a nested .context-menu (the flyout). On hover
+ * the flyout appears to the right of the parent item; a ▸ marker
+ * signals that the item expands. Clicking the parent label also
+ * toggles the flyout so touch / single-click devices work too. */
+.context-menu .submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.context-menu .submenu::after {
+  content: "▸";
+  margin-left: 8px;
+  font-size: .8em;
+  color: var(--fg-muted);
+}
+.context-menu .submenu > .context-menu {
+  position: absolute;
+  left: 100%;
+  top: -5px;
+  min-width: 150px;
+  margin-left: 2px;
+  display: none;
+}
+.context-menu .submenu:hover > .context-menu,
+.context-menu .submenu.open > .context-menu {
+  display: block;
+}
+.context-menu .submenu:hover,
+.context-menu .submenu.open {
+  background: var(--accent-soft);
 }
 
 /* ------------------------------------------------------------------ */
