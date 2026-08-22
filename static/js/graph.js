@@ -203,8 +203,16 @@
     // next layout pass so sizeCanvas() sees real dimensions.
     requestAnimationFrame(() => {
       sizeCanvas();
-      resetView();
+      // Re-center only when we have no view to preserve. On the first
+      // activation nodes is empty (or freshly seeded from a prior
+      // session) and pan defaults to (0, 0) -- without resetView() the
+      // world origin would land at the canvas top-left. On every
+      // subsequent re-activation, keep the user's pan/scale and let
+      // them stay zoomed into the layout they were looking at.
+      const hasLayout = nodes.length > 0;
+      if (!hasLayout) resetView();
       loadGraph();
+      if (hasLayout) wake();
     });
   }
   function onTabClose() {

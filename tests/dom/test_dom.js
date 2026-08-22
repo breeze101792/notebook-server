@@ -2576,6 +2576,43 @@ function check(label, cond, extra) {
       }));
     }
 
+    // --- re-activation preserves view state ---
+    // The user's bug: zoom in, switch away to a file tab, switch back,
+    // and the graph snaps back to its initial zoom + center. The view
+    // state (pan, scale) must be preserved when the tab is reactivated,
+    // not silently reset.
+    const panBeforeReopen = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
+    const scaleBeforeReopen = window.NB.graph.scale;
+    // Pick a non-graph tab that's already open and activate it. The
+    // boot block restored "Welcome.md" so it's safe to use.
+    const welcomeTab = window.document.querySelector('.tab[data-path="Welcome.md"]');
+    if (welcomeTab) {
+      welcomeTab.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(40);
+      // Now click the graph tab again to re-activate it.
+      const graphTab = window.document.querySelector('.tab[data-path="§graph"]');
+      if (graphTab) {
+        graphTab.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(40);
+      }
+    }
+    check("graph: re-activation preserves pan",
+      Math.abs(window.NB.graph.pan.x - panBeforeReopen.x) < 0.001 &&
+      Math.abs(window.NB.graph.pan.y - panBeforeReopen.y) < 0.001,
+      "before=" + JSON.stringify(panBeforeReopen) + " after=" + JSON.stringify(window.NB.graph.pan));
+    check("graph: re-activation preserves scale",
+      Math.abs(window.NB.graph.scale - scaleBeforeReopen) < 0.001,
+      "before=" + scaleBeforeReopen.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+    // Re-center button is still available for users who want to reset.
+    const panBeforeRecenter = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
+    $("graph-view-recenter").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("graph: recenter button still resets pan/scale",
+      window.NB.graph.pan.x !== panBeforeRecenter.x ||
+      window.NB.graph.pan.y !== panBeforeRecenter.y ||
+      Math.abs(window.NB.graph.scale - 1) > 0.001,
+      "after recenter pan=" + JSON.stringify(window.NB.graph.pan) +
+      " scale=" + window.NB.graph.scale.toFixed(3));
+
     // Close the graph tab before subsequent tests run so it doesn't
     // interfere with tab-close / restore assertions below.
     const graphTabEl = window.document.querySelector('.tab[data-path="§graph"]');
