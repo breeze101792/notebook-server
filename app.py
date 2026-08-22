@@ -857,6 +857,156 @@ def search():
 
 
 # --------------------------------------------------------------------------- #
+# Routes: graph
+# --------------------------------------------------------------------------- #
+# Wikilink graph: scans every .md file under DATA_DIR and extracts the
+# links between notes so the frontend can draw a force-directed graph
+# (Obsidian-style "graph view"). Two link syntaxes are recognised:
+#
+#   [[Target]]            -- a wikilink. The target is resolved to a .md
+#                           file by stem (basename without extension)
+#                           so [[README]] and [[README.md]] both link
+#                           to README.md.
+#   [text](path.md)       -- a standard Markdown link whose URL ends in
+#                           .md. Relative paths are normalised against
+#                           the linking file's folder so a link from
+#                           notes/a.md to b.md points at notes/b.md.
+#
+# Anchor fragments (#heading) are stripped before resolution. Links to
+# files that don't exist in the notebook are dropped (no "ghost" nodes);
+# self-links are skipped (a file linking to itself adds no information).
+# Edges are unique and undirected: A->B and B->A collapse to one edge.
+#
+# The endpoint is gated as a read (read_login_required) because it
+# discloses notebook structure + filenames, exactly like /api/tree.
+_WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+\.md(?:#[^\s)]*)?)\)", re.IGNORECASE)
+
+
+def _strip_fragment(target):
+    """Drop a trailing #anchor from a link target."""
+    if "#" in target:
+        return target.split("#", 1)[0]
+    return target
+
+
+def _normalise_link(raw, src_rel, stem_index):
+    """Resolve a link target against its source file.
+
+    Returns the canonical relative path of the linked .md file, or None
+    when the target can't be resolved to a known note. `stem_index` maps
+    a file's basename-without-extension to its relative path (built once
+    per graph build) so [[wikilinks]] by stem can be looked up cheaply.
+    """
+    target = _strip_fragment(raw.strip())
+    if not target:
+        return None
+    # Absolute paths never resolve inside DATA_DIR (safe_path would block
+    # them anyway); drop them.
+    if os.path.isabs(target):
+        return None
+    # A wikilink with no path separator may be a bare stem. Try the stem
+    # index first so [[README]] resolves even when the file lives in a
+    # subfolder.
+    if "/" not in target:
+        stem = target
+        if stem.lower().endswith(".md"):
+            stem = stem[:-3]
+        if stem in stem_index:
+            return stem_index[stem]
+    # Fall back to treating it as a relative path from the source's
+    # folder, normalised so "../sub/x.md" can't escape DATA_DIR.
+    src_dir = os.path.dirname(src_rel)
+    candidate = os.path.normpath(os.path.join(src_dir, target))
+    norm_data = os.path.normpath(DATA_DIR)
+    abs_candidate = os.path.normpath(os.path.join(DATA_DIR, candidate))
+    if abs_candidate == norm_data or abs_candidate.startswith(norm_data + os.sep):
+        return candidate.replace(os.sep, "/")
+    return None
+
+
+def build_graph():
+    """Walk DATA_DIR, parse every .md file for links, and return the graph.
+
+    Shape:
+      { "nodes": [ {"id": "notes/a.md", "name": "a.md", "links": 3}, ... ],
+        "edges": [ {"source": "notes/a.md", "target": "notes/b.md"}, ... ] }
+
+    `links` on a node is that node's degree (number of edges touching
+    it); the frontend uses it to size nodes. Nodes are every .md file
+    found, including orphans (files with no links in or out) so the graph
+    matches the file tree the user sees in the Explorer.
+    """
+    files = []
+    for dirpath, _dirs, filenames in os.walk(DATA_DIR):
+        for name in filenames:
+            if name.startswith(".") or not name.lower().endswith(".md"):
+                continue
+            full = os.path.join(dirpath, name)
+            rel = rel_from(full)
+            files.append(rel)
+
+    # Stem index: basename-without-extension -> relative path. If two
+    # files share a stem the first one wins (deterministic via os.walk
+    # order); wikilinks to that stem resolve to it. Ambiguous stems are
+    # rare in a single-user notebook and this keeps resolution cheap.
+    stem_index = {}
+    for rel in files:
+        base = os.path.basename(rel)
+        if base.lower().endswith(".md"):
+            base = base[:-3]
+        stem_index.setdefault(base, rel)
+
+    contents = {}
+    for rel in files:
+        abs_path = os.path.join(DATA_DIR, rel)
+        try:
+            with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+                contents[rel] = f.read()
+        except OSError:
+            contents[rel] = ""
+
+    edge_set = set()   # frozenset({src, dst}) for undirected dedup
+    degree = {rel: 0 for rel in files}
+    for src_rel in files:
+        text = contents.get(src_rel, "")
+        targets = set()
+        for m in _WIKILINK_RE.finditer(text):
+            resolved = _normalise_link(m.group(1), src_rel, stem_index)
+            if resolved and resolved in degree:
+                targets.add(resolved)
+        for m in _MD_LINK_RE.finditer(text):
+            resolved = _normalise_link(m.group(2), src_rel, stem_index)
+            if resolved and resolved in degree:
+                targets.add(resolved)
+        for dst in targets:
+            if dst == src_rel:
+                continue
+            key = frozenset((src_rel, dst))
+            if key in edge_set:
+                continue
+            edge_set.add(key)
+            degree[src_rel] += 1
+            degree[dst] += 1
+
+    nodes = [
+        {"id": rel, "name": os.path.basename(rel), "links": degree[rel]}
+        for rel in sorted(files)
+    ]
+    edges = []
+    for e in edge_set:
+        pair = sorted(e)
+        edges.append({"source": pair[0], "target": pair[1]})
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.route("/api/graph", methods=["GET"])
+@read_login_required
+def graph():
+    return jsonify(build_graph())
+
+
+# --------------------------------------------------------------------------- #
 # SPA catch-all
 # --------------------------------------------------------------------------- #
 # The notebook is a single-page app: every path that isn't an /api/* route

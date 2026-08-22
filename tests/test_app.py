@@ -404,6 +404,111 @@ class TestSearch(BaseTest):
         self.assertEqual(code, 400)
 
 
+class TestGraph(BaseTest):
+    """The /api/graph endpoint scans .md files for [[wikilinks]] and
+    standard [text](x.md) links and returns nodes + edges for the
+    frontend's force-directed graph view."""
+
+    def setUp(self):
+        super().setUp()
+        # Three files that link to each other so the graph has edges.
+        #   index.md  -> [[Welcome]] (wikilink by stem)
+        #              -> [notes](notes/a.md) (relative markdown link)
+        #   notes/a.md -> [[index]] (wikilink by stem, no extension)
+        #   notes/b.md -> (no links, should still appear as an orphan node)
+        os.makedirs(os.path.join(nb.DATA_DIR, "notes"), exist_ok=True)
+        self.post("/api/file", {"path": "index.md",
+            "content": "# Index\n\nSee [[Welcome]] and [notes](notes/a.md).\n"})
+        self.post("/api/file", {"path": "notes/a.md",
+            "content": "# A\n\nBack to [[index]].\n"})
+        self.post("/api/file", {"path": "notes/b.md",
+            "content": "# B\n\nNo links here.\n"})
+
+    def _graph(self):
+        code, data = self.jget("/api/graph")
+        self.assertEqual(code, 200)
+        return data
+
+    def test_returns_all_files_as_nodes(self):
+        data = self._graph()
+        ids = {n["id"] for n in data["nodes"]}
+        # The template ships README.md, Syntax.md, Welcome.md; the test
+        # adds index.md, notes/a.md, notes/b.md. Assert the test files are
+        # present (a subset check) rather than exact equality so the
+        # test doesn't break on template changes.
+        self.assertTrue({"index.md", "notes/a.md", "notes/b.md"}.issubset(ids))
+
+    def test_nodes_carry_name_and_degree(self):
+        data = self._graph()
+        for n in data["nodes"]:
+            self.assertIn("name", n)
+            self.assertIn("links", n)
+            self.assertIsInstance(n["links"], int)
+        # Welcome.md is linked from index.md via [[Welcome]] -> degree 1
+        welcome = next(n for n in data["nodes"] if n["id"] == "Welcome.md")
+        self.assertEqual(welcome["links"], 1)
+        # notes/b.md has no links in or out -> degree 0
+        b = next(n for n in data["nodes"] if n["id"] == "notes/b.md")
+        self.assertEqual(b["links"], 0)
+
+    def test_wikilink_by_stem_creates_edge(self):
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        # Edges are stored sorted by id; "Welcome.md" < "index.md"
+        self.assertIn(("Welcome.md", "index.md"), pairs)
+
+    def test_relative_markdown_link_creates_edge(self):
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        # index.md links to notes/a.md via [notes](notes/a.md)
+        self.assertIn(("index.md", "notes/a.md"), pairs)
+
+    def test_wikilink_without_extension_resolves(self):
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        # notes/a.md links to [[index]] -> resolves to index.md
+        self.assertIn(("index.md", "notes/a.md"), pairs)
+
+    def test_self_link_dropped(self):
+        # Write a file that links to itself; the edge should not appear.
+        self.post("/api/file", {"path": "self.md",
+            "content": "# Self\n\n[[self]] link to me.\n"})
+        data = self._graph()
+        for e in data["edges"]:
+            self.assertNotEqual(e["source"], e["target"])
+
+    def test_edges_undirected_dedup(self):
+        # index.md -> Welcome.md and if Welcome.md also linked to index.md,
+        # only one edge should exist. The dedup is by frozenset({src, dst}).
+        self.post("/api/file", {"path": "Welcome.md",
+            "content": "# Welcome\n\nLink to [[index]] and [a](notes/a.md).\n"})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        # Only one edge between index.md and Welcome.md regardless of
+        # direction of the link.
+        self.assertEqual(
+            sum(1 for s, t in pairs
+                if {s, t} == {"index.md", "Welcome.md"}), 1)
+
+    def test_link_to_nonexistent_file_dropped(self):
+        # A link to a file that doesn't exist should not create a ghost
+        # node or edge.
+        self.post("/api/file", {"path": "ghost.md",
+            "content": "# Ghost\n\n[[nonexistent]] and [missing](nope.md).\n"})
+        data = self._graph()
+        ids = {n["id"] for n in data["nodes"]}
+        self.assertNotIn("nonexistent", ids)
+        self.assertNotIn("nope.md", ids)
+
+    def test_anchor_fragment_stripped(self):
+        # [[Welcome#section]] should link to Welcome.md, not a ghost node.
+        self.post("/api/file", {"path": "anchor.md",
+            "content": "# Anchor\n\n[[Welcome#intro]] link.\n"})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        self.assertIn(("Welcome.md", "anchor.md"), pairs)
+
+
 class TestConfig(BaseTest):
     def test_default_empty(self):
         code, data = self.jget("/api/config")

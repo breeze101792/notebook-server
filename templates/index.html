@@ -52,6 +52,7 @@
              view: clicking it just opens the Settings modal, no panel
              swap. -->
         <div class="activity-bar-spacer"></div>
+        <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
       </nav>
 
@@ -183,13 +184,41 @@
               </ul>
             </div>
           </div>
-        </div>
-        <div id="search-results" class="search-results" hidden>
-          <div class="search-results-header">
-            <span id="search-summary"></span>
-            <button id="search-close" title="Close search">×</button>
+          <!-- Graph view: a force-directed graph of how notes link to each
+               other (Obsidian-style "graph view"). Opened as a special tab
+               (§graph) by the 🕸 button in the activity bar. Lives as a
+               .special-tab-view sibling of #viewer inside #edit-split so
+               the tab bar stays the single container; the viewer hides
+               when this is active. The canvas + physics simulation live
+               in static/js/graph.js. -->
+          <div id="graph-view" class="graph-view special-tab-view" hidden>
+            <div class="graph-view-header">
+              <span class="graph-view-title">Graph</span>
+              <span class="graph-view-summary" id="graph-view-summary"></span>
+              <div class="graph-view-controls">
+                <input type="search" id="graph-view-filter" class="graph-view-filter" placeholder="Filter notes…">
+                <button id="graph-view-recenter" class="graph-view-btn" title="Re-center">⊞</button>
+                <button id="graph-view-zoom-in" class="graph-view-btn" title="Zoom in">+</button>
+                <button id="graph-view-zoom-out" class="graph-view-btn" title="Zoom out">−</button>
+                <button id="graph-view-refresh" class="graph-view-btn" title="Refresh graph">↻</button>
+              </div>
+            </div>
+            <div class="graph-view-host" id="graph-view-canvas-host">
+              <canvas id="graph-view-canvas" class="graph-view-canvas"></canvas>
+            </div>
           </div>
-          <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
+          <!-- Search results: shown as a special tab (§search) in the tab
+               bar. The top-bar search input triggers NB.tabs.openSpecial
+               ("§search") when the user types a query; results render
+               here, a .special-tab-view sibling of #viewer inside
+               #edit-split. The viewer hides when this tab is active. -->
+          <div id="search-results" class="search-results special-tab-view" hidden>
+            <div class="search-results-header">
+              <span id="search-summary"></span>
+              <button id="search-close" title="Close search">×</button>
+            </div>
+            <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
+          </div>
         </div>
       </section>
 
@@ -560,6 +589,7 @@
   <script src="/static/js/outline.js"></script>
   <script src="/static/js/sidebar.js"></script>
   <script src="/static/js/search.js"></script>
+  <script src="/static/js/graph.js"></script>
   <script src="/static/js/tabs.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/vimnav.js"></script>

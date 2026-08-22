@@ -1,4 +1,12 @@
 /* search.js -- search inside notebooks, render results, jump to matches.
+ *
+ * The top-bar search input triggers a search; results render as a special
+ * tab (§search) in the tab bar, a .special-tab-view sibling of #viewer
+ * inside #edit-split. The search input stays in the topbar; typing a
+ * query + Enter opens/activates the §search tab and fills it with hits.
+ * Clicking a hit opens the file as a normal file tab (the search tab
+ * stays open so the user can return to the results).
+ *
  * Server returns matches with line numbers and a snippet marked with
  * << >> around the hit; the client re-wraps that as a <mark> using safe
  * textContent-based construction (no innerHTML on untrusted snippet text).
@@ -6,6 +14,8 @@
 (function () {
   "use strict";
   window.NB = window.NB || {};
+
+  const TAB_ID = "§search";
 
   const inputEl   = document.getElementById("search-input");
   const caseEl    = document.getElementById("search-case");
@@ -19,54 +29,119 @@
   // After pressing Enter in the search input, focus moves to the list
   // and the user can navigate hits with j/k/arrows, open with Enter/l,
   // jump to first/last with gg/G, and pop back to the input with Esc
-  // (Esc from the input itself still closes the overlay). The active
+  // (Esc from the input itself still closes the search tab). The active
   // hit carries .is-active; navigation updates it and scrolls it into
-  // view. The vim shell keymap yields while the search overlay is open
+  // view. The vim shell keymap yields while the search tab is open
   // (vimnav.js), so the list's own keydown handler owns the keys.
   let activeIdx = 0;
-  let currentMatches = [];       // mirrors data.matches from the last search
-  let focusListOnResults = false;  // set on Enter; consumed by renderResults
+  let currentMatches = [];
+  let focusListOnResults = false;
   const CHORD_MS = 800;
-  let listChord = null;           // { key, t } -- two-key chords on the list
+  let listChord = null;
+  let lastQuery = "";
+  let lastCaseSensitive = false;
 
-  function open() {
-    resultsEl.hidden = false;
-    document.getElementById("viewer").hidden = true;
-    const ed = document.getElementById("cm-host");
-    if (ed) ed.hidden = true;
+  /* Open the search results as a special tab. If the tab isn't open yet,
+   * NB.tabs.openSpecial creates it and activates it; if it's already open,
+   * it just activates it. The special-tab's onActivate handler shows
+   * #search-results (handled by the tab system + viewer.showSpecial).
+   * suppressReSearch prevents onTabActivate from re-running the search
+   * that triggered this open (which would loop). */
+  let suppressReSearch = false;
+  async function openTab() {
+    if (NB.tabs && NB.tabs.openSpecial) {
+      suppressReSearch = true;
+      try { await NB.tabs.openSpecial(TAB_ID); }
+      finally { suppressReSearch = false; }
+    }
+    // Fallback (e.g. before tabs.js loads): just unhide the container.
+    if (!resultsEl || resultsEl.hidden) {
+      if (resultsEl) resultsEl.hidden = false;
+    }
   }
+
+  /* Close the search tab. Called by the × button, Esc from the input,
+   * and the auth:locked handler. */
   function close() {
-    resultsEl.hidden = true;
-    document.getElementById("viewer").hidden = false;
+    if (NB.tabs && NB.tabs.isOpen && NB.tabs.isOpen(TAB_ID)) {
+      NB.tabs.close(TAB_ID);
+    }
+    if (resultsEl) resultsEl.hidden = true;
     // If focus was on the list (now hidden), drop it to the body so
     // it doesn't dangle on a removed subtree.
-    if (document.activeElement && listEl.contains(document.activeElement)) {
+    if (document.activeElement && listEl && listEl.contains(document.activeElement)) {
       document.activeElement.blur();
     }
   }
 
+  /* Special-tab lifecycle: called by tabs.js when §search becomes active.
+   * Only re-runs the search when the user manually switches to the search
+   * tab (e.g. clicking it in the tab bar), not when openTab() activates
+   * it as part of running a search (which would cause an infinite loop). */
+  function onTabActivate() {
+    if (resultsEl) resultsEl.hidden = false;
+    if (suppressReSearch) return;
+    // Re-run the last search so the results are fresh when the user
+    // switches back to the search tab after viewing a file.
+    const q = (inputEl && inputEl.value || "").trim();
+    if (q) { runSearch(); }
+    else if (lastQuery) {
+      inputEl.value = lastQuery;
+      if (caseEl) caseEl.checked = lastCaseSensitive;
+      runSearch();
+    }
+  }
+  function onTabClose() {
+    if (resultsEl) resultsEl.hidden = true;
+  }
+
+  // Register the special tab with the tab system. Done at module load
+  // so the tab is available as soon as tabs.js is ready. The search
+  // module loads before tabs.js, so we defer registration via a
+  // DOMContentLoaded / readystatechange callback that runs after tabs.js.
+  function registerTab() {
+    if (NB.tabs && NB.tabs.registerSpecial) {
+      NB.tabs.registerSpecial({
+        id: TAB_ID,
+        icon: "🔍",
+        label: "Search",
+        onActivate: onTabActivate,
+        onClose: onTabClose,
+      });
+    }
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", registerTab);
+  } else {
+    registerTab();
+  }
+
   async function runSearch() {
-    const q = inputEl.value.trim();
-    const caseSensitive = caseEl.checked;
+    const q = (inputEl && inputEl.value || "").trim();
+    const caseSensitive = caseEl ? caseEl.checked : false;
     if (!q) { close(); return; }
+    lastQuery = q;
+    lastCaseSensitive = caseSensitive;
     let data;
     try {
       data = await NB.api.search(q, caseSensitive);
     } catch (e) {
-      summaryEl.textContent = "Search error: " + e.message;
-      open();
+      if (summaryEl) summaryEl.textContent = "Search error: " + e.message;
+      await openTab();
       return;
     }
     renderResults(data, q, caseSensitive);
   }
 
-  function renderResults(data, q, caseSensitive) {
+  async function renderResults(data, q, caseSensitive) {
     listEl.innerHTML = "";
     const matches = data.matches || [];
     const n = matches.length;
-    summaryEl.textContent = data.truncated
-      ? n + "+ matches (truncated) for \"" + q + "\""
-      : n + " match" + (n === 1 ? "" : "es") + " for \"" + q + "\"";
+    if (summaryEl) {
+      summaryEl.textContent = data.truncated
+        ? n + "+ matches (truncated) for \"" + q + "\""
+        : n + " match" + (n === 1 ? "" : "es") + " for \"" + q + "\"";
+    }
     if (!n) {
       const li = document.createElement("li");
       li.className = "search-empty";
@@ -76,8 +151,8 @@
       listEl.appendChild(li);
       currentMatches = [];
       activeIdx = 0;
-      focusListOnResults = false;  // nothing to navigate to
-      open();
+      focusListOnResults = false;
+      await openTab();
       return;
     }
 
@@ -105,12 +180,9 @@
     currentMatches = matches;
     activeIdx = 0;
     applyActive();
-    open();
+    await openTab();
     // After the latest results settle, move focus to the list if Enter
-    // asked for it. This is what the user sees as "Enter -> I can nav
-    // with hjkl": Enter ran the search, the list now has hits, focus
-    // lands on the list with the first hit active. If there are no
-    // hits we kept focus on the input above (nothing to navigate).
+    // asked for it.
     if (focusListOnResults) {
       focusListOnResults = false;
       listEl.focus();
@@ -118,8 +190,8 @@
   }
 
   /* Move the .is-active class to currentMatches[activeIdx] (clamped).
-   * Scrolls the active hit into view within the overlay so j/k
-   * navigation never hides the cursor off-screen. */
+   * Scrolls the active hit into view so j/k navigation never hides the
+   * cursor off-screen. */
   function applyActive() {
     const hits = listEl.querySelectorAll(".search-hit");
     if (!hits.length) return;
@@ -135,7 +207,7 @@
     const m = currentMatches[activeIdx];
     if (!m) return;
     const q = inputEl.value;
-    const cs = caseEl.checked;
+    const cs = caseEl ? caseEl.checked : false;
     onHitClick(m, q, cs);
   }
 
@@ -159,8 +231,10 @@
     return frag;
   }
 
+  /* Clicking a hit opens the file as a normal file tab. The search tab
+   * stays open in the tab bar so the user can return to the results
+   * after reading the hit. */
   async function onHitClick(m, q, caseSensitive) {
-    close();
     if (NB.tabs) await NB.tabs.open(m.file);
     else if (NB.viewer) await NB.viewer.activate(m.file);
     // Wait a tick for render to settle before scrolling to the match.
@@ -168,9 +242,6 @@
       if (NB.viewer && NB.viewer.jumpToMatch) {
         const ok = NB.viewer.jumpToMatch(q, caseSensitive);
         if (!ok) {
-          // Fall back to scrolling to top. The scroll container is
-          // #viewer-content, not #viewer (which is a non-scrolling
-          // shell that wraps it).
           document.getElementById("viewer-content").scrollTop = 0;
         }
       }
@@ -178,29 +249,27 @@
   }
 
   /* --- events --------------------------------------------------------- */
-  inputEl.addEventListener("input", () => {
+  if (inputEl) inputEl.addEventListener("input", () => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(runSearch, 250);
   });
-  inputEl.addEventListener("keydown", (e) => {
+  if (inputEl) inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       clearTimeout(debounceTimer);
-      // Run the search immediately AND, once it renders, hand focus
-      // to the results list so the user can navigate with hjkl.
       focusListOnResults = true;
       runSearch();
     }
-    if (e.key === "Escape") { inputEl.value = ""; close(); inputEl.blur(); }
+    if (e.key === "Escape") {
+      inputEl.value = "";
+      close();
+      inputEl.blur();
+    }
   });
 
-  /* Keyboard nav for the results list. Active while listEl has focus
-   * (the vim shell keymap yields when the search overlay is open, so
-   * these keys reach the list's bubble-phase handler). The list is
-   * the focus container; the active hit is tracked by index. */
-  listEl.addEventListener("keydown", (e) => {
+  /* Keyboard nav for the results list. Active while listEl has focus. */
+  if (listEl) listEl.addEventListener("keydown", (e) => {
     const hits = listEl.querySelectorAll(".search-hit");
     if (!hits.length) {
-      // Only the "No matches" placeholder. Esc still returns to input.
       if (e.key === "Escape" || e.key === "/") {
         e.preventDefault();
         listChord = null;
@@ -209,7 +278,6 @@
       }
       return;
     }
-    // Resolve chord (gg -> first). A non-g key while waiting cancels.
     if (listChord) {
       if (e.key === listChord.key && Date.now() - listChord.t < CHORD_MS) {
         listChord = null;
@@ -239,7 +307,6 @@
         applyActive();
         return;
       case "g":
-        // First of a gg chord.
         e.preventDefault();
         listChord = { key: "g", t: Date.now() };
         return;
@@ -250,10 +317,6 @@
         return;
       case "Escape":
       case "/":
-        // Back to the search input so the user can refine the query.
-        // Esc from the input itself still closes the overlay (the
-        // input's own keydown handler does that); from the list it
-        // just hands focus back, leaving the query intact.
         e.preventDefault();
         listChord = null;
         inputEl.focus();
@@ -261,18 +324,15 @@
         return;
     }
   });
-  /* If the user clicks into the list whitespace (tabindex makes it
-   * focusable on click), reset the active hit to the top so the
-   * visible "cursor" matches the just-focused state. */
-  listEl.addEventListener("focus", () => {
+  if (listEl) listEl.addEventListener("focus", () => {
     activeIdx = 0;
     applyActive();
   });
-  caseEl.addEventListener("change", () => {
+  if (caseEl) caseEl.addEventListener("change", () => {
     if (inputEl.value.trim()) runSearch();
     NB.evt.emit("search-case-changed", caseEl.checked);
   });
-  closeBtn.addEventListener("click", close);
+  if (closeBtn) closeBtn.addEventListener("click", close);
 
-  NB.search = { runSearch, close };
+  NB.search = { runSearch, close, openTab };
 })();

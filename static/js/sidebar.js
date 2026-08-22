@@ -784,6 +784,7 @@
       // when the bookmark list is empty to avoid the no-op work.
       if (bookmarks.length) pruneBookmarks(treeCache);
       render(treeCache);
+      NB.evt.emit("tree:refreshed", treeCache);
     } catch (e) { console.error("tree fetch failed", e); }
   }
   function getTree() { return treeCache; }

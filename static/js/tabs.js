@@ -21,6 +21,18 @@
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)
   let activePath = null;
 
+  /* Special tabs: pseudo-paths that render in the tab bar like file tabs
+   * but show a non-file view (graph, search) in the content area instead
+   * of a rendered note. A special tab's id starts with "§" so it never
+   * collides with a real file path (paths are relative + can't start
+   * with § on any sane filesystem). Each special tab registers a
+   * { id, icon, label, onActivate, onClose } factory; tabs.js owns the
+   * tab bar lifecycle (open/activate/close/reorder) and delegates the
+   * content-area swap to onActivate/onClose. */
+  const specialTabs = new Map();   // id -> { icon, label, onActivate(id), onClose(id) }
+  function isSpecial(path) { return typeof path === "string" && path.startsWith("§"); }
+  function isSpecialOpen(path) { return openSet.has(path); }
+
   // Drag-and-drop reorder state. We track the dragged path here instead of
   // in dataTransfer so the same code works in jsdom (which has no real DnD).
   let draggingPath = null;
@@ -57,9 +69,11 @@
       const tab = document.createElement("div");
       tab.className = "tab" + (path === activePath ? " active" : "");
       if (pinned.has(path)) tab.classList.add("pinned");
-      if (NB.viewer.isDirty(path)) tab.classList.add("dirty");
+      if (isSpecial(path)) tab.classList.add("special");
+      // Special tabs are never dirty; file tabs consult the viewer.
+      if (!isSpecial(path) && NB.viewer.isDirty(path)) tab.classList.add("dirty");
       tab.dataset.path = path;
-      tab.title = path;
+      tab.title = isSpecial(path) ? (specialTabs.get(path) || {}).label || path : path;
       tab.draggable = true;
 
       if (pinned.has(path)) {
@@ -72,8 +86,21 @@
 
       const label = document.createElement("span");
       label.className = "tab-label";
-      label.textContent = baseName(path);
-      if (conflictSet.has(path)) {
+      if (isSpecial(path)) {
+        const spec = specialTabs.get(path) || {};
+        if (spec.icon) {
+          const icon = document.createElement("span");
+          icon.className = "tab-special-icon";
+          icon.textContent = spec.icon;
+          label.appendChild(icon);
+        }
+        const text = document.createElement("span");
+        text.textContent = spec.label || path;
+        label.appendChild(text);
+      } else {
+        label.textContent = baseName(path);
+      }
+      if (!isSpecial(path) && conflictSet.has(path)) {
         const badge = document.createElement("span");
         badge.className = "tab-conflict";
         badge.textContent = "↻";
@@ -116,7 +143,12 @@
     if (idx >= 0) ordered.splice(idx, 1);
     openSet.delete(path);
     pinned.delete(path);
-    NB.viewer.close(path);
+    if (isSpecial(path)) {
+      const spec = specialTabs.get(path);
+      if (spec && spec.onClose) { try { spec.onClose(path); } catch (e) { console.error(e); } }
+    } else {
+      NB.viewer.close(path);
+    }
   }
   function pickNeighbor(idx) {
     return ordered[idx] || ordered[idx - 1] || ordered[0] || null;
@@ -132,11 +164,28 @@
       const ok = await NB.hybrid.commitForTabSwitch();
       if (!ok) return;
     }
+    // Special tabs don't go through viewer.activate; they own their
+    // own content-area container. The viewer hides itself + welcome so
+    // the special view's container is the only visible sibling in
+    // #edit-split. onActivate receives the id so the view can show /
+    // refresh itself.
+    if (isSpecial(path)) {
+      const spec = specialTabs.get(path);
+      // Tell the viewer to step aside (hide #viewer + #welcome + #cm-host).
+      if (NB.viewer && NB.viewer.showSpecial) NB.viewer.showSpecial();
+      activePath = path;
+      render();
+      emitChanged();
+      if (spec && spec.onActivate) { try { spec.onActivate(path); } catch (e) { console.error(e); } }
+      return;
+    }
+    // Switching FROM a special tab TO a file: the special tab's container
+    // is still visible; showViewer (called below) restores #viewer. The
+    // special tab's onClose hides its container when it sees the file:open
+    // event or its own onActivate(false) -- simpler: each special view
+    // listens for "file:open" to hide itself, so we just emit it below.
     try {
       await NB.viewer.activate(path);
-      // The tab may have been closed while we were awaiting the fetch
-      // (user click, or the directory-delete loop taking a sibling). If so,
-      // undo the viewer side and recover to a still-open tab (or clear).
       if (!openSet.has(path)) {
         NB.viewer.close(path);
         if (ordered.length) activate(ordered[0]);
@@ -147,7 +196,6 @@
       render();
       emitChanged();
     } catch (e) {
-      // file no longer exists (deleted externally); drop it and fall back.
       const idx = ordered.indexOf(path);
       dropTab(path);
       const next = pickNeighbor(idx);
@@ -167,8 +215,9 @@
   function close(path, opts) {
     opts = opts || {};
     if (!openSet.has(path)) return;
-    // Confirm before discarding unsaved edits (skipped for force-close on delete).
-    if (!opts.force && NB.viewer.isDirty(path)) {
+    // Confirm before discarding unsaved edits (skipped for force-close on
+    // delete, and for special tabs which have no edit state).
+    if (!opts.force && !isSpecial(path) && NB.viewer.isDirty(path)) {
       if (!confirm('Close "' + baseName(path) + '"? Unsaved changes will be lost.')) return;
     }
     const idx = ordered.indexOf(path);
@@ -432,6 +481,22 @@
   NB.tabs = {
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
     togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next, clearAll,
+    /* Register a special tab type. `def` = { id, icon, label, onActivate, onClose }.
+     * id must start with "§". onActivate(id) is called when the tab becomes
+     * active; onClose(id) when it's closed. Re-registering the same id
+     * replaces the definition (used by hot reload / test reset). */
+    registerSpecial(def) {
+      if (!def || !def.id || !def.id.startsWith("§")) return;
+      specialTabs.set(def.id, def);
+    },
+    /* Open a special tab (by id) and activate it. If it's already open,
+     * just activate it (no duplicate). */
+    async openSpecial(id) {
+      if (!specialTabs.has(id)) return;
+      if (!openSet.has(id)) { openSet.add(id); ordered.push(id); }
+      await activate(id);
+    },
+    isSpecial,
   };
 
   /* --- keep the bar in sync with viewer-driven changes --------------- */

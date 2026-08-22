@@ -53,7 +53,8 @@
     copyItem:      (from, to)   => request("POST", "/api/copy",  { from, to }),
     deleteItem:    (path)      => request("POST", "/api/delete", { path }),
     search:        (q, caseSensitive) =>
-      request("GET", "/api/search?q=" + encodeURIComponent(q) + "&case=" + (caseSensitive ? "1" : "0")),
+      request("GET",  "/api/search?q=" + encodeURIComponent(q) + "&case=" + (caseSensitive ? "1" : "0")),
+    getGraph:      () => request("GET",  "/api/graph"),
     getConfig:     () => request("GET",  "/api/config"),
     saveConfig:    (cfg)       => request("POST", "/api/config", cfg),
     getInfo:       () => request("GET",  "/api/info"),

@@ -54,6 +54,62 @@ const MTIMES = {
   "notes/a.md": 1,
   "notes/b.md": 1,
 };
+// Build a graph from the current FILES fixture, mirroring the backend's
+// build_graph() so the graph view has something to render. Recognises
+// [[wikilinks]] by stem and [text](x.md) links by relative path.
+function buildGraphStub() {
+  const rels = Object.keys(FILES);
+  const stemIndex = {};
+  for (const rel of rels) {
+    const base = rel.split("/").pop();
+    const stem = base.toLowerCase().endsWith(".md") ? base.slice(0, -3) : base;
+    stemIndex[stem] = rel;
+  }
+  const edgeSet = new Set();
+  const degree = {};
+  for (const rel of rels) degree[rel] = 0;
+  const wl = /\[\[([^\]]+)\]\]/g;
+  const ml = /\[([^\]]*)\]\(([^)]+\.md(?:#[^\s)]*)?)\)/gi;
+  for (const src of rels) {
+    const text = FILES[src] || "";
+    const targets = new Set();
+    let m;
+    while ((m = wl.exec(text)) !== null) {
+      const t = (m[1] || "").split("#")[0].trim();
+      if (!t) continue;
+      const stem = t.toLowerCase().endsWith(".md") ? t.slice(0, -3) : t;
+      if (stem in stemIndex) targets.add(stemIndex[stem]);
+    }
+    while ((m = ml.exec(text)) !== null) {
+      const raw = (m[2] || "").split("#")[0].trim();
+      if (!raw) continue;
+      if (raw in degree) { targets.add(raw); continue; }
+      if (raw in stemIndex) { targets.add(stemIndex[raw]); continue; }
+      const srcDir = src.includes("/") ? src.slice(0, src.lastIndexOf("/")) : "";
+      const cand = (srcDir ? srcDir + "/" : "") + raw;
+      if (cand in degree) targets.add(cand);
+    }
+    for (const dst of targets) {
+      if (dst === src) continue;
+      const key = [src, dst].sort().join("\u0001");
+      if (edgeSet.has(key)) continue;
+      edgeSet.add(key);
+      degree[src]++;
+      degree[dst]++;
+    }
+  }
+  const nodes = rels.map(rel => ({
+    id: rel,
+    name: rel.split("/").pop(),
+    links: degree[rel],
+  })).sort((a, b) => a.id < b.id ? -1 : 1);
+  const edges = [];
+  for (const key of edgeSet) {
+    const [s, t] = key.split("\u0001");
+    edges.push({ source: s, target: t });
+  }
+  return { nodes, edges };
+}
 let config = {};
 let promptValue = null;
 const fetchLog = [];
@@ -92,6 +148,7 @@ const html = `<!DOCTYPE html><html><head>
     <main id="layout">
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
         <div class="activity-bar-spacer"></div>
+        <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
       </nav>
       <aside id="side-panel">
@@ -170,10 +227,29 @@ const html = `<!DOCTYPE html><html><head>
               </ul>
             </div>
           </div>
-        </div>
-        <div id="search-results" hidden>
-          <span id="search-summary"></span><button id="search-close">×</button>
-          <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
+          <div id="graph-view" class="graph-view special-tab-view" hidden>
+            <div class="graph-view-header">
+              <span class="graph-view-title">Graph</span>
+              <span class="graph-view-summary" id="graph-view-summary"></span>
+              <div class="graph-view-controls">
+                <input type="search" id="graph-view-filter" class="graph-view-filter" placeholder="Filter notes…">
+                <button id="graph-view-recenter" class="graph-view-btn" title="Re-center">⊞</button>
+                <button id="graph-view-zoom-in" class="graph-view-btn" title="Zoom in">+</button>
+                <button id="graph-view-zoom-out" class="graph-view-btn" title="Zoom out">−</button>
+                <button id="graph-view-refresh" class="graph-view-btn" title="Refresh graph">↻</button>
+              </div>
+            </div>
+            <div class="graph-view-host" id="graph-view-canvas-host">
+              <canvas id="graph-view-canvas" class="graph-view-canvas"></canvas>
+            </div>
+          </div>
+          <div id="search-results" class="search-results special-tab-view" hidden>
+            <div class="search-results-header">
+              <span id="search-summary"></span>
+              <button id="search-close" title="Close search">×</button>
+            </div>
+            <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
+          </div>
         </div>
       </section>
       <aside id="outline-pane">
@@ -572,6 +648,8 @@ window.fetch = async (url, opts) => {
       });
     }
     body = { query: q, matches, truncated: false };
+  } else if (p === "/api/graph") {
+    body = buildGraphStub();
   } else if (p === "/api/info") {
     body = { data_dir: "/tmp/test/data", config_dir: "/tmp/test/config" };
   } else if (p === "/api/create" || p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
@@ -680,6 +758,7 @@ evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
+evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/vimnav.js"));
@@ -2244,6 +2323,130 @@ function check(label, cond, extra) {
   // behind the collapsed strip and harder to assert against.
   explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
+
+  console.log("== graph view ==");
+  // The graph opens as a special tab (§graph) in the tab bar, not as a
+  // side-panel view or a content-area overlay. The 🕸 activity-bar button
+  // triggers NB.tabs.openSpecial("§graph"), which creates a tab with a
+  // custom icon + label and activates it.
+  const graphBtn = window.document.getElementById("activity-graph-btn");
+  check("graph toggle button in activity bar", !!graphBtn);
+  if (graphBtn) {
+    const graphFetchesBefore = fetchLog.filter(x => x === "GET /api/graph").length;
+    graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(50);
+    // A special tab should appear in the tab bar with the §graph id.
+    const graphTab = window.document.querySelector('.tab[data-path="§graph"]');
+    check("graph tab created in tab bar", !!graphTab);
+    check("graph tab is active", graphTab && graphTab.classList.contains("active"),
+      "classes=" + (graphTab ? graphTab.classList.toString() : "n/a"));
+    check("graph tab has special icon", graphTab && !!graphTab.querySelector(".tab-special-icon"),
+      "label=" + (graphTab ? graphTab.querySelector(".tab-label").textContent : "n/a"));
+    // The graph-view container should be visible (unhidden).
+    check("graph-view container visible", !$("graph-view").hidden);
+    // The viewer should be hidden (special tab takes the content area).
+    check("viewer hidden when graph tab active", $("viewer").hidden);
+    check("/api/graph fetched on tab open",
+      fetchLog.filter(x => x === "GET /api/graph").length - graphFetchesBefore >= 1);
+    // The overlay ships with a header, summary, controls, and canvas host.
+    const gv = $("graph-view");
+    check("graph header rendered", !!gv.querySelector(".graph-view-header"));
+    check("graph canvas rendered", !!gv.querySelector(".graph-view-canvas"));
+    check("graph summary element exists", !!gv.querySelector(".graph-view-summary"));
+    // The fixture accumulates files from earlier tests; node count must
+    // match Object.keys(FILES).length. Edges are 0 (no links in fixtures).
+    await tick(50);
+    const expectedNodes = Object.keys(FILES).length;
+    check("graph node count matches FILES (" + expectedNodes + ")",
+      window.NB.graph && Array.isArray(window.NB.graph.nodes) ? window.NB.graph.nodes.length === expectedNodes : false,
+      "nodes=" + (window.NB.graph && window.NB.graph.nodes ? window.NB.graph.nodes.length : "n/a") + " expected=" + expectedNodes);
+    check("graph loaded 0 edges (fixture has no links)", window.NB.graph && Array.isArray(window.NB.graph.edges) ? window.NB.graph.edges.length === 0 : false,
+      "edges=" + (window.NB.graph && window.NB.graph.edges ? window.NB.graph.edges.length : "n/a"));
+    // Close the graph tab via the tab's × button; the tab should
+    // disappear and the viewer should reappear (falling back to the
+    // previously-active file tab, or the welcome page).
+    const graphCloseBtn = graphTab && graphTab.querySelector(".tab-close");
+    if (graphCloseBtn) {
+      graphCloseBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(30);
+      check("graph tab removed after close", !window.document.querySelector('.tab[data-path="§graph"]'));
+      check("graph-view container hidden after close", $("graph-view").hidden);
+    }
+  }
+
+  // --- graph interactions: verify event handlers actually fire and
+  // mutate the simulation/zoom state. If these pass in jsdom, the
+  // handlers are wired correctly; if a real browser still doesn't
+  // react, the cause is CSS/layout (e.g. zero-size canvas host). ---
+  console.log("== graph interactions ==");
+  // Re-open the graph tab for interaction testing.
+  graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(50);
+  const canvasEl = $("graph-view-canvas");
+  const canvasHostEl = $("graph-view-canvas-host");
+  check("graph canvas element exists for interaction test", !!canvasEl);
+  check("graph canvas host exists", !!canvasHostEl);
+  if (canvasEl && canvasHostEl && window.NB.graph) {
+    // --- wheel zoom ---
+    const scaleBefore = window.NB.graph.scale;
+    const wheelEvt = new window.WheelEvent("wheel", {
+      deltaY: -120, bubbles: true, cancelable: true, clientX: 50, clientY: 50,
+    });
+    canvasEl.dispatchEvent(wheelEvt);
+    const scaleAfterZoomIn = window.NB.graph.scale;
+    check("graph: wheel up (deltaY<0) zooms in", scaleAfterZoomIn > scaleBefore,
+      "before=" + scaleBefore.toFixed(3) + " after=" + scaleAfterZoomIn.toFixed(3));
+    // defaultPrevented confirms preventDefault() ran (stops page scroll).
+    check("graph: wheel handler calls preventDefault", wheelEvt.defaultPrevented);
+    // Zoom out.
+    const wheelOut = new window.WheelEvent("wheel", {
+      deltaY: 120, bubbles: true, cancelable: true, clientX: 50, clientY: 50,
+    });
+    canvasEl.dispatchEvent(wheelOut);
+    check("graph: wheel down (deltaY>0) zooms out", window.NB.graph.scale < scaleAfterZoomIn,
+      "after zoom-out=" + window.NB.graph.scale.toFixed(3));
+    check("graph: zoom-out wheel preventDefault", wheelOut.defaultPrevented);
+
+    // --- mousedown / mousemove / mouseup: background pan ---
+    const panBefore = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
+    const md = new window.MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 100,
+    });
+    canvasEl.dispatchEvent(md);
+    const mm = new window.MouseEvent("mousemove", {
+      bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 120,
+    });
+    canvasEl.dispatchEvent(mm);
+    const mu = new window.MouseEvent("mouseup", {
+      bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 120,
+    });
+    window.document.dispatchEvent(mu);
+    check("graph: background drag changes pan.x",
+      window.NB.graph.pan.x !== panBefore.x || window.NB.graph.pan.y !== panBefore.y,
+      "before=" + JSON.stringify(panBefore) + " after=" + JSON.stringify(window.NB.graph.pan));
+
+    // --- zoom-in button ---
+    const scaleBeforeBtn = window.NB.graph.scale;
+    $("graph-view-zoom-in").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("graph: zoom-in button increases scale",
+      window.NB.graph.scale > scaleBeforeBtn,
+      "before=" + scaleBeforeBtn.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+    // --- zoom-out button ---
+    const scaleBeforeBtn2 = window.NB.graph.scale;
+    $("graph-view-zoom-out").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("graph: zoom-out button decreases scale",
+      window.NB.graph.scale < scaleBeforeBtn2,
+      "before=" + scaleBeforeBtn2.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+
+    // Close the graph tab before subsequent tests run so it doesn't
+    // interfere with tab-close / restore assertions below.
+    const graphTabEl = window.document.querySelector('.tab[data-path="§graph"]');
+    const gClose = graphTabEl && graphTabEl.querySelector(".tab-close");
+    if (gClose) {
+      gClose.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+    }
+  }
 
   console.log("== sidebar: collapse-all folders from root context menu ==");
   // Build a nested-folder tree, open the root context menu (right-click

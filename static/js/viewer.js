@@ -288,6 +288,41 @@
     viewerContentEl.removeEventListener("scroll", onViewerScroll);
     refreshTopbar();
     if (NB.editbar) NB.editbar.hide();
+    // Hide any special-tab content containers that live as siblings of
+    // #viewer inside #edit-split (graph, search-as-tab, etc.). Each
+    // special view also listens for file:open to hide itself, but this
+    // covers the case where a file tab is activated without the special
+    // view being a party to the switch (e.g. restore-on-boot).
+    hideSpecialContainers();
+  }
+  /* Hide every element inside #edit-split that carries the
+   * .special-tab-view class. Called when a file tab activates so a
+   * previously-active special tab's content disappears. Each special
+   * view owns its own visibility via its onActivate handler; this is
+   * the belt-and-suspenders fallback. */
+  function hideSpecialContainers() {
+    if (!editSplit) return;
+    editSplit.querySelectorAll(".special-tab-view").forEach(el => { el.hidden = true; });
+  }
+  /* Called by tabs.js when a special tab (§graph, §search) becomes
+   * active. Hides the viewer + welcome + editor so the special view's
+   * container (a .special-tab-view sibling inside #edit-split) is the
+   * only visible child. The special view's onActivate handler shows
+   * its own container. */
+  function showSpecial() {
+    if (cmHostEl) cmHostEl.hidden = true;
+    viewerEl.hidden = true;
+    if (welcomeEl) welcomeEl.hidden = true;
+    // Remove the edit-mode split class so #edit-split reverts to a
+    // simple column layout. If the user was in edit mode (split =
+    // editor + preview side by side) before opening a special tab
+    // (graph / search), the .split class would otherwise persist and
+    // make #edit-split a flex row, which can confuse the layout of
+    // the special-tab-view container.
+    editSplit.classList.remove("split");
+    hideSpecialContainers();
+    refreshTopbar();
+    if (NB.editbar) NB.editbar.hide();
   }
   function showEditor() {
     if (cmHostEl) cmHostEl.hidden = false;
@@ -409,6 +444,11 @@
      * clear(); exposed under its own name so callers (and tests) can
      * be explicit about intent. */
     showWelcome() { showWelcome(); },
+    /* Hide the viewer + welcome + editor so a special tab's content
+     * container (a .special-tab-view sibling in #edit-split) becomes
+     * the only visible child. Called by tabs.js when a special tab
+     * (§graph, §search) is activated. */
+    showSpecial() { showSpecial(); },
 
     getPath() { return active; },
     getContent() { const t = cur(); return t ? (t.editMode ? NB.cmEditor.getValue() : t.content) : ""; },
