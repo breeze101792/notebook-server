@@ -33,6 +33,18 @@
    * edit bar, settings rows) is rem-ified; only micro-decorations (8-11px
    * glyphs that would look wrong at 1.3x) stay in px. */
   --font-scale: 1;
+  /* Graph view canvas colors. RGB triples so graph.js can read them
+   * with getComputedStyle and assemble rgba(...) strings at draw time
+   * (canvas fillStyle/strokeStyle need full color strings, not var()).
+   * Override each triple per-theme so the canvas matches the rest of
+   * the app on both dark and light bodies. */
+  --graph-node-rgb: 124 156 255;          /* default node fill */
+  --graph-node-hover-rgb: 124 156 255;    /* hovered node fill */
+  --graph-edge-rgb: 124 156 255;          /* active edge stroke */
+  --graph-glow-rgb: 124 156 255;          /* hover/drag glow ring */
+  --graph-warn-rgb: 243 180 84;           /* active-file + dragged fill + drag glow */
+  --graph-dim-rgb: 127 140 160;           /* dimmed node + dimmed label */
+  --graph-label-rgb: 230 230 234;         /* regular label text */
 }
 
 body[data-theme="light"] {
@@ -49,6 +61,16 @@ body[data-theme="light"] {
   --danger: #c0392b;
   --ok: #2faa66;
   --warn: #c9831d;
+  /* Graph canvas colors on a light body: same hue families as dark but
+   * darker/more saturated so they stay legible against the white
+   * canvas. Reads match the rest of the UI's --accent / --warn. */
+  --graph-node-rgb: 47 95 208;
+  --graph-node-hover-rgb: 47 95 208;
+  --graph-edge-rgb: 47 95 208;
+  --graph-glow-rgb: 47 95 208;
+  --graph-warn-rgb: 201 131 29;
+  --graph-dim-rgb: 93 100 112;
+  --graph-label-rgb: 31 35 48;
 }
 
 * { box-sizing: border-box; }

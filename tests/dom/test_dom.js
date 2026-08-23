@@ -622,7 +622,14 @@ function makeFakeCtx(canvasEl) {
     calls: [], ops: {}, clears: 0,
     transforms: [],           // stack snapshots from save()
     current: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
+    fills: new Set(),         // every fillStyle string seen across draws
+    strokes: new Set(),       // every strokeStyle string seen across draws
   };
+  // Track each fillStyle/strokeStyle write into a Set so a test can
+  // assert "the canvas used the dark-theme accent" without coupling
+  // to the order of operations inside draw().
+  const fillProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; log.fills.add(v); } };
+  const strokeProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; log.strokes.add(v); } };
   const apply = (name) => (...args) => {
     log.calls.push(name);
     log.ops[name] = (log.ops[name] || 0) + 1;
@@ -647,7 +654,11 @@ function makeFakeCtx(canvasEl) {
   const ctx = {
     log,
     canvas: canvasEl || null,
-    fillStyle: "", strokeStyle: "", lineWidth: 1, font: "",
+    get fillStyle()   { return fillProxy._last; },
+    set fillStyle(v)  { fillProxy._last = v; log.fills.add(v); },
+    get strokeStyle() { return strokeProxy._last; },
+    set strokeStyle(v){ strokeProxy._last = v; log.strokes.add(v); },
+    lineWidth: 1, font: "",
     save: apply("save"), restore: apply("restore"),
     translate: apply("translate"), scale: apply("scale"), setTransform: apply("setTransform"),
     clearRect: apply("clearRect"),
@@ -2527,6 +2538,87 @@ function check(label, cond, extra) {
         "scale=" + ctx.log.ops.scale);
       check("graph: ctx drew node arcs", ctx.log.ops.arc > 0,
         "arc=" + ctx.log.ops.arc);
+
+      // --- theme-aware colors flip with body[data-theme] ---
+      // Snapshot the colors draw() wrote while the body is "dark".
+      // Then flip body[data-theme] to "light" and confirm the next
+      // draw writes the light-theme palette (the dark-mode literal
+      // "rgba(124,156,255,0.8)" must no longer appear). This is the
+      // bug that hid the graph on the light theme: draw() painted
+      // dark-mode accents (light blue + near-white labels) on a
+      // white canvas, producing near-invisible dots and unreadable
+      // text.
+      const hasFill = (re) => Array.from(ctx.log.fills).some(s => re.test(s));
+      const hasStroke = (re) => Array.from(ctx.log.strokes).some(s => re.test(s));
+      check("graph: dark-mode default node fill uses dark accent",
+        hasFill(/124\s*,\s*156\s*,\s*255/),
+        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
+      check("graph: dark-mode label fill uses near-white",
+        hasFill(/230\s*,\s*230\s*,\s*234/),
+        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
+      // Reset the recorder so we only look at colors from the light pass.
+      ctx.log.fills.clear();
+      ctx.log.strokes.clear();
+      // The jsdom test runner doesn't link static/css/style.css, so
+      // CSS custom properties aren't defined on any element. Mirror
+      // the graph tokens inline so resolveColors() has something to
+      // read -- this is exactly what the linked stylesheet does in
+      // production, just expressed inline.
+      const GRAPH_DARK_TOKENS = {
+        "--graph-node-rgb": "124 156 255",
+        "--graph-node-hover-rgb": "124 156 255",
+        "--graph-edge-rgb": "124 156 255",
+        "--graph-glow-rgb": "124 156 255",
+        "--graph-warn-rgb": "243 180 84",
+        "--graph-dim-rgb": "127 140 160",
+        "--graph-label-rgb": "230 230 234",
+      };
+      const GRAPH_LIGHT_TOKENS = {
+        "--graph-node-rgb": "47 95 208",
+        "--graph-node-hover-rgb": "47 95 208",
+        "--graph-edge-rgb": "47 95 208",
+        "--graph-glow-rgb": "47 95 208",
+        "--graph-warn-rgb": "201 131 29",
+        "--graph-dim-rgb": "93 100 112",
+        "--graph-label-rgb": "31 35 48",
+      };
+      function setTokens(map) {
+        for (const [k, v] of Object.entries(map)) {
+          window.document.body.style.setProperty(k, v);
+        }
+      }
+      // Set dark tokens first so the previous (pre-flip) draws still
+      // match what the assertion expects.
+      setTokens(GRAPH_DARK_TOKENS);
+      // Flip to light: change body[data-theme] AND swap the tokens so
+      // getComputedStyle(body) returns the light values.
+      window.document.body.dataset.theme = "light";
+      setTokens(GRAPH_LIGHT_TOKENS);
+      // Force a redraw regardless of the loop state by nudging pan;
+      // any draw() pass (idle requestRedraw or running rAF tick) will
+      // repaint with the resolved palette.
+      window.NB.graph.pan.x += 0.001;
+      // Wait long enough for the MO microtask + several rAF frames.
+      await tick(200);
+      // Surface whether a draw fired at all after the flip so a
+      // silent regression doesn't masquerade as a wrong-color failure.
+      check("graph: light theme drew at all after theme flip",
+        ctx.log.fills.size > 0,
+        "fills.size=" + ctx.log.fills.size + " contents=" + JSON.stringify(Array.from(ctx.log.fills)));
+      check("graph: light theme uses the light accent for nodes",
+        hasFill(/47\s*,\s*95\s*,\s*208/),
+        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
+      check("graph: light theme label fill is dark text",
+        hasFill(/31\s*,\s*35\s*,\s*48/),
+        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
+      check("graph: light theme does NOT paint the dark accent",
+        !hasFill(/124\s*,\s*156\s*,\s*255/) && !hasStroke(/124\s*,\s*156\s*,\s*255/),
+        "fills=" + JSON.stringify(Array.from(ctx.log.fills)) +
+        " strokes=" + JSON.stringify(Array.from(ctx.log.strokes)));
+      // Restore dark for the rest of the suite.
+      window.document.body.dataset.theme = "dark";
+      setTokens(GRAPH_DARK_TOKENS);
+      await tick(20);
     } else {
       check("graph: ctx was created on canvas", false,
         "no __fakeCtx attached to " + (canvasEl && canvasEl.id));

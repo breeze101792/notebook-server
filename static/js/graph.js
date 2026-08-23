@@ -86,6 +86,19 @@
     try { ctx = canvas.getContext("2d"); } catch (_) { ctx = null; }
     dpr = (window.devicePixelRatio || 1);
 
+    resolveColors();
+    // Re-resolve on theme change so the canvas picks up new colors
+    // without needing every draw to read computed style (cheap, but
+    // only fires when the user actually toggles theme).
+    try {
+      const body = document.body;
+      if (body && typeof MutationObserver === "function") {
+        new MutationObserver(() => {
+          resolveColors();
+          requestRedraw();
+        }).observe(body, { attributes: true, attributeFilter: ["data-theme"] });
+      }
+    } catch (_) {}
     sizeCanvas();
     if (window.ResizeObserver && canvasHostEl) {
       try {
@@ -343,6 +356,7 @@
     // the canvas backing store matches the CSS pixel dimensions, so
     // pointer-event picking math stays correct.
     sizeCanvas();
+    if (!_palette) resolveColors();
     // dpr scaling was set once in sizeCanvas(); don't reset to identity
     // or the dpr multiplier would be lost.
     ctx.clearRect(0, 0, width, height);
@@ -352,13 +366,27 @@
     ctx.save();
     ctx.translate(pan.x, pan.y);
     ctx.scale(scale, scale);
+    // Color fallbacks match the previous (dark-mode) hardcoded values
+    // so the canvas still looks sensible if the CSS tokens are missing
+    // (e.g. tests or a stray custom stylesheet).
+    const p = _palette || {};
+    const dimStroke    = rgbaOrFallback(p.dim,   0.07, "rgba(127,140,160,0.07)");
+    const activeEdge   = rgbaOrFallback(p.edge,  0.5,  "rgba(124,156,255,0.5)");
+    const dimFill      = rgbaOrFallback(p.dim,   0.18, "rgba(127,140,160,0.18)");
+    const warnFill     = rgbaOrFallback(p.warn,  1,    "#f3b454");
+    const hoverFill    = rgbaOrFallback(p.hover, 1,    "#7c9cff");
+    const nodeFill     = rgbaOrFallback(p.node,  0.8,  "rgba(124,156,255,0.8)");
+    const glowActive   = rgbaOrFallback(p.warn,  0.4,  "rgba(243,180,84,0.4)");
+    const glowHover    = rgbaOrFallback(p.glow,  0.4,  "rgba(124,156,255,0.4)");
+    const labelDim     = rgbaOrFallback(p.dim,   0.4,  "rgba(127,140,160,0.4)");
+    const labelNormal  = rgbaOrFallback(p.label, 0.92, "rgba(230,230,234,0.92)");
     const neighbours = hoverId ? neighbourSet(hoverId) : null;
     for (const e of edges) {
       if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
-        ctx.strokeStyle = "rgba(127,140,160,0.07)";
+        ctx.strokeStyle = dimStroke;
         ctx.lineWidth = 1 / scale;
       } else {
-        ctx.strokeStyle = "rgba(124,156,255,0.5)";
+        ctx.strokeStyle = activeEdge;
         ctx.lineWidth = 1.5 / scale;
       }
       ctx.beginPath();
@@ -376,21 +404,21 @@
       if (isDragged) r += 3;
       let fill;
       if (dim || isFiltered) {
-        fill = "rgba(127,140,160,0.18)";
+        fill = dimFill;
       } else if (n.id === activeFile) {
-        fill = "#f3b454";
+        fill = warnFill;
       } else if (isDragged) {
-        fill = "#f3b454";
+        fill = warnFill;
       } else if (n.id === hoverId) {
-        fill = "#7c9cff";
+        fill = hoverFill;
       } else {
-        fill = "rgba(124,156,255,0.8)";
+        fill = nodeFill;
       }
       // Glow ring for hovered / dragged nodes for clearer feedback.
       if (n.id === hoverId || isDragged) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
-        ctx.strokeStyle = isDragged ? "rgba(243,180,84,0.4)" : "rgba(124,156,255,0.4)";
+        ctx.strokeStyle = isDragged ? glowActive : glowHover;
         ctx.lineWidth = 2 / scale;
         ctx.stroke();
       }
@@ -403,7 +431,7 @@
         // Font size + label offset stay in screen pixels: undo the
         // scale so a 12px font reads as 12px regardless of zoom.
         ctx.font = (12 / scale) + "px -apple-system, sans-serif";
-        ctx.fillStyle = dim || isFiltered ? "rgba(127,140,160,0.4)" : "rgba(230,230,234,0.92)";
+        ctx.fillStyle = dim || isFiltered ? labelDim : labelNormal;
         ctx.fillText(label, n.x + r + 4 / scale, n.y + 4 / scale);
       }
     }
@@ -417,6 +445,53 @@
       else if (e.target.id === id) s.add(e.source.id);
     }
     return s;
+  }
+
+  // --- theme-aware colors ----------------------------------------------
+  // draw() runs on the canvas, which can't read CSS var() directly, so we
+  // resolve the graph color tokens out of computed styles on every draw
+  // and assemble rgba() strings. The values come from CSS tokens that
+  // flip with body[data-theme]; resolveColors() always picks up the
+  // current theme so a theme switch repaints with no manual hookup.
+  function parseRgbTriplet(s) {
+    const m = String(s || "").trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
+    if (!m) return null;
+    return [+m[1], +m[2], +m[3]];
+  }
+  function rgba(triple, a) {
+    if (!triple) return null;
+    return "rgba(" + triple[0] + "," + triple[1] + "," + triple[2] + "," + a + ")";
+  }
+  let _palette = null;
+  function resolveColors() {
+    // Real browsers cascade :root + body[data-theme] into a single
+    // computed style. jsdom doesn't merge custom properties the same
+    // way -- :root vars only show up on the document element and
+    // body[data-theme] overrides only show up on body -- so read both
+    // and let the body value win for each var (which matches the
+    // browser's cascade behavior).
+    const cs = (typeof getComputedStyle === "function") ? getComputedStyle : null;
+    const rootEl = document.documentElement;
+    const bodyEl = document.body;
+    const read = (name) => {
+      if (!cs) return "";
+      const fromBody = bodyEl ? cs(bodyEl).getPropertyValue(name).trim() : "";
+      if (fromBody) return fromBody;
+      return rootEl ? cs(rootEl).getPropertyValue(name).trim() : "";
+    };
+    _palette = {
+      node:    parseRgbTriplet(read("--graph-node-rgb")),
+      hover:   parseRgbTriplet(read("--graph-node-hover-rgb")),
+      edge:    parseRgbTriplet(read("--graph-edge-rgb")),
+      glow:    parseRgbTriplet(read("--graph-glow-rgb")),
+      warn:    parseRgbTriplet(read("--graph-warn-rgb")),
+      dim:     parseRgbTriplet(read("--graph-dim-rgb")),
+      label:   parseRgbTriplet(read("--graph-label-rgb")),
+    };
+  }
+  function rgbaOrFallback(triple, a, fallback) {
+    const v = rgba(triple, a);
+    return v || fallback;
   }
 
   // --- rAF loop --------------------------------------------------------
