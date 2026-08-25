@@ -130,6 +130,13 @@ let authHasViewer = false;
 // password" test used.
 let adminCurrentPw = null;
 let authSetPasswordsCalls = [];   // last few bodies posted to /api/auth/passwords
+// Named API token state used by the fake /api/auth/tokens stubs. Mirrors
+// the server: only a name/role/created list is kept (no hashes in jsdom),
+// creation returns the full token exactly once, and clearing the admin
+// password wipes the list.
+let authTokens = [];              // [{name, role, created}]
+let authTokensSeq = 0;            // deterministic token counter
+let authTokensCalls = [];         // log of {op, body} for assertions
 
 const html = `<!DOCTYPE html><html><head>
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
@@ -471,6 +478,29 @@ const html = `<!DOCTYPE html><html><head>
               <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
             </div>
             <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+            <h3>API tokens</h3>
+            <p id="settings-tokens-help" class="settings-help">Bearer tokens let agents and scripts call the API without a browser session.</p>
+            <div class="settings-note" id="settings-tokens-status">API tokens: <span id="settings-tokens-count">0</span></div>
+            <div id="settings-tokens-list"></div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-tokens-name">New token name</label>
+              <input id="settings-tokens-name" type="text" class="auth-input settings-auth-input" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-tokens-role">Role</label>
+              <select id="settings-tokens-role" disabled>
+                <option value="viewer">viewer — read only</option>
+                <option value="admin">admin — read + write</option>
+              </select>
+            </div>
+            <div class="settings-form-actions">
+              <button id="settings-tokens-create" class="settings-action" disabled>Create token</button>
+            </div>
+            <div id="settings-tokens-issued" class="settings-auth-admin-form" hidden>
+              <div class="settings-note">Token created — copy it now, it will not be shown again:</div>
+              <code id="settings-tokens-issued-value" class="settings-value settings-mono"></code>
+            </div>
+            <div id="settings-tokens-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
             <h3>About</h3>
@@ -798,7 +828,63 @@ window.fetch = async (url, opts) => {
     } else if (typeof d.viewer_password === "string" && d.viewer_password !== null) {
       authHasViewer = true;
     }
+    // Mirrors the server: disabling auth (clearing the admin password)
+    // also clears every API token.
+    if (d.admin_password === "") authTokens = [];
     body = { ok: true, hasAdmin: authHasAdmin, hasViewer: authHasViewer };
+  } else if (p === "/api/auth/tokens" || p.startsWith("/api/auth/tokens/")) {
+    // Named API tokens. Admin-only like /api/auth/passwords: when an
+    // admin password is configured, only an admin session gets through
+    // (401 signed out, 403 viewer). Creation is refused while auth is
+    // off -- tokens would be meaningless.
+    const isAdminSession = !authEnabled ? false : authRole === "admin";
+    const deny = () => ({
+      ok: false,
+      status: authRole ? 403 : 401,
+      text: async () => JSON.stringify({ error: "Admin role required" }),
+      json: async () => ({ error: "Admin role required" }),
+    });
+    if (method === "POST") {
+      if (!authEnabled) {
+        return { ok: false, status: 400,
+          text: async () => JSON.stringify({ error: "Set an admin password before issuing API tokens" }),
+          json: async () => ({ error: "Set an admin password before issuing API tokens" }) };
+      }
+      if (!isAdminSession) return deny();
+      const d = JSON.parse(opts.body || "{}");
+      authTokensCalls.push({ op: "create", body: d });
+      if (typeof d.name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(d.name)
+          || (d.role !== "admin" && d.role !== "viewer")) {
+        return { ok: false, status: 400,
+          text: async () => JSON.stringify({ error: "Invalid name or role" }),
+          json: async () => ({ error: "Invalid name or role" }) };
+      }
+      if (authTokens.some(t => t.name === d.name)) {
+        return { ok: false, status: 409,
+          text: async () => JSON.stringify({ error: "A token with that name already exists" }),
+          json: async () => ({ error: "A token with that name already exists" }) };
+      }
+      authTokensSeq++;
+      const entry = { name: d.name, role: d.role, created: 1700000000 + authTokensSeq };
+      authTokens.push(entry);
+      body = Object.assign({ ok: true, token: "nbtk_" + String(authTokensSeq) + "abcdef0123456789abcdef0123456789abcdef" }, entry);
+    } else if (method === "GET") {
+      if (!isAdminSession) return deny();
+      // Listing never includes the token string itself.
+      body = { tokens: authTokens.map(t => ({ name: t.name, role: t.role, created: t.created })) };
+    } else if (method === "DELETE") {
+      if (!isAdminSession) return deny();
+      const name = decodeURIComponent(p.slice("/api/auth/tokens/".length));
+      authTokensCalls.push({ op: "delete", body: { name } });
+      const before = authTokens.length;
+      authTokens = authTokens.filter(t => t.name !== name);
+      if (authTokens.length === before) {
+        return { ok: false, status: 404,
+          text: async () => JSON.stringify({ error: "No such token" }),
+          json: async () => ({ error: "No such token" }) };
+      }
+      body = { ok: true };
+    }
   }
   return { ok: true, status: 200,
     text: async () => JSON.stringify(body),
@@ -4788,6 +4874,115 @@ function check(label, cond, extra) {
    authSetPasswordsCalls = [];
    window.NB.settings.close();
    window.confirm = () => true;
+
+  console.log("== tokens ==");
+  // The API tokens section in Settings -> Security. Admin-only like the
+  // passwords section; the create response is the only time the full
+  // token string is shown, so the issued box must appear on create and
+  // never leak the secret into the rendered list.
+
+  // Scenario T1: no auth configured. Controls are disabled and no
+  // listing is fetched (the server would refuse anyway).
+  authEnabled = false; authHasAdmin = false; authRole = null;
+  authTokens = []; authTokensSeq = 0; authTokensCalls = [];
+  const tokFetchesBefore = fetchLog.length;
+  window.NB.settings.open(); await tick(40);
+  check("tok: auth off -> count shows dash", $("settings-tokens-count").textContent === "—",
+    "count=" + JSON.stringify($("settings-tokens-count").textContent));
+  check("tok: auth off -> name input + create disabled",
+    $("settings-tokens-name").disabled && $("settings-tokens-create").disabled);
+  check("tok: auth off -> help asks to sign in as admin",
+    /Sign in as admin/.test($("settings-tokens-help").textContent),
+    $("settings-tokens-help").textContent);
+  check("tok: auth off -> no tokens endpoint call during this open",
+    !fetchLog.slice(tokFetchesBefore).includes("GET /api/auth/tokens"));
+  window.NB.settings.close();
+
+  // Scenario T2: admin signed in. Listing renders; creating issues a
+  // one-time token; the list never contains the secret.
+  authEnabled = true; authHasAdmin = true; authRole = "admin";
+  window.NB.settings.open(); await tick(60);
+  check("tok: admin -> count is 0 after fetch",
+    $("settings-tokens-count").textContent === "0",
+    "count=" + JSON.stringify($("settings-tokens-count").textContent));
+  check("tok: admin -> create disabled until a name is typed",
+    $("settings-tokens-create").disabled
+    && !$("settings-tokens-name").disabled);
+  $("settings-tokens-name").value = "opencode";
+  $("settings-tokens-name").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("tok: admin -> create enabled with a name",
+    !$("settings-tokens-create").disabled);
+  $("settings-tokens-role").value = "viewer";
+  $("settings-tokens-create").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(60);
+  const createdTokenBody = authTokensCalls.find(c => c.op === "create");
+  check("tok: admin create POSTs {name:'opencode', role:'viewer'}",
+    !!createdTokenBody
+    && createdTokenBody.body.name === "opencode"
+    && createdTokenBody.body.role === "viewer",
+    JSON.stringify(authTokensCalls));
+  const issuedText = $("settings-tokens-issued-value").textContent;
+  check("tok: create -> issued box visible with an nbtk_ token",
+    !$("settings-tokens-issued").hidden && /^nbtk_[0-9a-f]+$/.test(issuedText),
+    "token=" + issuedText.slice(0, 12) + "…");
+  check("tok: create -> count updated to 1 and row rendered",
+    $("settings-tokens-count").textContent === "1"
+    && $("settings-tokens-list").children.length === 1,
+    "rows=" + $("settings-tokens-list").children.length);
+  const tokRow = $("settings-tokens-list").firstChild;
+  check("tok: row shows name + role but NOT the secret",
+    /opencode/.test(tokRow.textContent)
+    && /viewer/.test(tokRow.textContent)
+    && !tokRow.textContent.includes(issuedText),
+    JSON.stringify(tokRow.textContent));
+  check("tok: name field cleared after create",
+    $("settings-tokens-name").value === "");
+  window.NB.settings.close();
+
+  // Scenario T3: duplicate name -> server 409, error shown, issued box
+  // stays hidden.
+  authEnabled = true; authHasAdmin = true; authRole = "admin";
+  window.NB.settings.open(); await tick(60);
+  $("settings-tokens-name").value = "opencode";
+  $("settings-tokens-name").dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  $("settings-tokens-create").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(60);
+  check("tok: duplicate name -> error shown",
+    /already exists/.test($("settings-tokens-error").textContent),
+    "err=" + $("settings-tokens-error").textContent);
+  check("tok: duplicate name -> issued box stays hidden",
+    $("settings-tokens-issued").hidden);
+  window.NB.settings.close();
+
+  // Scenario T4: revoke. The confirm stub returns true; the DELETE is
+  // logged and the list re-renders without the row.
+  authEnabled = true; authHasAdmin = true; authRole = "admin";
+  let tokConfirmCalls = 0;
+  window.confirm = () => { tokConfirmCalls++; return true; };
+  window.NB.settings.open(); await tick(60);
+  check("tok: reopen -> persisted token still listed",
+    $("settings-tokens-count").textContent === "1"
+    && $("settings-tokens-list").children.length === 1);
+  check("tok: reopening hides any stale issued box",
+    $("settings-tokens-issued").hidden);
+  tokRow.querySelector(".settings-token-revoke")
+    .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(60);
+  const deletedTokenCall = authTokensCalls.find(c => c.op === "delete");
+  check("tok: revoke prompts + DELETEs by name",
+    tokConfirmCalls === 1 && !!deletedTokenCall && deletedTokenCall.body.name === "opencode",
+    JSON.stringify(authTokensCalls.filter(c => c.op === "delete")));
+  check("tok: revoke -> list empties, count back to 0",
+    $("settings-tokens-count").textContent === "0"
+    && $("settings-tokens-list").children.length === 0);
+  window.confirm = () => true;
+  window.NB.settings.close();
+
+  // Reset for later blocks.
+  authEnabled = false; authHasAdmin = false; authHasViewer = false; authRole = null;
+  authTokens = []; authTokensSeq = 0; authTokensCalls = [];
 
   console.log("== settings footer ==");
   // The Settings modal now has a single Close button in the footer --

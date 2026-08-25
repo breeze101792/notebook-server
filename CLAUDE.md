@@ -96,9 +96,13 @@ migration of legacy `data/` into `notebook/` if needed, and on a fresh
 install copies the contents of `notebook.template/` into `notebook/`. The
 template ships with a single `Welcome.md`; editing notes never touches the
 template. Endpoints: `/api/auth` (GET), `/api/auth/passwords` (POST, admin-only),
+`/api/auth/tokens` (GET/POST) + `/api/auth/tokens/<name>` (DELETE, admin-only),
 `/api/login` (POST), `/api/logout` (POST), `/api/config` (GET/POST),
 `/api/tree` (GET), `/api/file` (GET/POST), `/api/create`, `/api/move`,
-`/api/copy`, `/api/delete`, `/api/search`.
+`/api/copy`, `/api/delete`, `/api/search`, `/api/graph`; plus the
+ungated `/agent` page, a machine-readable API guide for AI agents
+(documentation only — no data — so agents can discover how to authenticate
+before holding any credential).
 
 `safe_path(rel)` is the security-critical chokepoint: every file route resolves the
 user-supplied relative path through it, which rejects absolute input, `..` traversal,
@@ -123,6 +127,12 @@ password is configured) gates the read paths so an admin-only config
 leaves reads open. Sessions are Flask's signed/encrypted cookies; the
 role is `session["role"]` ∈ `{"admin", "viewer"}`. A best-effort in-memory
 rate limiter (5 failures / 60s per client IP) trips 429 on the 6th attempt.
+**Named API tokens** let agents/scripts skip the cookie dance: issued via
+admin-only `POST /api/auth/tokens` (`{name, role}`, full token shown once,
+only a bcrypt hash stored), revoked via `DELETE /api/auth/tokens/<name>`,
+and sent as `Authorization: Bearer nbtk_…`. A presented-but-invalid Bearer
+fails hard with 401 (no fallback to the session) and shares the login rate
+limiter; clearing the admin password clears all tokens.
 The Settings modal's **Passwords** section is the in-app setup path:
 admin password is set/rotated via a single input, and the optional viewer
 password is set/cleared via a "Require a password to read" toggle. The
@@ -183,7 +193,10 @@ Module responsibilities:
   closes. The `×` / Esc / backdrop click all delegate to a dynamic `close()`
   — `Cancel` if the draft is dirty, plain close otherwise. The **Passwords**
   section is deliberately excluded from this footer flow and keeps its own
-  per-section Save/Remove buttons that reload the page on success.
+  per-section Save/Remove buttons that reload the page on success. The
+  **API tokens** section (same Security tab) is also admin-only and live:
+  it lists/creates/revokes named bearer tokens via `/api/auth/tokens` and
+  shows the full token string exactly once at creation.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,

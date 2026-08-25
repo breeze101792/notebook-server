@@ -595,6 +595,7 @@
     try { authState = await NB.api.getAuthStatus(); }
     catch (e) { authState = null; }
     refreshAuthSection();
+    renderTokens();
   }
   // --- admin "set" form: live + new + confirm ---
   if (adminNewEl) adminNewEl.addEventListener("input", refreshAdminSetSaveEnabled);
@@ -774,6 +775,140 @@
       } catch (e) {
         setAuthError(e.message || "Failed to clear viewer password");
         viewerToggleEl.checked = true;
+      }
+    });
+  }
+
+  /* --- API tokens section --------------------------------------------- */
+  // Named bearer credentials for agents/scripts. Admin-only, same gate
+  // as the passwords section (isAdmin()). The list is fetched fresh on
+  // every modal open; the create response is the only time the server
+  // returns the full token, so the issued box is the user's one chance
+  // to copy it. Revoking asks for confirmation and re-renders.
+  const tokensHelpEl        = document.getElementById("settings-tokens-help");
+  const tokensCountEl       = document.getElementById("settings-tokens-count");
+  const tokensListEl        = document.getElementById("settings-tokens-list");
+  const tokensNameEl        = document.getElementById("settings-tokens-name");
+  const tokensRoleEl        = document.getElementById("settings-tokens-role");
+  const tokensCreateBtn     = document.getElementById("settings-tokens-create");
+  const tokensIssuedEl      = document.getElementById("settings-tokens-issued");
+  const tokensIssuedValueEl = document.getElementById("settings-tokens-issued-value");
+  const tokensErrorEl       = document.getElementById("settings-tokens-error");
+
+  function setTokensError(msg) {
+    if (!tokensErrorEl) return;
+    tokensErrorEl.textContent = msg || "";
+    tokensErrorEl.hidden = !msg;
+  }
+
+  function refreshTokensControls() {
+    if (!tokensNameEl || !tokensRoleEl || !tokensCreateBtn) return;
+    const canEdit = isAdmin();
+    tokensNameEl.disabled = !canEdit;
+    tokensRoleEl.disabled = !canEdit;
+    // Create stays disabled until a name is typed (and the user may edit).
+    tokensCreateBtn.disabled = !canEdit || tokensNameEl.value.trim().length === 0;
+    if (tokensHelpEl) {
+      tokensHelpEl.textContent = canEdit
+        ? "Bearer tokens let agents and scripts call the API without a browser session. See the agent guide at /agent."
+        : "Sign in as admin to manage API tokens.";
+    }
+  }
+
+  function buildTokenRow(tok) {
+    const row = document.createElement("div");
+    row.className = "settings-row settings-token-row";
+    row.dataset.name = tok.name;
+    row.innerHTML =
+      '<span class="settings-label"></span>' +
+      '<span class="settings-token-meta">' +
+        '<code class="settings-token-role"></code>' +
+        '<span class="settings-token-created"></span>' +
+        '<button type="button" class="settings-action settings-token-revoke">Revoke</button>' +
+      '</span>';
+    row.querySelector(".settings-label").textContent = tok.name;
+    row.querySelector(".settings-token-role").textContent = tok.role;
+    row.querySelector(".settings-token-created").textContent = tok.created
+      ? new Date(tok.created * 1000).toISOString().slice(0, 10)
+      : "";
+    const revokeBtn = row.querySelector(".settings-token-revoke");
+    revokeBtn.addEventListener("click", async () => {
+      const ok = window.confirm(
+        "Revoke token \"" + tok.name + "\"?\n\n" +
+        "Any agent or script using it will stop working immediately.");
+      if (!ok) return;
+      revokeBtn.disabled = true;
+      setTokensError("");
+      try {
+        await NB.api.deleteAuthToken(tok.name);
+        await renderTokens();
+      } catch (e) {
+        revokeBtn.disabled = false;
+        setTokensError(e.message || "Failed to revoke token");
+      }
+    });
+    return row;
+  }
+
+  async function renderTokens() {
+    if (!tokensListEl || !tokensCountEl) return;
+    setTokensError("");
+    // A previously issued token must not linger into a fresh open: the
+    // list refresh means we're re-entering the section.
+    if (tokensIssuedEl) tokensIssuedEl.hidden = true;
+    if (!isAdmin()) {
+      // Non-admins (or auth-off visitors) get no listing at all: the
+      // endpoint would 401/403 anyway.
+      tokensCountEl.textContent = "—";
+      tokensListEl.textContent = "";
+      refreshTokensControls();
+      return;
+    }
+    try {
+      const data = await NB.api.listAuthTokens();
+      const tokens = (data && data.tokens) || [];
+      tokensCountEl.textContent = String(tokens.length);
+      tokensListEl.innerHTML = "";
+      for (const tok of tokens) {
+        tokensListEl.appendChild(buildTokenRow(tok));
+      }
+    } catch (e) {
+      tokensCountEl.textContent = "—";
+      tokensListEl.textContent = "";
+      setTokensError(e.message || "Failed to load tokens");
+    }
+    refreshTokensControls();
+  }
+
+  if (tokensNameEl) {
+    tokensNameEl.addEventListener("input", refreshTokensControls);
+    tokensNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !tokensCreateBtn.disabled) {
+        e.preventDefault();
+        tokensCreateBtn.click();
+      }
+    });
+  }
+  if (tokensCreateBtn) {
+    tokensCreateBtn.addEventListener("click", async () => {
+      const name = tokensNameEl.value.trim();
+      const role = tokensRoleEl.value;
+      if (!name) { setTokensError("Token name is required"); return; }
+      tokensCreateBtn.disabled = true;
+      setTokensError("");
+      try {
+        const resp = await NB.api.createAuthToken(name, role);
+        // Show the full token exactly once.
+        tokensIssuedValueEl.textContent = resp.token;
+        tokensIssuedEl.hidden = false;
+        tokensNameEl.value = "";
+        await renderTokens();
+        // renderTokens hid the issued box when re-rendering; show it
+        // after so the user still sees the one-time secret.
+        tokensIssuedEl.hidden = false;
+      } catch (e) {
+        setTokensError(e.message || "Failed to create token");
+        refreshTokensControls();
       }
     });
   }

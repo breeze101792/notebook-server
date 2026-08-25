@@ -1173,5 +1173,264 @@ class TestAuthSetPasswords(BaseTest):
         self.assertEqual(r.status_code, 400)
 
 
+class TestApiTokens(BaseTest):
+    """Named API tokens: bearer credentials for agents/scripts, mapped
+    onto the existing admin/viewer roles.
+
+    Each test starts with a freshly-seeded config dir and an auth.json
+    holding only the admin password (auth on). Tokens are created through
+    the real POST /api/auth/tokens route so hashing + storage are exercised
+    end to end. The rate limiter is reset between tests.
+    """
+
+    ADMIN_PW = "admin-pw-secret"
+    VIEWER_PW = "viewer-pw-secret"
+
+    def setUp(self):
+        super().setUp()
+        nb._login_failures.clear()
+        import bcrypt as _bcrypt
+        self._auth = {
+            "secret": "test-secret",
+            "admin_password_hash": _bcrypt.hashpw(
+                self.ADMIN_PW.encode("utf-8"), _bcrypt.gensalt(12)
+            ).decode(),
+            "viewer_password_hash": _bcrypt.hashpw(
+                self.VIEWER_PW.encode("utf-8"), _bcrypt.gensalt(12)
+            ).decode(),
+        }
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._auth, f)
+
+    # --- helpers --------------------------------------------------------
+    def _admin_client(self):
+        client = nb.app.test_client()
+        r = client.post("/api/login", json={"password": self.ADMIN_PW})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return client
+
+    def _create_token(self, name="agent", role="admin"):
+        """Create a token through the API as admin; return the token string."""
+        client = nb.app.test_client()
+        r = client.post("/api/login", json={"password": self.ADMIN_PW})
+        self.assertEqual(r.status_code, 200)
+        r = client.post("/api/auth/tokens", json={"name": name, "role": role})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_json()["token"]
+
+    def _bearer(self, token):
+        return {"Authorization": "Bearer %s" % token}
+
+    # --- creation / listing ----------------------------------------------
+    def test_create_returns_token_exactly_once(self):
+        client = self._admin_client()
+        r = client.post("/api/auth/tokens", json={"name": "opencode", "role": "viewer"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["name"], "opencode")
+        self.assertEqual(body["role"], "viewer")
+        token = body["token"]
+        self.assertTrue(token.startswith("nbtk_"))
+        # The issued token must never appear in any later response.
+        r = client.get("/api/auth/tokens")
+        listed = r.get_json()["tokens"]
+        self.assertEqual([t["name"] for t in listed], ["opencode"])
+        self.assertEqual(listed[0]["role"], "viewer")
+        self.assertNotIn(token, r.get_data(as_text=True))
+        for t in listed:
+            self.assertNotIn("hash", t)
+            self.assertNotIn("id", t)
+            self.assertNotIn("token", t)
+
+    def test_duplicate_name_conflict(self):
+        client = self._admin_client()
+        r = client.post("/api/auth/tokens", json={"name": "dup", "role": "viewer"})
+        self.assertEqual(r.status_code, 200)
+        r = client.post("/api/auth/tokens", json={"name": "dup", "role": "admin"})
+        self.assertEqual(r.status_code, 409)
+
+    def test_create_validation_errors(self):
+        client = self._admin_client()
+        for body in [
+            {"name": "", "role": "admin"},                # empty name
+            {"name": "has space", "role": "admin"},       # bad charset
+            {"name": "/etc/bad", "role": "admin"},        # slash would break DELETE URL
+            {"name": "a" * 65, "role": "admin"},          # too long
+            {"name": "ok-name", "role": "root"},          # bad role
+            {"role": "admin"},                            # missing name
+            {"name": "ok-name"},                          # missing role
+        ]:
+            r = client.post("/api/auth/tokens", json=body)
+            self.assertEqual(r.status_code, 400,
+                "expected 400 for %r, got %s: %s" % (body, r.status_code, r.get_data(as_text=True)))
+
+    def test_create_refused_when_auth_disabled(self):
+        # No admin password -> every route is open anyway; issuing a
+        # token would be meaningless so the server refuses.
+        if os.path.isfile(nb.AUTH_FILE):
+            os.remove(nb.AUTH_FILE)
+        client = nb.app.test_client()
+        r = client.post("/api/auth/tokens", json={"name": "x", "role": "admin"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_requires_admin_role(self):
+        # Anonymous -> 401 (auth is on).
+        r = self.client.post("/api/auth/tokens", json={"name": "x", "role": "admin"})
+        self.assertEqual(r.status_code, 401)
+        # Viewer session -> 403.
+        v = nb.app.test_client()
+        r = v.post("/api/login", json={"password": self.VIEWER_PW})
+        self.assertEqual(r.status_code, 200)
+        r = v.post("/api/auth/tokens", json={"name": "x", "role": "admin"})
+        self.assertEqual(r.status_code, 403)
+        # Listing and revoking are admin-only too.
+        r = v.get("/api/auth/tokens")
+        self.assertEqual(r.status_code, 403)
+        r = v.delete("/api/auth/tokens/x")
+        self.assertEqual(r.status_code, 403)
+
+    # --- bearer auth against gated routes ---------------------------------
+    def test_admin_token_reads_and_writes_without_session(self):
+        token = self._create_token(name="writer", role="admin")
+        fresh = nb.app.test_client()   # no cookies at all
+        r = fresh.get("/api/file?path=Welcome.md", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Welcome", r.get_json()["content"])
+        r = fresh.post("/api/file", json={"path": "tok.md", "content": "via token"},
+                       headers=self._bearer(token))
+        self.assertEqual(r.status_code, 200)
+        r = fresh.get("/api/file?path=tok.md")
+        self.assertEqual(r.status_code, 401)   # no header, no session -> still gated
+
+    def test_viewer_token_is_read_only(self):
+        token = self._create_token(name="reader", role="viewer")
+        fresh = nb.app.test_client()
+        r = fresh.get("/api/tree", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 200)
+        r = fresh.get("/api/search?q=Welcome", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 200)
+        r = fresh.post("/api/file", json={"path": "x.md", "content": "y"},
+                       headers=self._bearer(token))
+        self.assertEqual(r.status_code, 403)
+        r = fresh.delete("/api/auth/tokens/reader", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 403)   # viewer token can't manage tokens
+
+    def test_invalid_token_fails_hard_no_session_fallback(self):
+        # A presented-but-invalid bearer must NOT silently downgrade to a
+        # valid cookie session: machine clients get a deterministic 401.
+        client = self._admin_client()   # valid admin session cookie
+        r = client.get("/api/tree")     # sanity: works with session alone
+        self.assertEqual(r.status_code, 200)
+        r = client.get("/api/tree",
+                       headers=self._bearer("nbtk_" + "0" * 40))
+        self.assertEqual(r.status_code, 401)
+        # Garbage bearer values fail the same way.
+        for value in ("garbage", "nbtk_short", ""):
+            r = client.get("/api/tree", headers={"Authorization": "Bearer %s" % value})
+            self.assertEqual(r.status_code, 401)
+
+    def test_non_bearer_authorization_ignored(self):
+        # Only "Bearer ..." credentials take the token path; other auth
+        # schemes fall back to the session cookie as before.
+        client = self._admin_client()
+        r = client.get("/api/tree", headers={"Authorization": "Basic dXNlcjpwdw=="})
+        self.assertEqual(r.status_code, 200)
+
+    def test_revoked_token_stops_working(self):
+        client = self._admin_client()
+        r = client.post("/api/auth/tokens", json={"name": "temp", "role": "admin"})
+        token = r.get_json()["token"]
+        fresh = nb.app.test_client()
+        r = fresh.get("/api/tree", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 200)
+        r = client.delete("/api/auth/tokens/temp")
+        self.assertEqual(r.status_code, 200)
+        r = fresh.get("/api/tree", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 401)
+
+    def test_delete_missing_token_404(self):
+        client = self._admin_client()
+        r = client.delete("/api/auth/tokens/nope")
+        self.assertEqual(r.status_code, 404)
+
+    def test_clearing_admin_password_clears_tokens(self):
+        client = self._admin_client()
+        r = client.post("/api/auth/tokens", json={"name": "gone", "role": "admin"})
+        self.assertEqual(r.status_code, 200)
+        r = client.post("/api/auth/passwords",
+                        json={"admin_password": "",
+                              "admin_current_password": self.ADMIN_PW,
+                              "viewer_password": None})
+        self.assertEqual(r.status_code, 200)
+        with open(nb.AUTH_FILE, "r", encoding="utf-8") as f:
+            auth = json.load(f)
+        self.assertNotIn("tokens", auth)
+
+    def test_rate_limiter_applies_to_bad_tokens(self):
+        token = self._create_token(name="good", role="admin")
+        fresh = nb.app.test_client()
+        for _ in range(nb._LOGIN_FAIL_LIMIT):
+            r = fresh.get("/api/tree", headers=self._bearer("nbtk_" + "f" * 40))
+            self.assertEqual(r.status_code, 401)
+        # Even the valid token is now locked out from this IP.
+        r = fresh.get("/api/tree", headers=self._bearer(token))
+        self.assertEqual(r.status_code, 429)
+
+
+class TestAgentGuide(BaseTest):
+    """/agent: the machine-oriented API guide for AI agents/scripts.
+
+    Deliberately not gated by auth -- an agent has to be able to discover
+    HOW to authenticate before it holds any credential, and the page
+    carries documentation only (no notebook data, no secrets).
+    """
+
+    def test_serves_html_with_key_sections(self):
+        r = self.client.get("/agent")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/html", r.headers["Content-Type"])
+        body = r.get_data(as_text=True)
+        for marker in (
+            "Agent Guide",
+            "/api/auth",
+            "/api/login",
+            "/api/tree",
+            "/api/file?path=",
+            "/api/search?q=",
+            "Authorization: Bearer nbtk_",
+            "/api/auth/tokens",
+            "ifModifiedSince",
+        ):
+            self.assertIn(marker, body, "missing %r on /agent page" % marker)
+
+    def test_open_when_auth_enabled(self):
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        r = self.client.get("/agent")
+        self.assertEqual(r.status_code, 200,
+            "the guide must stay reachable without credentials so an "
+            "unauthenticated agent can learn how to authenticate")
+
+    def test_notice_reflects_auth_state(self):
+        # Auth off -> the notice says so; on -> it warns requests will 401.
+        body_off = self.client.get("/agent").get_data(as_text=True)
+        self.assertIn("disabled", body_off)
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        body_on = self.client.get("/agent").get_data(as_text=True)
+        self.assertIn("enabled", body_on)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -72,6 +72,12 @@
         admin_current_password: adminCurrentPassword,
         viewer_password: viewerPassword,
       }),
+    // Named API tokens (bearer credentials for agents/scripts). The full
+    // token string is only ever returned by createAuthToken; list and
+    // delete never see it.
+    listAuthTokens:  () => request("GET", "/api/auth/tokens"),
+    createAuthToken: (name, role) => request("POST", "/api/auth/tokens", { name, role }),
+    deleteAuthToken: (name) => request("DELETE", "/api/auth/tokens/" + encodeURIComponent(name)),
   };
 
   /* Tiny pub/sub so modules decouple. */

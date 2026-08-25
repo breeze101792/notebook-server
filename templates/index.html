@@ -520,6 +520,41 @@
               <button id="settings-auth-viewer-save" class="settings-action" disabled>Save</button>
             </div>
             <div id="settings-auth-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+
+            <!-- API tokens: named bearer credentials for agents/scripts.
+                 Admin-only, like the passwords above. The list renders
+                 one row per token (name + role + created); creating shows
+                 the full token exactly once. Agents read the machine
+                 guide at /agent. -->
+            <h3>API tokens</h3>
+            <p id="settings-tokens-help" class="settings-help">
+              Bearer tokens let agents and scripts call the API without a
+              browser session. See the <a href="/agent" target="_blank" rel="noopener">agent guide</a>.
+            </p>
+            <div class="settings-note" id="settings-tokens-status">API tokens: <span id="settings-tokens-count">0</span></div>
+            <div id="settings-tokens-list"></div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-tokens-name">New token name</label>
+              <input id="settings-tokens-name" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" placeholder="e.g. opencode" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-tokens-role">Role</label>
+              <select id="settings-tokens-role" disabled>
+                <option value="viewer">viewer — read only</option>
+                <option value="admin">admin — read + write</option>
+              </select>
+            </div>
+            <div class="settings-form-actions">
+              <button id="settings-tokens-create" class="settings-action" disabled>Create token</button>
+            </div>
+            <!-- Shown once per successful create; the server never returns
+                 the token again, so this is the only chance to copy it. -->
+            <div id="settings-tokens-issued" class="settings-auth-admin-form" hidden>
+              <div class="settings-note">Token created — copy it now, it will not be shown again:</div>
+              <code id="settings-tokens-issued-value" class="settings-value settings-mono"></code>
+            </div>
+            <div id="settings-tokens-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
 
           <!-- About: data + config folder paths. -->

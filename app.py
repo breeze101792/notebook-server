@@ -27,9 +27,12 @@ CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "co
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 # Auth lives in its own file so the UI-prefs blob (POSTed by any client) can
 # never accidentally include hashed credentials. Schema:
-#   {"secret": "<hex>", "admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>"}
+#   {"secret": "<hex>", "admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>",
+#    "tokens": [{"name": "...", "role": "admin"|"viewer", "id": "<10 hex>",
+#                "hash": "<bcrypt of full token string>", "created": <unix ts>}]}
 # Either password hash may be empty/missing to leave that role disabled. If
-# both are unset the whole auth layer is bypassed.
+# both are unset the whole auth layer is bypassed (and tokens are cleared --
+# they would be meaningless while every route is open).
 AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
 # copied into it. Ship a tiny starter notebook under notebook.template/ so
@@ -277,6 +280,97 @@ def _check_password(plain, stored_hash):
         return False
 
 
+# --------------------------------------------------------------------------- #
+# API tokens (named bearer credentials for agents / scripts)
+# --------------------------------------------------------------------------- #
+# Tokens let non-browser clients call the API with a static credential
+# instead of doing the cookie login dance. Each token maps onto the existing
+# roles: "admin" == full access, "viewer" == reads only. Storage lives in
+# auth.json under "tokens"; only a bcrypt hash is kept, and the full token
+# string is shown exactly once (in the create response).
+#
+# Token format: nbtk_<40 hex>. The first 10 hex chars are a public lookup id
+# so the server finds the single right hash without bcrypt-checking every
+# stored token; the remaining 30 chars are the secret. The id alone never
+# authenticates anything -- the stored hash covers the whole token string.
+_TOKEN_PREFIX = "nbtk_"
+_TOKEN_ID_LEN = 10
+_TOKEN_SECRET_LEN = 30
+_TOKEN_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def _generate_token_string():
+    """Return a fresh full token string (nbtk_ + 40 hex chars)."""
+    raw = secrets.token_hex((_TOKEN_ID_LEN + _TOKEN_SECRET_LEN) // 2)
+    return _TOKEN_PREFIX + raw
+
+
+def _token_id(token):
+    """Extract the public lookup id portion of a full token string."""
+    return token[len(_TOKEN_PREFIX):][:10]
+
+
+def _find_token(presented):
+    """Look up a presented token string among the tokens in auth.json.
+
+    Returns the matching stored dict ({name, role, ...}) or None. Cheap
+    prefix/charset/length rejection happens before any bcrypt work; a wrong
+    secret then fails the bcrypt check against the one candidate selected
+    by id, so cost stays O(1) bcrypt per request regardless of token count.
+    """
+    if not isinstance(presented, str) or not presented.startswith(_TOKEN_PREFIX):
+        return None
+    raw = presented[len(_TOKEN_PREFIX):].lower()
+    if len(raw) != _TOKEN_ID_LEN + _TOKEN_SECRET_LEN:
+        return None
+    if any(c not in "0123456789abcdef" for c in raw):
+        return None
+    for tok in load_auth().get("tokens") or []:
+        if isinstance(tok, dict) and tok.get("id") == raw[:_TOKEN_ID_LEN]:
+            if _check_password(presented, tok.get("hash")):
+                return tok
+            return None
+    return None
+
+
+def _public_token(tok):
+    """Strip secrets from a stored token dict for API responses."""
+    out = {"name": tok.get("name"), "role": tok.get("role")}
+    if tok.get("created"):
+        out["created"] = tok["created"]
+    return out
+
+
+def _request_role():
+    """Resolve the caller's role for a gated route (precondition: auth on).
+
+    Returns (role, error_response); exactly one is None.
+
+    A Bearer token, when presented, is authoritative: a malformed or unknown
+    token fails the request outright instead of silently downgrading to
+    whatever the cookie session says -- machine clients must get a
+    deterministic answer for the credential they sent. Invalid bearer
+    attempts share the login rate limiter. Without a Bearer header the
+    signed session cookie decides, as before.
+    """
+    header = request.headers.get("Authorization") or ""
+    if header.startswith("Bearer "):
+        presented = header[len("Bearer "):].strip()
+        ip = request.remote_addr or "unknown"
+        if _login_locked_out(ip):
+            return None, err("Too many failed attempts; try again in a minute", 429)
+        tok = _find_token(presented)
+        if tok is not None:
+            _clear_login_failures(ip)
+            return tok.get("role"), None
+        _record_login_failure(ip)
+        return None, err("Invalid API token", 401)
+    role = session.get("role")
+    if not role:
+        return None, err("Unauthorized", 401)
+    return role, None
+
+
 # In-memory rate limiter: {ip: [timestamp, ...]} of recent failed logins.
 # Best-effort -- an attacker can spoof headers, but it slows trivial brute
 # force on the LAN. Resets on successful login.
@@ -307,31 +401,33 @@ def _clear_login_failures(ip):
 
 
 def login_required(view):
-    """Require either no auth configured, or a session with a role."""
+    """Require either no auth configured, or a valid session / bearer role."""
     from functools import wraps
 
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not auth_enabled():
             return view(*args, **kwargs)
-        if not session.get("role"):
-            return err("Unauthorized", 401)
+        _role, error = _request_role()
+        if error:
+            return error
         return view(*args, **kwargs)
 
     return wrapped
 
 
 def admin_required(view):
-    """Require the session role to be 'admin'. Always require login too."""
+    """Require the resolved role (session or bearer token) to be 'admin'.
+    Always require login too."""
     from functools import wraps
 
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not auth_enabled():
             return view(*args, **kwargs)
-        role = session.get("role")
-        if not role:
-            return err("Unauthorized", 401)
+        role, error = _request_role()
+        if error:
+            return error
         if role != "admin":
             return err("Forbidden", 403)
         return view(*args, **kwargs)
@@ -354,7 +450,9 @@ def read_login_required(view):
     The viewer password is now a secondary login option (you can
     choose to log in as a viewer role with a different password) but
     it is no longer the switch that gates reads. Once the admin
-    password is set, every read is gated.
+    password is set, every read is gated. A named API token sent as a
+    Bearer credential satisfies this gate with its own role, so agents
+    can read without ever holding a browser session.
     """
     from functools import wraps
 
@@ -362,8 +460,9 @@ def read_login_required(view):
     def wrapped(*args, **kwargs):
         if not auth_enabled():
             return view(*args, **kwargs)
-        if not session.get("role"):
-            return err("Unauthorized", 401)
+        _role, error = _request_role()
+        if error:
+            return error
         return view(*args, **kwargs)
 
     return wrapped
@@ -600,10 +699,12 @@ def auth_set_passwords():
         pass
     elif admin_pw == "":
         # Clear the admin password (disables the auth layer entirely).
-        # Also clear the viewer password since it is meaningless once
-        # auth is off -- leaving it would just be stale data.
+        # Also clear the viewer password and any API tokens since they
+        # are meaningless once auth is off -- leaving them would just
+        # be stale credentials on disk.
         auth.pop("admin_password_hash", None)
         auth.pop("viewer_password_hash", None)
+        auth.pop("tokens", None)
     else:
         auth["admin_password_hash"] = bcrypt.hashpw(
             admin_pw.encode("utf-8"), bcrypt.gensalt(12)
@@ -622,6 +723,102 @@ def auth_set_passwords():
         "hasAdmin": bool(auth.get("admin_password_hash")),
         "hasViewer": bool(auth.get("viewer_password_hash")),
     })
+
+
+# --------------------------------------------------------------------------- #
+# Routes: API tokens (named bearer credentials for agents / scripts)
+# --------------------------------------------------------------------------- #
+@app.route("/api/auth/tokens", methods=["GET"])
+@admin_required
+def auth_tokens_list():
+    """List the issued tokens (names + roles only -- never the token
+    strings or hashes)."""
+    tokens = load_auth().get("tokens") or []
+    return jsonify({"tokens": [_public_token(t) for t in tokens
+                               if isinstance(t, dict)]})
+
+
+@app.route("/api/auth/tokens", methods=["POST"])
+@admin_required
+def auth_tokens_create():
+    """Issue a named token bound to a role.
+
+    Body: {"name": "opencode", "role": "admin"|"viewer"}. The full token
+    string is returned exactly once, in this response only; auth.json keeps
+    just the bcrypt hash. Issuing requires the auth layer to be on (an
+    admin password set): while auth is off every route is open and a token
+    would be meaningless.
+    """
+    if not auth_enabled():
+        return err("Set an admin password before issuing API tokens", 400)
+    data, error = expect_json("name", "role")
+    if error:
+        return error
+    name = data["name"]
+    role = data["role"]
+    if not isinstance(name, str) or not _TOKEN_NAME_RE.match(name):
+        return err(
+            "name must be 1-64 chars of letters, digits, dot, dash or "
+            "underscore (starting with a letter or digit)", 400)
+    if role not in ("admin", "viewer"):
+        return err("role must be 'admin' or 'viewer'", 400)
+
+    auth = load_auth()
+    tokens = [t for t in (auth.get("tokens") or []) if isinstance(t, dict)]
+    if any(t.get("name") == name for t in tokens):
+        return err("A token with that name already exists", 409)
+
+    token = _generate_token_string()
+    entry = {
+        "name": name,
+        "role": role,
+        "id": _token_id(token),
+        "hash": bcrypt.hashpw(token.encode("utf-8"),
+                              bcrypt.gensalt(12)).decode(),
+        "created": int(time.time()),
+    }
+    tokens.append(entry)
+    auth["tokens"] = tokens
+    save_auth(auth)
+
+    # The token string is shown exactly once; never stored in the clear.
+    return jsonify({
+        "ok": True,
+        "name": name,
+        "role": role,
+        "created": entry["created"],
+        "token": token,
+    })
+
+
+@app.route("/api/auth/tokens/<name>", methods=["DELETE"])
+@admin_required
+def auth_tokens_delete(name):
+    """Revoke a token by name. The credential stops working immediately."""
+    auth = load_auth()
+    tokens = auth.get("tokens") or []
+    remaining = [t for t in tokens
+                 if not (isinstance(t, dict) and t.get("name") == name)]
+    if len(remaining) == len(tokens):
+        return err("No such token", 404)
+    auth["tokens"] = remaining
+    save_auth(auth)
+    return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------- #
+# Routes: agent guide (/agent)
+# --------------------------------------------------------------------------- #
+@app.route("/agent", methods=["GET"])
+def agent_guide():
+    """Machine-oriented API guide for AI agents and scripts.
+
+    Deliberately NOT gated: an agent needs to discover how to authenticate
+    before it holds any credential, and the page contains endpoint
+    documentation only -- no notebook data, no secrets. The rendered auth
+    state (on/off) is already public via GET /api/auth.
+    """
+    return render_template("agent.html", auth_enabled=auth_enabled())
 
 
 # --------------------------------------------------------------------------- #
