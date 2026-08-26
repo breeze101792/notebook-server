@@ -54,6 +54,7 @@ Python deps are pinned in `requirements.txt`: Flask 3.0 and bcrypt.
 
 ```
 app.py                Flask backend, all routes under /api/*
+agent.md              agent guide served at /agent (plain Markdown, easy to edit)
 start.sh              per-host venv bootstrap + launcher
 requirements.txt      Python dependencies
 notebook.template/    starter notebook (copied into notebook/ on first run)
@@ -81,7 +82,9 @@ redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 All endpoints return JSON. `GET /` serves the single-page app. Gated
 read responses set `Cache-Control: no-store, private` so a previously-
 authorized browser can't keep showing the content after the auth state
-tightens.
+tightens. AI agents and scripts should read `GET /agent` — it serves
+`agent.md` (this repo's plain-Markdown agent guide) with the current
+auth state filled in.
 
 | Method | Path                  | Purpose                                            |
 | ------ | --------------------- | -------------------------------------------------- |
@@ -93,21 +96,29 @@ tightens.
 | POST   | `/api/config`         | Replace the persisted UI config (admin)           |
 | GET    | `/api/info`           | Absolute `data_dir` / `config_dir`                |
 | GET    | `/api/tree`           | File tree of the notebook directory                |
+| GET    | `/api/ls`             | Non-recursive listing of ONE folder (`?path=…`)   |
 | GET    | `/api/file`           | Read a file (`?path=…`)                            |
 | POST   | `/api/file`           | Save a file (`{path, content}`)                    |
-| POST   | `/api/create`         | Create a file or folder                            |
-| POST   | `/api/move`           | Rename / move                                      |
-| POST   | `/api/copy`           | Copy a file or folder                              |
+| POST   | `/api/file/append`    | Atomic append (`{path, content[, create]}`)       |
+| POST   | `/api/edit`           | All-or-nothing patch batch (`{path, edits}`)      |
+| POST   | `/api/create`         | Create file/folder; `upsert: true` = idempotent   |
+| POST   | `/api/move`           | Rename / move; `onConflict: error\|skip\|overwrite` |
+| POST   | `/api/copy`           | Copy file/folder; same `onConflict` modes          |
 | POST   | `/api/delete`         | Delete a file or folder                            |
-| GET    | `/api/search`         | Search all `.md` files (`?q=…`)                   |
+| GET    | `/api/search`         | Search `.md` files (`?q=…&regex=&file=&glob=&order=…`) |
 
 All file routes resolve the user-supplied relative path through
 `safe_path()`, which rejects absolute input, `..` traversal, and
 symlink escapes outside `notebook/`. Writes use atomic temp-file +
-`os.replace`. Search is a line-by-line regex scan with
-`MAX_TOTAL_MATCHES=200` and `MAX_MATCHES_PER_FILE=20` caps; matches
-return a snippet with the hit wrapped in `<<…>>` so the client can
-re-highlight without parsing HTML.
+`os.replace`. Search is a line-by-line scan (literal by default,
+`regex=1` for Python regex per line) with default caps
+`MAX_TOTAL_MATCHES=200` and `MAX_MATCHES_PER_FILE=20`, raisable per
+request via `limit=`/`perFile=` up to hard ceilings (2000/200);
+matches return a snippet with the hit wrapped in `<<…>>` so the client
+can re-highlight without parsing HTML. `POST /api/file/append` writes
+with a single O_APPEND syscall (concurrent appends never clobber each
+other), and `POST /api/edit` applies an ordered op batch in memory and
+writes once — a failed op rejects the whole batch untouched.
 
 ## Optional: password protection
 

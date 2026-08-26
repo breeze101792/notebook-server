@@ -98,21 +98,33 @@ template ships with a single `Welcome.md`; editing notes never touches the
 template. Endpoints: `/api/auth` (GET), `/api/auth/passwords` (POST, admin-only),
 `/api/auth/tokens` (GET/POST) + `/api/auth/tokens/<name>` (DELETE, admin-only),
 `/api/login` (POST), `/api/logout` (POST), `/api/config` (GET/POST),
-`/api/tree` (GET), `/api/file` (GET/POST), `/api/create`, `/api/move`,
-`/api/copy`, `/api/delete`, `/api/search`, `/api/graph`; plus the
-ungated `/agent` page, a machine-readable API guide for AI agents
-(documentation only — no data — so agents can discover how to authenticate
-before holding any credential).
+`/api/tree` (GET), `/api/ls` (GET, non-recursive single-folder listing),
+`/api/file` (GET/POST), `/api/file/append` (POST, atomic O_APPEND append),
+`/api/edit` (POST, ordered all-or-nothing patch batch: append/prepend/
+find_replace/line_insert/line_replace/line_delete applied in memory then
+atomically written), `/api/create` (optional `upsert: true` = idempotent
+ensure-exists that never clobbers; optional `content` seeds new files),
+`/api/move`, `/api/copy` (both take `onConflict: error|skip|overwrite`;
+absent-destination file moves use atomic link+unlink, copies use exclusive
+create), `/api/delete`, `/api/search`, `/api/graph`; plus the ungated
+`/agent` page, which serves the project-root `agent.md` verbatim as
+text/markdown with the current auth state substituted into a
+`{{auth_state}}` placeholder — a machine-readable API guide for AI agents,
+maintained as a normal Markdown file (documentation only — no data — so
+agents can discover how to authenticate before holding any credential).
 
 `safe_path(rel)` is the security-critical chokepoint: every file route resolves the
 user-supplied relative path through it, which rejects absolute input, `..` traversal,
 and symlink escapes outside `DATA_DIR`, returning the real absolute path or `None`.
 Any new file operation must go through `safe_path` and must never accept a raw
 user path. Writes use `atomic_write` (temp file + `os.replace`); config writes do the
-same. Search (`/api/search`) is a line-by-line regex scan of all `.md` files with
-`MAX_TOTAL_MATCHES` / `MAX_MATCHES_PER_FILE` caps; matches are returned with a snippet
-where the hit is wrapped in `<<…>>` so the client can re-highlight safely without
-parsing HTML.
+same. Search (`/api/search`) is a line-by-line scan of all `.md` files with
+default caps `MAX_TOTAL_MATCHES=200` / `MAX_MATCHES_PER_FILE=20` (raisable per
+request via `limit=` / `perFile=` up to the hard ceilings); matches are returned
+with a snippet where the hit is wrapped in `<<…>>` so the client can re-highlight
+safely without parsing HTML. Optional params: `regex=1` (Python regex per line),
+`file=` (scan one specific file only), `glob=` (fnmatch filter on relative path),
+and `order=path|mtime|count` (+ `desc=1`) to reorder result files.
 
 **Auth (optional two-password gate).** `config/auth.json` (separate from
 `config.json` so the UI-prefs blob can never include hashed credentials) holds

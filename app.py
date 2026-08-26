@@ -7,6 +7,7 @@ config/ -- two separate folders by design.
 """
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -38,10 +39,19 @@ AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 # copied into it. Ship a tiny starter notebook under notebook.template/ so
 # new users see something useful on first launch.
 TEMPLATE_DIR = os.path.join(BASE_DIR, "notebook.template")
+# The agent guide lives at the project root as plain Markdown (easy to
+# read and maintain) and is served verbatim at /agent with the current
+# auth state substituted into a placeholder.
+AGENT_GUIDE_FILE = os.path.join(BASE_DIR, "agent.md")
 
-# Search caps so payloads stay sane.
+# Search caps so payloads stay sane. The defaults protect browser
+# clients; agents may raise them per-request via ?limit= / ?perFile=
+# up to these hard ceilings so big notebooks stay searchable without
+# an unbounded scan.
 MAX_TOTAL_MATCHES = 200
 MAX_MATCHES_PER_FILE = 20
+MAX_TOTAL_MATCHES_CEILING = 2000
+MAX_MATCHES_PER_FILE_CEILING = 200
 SNIPPET_PAD = 60  # chars of context each side of a match
 
 app = Flask(__name__)
@@ -54,7 +64,7 @@ app = Flask(__name__)
 # user reported. `no-store` makes the response treat the cache as
 # forbidden; `private` prevents shared caches from holding it.
 _GATED_READ_PATHS = (
-    "/api/tree", "/api/file", "/api/search", "/api/config", "/api/info",
+    "/api/tree", "/api/ls", "/api/file", "/api/search", "/api/config", "/api/info",
 )
 
 @app.after_request
@@ -216,6 +226,166 @@ def build_tree(path):
             entries.append({"name": name, "type": "file", "path": rel})
     entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
     return entries
+
+
+def _remove_path(path):
+    """Delete a file, symlink, or directory tree. Raises OSError."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.remove(path)
+
+
+# --------------------------------------------------------------------------- #
+# Patch engine for POST /api/edit
+# --------------------------------------------------------------------------- #
+# Edits are applied to an in-memory buffer in order; any failed op aborts
+# the whole batch before anything is written, so a patch is all-or-nothing.
+class _EditError(ValueError):
+    """A patch batch failed validation or application.
+
+    Raised before any disk write happens so a failed batch leaves the
+    file untouched (all-or-nothing semantics)."""
+
+
+def _edit_field(edit, index, key):
+    """Fetch a required string field from an edit op, with a precise error."""
+    if key not in edit:
+        raise _EditError("edit %d: missing required field '%s'" % (index, key))
+    val = edit[key]
+    if not isinstance(val, str):
+        raise _EditError("edit %d: '%s' must be a string" % (index, key))
+    return val
+
+
+def _edit_int(edit, index, key, default=None, lo=None, hi=None):
+    """Fetch an optional integer field with bounds; default is required."""
+    if key not in edit or edit[key] is None:
+        if default is None:
+            raise _EditError("edit %d: missing required field '%s'" % (index, key))
+        return default
+    val = edit[key]
+    if isinstance(val, bool) or not isinstance(val, int):
+        raise _EditError("edit %d: '%s' must be an integer" % (index, key))
+    if ((lo is not None and val < lo) or (hi is not None and val > hi)):
+        bounds = []
+        if lo is not None:
+            bounds.append(">=%d" % lo)
+        if hi is not None:
+            bounds.append("<=%d" % hi)
+        raise _EditError("edit %d: '%s' out of range (%s)"
+                         % (index, key, ", ".join(bounds)))
+    return val
+
+
+def _text_to_lines(text):
+    """Split patch text into newline-terminated full lines."""
+    parts = text.split("\n")
+    if parts and parts[-1] == "":
+        parts.pop()
+    return [part + "\n" for part in parts]
+
+
+def _as_lines(text):
+    """Normalise the working buffer into newline-terminated lines.
+
+    A file whose last line has no trailing newline gets one added; this
+    keeps inserted/replaced lines from gluing onto the final fragment.
+    Line ops therefore guarantee the patched file ends with a newline.
+    """
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    return lines
+
+
+def _edit_line_range(edit, index, line_count):
+    """Validate {start[, end]} 1-based inclusive against len(lines)."""
+    start = _edit_int(edit, index, "start", lo=1, hi=line_count)
+    end = _edit_int(edit, index, "end", default=start, lo=start, hi=line_count)
+    return start, end
+
+
+def _edit_insert_pos(edit, index, line_count):
+    """Validate exactly one of {after_line, before_line}; returns a slice pos."""
+    has_after = edit.get("after_line") is not None
+    has_before = edit.get("before_line") is not None
+    if has_after == has_before:
+        raise _EditError(
+            "edit %d: give exactly one of 'after_line' or 'before_line'" % index)
+    if has_after:
+        # Inserting after line N lands at slice position N (0 == top).
+        return _edit_int(edit, index, "after_line", lo=0, hi=line_count)
+    pos = _edit_int(edit, index, "before_line", lo=1, hi=line_count + 1)
+    return pos - 1
+
+
+def _edit_find_replace(text, edit, index):
+    """One find_replace op. Literal by default; regex opts into re.subn
+    semantics (so backreference escapes like \\1 work in replace_with)."""
+    find = _edit_field(edit, index, "find")
+    replace_with = _edit_field(edit, index, "replace_with")
+    count = edit.get("count")
+    if count is not None and (
+            isinstance(count, bool) or not isinstance(count, int) or count < 0):
+        raise _EditError("edit %d: 'count' must be a non-negative integer" % index)
+    optional = bool(edit.get("optional", False))
+    if edit.get("regex"):
+        flags = re.IGNORECASE if edit.get("ignore_case") else 0
+        try:
+            pattern = re.compile(find, flags)
+        except re.error as exc:
+            raise _EditError("edit %d: invalid regex: %s" % (index, exc))
+        new_text, hits = pattern.subn(replace_with, text, count=count or 0)
+    else:
+        if not find:
+            raise _EditError("edit %d: 'find' must be a non-empty string" % index)
+        occurrences = text.count(find)
+        hits = occurrences if count in (None, 0) else min(count, occurrences)
+        new_text = text.replace(find, replace_with,
+                                count if count else -1)
+    if hits == 0 and not optional:
+        raise _EditError(
+            "edit %d: no match for %s%r; pass \"optional\": true to allow a no-op"
+            % (index, "regex " if edit.get("regex") else "", find))
+    return new_text
+
+
+def _apply_edits(text, edits):
+    """Apply an ordered batch of patch ops to `text`, all in memory.
+
+    Ops: append / prepend / find_replace / line_insert / line_replace /
+    line_delete. Raises _EditError on the first problem -- callers must
+    not touch the file when that happens, keeping batches atomic.
+    """
+    for index, edit in enumerate(edits, 1):
+        if not isinstance(edit, dict):
+            raise _EditError("edit %d: must be a JSON object" % index)
+        op = edit.get("op")
+        if op == "append":
+            text += _edit_field(edit, index, "text")
+        elif op == "prepend":
+            text = _edit_field(edit, index, "text") + text
+        elif op == "find_replace":
+            text = _edit_find_replace(text, edit, index)
+        elif op == "line_insert":
+            lines = _as_lines(text)
+            pos = _edit_insert_pos(edit, index, len(lines))
+            lines[pos:pos] = _text_to_lines(_edit_field(edit, index, "text"))
+            text = "".join(lines)
+        elif op == "line_replace":
+            lines = _as_lines(text)
+            start, end = _edit_line_range(edit, index, len(lines))
+            lines[start - 1:end] = _text_to_lines(_edit_field(edit, index, "text"))
+            text = "".join(lines)
+        elif op == "line_delete":
+            lines = _as_lines(text)
+            start, end = _edit_line_range(edit, index, len(lines))
+            del lines[start - 1:end]
+            text = "".join(lines)
+        else:
+            raise _EditError("edit %d: unknown op %r" % (index, op))
+    return text
 
 
 # --------------------------------------------------------------------------- #
@@ -807,18 +977,41 @@ def auth_tokens_delete(name):
 
 
 # --------------------------------------------------------------------------- #
-# Routes: agent guide (/agent)
+# Routes: agent guide (/agent, served from agent.md)
 # --------------------------------------------------------------------------- #
+_AUTH_STATE_PLACEHOLDER = "{{auth_state}}"
+
+
 @app.route("/agent", methods=["GET"])
 def agent_guide():
     """Machine-oriented API guide for AI agents and scripts.
 
-    Deliberately NOT gated: an agent needs to discover how to authenticate
-    before it holds any credential, and the page contains endpoint
-    documentation only -- no notebook data, no secrets. The rendered auth
-    state (on/off) is already public via GET /api/auth.
+    The guide lives at the project root as plain Markdown (agent.md) so
+    it can be read and maintained like any other doc; this route serves
+    it verbatim as text/markdown with the current auth state substituted
+    into a placeholder so the text never goes stale. Deliberately NOT
+    gated: an agent needs to discover how to authenticate before it holds
+    any credential, and the page contains endpoint documentation only --
+    no notebook data, no secrets.
     """
-    return render_template("agent.html", auth_enabled=auth_enabled())
+    try:
+        with open(AGENT_GUIDE_FILE, "r", encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return err("Agent guide (agent.md) is missing on the server", 500)
+    if auth_enabled():
+        state = ("**enabled** — every request must present a credential "
+                 "(see Authentication below). Check `GET /api/auth` at "
+                 "runtime instead of trusting this static text.")
+    else:
+        state = ("**disabled** — all endpoints are open without credentials. "
+                 "If this changes, requests start returning 401 and you will "
+                 "need to authenticate.")
+    return text.replace(_AUTH_STATE_PLACEHOLDER, state), 200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        # The rendered auth state changes with config; never cache it.
+        "Cache-Control": "no-store",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -828,6 +1021,51 @@ def agent_guide():
 @read_login_required
 def tree():
     return jsonify({"tree": build_tree(DATA_DIR)})
+
+
+@app.route("/api/ls", methods=["GET"])
+@read_login_required
+def ls_dir():
+    """Non-recursive listing of a single folder.
+
+    Unlike /api/tree this shows EVERY file type (attachments included),
+    carries size + mtime, and never descends into subfolders -- so an
+    agent can inspect one directory without pulling the whole tree.
+    Hidden entries (dotfiles, __pycache__) are skipped, matching the
+    tree. Empty path lists the notebook root.
+    """
+    rel = request.args.get("path", "").strip()
+    if rel in ("", "."):
+        abs_dir = os.path.realpath(DATA_DIR)
+        rel_out = ""
+    else:
+        abs_dir = safe_path(rel)
+        if abs_dir is None:
+            return err("Invalid path", 400)
+        rel_out = rel_from(abs_dir)
+    if not os.path.isdir(abs_dir):
+        return err("Folder not found", 404)
+    try:
+        names = sorted(os.listdir(abs_dir))
+    except OSError as exc:
+        return err("Could not list folder: %s" % exc, 500)
+    entries = []
+    for name in names:
+        if name.startswith(".") or name == "__pycache__":
+            continue
+        full = os.path.join(abs_dir, name)
+        try:
+            st = os.stat(full)
+        except OSError:
+            continue
+        entries.append({
+            "name": name,
+            "type": "dir" if os.path.isdir(full) else "file",
+            "size": st.st_size,
+            "mtime": st.st_mtime,
+        })
+    entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
+    return jsonify({"path": rel_out, "entries": entries})
 
 
 @app.route("/api/file", methods=["GET"])
@@ -885,12 +1123,123 @@ def file_save():
     return jsonify({"path": rel, "size": len(content)})
 
 
+@app.route("/api/file/append", methods=["POST"])
+@admin_required
+def file_append():
+    """Append content to a file with a single O_APPEND write.
+
+    The kernel guarantees the write lands at the current end of the
+    file, so concurrent appends never clobber each other the way a
+    read-modify-write via POST /api/file can. Body:
+      {"path": "...", "content": "...", "create": false}
+    With "create": true a missing file is created (its parent folder
+    must already exist); without it a missing file is 404.
+    """
+    data, error = expect_json("path", "content")
+    if error:
+        return error
+    rel = data["path"]
+    content = data["content"]
+    if not isinstance(content, str):
+        return err("content must be a string", 400)
+    abs_path = safe_path(rel)
+    if abs_path is None:
+        return err("Invalid path", 400)
+    if not os.path.isdir(os.path.dirname(abs_path)):
+        return err("Parent folder does not exist", 400)
+    create_missing = bool(data.get("create", False))
+    if not create_missing and not os.path.isfile(abs_path):
+        return err("File not found (pass \"create\": true to create it)", 404)
+    payload = memoryview(content.encode("utf-8"))
+    try:
+        fd = os.open(abs_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        try:
+            while payload:
+                payload = payload[os.write(fd, payload):]
+            size = os.fstat(fd).st_size
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        return err("Could not append to file: %s" % exc, 500)
+    return jsonify({"path": rel, "size": size,
+                    "appended": len(content.encode("utf-8"))})
+
+
+@app.route("/api/edit", methods=["POST"])
+@admin_required
+def file_edit():
+    """Apply an ordered batch of patches to one file, all-or-nothing.
+
+    Body: {"path": "...", "edits": [<op>, <op>, ...]}. Ops are applied
+    in order to an in-memory buffer; the result is written back with the
+    usual atomic temp-file + replace, so clients get partial-edit power
+    without a full read-modify-write round trip or torn writes. If ANY
+    op fails validation or application the whole batch is rejected with
+    400 and the file is left untouched.
+
+    Ops (see _apply_edits for exact semantics):
+      {"op": "append",  "text": "..."}       -- add at end of file
+      {"op": "prepend", "text": "..."}       -- insert at top of file
+      {"op": "find_replace", "find": "...", "replace_with": "...",
+       "count": 1, "regex": false, "ignore_case": false,
+       "optional": false}                    -- literal by default; regex
+            opts into re.subn semantics (\\1 backrefs work in regex mode).
+            Zero matches is a 400 unless optional=true.
+      {"op": "line_insert", "after_line": N | "before_line": N,
+       "text": "..."}                        -- 1-based; after_line 0 = top
+      {"op": "line_replace", "start": N, "end": M?, "text": "..."}
+      {"op": "line_delete", "start": N, "end": M?}   -- end defaults to start
+
+    Line ops normalise the buffer so it ends with a trailing newline.
+    """
+    data, error = expect_json("path", "edits")
+    if error:
+        return error
+    rel = data["path"]
+    edits = data["edits"]
+    if not isinstance(edits, list) or not edits:
+        return err("edits must be a non-empty list of ops", 400)
+    abs_path = safe_path(rel)
+    if abs_path is None:
+        return err("Invalid path", 400)
+    if not os.path.isfile(abs_path):
+        return err("File not found", 404)
+    try:
+        with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
+            original = f.read()
+    except OSError as exc:
+        return err("Could not read file: %s" % exc, 500)
+    try:
+        patched = _apply_edits(original, edits)
+    except _EditError as exc:
+        # Nothing has been written: batches are all-or-nothing.
+        return err(str(exc), 400)
+    try:
+        atomic_write(abs_path, patched)
+    except OSError as exc:
+        return err("Could not write file: %s" % exc, 500)
+    return jsonify({"path": rel, "size": len(patched), "applied": len(edits)})
+
+
 # --------------------------------------------------------------------------- #
 # Routes: create / move / copy / delete
 # --------------------------------------------------------------------------- #
 @app.route("/api/create", methods=["POST"])
 @admin_required
 def create():
+    """Create a file or folder; idempotent with "upsert": true.
+
+    Body: {"path": "...", "type": "file"|"dir",
+           "upsert": false, "content": ""}.
+
+    Without upsert (default) an existing target is a 409, exactly as
+    before. With "upsert": true the call is an idempotent ensure-exists:
+    an existing file/folder of the matching type succeeds with 200 and
+    {"existed": true} and is NOT modified (content is ignored -- use
+    POST /api/file to overwrite). A type mismatch (file vs folder at
+    that path) is still a 409 even under upsert. When creating a file,
+    optional "content" seeds it (default empty).
+    """
     data, error = expect_json("path", "type")
     if error:
         return error
@@ -898,64 +1247,163 @@ def create():
     item_type = data["type"]
     if item_type not in ("file", "dir"):
         return err("type must be 'file' or 'dir'", 400)
+    upsert = data.get("upsert", False)
+    if not isinstance(upsert, bool):
+        return err("upsert must be a boolean", 400)
+    content = data.get("content", "")
+    if content is not None and not isinstance(content, str):
+        return err("content must be a string", 400)
     abs_path = safe_path(rel)
     if abs_path is None:
         return err("Invalid path", 400)
     if os.path.exists(abs_path):
-        return err("Already exists", 409)
+        if not upsert:
+            return err("Already exists", 409)
+        if item_type == "file" and not os.path.isfile(abs_path):
+            return err("Already exists (as a folder)", 409)
+        if item_type == "dir" and not os.path.isdir(abs_path):
+            return err("Already exists (as a file)", 409)
+        return jsonify({"path": rel, "existed": True})
     try:
         if item_type == "file":
             os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            atomic_write(abs_path, "")
+            atomic_write(abs_path, content or "")
         else:
             os.makedirs(abs_path, exist_ok=False)
     except OSError as exc:
         return err("Could not create: %s" % exc, 500)
-    return jsonify({"path": rel})
+    return jsonify({"path": rel, "existed": False})
+
+
+def _conflict_response(data_key, data_value, on_conflict):
+    """Shared destination-exists handling for move/copy.
+
+    Returns (response, proceed) -- response is set when the request is
+    finished (skip / error); proceed=True means overwrite was chosen and
+    the caller should clear the way. """
+    if on_conflict == "skip":
+        return jsonify({data_key: data_value, "skipped": True}), False
+    if on_conflict == "error":
+        return err("Destination already exists", 409), False
+    return None, True   # overwrite
 
 
 @app.route("/api/move", methods=["POST"])
 @admin_required
 def move():
+    """Move/rename; "onConflict" decides what happens if the target exists.
+
+    Body: {"from": "...", "to": "...",
+           "onConflict": "error"|"skip"|"overwrite"} (default "error").
+
+      error      -- 409 if the destination exists (back-compat default)
+      skip       -- no-op, 200 {"skipped": true}; source left untouched
+      overwrite  -- destination is replaced
+
+    When the destination does not exist the move of a plain file uses
+    link()+unlink(), which fails atomically with EEXIST if another
+    writer creates the target concurrently -- a true move-if-absent
+    with no window where the destination is missing or partial.
+    Filesystems without hardlink support fall back to check-then-rename.
+    """
     data, error = expect_json("from", "to")
     if error:
         return error
+    on_conflict = data.get("onConflict", "error")
+    if on_conflict not in ("error", "skip", "overwrite"):
+        return err("onConflict must be 'error', 'skip' or 'overwrite'", 400)
     src = safe_path(data["from"])
     dst = safe_path(data["to"])
     if src is None or dst is None:
         return err("Invalid path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
+    src_is_dir = os.path.isdir(src) and not os.path.islink(src)
+
     if os.path.exists(dst):
-        return err("Destination already exists", 409)
+        response, proceed = _conflict_response("to", data["to"], on_conflict)
+        if not proceed:
+            return response
+        try:
+            _remove_path(dst)
+        except OSError as exc:
+            return err("Could not replace destination: %s" % exc, 500)
+
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    try:
-        os.rename(src, dst)
-    except OSError as exc:
-        return err("Could not move: %s" % exc, 500)
+    # Atomic move-if-absent for files: link() refuses to clobber.
+    moved = False
+    if not src_is_dir:
+        try:
+            os.link(src, dst)
+            os.unlink(src)
+            moved = True
+        except FileExistsError:
+            # Lost a race: something created dst after our check. The
+            # conflict was already resolved above; surface it plainly
+            # rather than guessing between skip/overwrite twice.
+            return err("Destination already exists", 409)
+        except OSError:
+            moved = False   # hardlinks unsupported -> classic rename below
+    if not moved:
+        try:
+            os.rename(src, dst)
+        except OSError as exc:
+            return err("Could not move: %s" % exc, 500)
     return jsonify({"from": data["from"], "to": data["to"]})
 
 
 @app.route("/api/copy", methods=["POST"])
 @admin_required
 def copy():
+    """Copy a file or folder; "onConflict" as in /api/move.
+
+    Body: {"from": "...", "to": "...",
+           "onConflict": "error"|"skip"|"overwrite"} (default "error").
+    A file copy is created exclusively ('x' mode), so copy-if-absent
+    never truncates or clobbers an existing destination, even under a
+    race; a lost race surfaces as 409 (or skipped=true). Folders are
+    copied recursively; for them the existence check is best-effort.
+    """
     data, error = expect_json("from", "to")
     if error:
         return error
+    on_conflict = data.get("onConflict", "error")
+    if on_conflict not in ("error", "skip", "overwrite"):
+        return err("onConflict must be 'error', 'skip' or 'overwrite'", 400)
     src = safe_path(data["from"])
     dst = safe_path(data["to"])
     if src is None or dst is None:
         return err("Invalid path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
+    src_is_dir = os.path.isdir(src) and not os.path.islink(src)
+
     if os.path.exists(dst):
-        return err("Destination already exists", 409)
+        response, proceed = _conflict_response("to", data["to"], on_conflict)
+        if not proceed:
+            return response
+        try:
+            _remove_path(dst)
+        except OSError as exc:
+            return err("Could not replace destination: %s" % exc, 500)
+
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     try:
-        if os.path.isdir(src):
+        if src_is_dir:
             shutil.copytree(src, dst)
         else:
-            shutil.copy2(src, dst)
+            try:
+                with open(dst, "xb") as out, open(src, "rb") as inp:
+                    shutil.copyfileobj(inp, out)
+            except FileExistsError:
+                # Lost a race after the pre-check; same answer as above.
+                if on_conflict == "skip":
+                    return jsonify({"to": data["to"], "skipped": True})
+                return err("Destination already exists", 409)
+            except OSError:
+                _remove_path(dst)   # drop any partial copy
+                raise
+            shutil.copystat(src, dst)
     except OSError as exc:
         return err("Could not copy: %s" % exc, 500)
     return jsonify({"to": data["to"]})
@@ -985,72 +1433,164 @@ def delete():
 # --------------------------------------------------------------------------- #
 # Routes: search
 # --------------------------------------------------------------------------- #
+def _bounded_int_arg(name, default, ceiling):
+    """Parse an optional query int, clamped to [1, ceiling]; None if bad."""
+    raw = request.args.get(name, "")
+    if raw == "":
+        return default
+    try:
+        val = int(raw)
+    except ValueError:
+        return None
+    return max(1, min(val, ceiling))
+
+
 @app.route("/api/search", methods=["GET"])
 @read_login_required
 def search():
+    """Line-oriented search with literal or regex patterns.
+
+    Params (all optional except q):
+      q         pattern; literal substring by default
+      case=1    case-sensitive (default insensitive)
+      regex=1   treat q as a Python regex instead of a literal
+                (matched per line; invalid regex -> 400)
+      file=rel  scope the scan to this single file (404 if missing)
+      glob=p    fnmatch filter on the relative path OR basename,
+                e.g. "notes/*.md" -- other files are not scanned
+      limit=N   total match cap (default 200, ceiling 2000)
+      perFile=N per-file match cap (default 20, ceiling 200)
+      order=... reorder result files by "path" | "mtime" | "count"
+                (default keeps root-first walk order); desc=1 reverses.
+                Ordering regroups whole files, never splits a file's
+                matches; caps still apply during the scan.
+
+    Response shape is unchanged for existing callers:
+      {query, matches: [{file, line, col, snippet}], truncated}
+    plus "file" echoed back when ?file= scoped. The hit inside each
+    snippet stays wrapped in <<...>> so clients can re-highlight safely.
+    """
     query = request.args.get("q", "")
-    case_sensitive = request.args.get("case", "0") == "1"
     if not query.strip():
         return err("Empty query", 400)
+    case_sensitive = request.args.get("case", "0") == "1"
+    use_regex = request.args.get("regex", "0") == "1"
 
     flags = 0 if case_sensitive else re.IGNORECASE
-    pattern = re.compile(re.escape(query), flags)
+    try:
+        pattern = re.compile(query if use_regex else re.escape(query), flags)
+    except re.error as exc:
+        return err("Invalid regex: %s" % exc, 400)
 
-    matches = []
+    # Optional single-file scope (#6): search one specific file only.
+    file_scope = request.args.get("file", "").strip()
+    scoped = None
+    if file_scope:
+        scoped = safe_path(file_scope)
+        if scoped is None:
+            return err("Invalid path", 400)
+        if not os.path.isfile(scoped):
+            return err("File not found", 404)
+
+    # Optional glob filter on which files are scanned at all.
+    glob_pat = request.args.get("glob", "").strip()
+
+    limit = _bounded_int_arg("limit", MAX_TOTAL_MATCHES,
+                             MAX_TOTAL_MATCHES_CEILING)
+    per_file_cap = _bounded_int_arg("perFile", MAX_MATCHES_PER_FILE,
+                                    MAX_MATCHES_PER_FILE_CEILING)
+    if limit is None or per_file_cap is None:
+        return err("limit and perFile must be integers", 400)
+
+    order = request.args.get("order", "").strip().lower()
+    if order and order not in ("path", "mtime", "count"):
+        return err("order must be 'path', 'mtime' or 'count'", 400)
+    desc = request.args.get("desc", "0") == "1"
+
+    # Collect per-file bundles, then order + flatten, so ?order= can
+    # regroup files without changing the flat match-item shape.
+    bundles = []
     total = 0
     truncated = False
 
-    for dirpath, _dirs, filenames in os.walk(DATA_DIR):
-        # Skip dotfiles dirs in-place so os.walk prunes them.
-        for name in sorted(filenames):
-            if name.startswith(".") or not name.lower().endswith(".md"):
-                continue
-            full = os.path.join(dirpath, name)
-            rel = rel_from(full)
-            try:
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
-                    lines = f.read().splitlines()
-            except OSError:
-                continue
-            count_in_file = 0
-            for i, line in enumerate(lines, 1):
-                for m in pattern.finditer(line):
-                    if total >= MAX_TOTAL_MATCHES:
-                        truncated = True
-                        return jsonify({
-                            "query": query,
-                            "matches": matches,
-                            "truncated": truncated,
-                        })
-                    if count_in_file >= MAX_MATCHES_PER_FILE:
-                        break
-                    start, end = m.start(), m.end()
-                    lo = max(0, start - SNIPPET_PAD)
-                    hi = min(len(line), end + SNIPPET_PAD)
-                    snippet = line[lo:hi]
-                    # Mark the match so the client can re-highlight safely.
-                    # Use offsets within the snippet so we don't corrupt HTML.
-                    snippet = (
-                        snippet[: start - lo]
-                        + "<<"
-                        + snippet[start - lo : end - lo]
-                        + ">>"
-                        + snippet[end - lo :]
-                    )
-                    matches.append({
-                        "file": rel,
-                        "line": i,
-                        "col": start + 1,
-                        "snippet": snippet,
-                    })
-                    count_in_file += 1
-                    total += 1
+    def _targets():
+        if scoped is not None:
+            yield rel_from(scoped), scoped
+            return
+        for dirpath, _dirs, filenames in os.walk(DATA_DIR):
+            for name in sorted(filenames):
+                if name.startswith(".") or not name.lower().endswith(".md"):
+                    continue
+                full = os.path.join(dirpath, name)
+                yield rel_from(full), full
+
+    for rel, full in _targets():
+        if glob_pat and not (
+                fnmatch.fnmatch(rel, glob_pat)
+                or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
+            continue
+        try:
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        matches_in_file = []
+        count_in_file = 0
+        for i, line in enumerate(lines, 1):
+            for m in pattern.finditer(line):
+                if total >= limit:
+                    truncated = True
+                    break
+                if count_in_file >= per_file_cap:
+                    break
+                start, end = m.start(), m.end()
+                lo = max(0, start - SNIPPET_PAD)
+                hi = min(len(line), end + SNIPPET_PAD)
+                snippet = line[lo:hi]
+                # Mark the match so the client can re-highlight safely.
+                # Use offsets within the snippet so we don't corrupt HTML.
+                snippet = (
+                    snippet[: start - lo]
+                    + "<<"
+                    + snippet[start - lo : end - lo]
+                    + ">>"
+                    + snippet[end - lo :]
+                )
+                matches_in_file.append({
+                    "file": rel,
+                    "line": i,
+                    "col": start + 1,
+                    "snippet": snippet,
+                })
+                count_in_file += 1
+                total += 1
             if truncated:
                 break
+        if matches_in_file:
+            try:
+                mtime = os.path.getmtime(full)
+            except OSError:
+                mtime = 0.0
+            bundles.append((rel, mtime, matches_in_file))
         if truncated:
             break
 
-    return jsonify({"query": query, "matches": matches, "truncated": truncated})
+    if order == "mtime":
+        key = lambda bundle: bundle[1]
+    elif order == "count":
+        key = lambda bundle: len(bundle[2])
+    elif order == "path":
+        key = lambda bundle: bundle[0].lower()
+    else:
+        key = None
+    if key is not None:
+        bundles.sort(key=key, reverse=desc)
+
+    matches_out = [m for _rel, _mtime, ms in bundles for m in ms]
+    resp = {"query": query, "matches": matches_out, "truncated": truncated}
+    if scoped is not None:
+        resp["file"] = rel_from(scoped)
+    return jsonify(resp)
 
 
 # --------------------------------------------------------------------------- #
