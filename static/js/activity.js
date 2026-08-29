@@ -486,6 +486,14 @@
     label: "Search",
     mount: mountSearch,
   });
+  register({
+    id: "ai",
+    icon: "✨",
+    label: "AI Assistant",
+    mount: function (host) {
+      if (NB.ai && typeof NB.ai.mount === "function") NB.ai.mount(host);
+    },
+  });
 
   // Activate Explorer on first load so the file tree is visible without
   // requiring a click.

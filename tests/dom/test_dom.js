@@ -137,6 +137,12 @@ let authSetPasswordsCalls = [];   // last few bodies posted to /api/auth/passwor
 let authTokens = [];              // [{name, role, created}]
 let authTokensSeq = 0;            // deterministic token counter
 let authTokensCalls = [];         // log of {op, body} for assertions
+// AI provider state used by the fake /api/ai/* stubs. Mirrors the server:
+// keys are stored but NEVER returned (only hasKey booleans), saving with
+// a blank key + replaceSecret carries the stored key over.
+let aiConfig = { servers: [], default: "" };
+let aiChatStreams = [];           // queued responses for /api/ai/chat
+let aiChatLog = [];               // bodies POSTed to /api/ai/chat
 
 const html = `<!DOCTYPE html><html><head>
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
@@ -173,6 +179,7 @@ const html = `<!DOCTYPE html><html><head>
         </div>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
         <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
+        <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar"></div>
@@ -300,6 +307,7 @@ const html = `<!DOCTYPE html><html><head>
           <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance"><span class="nav-icon" aria-hidden="true">🎨</span>Appearance</button>
           <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts"><span class="nav-icon" aria-hidden="true">⌨</span>Shortcuts</button>
           <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security"><span class="nav-icon" aria-hidden="true">🔒</span>Security</button>
+          <button class="settings-nav-item"        role="tab" data-tab="ai"         aria-selected="false" aria-controls="settings-section-ai"><span class="nav-icon" aria-hidden="true">✨</span>AI</button>
           <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about"><span class="nav-icon" aria-hidden="true">ℹ</span>About</button>
         </nav>
         <div class="settings-sections">
@@ -502,6 +510,34 @@ const html = `<!DOCTYPE html><html><head>
             </div>
             <div id="settings-tokens-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
+
+          <!-- AI providers (mirrors index.html; wired by settings.js). -->
+          <section class="settings-section" data-section="ai" id="settings-section-ai" hidden>
+            <h3>AI assistant</h3>
+            <p id="settings-ai-help" class="settings-help"></p>
+            <div class="settings-note" id="settings-ai-status">Providers: <span id="settings-ai-count">0</span></div>
+            <div id="settings-ai-list"></div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-name">Profile name</label>
+              <input id="settings-ai-name" type="text" class="auth-input settings-auth-input" autocomplete="off" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-url">Base URL</label>
+              <input id="settings-ai-url" type="text" class="auth-input settings-auth-input" autocomplete="off" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-model">Model</label>
+              <input id="settings-ai-model" type="text" class="auth-input settings-auth-input" autocomplete="off" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-key">API key</label>
+              <input id="settings-ai-key" type="password" class="auth-input settings-auth-input" autocomplete="off" disabled>
+            </div>
+            <div class="settings-form-actions">
+              <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
+            </div>
+            <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+          </section>
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
             <h3>About</h3>
             <div class="settings-row">
@@ -549,6 +585,11 @@ window.HTMLElement.prototype.scrollIntoView = function () {};
 window.prompt = () => promptValue;
 window.confirm = () => true;
 window.alert = () => {};
+// Encoding globals for api.js's SSE reader (jsdom doesn't ship them).
+// Point them at the Node implementations so decoding is real.
+if (!window.TextEncoder) window.TextEncoder = TextEncoder;
+if (!window.TextDecoder) window.TextDecoder = TextDecoder;
+if (!window.ReadableStream) window.ReadableStream = ReadableStream;
 // Clipboard stub. jsdom doesn't ship navigator.clipboard. We
 // record the last write so tests can assert what got copied, and
 // expose a __fail flag for tests that want to exercise the
@@ -729,6 +770,21 @@ window.fetch = async (url, opts) => {
       body = { path: d.path, size: d.content.length, mtime: MTIMES[d.path] };
     } else {
       const fp = u.searchParams.get("path");
+      const pathInTree = (p) => {
+        const hit = (nodes) => nodes.some(n =>
+          n.path === p || (n.children && hit(n.children)));
+        return hit(TREE);
+      };
+      if (FILES[fp] === undefined && !pathInTree(fp)) {
+        // Unknown path -> 404 (the server answers the same); the watcher
+        // poller treats a missing file the same way. Paths that exist in
+        // the TREE fixture but not in FILES (e.g. the reveal-test's
+        // deep.md) keep the old inline-empty-body behavior so tab-open
+        // flows there don't take the error path.
+        return { ok: false, status: 404,
+          text: async () => JSON.stringify({ error: "File not found" }),
+          json: async () => ({ error: "File not found" }) };
+      }
       // The poller passes ifModifiedSince=<ts>; honour it so the
       // polling fallback doesn't fire spurious change events.
       const since = parseInt(u.searchParams.get("ifModifiedSince") || "0", 10);
@@ -750,8 +806,100 @@ window.fetch = async (url, opts) => {
     body = buildGraphStub();
   } else if (p === "/api/info") {
     body = { data_dir: "/tmp/test/data", config_dir: "/tmp/test/config" };
-  } else if (p === "/api/create" || p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
+  } else if (p === "/api/create") {
+    // Mirrors the server: 409 when the path already exists, content seeds
+    // new files.
+    const d = JSON.parse(opts.body || "{}");
+    if (FILES[d.path] !== undefined) {
+      return { ok: false, status: 409,
+        text: async () => JSON.stringify({ error: "Already exists" }),
+        json: async () => ({ error: "Already exists" }) };
+    }
+    if (d.type === "dir") { TREE.push({ name: d.path, type: "dir", path: d.path, children: [] }); body = { path: d.path, existed: false }; }
+    else {
+      FILES[d.path] = d.content || "";
+      MTIMES[d.path] = (MTIMES[d.path] || 1) + 1;
+      TREE.push({ name: d.path.split("/").pop(), type: "file", path: d.path });
+      body = { path: d.path, existed: false };
+    }
+  } else if (p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
     body = JSON.parse(opts.body || "{}");
+  } else if (p === "/api/edit") {
+    // Mirror /api/edit's all-or-nothing contract: find_replace requires
+    // exactly one match UNLESS optional, append/prepend always succeed.
+    const d = JSON.parse(opts.body || "{}");
+    const src = FILES[d.path];
+    if (src == null) {
+      return { ok: false, status: 404,
+        text: async () => JSON.stringify({ error: "File not found" }),
+        json: async () => ({ error: "File not found" }) };
+    }
+    let text = src;
+    try {
+      for (const ed of (d.edits || [])) {
+        if (ed.op === "find_replace") {
+          const hits = text.split(ed.find).length - 1;
+          if (hits !== 1 && !ed.optional) throw new Error("no match for find");
+          text = text.replace(ed.find, ed.replace_with);
+        } else if (ed.op === "append") {
+          text = text + ed.text;
+        } else if (ed.op === "prepend") {
+          text = ed.text + text;
+        } else {
+          throw new Error("unknown op " + ed.op);
+        }
+      }
+    } catch (e) {
+      return { ok: false, status: 400,
+        text: async () => JSON.stringify({ error: e.message }),
+        json: async () => ({ error: e.message }) };
+    }
+    FILES[d.path] = text;
+    MTIMES[d.path] = (MTIMES[d.path] || 0) + 1;
+    body = { path: d.path, size: text.length, applied: (d.edits || []).length };
+  } else if (p === "/api/ai/config") {
+    if (method === "POST") {
+      const d = JSON.parse(opts.body || "{}");
+      const keepers = [];
+      for (const s of (d.servers || [])) {
+        if (s && s.apiKey === "" && s.replaceSecret) {
+          const prev = (aiConfig.servers || []).find(x => x.name === s.name);
+          s.apiKey = prev ? (prev.apiKey || "") : "";
+        }
+        keepers.push(s);
+      }
+      aiConfig = { servers: keepers, default: d.default || "" };
+      body = { servers: aiConfig.servers.map(s => ({
+        name: s.name, baseUrl: s.baseUrl, model: s.model || "",
+        hasKey: !!(s.apiKey && s.apiKey.length),
+      })), default: aiConfig.default };
+    } else {
+      body = { servers: (aiConfig.servers || []).map(s => ({
+        name: s.name, baseUrl: s.baseUrl, model: s.model || "",
+        hasKey: !!(s.apiKey && s.apiKey.length),
+      })), default: aiConfig.default || "" };
+    }
+  } else if (p === "/api/ai/chat") {
+    // SSE relay stub: /api/ai/chat returns a byte stream (resp.body),
+    // which api.js's aiChat reads with getReader(). Records the request
+    // and plays the queued chunks (aiChatStreams entries: arrays of SSE
+    // frames) so tests can script the "stream".
+    const d = JSON.parse(opts.body || "{}");
+    aiChatLog.push(d);
+    const frames = aiChatStreams.shift();
+    if (!frames) {
+      return { ok: false, status: 400,
+        text: async () => JSON.stringify({ error: "no queued ai chat stream" }),
+        json: async () => ({ error: "no queued ai chat stream" }) };
+    }
+    const enc = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(enc.encode(frame));
+        controller.close();
+      },
+    });
+    return { ok: true, status: 200, body: stream };
   } else if (p === "/api/auth") {
     // Default: auth disabled. Tests flip authEnabled/authRole to exercise
     // the login flow. The shape is {enabled, hasAdmin, hasViewer, role}:
@@ -916,6 +1064,7 @@ evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/vimnav.js"));
+evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/app.js"));
@@ -2440,11 +2589,11 @@ function check(label, cond, extra) {
   menuBtns.find(b => b.textContent.includes("New file")).dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
   check("create POST fired", fetchLog.filter(x => x.startsWith("POST /api/create")).length - beforeCreate === 1);
-  TREE.push({ name: "created.md", type: "file", path: "created.md" });
+  if (FILES["created.md"] === undefined) TREE.push({ name: "created.md", type: "file", path: "created.md" });
   await window.NB.sidebar.refresh();
   check("tree shows created file", window.document.querySelectorAll("#file-tree .tree-row").length === 1);
   // restore a tree entry so later checks have a file
-  TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
+  if (FILES["created.md"] === undefined) TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
 
   console.log("== sidebar minimize (collapse/expand) ==");
   // left file sidebar (now the #side-panel hosting the Explorer view)
@@ -3850,9 +3999,9 @@ function check(label, cond, extra) {
   const navButtons = Array.from(window.document.querySelectorAll(".settings-nav-item"));
   const navTabs    = navButtons.map(b => b.dataset.tab);
   const sectionEls = Array.from(window.document.querySelectorAll(".settings-section[data-section]"));
-  check("settings nav: 5 nav buttons present", navButtons.length === 5,
+  check("settings nav: 6 nav buttons present", navButtons.length === 6,
     "count=" + navButtons.length);
-  check("settings nav: 5 sections present", sectionEls.length === 5,
+  check("settings nav: 6 sections present", sectionEls.length === 6,
     "count=" + sectionEls.length);
   check("settings nav: every data-tab has a matching data-section",
     navTabs.every(t => sectionEls.some(s => s.dataset.section === t)),
@@ -3861,8 +4010,8 @@ function check(label, cond, extra) {
     sectionEls.every(s => navTabs.includes(s.dataset.section)),
     "sections=" + JSON.stringify(sectionEls.map(s => s.dataset.section)));
   // Exact ordering matches what the user asked for.
-  check("settings nav: tabs in order [general, appearance, shortcuts, security, about]",
-    JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "shortcuts", "security", "about"]),
+  check("settings nav: tabs in order [general, appearance, shortcuts, security, ai, about]",
+    JSON.stringify(navTabs) === JSON.stringify(["general", "appearance", "shortcuts", "security", "ai", "about"]),
     JSON.stringify(navTabs));
   // Each nav button wraps its leading icon in a .nav-icon span so
   // the label text starts at a consistent x position regardless of
@@ -3882,7 +4031,7 @@ function check(label, cond, extra) {
     (b.querySelector(".nav-icon") && b.querySelector(".nav-icon").nextSibling
       ? b.querySelector(".nav-icon").nextSibling.nodeValue : b.textContent));
   check("settings nav: labels are the plain words (no emoji in text)",
-    JSON.stringify(navLabels) === JSON.stringify(["General","Appearance","Shortcuts","Security","About"]),
+    JSON.stringify(navLabels) === JSON.stringify(["General","Appearance","Shortcuts","Security","AI","About"]),
     JSON.stringify(navLabels));
   // Fresh open: General is the default tab.
   if (window.NB.settings.isOpen()) window.NB.settings.close();
@@ -7322,6 +7471,341 @@ function check(label, cond, extra) {
   await tick(400);
   window.NB.settings.close();
   await tick(20);
+
+  console.log("== ai ==");
+  // Build one OpenAI-style SSE frame whose delta content is `text`.
+  // JSON.stringify(text) produces the double-quoted, escaped form that
+  // can be dropped straight into the content:"..." JSON of the frame.
+  const sseFrame = (text) =>
+    'data: {"choices":[{"delta":{"content":' + JSON.stringify(text) + '}}]}\n\n';
+
+  // --- pure parser unit checks (no DOM, no fetch) -----------------------
+  {
+    // 1. fenced block -> one proposal
+    const r1 = window.NB.ai.parseProposals(
+      "Here is my edit:\n\n```nb-edit\n" +
+      JSON.stringify({ op: "replace", find: "TODO fix this here.",
+                       replace: "TODO fixed." }) + "\n```\n");
+    check("ai: fenced nb-edit block parses into one card segment",
+      r1.count === 1 &&
+      r1.segments.some(s => s.type === "card") &&
+      r1.segments[0].type === "text",
+      "count=" + r1.count);
+
+    // 2. non-JSON block stays prose (no card)
+    const r2 = window.NB.ai.parseProposals(
+      "```nb-edit\nnot json at all\n```");
+    check("ai: non-JSON fenced block is not a card",
+      r2.count === 0 && r2.segments.length === 1 && r2.segments[0].type === "text",
+      "count=" + r2.count);
+
+    // 3. unknown op rejected
+    const r3 = window.NB.ai.parseProposals(
+      "```nb-edit\n" + JSON.stringify({ op: "line_delete", start: 1 }) + "\n```");
+    check("ai: unknown op is not a card", r3.count === 0, "count=" + r3.count);
+
+    // 4. replace without find/replace strings rejected
+    const r4 = window.NB.ai.parseProposals(
+      "```nb-edit\n" + JSON.stringify({ op: "replace" }) + "\n```");
+    check("ai: replace without find/replace is not a card", r4.count === 0,
+      "count=" + r4.count);
+
+    // 5. append/prepend need only replace
+    const r5 = window.NB.ai.parseProposals(
+      "```nb-edit\n" + JSON.stringify({ op: "append", replace: "new tail\n" }) +
+      "\n```");
+    const card5 = r5.segments.find(s => s.type === "card");
+    check("ai: append parses as a card",
+      r5.count === 1 && card5 && card5.proposal.op === "append",
+      r5.count + "");
+
+    // 6. nb-tool blocks cut out of prose; nb-edit cards preserved
+    const r6 = window.NB.ai.parseProposals(
+      'thinking\n```nb-tool\n{"tool": "read", "path": "a.md"}\n```\nmid\n' +
+      "```nb-edit\n" + JSON.stringify({ op: "append", replace: "x" }) + "\n```");
+    check("ai: nb-tool block is extracted as a tool segment",
+      JSON.stringify(r6.segments.map(s => s.type)) ===
+        JSON.stringify(["text", "tool", "text", "card"]),
+      JSON.stringify(r6.segments.map(s => s.type)));
+
+    // 7. tool block parser: valid + invalid shapes
+    check("ai: tryParseTool read/list/write/patch shapes",
+      window.NB.ai.tryParseTool('{"tool":"list"}') !== null &&
+      window.NB.ai.tryParseTool('{"tool":"read","path":"a.md"}') !== null &&
+      window.NB.ai.tryParseTool('{"tool":"write","path":"n.md","content":"x"}') !== null &&
+      window.NB.ai.tryParseTool('{"tool":"patch","path":"n.md","edits":[]}') !== null,
+      "");
+    check("ai: tryParseTool rejects bad calls",
+      window.NB.ai.tryParseTool('{"tool":"read"}') === null &&
+      window.NB.ai.tryParseTool('{"tool":"write","path":"n.md"}') === null &&
+      window.NB.ai.tryParseTool('{"tool":"patch","path":"n.md"}') === null &&
+      window.NB.ai.tryParseTool('{"tool":"delete","path":"n.md"}') === null &&
+      window.NB.ai.tryParseTool('not json') === null,
+      "");
+
+    // 8. diff row computation
+    const d1 = window.NB.ai.diffRows("alpha\nbeta\ngamma\ndelta\n", "alpha\nBETA\ngamma\ndelta\n");
+    check("ai: diffRows finds the changed line pair",
+      d1.some(r => r.type === "del" && r.text === "beta") &&
+      d1.some(r => r.type === "add" && r.text === "BETA") &&
+      d1.some(r => r.type === "ctx" && r.text === "alpha"),
+      JSON.stringify(d1.map(r => r.type)));
+
+    // 9. patch preview simulation
+    const pv = window.NB.ai.previewPatch(
+      "alpha\nbeta\ngamma\n",
+      [{ op: "find_replace", find: "beta", replace_with: "BETA", count: 1 }]);
+    check("ai: previewPatch simulates find_replace",
+      pv === "alpha\nBETA\ngamma\n", JSON.stringify(pv));
+    check("ai: previewPatch returns null for non-simulatable ops",
+      window.NB.ai.previewPatch("x", [{ op: "line_delete", start: 1 }]) === null &&
+      window.NB.ai.previewPatch("x", [{ op: "find_replace", find: "nope", replace_with: "y" }]) === null,
+      "");
+  }
+
+  // -- agent loop end-to-end (fetch-stubbed) -----------------------------
+  // Configure the stub config: one provider, and queue conversation-style
+  // streams (each entry is one assistant "reply"; the stub pops a NEW
+  // entry per chat request, mimicking the tool loop's follow-up calls).
+  window.NB.ai._resetForTests();
+  aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub", model: "m-1", apiKey: "sk-stub" }], default: "stub" };
+  aiChatStreams = [];
+  aiChatLog = [];
+
+  // Open a file so the system prompt names it (current-file context).
+  await window.NB.tabs.open("notes/a.md");
+  await tick(50);
+
+  // Mount the view via the activity bar (the user's path).
+  const aiBtn = Array.from(window.document.querySelectorAll("#activity-bar .activity-btn"))
+    .find(b => b.dataset.view === "ai");
+  check("ai: activity bar has an AI button", !!aiBtn);
+  aiBtn.click();
+  await tick(30);
+  check("ai: view mounts with a chat log + input",
+    !!window.document.getElementById("ai-chat-log") &&
+    !!window.document.getElementById("ai-input"),
+    "log=" + !!window.document.getElementById("ai-chat-log"));
+
+  // Provider picker lists the configured profile.
+  const aiSel = window.document.getElementById("ai-model-select");
+  check("ai: provider picker lists the stub profile",
+    aiSel && aiSel.options.length === 1 && aiSel.options[0].value === "stub",
+    aiSel ? aiSel.options.length + " opts" : "no select");
+
+  const aiInput = () => window.document.getElementById("ai-input");
+  const aiSend = () => {
+    aiInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    aiInput().closest("form").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }));
+  };
+  const aiCards = (sel) => Array.from(window.document.querySelectorAll(sel || "#ai-chat-log .ai-edit-card"));
+  const lastCard = () => {
+    const c = aiCards();
+    return c[c.length - 1] || null;
+  };
+  const aiTraces = () => Array.from(window.document.querySelectorAll("#ai-chat-log .ai-tool-trace"));
+  const aiBubbles = () => Array.from(window.document.querySelectorAll("#ai-chat-log .ai-msg-assistant"));
+
+  // --- Turn 1: model asks to READ, then (second loop round) patches ----
+  // Request 1 replies with a read tool call. Request 2 (after the tool
+  // result is fed back) proposes the actual patch.
+  const patchJson1 = JSON.stringify({
+    op: "replace", find: "TODO fix this bug.",
+    replace: "TODO fixed by the AI.", description: "Fix the todo",
+  });
+  aiChatStreams.push([
+    sseFrame("Let me read the file first.\n\n```nb-tool\n" +
+      JSON.stringify({ tool: "read", path: "notes/a.md" }) + "\n```"),
+  ]);
+  aiChatStreams.push([
+    sseFrame("Here is the fix you asked for:\n\n```nb-edit\n" + patchJson1 + "\n```"),
+  ]);
+  aiInput().value = "fix the todo in this file";
+  aiSend();
+  await tick(120);
+
+  check("ai: tool loop issued 2 model calls (read, then patch)",
+    aiChatLog.length === 2,
+    "requests=" + aiChatLog.length);
+  check("ai: request 1 carried system + user turn",
+    aiChatLog[0] && aiChatLog[0].server === "stub" &&
+    aiChatLog[0].messages[0].role === "system" &&
+    /current file is: notes\/a\.md/.test(aiChatLog[0].messages[0].content) &&
+    aiChatLog[0].messages[1].role === "user",
+    aiChatLog[0] ? aiChatLog[0].messages.map(m => m.role).join(",") : "none");
+  check("ai: system prompt declares the four tools",
+    /\bnb-tool\b/.test(aiChatLog[0].messages[0].content) &&
+    /"tool": "list"/.test(aiChatLog[0].messages[0].content) &&
+    /"tool": "patch"/.test(aiChatLog[0].messages[0].content),
+    "");
+  check("ai: request 2 re-uploads history + tool result (memory)",
+    aiChatLog[1] && aiChatLog[1].messages.length >= 4 &&
+    /tool read notes\/a\.md result/.test(aiChatLog[1].messages.at(-1).content) &&
+    /TODO fix this bug\./.test(aiChatLog[1].messages.at(-1).content),
+    aiChatLog[1] ? aiChatLog[1].messages.length + " msgs" : "none");
+  check("ai: read tool ran as a trace line",
+    aiTraces().some(t => t.dataset.testToolTrace === "read" &&
+      /notes\/a\.md/.test(t.textContent) && /\d+ chars/.test(t.textContent)),
+    "traces=" + aiTraces().length);
+
+  // Patch card applies through /api/edit.
+  let card = lastCard();
+  check("ai: assistant reply renders one patch card", !!card &&
+    card.dataset.testPatchCard === "1", card ? card.dataset.op : "none");
+  check("ai: patch card previews the diff before applying",
+    card && card.querySelector(".diff-del") && card.querySelector(".diff-add"),
+    "rows=" + (card ? card.querySelectorAll(".diff-row").length : 0));
+  card.querySelector(".ai-apply").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(150);
+  check("ai: apply patches the file via /api/edit",
+    FILES["notes/a.md"].includes("TODO fixed by the AI."),
+    FILES["notes/a.md"].split("\n").find(l => l.includes("TODO")) || "?");
+  check("ai: applied card shows success + viewer cache refreshed",
+    card.classList.contains("ok") &&
+    /Applied/.test(card.querySelector(".ai-card-status").textContent) &&
+    !window.NB.viewer.isDirty("notes/a.md"),
+    card.querySelector(".ai-card-status").textContent);
+  check("ai: tool outcome lands in the conversation (model sees it)",
+    window.NB.ai._getConversationForTests().some(m =>
+      /tool result\).*(?:applied|patch applied)/i.test(m.content)),
+    "");
+
+  // --- Turn 2: follow-up retains context WITHOUT new tool calls --------
+  aiChatStreams.push([
+    sseFrame("I already fixed the TODO in notes/a.md — anything else?"),
+  ]);
+  aiInput().value = "thanks, what did you change again?";
+  aiSend();
+  await tick(80);
+  check("ai: follow-up turn is a plain answer (no extra tool round)",
+    aiChatLog.length === 3,
+    "requests=" + aiChatLog.length);
+  check("ai: follow-up request includes prior turns (memory)",
+    aiChatLog[2].messages.filter(m => m.role === "assistant").length >= 1,
+    aiChatLog[2].messages.length + " msgs");
+  check("ai: follow-up answer renders without cards",
+    aiBubbles().length >= 3 && lastCard() === card,
+    "bubbles=" + aiBubbles().length);
+
+  // --- Turn 3: DELETE-style patch whose find no longer matches -> 400 --
+  aiChatStreams.push([
+    sseFrame("```nb-edit\n" + JSON.stringify({
+      op: "replace", find: "TODO fix this bug.", replace: "stale",
+    }) + "\n```"),
+  ]);
+  aiInput().value = "apply something stale";
+  aiSend();
+  await tick(100);
+  const staleCard = lastCard();
+  staleCard.querySelector(".ai-apply").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(100);
+  check("ai: stale find surfaces the server 400 on the card",
+    staleCard.classList.contains("errored") &&
+    /no match/i.test(staleCard.querySelector(".ai-card-status").textContent),
+    staleCard.querySelector(".ai-card-status").textContent);
+  check("ai: file unchanged by failed apply", !FILES["notes/a.md"].includes("stale"), "");
+
+  // --- Turn 4: reject path feeds back to the model ---------------------
+  aiChatStreams.push([
+    sseFrame("```nb-edit\n" + JSON.stringify({
+      op: "append", replace: "extra line\n" }) + "\n```"),
+  ]);
+  aiInput().value = "one more";
+  aiSend();
+  await tick(100);
+  const rejCard = lastCard();
+  rejCard.querySelector(".ai-reject").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(50);
+  check("ai: reject marks the card + records the outcome for the model",
+    rejCard.classList.contains("rejected") &&
+    !rejCard.querySelector(".ai-edit-actions") &&
+    window.NB.ai._getConversationForTests().some(m =>
+      /rejected by user/.test(m.content)),
+    "");
+
+  // --- Turn 5: write tool -> new file ok / existing file blocked -------
+  const WRITE_PATH = "notes/new-note.md";
+  aiChatStreams.push([
+    sseFrame("Creating it.\n\n```nb-tool\n" + JSON.stringify({
+      tool: "write", path: WRITE_PATH,
+      content: "# New note\n\ncreated by the AI\n" }) + "\n```"),
+  ]);
+  aiInput().value = "create a note";
+  aiSend();
+  await tick(100);
+  let writeCard = lastCard();
+  check("ai: write tool renders a create card (write, not patch)",
+    writeCard && writeCard.dataset.testWriteCard === "1" &&
+    writeCard.dataset.op === "write",
+    writeCard ? writeCard.dataset.op : "none");
+  writeCard.querySelector(".ai-apply").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(100);
+  check("ai: write creates a NEW file via /api/create",
+    FILES[WRITE_PATH] === "# New note\n\ncreated by the AI\n",
+    String(FILES[WRITE_PATH]).slice(0, 30));
+  check("ai: created write card shows ok",
+    writeCard.classList.contains("ok"),
+    writeCard.querySelector(".ai-card-status").textContent);
+
+  // Same write -> card exists check blocks overwrite with guidance.
+  aiChatStreams.push([
+    sseFrame("```nb-tool\n" + JSON.stringify({
+      tool: "write", path: WRITE_PATH, content: "OVERWRITE!\n" }) + "\n```"),
+  ]);
+  aiInput().value = "overwrite it";
+  aiSend();
+  await tick(100);
+  const blockCard = lastCard();
+  blockCard.querySelector(".ai-apply").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(100);
+  check("ai: write on an EXISTING file is blocked with 'use patch' guidance",
+    blockCard.classList.contains("errored") &&
+    /patch/i.test(blockCard.querySelector(".ai-card-status").textContent),
+    blockCard.querySelector(".ai-card-status").textContent);
+  check("ai: blocked write did NOT touch the file",
+    FILES[WRITE_PATH] === "# New note\n\ncreated by the AI\n", "");
+
+  // The model is told to patch instead, and the patch flow works.
+  aiChatStreams.push([
+    sseFrame("Understood — patching instead.\n\n```nb-tool\n" + JSON.stringify({
+      tool: "patch", path: WRITE_PATH,
+      edits: [{ op: "find_replace", find: "created by the AI",
+                replace_with: "patched by the AI", count: 1 }] }) + "\n```"),
+  ]);
+  aiInput().value = "then patch it";
+  aiSend();
+  await tick(120);
+  const patchCard2 = lastCard();
+  patchCard2.querySelector(".ai-apply").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true }));
+  await tick(150);
+  check("ai: patch tool updates an existing file (guided flow completes)",
+    FILES[WRITE_PATH] === "# New note\n\npatched by the AI\n",
+    String(FILES[WRITE_PATH]).slice(0, 40));
+
+  // --- Clear button resets conversation --------------------------------
+  aiChatStreams.length = 0;
+  window.document.querySelector("#ai-view .ai-clear")
+    .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(20);
+  check("ai: Clear empties the conversation + log",
+    window.NB.ai._getConversationForTests().length === 0 &&
+    window.document.querySelectorAll("#ai-chat-log > *").length === 0,
+    "");
+
+  // Restore fixture state for later blocks.
+  FILES["notes/a.md"] = FILE_A;
+  MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+  delete FILES[WRITE_PATH];
+  TREE = TREE.filter(n => n.path !== WRITE_PATH);
+  MTIMES[WRITE_PATH] = 1;
+  MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

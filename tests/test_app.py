@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler
 
 # Put the project root on sys.path so `import app` works from tests/.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1925,6 +1926,278 @@ class TestAgentGuide(BaseTest):
             }, f)
         body_on = self.client.get("/agent.md").get_data(as_text=True)
         self.assertIn("enabled", body_on)
+
+
+class _StubOpenAIHandler(BaseHTTPRequestHandler):
+    """A tiny OpenAI-compatible stand-in for the AI proxy tests.
+
+    Records the last request (path, Authorization header, parsed body) in
+    the module-level LAST_UPSTREAM dict, then either streams a canned SSE
+    chat completion or returns a configurable status. The notebook tests
+    point a profile at this server's loopback port and assert on what the
+    relay actually forwarded.
+    """
+
+    def do_POST(self):
+        import json as _json
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b"{}"
+        import app as _nb
+        _nb.LAST_UPSTREAM = {
+            "path": self.path,
+            "auth": self.headers.get("Authorization"),
+            "body": _json.loads(raw.decode("utf-8") or "{}"),
+        }
+        if _nb.UPSTREAM_STATUS != 200:
+            detail = _json.dumps({"error": {"message": "stub says no"}}).encode()
+            self.send_response(_nb.UPSTREAM_STATUS)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(detail)))
+            self.end_headers()
+            self.wfile.write(detail)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        # Two deltas + DONE, exactly the wire shape /v1/chat/completions
+        # produces with stream=true. The client may close early (test
+        # client drains the generator); a broken pipe then is harmless.
+        try:
+            for piece in (
+                'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
+                'data: {"choices":[{"delta":{"content":" world"}}]}\n\n',
+                "data: [DONE]\n\n",
+            ):
+                self.wfile.write(piece.encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def log_message(self, fmt, *args):  # keep test output clean
+        pass
+
+
+class TestAiConfig(BaseTest):
+    """GET/POST /api/ai/config: profiles live in config/ai.json, keys
+    never echo back."""
+
+    def test_get_empty_by_default(self):
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data, {"servers": [], "default": ""})
+        # No file is created by a read.
+        self.assertFalse(os.path.isfile(nb.AI_FILE))
+
+    def test_post_roundtrip_masks_key(self):
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "openai", "baseUrl": "https://api.openai.com/v1/",
+            "apiKey": "sk-secret", "model": "gpt-4o-mini",
+        }], "default": "openai"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["default"], "openai")
+        self.assertEqual(len(body["servers"]), 1)
+        self.assertEqual(body["servers"][0]["name"], "openai")
+        self.assertEqual(body["servers"][0]["baseUrl"], "https://api.openai.com")
+        self.assertTrue(body["servers"][0]["hasKey"])
+        # The cleartext key must never appear in any response.
+        self.assertNotIn("sk-secret", r.get_data(as_text=True))
+        # ...butmust be on disk.
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["servers"][0]["api_key"], "sk-secret")
+
+    def test_replace_secret_carries_stored_key(self):
+        self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://x", "apiKey": "sk-1",
+        }], "default": "p"})
+        # Re-save with a blank key + replaceSecret: the stored key stays.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://x", "apiKey": "",
+            "replaceSecret": True, "model": "m2",
+        }], "default": "p"})
+        self.assertEqual(r.status_code, 200)
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["servers"][0]["api_key"], "sk-1")
+        self.assertEqual(stored["servers"][0]["model"], "m2")
+
+    def test_base_url_trailing_v1_is_stripped(self):
+        # The chat URL builder appends /v1/chat/completions itself, so a
+        # base URL pasted with /v1 must be normalized on save.
+        self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://host:1234/v1/",
+        }], "default": "p"})
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["servers"][0]["base_url"], "http://host:1234")
+        self.assertEqual(nb._chat_url("http://host:1234"),
+                         "http://host:1234/v1/chat/completions")
+
+    def test_validation_errors(self):
+        cases = [
+            # not an object
+            "nope",
+            # missing baseUrl
+            {"name": "p"},
+            # bad scheme
+            {"name": "p", "baseUrl": "ftp://x"},
+            # duplicate names
+        ]
+        r = self.post("/api/ai/config", {"servers": ["nope"]})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/ai/config", {"servers": [{"name": "p"}]})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/ai/config",
+                      {"servers": [{"name": "p", "baseUrl": "ftp://x"}]})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/ai/config", {"servers": [
+            {"name": "p", "baseUrl": "http://a"},
+            {"name": "p", "baseUrl": "http://b"},
+        ]})
+        self.assertEqual(r.status_code, 400)
+        # default must name one of the supplied servers
+        r = self.post("/api/ai/config", {"servers": [
+            {"name": "p", "baseUrl": "http://a"}], "default": "other"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_admin_required_when_auth_on(self):
+        import bcrypt as _bcrypt
+        self._enable_auth("admin-pw")
+        self.assertEqual(self.client.get("/api/ai/config").status_code, 401)
+        self.assertEqual(
+            self.post("/api/ai/config", {"servers": []}).status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/ai/probe?server=x").status_code, 401)
+        self.assertEqual(
+            self.client.post("/api/ai/chat", json={"server": "x"}).status_code,
+            401)
+
+    # shared helper (mirrors TestAuth.setUp-ish pattern)
+    def _enable_auth(self, pw):
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    pw.encode(), _bcrypt.gensalt(4)).decode(),
+            }, f)
+
+
+class TestAiChat(BaseTest):
+    """POST /api/ai/chat relays to the configured upstream as SSE."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import HTTPServer
+        cls.httpd = HTTPServer(("127.0.0.1", 0), _StubOpenAIHandler)
+        cls.port = cls.httpd.server_address[1]
+        cls.thread = threading.Thread(
+            target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        super().setUp()
+        nb.LAST_UPSTREAM = None
+        nb.UPSTREAM_STATUS = 200
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "stub", "baseUrl": "http://127.0.0.1:%d" % self.port,
+            "apiKey": "sk-upstream", "model": "test-model",
+        }], "default": "stub"})
+        assert r.status_code == 200, r.get_data(as_text=True)
+
+    def _chat(self, body):
+        return self.client.post("/api/ai/chat", json=body)
+
+    def test_chat_relays_sse(self):
+        r = self._chat({"server": "stub",
+                        "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/event-stream", r.content_type)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"hello"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        # What the upstream actually received: the stored key + model, the
+        # caller's messages, streaming on -- and NOT the "server" selector.
+        up = nb.LAST_UPSTREAM
+        self.assertEqual(up["path"], "/v1/chat/completions")
+        self.assertEqual(up["auth"], "Bearer sk-upstream")
+        self.assertEqual(up["body"]["model"], "test-model")
+        self.assertEqual(up["body"]["messages"],
+                         [{"role": "user", "content": "hi"}])
+        self.assertTrue(up["body"]["stream"])
+        self.assertNotIn("server", up["body"])
+
+    def test_chat_unknown_server(self):
+        r = self._chat({"server": "ghost",
+                        "messages": [{"role": "user", "content": "x"}]})
+        self.assertEqual(r.status_code, 400)
+
+    def test_chat_validates_messages(self):
+        for bad in (
+            {"server": "stub"},
+            {"server": "stub", "messages": []},
+            {"server": "stub", "messages": ["hi"]},
+            {"server": "stub", "messages": [{"role": "tool", "content": "x"}]},
+            {"server": "stub", "messages": [{"role": "user"}]},
+        ):
+            r = self._chat(bad)
+            self.assertEqual(r.status_code, 400, bad)
+
+    def test_chat_upstream_http_error_becomes_sse_error_event(self):
+        nb.UPSTREAM_STATUS = 401
+        try:
+            r = self._chat({"server": "stub",
+                            "messages": [{"role": "user", "content": "hi"}]})
+            self.assertEqual(r.status_code, 200)  # SSE always answers 200
+            body = r.get_data(as_text=True)
+            self.assertIn("event: error", body)
+            self.assertIn('"status": 401', body)
+        finally:
+            nb.UPSTREAM_STATUS = 200
+
+    def test_probe_reports_unreachable_cleanly(self):
+        # Port 1 on loopback is never listening; the probe must answer
+        # 200 with ok:false (JSON), never a traceback / hang.
+        self.post("/api/ai/config", {"servers": [{
+            "name": "dead", "baseUrl": "http://127.0.0.1:1",
+        }], "default": ""})
+        r = self.client.get("/api/ai/probe?server=dead")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["ok"])
+
+    def test_probe_reachable_reports_ok(self):
+        r = self.client.get("/api/ai/probe?server=stub")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()["ok"])
+
+    def test_probe_unknown_server_404(self):
+        r = self.client.get("/api/ai/probe?server=ghost")
+        self.assertEqual(r.status_code, 404)
+
+    def test_ai_config_file_is_not_gated_read_but_chat_is(self):
+        # /api/ai/config is admin-only even with auth off? No: with auth
+        # off everything is open BY DESIGN (same as every other admin
+        # route). This test pins the contract the other way: when auth
+        # is ON, chat must demand the credential like every write.
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        self.assertEqual(
+            self.client.post("/api/ai/chat",
+                             json={"server": "stub", "messages":
+                                   [{"role": "user", "content": "x"}]}
+                             ).status_code, 401)
 
 
 if __name__ == "__main__":

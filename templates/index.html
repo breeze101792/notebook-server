@@ -95,6 +95,12 @@
              both call the same NB.api.search backend. -->
         <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
 
+        <!-- AI assistant view: chat + reviewable nb-edit proposal cards.
+             Mounted lazily by activity.js on first activation. The chat
+             streams through POST /api/ai/chat; assistant answers parse
+             into cards that apply via the standard /api/edit endpoint. -->
+        <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
+
         <!-- Collapsed-strip affordance removed: the activity bar's icons
              are the re-expand trigger, so the panel hides completely
              (width 0) when collapsed. -->
@@ -281,6 +287,7 @@
           <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance"><span class="nav-icon" aria-hidden="true">🎨</span>Appearance</button>
           <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts"><span class="nav-icon" aria-hidden="true">⌨</span>Shortcuts</button>
           <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security"><span class="nav-icon" aria-hidden="true">🔒</span>Security</button>
+          <button class="settings-nav-item"        role="tab" data-tab="ai"         aria-selected="false" aria-controls="settings-section-ai"><span class="nav-icon" aria-hidden="true">✨</span>AI</button>
           <button class="settings-nav-item"        role="tab" data-tab="about"      aria-selected="false" aria-controls="settings-section-about"><span class="nav-icon" aria-hidden="true">ℹ</span>About</button>
         </nav>
         <div class="settings-sections">
@@ -557,6 +564,47 @@
             <div id="settings-tokens-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
 
+          <!-- AI: OpenAI-compatible providers for the side-panel assistant.
+               Admin-only (same model as passwords/tokens): the API keys are
+               stored in config/ai.json server-side and never returned to any
+               client; saving a profile with a blank key + "keep stored secret"
+               carries the previous key over. -->
+          <section class="settings-section" data-section="ai" id="settings-section-ai" hidden>
+            <h3>AI assistant</h3>
+            <p id="settings-ai-help" class="settings-help">
+              Providers for the AI assistant in the left activity bar (✨).
+              Any OpenAI-compatible <code>/v1/chat/completions</code> endpoint works
+              (OpenAI, openai-compatible local servers, etc.). API keys are stored
+              server-side and never sent to the browser.
+            </p>
+            <div class="settings-note" id="settings-ai-status">Providers: <span id="settings-ai-count">0</span></div>
+            <div id="settings-ai-list"></div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-name">Profile name</label>
+              <input id="settings-ai-name" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" placeholder="e.g. openai or ollama-lan" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-url">Base URL</label>
+              <input id="settings-ai-url" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" placeholder="https://api.openai.com  (a trailing /v1 is optional)" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-model">Model</label>
+              <input id="settings-ai-model" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" placeholder="e.g. gpt-4o-mini or llama3" disabled>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-ai-key">API key</label>
+              <input id="settings-ai-key" type="password" class="auth-input settings-auth-input"
+                     autocomplete="off" placeholder="Empty = keep stored key (when editing)" disabled>
+            </div>
+            <div class="settings-form-actions">
+              <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
+            </div>
+            <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+          </section>
+
           <!-- About: data + config folder paths. -->
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
             <h3>About</h3>
@@ -628,6 +676,9 @@
   <script src="/static/js/tabs.js"></script>
   <script src="/static/js/settings.js"></script>
   <script src="/static/js/vimnav.js"></script>
+  <!-- ai.js: side-panel AI assistant + nb-edit proposal cards. Loaded
+       after viewer.js (uses NB.viewer.getPath) and before app.js. -->
+  <script src="/static/js/ai.js"></script>
   <!-- activity.js registers the activity-bar views (Explorer, Recent)
        and owns the icon<->panel swap + collapse. Loaded before app.js
        so NB.activity.register() calls during boot land on the live

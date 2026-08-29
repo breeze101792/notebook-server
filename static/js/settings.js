@@ -596,6 +596,7 @@
     catch (e) { authState = null; }
     refreshAuthSection();
     renderTokens();
+    renderAiProviders();
   }
   // --- admin "set" form: live + new + confirm ---
   if (adminNewEl) adminNewEl.addEventListener("input", refreshAdminSetSaveEnabled);
@@ -910,6 +911,216 @@
         setTokensError(e.message || "Failed to create token");
         refreshTokensControls();
       }
+    });
+  }
+
+  /* --- AI providers section -------------------------------------------- */
+  // OpenAI-compatible endpoint profiles for the side-panel assistant.
+  // Admin-only like passwords/tokens: the endpoints + models list comes
+  // from GET /api/ai/config, keys are write-only (a saved profile is
+  // updated by sending a blank key + replaceSecret, which carries the
+  // stored key over server-side). The whole list is replaced on save,
+  // so edits remove rows from a working copy, then one POST commits.
+  const aiCountEl  = document.getElementById("settings-ai-count");
+  const aiListEl   = document.getElementById("settings-ai-list");
+  const aiNameEl   = document.getElementById("settings-ai-name");
+  const aiUrlEl    = document.getElementById("settings-ai-url");
+  const aiModelEl  = document.getElementById("settings-ai-model");
+  const aiKeyEl    = document.getElementById("settings-ai-key");
+  const aiAddBtn   = document.getElementById("settings-ai-add");
+  const aiHelpEl   = document.getElementById("settings-ai-help");
+  const aiErrorEl  = document.getElementById("settings-ai-error");
+
+  let aiProviders = [];      // working copy while the modal is open
+  let aiDefaultName = "";
+
+  function setAiError(msg) {
+    if (!aiErrorEl) return;
+    aiErrorEl.textContent = msg || "";
+    aiErrorEl.hidden = !msg;
+  }
+
+  function refreshAiControls() {
+    if (!aiNameEl || !aiAddBtn) return;
+    const canEdit = isAdmin();
+    [aiNameEl, aiUrlEl, aiModelEl, aiKeyEl].forEach(el => {
+      if (el) el.disabled = !canEdit;
+    });
+    aiAddBtn.disabled = !canEdit ||
+      !aiNameEl.value.trim() || !aiUrlEl.value.trim();
+    if (aiHelpEl) {
+      aiHelpEl.textContent = canEdit
+        ? "Providers for the AI assistant in the left activity bar (✨). Any OpenAI-compatible /v1/chat/completions endpoint works. API keys are stored server-side and never sent to the browser."
+        : "Sign in as admin to configure AI providers.";
+    }
+  }
+
+  function buildAiRow(s) {
+    const row = document.createElement("div");
+    row.className = "settings-row settings-ai-row";
+    row.dataset.name = s.name;
+
+    const label = document.createElement("span");
+    label.className = "settings-label";
+    label.textContent = s.name;
+
+    const meta = document.createElement("span");
+    meta.className = "settings-token-meta";
+
+    const defaultTag = document.createElement("button");
+    defaultTag.type = "button";
+    defaultTag.className = "settings-action settings-ai-default";
+    defaultTag.textContent = s.name === aiDefaultName
+      ? "default" : "make default";
+    defaultTag.disabled = s.name === aiDefaultName;
+    defaultTag.addEventListener("click", async () => {
+      aiDefaultName = s.name;
+      await commitAiProviders("Default provider set to " + s.name);
+    });
+
+    const model = document.createElement("code");
+    model.className = "settings-token-role";
+    model.textContent = s.model || s.baseUrl || "(no model)";
+
+    const keyNote = document.createElement("span");
+    keyNote.className = "settings-token-created";
+    keyNote.textContent = s.hasKey ? "key stored" : "no key";
+
+    const testBtn = document.createElement("button");
+    testBtn.type = "button";
+    testBtn.className = "settings-action";
+    testBtn.textContent = "Test";
+    testBtn.addEventListener("click", async () => {
+      testBtn.disabled = true;
+      const original = testBtn.textContent;
+      testBtn.textContent = "…";
+      try {
+        const r = await NB.api.aiProbe(s.name);
+        testBtn.textContent = r.ok ? "reachable" : "unreachable";
+      } catch (e) {
+        testBtn.textContent = "error";
+      }
+      setTimeout(() => { testBtn.textContent = original; testBtn.disabled = false; },
+                 2000);
+    });
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "settings-action settings-token-revoke";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", async () => {
+      const ok = window.confirm(
+        "Remove provider \"" + s.name + "\" from the AI settings?");
+      if (!ok) return;
+      aiProviders = aiProviders.filter(p => p.name !== s.name);
+      if (aiDefaultName === s.name) aiDefaultName = "";
+      await commitAiProviders("Provider " + s.name + " removed");
+    });
+
+    meta.append(defaultTag, model, keyNote, testBtn, removeBtn);
+    row.append(label, meta);
+    return row;
+  }
+
+  async function commitAiProviders(okMsg) {
+    setAiError("");
+    try {
+      // When editing exists rows over the wire, carry stored keys: a row
+      // we didn't touch keeps hasKey via replaceSecret + blank apiKey.
+      const payload = aiProviders.map(p => ({
+        name: p.name,
+        baseUrl: p.baseUrl,
+        model: p.model || "",
+        apiKey: p.apiKey || "",
+        replaceSecret: p.hasKey === true,
+      }));
+      const cfg = await NB.api.aiSaveConfig(payload, aiDefaultName);
+      aiProviders = (cfg && cfg.servers) || [];
+      aiDefaultName = (cfg && cfg.default) || "";
+      renderAiList();
+      if (okMsg) setAiError("");   // okMsg path shows nothing (no error UI)
+      NB.ai && NB.ai.loadAiConfig && NB.ai.loadAiConfig();
+      return true;
+    } catch (e) {
+      setAiError(e.message || "Failed to save AI providers");
+      return false;
+    }
+  }
+
+  function renderAiList() {
+    if (!aiListEl || !aiCountEl) return;
+    aiCountEl.textContent = String(aiProviders.length);
+    aiListEl.innerHTML = "";
+    for (const p of aiProviders) aiListEl.appendChild(buildAiRow(p));
+  }
+
+  async function renderAiProviders() {
+    if (!aiListEl || !aiCountEl) return;
+    setAiError("");
+    if (!isAdmin()) {
+      aiCountEl.textContent = "—";
+      aiListEl.textContent = "";
+      refreshAiControls();
+      return;
+    }
+    try {
+      const cfg = await NB.api.aiGetConfig();
+      aiProviders = (cfg && cfg.servers) || [];
+      aiDefaultName = (cfg && cfg.default) || "";
+      renderAiList();
+    } catch (e) {
+      aiCountEl.textContent = "—";
+      aiListEl.textContent = "";
+      setAiError(e.message || "Failed to load AI providers");
+    }
+    refreshAiControls();
+  }
+
+  let ai_add_inflight = false;
+  if (aiNameEl) {
+    aiNameEl.addEventListener("input", refreshAiControls);
+    aiUrlEl && aiUrlEl.addEventListener("input", refreshAiControls);
+    aiNameEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !aiAddBtn.disabled) {
+        e.preventDefault();
+        aiAddBtn.click();
+      }
+    });
+  }
+  if (aiAddBtn) {
+    aiAddBtn.addEventListener("click", async () => {
+      if (ai_add_inflight) return;
+      const name = aiNameEl.value.trim();
+      const baseUrl = aiUrlEl.value.trim();
+      const model = document.getElementById("settings-ai-model").value.trim();
+      const apiKey = aiKeyEl.value;
+      if (!name || !baseUrl) return;
+      if (aiProviders.some(p => p.name === name)) {
+        setAiError("A provider named \"" + name + "\" already exists");
+        return;
+      }
+      ai_add_inflight = true;
+      aiAddBtn.disabled = true;
+      // New rows need their key in this same payload (there is no stored
+      // one to carry over -- replaceSecret must be false for them).
+      aiProviders.push({
+        name, baseUrl, model, apiKey,
+        hasKey: apiKey.length > 0,
+      });
+      if (!aiDefaultName) aiDefaultName = name;
+      const ok = await commitAiProviders();
+      if (ok) {
+        aiNameEl.value = "";
+        document.getElementById("settings-ai-url").value = "";
+        aiKeyEl.value = "";
+        setAiError("");
+      } else {
+        // Roll the optimistic row back so the list matches the server.
+        aiProviders = aiProviders.filter(p => p.name !== name);
+        renderAiList();
+      }
+      ai_add_inflight = false;
+      refreshAiControls();
     });
   }
 

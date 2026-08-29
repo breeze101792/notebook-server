@@ -157,9 +157,36 @@ to turn auth back off. Empty `viewer_password` clears the viewer. The
 `GET /api/auth` response is `{enabled, hasAdmin, hasViewer, role}` so
 the UI can render without exposing hashes.
 
+**AI assistant (optional; OpenAI-compatible proxy + reviewable edits).**
+`config/ai.json` (own file so the client-posted config blob can never
+hold secrets) stores `{"servers": [{"name", "base_url", "api_key",
+"model"}], "default"}` — a list of provider profiles. All `/api/ai/*`
+routes are `@admin_required` (open only while auth is off, like every
+other admin route):
+
+- `GET/POST /api/ai/config` — masked profile list (`{"servers": [{"name",
+  "baseUrl", "model", "hasKey"}], "default"}`); the stored API key is
+  NEVER echoed to any client. POSTing a profile with `apiKey: ""` +
+  `replaceSecret: true` carries the previously stored key over server-side
+  (the Settings UI relies on this). Base URLs are normalized on save
+  (trailing slash + `/v1` stripped; `_chat_url()` appends
+  `/v1/chat/completions`).
+- `GET /api/ai/probe?server=<name>` — reachability check; an upstream
+  HTTP error (even 401) counts as "reachable", connection failures return
+  `{ok: false}` with HTTP 200 so the UI never sees a trace.
+- `POST /api/ai/chat` — SSE relay to the chosen provider. Body
+  `{server, messages:[{role,content}]}` (roles validated server-side; the
+  payload is rebuilt from known fields, so extra client keys never reach
+  the provider and the stored `api_key` is attached server-side only).
+  Upstream byte stream is relayed verbatim as `text/event-stream`
+  (GeneratorExit-safe on early client disconnect); upstream HTTP errors
+  are re-emitted in-band as `event: error` / `data: {"error": true,
+  "status", "message"}` frames so the browser can show them.
+
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
-watcher.js → outline.js → sidebar.js → search.js → tabs.js → settings.js → app.js`.
+watcher.js → outline.js → sidebar.js → search.js → tabs.js → settings.js →
+ai.js → activity.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`).
 Module responsibilities:
@@ -185,6 +212,38 @@ Module responsibilities:
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
 - `search.js` — search UI; re-wraps `<<…>>` snippets into `<mark>` via textContent
   (never `innerHTML` on snippet text).
+- `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount
+  host `#ai-view`, `<div id="ai-view" class="side-panel-view" data-view="ai">`
+  in `index.html`). Chat streams through `NB.api.aiChat` (SSE; `api.js` parses
+  OpenAI-style `delta.content` frames). It is an **agentic tool loop**, not a
+  context-free chat:
+
+  - **Four tools** are declared in `systemPrompt()` and called by the model as
+    fenced ` ```nb-tool ` JSON blocks: `list` (tree, auto), `read` (file body,
+    auto), `write` (create **new** file, permission card), `patch` (edit an
+    existing file via a batch of `/api/edit` ops, permission card). Writes on
+    an existing path are blocked client-side ("ask the AI to patch it
+    instead") — overwrite-via-write is not a flow.
+  - **Tool loop**: after each assistant reply, tool calls are executed
+    (list/read immediately, surfaced as `.ai-tool-trace` lines; write/patch as
+    Apply/Reject cards) and their results are fed back as tool-result user
+    messages so the model can continue (`MAX_TOOL_ROUNDS` caps the fan-out;
+    a pending permission card pauses the loop until the user decides).
+  - **Memory**: `ai.js` owns the full transcript (`conversation`: system
+    prompt + user turns + assistant replies + tool outcomes). Every request
+    re-uploads it, so follow-ups keep context without re-reading files.
+    Reject/apply/blocked outcomes are appended via `recordToolOutcome` so the
+    model sees what happened to its proposals. The **Clear** button in the
+    panel header resets the conversation.
+  - Legacy ` ```nb-edit ` single-op blocks still render as patch cards (they
+    target the current file when no path is given); patch tools are previewed
+    client-side via `previewPatch()` (literal find_replace/append/prepend
+    simulation) and applied through `/api/edit`, so the server re-checks every
+    anchor against the CURRENT file — stale/ambiguous finds fail closed with
+    400 and the card turns errored. Applying emits `NB.evt("ai:applied",
+    {path})`; `viewer.js` listens and refreshes its cache (self-save noted to
+    the watcher, no confirm prompt). The tool contract is introduced in
+    `ai.js`'s `systemPrompt()`; server keys live only in `config/ai.json`.
 - `app.js` — bootstrap: loads config (merged over `DEFAULTS`), wires everything,
   drives sidebar/outline collapse + drag-resize (CSS vars `--sidebar-width` /
   `--outline-width`), theme select, font-size scale (CSS var `--font-scale` on
@@ -208,7 +267,13 @@ Module responsibilities:
   per-section Save/Remove buttons that reload the page on success. The
   **API tokens** section (same Security tab) is also admin-only and live:
   it lists/creates/revokes named bearer tokens via `/api/auth/tokens` and
-  shows the full token string exactly once at creation.
+  shows the full token string exactly once at creation. The **AI** tab is
+  the third admin-only live section: it edits the provider profile list
+  (add / make-default / Test / Remove) against `GET/POST /api/ai/config`;
+  editing an existing profile never re-sends its key (blank `apiKey` +
+  `replaceSecret: true` carries the stored one over server-side), and
+  every commit also refreshes the side-panel picker via
+  `NB.ai.loadAiConfig()`.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,
@@ -229,12 +294,16 @@ those at import time and calls `seed()`), so the project's real `notebook/` /
 `TestAuth` writes a custom `auth.json` after `super().setUp()` and resets
 `nb._login_failures` between tests so the rate limiter doesn't leak across them.
 
-Frontend tests (`tests/dom/test_dom.js`) load the real vendor bundles and all eleven
-app modules into a jsdom window, stub `fetch`/`matchMedia`/`prompt`, then drive the
-app by dispatching real DOM events (`DOMContentLoaded`, click, input, mousemove).
-The fetch stub defaults to `authEnabled=false` so the login modal stays closed for
-the existing tests; a dedicated `== auth ==` block flips the flags and exercises
-the full login/logout flow + the 401 → `auth:required` event path. When
-adding frontend behavior, extend this harness rather than adding a separate runner —
-the ordering and stubs (e.g. `getBoundingClientRect` overrides for drag-resize) are
-load-bearing for the assertions.
+Frontend tests (`tests/dom/test_dom.js`) load the real vendor bundles and all
+app modules into a jsdom window, stub `fetch`/`matchMedia`/`prompt`, then drive
+the app by dispatching real DOM events (`DOMContentLoaded`, click, input,
+mousemove). The fetch stub defaults to `authEnabled=false` so the login modal
+stays closed for the existing tests; a dedicated `== auth ==` block flips the
+flags and exercises the full login/logout flow + the 401 → `auth:required`
+event path. The `== ai ==` block queues canned SSE streams in `aiChatStreams`
+(the `/api/ai/chat` stub plays them through a `ReadableStream`) and needs the
+`TextEncoder`/`TextDecoder`/`ReadableStream` window stubs installed near the
+top of the harness. When adding frontend behavior, extend this harness rather
+than adding a separate runner — the ordering and stubs (e.g.
+`getBoundingClientRect` overrides for drag-resize) are load-bearing for the
+assertions.

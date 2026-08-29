@@ -686,9 +686,35 @@
     t.savedContent = fresh.content;
     t.editMode = false;
     showPreview = true;  // reset for next edit session
-    if (wasActive) { showViewer(); render(); }
+    if (wasActive) {
+      showViewer();
+      // In case the fresh copy came from data (conditional GET didn't run
+      // -- e.g. some callers pass pre-fetched data), mirror into the CM6
+      // editor if edit mode had been active. endEdit() semantics.
+      if (NB.cmEditor && t.content !== undefined) NB.cmEditor.setValue(t.content);
+      render();
+    }
     NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     NB.evt.emit("viewer:conflict", { path, conflict: false });
+  });
+
+  /* AI proposal applied (ai.js wrote via POST /api/edit and the watcher
+   * is about to fire file:external-change for the same path). Bypass the
+   * "changed on disk" confirm -- the user just clicked Apply on this
+   * very change. Fresh data arrives in the event payload. */
+  NB.evt.on("ai:applied", ({ path, data }) => {
+    const t = cache.get(path);
+    if (!t) return;
+    if (NB.watcher) NB.watcher.noteSelfSave(path);
+    if (data) {
+      t.content = data.content;
+      t.savedContent = data.content;
+      t.mtime = data.mtime;
+      if (NB.watcher) NB.watcher.noteOpened(path, data.mtime);
+      const wasActive = (active === path);
+      if (wasActive) { showViewer(); render(); }
+      NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
+    }
   });
 
   /* In-app link interception. A Markdown link like

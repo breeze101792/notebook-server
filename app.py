@@ -7,6 +7,7 @@ config/ -- two separate folders by design.
 """
 
 import argparse
+import dataclasses
 import fnmatch
 import json
 import os
@@ -15,9 +16,11 @@ import secrets
 import shutil
 import socket
 import time
+import urllib.error
+import urllib.request
 
 import bcrypt
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, Response, jsonify, render_template, request, session
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
@@ -974,6 +977,312 @@ def auth_tokens_delete(name):
     auth["tokens"] = remaining
     save_auth(auth)
     return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------- #
+# AI assistant (OpenAI-compatible chat proxy + client-key config)
+# --------------------------------------------------------------------------- #
+# The browser talks only to this server; this server relays chat to any
+# OpenAI-compatible /v1/chat/completions endpoint. The API key lives in
+# config/ai.json (never inside config.json -- that blob is POSTable by any
+# authed client and would leak it) and never leaves the server: GET
+# /api/ai/config masks it to a boolean before responding.
+#
+# Streaming is relayed verbatim as SSE (text/event-stream), byte by byte,
+# so no upstream chunk is ever buffered whole -- a 4096-token answer paints
+# progressively just like talking to the provider directly.
+AI_FILE = os.path.join(CONFIG_DIR, "ai.json")
+
+
+@dataclasses.dataclass
+class Upstream:
+    """One saved OpenAI-compatible endpoint (config/ai.json "servers")."""
+    name: str
+    base_url: str
+    api_key: str = ""
+    model: str = ""
+
+
+def load_ai_config():
+    """Read config/ai.json, always returning a well-formed dict.
+
+    Shape: {"default": "name-or-empty",
+            "servers": [{"name": str, "base_url": str,
+                         "api_key": str, "model": str}, ...]}
+    Corrupt or missing files degrade to empty config -- never a crash.
+    """
+    try:
+        with open(AI_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_ai_config(data):
+    """Persist the AI settings atomically (same temp+replace as auth.json)."""
+    with open(AI_FILE + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(AI_FILE + ".tmp", AI_FILE)
+
+
+def _sanitize_server(raw, index):
+    """Validate one server entry from a POST body; returns a clean dict or
+    raises ValueError with a precise message."""
+    if not isinstance(raw, dict):
+        raise ValueError("servers[%d] must be an object" % index)
+    name = raw.get("name")
+    base_url = raw.get("baseUrl")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("servers[%d].name must be a non-empty string" % index)
+    if not isinstance(base_url, str) or not base_url.strip():
+        raise ValueError("servers[%d].baseUrl must be a non-empty string" % index)
+    name = name.strip()
+    if len(name) > 60:
+        raise ValueError("servers[%d].name is longer than 60 chars" % index)
+    base_url = base_url.strip()
+    if not base_url.lower().startswith(("http://", "https://")):
+        raise ValueError("servers[%d].baseUrl must be an http(s) URL" % index)
+    # Strip a trailing slash AND a trailing /v1 so clients can paste either
+    # form (https://api.openai.com or https://api.openai.com/v1); _chat_url
+    # appends the canonical path.
+    base_url = base_url.rstrip("/")
+    if base_url.lower().endswith("/v1"):
+        base_url = base_url[:-3]
+    if len(base_url) > 300:
+        raise ValueError("servers[%d].baseUrl is longer than 300 chars" % index)
+    api_key = raw.get("apiKey", "")
+    if api_key is None:
+        api_key = ""
+    if not isinstance(api_key, str):
+        raise ValueError("servers[%d].apiKey must be a string" % index)
+    # Empty apiKey + replaceSecret means "keep the stored one": lets the
+    # settings UI save a profile without re-typing the key every time.
+    if api_key == "" and raw.get("replaceSecret"):
+        stored = load_ai_config()
+        for s in stored.get("servers") or []:
+            if isinstance(s, dict) and s.get("name") == name:
+                api_key = s.get("api_key") or ""
+                break
+    if len(api_key) > 500:
+        raise ValueError("servers[%d].apiKey is longer than 500 chars" % index)
+    model = raw.get("model", "")
+    if model is None:
+        model = ""
+    if not isinstance(model, str):
+        raise ValueError("servers[%d].model must be a string" % index)
+    return {"name": name, "base_url": base_url,
+            "api_key": api_key, "model": model.strip()}
+
+
+def _public_ai_config():
+    """Config safe for the browser: booleans instead of secrets.
+
+    The stored api_key is NEVER echoed back -- the settings UI re-sends
+    replaceSecret to keep it, so a stolen config response can't be replayed.
+    """
+    data = load_ai_config()
+    servers = []
+    for s in data.get("servers") or []:
+        if not isinstance(s, dict):
+            continue
+        servers.append({
+            "name": s.get("name", ""),
+            "baseUrl": s.get("base_url", ""),
+            "model": s.get("model", ""),
+            "hasKey": bool(s.get("api_key")),
+        })
+    return {"servers": servers, "default": data.get("default", "")}
+
+
+def _saved_server(name):
+    """Fetch one stored server profile by its exact name, or None."""
+    for s in load_ai_config().get("servers") or []:
+        if isinstance(s, dict) and s.get("name") == name:
+            return s
+    return None
+
+
+def _chat_url(base_url):
+    """Normalize a saved base_url into the full chat-completions endpoint.
+
+    Base URLs are stored without a trailing /v1 (sanitized on save), so the
+    canonical path is appended here. Some servers need a distinct prefix;
+    the user can put it in the base_url (e.g. .../v1/openai) and it flows
+    through unchanged.
+    """
+    base = (base_url or "").rstrip("/")
+    if base.lower().endswith("/v1"):
+        base = base[:-3]
+    return base + "/v1/chat/completions" if base else ""
+
+
+def _sse_bytes(chunks):
+    """Join upstream byte chunks into one bytes object (tests, not prod)."""
+    return b"".join(chunks)
+
+
+@app.route("/api/ai/config", methods=["GET"])
+@admin_required
+def ai_config_get():
+    """Masked view of the saved AI provider profiles (admin-only:
+    a viewer must not even learn which endpoints + models are set)."""
+    return jsonify(_public_ai_config())
+
+
+@app.route("/api/ai/config", methods=["POST"])
+@admin_required
+def ai_config_post():
+    """Replace the saved provider profiles wholesale.
+
+    Body: {"servers": [{name, baseUrl, apiKey?, model, replaceSecret?},
+    ...], "default": "<name>"}. The list replaces the stored one but
+    entries whose apiKey is "" + replaceSecret:true carry over the
+    previously stored key, so the UI can round-trip profiles without
+    echoing secrets back through the browser.
+    """
+    data, error = expect_json("servers")
+    if error:
+        return error
+    servers_in = data.get("servers", [])
+    default = data.get("default", "")
+    if not isinstance(servers_in, list):
+        return err("servers must be a list", 400)
+    if not isinstance(default, str):
+        return err("default must be a string", 400)
+    cleaned = []
+    seen = set()
+    for i, raw in enumerate(servers_in):
+        try:
+            clean = _sanitize_server(raw, i)
+        except ValueError as exc:
+            return err(str(exc), 400)
+        if any(s["name"] == clean["name"] for s in cleaned):
+            return err("duplicate server name: %s" % clean["name"], 400)
+        seen.add(clean["name"])
+        cleaned.append(clean)
+    if default and default not in seen:
+        return err("default is not one of the server names", 400)
+    try:
+        save_ai_config({"servers": cleaned, "default": default})
+    except OSError as exc:
+        return err("Could not write AI config: %s" % exc, 500)
+    return jsonify(_public_ai_config())
+
+
+@app.route("/api/ai/probe", methods=["GET"])
+@admin_required
+def ai_probe():
+    """Server-side reachability check for one saved provider.
+
+    GET /api/ai/probe?server=<name>. A no-key 401 from the upstream is a
+    SUCCESS here (the ask is 'can this server reach me', not 'is my key
+    valid') so a user can verify a LAN ollama before pasting credentials.
+    Everything is wrapped so an unroutable host errors cleanly instead of
+    hanging the request thread.
+    """
+    name = (request.args.get("server") or "").strip()
+    if not name:
+        return err("Missing server parameter", 400)
+    stored = _saved_server(name)
+    if stored is None:
+        return err("Unknown server: %s" % name, 404)
+    url = _chat_url(stored.get("base_url", ""))
+    if not url:
+        return err("Server has no base URL", 400)
+    payload = json.dumps({
+        "model": "probe",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+        "stream": False,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Accept": "application/json",
+                 **_upstream_auth_headers(stored)})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return jsonify({"ok": True, "status": resp.status})
+    except urllib.error.HTTPError as exc:
+        # The endpoint lives and answered -- that's what "probe" asks.
+        return jsonify({"ok": True, "status": exc.code})
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 200
+
+
+@app.route("/api/ai/chat", methods=["POST"])
+@admin_required
+def ai_chat():
+    """Stream a chat completion through the saved upstream as SSE.
+
+    Body: {"server": "<profile name>", "messages": [{role, content}, ...]}.
+    The chosen profile's apiKey is attached server-side; the browser
+    never sees it. The upstream SSE byte stream is relayed unmodified with
+    Content-Type: text/event-stream (this endpoint IS the upstream body).
+    """
+    stored = _saved_server((request.get_json(silent=True) or {}).get("server", ""))
+    if stored is None:
+        return err("Unknown or missing server", 400)
+    url = _chat_url(stored.get("base_url", ""))
+    if not url:
+        return err("Server has no baseUrl configured", 400)
+    data = request.get_json()
+    messages = data.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return err("messages must be a non-empty list", 400)
+    for m in messages:
+        if (not isinstance(m, dict) or m.get("role") not in ("system", "user", "assistant")
+                or not isinstance(m.get("content"), str)):
+            return err("messages entries must be {role: system|user|assistant, content: str}",
+                       400)
+    # White-list the upstream payload: the browser's "server" selector and
+    # any extra keys must not leak through to the provider.
+    payload_body = {"model": stored.get("model") or "default",
+                    "messages": messages, "stream": True}
+    payload = json.dumps(payload_body).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Accept": "text/event-stream",
+                 **_upstream_auth_headers(stored)})
+
+    def relay():
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                # Relay raw bytes as they arrive; no buffering, no parsing.
+                while True:
+                    chunk = resp.read(1024)
+                    if not chunk:
+                        break
+                    yield chunk
+        except GeneratorExit:
+            # Browser closed the connection mid-stream (stop button,
+            # tab close). Abort the upstream read without turning the
+            # normal disconnect into an error banner.
+            raise
+        except urllib.error.HTTPError as exc:
+            # Upstream auth/model errors surface as SSE so the browser's
+            # onmessage path shows them inline (EventSource can't read
+            # non-200 statuses itself). The "error" flag is what the
+            # client keys on; message/status carry the specifics.
+            detail = exc.read(2048).decode("utf-8", "replace")
+            yield "event: error\ndata: %s\n\n" % json.dumps(
+                {"error": True, "status": exc.code,
+                 "message": detail[:1500]})
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            yield "event: error\ndata: %s\n\n" % json.dumps(
+                {"error": True, "status": 0, "message": str(exc)})
+
+    return Response(relay(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-store",
+                             "X-Accel-Buffering": "no"})
+
+
+def _upstream_auth_headers(stored):
+    """Auth headers for the upstream, from the profile's stored key."""
+    key = stored.get("api_key") or ""
+    return {"Authorization": "Bearer " + key} if key else {}
 
 
 # --------------------------------------------------------------------------- #
