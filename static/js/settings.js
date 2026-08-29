@@ -810,7 +810,7 @@
     tokensCreateBtn.disabled = !canEdit || tokensNameEl.value.trim().length === 0;
     if (tokensHelpEl) {
       tokensHelpEl.textContent = canEdit
-        ? "Bearer tokens let agents and scripts call the API without a browser session. See the agent guide at /agent."
+        ? "Bearer tokens let agents and scripts call the API without a browser session. See the agent guide at /agent.md."
         : "Sign in as admin to manage API tokens.";
     }
   }

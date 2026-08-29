@@ -107,7 +107,7 @@ ensure-exists that never clobbers; optional `content` seeds new files),
 `/api/move`, `/api/copy` (both take `onConflict: error|skip|overwrite`;
 absent-destination file moves use atomic link+unlink, copies use exclusive
 create), `/api/delete`, `/api/search`, `/api/graph`; plus the ungated
-`/agent` page, which serves the project-root `agent.md` verbatim as
+`/agent.md` route, which serves the project-root `agent.md` verbatim as
 text/markdown with the current auth state substituted into a
 `{{auth_state}}` placeholder — a machine-readable API guide for AI agents,
 maintained as a normal Markdown file (documentation only — no data — so

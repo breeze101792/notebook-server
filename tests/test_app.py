@@ -1843,7 +1843,7 @@ class TestApiTokens(BaseTest):
 
 
 class TestAgentGuide(BaseTest):
-    """/agent: the machine-oriented API guide for AI agents/scripts.
+    """/agent.md: the machine-oriented API guide for AI agents/scripts.
 
     The guide is plain Markdown (agent.md in the project root) served
     verbatim as text/markdown with the auth state substituted into a
@@ -1854,7 +1854,7 @@ class TestAgentGuide(BaseTest):
     """
 
     def test_serves_markdown_with_key_sections(self):
-        r = self.client.get("/agent")
+        r = self.client.get("/agent.md")
         self.assertEqual(r.status_code, 200)
         self.assertIn("text/markdown", r.headers["Content-Type"])
         body = r.get_data(as_text=True)
@@ -1874,12 +1874,20 @@ class TestAgentGuide(BaseTest):
             "/api/auth/tokens",
             "ifModifiedSince",
         ):
-            self.assertIn(marker, body, "missing %r on /agent page" % marker)
+            self.assertIn(marker, body, "missing %r on /agent.md page" % marker)
+
+    def test_old_agent_url_falls_through_to_spa(self):
+        # The guide moved from /agent to /agent.md; the bare /agent path
+        # is no longer an API route, so it lands on the SPA catch-all.
+        r = self.client.get("/agent")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/html", r.headers["Content-Type"])
+        self.assertNotIn("Agent Guide", r.get_data(as_text=True))
 
     def test_auth_state_placeholder_substituted(self):
         # The {{auth_state}} marker must never leak to clients; the
         # served text carries the rendered state instead.
-        r = self.client.get("/agent")
+        r = self.client.get("/agent.md")
         body = r.get_data(as_text=True)
         self.assertNotIn("{{auth_state}}", body)
         self.assertIn("disabled", body)   # no auth.json in BaseTest setUp
@@ -1887,7 +1895,7 @@ class TestAgentGuide(BaseTest):
     def test_guide_not_cached_and_no_secrets(self):
         # The rendered auth state changes with config, so the response
         # must not be cacheable; and it must never contain hashes.
-        r = self.client.get("/agent")
+        r = self.client.get("/agent.md")
         self.assertEqual(r.headers.get("Cache-Control"), "no-store")
         self.assertNotIn("admin_password_hash", r.get_data(as_text=True))
 
@@ -1899,14 +1907,14 @@ class TestAgentGuide(BaseTest):
                 "admin_password_hash": _bcrypt.hashpw(
                     b"admin-pw", _bcrypt.gensalt(4)).decode(),
             }, f)
-        r = self.client.get("/agent")
+        r = self.client.get("/agent.md")
         self.assertEqual(r.status_code, 200,
             "the guide must stay reachable without credentials so an "
             "unauthenticated agent can learn how to authenticate")
 
     def test_notice_reflects_auth_state(self):
         # Auth off -> the notice says so; on -> it warns requests will 401.
-        body_off = self.client.get("/agent").get_data(as_text=True)
+        body_off = self.client.get("/agent.md").get_data(as_text=True)
         self.assertIn("disabled", body_off)
         import bcrypt as _bcrypt
         with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
@@ -1915,7 +1923,7 @@ class TestAgentGuide(BaseTest):
                 "admin_password_hash": _bcrypt.hashpw(
                     b"admin-pw", _bcrypt.gensalt(4)).decode(),
             }, f)
-        body_on = self.client.get("/agent").get_data(as_text=True)
+        body_on = self.client.get("/agent.md").get_data(as_text=True)
         self.assertIn("enabled", body_on)
 
 

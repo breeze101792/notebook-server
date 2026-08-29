@@ -54,7 +54,7 @@ Python deps are pinned in `requirements.txt`: Flask 3.0 and bcrypt.
 
 ```
 app.py                Flask backend, all routes under /api/*
-agent.md              agent guide served at /agent (plain Markdown, easy to edit)
+agent.md              agent guide served at /agent.md (plain Markdown, easy to edit)
 start.sh              per-host venv bootstrap + launcher
 requirements.txt      Python dependencies
 notebook.template/    starter notebook (copied into notebook/ on first run)
@@ -82,7 +82,7 @@ redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 All endpoints return JSON. `GET /` serves the single-page app. Gated
 read responses set `Cache-Control: no-store, private` so a previously-
 authorized browser can't keep showing the content after the auth state
-tightens. AI agents and scripts should read `GET /agent` — it serves
+tightens. AI agents and scripts should read `GET /agent.md` — it serves
 `agent.md` (this repo's plain-Markdown agent guide) with the current
 auth state filled in.
 

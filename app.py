@@ -40,7 +40,7 @@ AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
 # new users see something useful on first launch.
 TEMPLATE_DIR = os.path.join(BASE_DIR, "notebook.template")
 # The agent guide lives at the project root as plain Markdown (easy to
-# read and maintain) and is served verbatim at /agent with the current
+# read and maintain) and is served verbatim at /agent.md with the current
 # auth state substituted into a placeholder.
 AGENT_GUIDE_FILE = os.path.join(BASE_DIR, "agent.md")
 
@@ -977,12 +977,12 @@ def auth_tokens_delete(name):
 
 
 # --------------------------------------------------------------------------- #
-# Routes: agent guide (/agent, served from agent.md)
+# Routes: agent guide (/agent.md, served from agent.md)
 # --------------------------------------------------------------------------- #
 _AUTH_STATE_PLACEHOLDER = "{{auth_state}}"
 
 
-@app.route("/agent", methods=["GET"])
+@app.route("/agent.md", methods=["GET"])
 def agent_guide():
     """Machine-oriented API guide for AI agents and scripts.
 

@@ -2,7 +2,7 @@
 
 A single-user Markdown notebook over a JSON HTTP API. Every response is JSON
 (except this page). This document describes everything an AI agent or script
-needs to read, search, and edit the notebook. It is served at `/agent` with
+needs to read, search, and edit the notebook. It is served at `/agent.md` with
 the auth-state line below filled in at request time; edit this file
 (`agent.md` in the project root) to change what agents see.
 
