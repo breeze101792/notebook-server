@@ -2391,7 +2391,7 @@ body[data-theme="light"] #viewer-content {
   gap: 10px;
 }
 
-.ai-msg { display: flex; flex-direction: column; min-width: 0; }
+.ai-msg { display: flex; flex-direction: column; min-width: 0; flex: 0 0 auto; }
 .ai-msg-user { align-items: flex-end; }
 .ai-msg-assistant { align-items: stretch; }
 .ai-user-text {
@@ -2495,12 +2495,18 @@ body[data-theme="light"] #viewer-content {
 }
 
 /* --- edit card ----------------------------------------------------- */
+/* The card is a flex item of the .ai-chat-log column (tool-loop cards
+ * are appended straight to the log, not inside a bubble). overflow:
+ * hidden makes its automatic minimum size 0, so a full log would
+ * flex-shrink it away and hide Apply/Reject; flex: 0 0 auto pins it to
+ * content height and lets the log scroll instead. */
 .ai-edit-card {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-elev);
   overflow: hidden;
   margin: 2px 0;
+  flex: 0 0 auto;
 }
 .ai-edit-card.applying { opacity: .7; }
 .ai-edit-card.ok { border-color: var(--ok); }
@@ -2584,6 +2590,12 @@ body[data-theme="light"] #viewer-content {
   overflow-x: auto;
   max-height: 260px;
   overflow-y: auto;
+  /* The permission window stays at least ~10 lines tall even for a tiny
+   * diff. The .ai-msg non-shrink rule pairs with this: because the card
+   * never flexes down, its Apply/Reject row is never clipped by the
+   * card's overflow:hidden, and a too-tall card is scrolled by the chat
+   * log instead. */
+  min-height: calc(1.55em * 10);
 }
 .diff-row {
   display: grid;

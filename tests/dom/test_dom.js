@@ -7953,6 +7953,96 @@ function check(label, cond, extra) {
     FILES[WRITE_PATH] === "# New note\n\npatched by the AI\n",
     String(FILES[WRITE_PATH]).slice(0, 40));
 
+  // --- Permission card visibility when the log is full -----------------
+  // Regression: the tool loop appended write/patch cards WITHOUT
+  // scrolling the log, then stopped (the user must decide), so with a
+  // long history the card sat below the fold and the loop looked
+  // stuck. The card could also be flex-crushed to ~0px: .ai-edit-card
+  // has overflow:hidden, so as a direct flex item of .ai-chat-log its
+  // automatic minimum size is 0 and a full log shrank it away. jsdom
+  // has no layout engine, so the scroll is observed with a scrollTop
+  // spy on the log instance (the same instance-override pattern the
+  // drag tests use for getBoundingClientRect): every scrollLog() write
+  // records what the log's last child was at that moment.
+  {
+    const log = window.document.getElementById("ai-chat-log");
+    const scrollWrites = [];
+    let logTop = log.scrollTop;
+    Object.defineProperty(log, "scrollTop", {
+      configurable: true,
+      get() { return logTop; },
+      set(v) {
+        logTop = v;
+        const last = log.lastElementChild;
+        // preDiff: the write happened before the card's async diff
+        // preview landed. Only the append-time scroll qualifies -- the
+        // wasFollowing re-scroll after the diff insert also writes, but
+        // by then the card already contains .ai-diff.
+        scrollWrites.push(last ? {
+          cls: last.className,
+          preDiff: !last.querySelector(".ai-diff"),
+        } : null);
+      },
+    });
+    const cardTimeScrolls = (re) => scrollWrites.filter(w =>
+      w && re.test(w.cls) && w.preDiff);
+
+    // The log already holds every prior turn (bubbles, traces, cards),
+    // i.e. the "history fills the panel" precondition. Patch tool call:
+    aiChatStreams.push([
+      sseFrame("Sure, one more.\n\n```nb-tool\n" + JSON.stringify({
+        tool: "patch", path: "notes/a.md",
+        edits: [{ op: "find_replace", find: "TODO fixed by the AI.",
+                  replace_with: "TODO double-fixed.", count: 1 }] }) + "\n```"),
+    ]);
+    aiInput().value = "one more fix please";
+    aiSend();
+    await tick(120);
+
+    const pendCard = lastCard();
+    check("ai: patch card after long history renders with Apply/Reject",
+      pendCard && pendCard.dataset.testPatchCard === "1" &&
+      !!pendCard.querySelector(".ai-edit-actions .ai-apply") &&
+      !!pendCard.querySelector(".ai-edit-actions .ai-reject"),
+      pendCard ? pendCard.dataset.op : "none");
+    check("ai: appending a permission card scrolls the log to it",
+      cardTimeScrolls(/ai-edit-card/).length > 0,
+      "card-time scrolls=" + cardTimeScrolls(/ai-edit-card/).length);
+    // The buttons stay wired: rejecting resolves the pending state.
+    pendCard.querySelector(".ai-reject").dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }));
+    await tick(30);
+    check("ai: card buttons still work after the visibility fix",
+      pendCard.classList.contains("rejected") &&
+      !pendCard.querySelector(".ai-edit-actions"),
+      "");
+
+    // Write cards take the same append path (and have no async
+    // fallback scroll at all), so any scroll recorded while the write
+    // card is the last child must be the append-time one.
+    aiChatStreams.push([
+      sseFrame("```nb-tool\n" + JSON.stringify({
+        tool: "write", path: "notes/vis-check.md",
+        content: "# Visibility check\n" }) + "\n```"),
+    ]);
+    aiInput().value = "draft a note";
+    aiSend();
+    await tick(120);
+    check("ai: write card append also scrolls the log",
+      scrollWrites.some(w => w && /ai-write-card/.test(w.cls)),
+      "");
+    check("ai: pending write card did not create the file",
+      FILES["notes/vis-check.md"] === undefined, "");
+
+    // CSS guard: .ai-edit-card must never flex-shrink inside the log
+    // (style.css regex, same approach as the mermaid style checks).
+    check("ai: .ai-edit-card cannot be flex-crushed by a full log",
+      /\.ai-edit-card\s*\{[^}]*flex:\s*0 0 auto/.test(read("static/css/style.css")),
+      ".ai-edit-card rule present in style.css");
+
+    delete log.scrollTop;   // restore the prototype accessor
+  }
+
   // --- Clear button resets conversation --------------------------------
   aiChatStreams.length = 0;
   window.document.querySelector("#ai-view .ai-clear")

@@ -464,6 +464,14 @@
     (async () => {
       try {
         const data = await NB.api.getFile(t.path);
+        // The card is in the DOM by now (the caller appends it after
+        // makePatchCard returns; the await above let that happen), so the
+        // log can be found. Whether to keep following the bottom is
+        // decided BEFORE the insert: the diff grows the card by up to
+        // ~260px, which by itself moves the log away from "near bottom".
+        const log = card.closest(".ai-chat-log");
+        const wasFollowing = !log ||
+          (log.scrollHeight - log.scrollTop - log.clientHeight < 80);
         const preview = previewPatch(data.content || "", t.edits);
         if (preview !== null) {
           const diff = buildDiffEl(data.content || "", preview);
@@ -476,6 +484,7 @@
             (t.edits.length === 1 ? "" : "s") + " · preview unavailable (applied atomically)";
           card.insertBefore(note, card.querySelector(".ai-edit-actions"));
         }
+        if (wasFollowing && log) scrollLog(log);
       } catch (_) { /* no preview */ }
     })();
     return card;
@@ -632,13 +641,20 @@
     return null;
   }
 
+  /* write/patch become permission cards and resolve through their
+   * buttons. The append scrolls the log like every other append: the
+   * loop STOPS here until the user decides, so the card must land on
+   * screen -- with a long history it would otherwise sit below the
+   * fold and the turn would look stuck. */
   function runPendingTool(t, logEl) {
     if (t.tool === "patch") {
       logEl.appendChild(makePatchCard(t));
+      scrollLog(logEl);
       return "asked-permission";
     }
     if (t.tool === "write") {
       logEl.appendChild(makeWriteCard(t));
+      scrollLog(logEl);
       return "asked-permission";
     }
     return null;
