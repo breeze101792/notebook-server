@@ -16,6 +16,11 @@
 
   const barEl = document.getElementById("tab-bar");
   const menuEl = document.getElementById("tab-context-menu");
+  // The outline toggle icon lives in the same bar. render() clears the bar
+  // with innerHTML, which would destroy this node, so we hold a reference
+  // and re-append it after every render. It's styled to stick to the right
+  // edge (see .outline-toggle) so open file tabs scroll under it.
+  const outlineToggleEl = barEl && barEl.querySelector("#outline-toggle");
   const ordered = [];          // [path] in display order (pinned tabs first)
   const openSet = new Set();   // path membership
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)
@@ -127,6 +132,8 @@
       tab.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(path, e); });
       barEl.appendChild(tab);
     });
+    // Keep the pinned outline toggle on the right edge after the re-render.
+    if (outlineToggleEl) barEl.appendChild(outlineToggleEl);
   }
 
   function emitChanged() {

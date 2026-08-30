@@ -107,7 +107,12 @@
       </aside>
 
       <section id="editor-pane">
-        <div id="tab-bar" class="tab-bar"></div>
+        <div id="tab-bar" class="tab-bar">
+          <!-- Outline toggle icon: shows/hides the right-side pane. Pinned
+               to the right edge of the tab bar, independent of the open
+               file tabs (which render into the same bar on boot). -->
+          <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
         <div id="edit-bar" class="edit-bar" hidden>
           <button class="eb" data-act="h1"     title="Heading 1">H1</button>
           <button class="eb" data-act="h2"     title="Heading 2">H2</button>
@@ -234,7 +239,6 @@
           <button class="collapse-btn" id="outline-collapse" title="Collapse outline (right arrow)">›</button>
         </div>
         <div id="outline" class="outline"></div>
-        <button class="expand-btn" id="outline-expand" title="Show outline" hidden>‹</button>
       </aside>
     </main>
   </div>

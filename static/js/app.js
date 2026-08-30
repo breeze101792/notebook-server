@@ -72,9 +72,9 @@
   // bar's icons are the re-expand affordance, so the panel itself hides
   // completely instead of leaving a thin strip.
   const PANEL_COLLAPSED_W = 0;
-  // The outline pane has no activity-bar icon, so it keeps a thin strip
-  // to click for re-expanding.
-  const OUTLINE_COLLAPSED_W = 12;
+  // The outline pane's visibility is toggled from the tab-bar icon, so it
+  // hides completely (width 0) when collapsed -- no thin strip.
+  const OUTLINE_COLLAPSED_W = 0;
 
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
@@ -372,8 +372,15 @@
     }
     document.getElementById("outline-collapse").addEventListener("click",
       () => { cfg.outlineCollapsed = true; applyOutlineState(); persistConfig(); });
-    document.getElementById("outline-expand").addEventListener("click",
-      () => { cfg.outlineCollapsed = false; applyOutlineState(); persistConfig(); });
+    // Tab-bar icon toggles the right outline pane on/off (collapse =
+    // hide the pane completely to 0 width; there's no thin strip to
+    // re-expand it). Mirrors how the activity-bar icon toggles the left
+    // side panel, giving both panes one persistent visibility control.
+    document.getElementById("outline-toggle").addEventListener("click", () => {
+      cfg.outlineCollapsed = !cfg.outlineCollapsed;
+      applyOutlineState();
+      persistConfig();
+    });
 
     // App-level keyboard shortcuts (active when VIM mode is off; see
     // static/js/shortcuts.js). The module owns the keydown listener

@@ -378,6 +378,20 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   scrollbar-width: thin;
 }
 
+/* Outline toggle icon pinned to the right edge of the tab bar. Sticky to
+ * `right: 0` inside the scrollable bar, so it stays visible above the
+ * open file tabs even when they overflow. Keeps the tab bar its only
+ * control for showing/hiding the right outline pane. */
+.outline-toggle {
+  align-self: center;
+  margin-left: auto;
+  position: sticky;
+  right: 0;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  padding: 2px 6px;
+}
+
 /* Edit bar: a thin row of formatting buttons that sits between the tab
  * bar and the textarea. Hidden by default; viewer.js shows it on
  * startEdit(). The [hidden] attribute is the source of truth -- a class

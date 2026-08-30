@@ -191,7 +191,9 @@ const html = `<!DOCTYPE html><html><head>
         <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
       </aside>
       <section id="editor-pane">
-        <div id="tab-bar" class="tab-bar"></div>
+        <div id="tab-bar" class="tab-bar">
+          <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
         <div id="edit-bar" class="edit-bar" hidden>
           <button class="eb" data-act="bold">B</button>
           <button class="eb" data-act="italic">I</button>
@@ -279,7 +281,6 @@ const html = `<!DOCTYPE html><html><head>
         <div class="panel-header"><span class="panel-title">Outline</span>
           <button class="collapse-btn" id="outline-collapse" title="Collapse outline">›</button></div>
         <div id="outline" class="outline"></div>
-        <button class="expand-btn" id="outline-expand" title="Show outline" hidden>‹</button>
       </aside>
     </main>
   </div>
@@ -2638,12 +2639,12 @@ function check(label, cond, extra) {
   await tick(10);
   check("left sidebar .collapsed removed", !$("side-panel").classList.contains("collapsed"));
   check("left sidebar width restored (240px)", cssVar("--side-panel-width") === "240px", cssVar("--side-panel-width"));
-  // right outline
-  click("outline-collapse");
+  // right outline: toggled from the tab-bar icon (no strip button now)
+  click("outline-toggle");
   await tick(10);
   check("outline gets .collapsed", $("outline-pane").classList.contains("collapsed"));
-  check("outline width -> 12px", cssVar("--outline-width") === "12px", cssVar("--outline-width"));
-  click("outline-expand");
+  check("outline width -> 0px", cssVar("--outline-width") === "0px", cssVar("--outline-width"));
+  click("outline-toggle");
   await tick(10);
   check("outline .collapsed removed", !$("outline-pane").classList.contains("collapsed"));
   check("outline width restored (220px)", cssVar("--outline-width") === "220px", cssVar("--outline-width"));
