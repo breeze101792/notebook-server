@@ -541,6 +541,14 @@
     canGoForward() { return redoStack.length > 0; },
 
     async save() {
+      // Hybrid (WYSIWYG) mode sits on top of preview mode, so editMode
+      // is false while it's active. Let the hybrid module own the save
+      // (it converts the DOM back to Markdown). The keyboard shortcut
+      // (Ctrl+S / vim s / :w) routes here, so this delegation is what
+      // makes the shortcut save while hybrid-editing.
+      if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
+        return NB.hybrid.save();
+      }
       const t = cur();
       if (!t) { alert("No file open."); return; }
       if (!t.editMode) return;                 // no toolbar in preview mode
@@ -563,6 +571,22 @@
       } catch (_) { /* non-fatal; the file did save */ }
       NB.evt.emit("viewer:dirty-changed", { path: active, dirty: false });
       NB.evt.emit("file:saved", active);
+    },
+
+    /* Another module (the AI assistant, or hybrid/WYSIWYG mode) wrote
+     * the file and wants the viewer's cache refreshed so the next render
+     * shows the fresh content. Mirrors the ai:applied event handler but
+     * takes the already-converted content instead of an async refetch,
+     * so hybrid save -> exit re-renders the saved bytes, not the stale
+     * cache. Also marks the write as a self-save so the watcher swallows
+     * its echo. */
+    noteSaved(path, content) {
+      const t = cache.get(path);
+      if (!t) return;
+      t.content = content;
+      t.savedContent = content;
+      if (NB.watcher) NB.watcher.noteSelfSave(path);
+      NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     },
 
     /* Scroll the rendered viewer to a heading by its slugified id.

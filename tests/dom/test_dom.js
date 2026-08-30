@@ -226,6 +226,7 @@ const html = `<!DOCTYPE html><html><head>
           <span class="eb-actions">
             <button id="preview-btn" class="eb">Preview</button>
             <button id="save-btn" class="eb eb-primary" hidden>Save</button>
+            <button id="save-exit-btn" class="eb eb-primary" hidden>Save &amp; Exit</button>
             <button id="close-edit-btn" class="eb">Close</button>
           </span>
         </div>
@@ -2228,6 +2229,46 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(50);
     check("hybrid: clean exit after save", !window.NB.hybrid.isActive());
+
+    // --- hybrid Save & Exit flow ---
+    // The Save&Exit button is visible in hybrid mode, saves, then exits.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const sexBtn = $("save-exit-btn");
+    check("hybrid: Save&Exit button visible when dirty", !sexBtn.hidden);
+    // Edit then click Save&Exit.
+    vc.innerHTML += "<p>save-exit test</p>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    const saveExitBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    sexBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    const saveExitAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid: Save&Exit saves", saveExitAfter - saveExitBefore === 1,
+      "delta=" + (saveExitAfter - saveExitBefore));
+    check("hybrid: Save&Exit exits hybrid mode", !window.NB.hybrid.isActive());
+    check("hybrid: Save&Exit hides its button", sexBtn.hidden);
+
+    // --- hybrid keyboard-save delegation ---
+    // NB.viewer.save() delegates to NB.hybrid.save() while hybrid is
+    // active, so Ctrl+S / vim :w works in WYSIWYG mode.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    vc.innerHTML += "<p>keyboard save test</p>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    check("hybrid: dirty before keyboard save", window.NB.hybrid.isDirty());
+    const kbBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    await window.NB.viewer.save();
+    await tick(50);
+    const kbAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid: viewer.save() delegates to hybrid save", kbAfter - kbBefore === 1,
+      "delta=" + (kbAfter - kbBefore));
+    check("hybrid: clean after keyboard save", !window.NB.hybrid.isDirty());
+    // Still in hybrid mode after a plain save (no exit).
+    check("hybrid: still active after plain save", window.NB.hybrid.isActive());
+    await window.NB.hybrid.exit(false);
+    await tick(50);
 
     // --- hybrid context menu ---
     // Right-clicking inside #viewer-content while hybrid mode is active

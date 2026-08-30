@@ -39,6 +39,7 @@
   const editBar        = document.getElementById("edit-bar");
   const hybridBtn      = document.getElementById("hybrid-toggle");
   const saveBtn        = document.getElementById("save-btn");
+  const saveExitBtn    = document.getElementById("save-exit-btn");
   const closeEditBtn   = document.getElementById("close-edit-btn");
   const topbar         = document.getElementById("topbar");
   const menuEl         = document.getElementById("hybrid-context-menu");
@@ -389,6 +390,10 @@
       closeEditBtn.textContent = "Exit";
     }
     if (saveBtn) saveBtn.hidden = true;
+    // The hybrid flow adds Save+Exit as its primary affordance (Save
+    // alone is the CM6-mode button). Save+Exit is always visible while
+    // hybrid-editing; the plain Save only appears once dirty.
+    if (saveExitBtn) saveExitBtn.hidden = false;
 
     // Focus the content.
     viewerContentEl.focus();
@@ -397,6 +402,7 @@
     viewerContentEl.addEventListener("input", onInput);
     editBar.addEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
+    if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.addEventListener("click", onClose, true);
 
     NB.evt.emit("hybrid:entered", activePath);
@@ -413,6 +419,7 @@
     viewerContentEl.removeEventListener("input", onInput);
     editBar.removeEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
+    if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.removeEventListener("click", onClose, true);
     hideMenu();
 
@@ -430,6 +437,7 @@
     if (closeEditBtn) {
       closeEditBtn.textContent = "Close";
     }
+    if (saveExitBtn) saveExitBtn.hidden = true;
 
     active = false;
     const path = activePath;
@@ -459,8 +467,10 @@
     // Update the viewer's cache so the next activate shows the saved content.
     // We emit file:saved so the watcher etc. stay in sync.
     NB.evt.emit("file:saved", activePath);
-    // Also tell the watcher to ignore the self-save echo.
-    if (NB.watcher) NB.watcher.noteSelfSave(activePath);
+    // Tell the viewer the cache now holds the saved bytes (avoids a stale
+    // re-render after exit), and the watcher to ignore the self-save echo.
+    if (NB.viewer && NB.viewer.noteSaved) NB.viewer.noteSaved(activePath, md);
+    else if (NB.watcher) NB.watcher.noteSelfSave(activePath);
     // Re-fetch to pick up the new mtime.
     try {
       const data = await NB.api.getFile(activePath);
@@ -475,11 +485,25 @@
     if (e) { e.stopPropagation(); e.preventDefault(); }
     if (!active) return;
     try {
+      await save();
+    } catch (err) {
+      alert("Save failed: " + (err && err.message ? err.message : err));
+    }
+  }
+
+  /* Save the current hybrid-edited DOM back to Markdown. Exposed via
+   * NB.hybrid.save so the keyboard shortcut (NB.viewer.save()) can
+   * delegate here. Returns a promise that resolves once the save is
+   * written (rejects on failure). Also shows a transient "Saved" toast. */
+  async function save() {
+    if (!active) return;
+    try {
       const md = domToMarkdown();
       await doSave(md);
       if (NB.app && NB.app.notify) NB.app.notify("Saved");
     } catch (err) {
       alert("Save failed: " + (err && err.message ? err.message : err));
+      throw err;
     }
   }
 
@@ -500,6 +524,19 @@
       }
     }
     await exit(false);
+  }
+
+  async function onSaveExit(e) {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    if (!active) return;
+    try {
+      const md = domToMarkdown();
+      await doSave(md);
+      if (NB.app && NB.app.notify) NB.app.notify("Saved");
+      await exit(false);
+    } catch (err) {
+      alert("Save failed: " + (err && err.message ? err.message : err));
+    }
   }
 
   function toggle() {
@@ -770,6 +807,7 @@
     enter,
     exit,
     toggle,
+    save,
     isActive,
     isDirty,
     domToMarkdown,
