@@ -625,7 +625,20 @@
       "- After the tool result arrives, continue your answer in normal prose.",
       "- Read the relevant file(s) BEFORE proposing patches; never invent file content.",
       "When the user just asks a question, answer in prose with no nb-tool blocks.",
-    ].join("\n");
+    ].join("\n") + customPromptSuffix();
+  }
+
+  /* GLOBAL custom instructions (Settings → AI → Custom prompt). One text
+   * shared by every provider: stored in config/ai.json outside the server
+   * list and appended to the built-in contract. The tool syntax stays
+   * fixed here — the custom text may only steer style/focus, never
+   * invent tools. */
+  function customPromptSuffix() {
+    const p = typeof globalCustomPrompt === "string"
+      ? globalCustomPrompt.trim() : "";
+    return p
+      ? ("\n\nAdditional instructions from the user (follow them; the tool rules above always win):\n" + p)
+      : "";
   }
 
   function systemCacheKey() { return currentPath(); }
@@ -894,7 +907,12 @@
     const sel = document.createElement("select");
     sel.id = "ai-model-select";
     sel.className = "ai-model-select";
-    sel.addEventListener("change", () => { currentServer = sel.value; });
+    sel.addEventListener("change", () => {
+      currentServer = sel.value;
+      // The prompt is global now, so switching providers doesn't change
+      // the instructions; still cheap to keep the cache coherent.
+      invalidateSystem();
+    });
     modelBar.appendChild(sel);
     host.appendChild(modelBar);
 
@@ -980,6 +998,7 @@
 
   let servers = [];
   let currentServer = "";
+  let globalCustomPrompt = "";   // Settings → AI → Custom prompt (global)
 
   async function loadAiConfig() {
     try {
@@ -987,10 +1006,17 @@
       servers = (cfg && cfg.servers) || [];
       currentServer = (cfg && cfg.default) ||
         (servers.length ? servers[0].name : "");
+      globalCustomPrompt =
+        cfg && typeof cfg.customPrompt === "string" ? cfg.customPrompt : "";
     } catch (e) {
       servers = [];
       currentServer = "";
+      // Keep the last known prompt — a config fetch hiccup shouldn't
+      // silently drop the user's instructions mid-session.
     }
+    // The custom prompt (or the provider list) may have changed; the
+    // system prompt needs rebuilding.
+    invalidateSystem();
     refreshServerBar();
   }
 

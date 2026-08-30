@@ -579,6 +579,10 @@
             </p>
             <div class="settings-note" id="settings-ai-status">Providers: <span id="settings-ai-count">0</span></div>
             <div id="settings-ai-list"></div>
+
+            <!-- Add a provider: name/URL/model/key. Kept right under the
+                 list so adding follows the list it feeds. -->
+            <div class="settings-form-title" id="settings-ai-form-title">Add a provider</div>
             <div class="settings-row">
               <label class="settings-label" for="settings-ai-name">Profile name</label>
               <input id="settings-ai-name" type="text" class="auth-input settings-auth-input"
@@ -600,7 +604,24 @@
                      autocomplete="off" placeholder="Empty = keep stored key (when editing)" disabled>
             </div>
             <div class="settings-form-actions">
+              <button id="settings-ai-cancel" class="settings-action" hidden>Cancel</button>
               <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
+            </div>
+
+            <!-- Global custom prompt: applies to whichever provider is
+                 active. Lives OUTSIDE the add/edit form on purpose --
+                 provider profiles only control endpoint + model + key. -->
+            <div class="settings-form-title">Custom prompt</div>
+            <div class="settings-row settings-row-column">
+              <label class="settings-label" for="settings-ai-custom-prompt">Assistant instructions (all providers)</label>
+              <textarea id="settings-ai-custom-prompt" class="auth-input settings-auth-input"
+                        rows="4" autocomplete="off" disabled
+                        placeholder="Extra instructions for the AI assistant, e.g. “Always answer in Traditional Chinese. Prefer concise bullet points.“"></textarea>
+              <span class="settings-hint">Appended to the assistant's instructions regardless of provider. The built-in tool rules always win.</span>
+            </div>
+            <div class="settings-form-actions">
+              <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
+              <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
             </div>
             <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>

@@ -2749,3 +2749,63 @@ body[data-theme="light"] #viewer-content {
 .ai-clear:hover { color: var(--fg); border-color: var(--accent); }
 
 /* Legacy single-op badge colors live with the per-op rules above. */
+
+/* --- Settings -> AI edit flow --------------------------------------- */
+.settings-form-title {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin: 10px 0 6px;
+}
+/* Column row (label above control) for the multi-line prompt textarea. */
+.settings-row.settings-row-column {
+  flex-direction: column;
+  align-items: stretch;
+}
+.settings-row.settings-row-column .settings-label { margin-bottom: 4px; }
+.settings-hint {
+  font-size: .72rem;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+#settings-ai-custom-prompt {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.45;
+}
+/* AI section: provider fields + the prompt textarea span the full
+ * available width (the shared .settings-auth-input caps at 260px for
+ * the password forms; that is not what we want here). Fields still
+ * sit beside their 130px labels; the prompt column label hugs its
+ * textarea with no gap. */
+#settings-section-ai .settings-auth-input {
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+#settings-section-ai .settings-row-column {
+  gap: 0;
+}
+#settings-section-ai .settings-row-column .settings-label {
+  /* In a column row the shared 130px flex-basis would set the label's
+   * HEIGHT (column main axis), not its width -- which is exactly the
+   * big gap between the text and the textarea. Reset it to auto so the
+   * label hugs its content. */
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+/* The list dims + shrinks while a row is being edited so the form reads
+   as a modal-ish focus. The edited row gets a highlight border. */
+#settings-ai-list.ai-editing .settings-ai-row { opacity: .55; }
+#settings-ai-list.ai-editing .settings-ai-row.editing {
+  opacity: 1;
+  outline: 1px solid var(--accent);
+  border-radius: 6px;
+}
+.settings-ai-edit { color: var(--accent); }

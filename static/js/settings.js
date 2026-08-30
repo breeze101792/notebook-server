@@ -927,12 +927,23 @@
   const aiUrlEl    = document.getElementById("settings-ai-url");
   const aiModelEl  = document.getElementById("settings-ai-model");
   const aiKeyEl    = document.getElementById("settings-ai-key");
+  const aiPromptEl = document.getElementById("settings-ai-custom-prompt");
+  const aiPromptSaveBtn = document.getElementById("settings-ai-prompt-save");
+  const aiPromptStatusEl = document.getElementById("settings-ai-prompt-status");
   const aiAddBtn   = document.getElementById("settings-ai-add");
+  const aiCancelBtn = document.getElementById("settings-ai-cancel");
+  const aiFormTitle = document.getElementById("settings-ai-form-title");
   const aiHelpEl   = document.getElementById("settings-ai-help");
   const aiErrorEl  = document.getElementById("settings-ai-error");
 
   let aiProviders = [];      // working copy while the modal is open
   let aiDefaultName = "";
+  // Global custom prompt: snapshot at modal open + dirty flag for the
+  // prompt's own Save button (independent from provider add/edit).
+  let aiPromptSaved = "";
+  let ai_prompt_inflight = false;
+  // Edit mode: name of the provider being edited ("" = add-new form).
+  let aiEditingName = "";
 
   function setAiError(msg) {
     if (!aiErrorEl) return;
@@ -943,11 +954,21 @@
   function refreshAiControls() {
     if (!aiNameEl || !aiAddBtn) return;
     const canEdit = isAdmin();
-    [aiNameEl, aiUrlEl, aiModelEl, aiKeyEl].forEach(el => {
-      if (el) el.disabled = !canEdit;
-    });
+    [aiNameEl, aiUrlEl, aiModelEl, aiKeyEl, aiPromptEl, aiPromptSaveBtn]
+      .forEach(el => { if (el) el.disabled = !canEdit; });
     aiAddBtn.disabled = !canEdit ||
       !aiNameEl.value.trim() || !aiUrlEl.value.trim();
+    if (aiFormTitle) {
+      aiFormTitle.textContent = aiEditingName
+        ? ("Edit provider: " + aiEditingName) : "Add a provider";
+    }
+    if (aiAddBtn) aiAddBtn.textContent = aiEditingName ? "Save changes" : "Add provider";
+    if (aiCancelBtn) aiCancelBtn.hidden = !aiEditingName;
+    if (aiPromptSaveBtn) {
+      // Prompt Save only when admin + text differs from the last snapshot.
+      aiPromptSaveBtn.disabled = !canEdit ||
+        (aiPromptEl && aiPromptEl.value === aiPromptSaved);
+    }
     if (aiHelpEl) {
       aiHelpEl.textContent = canEdit
         ? "Providers for the AI assistant in the left activity bar (✨). Any OpenAI-compatible /v1/chat/completions endpoint works. API keys are stored server-side and never sent to the browser."
@@ -1004,6 +1025,12 @@
                  2000);
     });
 
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "settings-action settings-ai-edit";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => beginAiEdit(s.name));
+
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "settings-action settings-token-revoke";
@@ -1012,21 +1039,101 @@
       const ok = window.confirm(
         "Remove provider \"" + s.name + "\" from the AI settings?");
       if (!ok) return;
+      if (aiEditingName === s.name) cancelAiEdit();
       aiProviders = aiProviders.filter(p => p.name !== s.name);
       if (aiDefaultName === s.name) aiDefaultName = "";
       await commitAiProviders("Provider " + s.name + " removed");
     });
 
-    meta.append(defaultTag, model, keyNote, testBtn, removeBtn);
+    meta.append(defaultTag, model, keyNote, testBtn, editBtn, removeBtn);
     row.append(label, meta);
     return row;
+  }
+
+  /* --- Edit flow ------------------------------------------------------ */
+  // Edit reuses the Add form: the row's values (including the custom
+  // prompt; the key stays blank with "keep stored key" semantics) are
+  // loaded in, and Save commits as an update. Renaming works: the commit
+  // sends replaceSecretFor=<old name> server-side, which carries the
+  // stored key over even though the name changed.
+  function beginAiEdit(name) {
+    const p = aiProviders.find(x => x.name === name);
+    if (!p) return;
+    aiEditingName = name;
+    aiNameEl.value = p.name;
+    aiUrlEl.value = p.baseUrl || "";
+    document.getElementById("settings-ai-model").value = p.model || "";
+    aiKeyEl.value = "";
+    aiKeyEl.placeholder = "Stored — leave blank to keep";
+    // The global prompt is NOT part of the provider form: it stays as-is
+    // in its own control (settings-ai-custom-prompt) while editing.
+    if (aiListEl) aiListEl.classList.add("ai-editing");
+    Array.from(aiListEl ? aiListEl.children : [])
+      .forEach(row => row.classList.toggle("editing",
+        row.dataset.name === name));
+    refreshAiControls();
+    if (aiNameEl) aiNameEl.focus();
+  }
+
+  function cancelAiEdit() {
+    aiEditingName = "";
+    aiNameEl.value = "";
+    aiUrlEl.value = "";
+    aiKeyEl.value = "";
+    aiKeyEl.placeholder = "Empty = keep stored key (when editing)";
+    if (aiListEl) {
+      aiListEl.classList.remove("ai-editing");
+      Array.from(aiListEl.children).forEach(row =>
+        row.classList.remove("editing"));
+    }
+    refreshAiControls();
   }
 
   async function commitAiProviders(okMsg) {
     setAiError("");
     try {
-      // When editing exists rows over the wire, carry stored keys: a row
+      // When editing existing rows over the wire, carry stored keys: a row
       // we didn't touch keeps hasKey via replaceSecret + blank apiKey.
+      // A renamed profile carries its key via replaceSecretFor=<old name>.
+      // The GLOBAL prompt rides along (server preserves it when the
+      // payload omits it, but we always send the current snapshot so a
+      // prompt save + provider save can't clobber each other mid-flight).
+      const payload = aiProviders.map(p => ({
+        name: p.name,
+        baseUrl: p.baseUrl,
+        model: p.model || "",
+        apiKey: p.apiKey || "",
+        replaceSecret: p.hasKey === true,
+        replaceSecretFor: p.replaceSecretFor || undefined,
+      }));
+      const cfg = await NB.api.aiSaveConfig(
+        payload, aiDefaultName, aiPromptEl ? aiPromptEl.value : undefined);
+      aiProviders = (cfg && cfg.servers) || [];
+      aiDefaultName = (cfg && cfg.default) || "";
+      if (cfg && typeof cfg.customPrompt === "string") {
+        aiPromptSaved = cfg.customPrompt;
+        if (aiPromptEl) aiPromptEl.value = aiPromptSaved;
+      }
+      renderAiList();
+      refreshAiControls();
+      if (okMsg) setAiError("");   // okMsg path shows nothing (no error UI)
+      NB.ai && NB.ai.loadAiConfig && NB.ai.loadAiConfig();
+      return true;
+    } catch (e) {
+      setAiError(e.message || "Failed to save AI providers");
+      return false;
+    }
+  }
+
+  /* Save ONLY the global prompt: one POST with the stored provider list
+   * (keys ride server-side) + the new prompt text. Independent from the
+   * provider form so editing a URL never touches the prompt and vice
+   * versa. */
+  async function saveAiPrompt() {
+    if (ai_prompt_inflight || !aiPromptEl) return;
+    ai_prompt_inflight = true;
+    if (aiPromptSaveBtn) { aiPromptSaveBtn.disabled = true; aiPromptSaveBtn.textContent = "Saving…"; }
+    try {
       const payload = aiProviders.map(p => ({
         name: p.name,
         baseUrl: p.baseUrl,
@@ -1034,16 +1141,24 @@
         apiKey: p.apiKey || "",
         replaceSecret: p.hasKey === true,
       }));
-      const cfg = await NB.api.aiSaveConfig(payload, aiDefaultName);
-      aiProviders = (cfg && cfg.servers) || [];
-      aiDefaultName = (cfg && cfg.default) || "";
-      renderAiList();
-      if (okMsg) setAiError("");   // okMsg path shows nothing (no error UI)
+      const cfg = await NB.api.aiSaveConfig(
+        payload, aiDefaultName, aiPromptEl.value);
+      aiPromptSaved = (cfg && cfg.customPrompt) || aiPromptEl.value;
+      if (aiPromptStatusEl) {
+        aiPromptStatusEl.textContent = "Saved";
+        aiPromptStatusEl.hidden = false;
+        setTimeout(() => { aiPromptStatusEl.hidden = true; }, 2000);
+      }
       NB.ai && NB.ai.loadAiConfig && NB.ai.loadAiConfig();
-      return true;
     } catch (e) {
-      setAiError(e.message || "Failed to save AI providers");
-      return false;
+      if (aiPromptStatusEl) {
+        aiPromptStatusEl.textContent = e.message || "Save failed";
+        aiPromptStatusEl.hidden = false;
+      }
+    } finally {
+      ai_prompt_inflight = false;
+      if (aiPromptSaveBtn) aiPromptSaveBtn.textContent = "Save prompt";
+      refreshAiControls();
     }
   }
 
@@ -1067,6 +1182,8 @@
       const cfg = await NB.api.aiGetConfig();
       aiProviders = (cfg && cfg.servers) || [];
       aiDefaultName = (cfg && cfg.default) || "";
+      aiPromptSaved = (cfg && cfg.customPrompt) || "";
+      if (aiPromptEl) aiPromptEl.value = aiPromptSaved;
       renderAiList();
     } catch (e) {
       aiCountEl.textContent = "—";
@@ -1087,13 +1204,72 @@
       }
     });
   }
+  if (aiCancelBtn) {
+    aiCancelBtn.addEventListener("click", cancelAiEdit);
+  }
+  // Global prompt: its own Save button + dirty tracking (independent of
+  // the provider form). Ctrl/Cmd+Enter saves from the textarea.
+  if (aiPromptEl) {
+    aiPromptEl.addEventListener("input", refreshAiControls);
+    aiPromptEl.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (aiPromptSaveBtn && !aiPromptSaveBtn.disabled) saveAiPrompt();
+      }
+    });
+  }
+  if (aiPromptSaveBtn) {
+    aiPromptSaveBtn.addEventListener("click", saveAiPrompt);
+  }
   if (aiAddBtn) {
     aiAddBtn.addEventListener("click", async () => {
       if (ai_add_inflight) return;
-      const name = aiNameEl.value.trim();
       const baseUrl = aiUrlEl.value.trim();
       const model = document.getElementById("settings-ai-model").value.trim();
       const apiKey = aiKeyEl.value;
+      if (aiEditingName) {
+        // ---- EDIT existing provider (name/url/model/key only; the
+        // global prompt is a separate control) ----
+        const oldName = aiEditingName;
+        const newName = aiNameEl.value.trim();
+        if (!newName || !baseUrl) return;
+        if (newName !== oldName &&
+            aiProviders.some(p => p.name === newName)) {
+          setAiError("A provider named \"" + newName + "\" already exists");
+          return;
+        }
+        ai_add_inflight = true;
+        aiAddBtn.disabled = true;
+        const idx = aiProviders.findIndex(p => p.name === oldName);
+        const updated = {
+          name: newName, baseUrl, model,
+          apiKey,                       // blank => keep stored key
+          hasKey: (aiProviders[idx] && aiProviders[idx].hasKey) ||
+                  apiKey.length > 0,
+          // Rename: tell the server which stored profile the blank key
+          // should carry over from.
+          replaceSecretFor: newName !== oldName ? oldName : undefined,
+        };
+        aiProviders.splice(idx, 1, updated);
+        if (aiDefaultName === oldName) aiDefaultName = newName;
+        const ok = await commitAiProviders();
+        ai_add_inflight = false;
+        if (ok) {
+          cancelAiEdit();
+        } else {
+          // Roll back the optimistic splice on failure.
+          aiProviders.splice(idx, 1,
+            aiProviders[idx] && oldName !== newName
+              ? { name: oldName } : updated);
+          const snap = aiProviders.find(p => p.name === newName || p.name === oldName);
+          if (snap) delete snap.replaceSecretFor;
+          renderAiList();
+          refreshAiControls();
+        }
+        return;
+      }
+      // ---- ADD new provider ----
+      const name = aiNameEl.value.trim();
       if (!name || !baseUrl) return;
       if (aiProviders.some(p => p.name === name)) {
         setAiError("A provider named \"" + name + "\" already exists");
@@ -1121,6 +1297,16 @@
       }
       ai_add_inflight = false;
       refreshAiControls();
+    });
+  }
+  // Global prompt textarea: keep the Save button state live.
+  if (aiPromptEl) {
+    aiPromptEl.addEventListener("input", refreshAiControls);
+    aiPromptEl.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (aiPromptSaveBtn && !aiPromptSaveBtn.disabled) saveAiPrompt();
+      }
     });
   }
 

@@ -84,8 +84,12 @@
     applyEdits: (path, edits) => request("POST", "/api/edit", { path, edits }),
     // ---- AI assistant (OpenAI-compatible proxy; secrets stay server-side)
     aiGetConfig: () => request("GET", "/api/ai/config"),
-    aiSaveConfig: (servers, dflt) =>
-      request("POST", "/api/ai/config", { servers, default: dflt }),
+    // customPrompt is the global assistant instruction text; pass
+    // undefined to let the server preserve whatever is stored.
+    aiSaveConfig: (servers, dflt, customPrompt) =>
+      request("POST", "/api/ai/config", Object.assign(
+        { servers, default: dflt },
+        customPrompt !== undefined ? { customPrompt } : {})),
     aiProbe: (name) => request("GET", "/api/ai/probe?server=" + encodeURIComponent(name)),
     // SSE relay. Does NOT use request(): the response is a text/event-stream,
     // not JSON -- we parse OpenAI-style deltas and invoke onDelta per token.

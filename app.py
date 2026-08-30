@@ -1058,10 +1058,14 @@ def _sanitize_server(raw, index):
         raise ValueError("servers[%d].apiKey must be a string" % index)
     # Empty apiKey + replaceSecret means "keep the stored one": lets the
     # settings UI save a profile without re-typing the key every time.
+    # replaceSecretFor names another (usually renamed) profile whose key
+    # should carry over; the Edit flow uses it when the profile name
+    # itself is changed.
     if api_key == "" and raw.get("replaceSecret"):
         stored = load_ai_config()
+        wanted = raw.get("replaceSecretFor") or name
         for s in stored.get("servers") or []:
-            if isinstance(s, dict) and s.get("name") == name:
+            if isinstance(s, dict) and s.get("name") == wanted:
                 api_key = s.get("api_key") or ""
                 break
     if len(api_key) > 500:
@@ -1092,7 +1096,10 @@ def _public_ai_config():
             "model": s.get("model", ""),
             "hasKey": bool(s.get("api_key")),
         })
-    return {"servers": servers, "default": data.get("default", "")}
+    # customPrompt is a GLOBAL setting (used by whichever provider is
+    # active), stored outside the server list.
+    return {"servers": servers, "default": data.get("default", ""),
+            "customPrompt": data.get("custom_prompt", "")}
 
 
 def _saved_server(name):
@@ -1136,10 +1143,13 @@ def ai_config_post():
     """Replace the saved provider profiles wholesale.
 
     Body: {"servers": [{name, baseUrl, apiKey?, model, replaceSecret?},
-    ...], "default": "<name>"}. The list replaces the stored one but
-    entries whose apiKey is "" + replaceSecret:true carry over the
-    previously stored key, so the UI can round-trip profiles without
-    echoing secrets back through the browser.
+    ...], "default": "<name>", "customPrompt": "<global instructions>"}.
+    The list replaces the stored one but entries whose apiKey is "" +
+    replaceSecret:true carry over the previously stored key, so the UI can
+    round-trip profiles without echoing secrets back through the browser.
+    customPrompt is the global assistant instruction text (applies to
+    whichever provider is active), stored outside the server list and
+    preserved when the field is omitted (older clients).
     """
     data, error = expect_json("servers")
     if error:
@@ -1150,6 +1160,15 @@ def ai_config_post():
         return err("servers must be a list", 400)
     if not isinstance(default, str):
         return err("default must be a string", 400)
+    custom_prompt = data.get("customPrompt")
+    if custom_prompt is None:
+        # Field absent -> keep whatever is stored (round-trip safety).
+        custom_prompt = load_ai_config().get("custom_prompt", "")
+    if not isinstance(custom_prompt, str):
+        return err("customPrompt must be a string", 400)
+    if len(custom_prompt) > 8000:
+        return err("customPrompt is longer than 8000 chars", 400)
+    custom_prompt = custom_prompt.strip()
     cleaned = []
     seen = set()
     for i, raw in enumerate(servers_in):
@@ -1164,7 +1183,8 @@ def ai_config_post():
     if default and default not in seen:
         return err("default is not one of the server names", 400)
     try:
-        save_ai_config({"servers": cleaned, "default": default})
+        save_ai_config({"servers": cleaned, "default": default,
+                        "custom_prompt": custom_prompt})
     except OSError as exc:
         return err("Could not write AI config: %s" % exc, 500)
     return jsonify(_public_ai_config())

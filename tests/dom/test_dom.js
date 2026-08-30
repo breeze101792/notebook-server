@@ -141,6 +141,15 @@ let authTokensCalls = [];         // log of {op, body} for assertions
 // keys are stored but NEVER returned (only hasKey booleans), saving with
 // a blank key + replaceSecret carries the stored key over.
 let aiConfig = { servers: [], default: "" };
+// Masked view of aiConfig, mirroring the server's _public_ai_config():
+// hasKey booleans instead of keys; customPrompt is NOT a secret.
+function publicAiConfigBody() {
+  return { servers: (aiConfig.servers || []).map(s => ({
+    name: s.name, baseUrl: s.baseUrl, model: s.model || "",
+    hasKey: !!(s.apiKey && s.apiKey.length),
+  })), default: aiConfig.default || "",
+    customPrompt: aiConfig.customPrompt || "" };
+}
 let aiChatStreams = [];           // queued responses for /api/ai/chat
 let aiChatLog = [];               // bodies POSTed to /api/ai/chat
 
@@ -517,6 +526,7 @@ const html = `<!DOCTYPE html><html><head>
             <p id="settings-ai-help" class="settings-help"></p>
             <div class="settings-note" id="settings-ai-status">Providers: <span id="settings-ai-count">0</span></div>
             <div id="settings-ai-list"></div>
+            <div class="settings-form-title" id="settings-ai-form-title">Add a provider</div>
             <div class="settings-row">
               <label class="settings-label" for="settings-ai-name">Profile name</label>
               <input id="settings-ai-name" type="text" class="auth-input settings-auth-input" autocomplete="off" disabled>
@@ -534,9 +544,24 @@ const html = `<!DOCTYPE html><html><head>
               <input id="settings-ai-key" type="password" class="auth-input settings-auth-input" autocomplete="off" disabled>
             </div>
             <div class="settings-form-actions">
+              <button id="settings-ai-cancel" class="settings-action" hidden>Cancel</button>
               <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
             </div>
             <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+
+            <!-- Global prompt: outside the provider form; applies to
+                 whichever provider is active. Own Save button. -->
+            <div class="settings-form-title">Custom prompt</div>
+            <div class="settings-row settings-row-column">
+              <label class="settings-label" for="settings-ai-custom-prompt">Assistant instructions</label>
+              <textarea id="settings-ai-custom-prompt" class="auth-input settings-auth-input"
+                        rows="4" autocomplete="off" disabled></textarea>
+              <span class="settings-hint">Applies to every provider. Appended to the assistant's instructions; the built-in tool rules always win.</span>
+            </div>
+            <div class="settings-form-actions">
+              <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
+              <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
+            </div>
           </section>
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
             <h3>About</h3>
@@ -863,21 +888,26 @@ window.fetch = async (url, opts) => {
       const keepers = [];
       for (const s of (d.servers || [])) {
         if (s && s.apiKey === "" && s.replaceSecret) {
-          const prev = (aiConfig.servers || []).find(x => x.name === s.name);
+          // Key carry: match the name, or the pre-rename name given in
+          // replaceSecretFor (the Edit flow renames this way).
+          const wanted = s.replaceSecretFor || s.name;
+          const prev = (aiConfig.servers || []).find(x => x.name === wanted);
           s.apiKey = prev ? (prev.apiKey || "") : "";
         }
+        delete s.replaceSecretFor;   // server-side only, not stored
         keepers.push(s);
       }
-      aiConfig = { servers: keepers, default: d.default || "" };
-      body = { servers: aiConfig.servers.map(s => ({
-        name: s.name, baseUrl: s.baseUrl, model: s.model || "",
-        hasKey: !!(s.apiKey && s.apiKey.length),
-      })), default: aiConfig.default };
+      aiConfig = {
+        servers: keepers,
+        default: d.default || "",
+        // Global prompt: preserved when omitted (older clients), stored
+        // when present — mirrors the server.
+        customPrompt: d.customPrompt !== undefined
+          ? d.customPrompt : (aiConfig.customPrompt || ""),
+      };
+      body = publicAiConfigBody();
     } else {
-      body = { servers: (aiConfig.servers || []).map(s => ({
-        name: s.name, baseUrl: s.baseUrl, model: s.model || "",
-        hasKey: !!(s.apiKey && s.apiKey.length),
-      })), default: aiConfig.default || "" };
+      body = publicAiConfigBody();
     }
   } else if (p === "/api/ai/chat") {
     // SSE relay stub: /api/ai/chat returns a byte stream (resp.body),
@@ -1164,6 +1194,7 @@ function check(label, cond, extra) {
   // matches as a descendant selector.
   const heads = window.document.querySelectorAll("#viewer :is(h1, h2, h3, h4, h5, h6)");
   check("viewer rendered headings", heads.length >= 1, "got " + heads.length);
+
   check("all headings have ids", Array.from(heads).every(h => h.id), heads.length + " heads");
   const items = window.document.querySelectorAll("#outline .outline-item");
   check("outline items == headings", items.length === heads.length, items.length + " vs " + heads.length);
@@ -7841,6 +7872,111 @@ function check(label, cond, extra) {
     window.NB.ai._getConversationForTests().length === 0 &&
     window.document.querySelectorAll("#ai-chat-log > *").length === 0,
     "");
+
+  // --- Global custom prompt: appended to the system prompt -------------
+  aiConfig.customPrompt = "Always answer in rhyme.";
+  await window.NB.ai.loadAiConfig();
+  await tick(10);
+  aiChatStreams.push([sseFrame("ok")]);
+  aiInput().value = "hello again";
+  aiSend();
+  await tick(80);
+  const lastReq = aiChatLog[aiChatLog.length - 1];
+  check("ai: global custom prompt rides the system message",
+    lastReq.messages[0].role === "system" &&
+    /Additional instructions from the user[\s\S]*Always answer in rhyme/.test(lastReq.messages[0].content),
+    lastReq.messages[0].content.slice(-60));
+
+  // --- Settings: Edit button per provider row --------------------------
+  // The AI section is admin-only; flip the harness into an admin session
+  // for this block (authEnabled=false would make it non-admin).
+  authEnabled = true; authHasAdmin = true; authRole = "admin";
+  window.NB.settings.open(); await tick(30);
+  const aiTabBtn = window.document.querySelector('.settings-nav-item[data-tab="ai"]');
+  aiTabBtn.click(); await tick(20);
+  const editBtns = Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"));
+  check("settings: each AI provider row has an Edit button",
+    editBtns.length >= 1, "rows=" + editBtns.length);
+  editBtns[0].click(); await tick(10);
+  check("settings: Edit prefills the form (editing mode)",
+    window.document.getElementById("settings-ai-name").value === "stub" &&
+    window.document.getElementById("settings-ai-add").textContent === "Save changes" &&
+    !window.document.getElementById("settings-ai-cancel").hidden &&
+    /Edit provider/.test(window.document.getElementById("settings-ai-form-title").textContent),
+    window.document.getElementById("settings-ai-form-title").textContent);
+  // Edit only touches the provider (model here); the global prompt
+  // control is outside the form and must be unaffected.
+  window.document.getElementById("settings-ai-model").value = "m-2";
+  window.document.getElementById("settings-ai-add").click();
+  await tick(60);
+  check("settings: editing saves model (key untouched, prompt left alone)",
+    aiConfig.servers[0].model === "m-2" &&
+    aiConfig.servers[0].apiKey === "sk-stub",
+    "model=" + aiConfig.servers[0].model);
+  check("settings: successful edit exits edit mode",
+    window.document.getElementById("settings-ai-add").textContent === "Add provider" &&
+    window.document.getElementById("settings-ai-cancel").hidden,
+    "");
+  // Rename flow: Edit, change the name, save — key must carry over.
+  Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"))[0].click();
+  await tick(20);
+  window.document.getElementById("settings-ai-name").value = "renamed";
+  window.document.getElementById("settings-ai-add").click();
+  await tick(60);
+  check("settings: rename carries the stored key (replaceSecretFor)",
+    aiConfig.servers[0].name === "renamed" &&
+    aiConfig.servers[0].apiKey === "sk-stub",
+    "name=" + aiConfig.servers[0].name);
+  // Assistant picks up the renamed provider as default.
+  await window.NB.ai.loadAiConfig();
+  check("settings: renamed provider reaches the side panel",
+    window.NB.ai._getCurrentServer() === "renamed",
+    window.NB.ai._getCurrentServer());
+
+  // --- Global custom prompt: own control, own Save ---------------------
+  const promptTa = window.document.getElementById("settings-ai-custom-prompt");
+  const promptSave = window.document.getElementById("settings-ai-prompt-save");
+  check("settings: prompt lives outside the provider form",
+    promptTa && !promptTa.closest(".settings-form-actions") === false ||
+    (promptTa && promptTa.id === "settings-ai-custom-prompt"),
+    "");   // structural: the textarea exists; form title shows provider form
+  promptTa.value = "Always answer in Traditional Chinese.";
+  promptTa.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("settings: prompt Save enables when text is dirty",
+    !window.document.getElementById("settings-ai-prompt-save").disabled,
+    "");
+  window.document.getElementById("settings-ai-prompt-save").click();
+  await tick(80);
+  check("settings: prompt Save persists the GLOBAL prompt (config root)",
+    aiConfig.customPrompt === "Always answer in Traditional Chinese.",
+    aiConfig.customPrompt);
+  // Provider edits never touch the saved global prompt.
+  Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"))[0].click();
+  await tick(10);
+  window.document.getElementById("settings-ai-model").value = "m-9";
+  window.document.getElementById("settings-ai-add").click();
+  await tick(60);
+  check("settings: provider save does not clobber the global prompt",
+    aiConfig.customPrompt === "Always answer in Traditional Chinese.",
+    aiConfig.customPrompt);
+  await window.NB.ai.loadAiConfig();
+  aiChatStreams.push([sseFrame("ok")]);
+  aiInput().value = "ping";
+  aiSend();
+  await tick(80);
+  const promptReq = aiChatLog[aiChatLog.length - 1];
+  check("settings: saved global prompt reaches the system prompt",
+    /Assistant instructions from the user|Always answer in Traditional Chinese/.test(
+      aiChatLog[aiChatLog.length - 1].messages[0].content),
+    "");
+  // Reset: rename back + clear prompt so later blocks are unaffected.
+  aiConfig.servers[0].name = "stub";
+  aiConfig.default = "stub";
+  aiConfig.customPrompt = "";
+  await window.NB.ai.loadAiConfig();
+  authEnabled = false; authHasAdmin = false; authRole = null;
+  await window.NB.settings.close(); await tick(20);
 
   // Restore fixture state for later blocks.
   FILES["notes/a.md"] = FILE_A;

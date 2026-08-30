@@ -1984,7 +1984,7 @@ class TestAiConfig(BaseTest):
     def test_get_empty_by_default(self):
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
-        self.assertEqual(data, {"servers": [], "default": ""})
+        self.assertEqual(data, {"servers": [], "default": "", "customPrompt": ""})
         # No file is created by a read.
         self.assertFalse(os.path.isfile(nb.AI_FILE))
 
@@ -2033,6 +2033,72 @@ class TestAiConfig(BaseTest):
         self.assertEqual(stored["servers"][0]["base_url"], "http://host:1234")
         self.assertEqual(nb._chat_url("http://host:1234"),
                          "http://host:1234/v1/chat/completions")
+
+    def test_custom_prompt_global_roundtrip(self):
+        # customPrompt is a GLOBAL setting (applies to whichever provider
+        # is active): stored outside the server list, returned at the
+        # config root, trimmed, and preserved when a POST omits it
+        # (round-trip safety for provider-only saves).
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://x", "apiKey": "sk-1",
+        }], "default": "p",
+            "customPrompt": "  Always answer in Traditional Chinese.  "})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            r.get_json()["customPrompt"],
+            "Always answer in Traditional Chinese.")
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["custom_prompt"],
+                         "Always answer in Traditional Chinese.")
+        # Provider-only save (no customPrompt field) PRESERVES the prompt;
+        # the key carry still works.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://y", "apiKey": "",
+            "replaceSecret": True,
+        }], "default": "p"})
+        self.assertEqual(r.get_json()["customPrompt"],
+                         "Always answer in Traditional Chinese.")
+        # Explicit empty string clears it.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://y", "apiKey": "",
+            "replaceSecret": True,
+        }], "default": "p", "customPrompt": ""})
+        self.assertEqual(r.get_json()["customPrompt"], "")
+        # Per-server customPrompt keys are ignored (no longer a profile
+        # field): the server doesn't store unknown fields.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://x", "apiKey": "",
+            "replaceSecret": True, "customPrompt": "ignored",
+        }], "default": "p", "customPrompt": "global wins"})
+        self.assertEqual(r.get_json()["customPrompt"], "global wins")
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertNotIn("custom_prompt", stored["servers"][0])
+        # Oversized prompt rejected.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://x",
+            "apiKey": "", "replaceSecret": True,
+        }], "default": "p", "customPrompt": "x" * 8001})
+        self.assertEqual(r.status_code, 400)
+
+    def test_rename_carries_key_via_replace_secret_for(self):
+        # The Edit flow may change the profile name; the stored key must
+        # follow via replaceSecretFor=<old name>.
+        self.post("/api/ai/config", {"servers": [{
+            "name": "old", "baseUrl": "http://x", "apiKey": "sk-keep",
+        }], "default": "old"})
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "new", "baseUrl": "http://x", "apiKey": "",
+            "replaceSecret": True, "replaceSecretFor": "old",
+        }], "default": "new"})
+        self.assertEqual(r.status_code, 200)
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["servers"][0]["name"], "new")
+        self.assertEqual(stored["servers"][0]["api_key"], "sk-keep")
+        # The renamed server still works for chat (key attaches by name).
+        self.assertEqual(nb._saved_server("new")["api_key"], "sk-keep")
 
     def test_validation_errors(self):
         cases = [
