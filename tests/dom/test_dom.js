@@ -7636,6 +7636,34 @@ function check(label, cond, extra) {
       window.NB.ai.tryParseTool('not json') === null,
       "");
 
+    // 7b. bracket/quote-aware fence: close only at JSON depth 0, so a
+    // patch whose content embeds its own fenced code (mermaid) still
+    // parses. The inner ```flowchart block's three backticks sit inside
+    // a JSON string (outside depth 0) so they are NOT treated as the
+    // end of the nb-tool fence.
+    const fenceMsg =
+      "Please embed a diagram:\n\n```nb-tool\n" +
+      JSON.stringify({ tool: "patch", path: "n.md", edits: [
+        { op: "find_replace", find: "<!--diagram-->",
+          replace_with: "```flowchart TD\nA[Start] --> B{Go?}\nB -- Yes --> C\n```",
+          count: 1 },
+      ] }) +
+      "\n```\n\nAbove is the patch.\n```markdown\nafter\n```";
+    const fenced = window.NB.ai.collectFenced(fenceMsg, "nb-tool");
+    check("ai: fence scan survives embedded backtick fences in content",
+      fenced.length === 1,
+      "blocks=" + fenced.length);
+    const fencedTool = fenced.length ? window.NB.ai.tryParseTool(fenced[0].content) : null;
+    check("ai: embedded-backtick content parses as a full patch tool",
+      !!fencedTool && fencedTool.tool === "patch" && fencedTool.edits.length === 1 &&
+        /flowchart TD/.test(fencedTool.edits[0].replace_with),
+      fencedTool ? JSON.stringify(fencedTool.edits) : "null");
+    // A trailing ```markdown fence after the nb-tool block must not leak
+    // into the tool content either (still ends at the depth-0 close).
+    check("ai: fence scan does not consume a following language fence",
+      fenced.length === 1 && /markdown/.test(fenced[0].content) === false,
+      fenced.length ? "block ends before markdown fence" : "no block");
+
     // 8. diff row computation
     const d1 = window.NB.ai.diffRows("alpha\nbeta\ngamma\ndelta\n", "alpha\nBETA\ngamma\ndelta\n");
     check("ai: diffRows finds the changed line pair",

@@ -44,9 +44,72 @@
    *     {"op": "replace", "find": "...", "replace": "..."}
    *     ```
    * The brace-scan fallback catches models that emit the bare JSON
-   * object without (or with a mangled) fence. */
-  const FENCE_RE = /```[ \t]*nb-edit[ \t]*[^\n]*\n([\s\S]*?)```/g;
-  const TOOL_RE = /```[ \t]*nb-tool[ \t]*[^\n]*\n([\s\S]*?)```/g;
+   * object without (or with a mangled) fence.
+   *
+   * collectFenced() scans for ```<lang> blocks and returns the full span
+   * plus the inner JSON text. It is BRACKET/QUOTE-AWARE: it walks the
+   * body tracking JSON {} / [] depth and string state (quotes + escapes),
+   * and only treats a line-leading ``` run as the true closing fence once
+   * the JSON is back to depth 0 and outside any string. A naive
+   * non-greedy "``` close at the first backtick run" would truncate the
+   * block whenever a patch's find/append content legitimately contains
+   * its own fenced code (e.g. a mermaid ```flowchart block) -- the inner
+   * backticks always sit inside a JSON string, so they never satisfy the
+   * depth-0 + not-in-string close condition and the scanner keeps going. */
+  function collectFenced(text, lang) {
+    const headerRe = new RegExp(
+      "```[ \\t]*" + lang + "[ \\t]*[^\\n]*\\n", "g");
+    const out = [];
+    let m;
+    while ((m = headerRe.exec(text)) !== null) {
+      const contentStart = m.index + m[0].length;
+      let i = contentStart;
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      let closeStart = -1;
+      const len = text.length;
+      while (i < len) {
+        const c = text[i];
+        if (!inStr && (i === contentStart || text[i - 1] === "\n")) {
+          // A backtick run that begins a line is a fence candidate.
+          if (c === "`") {
+            let j = i;
+            while (j < len && text[j] === "`") j++;
+            if (j - i >= 3 && depth === 0) {
+              closeStart = i;      // real close: JSON balanced, not in a string
+              break;
+            }
+            i = j;                 // inner content backticks; skip the run
+            continue;
+          }
+        }
+        if (esc) { esc = false; i++; continue; }
+        if (inStr) {
+          if (c === "\\") esc = true;
+          else if (c === '"') inStr = false;
+          i++;
+          continue;
+        }
+        if (c === '"') { inStr = true; i++; continue; }
+        if (c === "{" || c === "[") depth++;
+        else if (c === "}" || c === "]") depth--;
+        i++;
+      }
+      if (closeStart >= 0) {
+        out.push({
+          start: m.index,
+          end: closeStart + 3,
+          content: text.slice(contentStart, closeStart),
+        });
+      } else {
+        // Unbalanced fence (model never closed it). Treat what we saw as
+        // a block so the caller's JSON.parse still has a chance to work.
+        out.push({ start: m.index, end: len, content: text.slice(contentStart) });
+      }
+    }
+    return out;
+  }
 
   function tryParseProposal(raw) {
     let obj;
@@ -81,23 +144,23 @@
    * prose; cards are later attached at render time. */
   function parseProposals(text) {
     const spans = [];       // {start, end, kind, p}
-    let m;
-    FENCE_RE.lastIndex = 0;
-    while ((m = FENCE_RE.exec(text)) !== null) {
-      const p = tryParseProposal(m[1]);
-      if (p) spans.push({ start: m.index, end: m.index + m[0].length, kind: "card", p });
+    for (const b of collectFenced(text, "nb-edit")) {
+      const p = tryParseProposal(b.content);
+      if (p) spans.push({ start: b.start, end: b.end, kind: "card", p });
     }
-    let sawTool = false;
-    TOOL_RE.lastIndex = 0;
-    while ((m = TOOL_RE.exec(text)) !== null) {
-      sawTool = true;
-      spans.push({ start: m.index, end: m.index + m[0].length, kind: "tool", p: m[1] });
+    // Tool blocks are collected separately so a card's JSON can never be
+    // mistaken for a (or hide inside a) tool call, and vice versa.
+    const toolBlocks = collectFenced(text, "nb-tool");
+    const sawTool = toolBlocks.length > 0;
+    for (const b of toolBlocks) {
+      spans.push({ start: b.start, end: b.end, kind: "tool", p: b.content });
     }
     // Fallback ONLY for standalone nb-edit JSON with no fence at all and
     // no tool blocks present (keeps the old tolerant path alive without
     // mangling tool call blocks).
     if (!spans.length && !sawTool && !/```/.test(text)) {
       const objRe = /\{[^{}]*"op"\s*:[^{}]*\}/g;
+      let m;
       while ((m = objRe.exec(text)) !== null) {
         const p = tryParseProposal(m[0]);
         if (p) spans.push({ start: m.index, end: m.index + m[0].length, kind: "card", p });
@@ -830,10 +893,8 @@
 
       /* Extract nb-tool calls from the reply. */
       const toolCalls = [];
-      let m;
-      TOOL_RE.lastIndex = 0;
-      while ((m = TOOL_RE.exec(text)) !== null) {
-        const t = tryParseTool(m[1]);
+      for (const b of collectFenced(text, "nb-tool")) {
+        const t = tryParseTool(b.content);
         if (t) toolCalls.push(t);
       }
       conversation.push({ role: "assistant", content: text });
@@ -1055,6 +1116,7 @@
 
   NB.ai = {
     mount,
+    collectFenced,
     parseProposals,
     tryParseProposal,
     tryParseTool,
