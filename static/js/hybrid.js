@@ -47,6 +47,7 @@
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
   let turndownSvc = null;   // lazily created TurndownService instance
+  let savedRange = null;    // caret range captured when the context menu opens
 
   function ensureTurndown() {
     if (turndownSvc) return turndownSvc;
@@ -353,33 +354,80 @@
     viewerContentEl.focus();
   }
 
-  /* Paste from the clipboard at the current selection. Tries the async
-   * Clipboard API (navigator.clipboard.readText) first; falls back to
-   * document.execCommand("paste") which is often blocked outside the
-   * user-gesture path, then to inserting the text as a plain text node.
-   * Falls back gracefully in jsdom where the Clipboard API is absent. */
-  async function doPaste() {
-    viewerContentEl.focus();
-    let text = null;
-    if (navigator.clipboard && navigator.clipboard.readText) {
-      try { text = await navigator.clipboard.readText(); }
-      catch (_) { text = null; }
-    }
-    if (text != null) {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount) {
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(document.createTextNode(text));
-        sel.collapseToEnd();
-      }
-      onContentChange();
-      return;
-    }
-    // execCommand fallback (may be blocked by the browser).
-    try { document.execCommand("paste"); }
-    catch (_) {}
+  /* Paste from the clipboard at the caret. Uses document.execCommand
+   * ("paste") synchronously so it runs inside the user-gesture (the
+   * menu click) and the browser pastes natively without a permission
+   * prompt. We deliberately do NOT fall back to the async Clipboard
+   * API here: navigator.clipboard.readText() loses the user-gesture
+   * context and triggers a browser permission prompt. */
+  function doPaste() {
+    restoreCaret();
+    try { document.execCommand("paste"); } catch (_) {}
     onContentChange();
+  }
+
+  /* Paste from the clipboard as plain text, stripping any formatting.
+   * Triggers a native paste via execCommand("paste") (runs in the user
+   * gesture, no permission prompt) but intercepts the resulting paste
+   * event and inserts only the plain-text representation, so rich HTML
+   * (bold, links, etc.) never survives. */
+  function doPastePlain() {
+    restoreCaret();
+    const handler = (e) => {
+      e.preventDefault();
+      const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+      if (text) insertTextAtCaret(text);
+      onContentChange();
+      viewerContentEl.removeEventListener("paste", handler);
+    };
+    viewerContentEl.addEventListener("paste", handler);
+    try { document.execCommand("paste"); } catch (_) {}
+  }
+
+  /* Insert `text` as a plain text node at the caret, then place the
+   * caret AFTER the inserted text. We can't use setStartAfter(node)
+   * directly because browsers merge an adjacent text node, detaching
+   * `node` and breaking the range. Instead we locate the text node that
+   * now holds the end of the range and set the caret to its end. */
+  function insertTextAtCaret(text) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(text);
+    range.insertNode(node);
+    // After insertNode the range's end sits at the end of the inserted
+    // text. If the browser merged adjacent text nodes, `node` is detached
+    // and the endContainer is the parent element; find the text node at
+    // endOffset - 1 and place the caret at its end.
+    const endContainer = range.endContainer;
+    const endOffset = range.endOffset;
+    let caretNode = endContainer;
+    let caretOffset = endOffset;
+    if (endContainer.nodeType === Node.ELEMENT_NODE) {
+      const child = endContainer.childNodes[endOffset - 1];
+      if (child && child.nodeType === Node.TEXT_NODE) {
+        caretNode = child;
+        caretOffset = child.textContent.length;
+      }
+    }
+    const newRange = document.createRange();
+    newRange.setStart(caretNode, caretOffset);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+  }
+
+  /* Restore focus + the caret captured when the context menu opened,
+   * so a paste lands at the right-click position. Clicking a menu item
+   * moves focus to the button, which would otherwise lose the caret. */
+  function restoreCaret() {
+    viewerContentEl.focus();
+    const sel = window.getSelection();
+    if (savedRange) {
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+    }
   }
 
   /* --- dirty tracking -------------------------------------------- */
@@ -854,6 +902,7 @@
     // Clipboard (top-level)
     addMenuItem("Copy", () => doCopy());
     addMenuItem("Paste", () => doPaste());
+    addMenuItem("Paste without formatting", () => doPastePlain());
 
     addMenuSep();
 
@@ -940,6 +989,10 @@
   function openMenu(e) {
     if (!active || !menuEl) return;
     e.preventDefault();
+    // Capture the caret position at the right-click point so paste
+    // actions can restore it after the menu steals focus.
+    const sel = window.getSelection();
+    savedRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
     buildMenu(e);
     menuEl.hidden = false;
     const x = Math.min(e.clientX, window.innerWidth - 200);
