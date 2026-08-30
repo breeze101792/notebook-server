@@ -611,7 +611,7 @@
       '{"tool": "write", "path": "folder/file.md", "content": "full new file content"}',
       "```",
       '```nb-tool',
-      '{"tool": "patch", "path": "folder/file.md", "edits": [{"op": "find_replace", "find": "<exact text, appears once>", "replace_with": "<new text>"}, {"op": "append", "text": "..."}, {"op": "prepend", "text": "..."}}',
+      '{"tool": "patch", "path": "folder/file.md", "edits": [{"op": "find_replace", "find": "<exact text, appears once>", "replace_with": "<new text>"}, {"op": "append", "text": "..."}, {"op": "prepend", "text": "..."}]}',
       "```",
       "",
       "list and read run automatically and you will see the output.",
