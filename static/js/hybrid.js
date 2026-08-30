@@ -129,6 +129,11 @@
     if (NB.mermaid && NB.mermaid.renderAll) {
       NB.mermaid.renderAll(viewerContentEl);
     }
+    // Make task-list checkboxes interactive: marked renders them
+    // disabled, so remove the disabled flag so the user can click to
+    // toggle. The click handler below flips `checked` and marks dirty;
+    // turndown then emits [x]/[ ] on save.
+    enableCheckboxes();
   }
 
   /* --- edit bar integration -------------------------------------- */
@@ -275,6 +280,51 @@
         onContentChange();
         break;
       }
+      case "table-menu": {
+        const menu = document.querySelector(".eb-table-menu");
+        if (menu) menu.hidden = !menu.hidden;
+        break;
+      }
+      case "table-row-above": {
+        const row = getRowFromSelection();
+        if (row) insertRow(row, "above");
+        break;
+      }
+      case "table-row-below": {
+        const row = getRowFromSelection();
+        if (row) insertRow(row, "below");
+        break;
+      }
+      case "table-row-delete": {
+        const row = getRowFromSelection();
+        if (row) deleteRow(row);
+        break;
+      }
+      case "table-col-left": {
+        const cell = getCellFromSelection();
+        if (cell) insertCol(cell, "left");
+        break;
+      }
+      case "table-col-right": {
+        const cell = getCellFromSelection();
+        if (cell) insertCol(cell, "right");
+        break;
+      }
+      case "table-col-delete": {
+        const cell = getCellFromSelection();
+        if (cell) deleteCol(cell);
+        break;
+      }
+      case "table-header": {
+        const table = getTableFromSelection();
+        if (table) toggleHeaderRow(table);
+        break;
+      }
+      case "table-delete": {
+        const table = getTableFromSelection();
+        if (table) deleteTable(table);
+        break;
+      }
       case "undo": execCommand("undo"); break;
       case "redo": execCommand("redo"); break;
       case "clear": {
@@ -361,6 +411,27 @@
     inputDebounce = setTimeout(onContentChange, 50);
   }
 
+  /* Toggle task-list checkboxes on click. marked renders them disabled;
+   * we re-enable them in renderMarkdown and let the browser handle the
+   * native toggle. The `change` event fires after the native toggle, so
+   * we just mark dirty there. Turndown picks up the new state on save
+   * ([x]/[ ]). */
+  function onCheckboxChange(e) {
+    const cb = e.target.closest('input[type="checkbox"]');
+    if (!cb) return;
+    onContentChange();
+  }
+
+  /* Re-enable task-list checkboxes in the current DOM. marked renders
+   * them with the disabled attribute; hybrid mode needs them clickable.
+   * Called on enter (the DOM is already rendered by viewer.js) and after
+   * any re-render. */
+  function enableCheckboxes() {
+    viewerContentEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.removeAttribute("disabled");
+    });
+  }
+
   /* --- public API ------------------------------------------------- */
 
   async function enter(path) {
@@ -397,9 +468,13 @@
 
     // Focus the content.
     viewerContentEl.focus();
+    // The DOM is already rendered by viewer.js (checkboxes disabled);
+    // re-enable them so the user can toggle task items.
+    enableCheckboxes();
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
+    viewerContentEl.addEventListener("change", onCheckboxChange);
     editBar.addEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
@@ -417,6 +492,7 @@
     }
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
+    viewerContentEl.removeEventListener("change", onCheckboxChange);
     editBar.removeEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
@@ -637,7 +713,142 @@
     }
   }
 
-  function buildMenu() {
+  /* --- table operations ------------------------------------------- */
+
+  /* Find the <table> that contains the current selection/caret, or null. */
+  function getTableFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !node.closest) return null;
+    const table = node.closest("table");
+    return table && viewerContentEl.contains(table) ? table : null;
+  }
+
+  /* The <tr> that holds the current caret, or null. */
+  function getRowFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !node.closest) return null;
+    const row = node.closest("tr");
+    return row && viewerContentEl.contains(row) ? row : null;
+  }
+
+  /* The <td>/<th> that holds the current caret, or null. */
+  function getCellFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !node.closest) return null;
+    const cell = node.closest("td,th");
+    return cell && viewerContentEl.contains(cell) ? cell : null;
+  }
+
+  /* Insert a row above or below the given row. Copies the cell count
+   * from the row's own cells so the new row lines up. */
+  function insertRow(row, position) {
+    if (!row) return;
+    const table = row.closest("table");
+    const cells = Array.from(row.cells);
+    const newRow = document.createElement("tr");
+    cells.forEach((cell) => {
+      const tag = cell.tagName === "TH" ? "th" : "td";
+      const nc = document.createElement(tag);
+      nc.innerHTML = "&nbsp;";
+      newRow.appendChild(nc);
+    });
+    if (position === "above") row.parentNode.insertBefore(newRow, row);
+    else if (row.nextSibling) row.parentNode.insertBefore(newRow, row.nextSibling);
+    else row.parentNode.appendChild(newRow);
+    onContentChange();
+  }
+
+  /* Delete the given row. If it's the only row, remove the whole table. */
+  function deleteRow(row) {
+    if (!row) return;
+    const table = row.closest("table");
+    const rows = Array.from(table.rows);
+    if (rows.length <= 1) { deleteTable(table); return; }
+    row.remove();
+    onContentChange();
+  }
+
+  /* Insert a column to the left or right of the current cell's column.
+   * Adds a cell to every row at the matching index. */
+  function insertCol(cell, position) {
+    if (!cell) return;
+    const table = cell.closest("table");
+    const idx = cell.cellIndex;
+    Array.from(table.rows).forEach((row) => {
+      const cells = Array.from(row.cells);
+      const ref = cells[idx];
+      const tag = ref && ref.tagName === "TH" ? "th" : "td";
+      const nc = document.createElement(tag);
+      nc.innerHTML = "&nbsp;";
+      if (ref) {
+        if (position === "left") ref.parentNode.insertBefore(nc, ref);
+        else if (ref.nextSibling) ref.parentNode.insertBefore(nc, ref.nextSibling);
+        else ref.parentNode.appendChild(nc);
+      } else {
+        row.appendChild(nc);
+      }
+    });
+    onContentChange();
+  }
+
+  /* Delete the current cell's column from every row. */
+  function deleteCol(cell) {
+    if (!cell) return;
+    const table = cell.closest("table");
+    const idx = cell.cellIndex;
+    Array.from(table.rows).forEach((row) => {
+      const cells = Array.from(row.cells);
+      if (cells[idx]) cells[idx].remove();
+    });
+    onContentChange();
+  }
+
+  /* Remove the whole table element. */
+  function deleteTable(table) {
+    if (!table) return;
+    table.remove();
+    onContentChange();
+  }
+
+  /* Toggle the first row between header (th) and body (td) cells. */
+  function toggleHeaderRow(table) {
+    if (!table) return;
+    const first = table.rows[0];
+    if (!first) return;
+    const isHeader = Array.from(first.cells).some((c) => c.tagName === "TH");
+    Array.from(first.cells).forEach((c) => {
+      const tag = isHeader ? "td" : "th";
+      const nc = document.createElement(tag);
+      while (c.firstChild) nc.appendChild(c.firstChild);
+      c.replaceWith(nc);
+    });
+    onContentChange();
+  }
+
+  /* Build the Table submenu for the given table. */
+  function buildTableMenu(fly, table) {
+    addSubItem(fly, "Insert row above", () => insertRow(getRowFromSelection(), "above"));
+    addSubItem(fly, "Insert row below", () => insertRow(getRowFromSelection(), "below"));
+    addSubItem(fly, "Delete row", () => deleteRow(getRowFromSelection()));
+    fly.appendChild(document.createElement("hr"));
+    addSubItem(fly, "Insert column left", () => insertCol(getCellFromSelection(), "left"));
+    addSubItem(fly, "Insert column right", () => insertCol(getCellFromSelection(), "right"));
+    addSubItem(fly, "Delete column", () => deleteCol(getCellFromSelection()));
+    fly.appendChild(document.createElement("hr"));
+    addSubItem(fly, "Toggle header row", () => toggleHeaderRow(table));
+    addSubItem(fly, "Delete table", () => deleteTable(table));
+  }
+
+  function buildMenu(e) {
     menuEl.innerHTML = "";
 
     // Clipboard (top-level)
@@ -671,6 +882,12 @@
       addSubItem(fly, "Numbered list", () => toggleList("ol"));
       addSubItem(fly, "Quote", () => wrapBlock("blockquote"));
     });
+
+    // Table submenu -- only shown when the click is inside a table.
+    const table = e && e.target && e.target.closest ? e.target.closest("table") : null;
+    if (table && viewerContentEl.contains(table)) {
+      addSubmenu("Table", (fly) => buildTableMenu(fly, table));
+    }
 
     // Insert submenu
     addSubmenu("Insert", (fly) => {
@@ -723,7 +940,7 @@
   function openMenu(e) {
     if (!active || !menuEl) return;
     e.preventDefault();
-    buildMenu();
+    buildMenu(e);
     menuEl.hidden = false;
     const x = Math.min(e.clientX, window.innerWidth - 200);
     const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);

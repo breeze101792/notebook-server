@@ -133,6 +133,20 @@
           <button class="eb" data-act="image"  title="Image">🖼</button>
           <button class="eb" data-act="codeblock" title="Code block">{}</button>
           <span class="eb-sep"></span>
+          <span class="eb-overflow eb-table">
+            <button class="eb eb-table-btn" data-act="table-menu" title="Table actions">▦</button>
+            <div class="eb-menu eb-table-menu" hidden>
+              <button class="eb" data-act="table-row-above">Insert row above</button>
+              <button class="eb" data-act="table-row-below">Insert row below</button>
+              <button class="eb" data-act="table-row-delete">Delete row</button>
+              <button class="eb" data-act="table-col-left">Insert column left</button>
+              <button class="eb" data-act="table-col-right">Insert column right</button>
+              <button class="eb" data-act="table-col-delete">Delete column</button>
+              <button class="eb" data-act="table-header">Toggle header row</button>
+              <button class="eb" data-act="table-delete">Delete table</button>
+            </div>
+          </span>
+          <span class="eb-sep"></span>
           <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
           <button class="eb" data-act="redo"   title="Redo (Ctrl+Y)">↷</button>
           <!-- Overflow menu: the less-common syntaxes live here -->

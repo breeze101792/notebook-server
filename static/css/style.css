@@ -462,6 +462,15 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   justify-content: flex-start;
   height: 28px;
 }
+/* Table actions dropdown: a second overflow-style menu anchored to the
+ * ▦ button. It reuses .eb-menu styling but is positioned relative to
+ * its own .eb-table wrapper. */
+.edit-bar .eb-table { position: relative; }
+.edit-bar .eb-table .eb-table-menu {
+  right: auto;
+  left: 0;
+  min-width: 170px;
+}
 /* Any .eb that carries the [hidden] attribute must actually hide, despite
  * the .eb rule above setting `display: inline-flex` (which outranks the
  * UA's `[hidden] { display: none }` at equal specificity, since user CSS

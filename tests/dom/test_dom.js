@@ -2230,6 +2230,26 @@ function check(label, cond, extra) {
     await tick(50);
     check("hybrid: clean exit after save", !window.NB.hybrid.isActive());
 
+    // --- hybrid task-list checkbox toggle ---
+    // marked renders checkboxes disabled; hybrid re-enables them and the
+    // browser's native toggle + change event marks the doc dirty.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    vc.innerHTML = "<ul><li><input type=\"checkbox\" checked=\"\"> done</li><li><input type=\"checkbox\"> todo</li></ul>";
+    const cbs = vc.querySelectorAll('input[type="checkbox"]');
+    check("hybrid: checkboxes exist", cbs.length === 2, "count=" + cbs.length);
+    check("hybrid: checkbox disabled attr removed", !cbs[0].hasAttribute("disabled"), "disabled=" + cbs[0].getAttribute("disabled"));
+    const before = cbs[0].checked;
+    // Simulate a real browser: native toggle flips checked, then a
+    // change event fires. The hybrid handler should mark dirty.
+    cbs[0].checked = !cbs[0].checked;
+    cbs[0].dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    check("hybrid: checkbox toggled on click", cbs[0].checked !== before, "before=" + before + " after=" + cbs[0].checked);
+    check("hybrid: dirty after checkbox toggle", window.NB.hybrid.isDirty());
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+
     // --- hybrid Save & Exit flow ---
     // The Save&Exit button is visible in hybrid mode, saves, then exits.
     await window.NB.hybrid.enter();

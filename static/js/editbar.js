@@ -32,6 +32,7 @@
   const bar         = document.getElementById("edit-bar");
   const overflowBtn = bar.querySelector(".eb-overflow-btn");
   const overflowMenu = bar.querySelector(".eb-menu");
+  const tableMenu   = bar.querySelector(".eb-table-menu");
 
   /* Get the current selection as { start, end, text, value }. The
    * `start`/`end` fields are char offsets into the document
@@ -206,12 +207,174 @@
     more() {
       overflowMenu.hidden = !overflowMenu.hidden;
     },
+
+    /* Table actions dropdown trigger. */
+    "table-menu"() {
+      tableMenu.hidden = !tableMenu.hidden;
+    },
+
+    /* --- table operations (markdown source) ---------------------- */
+
+    /* Find the markdown table block that contains the cursor, and
+     * return { start, end, lines, rowIdx, colIdx } where lines is the
+     * array of raw table lines and rowIdx/colIdx locate the cursor's
+     * cell. Returns null if the cursor isn't inside a table. */
+    _tableAt() {
+      const { start, value } = sel();
+      const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+      const lineEndIdx = value.indexOf("\n", start);
+      const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+      const curLine = value.slice(lineStart, lineEnd);
+      if (!/^\s*\|.*\|/.test(curLine)) return null;
+      // Walk up to find the first table line.
+      let headerStart = lineStart;
+      while (headerStart > 0) {
+        const p = value.lastIndexOf("\n", headerStart - 1);
+        const prevLine = value.slice(p + 1, headerStart);
+        if (!/^\s*\|.*\|/.test(prevLine)) break;
+        headerStart = p + 1;
+      }
+      // Walk down to find the last table line.
+      let tableEnd = lineEnd;
+      let nextStart = lineEndIdx === -1 ? value.length : lineEndIdx + 1;
+      while (nextStart < value.length) {
+        const n = value.indexOf("\n", nextStart);
+        const nextLine = value.slice(nextStart, n === -1 ? value.length : n);
+        if (!/^\s*\|.*\|/.test(nextLine)) break;
+        tableEnd = n === -1 ? value.length : n;
+        nextStart = n + 1;
+      }
+      const block = value.slice(headerStart, tableEnd);
+      const lines = block.split("\n");
+      const rowIdx = lines.findIndex((l) => {
+        const ls = value.lastIndexOf("\n", start - 1) + 1;
+        return value.slice(ls, ls + l.length) === l;
+      });
+      // Column index: count pipes before the cursor on the current line.
+      const before = value.slice(lineStart, start);
+      const colIdx = Math.max(0, (before.match(/\|/g) || []).length - 1);
+      return { start: headerStart, end: tableEnd, lines, rowIdx, colIdx };
+    },
+
+    /* Split a table line into its cells (trimmed, without leading/trailing |). */
+    _splitCells(line) {
+      const s = line.trim();
+      const inner = s.replace(/^\|/, "").replace(/\|$/, "");
+      return inner.split("|").map((c) => c.trim());
+    },
+
+    /* Rebuild a table line from cells, preserving the original
+     * leading/trailing pipe style. */
+    _joinCells(cells, original) {
+      const lead = /^\s*\|/.test(original) ? "|" : "";
+      const trail = /\|\s*$/.test(original) ? "|" : "";
+      return lead + cells.join(" | ") + trail;
+    },
+
+    /* Rewrite the table block under the cursor with new lines. */
+    _rewriteTable(newLines) {
+      const t = actions._tableAt();
+      if (!t) return;
+      const { start, end, value } = sel();
+      const newBlock = newLines.join("\n");
+      const newDoc = value.slice(0, start) + newBlock + value.slice(end);
+      NB.cmEditor.setValue(newDoc);
+      NB.cmEditor.setSelection(start, start + newBlock.length);
+    },
+
+    "table-row-above"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.slice();
+      const idx = t.rowIdx;
+      if (idx <= 0) return; // can't insert above the header
+      const cells = actions._splitCells(lines[idx]);
+      lines.splice(idx, 0, actions._joinCells(cells.map(() => "cell"), lines[idx]));
+      actions._rewriteTable(lines);
+    },
+    "table-row-below"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.slice();
+      const idx = t.rowIdx;
+      if (idx <= 0) return;
+      const cells = actions._splitCells(lines[idx]);
+      lines.splice(idx + 1, 0, actions._joinCells(cells.map(() => "cell"), lines[idx]));
+      actions._rewriteTable(lines);
+    },
+    "table-row-delete"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.slice();
+      const idx = t.rowIdx;
+      if (idx <= 0) return; // don't delete the header
+      if (lines.length <= 2) return; // only header + one row left
+      lines.splice(idx, 1);
+      actions._rewriteTable(lines);
+    },
+    "table-col-left"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.map((line, i) => {
+        if (i === 1) return line; // separator row unchanged
+        const cells = actions._splitCells(line);
+        cells.splice(t.colIdx, 0, "cell");
+        return actions._joinCells(cells, line);
+      });
+      actions._rewriteTable(lines);
+    },
+    "table-col-right"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.map((line, i) => {
+        if (i === 1) return line;
+        const cells = actions._splitCells(line);
+        cells.splice(t.colIdx + 1, 0, "cell");
+        return actions._joinCells(cells, line);
+      });
+      actions._rewriteTable(lines);
+    },
+    "table-col-delete"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.map((line, i) => {
+        if (i === 1) return line;
+        const cells = actions._splitCells(line);
+        if (cells.length <= 1) return line;
+        cells.splice(t.colIdx, 1);
+        return actions._joinCells(cells, line);
+      });
+      actions._rewriteTable(lines);
+    },
+    "table-header"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const lines = t.lines.slice();
+      // Toggle: if the separator row exists, remove it (header becomes body);
+      // otherwise insert one after the first row.
+      const sepIdx = lines.findIndex((l) => /^\s*\|?[\s:|-]+\|?\s*$/.test(l) && l.includes("-"));
+      if (sepIdx !== -1) {
+        lines.splice(sepIdx, 1);
+      } else {
+        const cells = actions._splitCells(lines[0]);
+        lines.splice(1, 0, "| " + cells.map(() => "---").join(" | ") + " |");
+      }
+      actions._rewriteTable(lines);
+    },
+    "table-delete"() {
+      const t = actions._tableAt();
+      if (!t) return;
+      const { start, end, value } = sel();
+      const newDoc = value.slice(0, start) + value.slice(end);
+      NB.cmEditor.setValue(newDoc);
+      NB.cmEditor.setSelection(start, start);
+    },
   };
 
   /* --- visibility / wiring ---------------------------------------- */
 
   function show() { bar.hidden = false; }
-  function hide() { bar.hidden = true; overflowMenu.hidden = true; }
+  function hide() { bar.hidden = true; overflowMenu.hidden = true; if (tableMenu) tableMenu.hidden = true; }
 
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -220,6 +383,7 @@
     const fn = actions[act];
     if (fn) fn();
     if (btn.closest(".eb-menu")) overflowMenu.hidden = true;
+    if (btn.closest(".eb-table-menu")) tableMenu.hidden = true;
   });
 
   document.addEventListener("click", (e) => {
