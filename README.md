@@ -20,8 +20,75 @@ plain `.md` files on disk — no database, no build step.
   font-size scale, and per-theme code-block highlight stylesheet.
 - Optional two-password gate (admin + viewer) with bcrypt-hashed
   credentials stored in `config/auth.json`.
+- Optional AI assistant (✨) that drives any OpenAI-compatible endpoint
+  and proposes notebook edits as reviewable Apply/Reject cards.
 - All UI state (open files, widths, theme, recent files) is persisted
   to `config/config.json` and restored on next launch.
+
+## Markdown syntax
+
+Notebooks are rendered client-side by **marked v12** (GFM mode, `breaks`
+off) with **highlight.js** for code blocks, plus an extension for
+**Mermaid diagrams**. Headings get stable anchor ids (used by the outline
+and by `?file=…&heading=…` deep links).
+
+- **Everything GFM v12 supports** — headings + TOC, bold/italic/strike,
+  inline code, blockquotes, ordered/unordered lists, nested lists,
+  links + autolinks (bare URLs), tables (incl. column alignment), task
+  lists (`- [ ]` / `- [x]`), fenced code blocks with language labels,
+  horizontal rules, and HTML passthrough.
+- **Syntax highlighting** — a fenced block tagged with a language
+  (e.g. `` ```js `` or `` ```python ``) gets highlight.js colors; the
+  code highlight theme follows the light/dark body theme.
+- **Mermaid diagrams** — a fenced block tagged with the `` mermaid ``
+  language renders as a live SVG diagram (flowcharts, sequence, class,
+  state, ER, gantt, pie, journey, mindmap, timeline, gitGraph, …). Click
+  an SVG in the viewer to open a lightbox; a diagram with a syntax error
+  is marked in place with a toast. Rendering is asynchronous, so the raw
+  Mermaid source stays in your note.
+- **Copy button** — every fenced code block gets a hover "Copy" that
+  copies the raw source (pre-highlight).
+
+Emoji are not translated into images (there is no emoji shortcode
+plugin) — type them as unicode or HTML entities. `breaks` is off, so a
+single newline does **not** start a new paragraph: use a blank line.
+Markdown is rendered **un-sanitized** (see *Security note*), so HTML
+inside a note is emitted as-is.
+
+## AI assistant
+
+The ✨ pane in the left activity bar is an agentic assistant for working
+on your notes. It talks to any OpenAI-compatible
+`/v1/chat/completions` endpoint (OpenAI, openai-compatible local
+servers such as ollama/LM Studio, OpenRouter, …) through a server-side
+SSE relay — your API keys never leave the server.
+
+**Tools.** The assistant has four tools it can call with fenced
+`` ```nb-tool `` JSON blocks:
+
+- `list` — enumerate notes (runs automatically, shown as a trace line).
+- `read` — fetch a note's content (runs automatically).
+- `patch` — edit an existing note (an Apply/Reject card appears).
+- `write` — create a **new** note (an Apply/Reject card appears).
+
+`read`/`list` execute immediately and their output is fed back so the
+model can continue. `patch`/`write` always surface as reviewable cards
+with a color-coded diff (dual line numbers + `@@ hunk @@` header); you
+Apply or Reject each one. Nothing is written to disk until you click
+Apply. Writes are blocked on paths that already exist ("use patch
+instead"), and patch anchors are re-verified against the current file at
+apply time, so a stale proposal fails closed instead of damaging a note.
+Assistant replies are rendered as Markdown (headings, lists, tables,
+code fences with syntax highlighting + a Copy button).
+
+**Conversation.** The assistant keeps the full transcript in memory, so
+follow-ups retain context; the **Clear** button resets it. Switching
+tabs changes the "current file" it references.
+
+**Settings → AI.** Add/name/remove provider profiles (base URL, model,
+API key), pick a default, and Test connectivity. The **Custom prompt**
+applied to whichever provider is active sits below the provider list.
+
 
 ## Quick start
 
