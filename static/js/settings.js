@@ -931,6 +931,7 @@
   const aiPromptSaveBtn = document.getElementById("settings-ai-prompt-save");
   const aiPromptStatusEl = document.getElementById("settings-ai-prompt-status");
   const aiAddBtn   = document.getElementById("settings-ai-add");
+  const aiSaveAsBtn = document.getElementById("settings-ai-saveas");
   const aiCancelBtn = document.getElementById("settings-ai-cancel");
   const aiFormTitle = document.getElementById("settings-ai-form-title");
   const aiHelpEl   = document.getElementById("settings-ai-help");
@@ -963,6 +964,11 @@
         ? ("Edit provider: " + aiEditingName) : "Add a provider";
     }
     if (aiAddBtn) aiAddBtn.textContent = aiEditingName ? "Save changes" : "Add provider";
+    if (aiSaveAsBtn) {
+      aiSaveAsBtn.hidden = !aiEditingName;
+      aiSaveAsBtn.disabled = !canEdit ||
+        !aiNameEl.value.trim() || !aiUrlEl.value.trim();
+    }
     if (aiCancelBtn) aiCancelBtn.hidden = !aiEditingName;
     if (aiPromptSaveBtn) {
       // Prompt Save only when admin + text differs from the last snapshot.
@@ -1206,6 +1212,39 @@
   }
   if (aiCancelBtn) {
     aiCancelBtn.addEventListener("click", cancelAiEdit);
+  }
+  // "Save as new": duplicate the current form values into a brand-new
+  // provider (only shown while editing). The original row is left
+  // untouched; the new row carries the key only if one was typed.
+  if (aiSaveAsBtn) {
+    aiSaveAsBtn.addEventListener("click", async () => {
+      if (ai_add_inflight) return;
+      const name = aiNameEl.value.trim();
+      const baseUrl = aiUrlEl.value.trim();
+      const model = document.getElementById("settings-ai-model").value.trim();
+      const apiKey = aiKeyEl.value;
+      if (!name || !baseUrl) return;
+      if (aiProviders.some(p => p.name === name)) {
+        setAiError("A provider named \"" + name + "\" already exists");
+        return;
+      }
+      ai_add_inflight = true;
+      aiSaveAsBtn.disabled = true;
+      aiProviders.push({
+        name, baseUrl, model, apiKey,
+        hasKey: apiKey.length > 0,
+      });
+      if (!aiDefaultName) aiDefaultName = name;
+      const ok = await commitAiProviders();
+      if (ok) {
+        cancelAiEdit();
+      } else {
+        aiProviders = aiProviders.filter(p => p.name !== name);
+        renderAiList();
+      }
+      ai_add_inflight = false;
+      refreshAiControls();
+    });
   }
   // Global prompt: its own Save button + dirty tracking (independent of
   // the provider form). Ctrl/Cmd+Enter saves from the textarea.
