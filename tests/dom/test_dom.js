@@ -7703,6 +7703,29 @@ function check(label, cond, extra) {
     aiBubbles().length >= 3 && lastCard() === card,
     "bubbles=" + aiBubbles().length);
 
+  // Assistant markdown: the follow-up answer contains **bold** + a fenced
+  // block; verify it renders as real elements (marked pipeline), not raw
+  // asterisk text.
+  {
+    aiChatStreams.push([
+      sseFrame("Answer with **bold**, a list:\n\n- item one\n- item two\n\nand code:\n\n```js\nconsole.log(1);\n```\n"),
+    ]);
+    aiInput().value = "show markdown";
+    aiSend();
+    await tick(120);
+    const prose = Array.from(window.document.querySelectorAll("#ai-chat-log .ai-msg-assistant > .ai-prose-span"));
+    const lastProse = prose[prose.length - 1];
+    check("ai: assistant prose renders markdown (strong + list + code)",
+      lastProse && lastProse.querySelector("strong") &&
+      lastProse.querySelector("ul li") &&
+      lastProse.querySelector("pre code"),
+      "children=" + (lastProse ? lastProse.children.length : 0));
+    check("ai: code fence in prose is highlighted + has a Copy button",
+      lastProse && lastProse.querySelector("pre code.hljs") &&
+      lastProse.querySelector("pre .code-copy-btn"),
+      "");
+  }
+
   // --- Turn 3: DELETE-style patch whose find no longer matches -> 400 --
   aiChatStreams.push([
     sseFrame("```nb-edit\n" + JSON.stringify({

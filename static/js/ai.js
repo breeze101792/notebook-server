@@ -674,8 +674,59 @@
     log.scrollTop = log.scrollHeight;
   }
 
+  /* Render a prose blob as markdown (same pipeline as the viewer:
+   * marked + highlight.js, then post-process). Return a fragment.
+   * Falls back to a plain-text node when marked is unavailable so the
+   * message never disappears. Not sanitized -- same trust model as the
+   * notebook itself (the user's own files), per the viewer's note. */
+  function renderMarkdown(text) {
+    const frag = document.createDocumentFragment();
+    const host = document.createElement("div");
+    frag.appendChild(host);
+    if (window.marked) {
+      host.innerHTML = marked.parse(text, { gfm: true, breaks: false });
+    } else {
+      const span = document.createElement("span");
+      span.className = "ai-prose-span";
+      span.textContent = text;
+      host.appendChild(span);
+      return frag;
+    }
+    if (window.hljs) {
+      host.querySelectorAll("pre code").forEach(el => {
+        try { hljs.highlightElement(el); }
+        catch (e) { /* leave as plain text */ }
+      });
+    }
+    host.querySelectorAll("pre").forEach(pre => {
+      if (NB.app && NB.app.copyToClipboard) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "code-copy-btn";
+        btn.textContent = "Copy";
+        btn.setAttribute("aria-label", "Copy code to clipboard");
+        btn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          try {
+            await NB.app.copyToClipboard(pre.textContent);
+            btn.textContent = "Copied!";
+            btn.classList.add("copied");
+            setTimeout(() => {
+              btn.textContent = "Copy";
+              btn.classList.remove("copied");
+            }, 1200);
+          } catch (_) { /* toast path not available here */ }
+        });
+        pre.appendChild(btn);
+      }
+    });
+    return frag;
+  }
+
   /* Streaming bubble renderer: re-parses the whole text on every delta;
-   * when the structure is unchanged, updates only the last prose node. */
+   * when the structure is unchanged, updates only the last prose node.
+   * Prose renders as markdown (headings, lists, code fences, tables). */
   function renderAssistantContent(bubble, fullText, state) {
     const parsed = parseProposals(fullText);
     const shape = parsed.segments.map(s =>
@@ -687,7 +738,7 @@
       if (last && last.type === "text") {
         const node = bubble.lastChild;
         if (node && node.classList && node.classList.contains("ai-prose-span")) {
-          node.textContent = last.text;
+          node.replaceChildren(renderMarkdown(last.text));
         }
       }
       scrollLog(bubble.parentNode);
@@ -700,7 +751,7 @@
         if (!seg.text) continue;
         const span = document.createElement("span");
         span.className = "ai-prose-span";
-        span.textContent = seg.text;
+        span.appendChild(renderMarkdown(seg.text));
         bubble.appendChild(span);
       } else if (seg.type === "card") {
         bubble.appendChild(makePatchCardFromProposal(seg.proposal));
