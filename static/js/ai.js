@@ -349,13 +349,20 @@
       card.appendChild(desc);
     }
 
-    const applied = () => {
+    const applied = async () => {
       /* The patch landed. Tell the watcher to expect our own mtime echo
        * (prevents a poller "changed externally" event for our own
-       * write), then refresh through the same event path the viewer
-       * refreshes on. */
+       * write), fetch the fresh content, then refresh through the same
+       * event path the viewer refreshes on. The event carries the fresh
+       * data so an already-open tab is updated immediately (the watcher
+       * suppress above is why we can't rely on file:external-change). */
       if (NB.watcher) NB.watcher.noteSelfSave(t.path);
-      NB.evt.emit("ai:applied", { path: t.path });
+      let data = null;
+      try {
+        const fresh = await NB.api.getFile(t.path);
+        if (fresh && fresh.content !== undefined) data = fresh;
+      } catch (_) { /* tab refresh best-effort; next open refetches */ }
+      NB.evt.emit("ai:applied", { path: t.path, data });
     };
 
     const applyBtnRef = { current: null };
