@@ -187,25 +187,77 @@
     return rows;
   }
 
+  /* Hunk summary line, git-style: "@@ -12,3 +12,5 @@". Rendered as the
+   * first row of the diff so the change is located at a glance. */
+  function hunkLabel(rows) {
+    const firstOld = rows.find(r => r.oldNum != null);
+    const firstNew = rows.find(r => r.newNum != null);
+    let del = 0, add = 0;
+    for (const r of rows) {
+      if (r.type === "del") del++;
+      else if (r.type === "add") add++;
+    }
+    const oldPart = firstOld ? ("-" + firstOld.oldNum +
+      (del ? "," + del : "")) : "-0,0";
+    const newPart = firstNew ? ("+" + firstNew.newNum +
+      (add ? "," + add : "")) : "+0,0";
+    return "@@ " + oldPart.slice(1) + " " + newPart.slice(1) + " @@";
+  }
+
   function buildDiffEl(oldText, newText) {
+    const rows = diffRows(oldText, newText);
     const el = document.createElement("div");
     el.className = "ai-diff";
-    for (const row of diffRows(oldText, newText)) {
+    let del = 0, add = 0;
+    for (const r of rows) {
+      if (r.type === "del") del++;
+      else if (r.type === "add") add++;
+    }
+    const header = document.createElement("div");
+    header.className = "diff-row diff-hunk";
+    header.textContent = hunkLabel(rows);
+    el.appendChild(header);
+    for (const row of rows) {
       const line = document.createElement("div");
       line.className = "diff-row diff-" + row.type;
-      const num = document.createElement("span");
-      num.className = "diff-num";
-      num.textContent = row.type === "del" ? String(row.oldNum ?? "")
-        : row.type === "add" ? String(row.newNum ?? "")
-        : String(row.oldNum ?? "");
+      // Dual gutter, unified-grid style: old number | new number | sign |
+      // code. Deleted lines blank the new number; added lines blank the
+      // old one — same convention as a GitHub split view.
+      const oldNum = document.createElement("span");
+      oldNum.className = "diff-num diff-num-old";
+      oldNum.textContent = row.oldNum != null ? String(row.oldNum) : "";
+      const newNum = document.createElement("span");
+      newNum.className = "diff-num diff-num-new";
+      newNum.textContent = row.newNum != null ? String(row.newNum) : "";
+      const sign = document.createElement("span");
+      sign.className = "diff-sign";
+      sign.textContent = row.type === "add" ? "+" :
+                         row.type === "del" ? "−" : "";
       const txt = document.createElement("span");
       txt.className = "diff-text";
-      txt.textContent = (row.type === "add" ? "+ " :
-                         row.type === "del" ? "− " : "  ") + row.text;
-      line.append(num, txt);
+      txt.textContent = row.text;
+      line.append(oldNum, newNum, sign, txt);
       el.appendChild(line);
     }
+    el.dataset.del = String(del);
+    el.dataset.add = String(add);
     return el;
+  }
+
+  /* "-2 +5" change badges for the card header. */
+  function changeStats(el) {
+    const wrap = document.createElement("span");
+    wrap.className = "ai-diff-stats";
+    wrap.appendChild(statBadge("del", el.dataset.del || "0"));
+    wrap.appendChild(statBadge("add", el.dataset.add || "0"));
+    return wrap;
+  }
+
+  function statBadge(kind, count) {
+    const b = document.createElement("span");
+    b.className = "ai-stat " + kind;
+    b.textContent = (kind === "del" ? "−" : "+") + count;
+    return b;
   }
 
   /* Client-side preview of what a batch of /api/edit ops does to `text`.
@@ -336,14 +388,23 @@
     });
 
     /* Diff preview: fetch the file and simulate. Failure to fetch must
-     * never block applying -- the server is the final authority. */
+     * never block applying -- the server is the final authority. When the
+     * ops can't be simulated client-side, show an ops list instead so the
+     * card is never a bare "trust me". */
     (async () => {
       try {
         const data = await NB.api.getFile(t.path);
         const preview = previewPatch(data.content || "", t.edits);
         if (preview !== null) {
-          card.insertBefore(buildDiffEl(data.content || "", preview),
-                            card.querySelector(".ai-edit-actions"));
+          const diff = buildDiffEl(data.content || "", preview);
+          card.insertBefore(diff, card.querySelector(".ai-edit-actions"));
+          head.appendChild(changeStats(diff));
+        } else {
+          const note = document.createElement("div");
+          note.className = "ai-patch-ops-note";
+          note.textContent = t.edits.length + " op" +
+            (t.edits.length === 1 ? "" : "s") + " · preview unavailable (applied atomically)";
+          card.insertBefore(note, card.querySelector(".ai-edit-actions"));
         }
       } catch (_) { /* no preview */ }
     })();
@@ -375,21 +436,21 @@
       card.appendChild(desc);
     }
 
-    const body = document.createElement("div");
-    body.className = "ai-diff ai-write-body";
-    for (const ln of t.content.split("\n").slice(0, 40)) {
-      const line = document.createElement("div");
-      line.className = "diff-row add";
-      const num = document.createElement("span");
-      num.className = "diff-num";
-      num.textContent = "+";
-      const txt = document.createElement("span");
-      txt.className = "diff-text";
-      txt.textContent = ln;
-      line.append(num, txt);
-      body.appendChild(line);
+    /* Whole-file diff: everything is an addition against an empty base.
+     * buildDiffEl gives the same dual gutter + hunk header as patch
+     * cards; rows beyond 40 are elided with a footer note. */
+    const lines = t.content.split("\n");
+    const shown = lines.slice(0, 40);
+    const body = buildDiffEl("", t.content.split("\n").slice(0, 40).join("\n"));
+    if (lines.length > 40) {
+      const more = document.createElement("div");
+      more.className = "diff-row diff-more";
+      more.textContent = "… " + (lines.length - 40) + " more line" +
+        (lines.length - 40 === 1 ? "" : "s");
+      body.appendChild(more);
     }
     card.appendChild(body);
+    head.appendChild(changeStats(body));
 
     const applyBtnRef = { current: null };
     async function onApply() {

@@ -2410,69 +2410,139 @@ body[data-theme="light"] #viewer-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px 0;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
 }
 .ai-edit-op {
-  font-size: .7rem;
+  font-size: .68rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .5px;
-  background: var(--accent-soft);
-  color: var(--accent);
   border-radius: 4px;
-  padding: 2px 6px;
+  padding: 2px 7px;
   flex: 0 0 auto;
+  border: 1px solid transparent;
 }
+/* Per-op badge colors: WRITE green (create), PATCH amber (mutate),
+ * append/prepend neutral. The color matches the card's border on hover
+ * so the intent reads before the label does. */
+.ai-edit-card[data-op="write"]  .ai-edit-op { color: var(--ok); background: rgba(95, 212, 154, .12); }
+.ai-edit-card[data-op="patch"]  .ai-edit-op { color: var(--warn); background: rgba(243, 180, 84, .12); }
+.ai-edit-card[data-op="append"] .ai-edit-op,
+.ai-edit-card[data-op="prepend"] .ai-edit-op,
+.ai-edit-card[data-op="replace"] .ai-edit-op { color: var(--fg-muted); background: var(--bg-elev); }
+
 .ai-edit-path {
   font-size: .8rem;
-  color: var(--fg-muted);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ai-edit-path:empty { display: none; }
+/* Change stats (-2 +5) pinned to the right edge of the header. */
+.ai-diff-stats {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.ai-stat {
+  font-size: .7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.ai-stat.del { color: var(--danger); background: rgba(255, 107, 107, .10); }
+.ai-stat.add { color: var(--ok); background: rgba(95, 212, 154, .12); }
 .ai-edit-desc {
-  padding: 4px 10px 0;
-  font-size: .82rem;
+  padding: 0 10px;
+  padding-top: 6px;
+  font-size: .8rem;
   color: var(--fg-muted);
 }
-
-.ai-diff {
-  margin: 8px 0 0;
-  background: var(--code-bg);
+.ai-patch-ops-note {
+  padding: 8px 10px;
+  font-size: .78rem;
+  color: var(--fg-muted);
   border-top: 1px solid var(--border);
+}
+
+/* The diff is a 4-column grid (old num | new num | sign | code) with a
+ * hunk header row, like a compact GitHub unified view. The gutter has a
+ * subtle inset background so code always starts at the same x. */
+.ai-diff {
+  margin: 0;
+  background: var(--code-bg);
   border-bottom: 1px solid var(--border);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: .78rem;
-  line-height: 1.5;
+  font-size: .76rem;
+  line-height: 1.55;
   overflow-x: auto;
-  max-height: 240px;
+  max-height: 260px;
   overflow-y: auto;
 }
 .diff-row {
-  display: flex;
-  white-space: pre;
-  padding: 0 8px;
+  display: grid;
+  grid-template-columns: 2.4em 2.4em 1em 1fr;
+  align-items: baseline;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: max-content;
+  padding-right: 8px;
 }
 .diff-num {
-  flex: 0 0 34px;
   text-align: right;
-  padding-right: 8px;
+  padding: 0 6px 0 0;
   color: var(--fg-muted);
-  opacity: .75;
+  opacity: .6;
   user-select: none;
+  font-size: .7rem;
+  flex: 0 0 auto;
 }
-.diff-text { word-break: break-all; white-space: pre-wrap; }
-.diff-add { background: rgba(95, 212, 154, .12); }
-.diff-add .diff-text,
-.diff-add .diff-num { color: var(--ok); }
-.diff-del { background: rgba(255, 107, 107, .10); text-decoration: line-through; }
-.diff-del .diff-text,
-.diff-del .diff-num { color: var(--danger); text-decoration: line-through; }
+.diff-sign { user-select: none; font-weight: 600; }
+.diff-text { white-space: pre-wrap; }
+/* Hunk header: "@@ -12,3 +12,5 @@" — a location line, not a change. */
+.diff-hunk {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: .72rem;
+  padding: 2px 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;   /* full-width row, not gridded */
+  white-space: nowrap;
+}
+.diff-add {
+  background: rgba(95, 212, 154, .10);
+}
+.diff-add .diff-sign,
+.diff-add .diff-text { color: var(--ok); }
+.diff-add .diff-num-new { background: rgba(95, 212, 154, .22); opacity: 1; }
+.diff-del {
+  background: rgba(255, 107, 107, .10);
+}
+.diff-del .diff-sign,
+.diff-del .diff-text { color: var(--danger); }
+.diff-del .diff-text { text-decoration: line-through; text-decoration-color: rgba(255, 107, 107, .45); }
+.diff-del .diff-num-old { background: rgba(255, 107, 107, .22); opacity: 1; }
 .diff-ctx { color: var(--fg-muted); }
+.diff-more {
+  color: var(--fg-muted);
+  font-style: italic;
+  display: block;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
 
 .ai-edit-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  align-items: center;
   padding: 8px 10px;
 }
 .ai-btn {
@@ -2483,10 +2553,17 @@ body[data-theme="light"] #viewer-content {
   padding: 4px 14px;
   font-size: .82rem;
   cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
 }
 .ai-btn:hover { border-color: var(--accent); color: var(--accent); }
-.ai-btn.ai-apply { border-color: var(--accent); color: var(--accent); }
-.ai-btn.ai-apply:hover { background: var(--accent-soft); }
+/* Apply is the primary action: filled accent, not just an outline. */
+.ai-btn.ai-apply {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.ai-btn.ai-apply:hover { background: var(--accent); opacity: .88; color: #fff; }
 .ai-btn:disabled { opacity: .5; cursor: default; }
 
 .ai-card-status {
@@ -2590,10 +2667,6 @@ body[data-theme="light"] #viewer-content {
 }
 .ai-tool-out.err { color: var(--danger); }
 
-.ai-write-card .ai-write-body { border-top: 1px solid var(--border); }
-.ai-write-card .diff-row.add { background: rgba(95, 212, 154, .07); }
-.ai-write-card .diff-num { flex: 0 0 18px; }
-
 .ai-clear {
   border: 1px solid var(--border);
   background: var(--bg-elev);
@@ -2605,6 +2678,4 @@ body[data-theme="light"] #viewer-content {
 }
 .ai-clear:hover { color: var(--fg); border-color: var(--accent); }
 
-/* Legacy single-op cards (no tool call) neutral badge */
-.ai-edit-card[data-op="append"] .ai-edit-op,
-.ai-edit-card[data-op="prepend"] .ai-edit-op { background: var(--bg-elev); color: var(--fg); }
+/* Legacy single-op badge colors live with the per-op rules above. */

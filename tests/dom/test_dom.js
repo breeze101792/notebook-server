@@ -7656,6 +7656,20 @@ function check(label, cond, extra) {
   check("ai: patch card previews the diff before applying",
     card && card.querySelector(".diff-del") && card.querySelector(".diff-add"),
     "rows=" + (card ? card.querySelectorAll(".diff-row").length : 0));
+  check("ai: diff has dual line numbers + sign + hunk header",
+    card && card.querySelector(".diff-num-old") !== null &&
+    card.querySelector(".diff-num-new") !== null &&
+    card.querySelector(".diff-sign") !== null &&
+    /^@@ /.test(card.querySelector(".diff-hunk").textContent.trim()),
+    card && card.querySelector(".diff-hunk").textContent);
+  check("ai: card header shows -/+ change stats",
+    card && /−1/.test(card.querySelector(".ai-stat.del").textContent) &&
+    /\+1/.test(card.querySelector(".ai-stat.add").textContent),
+    card && card.querySelector(".ai-diff-stats").textContent);
+  check("ai: apply is the primary (filled) action with per-op badge color",
+    card && card.querySelector(".ai-btn.ai-apply") !== null &&
+    card.querySelector(".ai-edit-op").textContent === "patch",
+    "");
   card.querySelector(".ai-apply").dispatchEvent(
     new window.MouseEvent("click", { bubbles: true }));
   await tick(150);
@@ -7742,6 +7756,12 @@ function check(label, cond, extra) {
     writeCard && writeCard.dataset.testWriteCard === "1" &&
     writeCard.dataset.op === "write",
     writeCard ? writeCard.dataset.op : "none");
+  check("ai: write card previews as an all-add diff with hunk + stats",
+    writeCard.querySelector(".diff-hunk") &&
+    writeCard.querySelectorAll(".diff-add").length >= 1 &&
+    writeCard.querySelector(".ai-stat.add") &&
+    writeCard.querySelector(".ai-edit-path").textContent.includes("new file"),
+    writeCard.querySelector(".ai-diff-stats").textContent);
   writeCard.querySelector(".ai-apply").dispatchEvent(
     new window.MouseEvent("click", { bubbles: true }));
   await tick(100);
