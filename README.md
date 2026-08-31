@@ -61,6 +61,13 @@ and by `?file=…&heading=…` deep links).
   to open it full-size with zoom in/out.
 - **Copy button** — every fenced code block gets a hover "Copy" that
   copies the raw source (pre-highlight).
+- **Wikilinks** — Obsidian-style `[[Target]]` internal note links. A
+  bare stem resolves to a note by basename (`[[README]]` and
+  `[[README.md]]` both link to `README.md`), a path is relative to the
+  current note's folder, and a trailing `#anchor` deep-links to a
+  heading. `[[Target|label]]` sets the link text. Unresolvable targets
+  render as plain text (no dead link). Clicking a wikilink opens the
+  target in place (SPA, no page reload).
 
 Emoji are not translated into images (there is no emoji shortcode
 plugin) — type them as unicode or HTML entities. `breaks` is off, so a

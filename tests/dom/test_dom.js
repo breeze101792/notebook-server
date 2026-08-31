@@ -2788,6 +2788,30 @@ function check(label, cond, extra) {
     check("hybrid: viewer-content has rendered content after exit",
       vc.innerHTML.length > 0 && vc.querySelector("h1") !== null);
 
+    // --- hybrid wikilink round-trip ---
+    // A [[Target]] rendered as <a data-wikilink> must come back out of
+    // domToMarkdown as [[Target]] (not a normal [text](href) link), so a
+    // WYSIWYG edit doesn't rewrite internal links.
+    FILES["notes/a.md"] = "# File A\n\nSee [[b]] and [[b|File B]].\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const wlMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid: wikilink [[b]] round-trips as [[b]]",
+      wlMd.includes("[[b]]"), JSON.stringify(wlMd).slice(0, 120));
+    check("hybrid: wikilink [[b|File B]] round-trips with label",
+      wlMd.includes("[[b|File B]]"), JSON.stringify(wlMd).slice(0, 120));
+    check("hybrid: wikilink does NOT become a markdown link",
+      !/\[File B\]\(b\)/.test(wlMd), JSON.stringify(wlMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+
     // --- hybrid save flow ---
     // Re-enter hybrid mode, type a change, save, and verify the save
     // POST was sent to the server.
@@ -7114,6 +7138,100 @@ function check(label, cond, extra) {
     window.Element.prototype.scrollIntoView = realScroll;
     window.HTMLElement.prototype.scrollIntoView = realScroll;
     window.console.warn = realWarn;
+  }
+
+  console.log("== wikilinks ==");
+  // Obsidian-style [[Target]] internal links. viewer.js registers a
+  // marked extension that tokenises [[...]] into <a data-wikilink>; the
+  // click handler resolves the target against the current note + tree
+  // and routes through openDeepLink. Unresolvable targets render as
+  // plain text (no dead link).
+  {
+    // Seed a source file with wikilinks: a bare stem, a stem with a
+    // label, a path with a heading anchor, and an unresolvable target.
+    FILES["notes/a.md"] = "# File A\n\n" +
+      "TODO fix this bug.\n\n" +
+      "## Sub A\n\nbody\n\n" +
+      "See [[b]] and [[b|File B]] and [[b#file-b]] and [[ghost]].\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    check("wikilink: notes/a.md active", window.NB.tabs.getActive() === "notes/a.md");
+
+    // The marked extension renders [[b]] -> <a data-wikilink href="b">.
+    const wlAnchors = () => window.document.querySelectorAll("#viewer-content a[data-wikilink]");
+    check("wikilink: [[b]] renders as <a data-wikilink>",
+      wlAnchors().length === 3, "got " + wlAnchors().length + " wikilink anchors");
+    const bLink = window.document.querySelector('#viewer-content a[data-wikilink][href="b"]');
+    check("wikilink: bare stem [[b]] href is 'b'",
+      !!bLink && bLink.textContent === "b",
+      bLink ? "href=" + bLink.getAttribute("href") + " text=" + bLink.textContent : "(none)");
+    const bLabel = window.document.querySelector('#viewer-content a[data-wikilink][href="b"]');
+    // The labelled form [[b|File B]] -> href="b" text="File B".
+    const labelled = Array.from(wlAnchors()).find(a => a.textContent === "File B");
+    check("wikilink: [[b|File B]] renders label as text",
+      !!labelled && labelled.getAttribute("href") === "b",
+      labelled ? "href=" + labelled.getAttribute("href") : "(none)");
+    // The heading form [[b#file-b]] -> href="b#file-b".
+    const withHeading = window.document.querySelector('#viewer-content a[data-wikilink][href="b#file-b"]');
+    check("wikilink: [[b#file-b]] keeps the #anchor in href",
+      !!withHeading, withHeading ? withHeading.getAttribute("href") : "(none)");
+    // Unresolvable [[ghost]] renders as plain text, not a link.
+    check("wikilink: unresolvable [[ghost]] is NOT a link",
+      !window.document.querySelector('#viewer-content a[data-wikilink][href="ghost"]'),
+      "ghost anchor present");
+
+    // Clicking [[b]] should resolve to notes/b.md (stem index) and open
+    // it via openDeepLink, pushing a navStack entry (back button).
+    const backBtn = window.document.getElementById("back-btn");
+    if (backBtn && !backBtn.disabled) {
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
+    const scrollCalls = [];
+    const realScroll = window.Element.prototype.scrollIntoView;
+    window.Element.prototype.scrollIntoView = function () { scrollCalls.push(this.id); };
+    window.HTMLElement.prototype.scrollIntoView = window.Element.prototype.scrollIntoView;
+    bLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("wikilink: click [[b]] opens notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+    check("wikilink: click [[b]] enables back button (navStack push)",
+      backBtn && !backBtn.disabled,
+      "disabled=" + (backBtn ? backBtn.disabled : "n/a"));
+    // Clicking [[b#file-b]] should scroll to the heading.
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    if (backBtn && !backBtn.disabled) {
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    }
+    scrollCalls.length = 0;
+    // Re-query the anchor: re-opening notes/a.md re-rendered the DOM,
+    // so the earlier `withHeading` reference is detached.
+    const wlHeading = window.document.querySelector('#viewer-content a[data-wikilink][href="b#file-b"]');
+    check("wikilink: [[b#file-b]] anchor present after re-open", !!wlHeading);
+    wlHeading.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("wikilink: click [[b#file-b]] opens notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+    check("wikilink: click [[b#file-b]] scrolls to file-b heading",
+      scrollCalls.filter(id => id === "file-b").length === 1,
+      "calls=" + JSON.stringify(scrollCalls));
+
+    // Restore stubs + fixture.
+    window.Element.prototype.scrollIntoView = realScroll;
+    window.HTMLElement.prototype.scrollIntoView = realScroll;
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
   }
 
   console.log("== viewer top spacing ==");

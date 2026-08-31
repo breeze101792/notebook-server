@@ -1850,6 +1850,9 @@ body[data-theme="light"] #viewer-content {
 .markdown-body h3 { font-size: 1.25em; }
 .markdown-body p { margin: .7em 0; }
 .markdown-body a { color: var(--accent); }
+/* Wikilinks ([[Target]]) are internal note links. Give them a subtle
+ * underline so they read as clickable, distinct from plain text. */
+.markdown-body a[data-wikilink] { text-decoration: underline; text-underline-offset: 2px; }
 .markdown-body ul, .markdown-body ol { padding-left: 1.6em; }
 .markdown-body blockquote {
   border-left: 3px solid var(--accent);

@@ -253,6 +253,26 @@ A block with a Graphviz syntax error falls back to an inline error box
 
 ---
 
+## Wikilinks (internal note links)
+
+Obsidian-style `[[Target]]` links jump to another note in the notebook,
+in place (no page reload). A bare stem resolves to a note by basename,
+so `[[README]]` and `[[README.md]]` both link to `README.md` even from
+a subfolder. A path is relative to the current note's folder, and a
+trailing `#anchor` deep-links to a heading. `[[Target|label]]` sets the
+link text.
+
+```markdown
+See [[README]] for the overview, or jump straight to [[README#core-rules]].
+The [[notes/b.md|B note]] covers the rest.
+```
+
+A target that doesn't match any note renders as plain text (no dead
+link). Clicking a wikilink opens the target in the current tab; the
+**Back** button returns you to where you were.
+
+---
+
 ## File tree + context menu (left panel)
 
 **How to use:**

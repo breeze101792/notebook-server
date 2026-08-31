@@ -63,6 +63,18 @@
     if (window.TurndownPluginGfm && window.TurndownPluginGfm.gfm) {
       turndownSvc.use(window.TurndownPluginGfm.gfm);
     }
+    // Round-trip [[wikilinks]]: viewer.js renders them as
+    // <a data-wikilink>. Without this rule turndown would emit a normal
+    // [text](href) link; with it, the original [[Target|label]] form is
+    // preserved so a WYSIWYG edit doesn't rewrite internal links.
+    turndownSvc.addRule("wikilink", {
+      filter: (node) =>
+        node.nodeName === "A" && node.getAttribute("data-wikilink") === "1",
+      replacement: (content, node) => {
+        const target = node.getAttribute("href") || "";
+        return "[[" + target + (content === target ? "" : "|" + content) + "]]";
+      },
+    });
     return turndownSvc;
   }
 

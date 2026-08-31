@@ -51,6 +51,129 @@
     return id;
   }
 
+  /* --- wikilinks: [[Target]] internal note links --------------------- */
+  /* Obsidian-style internal links. A `[[Target]]` (or `[[Target|label]]`)
+   * in a note renders as an in-app link to another note. The target is
+   * resolved the same way the backend's graph view does (see
+   * _normalise_link in app.py):
+   *   - a bare stem (no path separator) matches a note by basename
+   *     without extension, so [[README]] and [[README.md]] both link to
+   *     README.md even from a subfolder;
+   *   - a path is treated as relative to the current note's folder;
+   *   - a trailing #anchor is kept as a heading deep-link.
+   * Unresolvable targets render as plain text (no dead link), matching
+   * the graph view's "no ghost nodes" rule.
+   *
+   * We register a marked inline extension so `[[...]]` is tokenised
+   * before marked's default link handling. The extension emits an <a>
+   * with a data-wikilink attribute; the click handler below routes it
+   * through the same in-app navigation as a normal cross-note link. */
+  function registerWikilinkExtension() {
+    if (!window.marked || window.marked.__nbWikilink) return;
+    window.marked.__nbWikilink = true;
+    window.marked.use({
+      extensions: [{
+        name: "wikilink",
+        level: "inline",
+        start(src) { return src.indexOf("[["); },
+        tokenizer(src) {
+          const m = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/.exec(src);
+          if (!m) return undefined;
+          return {
+            type: "wikilink",
+            raw: m[0],
+            target: m[1].trim(),
+            text: (m[2] || "").trim() || m[1].trim(),
+          };
+        },
+        renderer(token) {
+          // Only emit a link when the target resolves to a known note
+          // (matching the graph view's "no ghost nodes" rule); otherwise
+          // render the raw [[...]] as plain text so there's no dead
+          // link. resolveWikilink reads the current note + tree.
+          const resolved = resolveWikilink(token.target);
+          if (!resolved) return token.raw;
+          // Escape the href so a target with quotes/spaces can't break
+          // out of the attribute. The text is the note's own content
+          // (rendered unsanitised anyway), so we pass it through.
+          const href = String(token.target).replace(/"/g, "&quot;");
+          return '<a href="' + href + '" data-wikilink="1">' + token.text + "</a>";
+        },
+      }],
+    });
+  }
+
+  /* resolveWikilink(target) -> { path, heading } | null. Resolves a
+   * [[target]] against the current note + the file tree, mirroring the
+   * backend's _normalise_link. Returns null when the target can't be
+   * resolved to a known note. */
+  function resolveWikilink(target) {
+    const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : [];
+    const currentPath = (active || "").replace(/^\/+/, "");
+    const currentDir = currentPath.includes("/")
+      ? currentPath.slice(0, currentPath.lastIndexOf("/"))
+      : "";
+
+    // Split off a #heading anchor.
+    let heading = null;
+    let t = target;
+    if (t.includes("#")) {
+      const i = t.indexOf("#");
+      heading = t.slice(i + 1);
+      t = t.slice(0, i);
+    }
+    t = t.trim();
+    if (!t) return null;
+
+    // Build a stem index (basename without extension -> path) so a bare
+    // stem resolves even when the file lives in a subfolder.
+    const stemIndex = {};
+    (function index(nodes) {
+      for (const n of nodes) {
+        if (n.type === "file") {
+          const base = n.path.split("/").pop();
+          const stem = base.toLowerCase().endsWith(".md") ? base.slice(0, -3) : base;
+          if (!(stem in stemIndex)) stemIndex[stem] = n.path;
+        }
+        if (n.children) index(n.children);
+      }
+    })(tree);
+
+    // A bare stem (no path separator): try the stem index first.
+    let resolved = null;
+    if (!t.includes("/")) {
+      let stem = t;
+      if (stem.toLowerCase().endsWith(".md")) stem = stem.slice(0, -3);
+      if (stem in stemIndex) resolved = stemIndex[stem];
+    }
+    // Otherwise (or if the stem didn't match) treat it as a relative
+    // path from the current note's folder.
+    if (!resolved) {
+      const candidate = (currentDir ? currentDir + "/" : "") + t;
+      const norm = candidate.split("/").filter(Boolean).join("/");
+      // Normalise "." and ".." segments.
+      const parts = [];
+      for (const seg of norm.split("/")) {
+        if (seg === "." || seg === "") continue;
+        if (seg === "..") parts.pop();
+        else parts.push(seg);
+      }
+      const clean = parts.join("/");
+      if (treeHasPath(tree, clean)) resolved = clean;
+    }
+
+    if (!resolved) return null;
+    return { path: resolved, heading };
+  }
+
+  function treeHasPath(tree, path) {
+    for (const n of tree) {
+      if (n.path === path) return true;
+      if (n.children && treeHasPath(n.children, path)) return true;
+    }
+    return false;
+  }
+
   /* --- copy button on code blocks ----------------------------------- */
   /* attachCopyButton(pre) wires a single "Copy" button into a <pre>
    * wrapper. The button:
@@ -834,6 +957,21 @@
     // (open in new tab, etc.) goes through the browser's default.
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (e.button !== 0) return;
+    // Wikilink: [[Target]] rendered as <a data-wikilink>. Resolve the
+    // target against the current note + tree and route through the same
+    // in-app navigation as a cross-note link (push a navStack entry so
+    // back can return, then openDeepLink).
+    if (a.getAttribute("data-wikilink") === "1") {
+      e.preventDefault();
+      const resolved = resolveWikilink(a.getAttribute("href") || "");
+      if (!resolved) return; // unresolvable -> nothing to do
+      const currentPath = (NB.viewer.getPath() || "").replace(/^\/+/, "");
+      const fromFile = currentPath || null;
+      const fromScroll = viewerContentEl.scrollTop;
+      pushNav({ type: "cross-note", fromFile, fromScroll });
+      NB.app.openDeepLink({ file: resolved.path, heading: resolved.heading });
+      return;
+    }
     // Same-origin only. new URL(broken) throws -- bail on bad input.
     let url;
     try { url = new URL(a.getAttribute("href"), window.location.href); }
@@ -884,6 +1022,10 @@
    * reference resolves at call time. */
 
   NB.viewer = viewer;
+
+  // Register the [[wikilink]] marked extension once at module load so
+  // every render (viewer + hybrid) tokenises [[...]] into in-app links.
+  registerWikilinkExtension();
 
   /* --- back button + navStack popstate handler --------------------- */
   /* The back button (#back-btn) in the topbar pops the top of
