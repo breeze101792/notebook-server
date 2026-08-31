@@ -50,6 +50,8 @@
     let lightboxOpen = false;
     let zoomLevel = 1;          // 1 = 100%
     let zoomFit   = true;       // true when constrained to viewport
+    let panX = 0;               // accumulated drag offset (in SVG px)
+    let panY = 0;
 
     function getSvg() {
       return body.querySelector("svg");
@@ -61,15 +63,23 @@
       pct.textContent = zoomFit ? "Fit" : Math.round(zoomLevel * 100) + "%";
     }
 
+    /* The zoom transform combines scale and pan. The pan is applied in
+     * the SVG's local coordinate frame (before the scale), so the drag
+     * deltas are divided by zoomLevel to move the image 1:1 with the
+     * cursor. transform-origin is center-center (set in CSS), so a
+     * translate+scale keeps the image centred then grows it. When fit
+     * (not zoomed) there is nothing to pan, so we drop the transform. */
     function applyZoom() {
       const svg = getSvg();
       if (!svg) return;
       if (zoomFit) {
         body.classList.add("svg-fit");
         svg.style.transform = "none";
+        panX = 0;
+        panY = 0;
       } else {
         body.classList.remove("svg-fit");
-        svg.style.transform = "scale(" + zoomLevel + ")";
+        svg.style.transform = "translate(" + panX + "px, " + panY + "px) scale(" + zoomLevel + ")";
       }
       updateZoomDisplay();
     }
@@ -143,7 +153,10 @@
     if (fitBtn)     fitBtn.addEventListener("click", fitToPage);
     // Backdrop click: close when clicking the overlay background or any
     // blank area around the SVG (the body container). Clicks on the SVG
-    // itself or the controls toolbar are ignored.
+    // itself or the controls toolbar are ignored. A mouseup after a drag
+    // starting on the SVG lands on a different element, so the browser
+    // fires no click event on the backdrop -- a pan can never close the
+    // lightbox on its own.
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay || e.target === body) closeLightbox();
     });
@@ -154,6 +167,65 @@
       if (e.deltaY < 0) zoomIn();
       else              zoomOut();
     }, { passive: false });
+
+    /* --- drag to pan (left or right mouse drag) -------------------- */
+    /* When zoomed in past fit, drag the picture around the overlay.
+     * Works with any primary mouse button (left or right); right-drag
+     * is often how people grab diagrams, so we suppress the context
+     * menu while dragging. A drag on the SVG pans; a plain click on the
+     * backdrop still closes the overlay. */
+    let dragging = null;   // { startX, startY, origPanX, origPanY, moved }
+    const svgEl = () => getSvg();
+
+    function setDraggingClass(on) {
+      const s = svgEl();
+      if (s) s.classList.toggle("dragging", on);
+    }
+
+    function onDragStart(e) {
+      if (!lightboxOpen) return;
+      // Left (0) or right (2) mouse button only; ignore middle (1).
+      if (e.button !== 0 && e.button !== 2) return;
+      // Ignore drags that begin on the controls toolbar.
+      if (e.target.closest && e.target.closest(".mermaid-lightbox-controls")) return;
+      // Only pan when actually zoomed (fit mode has nothing to pan).
+      if (zoomFit) return;
+      e.preventDefault();
+      dragging = { startX: e.clientX, startY: e.clientY, origPanX: panX, origPanY: panY, moved: false };
+      setDraggingClass(true);
+    }
+
+    function onDragMove(e) {
+      if (!dragging) return;
+      const dx = e.clientX - dragging.startX;
+      const dy = e.clientY - dragging.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
+      // Divide by zoomLevel so the image tracks the cursor 1:1.
+      panX = dragging.origPanX + dx / zoomLevel;
+      panY = dragging.origPanY + dy / zoomLevel;
+      applyZoom();
+    }
+
+    function onDragEnd() {
+      if (!dragging) return;
+      dragging = null;
+      setDraggingClass(false);
+    }
+
+    // Right button is used to drag the picture around (common for
+    // grabbing diagrams). Suppress the browser's context menu whenever
+    // the lightbox is open and zoomed, so a right-drag isn't interrupted
+    // by the menu appearing. (The viewer's right-click context menu is
+    // separate and only applies to the file tree, not the lightbox.)
+    overlay.addEventListener("mousedown", onDragStart);
+    overlay.addEventListener("contextmenu", (e) => {
+      // When zoomed (pan enabled), suppress the context menu so right-
+      // drag isn't interrupted. In fit mode there's nothing to pan, so
+      // allow the menu (matches normal page behaviour).
+      if (!zoomFit) e.preventDefault();
+    });
+    window.addEventListener("mousemove", onDragMove);
+    window.addEventListener("mouseup", onDragEnd);
 
     /* Keyboard: Escape closes the lightbox. Ctrl++ / Ctrl+- for zoom. */
     document.addEventListener("keydown", (e) => {

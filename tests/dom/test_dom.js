@@ -1776,6 +1776,62 @@ function check(label, cond, extra) {
     /\.mlb-btn\s*\{/.test(mermaidCssText),
     "no .mlb-btn rule");
 
+  // --- lightbox: drag to pan when zoomed ----------------------------
+  // Re-open the mermaid lightbox, zoom in (so it's not in fit mode), then
+  // simulate a left-mouse drag across the SVG. Dragging should pan the
+  // image (visible as a translate(...) transform on the SVG), and a click
+  // that follows a drag should NOT close the overlay.
+  {
+    mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    await tick(10);
+    window.NB.mermaid.zoomIn();          // leave fit mode -> 100%
+    await tick(10);
+    const lbSvg = () => lightboxBody() && lightboxBody().querySelector("svg");
+    check("lightbox drag: zoomed SVG has a transform before drag",
+      lbSvg() && /scale\(1\)/.test(lbSvg().style.transform),
+      lbSvg() ? lbSvg().style.transform : "(no svg)");
+
+    // Simulate a drag: mousedown on the SVG, mousemove (+40,+30),
+    // mouseup on window.
+    const svg = lbSvg();
+    svg.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 100, clientY: 100 }));
+    window.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 140, clientY: 130 }));
+    await tick(10);
+    window.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+    await tick(10);
+    check("lightbox drag: zoomed SVG translated after drag",
+      /translate\(40px, 30px\)/.test(lbSvg().style.transform),
+      lbSvg() ? lbSvg().style.transform : "(no svg)");
+
+    // A drag that starts on the SVG and ends elsewhere fires no click on
+    // the backdrop, so a pan can never close the lightbox by itself.
+
+    // Right-drag also pans + suppresses the context menu.
+    const before = lbSvg().style.transform;
+    lbSvg().dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 2, clientX: 200, clientY: 200 }));
+    window.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 220, clientY: 210 }));
+    await tick(10);
+    window.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true, button: 2 }));
+    // Right-drag context menu suppressed when zoomed.
+    let ctxPrevented = false;
+    const ctxEvt = new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    ctxEvt.preventDefault = () => { ctxPrevented = true; };
+    lightboxOverlay().dispatchEvent(ctxEvt);
+    check("lightbox drag: right-drag translates + context menu suppressed when zoomed",
+      /translate\(60px, 40px\)/.test(lbSvg().style.transform) && ctxPrevented,
+      "transform=" + (lbSvg() ? lbSvg().style.transform : "(none)") + " ctxPrevented=" + ctxPrevented);
+
+    // Fit-to-page clears the pan (transform reset to "none").
+    window.NB.mermaid.fitToPage();
+    await tick(10);
+    check("lightbox drag: fitToPage clears the transform",
+      lbSvg() && lbSvg().style.transform === "none",
+      lbSvg() ? lbSvg().style.transform : "(no svg)");
+
+    window.NB.mermaid.closeLightbox();
+    await tick(10);
+  }
+
   // Cleanup: close the test files we opened so the rest of the
   // suite isn't carrying them. The TREE / FILES changes stay
   // (they're the test fixture), but the open tabs should match
