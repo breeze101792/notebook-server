@@ -52,6 +52,13 @@ and by `?file=…&heading=…` deep links).
   and bus timing in a note. WaveDrom's lenient JSON notation (unquoted
   keys, JS object syntax) is accepted; malformed blocks fall back to an
   inline error box with a toast.
+- **KaTeX math** — a fenced block tagged with the `` math `` (or
+  `` katex ``) language renders as a typeset equation (`` ```math `` +
+  LaTeX). Fast, offline, theme-independent.
+- **Graphviz diagrams** — a fenced block tagged with the `` dot `` (or
+  `` graphviz ``) language renders as a Graphviz graph (state machines,
+  dependency graphs, …). Compiled to WASM, runs offline. Click a graph
+  to open it full-size with zoom in/out.
 - **Copy button** — every fenced code block gets a hover "Copy" that
   copies the raw source (pre-highlight).
 

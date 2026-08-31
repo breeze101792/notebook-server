@@ -172,6 +172,20 @@
       NB.wavedrom.renderAll(viewerContentEl);
     }
 
+    // KaTeX math: blocks tagged ```math (or ```katex) are replaced with
+    // typeset equations. Renders to HTML (not SVG), so no lightbox.
+    // Runs in BOTH view mode and live preview.
+    if (NB.katex && NB.katex.renderAll) {
+      NB.katex.renderAll(viewerContentEl);
+    }
+
+    // Graphviz diagrams: blocks tagged ```dot (or ```graphviz) are
+    // replaced with rendered SVG graphs. Uses the shared lightbox for
+    // click-to-inspect + zoom. Runs in BOTH view mode and live preview.
+    if (NB.viz && NB.viz.renderAll) {
+      NB.viz.renderAll(viewerContentEl);
+    }
+
     // Copy buttons on code blocks. Only in view mode (content is
     // undefined); the live preview during editing gets the same
     // highlight but no button so the right pane stays focused on

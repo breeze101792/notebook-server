@@ -14,6 +14,10 @@
   <link rel="apple-touch-icon-precomposed" href="/static/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/vimnav.css">
+  <!-- KaTeX stylesheet + its woff2 fonts (vendored, works offline). The
+       math CSS is theme-independent (black on transparent), so it reads
+       on both light and dark surfaces. -->
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head>
@@ -700,6 +704,22 @@
     </div>
   </div>
 
+  <!-- Graphviz lightbox overlay: same click-to-inspect + zoom behaviour
+       as the mermaid/wavedrom lightboxes, but for rendered ```dot
+       diagrams. Reuses the generic .mermaid-lightbox-* / .mlb-* CSS
+       classes; only the element ids differ so the overlays are
+       independent. -->
+  <div id="viz-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="viz-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="vizlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="vizlb-zoom-pct">100%</span>
+      <button id="vizlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+      <button id="vizlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="vizlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+  </div>
+
   <!-- Vendored libs first (no CDN tags; works offline) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
@@ -710,6 +730,16 @@
        Unlike mermaid it needs no async load, so this tag is a plain
        <script>, not <script defer>. -->
   <script src="/static/vendor/wavedrom.unpkg.min.js"></script>
+  <!-- KaTeX (math typesetting; ~275KB UMD bundle) is loaded synchronously
+       so window.katex is available before katex.js runs. Renders ```math
+       code blocks to HTML. -->
+  <script src="/static/vendor/katex/katex.min.js"></script>
+  <!-- Graphviz (compiled to WASM). viz.js is the public API; viz.full.js
+       is the compiled Graphviz module. Loaded in this order so
+       full.render.js auto-attaches its render/Module onto window.Viz.
+       Renders ```dot code blocks to SVG. -->
+  <script src="/static/vendor/viz.js"></script>
+  <script src="/static/vendor/viz.full.js"></script>
   <!-- Mermaid (3.5MB) is loaded with defer so it doesn't block the
        page's first paint. The integration waits for window.mermaid
        to be available before rendering any diagrams, so the async
@@ -740,6 +770,15 @@
        viewer.js so NB.wavedrom exists when the viewer's render pass
        runs in the app. -->
   <script src="/static/js/wavedrom.js"></script>
+  <!-- katex.js: render ```math / ```katex code blocks to typeset
+       equations (window.katex is loaded synchronously above). Loaded
+       before viewer.js so NB.katex exists when the viewer's render pass
+       runs. -->
+  <script src="/static/js/katex.js"></script>
+  <!-- viz.js: render ```dot / ```graphviz code blocks to SVG graphs
+       (window.Viz is loaded synchronously above). Loaded before
+       viewer.js so NB.viz exists when the viewer's render pass runs. -->
+  <script src="/static/js/viz.js"></script>
   <script src="/static/js/viewer.js"></script>
   <script src="/static/js/editbar.js"></script>
   <script src="/static/js/hybrid.js"></script>

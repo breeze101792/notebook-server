@@ -606,6 +606,17 @@ const html = `<!DOCTYPE html><html><head>
       <button id="wdlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
+  <!-- Graphviz lightbox overlay (mirrors the mermaid one) -->
+  <div id="viz-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="viz-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="vizlb-zoom-out" class="mlb-btn" title="Zoom Out" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="vizlb-zoom-pct">100%</span>
+      <button id="vizlb-zoom-in" class="mlb-btn" title="Zoom In" aria-label="Zoom In">+</button>
+      <button id="vizlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="vizlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
+    </div>
+  </div>
 </body></html>`;
 
 const dom = new JSDOM(html, {
@@ -727,6 +738,51 @@ window.wavedrom = {
     const host = window.document.getElementById(output + index);
     if (host) host.innerHTML = __wavedrom.nextSvg;
   },
+};
+// KaTeX stub. The katex module (static/js/katex.js) calls
+// window.katex.renderToString(source, options) and injects the returned
+// HTML into a .katex-container. The real bundle is ~275KB; we stub it to
+// return a predictable HTML string so the module's container-mount and
+// error-fallback logic is exercised without loading it into jsdom.
+const __katex = {
+  renders: 0,
+  lastSource: null,
+  failNext: false,        // throw on the next render
+  nextHtml: '<span class="katex">E=mc^2</span>',
+};
+window.katex = {
+  renderToString(source, options) {
+    __katex.renders++;
+    __katex.lastSource = source;
+    if (__katex.failNext) {
+      __katex.failNext = false;
+      throw new Error("Parse error in math (test stub)");
+    }
+    return __katex.nextHtml;
+  },
+};
+// Graphviz (viz.js) stub. The viz module (static/js/viz.js) does
+// `new window.Viz()` then `viz.renderString(src, {format:"svg"})` and
+// extracts the <svg> from the returned document string. The real bundle
+// is a ~2MB WASM build; we stub the Viz class to return a predictable
+// SVG document so the module's container-mount, SVG-extraction, and
+// error-fallback logic is exercised without loading it into jsdom.
+const __viz = {
+  renders: 0,
+  lastSource: null,
+  failNext: false,        // throw on the next render
+  nextSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200" height="100"><text>graph</text></svg>',
+};
+window.Viz = class {
+  renderString(source, options) {
+    __viz.renders++;
+    __viz.lastSource = source;
+    if (__viz.failNext) {
+      __viz.failNext = false;
+      throw new Error("Syntax error in graph (test stub)");
+    }
+    return Promise.resolve(__viz.nextSvg);
+  }
 };
 // matchMedia stub: report a dark system preference (auto -> dark).
 window.matchMedia = () => ({
@@ -1127,6 +1183,8 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/lightbox.js"));
   evalIn(read("static/js/mermaid.js"));
   evalIn(read("static/js/wavedrom.js"));
+  evalIn(read("static/js/katex.js"));
+  evalIn(read("static/js/viz.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
@@ -1965,8 +2023,249 @@ function check(label, cond, extra) {
     window.document.getElementById("mermaid-lightbox") &&
     window.document.getElementById("mermaid-lightbox").hidden);
 
-  // Cleanup: close the wavedrom test tabs so the rest of the suite
+  console.log("== katex ==");
+  // The katex integration is in static/js/katex.js + the viewer's
+  // render() pipeline. The vendored bundle is not loaded into jsdom
+  // (same reason as mermaid); the test relies on the window.katex stub.
+  // Reset the stub so prior tests' render counts don't leak.
+  __katex.renders = 0;
+  __katex.failNext = false;
+  __katex.nextHtml = '<span class="katex">E=mc^2</span>';
+
+  const KATEX_BODY = "# Math\n\n" +
+    "```math\n" +
+    "E = mc^2\n" +
+    "```\n\n" +
+    "End.\n";
+  FILES["notes/katex.md"] = KATEX_BODY;
+  const kxNotesDir = (TREE.find(n => n.path === "notes"));
+  if (kxNotesDir && !kxNotesDir.children.some(c => c.path === "notes/katex.md")) {
+    kxNotesDir.children.push({ name: "katex.md", type: "file", path: "notes/katex.md" });
+  } else {
+    TREE.push({ name: "katex.md", type: "file", path: "notes/katex.md" });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/katex.md");
+  await tick(80);
+  const katexContainers = () => window.document.querySelectorAll("#viewer .katex-container");
+  const katexErrs = () => window.document.querySelectorAll("#viewer .katex-error");
+  check("katex: NB.katex module is loaded", !!window.NB.katex);
+  check("katex: rendering a ```math block produces a .katex-container",
+    katexContainers().length === 1,
+    "containers=" + katexContainers().length + " errors=" + katexErrs().length);
+  check("katex: the original <pre> was replaced (no orphan code.language-math left)",
+    window.document.querySelectorAll("#viewer pre > code.language-math").length === 0,
+    "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-math").length);
+  check("katex: the container's data-katex is 'ok'",
+    katexContainers()[0] && katexContainers()[0].dataset.katex === "ok",
+    "data=" + (katexContainers()[0] && katexContainers()[0].dataset.katex));
+  check("katex: the stub's renderToString was called once with the math source",
+    __katex.renders === 1 && /E = mc\^2/.test(__katex.lastSource || ""),
+    "renders=" + __katex.renders + " source=" + JSON.stringify(__katex.lastSource));
+  check("katex: the container holds the typeset HTML from renderToString",
+    katexContainers()[0] && /E=mc\^2/.test(katexContainers()[0].innerHTML),
+    "html=" + (katexContainers()[0] && katexContainers()[0].innerHTML.slice(0, 80)));
+
+  // Error fallback: arm the stub to throw on the next render.
+  __katex.failNext = true;
+  const BAD_KATEX_BODY = "```math\nE = \\frac{unclosed\n```\n";
+  FILES["notes/badkatex.md"] = BAD_KATEX_BODY;
+  TREE.push({ name: "badkatex.md", type: "file", path: "notes/badkatex.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/badkatex.md");
+  await tick(80);
+  check("katex: render error falls back to .katex-error block",
+    katexErrs().length === 1,
+    "errs=" + katexErrs().length);
+  check("katex: error block has a 'KaTeX error:' header",
+    katexErrs()[0] &&
+    /KaTeX error:/.test(katexErrs()[0].querySelector(".katex-error-head").textContent),
+    "head=" + (katexErrs()[0] && katexErrs()[0].querySelector(".katex-error-head").textContent));
+
+  // Recovery: re-activating the good file clears the error and re-renders.
+  __katex.failNext = false;
+  await window.NB.tabs.activate("notes/katex.md");
+  await tick(80);
+  check("katex: re-activating the good file clears the error",
+    katexErrs().length === 0 && katexContainers().length === 1,
+    "errs=" + katexErrs().length + " containers=" + katexContainers().length);
+
+  // NB.katex façade surface.
+  check("katex: NB.katex.renderAll is a function", typeof window.NB.katex.renderAll === "function");
+  check("katex: NB.katex.whenReady is a function", typeof window.NB.katex.whenReady === "function");
+
+  // CSS sanity.
+  const katexCssText = read("static/css/style.css");
+  check("katex: .katex-container style is in style.css",
+    /\.katex-container\s*\{/.test(katexCssText),
+    "no .katex-container rule");
+  check("katex: .katex-error style is in style.css",
+    /\.katex-error\s*\{/.test(katexCssText),
+    "no .katex-error rule");
+
+  console.log("== graphviz ==");
+  // The graphviz integration is in static/js/viz.js + the viewer's
+  // render() pipeline. The vendored WASM bundle is not loaded into
+  // jsdom; the test relies on the window.Viz stub. Reset the stub.
+  __viz.renders = 0;
+  __viz.failNext = false;
+  __viz.nextSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200" height="100"><text>graph</text></svg>';
+
+  const VIZ_BODY = "# Graph\n\n" +
+    "```dot\n" +
+    "digraph { a -> b }\n" +
+    "```\n\n" +
+    "End.\n";
+  FILES["notes/viz.md"] = VIZ_BODY;
+  const vzNotesDir = (TREE.find(n => n.path === "notes"));
+  if (vzNotesDir && !vzNotesDir.children.some(c => c.path === "notes/viz.md")) {
+    vzNotesDir.children.push({ name: "viz.md", type: "file", path: "notes/viz.md" });
+  } else {
+    TREE.push({ name: "viz.md", type: "file", path: "notes/viz.md" });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/viz.md");
+  await tick(80);
+  const vizContainers = () => window.document.querySelectorAll("#viewer .viz-container");
+  const vizErrs = () => window.document.querySelectorAll("#viewer .viz-error");
+  check("graphviz: NB.viz module is loaded", !!window.NB.viz);
+  check("graphviz: rendering a ```dot block produces a .viz-container",
+    vizContainers().length === 1,
+    "containers=" + vizContainers().length + " errors=" + vizErrs().length);
+  check("graphviz: the original <pre> was replaced (no orphan code.language-dot left)",
+    window.document.querySelectorAll("#viewer pre > code.language-dot").length === 0,
+    "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-dot").length);
+  check("graphviz: the container's data-viz is 'ok'",
+    vizContainers()[0] && vizContainers()[0].dataset.viz === "ok",
+    "data=" + (vizContainers()[0] && vizContainers()[0].dataset.viz));
+  check("graphviz: the stub's renderString was called once with the dot source",
+    __viz.renders === 1 && /digraph/.test(__viz.lastSource || ""),
+    "renders=" + __viz.renders + " source=" + JSON.stringify(__viz.lastSource));
+  check("graphviz: the container holds an <svg> from renderString",
+    vizContainers()[0] && vizContainers()[0].querySelector("svg"),
+    "html=" + (vizContainers()[0] && vizContainers()[0].innerHTML.slice(0, 80)));
+  const vzSvg = vizContainers()[0] && vizContainers()[0].querySelector("svg");
+  check("graphviz: svg has width+height attributes removed (CSS scales it)",
+    vzSvg && !vzSvg.getAttribute("height") && !vzSvg.getAttribute("width"),
+    "w=" + (vzSvg && vzSvg.getAttribute("width")) + " h=" + (vzSvg && vzSvg.getAttribute("height")));
+  check("graphviz: svg has a viewBox so the browser preserves the aspect ratio",
+    vzSvg && /^\d+ \d+ \d+ \d+$/.test(vzSvg.getAttribute("viewBox") || ""),
+    "viewBox=" + (vzSvg && vzSvg.getAttribute("viewBox")));
+
+  // Error fallback: arm the stub to throw on the next render.
+  __viz.failNext = true;
+  const BAD_VIZ_BODY = "```dot\ndigraph { this is not valid dot\n```\n";
+  FILES["notes/badviz.md"] = BAD_VIZ_BODY;
+  TREE.push({ name: "badviz.md", type: "file", path: "notes/badviz.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/badviz.md");
+  await tick(80);
+  check("graphviz: render error falls back to .viz-error block",
+    vizErrs().length === 1,
+    "errs=" + vizErrs().length);
+  check("graphviz: error block has a 'Graphviz error:' header",
+    vizErrs()[0] &&
+    /Graphviz error:/.test(vizErrs()[0].querySelector(".viz-error-head").textContent),
+    "head=" + (vizErrs()[0] && vizErrs()[0].querySelector(".viz-error-head").textContent));
+
+  // Recovery: re-activating the good file clears the error and re-renders.
+  __viz.failNext = false;
+  await window.NB.tabs.activate("notes/viz.md");
+  await tick(80);
+  check("graphviz: re-activating the good file clears the error",
+    vizErrs().length === 0 && vizContainers().length === 1,
+    "errs=" + vizErrs().length + " containers=" + vizContainers().length);
+
+  // NB.viz façade surface.
+  check("graphviz: NB.viz.renderAll is a function", typeof window.NB.viz.renderAll === "function");
+  check("graphviz: NB.viz.whenReady is a function", typeof window.NB.viz.whenReady === "function");
+
+  // CSS sanity.
+  const vizCssText = read("static/css/style.css");
+  check("graphviz: .viz-container style is in style.css",
+    /\.viz-container\s*\{/.test(vizCssText),
+    "no .viz-container rule");
+  check("graphviz: .viz-error style is in style.css",
+    /\.viz-error\s*\{/.test(vizCssText),
+    "no .viz-error rule");
+
+  // --- graphviz lightbox: click a graph to see it full-size ----------
+  const vzLightboxOverlay = () => window.document.getElementById("viz-lightbox");
+  const vzLightboxBody    = () => window.document.getElementById("viz-lightbox-body");
+  const vzLightboxClose   = () => window.document.getElementById("vizlb-close");
+  check("graphviz lightbox: overlay element exists", !!vzLightboxOverlay());
+  check("graphviz lightbox: body element exists", !!vzLightboxBody());
+  check("graphviz lightbox: close button exists", !!vzLightboxClose());
+  check("graphviz lightbox: zoom in button exists",
+    !!window.document.getElementById("vizlb-zoom-in"));
+  check("graphviz lightbox: zoom out button exists",
+    !!window.document.getElementById("vizlb-zoom-out"));
+  check("graphviz lightbox: fit button exists",
+    !!window.document.getElementById("vizlb-fit"));
+  check("graphviz lightbox: zoom percentage indicator exists",
+    !!window.document.getElementById("vizlb-zoom-pct"));
+  check("graphviz lightbox: overlay is hidden by default",
+    vzLightboxOverlay() && vzLightboxOverlay().hidden,
+    "hidden=" + (vzLightboxOverlay() ? vzLightboxOverlay().hidden : "n/a"));
+  const vzContainers = vizContainers();
+  check("graphviz lightbox: viz container exists (precondition)", vzContainers.length >= 1,
+    "count=" + vzContainers.length);
+  vzContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(20);
+  check("graphviz lightbox: click on .viz-container reveals the lightbox",
+    vzLightboxOverlay() && !vzLightboxOverlay().hidden,
+    "hidden=" + (vzLightboxOverlay() ? vzLightboxOverlay().hidden : "n/a"));
+  check("graphviz lightbox: body has an SVG clone",
+    vzLightboxBody() && vzLightboxBody().querySelector("svg") &&
+    vzLightboxBody().querySelector("svg").textContent === "graph",
+    "svg_text=" + (vzLightboxBody() && vzLightboxBody().querySelector("svg")
+      ? vzLightboxBody().querySelector("svg").textContent : "(no svg)"));
+  check("graphviz lightbox: body has svg-fit class on open",
+    vzLightboxBody().classList.contains("svg-fit"),
+    "classes=" + vzLightboxBody().className);
+  check("graphviz lightbox: zoom display shows 'Fit'",
+    window.document.getElementById("vizlb-zoom-pct").textContent === "Fit",
+    "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  window.NB.viz.zoomIn();
+  await tick(10);
+  check("graphviz lightbox: zoomIn removes svg-fit class",
+    !vzLightboxBody().classList.contains("svg-fit"),
+    "classes=" + vzLightboxBody().className);
+  check("graphviz lightbox: zoom display shows 100%",
+    window.document.getElementById("vizlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  window.NB.viz.zoomIn();
+  await tick(10);
+  check("graphviz lightbox: zoomIn to 125%",
+    window.document.getElementById("vizlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  window.NB.viz.fitToPage();
+  await tick(10);
+  check("graphviz lightbox: fitToPage restores svg-fit class",
+    vzLightboxBody().classList.contains("svg-fit"),
+    "classes=" + vzLightboxBody().className);
+  vzLightboxClose().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("graphviz lightbox: close button hides the overlay",
+    vzLightboxOverlay() && vzLightboxOverlay().hidden);
+  // The mermaid + wavedrom lightboxes must be unaffected.
+  check("graphviz lightbox: mermaid lightbox stays hidden",
+    window.document.getElementById("mermaid-lightbox") &&
+    window.document.getElementById("mermaid-lightbox").hidden);
+  check("graphviz lightbox: wavedrom lightbox stays hidden",
+    window.document.getElementById("wavedrom-lightbox") &&
+    window.document.getElementById("wavedrom-lightbox").hidden);
+
+  // Cleanup: close the diagram test tabs so the rest of the suite
   // starts from a known state (one canonical tab: notes/a.md).
+  await window.NB.tabs.close("notes/badviz.md", { force: true });
+  await window.NB.tabs.close("notes/viz.md", { force: true });
+  await window.NB.tabs.close("notes/badkatex.md", { force: true });
+  await window.NB.tabs.close("notes/katex.md", { force: true });
   await window.NB.tabs.close("notes/badwd.md", { force: true });
   await window.NB.tabs.close("notes/wavedrom.md", { force: true });
   await window.NB.tabs.activate("notes/a.md");

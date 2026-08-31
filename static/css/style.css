@@ -2018,6 +2018,91 @@ body[data-theme="light"] #viewer-content {
   white-space: pre;
   overflow-x: auto;
 }
+/* KaTeX math blocks. The .katex-container wraps a typeset equation
+ * (HTML, not SVG). KaTeX's own stylesheet handles the glyphs; we just
+ * give the block a card so it reads as a distinct element in the note,
+ * matching the diagram containers. Math is black-on-transparent, so it
+ * reads on both light and dark surfaces. */
+.katex-container {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.katex-container .katex-display {
+  margin: 0;
+}
+.katex-error {
+  margin: 12px 0;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.katex-error-head {
+  background: var(--warn);
+  color: var(--bg);
+  font-size: .86rem;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+.katex-source {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: .85rem;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
+/* Graphviz diagrams. The .viz-container wraps a rendered SVG produced
+ * by the graphviz (viz.js) library (```dot code blocks). Styling
+ * mirrors the mermaid/wavedrom containers so all diagram types share
+ * the same card look and the "click to inspect" affordance. */
+.viz-container {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  overflow-x: auto;
+}
+.viz-container svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  cursor: zoom-in;
+}
+.viz-error {
+  margin: 12px 0;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.viz-error-head {
+  background: var(--warn);
+  color: var(--bg);
+  font-size: .86rem;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+.viz-source {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: .85rem;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
 
 /* Mermaid lightbox: borderless full-screen overlay with a blurred
  * backdrop. The SVG sits centered in the body; a floating toolbar

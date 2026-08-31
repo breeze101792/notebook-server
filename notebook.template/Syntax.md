@@ -3,7 +3,7 @@
 A live demo of every feature the notebook supports. Open this file in
 the app and you'll see each section render the way it's meant to —
 code blocks with one-click **Copy** buttons, Mermaid diagrams, WaveDrom
-timing plots, syntax
+timing plots, KaTeX math, Graphviz graphs, syntax
 highlighting, the heading outline, the search field, the sidebar's
 **Bookmarks** section, and so on. The "how to use" notes under each
 section tell you where to click to exercise the feature.
@@ -179,6 +179,77 @@ source stays visible to correct it.
 > **Tip:** the rendered waveform's `<svg>` lives in a
 > `.wavedrom-container`, the same card style as Mermaid, so both diagram
 > types read as one family in a note.
+
+---
+
+## KaTeX math
+
+Blocks tagged ```math (or ```katex) render as typeset equations — handy
+for DSP, control theory, and signal notes. KaTeX is fast and works
+offline; the math is black-on-transparent so it reads on both light and
+dark themes.
+
+### Inline-style block
+
+```math
+E = mc^2
+```
+
+### A transfer function
+
+```math
+H(s) = \frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2}
+```
+
+### A matrix
+
+```math
+\begin{bmatrix}
+1 & 0 & 0 \\
+0 & \cos\theta & -\sin\theta \\
+0 & \sin\theta & \cos\theta
+\end{bmatrix}
+```
+
+A malformed expression renders the raw source in red (KaTeX's
+`throwOnError:false`) so you see exactly what to correct — no toast needed.
+
+---
+
+## Graphviz diagrams
+
+Blocks tagged ```dot (or ```graphviz) render as Graphviz graphs —
+state machines, dependency graphs, and call graphs. Graphviz is compiled
+to WASM and runs entirely in the browser, offline. Click a rendered
+graph to open it full-size with zoom in/out (like Mermaid and WaveDrom).
+
+### State machine
+
+```dot
+digraph fsm {
+  rankdir=LR;
+  node [shape=circle];
+  IDLE -> RUNNING [label="start"];
+  RUNNING -> IDLE [label="stop"];
+  RUNNING -> FAULT [label="error"];
+  FAULT -> IDLE [label="reset"];
+}
+```
+
+### Dependency graph
+
+```dot
+digraph deps {
+  rankdir=LR;
+  "app.c" -> "hal.c";
+  "app.c" -> "rtos.c";
+  "hal.c" -> "regs.h";
+  "rtos.c" -> "sched.h";
+}
+```
+
+A block with a Graphviz syntax error falls back to an inline error box
+(plus a toast) so the source stays visible to correct it.
 
 ---
 

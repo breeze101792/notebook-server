@@ -129,6 +129,52 @@
       pre.appendChild(code);
       e.replaceWith(pre);
     });
+    // Same round-trip for KaTeX math: replace each .katex-container (a
+    // typeset equation) and .katex-error box with a <pre><code
+    // class="language-math"> of the original source so turndown produces
+    // a ```math fenced block instead of stripping the HTML to text.
+    clone.querySelectorAll(".katex-container").forEach((c) => {
+      const src = c.dataset.katexSource || "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-math";
+      code.textContent = src;
+      pre.appendChild(code);
+      c.replaceWith(pre);
+    });
+    clone.querySelectorAll(".katex-error").forEach((e) => {
+      const srcEl = e.querySelector(".katex-source");
+      const src = srcEl ? srcEl.textContent : "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-math";
+      code.textContent = src;
+      pre.appendChild(code);
+      e.replaceWith(pre);
+    });
+    // Same round-trip for Graphviz diagrams: replace each .viz-container
+    // (a rendered SVG) and .viz-error box with a <pre><code
+    // class="language-dot"> of the original source so turndown produces a
+    // ```dot fenced block instead of stripping the SVG to text.
+    clone.querySelectorAll(".viz-container").forEach((c) => {
+      const src = c.dataset.vizSource || "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-dot";
+      code.textContent = src;
+      pre.appendChild(code);
+      c.replaceWith(pre);
+    });
+    clone.querySelectorAll(".viz-error").forEach((e) => {
+      const srcEl = e.querySelector(".viz-source");
+      const src = srcEl ? srcEl.textContent : "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-dot";
+      code.textContent = src;
+      pre.appendChild(code);
+      e.replaceWith(pre);
+    });
     let md = td.turndown(clone);
     // Turndown sometimes leaves a leading newline; trim it.
     return md.replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
@@ -156,6 +202,12 @@
     }
     if (NB.wavedrom && NB.wavedrom.renderAll) {
       NB.wavedrom.renderAll(viewerContentEl);
+    }
+    if (NB.katex && NB.katex.renderAll) {
+      NB.katex.renderAll(viewerContentEl);
+    }
+    if (NB.viz && NB.viz.renderAll) {
+      NB.viz.renderAll(viewerContentEl);
     }
     // Make task-list checkboxes interactive: marked renders them
     // disabled, so remove the disabled flag so the user can click to
