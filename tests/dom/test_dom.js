@@ -1844,8 +1844,8 @@ function check(label, cond, extra) {
   // The SVG is responsive: width/height attributes removed, aspect ratio
   // preserved via an inline style so max-width doesn't clip.
   const wdSvg = wavedromContainers()[0] && wavedromContainers()[0].querySelector("svg");
-  check("wavedrom: svg has width+height attributes removed (CSS scales it)",
-    wdSvg && !wdSvg.getAttribute("height") && !wdSvg.getAttribute("width"),
+  check("wavedrom: svg has height removed but width kept (CSS scales it, like mermaid)",
+    wdSvg && !wdSvg.getAttribute("height") && wdSvg.getAttribute("width"),
     "w=" + (wdSvg && wdSvg.getAttribute("width")) + " h=" + (wdSvg && wdSvg.getAttribute("height")));
   check("wavedrom: svg has a viewBox so the browser preserves the aspect ratio",
     wdSvg && /^\d+ \d+ \d+ \d+$/.test(wdSvg.getAttribute("viewBox") || ""),
@@ -2148,8 +2148,8 @@ function check(label, cond, extra) {
     vizContainers()[0] && vizContainers()[0].querySelector("svg"),
     "html=" + (vizContainers()[0] && vizContainers()[0].innerHTML.slice(0, 80)));
   const vzSvg = vizContainers()[0] && vizContainers()[0].querySelector("svg");
-  check("graphviz: svg has width+height attributes removed (CSS scales it)",
-    vzSvg && !vzSvg.getAttribute("height") && !vzSvg.getAttribute("width"),
+  check("graphviz: svg has height removed but width kept (CSS scales it, like mermaid)",
+    vzSvg && !vzSvg.getAttribute("height") && vzSvg.getAttribute("width"),
     "w=" + (vzSvg && vzSvg.getAttribute("width")) + " h=" + (vzSvg && vzSvg.getAttribute("height")));
   check("graphviz: svg has a viewBox so the browser preserves the aspect ratio",
     vzSvg && /^\d+ \d+ \d+ \d+$/.test(vzSvg.getAttribute("viewBox") || ""),

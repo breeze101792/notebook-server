@@ -81,9 +81,11 @@
       tmp.innerHTML = svgText;
       const svg = tmp.querySelector("svg");
       if (!svg) throw new Error("No SVG rendered");
-      // Make the SVG responsive: Graphviz emits fixed width/height +
-      // a viewBox. Pin the aspect ratio from the viewBox (as mermaid.js
-      // does) so max-width + max-height both scale the element uniformly.
+      // Make the SVG responsive, exactly like mermaid.js: keep the
+      // `width` attribute (so the SVG has an intrinsic width for
+      // aspect-ratio to anchor to) and remove only `height`. Pin the
+      // aspect ratio from the viewBox so max-width + max-height both
+      // scale the element uniformly instead of clipping.
       const vb = svg.getAttribute("viewBox");
       let vbW = 0, vbH = 0;
       if (vb) {
@@ -99,7 +101,6 @@
         if (vbW > 0 && vbH > 0) svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
       }
       svg.removeAttribute("height");
-      svg.removeAttribute("width");
       if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
       container.appendChild(svg);
       pre.replaceWith(container);

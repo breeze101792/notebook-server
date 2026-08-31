@@ -1991,7 +1991,16 @@ body[data-theme="light"] #viewer-content {
 .wavedrom-container svg {
   display: inline-block;
   max-width: 100%;
+  /* Cap the inline waveform to the viewer window height, exactly like
+   * mermaid: the SVG has `aspect-ratio` set from its viewBox (see
+   * wavedrom.js), so max-width + max-height both scale the element
+   * uniformly instead of clipping. A tall waveform shows at its natural
+   * size when it fits and scales down to fit otherwise; the lightbox
+   * still gives a full-size + zoomable view on click. */
+  max-height: calc(100dvh - var(--topbar-h) - 64px);
   height: auto;
+  width: auto;
+  cursor: zoom-in;
 }
 .wavedrom-error {
   margin: 12px 0;
@@ -2075,7 +2084,15 @@ body[data-theme="light"] #viewer-content {
 .viz-container svg {
   display: inline-block;
   max-width: 100%;
+  /* Cap the inline graph to the viewer window height, exactly like
+   * mermaid: the SVG has `aspect-ratio` set from its viewBox (see
+   * viz.js), so max-width + max-height both scale the element uniformly
+   * instead of clipping. A tall graph shows at its natural size when it
+   * fits and scales down to fit otherwise; the lightbox still gives a
+   * full-size + zoomable view on click. */
+  max-height: calc(100dvh - var(--topbar-h) - 64px);
   height: auto;
+  width: auto;
   cursor: zoom-in;
 }
 .viz-error {

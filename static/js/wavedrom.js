@@ -138,10 +138,11 @@
       if (svg) {
         host.removeChild(svg);
         container.appendChild(svg);
-        // Make the SVG responsive: WaveDrom emits fixed width/height
-        // attributes + a viewBox. Pin the aspect ratio from the viewBox
-        // (as mermaid.js does) so max-width + max-height both scale the
-        // element uniformly instead of clipping.
+        // Make the SVG responsive, exactly like mermaid.js: keep the
+        // `width` attribute (so the SVG has an intrinsic width for
+        // aspect-ratio to anchor to) and remove only `height`. Pin the
+        // aspect ratio from the viewBox so max-width + max-height both
+        // scale the element uniformly instead of clipping.
         const vb = svg.getAttribute("viewBox");
         let vbW = 0, vbH = 0;
         if (vb) {
@@ -159,7 +160,6 @@
           }
         }
         svg.removeAttribute("height");
-        svg.removeAttribute("width");
         if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
         // Sanitise: WaveDrom's SVG is generated from user JSON by a lib
         // we control, the same class of trust as mermaid's output, so we
