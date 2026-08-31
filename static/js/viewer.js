@@ -362,6 +362,7 @@
   }
   function showWelcome() {
     active = null;
+    setHasActiveFile(false);
     cache.clear();
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
@@ -416,6 +417,7 @@
       active = path;
       if (t.editMode) { NB.cmEditor.setValue(t.content); showEditor(); }
       else { showViewer(); render(); }
+      setHasActiveFile(true);
       NB.evt.emit("file:open", path);
       return t.content;
     },
@@ -424,7 +426,7 @@
     close(path) {
       cache.delete(path);
       if (NB.watcher) NB.watcher.forget(path);
-      if (active === path) active = null;
+      if (active === path) { active = null; setHasActiveFile(false); }
     },
 
     /* Re-key a tab when its file is moved/renamed; unsaved edits travel. */
@@ -493,6 +495,40 @@
       return true;
     },
     toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
+
+    /* Manually re-fetch the active file from disk and re-render, so the
+     * user can force a refresh without waiting for the watcher. Prompts
+     * before discarding unsaved edits (same guard as the external-change
+     * handler). Returns true if the reload happened, false if the user
+     * cancelled or there was nothing to reload. */
+    async reload() {
+      const path = active;
+      const t = cache.get(path);
+      if (!path || !t) return false;
+      if (viewer.isDirty(path)) {
+        const ok = confirm('"' + path + '" has unsaved edits.\n\n' +
+          'Discard them and reload from disk?');
+        if (!ok) return false;
+      }
+      try {
+        const fresh = await NB.api.getFile(path);
+        if (!fresh) return false;
+        t.content = fresh.content;
+        t.savedContent = fresh.content;
+        t.mtime = fresh.mtime != null ? fresh.mtime : t.mtime;
+        t.editMode = false;
+        showPreview = true;
+        if (NB.watcher) NB.watcher.noteOpened(path, t.mtime);
+        showViewer();
+        if (NB.cmEditor) NB.cmEditor.setValue(t.content);
+        render();
+        NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
+        NB.evt.emit("viewer:conflict", { path, conflict: false });
+        return true;
+      } catch (e) {
+        return false;
+      }
+    },
 
     /* Commit before navigating away (tab switch via Alt+H/L or the
      * browser back button). If the current file is in edit mode:
@@ -842,8 +878,12 @@
    * is false until the first push. */
   const navStack = [];
   const backBtn = document.getElementById("back-btn");
+  const reloadBtn = document.getElementById("reload-btn");
   function setHasNavHistory(has) {
     if (backBtn) backBtn.disabled = !has;
+  }
+  function setHasActiveFile(has) {
+    if (reloadBtn) reloadBtn.disabled = !has;
   }
   function pushNav(entry) {
     navStack.push(entry);
@@ -886,6 +926,9 @@
 
   if (backBtn) {
     backBtn.addEventListener("click", () => goBack());
+  }
+  if (reloadBtn) {
+    reloadBtn.addEventListener("click", () => NB.viewer.reload());
   }
 
   // A redo stack: H/L in vim navigate in-app history back/forward.
