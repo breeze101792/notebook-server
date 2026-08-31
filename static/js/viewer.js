@@ -161,6 +161,17 @@
       NB.mermaid.renderAll(viewerContentEl);
     }
 
+    // WaveDrom timing diagrams: blocks tagged ```wavedrom are replaced
+    // with rendered waveform SVGs (or a warning error box + source block
+    // on failure). Mirrors the mermaid pass above; runs in BOTH view mode
+    // and live preview so the user sees the diagram update as they type.
+    // NB.wavedrom.renderAll awaits each block sequentially (WaveDrom is
+    // lighter than mermaid, but the same sequential discipline keeps the
+    // main thread calm on a large document).
+    if (NB.wavedrom && NB.wavedrom.renderAll) {
+      NB.wavedrom.renderAll(viewerContentEl);
+    }
+
     // Copy buttons on code blocks. Only in view mode (content is
     // undefined); the live preview during editing gets the same
     // highlight but no button so the right pane stays focused on

@@ -46,6 +46,12 @@ and by `?file=…&heading=…` deep links).
   an SVG in the viewer to open a lightbox; a diagram with a syntax error
   is marked in place with a toast. Rendering is asynchronous, so the raw
   Mermaid source stays in your note.
+- **WaveDrom timing diagrams** — a fenced block tagged with the
+  `` wavedrom `` language renders as a waveform / timing plot
+  (`` ```wavedrom `` + a WaveDrom JSON object). Ideal for digital logic
+  and bus timing in a note. WaveDrom's lenient JSON notation (unquoted
+  keys, JS object syntax) is accepted; malformed blocks fall back to an
+  inline error box with a toast.
 - **Copy button** — every fenced code block gets a hover "Copy" that
   copies the raw source (pre-highlight).
 

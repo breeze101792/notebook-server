@@ -2,7 +2,8 @@
 
 A live demo of every feature the notebook supports. Open this file in
 the app and you'll see each section render the way it's meant to —
-code blocks with one-click **Copy** buttons, Mermaid diagrams, syntax
+code blocks with one-click **Copy** buttons, Mermaid diagrams, WaveDrom
+timing plots, syntax
 highlighting, the heading outline, the search field, the sidebar's
 **Bookmarks** section, and so on. The "how to use" notes under each
 section tell you where to click to exercise the feature.
@@ -137,6 +138,47 @@ pie title Where the bytes go
   "Stylesheet" : 11
   "Tests" : 6
 ```
+
+---
+
+## WaveDrom timing diagrams
+
+Blocks tagged ```wavedrom render as timing / waveform plots — handy for
+digital logic, bus transactions, or SPI/I[2]C captures in your notes.
+The JSON source uses WaveDrom's notation: unquoted keys are fine, and
+each signal maps a `wave` string (letters like `p` = rising edge,
+`` ` `` = toggle, `x` = unknown, digits = bus values, `.` = continue).
+
+### Simple clock + data
+
+```wavedrom
+{ signal: [
+  { name: "clk",  wave: "p.....|.|." },
+  { name: "dout", wave: "x.345x|=.x" },
+  { name: "cs_n", wave: "0.111..|1.0" }
+] }
+```
+
+### Bus with a phase label
+
+```wavedrom
+{ signal: [
+  [ "clk" ],
+  { name: "addr", wave: "x.=.=.=.|=.=.", data: ["A0", "A1", "A2", "A3"] },
+  { name: "data", wave: "x.=.=.=.|=.=.", data: ["D0", "D1", "D2", "D3"] },
+  [ "phase" ],
+  { name: "WE",  wave: "1.0..1.|0..", phase: [5, 6] }
+] }
+```
+
+Waveforms are self-contained SVGs — they don't flip with the theme the
+way Mermaid does, and the color/style comes from the block. A block with
+malformed JSON falls back to an inline error box (plus a toast) so the
+source stays visible to correct it.
+
+> **Tip:** the rendered waveform's `<svg>` lives in a
+> `.wavedrom-container`, the same card style as Mermaid, so both diagram
+> types read as one family in a note.
 
 ---
 

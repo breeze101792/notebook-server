@@ -105,6 +105,30 @@
       pre.appendChild(code);
       e.replaceWith(pre);
     });
+    // Same round-trip for WaveDrom waveform diagrams: replace each
+    // .wavedrom-container (a rendered SVG) and .wavedrom-error box with a
+    // <pre><code class="language-wavedrom"> of the original source so
+    // turndown produces a ```wavedrom fenced block instead of stripping
+    // the SVG to text.
+    clone.querySelectorAll(".wavedrom-container").forEach((c) => {
+      const src = c.dataset.wavedromSource || "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-wavedrom";
+      code.textContent = src;
+      pre.appendChild(code);
+      c.replaceWith(pre);
+    });
+    clone.querySelectorAll(".wavedrom-error").forEach((e) => {
+      const srcEl = e.querySelector(".wavedrom-source");
+      const src = srcEl ? srcEl.textContent : "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-wavedrom";
+      code.textContent = src;
+      pre.appendChild(code);
+      e.replaceWith(pre);
+    });
     let md = td.turndown(clone);
     // Turndown sometimes leaves a leading newline; trim it.
     return md.replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
@@ -129,6 +153,9 @@
     }
     if (NB.mermaid && NB.mermaid.renderAll) {
       NB.mermaid.renderAll(viewerContentEl);
+    }
+    if (NB.wavedrom && NB.wavedrom.renderAll) {
+      NB.wavedrom.renderAll(viewerContentEl);
     }
     // Make task-list checkboxes interactive: marked renders them
     // disabled, so remove the disabled flag so the user can click to

@@ -1971,6 +1971,54 @@ body[data-theme="light"] #viewer-content {
   white-space: pre;
   overflow-x: auto;
 }
+/* WaveDrom waveform timing diagrams. The .wavedrom-container wraps a
+ * rendered SVG produced by the wavedrom library (```wavedrom JSON
+ * blocks in a markdown file). WaveDrom emits a standalone <svg> with an
+ * embedded <style> carrying its own white background (the default skin
+ * is light, so the diagram reads as a crisp timing plot against the
+ * notebook's themed surface). Styling mirrors the mermaid container so
+ * both diagram types share the same look and the "click to inspect"
+ * affordance. */
+.wavedrom-container {
+  margin: 12px 0;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  overflow-x: auto;
+}
+.wavedrom-container svg {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+.wavedrom-error {
+  margin: 12px 0;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.wavedrom-error-head {
+  background: var(--warn);
+  color: var(--bg);
+  font-size: .86rem;
+  padding: 6px 12px;
+  font-weight: 600;
+}
+.wavedrom-source {
+  margin: 0;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 0;
+  border-radius: 0;
+  padding: 10px 12px;
+  font-size: .85rem;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
+
 /* Mermaid lightbox: borderless full-screen overlay with a blurred
  * backdrop. The SVG sits centered in the body; a floating toolbar
  * in the top-right corner provides zoom controls. */

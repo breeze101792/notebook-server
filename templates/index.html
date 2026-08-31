@@ -684,9 +684,32 @@
     </div>
   </div>
 
+  <!-- WaveDrom lightbox overlay: same click-to-inspect + zoom behaviour
+       as the mermaid lightbox, but for rendered ```wavedrom timing
+       diagrams. Reuses the generic .mermaid-lightbox-* / .mlb-* CSS
+       classes; only the element ids differ so the two overlays are
+       independent. -->
+  <div id="wavedrom-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="wavedrom-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="wdlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="wdlb-zoom-pct">100%</span>
+      <button id="wdlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+      <button id="wdlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="wdlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+  </div>
+
   <!-- Vendored libs first (no CDN tags; works offline) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/highlight.min.js"></script>
+  <!-- WaveDrom (timing waveform rendering; ~98KB UMD bundle) is loaded
+       synchronously alongside the other libs, so window.wavedrom is
+       available before wavedrom.js runs. The bundle reads JSON code
+       blocks tagged ```wavedrom and renders them to SVG in the viewer.
+       Unlike mermaid it needs no async load, so this tag is a plain
+       <script>, not <script defer>. -->
+  <script src="/static/vendor/wavedrom.unpkg.min.js"></script>
   <!-- Mermaid (3.5MB) is loaded with defer so it doesn't block the
        page's first paint. The integration waits for window.mermaid
        to be available before rendering any diagrams, so the async
@@ -706,7 +729,17 @@
   <script src="/static/js/api.js"></script>
   <script src="/static/js/auth.js"></script>
   <script src="/static/js/cm-bridge.js"></script>
+  <!-- lightbox.js: shared full-screen SVG lightbox + zoom controls used
+       by both mermaid.js and wavedrom.js. Loaded before them so
+       NB.lightbox.create exists when each diagram module wires its
+       overlay. -->
+  <script src="/static/js/lightbox.js"></script>
   <script src="/static/js/mermaid.js"></script>
+  <!-- wavedrom.js: render ```wavedrom timing-diagram code blocks to SVG
+       (window.wavedrom is loaded synchronously above). Loaded before
+       viewer.js so NB.wavedrom exists when the viewer's render pass
+       runs in the app. -->
+  <script src="/static/js/wavedrom.js"></script>
   <script src="/static/js/viewer.js"></script>
   <script src="/static/js/editbar.js"></script>
   <script src="/static/js/hybrid.js"></script>

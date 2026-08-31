@@ -594,6 +594,18 @@ const html = `<!DOCTYPE html><html><head>
       <button id="mlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
+  <!-- WaveDrom lightbox overlay (mirrors the mermaid one; reuses the
+       generic .mermaid-lightbox-* / .mlb-* CSS classes) -->
+  <div id="wavedrom-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="wavedrom-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="wdlb-zoom-out" class="mlb-btn" title="Zoom Out" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="wdlb-zoom-pct">100%</span>
+      <button id="wdlb-zoom-in" class="mlb-btn" title="Zoom In" aria-label="Zoom In">+</button>
+      <button id="wdlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="wdlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
+    </div>
+  </div>
 </body></html>`;
 
 const dom = new JSDOM(html, {
@@ -686,6 +698,34 @@ window.mermaid = {
       throw new Error("Syntax error in diagram (test stub)");
     }
     return { svg: __mermaid.nextSvg };
+  },
+};
+// WaveDrom stub. We mirror the mermaid approach: the wavedrom module
+// (static/js/wavedrom.js) calls window.wavedrom.renderWaveForm(index,
+// source, output) which draws into an element with id output+index, and
+// reads window.WaveSkin for the default skin. Real WaveDrom paints a
+// self-contained <svg> plus an embedded <style> into that element. The
+// stub does the same minimal thing so the module's container-mount and
+// id-suffix logic is exercised without the ~98KB bundle in jsdom.
+const __wavedrom = {
+  renders: 0,
+  lastSource: null,
+  lastOutput: null,
+  failNext: false,        // throw on the next render
+  nextSvg: '<svg viewBox="0 0 480 60" width="480" height="60"><text>wave</text></svg>',
+};
+window.wavedrom = {
+  waveSkin: {},
+  renderWaveForm(index, source, output) {
+    __wavedrom.renders++;
+    __wavedrom.lastSource = source;
+    __wavedrom.lastOutput = output;
+    if (__wavedrom.failNext) {
+      __wavedrom.failNext = false;
+      throw new Error("Syntax error in waveform (test stub)");
+    }
+    const host = window.document.getElementById(output + index);
+    if (host) host.innerHTML = __wavedrom.nextSvg;
   },
 };
 // matchMedia stub: report a dark system preference (auto -> dark).
@@ -1084,7 +1124,9 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/api.js"));
   evalIn(read("static/js/auth.js"));
   evalIn(read("static/js/cm-bridge.js"));
+  evalIn(read("static/js/lightbox.js"));
   evalIn(read("static/js/mermaid.js"));
+  evalIn(read("static/js/wavedrom.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
@@ -1495,6 +1537,8 @@ function check(label, cond, extra) {
     /\.toast\.warn/.test(mermaidCssText),
     "no .toast.warn rule");
 
+
+
   // --- lightbox: click a diagram to see it full-size ---------------
   const lightboxOverlay = () => window.document.getElementById("mermaid-lightbox");
   const lightboxBody    = () => window.document.getElementById("mermaid-lightbox-body");
@@ -1688,6 +1732,245 @@ function check(label, cond, extra) {
   // and the footer test asserts that. Reset here.
   window.NB.app.setTheme("dark");
   await tick(20);
+
+  console.log("== wavedrom ==");
+  // The wavedrom integration is in static/js/wavedrom.js + the viewer's
+  // render() pipeline. The vendored UMD bundle is not loaded into jsdom
+  // (same reason as mermaid); the test relies on the window.wavedrom stub
+  // installed in the harness. It mirrors the real renderWaveForm contract:
+  // (index, source, output) paints an SVG into element output+index.
+  // Reset the stub so prior tests' render counts don't leak.
+  __wavedrom.renders = 0;
+  __wavedrom.failNext = false;
+  __wavedrom.nextSvg = '<svg viewBox="0 0 480 60" width="480" height="60"><text>wave</text></svg>';
+
+  // Open a tab whose body has a ```wavedrom block. NB.wavedrom parses
+  // the JSON and calls renderWaveForm into a temp host it mounts before
+  // the block, then moves the SVG into a .wavedrom-container.
+  const WAVEDROM_BODY = "# Timing\n\n" +
+    "```wavedrom\n" +
+    '{signal:[{name:"clk",wave:"p.....|..."},{name:"dout",wave:"x.345x|=.x"}]}\n' +
+    "```\n\n" +
+    "End.\n";
+  FILES["notes/wavedrom.md"] = WAVEDROM_BODY;
+  const wdNotesDir = (TREE.find(n => n.path === "notes"));
+  if (wdNotesDir && !wdNotesDir.children.some(c => c.path === "notes/wavedrom.md")) {
+    wdNotesDir.children.push({ name: "wavedrom.md", type: "file", path: "notes/wavedrom.md" });
+  } else {
+    TREE.push({ name: "wavedrom.md", type: "file", path: "notes/wavedrom.md" });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/wavedrom.md");
+  await tick(80);
+  const wavedromContainers = () => window.document.querySelectorAll("#viewer .wavedrom-container");
+  const wavedromErrs = () => window.document.querySelectorAll("#viewer .wavedrom-error");
+  check("wavedrom: NB.wavedrom module is loaded", !!window.NB.wavedrom);
+  check("wavedrom: rendering a ```wavedrom block produces a .wavedrom-container",
+    wavedromContainers().length === 1,
+    "containers=" + wavedromContainers().length + " errors=" + wavedromErrs().length);
+  check("wavedrom: the original <pre> was replaced (no orphan code.language-wavedrom left)",
+    window.document.querySelectorAll("#viewer pre > code.language-wavedrom").length === 0,
+    "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-wavedrom").length);
+  check("wavedrom: the container's data-wavedrom is 'ok'",
+    wavedromContainers()[0] && wavedromContainers()[0].dataset.wavedrom === "ok",
+    "data=" + (wavedromContainers()[0] && wavedromContainers()[0].dataset.wavedrom));
+  check("wavedrom: the stub's renderWaveForm was called once with the parsed signal object",
+    __wavedrom.renders === 1 &&
+    __wavedrom.lastSource && __wavedrom.lastSource.signal &&
+    __wavedrom.lastSource.signal[0].name === "clk",
+    "renders=" + __wavedrom.renders + " source=" + JSON.stringify(__wavedrom.lastSource));
+  check("wavedrom: the container holds an <svg> from renderWaveForm",
+    wavedromContainers()[0] && wavedromContainers()[0].querySelector("svg"),
+    "html=" + (wavedromContainers()[0] && wavedromContainers()[0].innerHTML.slice(0, 80)));
+  // The SVG is responsive: width/height attributes removed, aspect ratio
+  // preserved via an inline style so max-width doesn't clip.
+  const wdSvg = wavedromContainers()[0] && wavedromContainers()[0].querySelector("svg");
+  check("wavedrom: svg has width+height attributes removed (CSS scales it)",
+    wdSvg && !wdSvg.getAttribute("height") && !wdSvg.getAttribute("width"),
+    "w=" + (wdSvg && wdSvg.getAttribute("width")) + " h=" + (wdSvg && wdSvg.getAttribute("height")));
+  check("wavedrom: svg has a viewBox so the browser preserves the aspect ratio",
+    wdSvg && /^\d+ \d+ \d+ \d+$/.test(wdSvg.getAttribute("viewBox") || ""),
+    "viewBox=" + (wdSvg && wdSvg.getAttribute("viewBox")));
+
+  // Error fallback: arm the stub to throw on the next render. The viewer
+  // should replace the <pre> with a .wavedrom-error box (header + source).
+  __wavedrom.failNext = true;
+  const BAD_WD_BODY = "```wavedrom\n{not valid json\n```\n";
+  FILES["notes/badwd.md"] = BAD_WD_BODY;
+  TREE.push({ name: "badwd.md", type: "file", path: "notes/badwd.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/badwd.md");
+  await tick(80);
+  check("wavedrom: render error falls back to .wavedrom-error block",
+    wavedromErrs().length === 1,
+    "errs=" + wavedromErrs().length);
+  check("wavedrom: error block has a 'WaveDrom error:' header",
+    wavedromErrs()[0] &&
+    /WaveDrom error:/.test(wavedromErrs()[0].querySelector(".wavedrom-error-head").textContent),
+    "head=" + (wavedromErrs()[0] && wavedromErrs()[0].querySelector(".wavedrom-error-head").textContent));
+
+  // Recovery: re-activating the good file clears the error and re-renders.
+  __wavedrom.failNext = false;
+  await window.NB.tabs.activate("notes/wavedrom.md");
+  await tick(80);
+  check("wavedrom: re-activating the good file clears the error",
+    wavedromErrs().length === 0 && wavedromContainers().length === 1,
+    "errs=" + wavedromErrs().length + " containers=" + wavedromContainers().length);
+
+  // NB.wavedrom façade surface -- the public methods exist.
+  check("wavedrom: NB.wavedrom.renderAll is a function", typeof window.NB.wavedrom.renderAll === "function");
+  check("wavedrom: NB.wavedrom.whenReady is a function", typeof window.NB.wavedrom.whenReady === "function");
+
+  // CSS sanity: the diagram + error styles exist in the stylesheet.
+  const wavedromCssText = read("static/css/style.css");
+  check("wavedrom: .wavedrom-container style is in style.css",
+    /\.wavedrom-container\s*\{/.test(wavedromCssText),
+    "no .wavedrom-container rule");
+  check("wavedrom: .wavedrom-error style is in style.css",
+    /\.wavedrom-error\s*\{/.test(wavedromCssText),
+    "no .wavedrom-error rule");
+
+  // --- wavedrom lightbox: click a waveform to see it full-size ------
+  const wdLightboxOverlay = () => window.document.getElementById("wavedrom-lightbox");
+  const wdLightboxBody    = () => window.document.getElementById("wavedrom-lightbox-body");
+  const wdLightboxClose   = () => window.document.getElementById("wdlb-close");
+  check("wavedrom lightbox: overlay element exists", !!wdLightboxOverlay());
+  check("wavedrom lightbox: body element exists", !!wdLightboxBody());
+  check("wavedrom lightbox: close button exists", !!wdLightboxClose());
+  check("wavedrom lightbox: zoom in button exists",
+    !!window.document.getElementById("wdlb-zoom-in"));
+  check("wavedrom lightbox: zoom out button exists",
+    !!window.document.getElementById("wdlb-zoom-out"));
+  check("wavedrom lightbox: fit button exists",
+    !!window.document.getElementById("wdlb-fit"));
+  check("wavedrom lightbox: zoom percentage indicator exists",
+    !!window.document.getElementById("wdlb-zoom-pct"));
+  check("wavedrom lightbox: overlay is hidden by default",
+    wdLightboxOverlay() && wdLightboxOverlay().hidden,
+    "hidden=" + (wdLightboxOverlay() ? wdLightboxOverlay().hidden : "n/a"));
+  check("wavedrom lightbox: body is empty by default",
+    wdLightboxBody() && wdLightboxBody().innerHTML === "",
+    "html=" + JSON.stringify(wdLightboxBody() && wdLightboxBody().innerHTML));
+  // The wavedrom container from the previous test block is still in the
+  // DOM (we're before the cleanup section). Click it.
+  const wdContainers = wavedromContainers();
+  check("wavedrom lightbox: wavedrom container exists (precondition)", wdContainers.length >= 1,
+    "count=" + wdContainers.length);
+  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(20);
+  check("wavedrom lightbox: click on .wavedrom-container reveals the lightbox",
+    wdLightboxOverlay() && !wdLightboxOverlay().hidden,
+    "hidden=" + (wdLightboxOverlay() ? wdLightboxOverlay().hidden : "n/a"));
+  check("wavedrom lightbox: body has an SVG clone",
+    wdLightboxBody() && wdLightboxBody().querySelector("svg") &&
+    wdLightboxBody().querySelector("svg").textContent === "wave",
+    "svg_text=" + (wdLightboxBody() && wdLightboxBody().querySelector("svg")
+      ? wdLightboxBody().querySelector("svg").textContent : "(no svg)"));
+  check("wavedrom lightbox: clone does not replace the original container (still in DOM)",
+    wavedromContainers().length >= 1,
+    "containers=" + wavedromContainers().length);
+  check("wavedrom lightbox: original SVG is still in the viewer container",
+    !!wavedromContainers()[0].querySelector("svg"),
+    "original svg=" + !!wavedromContainers()[0].querySelector("svg"));
+  check("wavedrom lightbox: body has svg-fit class on open",
+    wdLightboxBody().classList.contains("svg-fit"),
+    "classes=" + wdLightboxBody().className);
+  check("wavedrom lightbox: zoom display shows 'Fit'",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "Fit",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Zoom in leaves fit mode and shows 100%.
+  window.NB.wavedrom.zoomIn();
+  await tick(10);
+  check("wavedrom lightbox: zoomIn removes svg-fit class",
+    !wdLightboxBody().classList.contains("svg-fit"),
+    "classes=" + wdLightboxBody().className);
+  check("wavedrom lightbox: zoom display shows 100%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Zoom in again → 125%.
+  window.NB.wavedrom.zoomIn();
+  await tick(10);
+  check("wavedrom lightbox: zoomIn to 125%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Fit to page restores fit mode.
+  window.NB.wavedrom.fitToPage();
+  await tick(10);
+  check("wavedrom lightbox: fitToPage restores svg-fit class",
+    wdLightboxBody().classList.contains("svg-fit"),
+    "classes=" + wdLightboxBody().className);
+  check("wavedrom lightbox: fit display shows 'Fit'",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "Fit",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Zoom out from fit → leaves fit at 100%.
+  window.NB.wavedrom.zoomOut();
+  await tick(10);
+  check("wavedrom lightbox: zoomOut from fit goes to 100%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Ctrl++ keyboard shortcut.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "=", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("wavedrom lightbox: Ctrl++ zooms in to 125%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Ctrl+- keyboard shortcut.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "-", ctrlKey: true, bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("wavedrom lightbox: Ctrl+- zooms out to 100%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "100%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Mouse wheel zooms.
+  wdLightboxOverlay().dispatchEvent(new window.WheelEvent("wheel", {
+    deltaY: -120, bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("wavedrom lightbox: wheel up zooms in to 125%",
+    window.document.getElementById("wdlb-zoom-pct").textContent === "125%",
+    "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  // Close via the close button.
+  wdLightboxClose().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("wavedrom lightbox: close button hides the overlay",
+    wdLightboxOverlay() && wdLightboxOverlay().hidden);
+  check("wavedrom lightbox: close hides the SVG",
+    wdLightboxBody() && wdLightboxBody().innerHTML === "",
+    "html=" + JSON.stringify(wdLightboxBody() && wdLightboxBody().innerHTML));
+  // Re-open then close via Escape.
+  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  check("wavedrom lightbox: re-open precondition (overlay visible)",
+    wdLightboxOverlay() && !wdLightboxOverlay().hidden);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(10);
+  check("wavedrom lightbox: Escape closes the overlay",
+    wdLightboxOverlay() && wdLightboxOverlay().hidden);
+  // Backdrop click closes.
+  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  wdLightboxOverlay().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("wavedrom lightbox: backdrop click closes the overlay",
+    wdLightboxOverlay() && wdLightboxOverlay().hidden);
+  // The mermaid lightbox must be unaffected (independent overlays).
+  check("wavedrom lightbox: mermaid lightbox stays hidden",
+    window.document.getElementById("mermaid-lightbox") &&
+    window.document.getElementById("mermaid-lightbox").hidden);
+
+  // Cleanup: close the wavedrom test tabs so the rest of the suite
+  // starts from a known state (one canonical tab: notes/a.md).
+  await window.NB.tabs.close("notes/badwd.md", { force: true });
+  await window.NB.tabs.close("notes/wavedrom.md", { force: true });
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(40);
 
   console.log("== file tabs ==");
   const barEl = window.document.getElementById("tab-bar");
