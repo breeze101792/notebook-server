@@ -421,12 +421,18 @@
       () => NB.settings && NB.settings.open());
 
     // resizable sidebars (drag the inner edge)
-    setupResize("side-panel", "--side-panel-width", "right");
+    // The sidebar may be dragged up to half the viewport width; the
+    // outline is capped to a fixed 520px so it stays a minimap.
+    setupResize("side-panel", "--side-panel-width", "right", { max: () => window.innerWidth / 2 });
     setupResize("outline-pane", "--outline-width", "left");
   }
 
-  function setupResize(id, cssVar, edge) {
+  function setupResize(id, cssVar, edge, opts) {
     const pane = document.getElementById(id);
+    // Max may be a fixed number (default 520) or a function evaluated
+    // live on each drag tick (e.g. half the current viewport width), so
+    // a window resize mid-drag keeps working.
+    const maxOpt = (opts && opts.max !== undefined) ? opts.max : 520;
     let startX = 0, startW = 0, dragging = false;
     // The handle is a wider, hover-visible grab strip on the pane's inner
     // edge (size + look come from .resize-handle in CSS). Only the edge
@@ -466,7 +472,7 @@
       // (dragging left => wider), so flip the sign; a right-edge handle
       // (sidebar) drags naturally with +dx.
       const sign = edge === "left" ? -1 : 1;
-      const w = Math.max(140, Math.min(520, startW + sign * dx));
+      const w = Math.max(140, Math.min(typeof maxOpt === "function" ? maxOpt() : maxOpt, startW + sign * dx));
       document.documentElement.style.setProperty(cssVar, w + "px");
     });
     document.addEventListener("mouseup", endDrag);
