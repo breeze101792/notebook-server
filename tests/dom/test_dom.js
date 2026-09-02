@@ -2830,6 +2830,136 @@ function check(label, cond, extra) {
     check("hybrid: isDirty true after edit", window.NB.hybrid.isDirty());
     check("hybrid: Save button visible when dirty", !$("save-btn").hidden);
 
+    // --- live markdown input rules ----------------------------------
+    // Simulate typing a trigger into a fresh <p>: put a collapsed caret
+    // after the trigger text inside a text node, then fire 'input'.
+    const typeIn = (text, tag) => {
+      const p = window.document.createElement(tag || "p");
+      const tn = window.document.createTextNode(text);
+      p.appendChild(tn);
+      vc.appendChild(p);
+      const range = window.document.createRange();
+      range.setStart(tn, tn.nodeValue.length);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      p.dispatchEvent(new window.Event("input", { bubbles: true }));
+      return p;
+    };
+
+    typeIn("### ");
+    check("hybrid: input rule '### ' makes an h3",
+      (vc.querySelector("h3") !== null) ||
+      vc.lastElementChild.tagName === "H3",
+      "last=" + vc.lastElementChild.tagName);
+    check("hybrid: input rule heading has no literal '#'",
+      !/#/.test(vc.lastElementChild.textContent),
+      JSON.stringify(vc.lastElementChild.textContent));
+
+    typeIn("- ");
+    check("hybrid: input rule '- ' makes a bullet list",
+      vc.querySelector("ul li") !== null,
+      "ul present=" + !!vc.querySelector("ul"));
+
+    typeIn("1. ");
+    check("hybrid: input rule '1. ' makes an ordered list",
+      vc.querySelector("ol li") !== null,
+      "ol present=" + !!vc.querySelector("ol"));
+
+    typeIn("> ");
+    check("hybrid: input rule '> ' makes a blockquote",
+      vc.querySelector("blockquote") !== null,
+      "bq present=" + !!vc.querySelector("blockquote"));
+
+    typeIn("[ ] ");
+    const taskLi = vc.querySelector("li.task-list-item");
+    check("hybrid: input rule '[ ] ' makes a task item with checkbox",
+      taskLi !== null && taskLi.querySelector('input[type="checkbox"]') !== null,
+      "task li=" + !!taskLi);
+
+    // Inline rules: '**bold**' with the caret after the final '*'.
+    typeIn("**bold**");
+    const lastEl = vc.lastElementChild;
+    check("hybrid: input rule '**bold**' makes a <strong>",
+      lastEl.querySelector("strong") !== null,
+      "last=" + lastEl.tagName + ":" + lastEl.textContent);
+    check("hybrid: strong text kept, asterisks gone",
+      lastEl.querySelector("strong") && lastEl.querySelector("strong").textContent === "bold",
+      JSON.stringify(lastEl.textContent));
+
+    typeIn("`code`");
+    check("hybrid: input rule '`code`' makes inline <code>",
+      vc.lastElementChild.querySelector("code") !== null,
+      "last=" + vc.lastElementChild.textContent);
+
+    // No false positives: plain text with a leading '#' but no space after
+    // the hashes must NOT convert.
+    vc.querySelectorAll("ul,ol,blockquote,h3").forEach(el => el.remove());
+    const plain = typeIn("#no-space heading text");
+    check("hybrid: plain '#no-space' text is not converted",
+      plain.tagName === "P" && plain.textContent === "#no-space heading text",
+      plain.tagName + ":" + plain.textContent);
+
+    // Typing the trigger at the START of a line that already has text:
+    // caret before existing content, type "# " -> whole line becomes h1.
+    {
+      const p2 = window.document.createElement("p");
+      const tn2 = window.document.createTextNode("existing line");
+      p2.appendChild(tn2);
+      vc.appendChild(p2);
+      // Simulate the user typing "# " before "existing line": the text
+      // node now starts with the trigger, caret right after it.
+      tn2.nodeValue = "# existing line";
+      const r2 = window.document.createRange();
+      r2.setStart(tn2, 2);   // right after "# "
+      r2.collapse(true);
+      const sel2 = window.getSelection();
+      sel2.removeAllRanges();
+      sel2.addRange(r2);
+      p2.dispatchEvent(new window.Event("input", { bubbles: true }));
+      // wrapBlock REPLACES the <p> with an <h1>, so p2 is detached;
+      // look at the viewer's current last element instead.
+      const last2 = vc.lastElementChild;
+      check("hybrid: trigger before existing text converts the line to a heading",
+        last2 && last2.tagName === "H1" && last2.textContent === "existing line",
+        "last=" + (last2 && last2.tagName) + ":" + (last2 && last2.textContent));
+    }
+
+    // Non-breaking space: real browsers type \u00A0 after "#" inside
+    // contentEditable; the rule must still fire.
+    {
+      const p3 = window.document.createElement("p");
+      const tn3 = window.document.createTextNode("##\u00A0");
+      p3.appendChild(tn3);
+      vc.appendChild(p3);
+      const r3 = window.document.createRange();
+      r3.setStart(tn3, tn3.nodeValue.length);
+      r3.collapse(true);
+      const sel3 = window.getSelection();
+      sel3.removeAllRanges();
+      sel3.addRange(r3);
+      p3.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check("hybrid: non-breaking space after '##' still converts to h2",
+        vc.lastElementChild.tagName === "H2",
+        "last=" + vc.lastElementChild.tagName);
+    }
+
+    // ``` + Enter -> code block.
+    const cbPara = typeIn("```js");
+    const rangeCb = window.document.createRange();
+    rangeCb.selectNodeContents(cbPara);
+    rangeCb.collapse(false);
+    const selCb = window.getSelection();
+    selCb.removeAllRanges();
+    selCb.addRange(rangeCb);
+    cbPara.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true, cancelable: true }));
+    const preEl = vc.querySelector("pre");
+    check("hybrid: '```js' + Enter makes a code block",
+      preEl !== null && preEl.querySelector("code.language-js") !== null,
+      "pre=" + !!preEl);
+
     // Exit hybrid mode (discard changes).
     await window.NB.hybrid.exit(false);
     await tick(50);

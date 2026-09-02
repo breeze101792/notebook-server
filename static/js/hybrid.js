@@ -292,10 +292,11 @@
 
   /* Wrap the selection in an element with the given tag. Used for
    * headings (h1-h6) and blockquote. Operates on the current selection
-   * inside #viewer-content. */
+   * inside #viewer-content. Returns the element the block became
+   * (the new tag, or the <p> it toggled back to). */
   function wrapBlock(tag) {
     const sel = window.getSelection();
-    if (!sel.rangeCount) return;
+    if (!sel.rangeCount) return null;
     let range = sel.getRangeAt(0);
     // Expand to the whole block (the nearest block ancestor).
     let block = range.commonAncestorContainer;
@@ -305,32 +306,38 @@
       if (display === "block" || /^(H[1-6]|P|UL|OL|BLOCKQUOTE|PRE|LI)$/.test(block.tagName)) break;
       block = block.parentElement;
     }
-    if (!block || block === viewerContentEl) return;
+    if (!block || block === viewerContentEl) return null;
     // Toggle: if already this tag, convert back to <p>.
+    let made = null;
     if (block.tagName === tag.toUpperCase()) {
       const p = document.createElement("p");
       while (block.firstChild) p.appendChild(block.firstChild);
       block.replaceWith(p);
+      made = p;
     } else {
       const el = document.createElement(tag);
       while (block.firstChild) el.appendChild(block.firstChild);
       block.replaceWith(el);
+      made = el;
     }
     onContentChange();
+    return made;
   }
 
   /* Toggle a list type on the current block. Creates a <ul>/<ol> if
-   * the block isn't already a list, or converts between ul/ol. */
+   * the block isn't already a list, or converts between ul/ol. Returns
+   * the list element created/toggled (null when nothing changed). */
   function toggleList(tag) {
     const sel = window.getSelection();
-    if (!sel.rangeCount) return;
+    if (!sel.rangeCount) return null;
     let block = sel.getRangeAt(0).commonAncestorContainer;
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
     while (block && block !== viewerContentEl) {
       if (/^(P|UL|OL|LI|DIV)$/.test(block.tagName)) break;
       block = block.parentElement;
     }
-    if (!block || block === viewerContentEl) return;
+    if (!block || block === viewerContentEl) return null;
+    let made = null;
     // Find the nearest list ancestor.
     let listAncestor = block.closest("ul,ol");
     if (listAncestor && listAncestor !== viewerContentEl) {
@@ -350,6 +357,7 @@
         const newList = document.createElement(tag);
         while (listAncestor.firstChild) newList.appendChild(listAncestor.firstChild);
         listAncestor.replaceWith(newList);
+        made = newList;
       }
     } else {
       // Create a new list from the current paragraph.
@@ -358,8 +366,257 @@
       while (block.firstChild) li.appendChild(block.firstChild);
       list.appendChild(li);
       block.replaceWith(list);
+      made = list;
     }
     onContentChange();
+    return made;
+  }
+
+  /* --- live markdown input rules ------------------------------------ */
+  /* Typora-style live syntax: the user types raw markdown (### , - ,
+   * > , 1. , [ ] , **bold**) inside the contentEditable and it becomes
+   * the rendered element immediately, instead of surviving as literal
+   * "#"-text that turndown then escapes on save. Runs synchronously on
+   * every input event; each rule is a cheap caret-text regex test.
+   *
+   * BLOCK rules fire only when the paragraph consists of exactly the
+   * trigger text (typed into an empty block) -- never mid-paragraph,
+   * where "#" may be real content. INLINE rules fire on the closing
+   * delimiter of an emphasized span inside one text node. */
+
+  function caretContext() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let block = range.startContainer;
+    if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
+    if (!block || !viewerContentEl.contains(block)) return null;
+    const blockEl = block.closest(
+      "p,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote,pre,div");
+    if (!blockEl || !viewerContentEl.contains(blockEl)) return null;
+    return { sel, range, blockEl };
+  }
+
+  /* Text from the block's start up to the caret. */
+  function textBeforeCaret(blockEl, range) {
+    const r = document.createRange();
+    r.selectNodeContents(blockEl);
+    r.setEnd(range.startContainer, range.startOffset);
+    // Browsers type \u00A0 (non-breaking space) inside contentEditable
+    // instead of a plain space; normalize so the rule patterns match.
+    return r.toString().replace(/\u00A0/g, " ");
+  }
+
+  /* Delete the first `len` characters of a block's text content
+   * (the trigger text) and leave the caret where it lands. Only used on
+   * blocks whose entire text is the trigger, so the walk is short. */
+  function deleteBlockPrefix(blockEl, len) {
+    let remaining = len;
+    const walker = document.createTreeWalker(
+      blockEl, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const n of nodes) {
+      if (remaining <= 0) break;
+      if (n.nodeValue.length <= remaining) {
+        remaining -= n.nodeValue.length;
+        n.remove();
+      } else {
+        n.nodeValue = n.nodeValue.slice(remaining);
+        remaining = 0;
+      }
+    }
+  }
+
+  /* Put the caret at the start of `el`'s editable content (after a
+   * block transform the selection is often stale). An empty block gets
+   * a <br> line box first: without it Chrome has no line to attach the
+   * caret to and draws it on the neighboring line instead. */
+  function caretToStart(el) {
+    if (!el) return;
+    if (!el.textContent && !el.querySelector("img,br,canvas,svg,iframe")) {
+      el.appendChild(document.createElement("br"));
+    }
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  const INPUT_RULES = [
+    { re: /^(#{1,6}) $/, apply: (m) => {
+      const made = wrapBlock("h" + m[1].length);
+      if (made) caretToStart(made);
+    } },
+    { re: /^(-|\*) $/, apply: () => {
+      const made = toggleList("ul");
+      if (made) {
+        const li = made.querySelector("li");
+        if (li) caretToStart(li);
+      }
+    } },
+    { re: /^\d+\. $/, apply: () => {
+      const made = toggleList("ol");
+      if (made) {
+        const li = made.querySelector("li");
+        if (li) caretToStart(li);
+      }
+    } },
+    { re: /^> $/, apply: () => {
+      const made = wrapBlock("blockquote");
+      if (made) caretToStart(made);
+    } },
+    { re: /^\[([ xX])\] $/, apply: (m) => {
+      // Task item: same DOM shape marked produces so turndown's gfm
+      // taskListItems rule round-trips it ([x]/[ ]).
+      const made = toggleList("ul");
+      const li = made && made.querySelector("li");
+      if (li) {
+        li.classList.add("task-list-item");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = m[1] !== " ";
+        li.insertBefore(cb, li.firstChild);
+        caretToStart(li);
+      }
+    } },
+  ];
+
+  /* One inline rule set: the pattern must end exactly at the caret and
+   * live inside a single text node. `tag` is the element to produce. */
+  const INLINE_RULES = [
+    { re: /\*\*([^\s*][^*]*?)\*\*$/, tag: "strong" },
+    { re: /(?<!\*)\*([^*\s][^*]*?)\*(?!\*)$/, tag: "em" },
+    { re: /~~([^~]+)~~$/, tag: "del" },
+    { re: /`([^`]+)`$/, tag: "code" },
+  ];
+
+  function applyBlockRules() {
+    const ctx = caretContext();
+    if (!ctx) return false;
+    const { blockEl, range, sel } = ctx;
+    // Only plain paragraphs convert (never inside lists, headings,
+    // blockquotes, code blocks -- those are already formatted).
+    if (blockEl.tagName !== "P" && blockEl.tagName !== "DIV") return false;
+    // The trigger must be at the very start of the line; whatever text
+    // follows the caret (or before it on the same line) is preserved and
+    // becomes the content of the new element.
+    const before = textBeforeCaret(blockEl, range);
+    for (const rule of INPUT_RULES) {
+      const m = before.match(rule.re);
+      if (!m) continue;
+      deleteBlockPrefix(blockEl, m[0].length);
+      // Re-anchor the caret INSIDE this block before the transform:
+      // deleteBlockPrefix removed the text nodes holding the selection,
+      // and the helpers below (wrapBlock/toggleList) operate on wherever
+      // the browser dropped the caret -- often the NEXT line. Anchoring
+      // here keeps both the transform and the final caret on this block.
+      const r = document.createRange();
+      r.selectNodeContents(blockEl);
+      r.collapse(false);   // end of the (now trigger-less) block
+      sel.removeAllRanges();
+      sel.addRange(r);
+      rule.apply(m);
+      onContentChange();
+      return true;
+    }
+    return false;
+  }
+
+  function applyInlineRules() {
+    const ctx = caretContext();
+    if (!ctx) return false;
+    const { range, sel } = ctx;
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return false;
+    const text = node.nodeValue.slice(0, range.startOffset);
+    for (const rule of INLINE_RULES) {
+      const m = text.match(rule.re);
+      if (!m) continue;
+      const inner = m[1];
+      const after = node.nodeValue.slice(range.startOffset);
+      const before = node.nodeValue.slice(0, text.length - m[0].length);
+      const el = document.createElement(rule.tag);
+      el.textContent = inner;
+      node.nodeValue = before;
+      const parent = node.parentElement;
+      if (!parent) return false;
+      const marker = document.createTextNode("");
+      parent.insertBefore(marker, node.nextSibling);
+      parent.insertBefore(el, marker);
+      parent.insertBefore(document.createTextNode(after), marker);
+      marker.remove();
+      // Caret just after the new element.
+      const r = document.createRange();
+      r.setStartAfter(el);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      onContentChange();
+      return true;
+    }
+    return false;
+  }
+
+  function applyInputRules() {
+    if (!active) return;
+    if (applyBlockRules()) return;
+    applyInlineRules();
+  }
+
+  /* Enter-key input rules:
+   *  - ``` + Enter in a paragraph  -> code block
+   *  - Enter in an EMPTY list item -> outdent (leave the list), the
+   *    same escape-hatch every markdown editor has.
+   * Everything else falls through to the browser's native
+   * contentEditable Enter (new <p>, list-item continuation). */
+  function onEnterKey(e) {
+    if (!active) return;
+    const ctx = caretContext();
+    if (!ctx) return;
+    const { blockEl, range } = ctx;
+    // ``` + Enter -> code block.
+    if ((blockEl.tagName === "P" || blockEl.tagName === "DIV") &&
+        /^```[^\n]*$/.test(blockEl.textContent.trim())) {
+      e.preventDefault();
+      const m = blockEl.textContent.trim().match(/^```(.*)$/);
+      const lang = m ? m[1].trim() : "";
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      if (lang) code.className = "language-" + lang;
+      pre.appendChild(code);
+      blockEl.replaceWith(pre);
+      caretToStart(code);
+      onContentChange();
+      return;
+    }
+    // Empty list item -> outdent to a paragraph.
+    const li = blockEl.closest("li");
+    if (li && li.textContent.trim() === "") {
+      e.preventDefault();
+      const list = li.closest("ul,ol");
+      if (list) {
+        const p = document.createElement("p");
+        const atEnd = list.lastElementChild === li;
+        if (atEnd) {
+          list.after(p);
+          li.remove();
+          if (!list.firstElementChild) list.remove();
+        } else {
+          // Split the list and drop the empty item between.
+          const rest = document.createElement(list.tagName);
+          let cur = li.nextElementSibling;
+          while (cur) { const nx = cur.nextElementSibling; rest.appendChild(cur); cur = nx; }
+          list.after(p, rest);
+          li.remove();
+          if (!list.firstElementChild) list.remove();
+        }
+        caretToStart(p);
+        onContentChange();
+      }
+    }
   }
 
   /* The edit bar click handler. We intercept clicks that would normally
@@ -592,6 +849,9 @@
   let inputDebounce = null;
   function onInput() {
     // contentEditable fires 'input' on every keystroke; we just mark dirty.
+    // Live markdown input rules run first (they mutate the DOM and move
+    // the caret, and themselves mark dirty on success).
+    applyInputRules();
     clearTimeout(inputDebounce);
     inputDebounce = setTimeout(onContentChange, 50);
   }
@@ -667,6 +927,7 @@
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
     viewerContentEl.addEventListener("change", onCheckboxChange);
+    viewerContentEl.addEventListener("keydown", onEnterKey);
     editBar.addEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
@@ -685,6 +946,7 @@
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
     viewerContentEl.removeEventListener("change", onCheckboxChange);
+    viewerContentEl.removeEventListener("keydown", onEnterKey);
     editBar.removeEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
