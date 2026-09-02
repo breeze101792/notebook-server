@@ -2886,11 +2886,84 @@ function check(label, cond, extra) {
     const saveAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
     check("hybrid: save POST fired", saveAfter - saveBefore === 1,
       "delta=" + (saveAfter - saveBefore));
+    // The POST body must actually contain the edit -- a save that fires
+    // but drops the modified content is the bug the user reported.
+    const savedContent = FILES["notes/a.md"] || "";
+    check("hybrid: saved content includes the edit",
+      savedContent.includes("hybrid save test"),
+      JSON.stringify(savedContent).slice(0, 120));
     check("hybrid: not dirty after save", !window.NB.hybrid.isDirty());
     // Exit hybrid mode (clean now).
     await window.NB.hybrid.exit(false);
     await tick(50);
     check("hybrid: clean exit after save", !window.NB.hybrid.isActive());
+
+    // --- hybrid trailing-blank-line preservation ---
+    // The user reported that adding blank lines (empty space) in hybrid
+    // mode was silently dropped on save. A REAL browser's contentEditable
+    // inserts <div><br></div> on Enter (Chrome's default paragraph
+    // separator is div) -- NOT the <p><br></p> that marked renders.
+    // Empty blocks must save as explicit <p><br></p> lines (marked
+    // collapses bare blank lines when rendering, so the space would
+    // visually vanish on reopen otherwise).
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    // Simulate real-browser Enter presses: <div><br></div> blocks.
+    vc.innerHTML += "<p>tail</p><div><br></div><div><br></div>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    const blankBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(50);
+    const blankAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid: blank-line save POST fired", blankAfter - blankBefore === 1,
+      "delta=" + (blankAfter - blankBefore));
+    const blankSaved = FILES["notes/a.md"] || "";
+    const blankCount = (blankSaved.match(/<p><br><\/p>/g) || []).length;
+    check("hybrid: saved content keeps BOTH trailing blank lines",
+      /tail\n+/.test(blankSaved) && blankCount === 2,
+      JSON.stringify(blankSaved).slice(-60));
+    check("hybrid: saved content has no sentinel leftover",
+      blankSaved.indexOf("\u0000") === -1,
+      JSON.stringify(blankSaved).slice(-60));
+    // Round-trip stability: exiting re-renders the saved content; the
+    // empty paragraphs must be back in the DOM (the space stays visible).
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+    const emptyPs = Array.from(vc.querySelectorAll("p"))
+      .filter(p => !p.textContent.trim() && !p.querySelector("img"));
+    check("hybrid: blank lines survive the save -> re-render round-trip",
+      emptyPs.length === 2,
+      "empty <p> count=" + emptyPs.length);
+    // Mid-document blank lines (a div between two paragraphs) survive too.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    vc.innerHTML = "<p>top</p><div><br></div><p>bottom</p>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    const midBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(50);
+    check("hybrid: mid-doc save POST fired",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - midBefore === 1);
+    const midSaved = FILES["notes/a.md"] || "";
+    check("hybrid: saved content keeps mid-document blank line",
+      /top\n+<p><br><\/p>\n+bottom/.test(midSaved),
+      JSON.stringify(midSaved).slice(0, 90));
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
 
     // --- hybrid task-list checkbox toggle ---
     // marked renders checkboxes disabled; hybrid re-enables them and the

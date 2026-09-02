@@ -75,6 +75,41 @@
         return "[[" + target + (content === target ? "" : "|" + content) + "]]";
       },
     });
+    // Preserve blank lines. Turndown's default `blank` rule drops empty
+    // paragraphs entirely (it matches any element with no text content),
+    // so blank lines the user adds in hybrid mode would silently vanish
+    // on save. Two changes:
+    //   1. Exclude <p> AND <div> from the `blank` rule so empty blocks
+    //      aren't swallowed before the paragraph rule sees them. (<div>
+    //      matters because a real browser's contentEditable inserts
+    //      <div><br></div> when the user presses Enter, even when the
+    //      surrounding content is <p>-based.)
+    //   2. Override the `paragraph` rule for both tags. An empty block
+    //      (only <br> or whitespace) emits an explicit <p><br></p> HTML
+    //      line rather than bare newlines, for two reasons:
+    //        - turndown's join() collapses consecutive "\n\n" outputs,
+    //          so N blank lines would collapse into one;
+    //        - marked collapses consecutive blank lines when rendering,
+    //          so the space would visually disappear on reopen anyway.
+    //      <p><br></p> is passed through by marked as an HTML block, so
+    //      the empty line renders, survives save, and round-trips
+    //      stably (empty block -> <p><br></p> -> renders as empty block).
+    turndownSvc.addRule("blank", {
+      filter(node) {
+        if (node.nodeName === "P" || node.nodeName === "DIV") return false;
+        return ["A", "IFRAME", "OBJECT", "EMBED", "IMG", "BR", "HR",
+                "INPUT", "TEXTAREA", "SELECT", "BUTTON"].indexOf(node.nodeName) === -1 &&
+               !node.textContent.trim();
+      },
+      replacement: () => "",
+    });
+    turndownSvc.addRule("paragraph", {
+      filter: ["p", "div"],
+      replacement(content, node) {
+        if (!node.textContent.trim()) return "\n\n<p><br></p>\n\n";
+        return "\n\n" + content + "\n\n";
+      },
+    });
     return turndownSvc;
   }
 
@@ -187,9 +222,20 @@
       pre.appendChild(code);
       e.replaceWith(pre);
     });
+    // Turndown's bundled postProcess() trims trailing whitespace from
+    // its final output, which would silently drop blank lines the user
+    // added at the end of a note (whether they live in <p>, <div>, or
+    // bare <br> elements -- a real browser's contentEditable produces
+    // all three). postProcess is a module-scoped closure that cannot be
+    // overridden on the instance, so instead append a non-whitespace
+    // sentinel text node as the clone's LAST child: the trim then can't
+    // eat anything before it. Run the conversion, cut the sentinel off.
+    const SENTINEL = "\u0000nbsave";
+    clone.appendChild(document.createTextNode(SENTINEL));
     let md = td.turndown(clone);
-    // Turndown sometimes leaves a leading newline; trim it.
-    return md.replace(/^\n+/, "").replace(/\n+$/, "") + "\n";
+    const cut = md.indexOf(SENTINEL);
+    if (cut >= 0) md = md.slice(0, cut);
+    return md;
   }
 
   /* Re-render Markdown into #viewer-content (same pipeline as
@@ -584,6 +630,13 @@
 
     // Make the viewer content editable.
     viewerContentEl.setAttribute("contenteditable", "true");
+    // Make Enter produce <p> blocks (matching the rendered structure)
+    // instead of the browser default <div>. Blank <p> blocks round-trip
+    // to markdown blank lines on save; <div>s are handled too, but <p>
+    // keeps the DOM consistent with what marked rendered.
+    try {
+      document.execCommand("defaultParagraphSeparator", false, "p");
+    } catch (_) {}
     viewerContentEl.classList.add("hybrid-editing");
     viewerEl.classList.add("hybrid-active");
     topbar.classList.add("editing");
