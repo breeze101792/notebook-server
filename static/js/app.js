@@ -394,24 +394,17 @@
       // Cycle to the previous / next tab with the same dirty-aware
       // commit logic vimnav uses (commitForTabSwitch prompts to save
       // a dirty file first; a failed save aborts the cycle).
-      const cycleTab = async (direction) => {
-        if (!NB.tabs || !NB.tabs[direction]) return;
-        if (NB.viewer && NB.viewer.commitForTabSwitch) {
-          const ok = await NB.viewer.commitForTabSwitch();
-          if (!ok) return;
-        }
-        await NB.tabs[direction]();
-      };
       NB.shortcuts.install({
         save: () => NB.viewer.save(),
         openSearch: () => {
           const si = document.getElementById("search-input");
           if (si) { si.focus(); si.select(); }
         },
-        tabPrev: () => cycleTab("prev"),
-        tabNext: () => cycleTab("next"),
+        tabPrev: () => NB.vimnav && NB.vimnav.cycleTabWithCommit && NB.vimnav.cycleTabWithCommit("prev"),
+        tabNext: () => NB.vimnav && NB.vimnav.cycleTabWithCommit && NB.vimnav.cycleTabWithCommit("next"),
         toggleEdit: () => { if (NB.viewer && NB.viewer.toggleEdit) NB.viewer.toggleEdit(); },
         toggleHybrid: () => { NB.evt.emit("shortcut:toggleHybrid"); },
+        windowCycle: () => NB.vimnav && NB.vimnav.cycleWindow && NB.vimnav.cycleWindow(),
         openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }

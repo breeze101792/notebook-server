@@ -121,26 +121,11 @@
    *   key (in our normalized form, lowercase letter) -> handler.
    * Modifier keys (Ctrl/Alt/Meta) we own are handled separately. */
   function isOwnerModifier(e) {
-    if (e.altKey) {
-      // Alt+H / Alt+L cycle to the previous / next tab. We claim
-      // these so the browser's Alt+Left/Right (browser back/forward)
-      // doesn't fire instead -- the user said they don't want to
-      // break browser shortcuts, so we use Alt (which the browser
-      // mostly ignores) rather than Ctrl (which the browser uses
-      // for many things).
-      const k = e.key.toLowerCase();
-      return ["h", "l"].includes(k);
-    }
-    if (e.metaKey) return true;     // we own Cmd on Mac
-    if (e.ctrlKey) {
-      // We own Ctrl+W (cycle window), Ctrl+E (toggle edit), Ctrl+S
-      // (save), Ctrl+/ (disable VIM). Ctrl+H/L are NOT ours -- many
-      // browsers use Ctrl+L for the address bar. The tab cycle is
-      // Alt+H/L instead.
-      const k = e.key.toLowerCase();
-      return ["w", "e", "s", "/"].includes(k);
-    }
-    return true;
+    // We only own Ctrl+/ (disable VIM). All other modifier combos
+    // (Ctrl+E, Ctrl+S, Ctrl+W, Alt+H/L) are in shortcuts.js and
+    // customizable.
+    if ((e.ctrlKey || e.metaKey) && e.key === "/") return true;
+    return false;
   }
   function isChordable(k) {
     // Keys that participate in two-key chords (gg). We don't make
@@ -179,73 +164,16 @@
       e.__vimnavHandled = true;
       return;
     }
-    // --- global app-level bindings (work in any focus context, including
-    // when CodeMirror has focus in edit mode) ---
-    // These are app-level actions the user expects to work no matter
-    // which sub-editor is focused. We process them before the CM / input
-    // early returns below.
-    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      // Use e.code for the letter check: on macOS the Option key composes
-      // special Unicode characters into e.key (e.g. Alt+H -> "˙"), so
-      // e.key.toLowerCase() never matches "h". e.code is the physical key
-      // ("KeyH"), layout- and modifier-independent, so it works on every
-      // platform. On Linux/Windows, e.key still gives us the right answer
-      // too, but e.code is the reliable one and is what we use here.
-      const code = e.code;
-      if (code === "KeyH") {
-        // Previous tab. Wraps. If we're in edit mode with unsaved
-        // changes, prompt to save / discard first.
-        e.preventDefault();
-        cycleTabWithCommit("prev");
-        e.__vimnavHandled = true;
-        return;
-      }
-      if (code === "KeyL") {
-        // Next tab. Wraps. Same dirty-check as Alt+H.
-        e.preventDefault();
-        cycleTabWithCommit("next");
-        e.__vimnavHandled = true;
-        return;
-      }
-    }
-    if (e.ctrlKey || e.metaKey) {
-      const k = e.key.toLowerCase();
-      if (k === "e" && !e.shiftKey) {
-        e.preventDefault();
-        e.__vimnavHandled = true;
-        const v = NB.viewer;
-        if (!v) return;
-        const cmHost = document.getElementById("cm-host");
-        const inEdit = cmHost && !cmHost.hidden;
-        if (inEdit) { if (v.closeEdit) v.closeEdit(); }
-        else { if (v.startEdit) v.startEdit(); }
-        return;
-      }
-      if (k === "s" && !e.shiftKey) {
-        e.preventDefault();
-        e.__vimnavHandled = true;
-        if (NB.viewer) NB.viewer.save();
-        return;
-      }
-      if (k === "/") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        e.__vimnavHandled = true;
-        // Ctrl+/ turns VIM mode off. The state change is what makes
-        // this handler special: without stopImmediatePropagation the
-        // shortcuts module (registered after vimnav) would also see
-        // the event, observe that vim is now off, and fire its own
-        // default binding (openSearch on Ctrl+/) -- a confusing
-        // "vim disables AND search opens" double action.
-        setEnabled(false);
-        return;
-      }
-      if (k === "w") {
-        e.preventDefault();
-        e.__vimnavHandled = true;
-        cycleWindow();
-        return;
-      }
+    // --- global app-level bindings ---
+    // Ctrl+E (toggleEdit), Ctrl+S (save), Alt+H/L (tabPrev/Next),
+    // Ctrl+W (cycleWindow) are now in shortcuts.js and customizable.
+    // Only Ctrl+/ (disable vim) remains here — it's vim-specific.
+    if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.__vimnavHandled = true;
+      setEnabled(false);
+      return;
     }
     if (cmHasFocus()) {
       // CodeMirror has focus -- in edit mode. CM6's vim keymap owns
@@ -609,6 +537,6 @@
   /* --- public API ------------------------------------------------- */
   NB.vimnav = {
     isEnabled, setEnabled, getWindow: getActiveWindow, setWindow: setActiveWindow,
-    openHelp, closeHelp,
+    openHelp, closeHelp, cycleWindow, cycleTabWithCommit,
   };
 })();

@@ -5424,20 +5424,21 @@ function check(label, cond, extra) {
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
   check("shortcuts: NB.shortcuts module loaded", !!sc);
-  check("shortcuts: 7 default actions",
-    sc.getActionOrder().length === 7 &&
+  check("shortcuts: 8 default actions",
+    sc.getActionOrder().length === 8 &&
     sc.getDefaults().save === "Mod+S" &&
     sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
     sc.getDefaults().tabNext === "Alt+L" &&
     sc.getDefaults().toggleEdit === "Mod+E" &&
     sc.getDefaults().toggleHybrid === "Mod+Shift+E" &&
+    sc.getDefaults().windowCycle === "Mod+W" &&
     sc.getDefaults().openSettings === "Mod+comma");
   // The list helpers expose the same set the UI renders.
   const labels = sc.getActionLabels();
   check("shortcuts: labels exist for all actions",
     labels.save && labels.openSearch && labels.tabPrev && labels.tabNext &&
-    labels.toggleEdit && labels.toggleHybrid && labels.openSettings);
+    labels.toggleEdit && labels.toggleHybrid && labels.windowCycle && labels.openSettings);
 
   // Open the Shortcuts tab and verify the rendered rows.
   window.NB.settings.open();
@@ -5446,7 +5447,7 @@ function check(label, cond, extra) {
   navBtns.find(b => b.dataset.tab === "shortcuts").click();
   await tick(20);
   let scRows = shortcutsList.querySelectorAll(".shortcut-row");
-  check("shortcuts: 7 rows rendered", scRows.length === 7, "got " + scRows.length);
+  check("shortcuts: 8 rows rendered", scRows.length === 8, "got " + scRows.length);
   const expFmt = {
     save: "Ctrl+S",
     openSearch: "/",
@@ -5454,6 +5455,7 @@ function check(label, cond, extra) {
     tabNext: "Alt+L",
     toggleEdit: "Ctrl+E",
     toggleHybrid: "Ctrl+Shift+E",
+    windowCycle: "Ctrl+W",
     openSettings: "Ctrl+Comma",
   };
   for (const r of scRows) {
