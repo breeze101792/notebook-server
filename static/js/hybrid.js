@@ -1786,6 +1786,11 @@
     hybridBtn.addEventListener("click", () => toggle());
   }
 
+  /* Keyboard shortcut: Mod+Shift+E toggles hybrid mode. */
+  NB.evt.on("shortcut:toggleHybrid", () => {
+    toggle();
+  });
+
   /* Show/hide the hybrid button based on whether a file is open.
    * The button should only be visible when in preview mode (not in
    * CM6 edit mode) and a file is active. We listen to file:open and

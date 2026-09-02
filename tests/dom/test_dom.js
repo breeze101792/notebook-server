@@ -5418,24 +5418,26 @@ function check(label, cond, extra) {
 
   console.log("== shortcuts ==");
   // The non-vim app keymap (Settings -> Shortcuts). Defaults:
-  // Mod+S save, / openSearch, Mod+E toggleEdit, Mod+comma
-  // openSettings. Active when VIM mode is off and no modal is up.
+  // Mod+S save, / openSearch, Mod+E toggleEdit, Mod+Shift+E toggleHybrid,
+  // Alt+H/L tabPrev/Next, Mod+comma openSettings. Active when VIM mode
+  // is off and no modal is up.
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
   check("shortcuts: NB.shortcuts module loaded", !!sc);
-  check("shortcuts: 6 default actions",
-    sc.getActionOrder().length === 6 &&
+  check("shortcuts: 7 default actions",
+    sc.getActionOrder().length === 7 &&
     sc.getDefaults().save === "Mod+S" &&
     sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
     sc.getDefaults().tabNext === "Alt+L" &&
     sc.getDefaults().toggleEdit === "Mod+E" &&
+    sc.getDefaults().toggleHybrid === "Mod+Shift+E" &&
     sc.getDefaults().openSettings === "Mod+comma");
   // The list helpers expose the same set the UI renders.
   const labels = sc.getActionLabels();
   check("shortcuts: labels exist for all actions",
     labels.save && labels.openSearch && labels.tabPrev && labels.tabNext &&
-    labels.toggleEdit && labels.openSettings);
+    labels.toggleEdit && labels.toggleHybrid && labels.openSettings);
 
   // Open the Shortcuts tab and verify the rendered rows.
   window.NB.settings.open();
@@ -5444,13 +5446,14 @@ function check(label, cond, extra) {
   navBtns.find(b => b.dataset.tab === "shortcuts").click();
   await tick(20);
   let scRows = shortcutsList.querySelectorAll(".shortcut-row");
-  check("shortcuts: 6 rows rendered", scRows.length === 6, "got " + scRows.length);
+  check("shortcuts: 7 rows rendered", scRows.length === 7, "got " + scRows.length);
   const expFmt = {
     save: "Ctrl+S",
     openSearch: "/",
     tabPrev: "Alt+H",
     tabNext: "Alt+L",
     toggleEdit: "Ctrl+E",
+    toggleHybrid: "Ctrl+Shift+E",
     openSettings: "Ctrl+Comma",
   };
   for (const r of scRows) {

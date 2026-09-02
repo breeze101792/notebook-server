@@ -51,6 +51,7 @@
     tabPrev:      "Alt+H",
     tabNext:      "Alt+L",
     toggleEdit:   "Mod+E",
+    toggleHybrid: "Mod+Shift+E",
     openSettings: "Mod+comma",
   };
   const ACTION_LABELS = {
@@ -59,6 +60,7 @@
     tabPrev:      "Previous tab",
     tabNext:      "Next tab",
     toggleEdit:   "Toggle edit mode",
+    toggleHybrid: "Toggle hybrid (WYSIWYG) mode",
     openSettings: "Open Settings",
   };
 
