@@ -33,6 +33,14 @@
     sidebarCollapsed: false,
     outlineCollapsed: false,
     searchCaseSensitive: false,
+    // Hide the top bar (brand, search, actions). Toggled live from the
+    // Appearance settings tab or the Ctrl+Shift+T shortcut. When on,
+    // body gets .topbar-hidden and --topbar-h collapses to 0 so the
+    // layout heights stay correct.
+    hideTopbar: false,
+    // The site title shown in the browser tab and the top-bar brand.
+    // Defaults to "Notebook"; the user can rename it in General settings.
+    siteTitle: "Notebook",
     // Bookmarks: an ordered array of file paths the user has pinned in
     // the sidebar's bookmarks section. Insertion order; the sidebar
     // module reorders them via drag-and-drop. Missing files (e.g. after
@@ -257,6 +265,26 @@
     }
   }
 
+  /* --- top bar + site title ----------------------------------------- */
+  // Hiding the top bar is a body class + a --topbar-h collapse (see
+  // style.css). The class drives the CSS; the variable keeps every
+  // height that references --topbar-h (tabs, viewer scroll-margin,
+  // popover max-heights) correct when the bar is gone.
+  function applyTopbar(hide) {
+    cfg.hideTopbar = !!hide;
+    document.body.classList.toggle("topbar-hidden", cfg.hideTopbar);
+  }
+  // The site title shows in the browser tab (<title>) and the top-bar
+  // brand. Empty input falls back to the default so the tab never
+  // shows a blank title.
+  function applySiteTitle(title) {
+    const t = (typeof title === "string" && title.trim()) ? title.trim() : "Notebook";
+    cfg.siteTitle = t;
+    const brand = document.querySelector(".brand");
+    if (brand) brand.textContent = "📓 " + t;
+    document.title = t;
+  }
+
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
@@ -268,6 +296,8 @@
     applyWallpaperColor(cfg.wallpaperColor || "neutral");
     applyWallpaperIntensity(cfg.wallpaperIntensity || "subtle");
     applyWallpaperScroll(cfg.wallpaperScroll || "scroll");
+    applyTopbar(!!cfg.hideTopbar);
+    applySiteTitle(cfg.siteTitle || "Notebook");
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -405,7 +435,7 @@
         toggleEdit: () => { if (NB.viewer && NB.viewer.toggleEdit) NB.viewer.toggleEdit(); },
         toggleHybrid: () => { NB.evt.emit("shortcut:toggleHybrid"); },
         windowCycle: () => NB.vimnav && NB.vimnav.cycleWindow && NB.vimnav.cycleWindow(),
-        toggleTopbar: () => document.body.classList.toggle("topbar-hidden"),
+        toggleTopbar: () => NB.app.setHideTopbar(!NB.app.getHideTopbar()),
         openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }
@@ -709,6 +739,10 @@
     setWallpaperIntensity: (name) => { applyWallpaperIntensity(name); persistConfig(); },
     getWallpaperIntensity: () => cfg.wallpaperIntensity || "subtle",
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
+    setHideTopbar: (on) => { applyTopbar(!!on); persistConfig(); },
+    getHideTopbar: () => !!cfg.hideTopbar,
+    setSiteTitle: (title) => { applySiteTitle(title); persistConfig(); },
+    getSiteTitle: () => cfg.siteTitle || "Notebook",
     setVimMode: (on) => {
       cfg.vimMode = !!on;
       if (NB.vimnav) NB.vimnav.setEnabled(cfg.vimMode);

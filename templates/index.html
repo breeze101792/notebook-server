@@ -317,6 +317,12 @@
         <div class="settings-sections">
           <!-- General: file watching (was its own "File watching" section). -->
           <section class="settings-section" data-section="general" id="settings-section-general">
+            <h3>Site</h3>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-site-title">Site title</label>
+              <input type="text" id="settings-site-title" class="settings-text-input"
+                placeholder="Notebook" maxlength="60" spellcheck="false">
+            </div>
             <h3>File watching</h3>
             <p class="settings-help">
               Get notified when files in your notebook are changed by another program
@@ -377,6 +383,10 @@
                 <label><input type="radio" name="fontSize" value="large"> L</label>
                 <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
               </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
+              <input type="checkbox" id="settings-hide-topbar">
             </div>
             <div class="settings-row">
               <label class="settings-label">Settings modal width</label>

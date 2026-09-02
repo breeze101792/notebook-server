@@ -867,6 +867,20 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   /* No top margin: the parent column already gaps children by 6px. */
   margin: 0;
 }
+.settings-text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: .9rem;
+  background: var(--code-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.settings-text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
 .settings-vimrc-status {
   font-size: .85rem;
   color: var(--fg-muted);

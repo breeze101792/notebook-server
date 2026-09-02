@@ -45,6 +45,8 @@
   const vimrcEl     = document.getElementById("settings-vimrc");
   const vimrcSaveEl = document.getElementById("settings-vimrc-save");
   const vimrcStatus = document.getElementById("settings-vimrc-status");
+  const hideTopbarEl = document.getElementById("settings-hide-topbar");
+  const siteTitleEl  = document.getElementById("settings-site-title");
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
 
@@ -160,6 +162,7 @@
     syncRadios();
     syncVimToggle();
     syncVimrc();
+    syncAppearanceText();
     refreshWatchStatus();
     refreshAuthState();
     renderShortcuts();
@@ -377,6 +380,15 @@
     }
   }
 
+  /* Sync the hide-top-bar checkbox + site-title field from the live cfg. */
+  function syncAppearanceText() {
+    if (NB.app && NB.app.getCfg) {
+      const cfg = NB.app.getCfg();
+      if (hideTopbarEl) hideTopbarEl.checked = !!cfg.hideTopbar;
+      if (siteTitleEl) siteTitleEl.value = cfg.siteTitle || "Notebook";
+    }
+  }
+
   /* VIM toggle: live, same model as the radios. The actual work
    * (attaching the global keydown listener + tagging the three
    * windows) is in NB.vimnav.setEnabled; we just flip the cfg +
@@ -385,6 +397,20 @@
     vimToggleEl.addEventListener("change", () => {
       const on = vimToggleEl.checked;
       if (NB.app && NB.app.setVimMode) NB.app.setVimMode(on);
+    });
+  }
+
+  /* Hide top bar: live, same model as the radios. */
+  if (hideTopbarEl) {
+    hideTopbarEl.addEventListener("change", () => {
+      if (NB.app && NB.app.setHideTopbar) NB.app.setHideTopbar(hideTopbarEl.checked);
+    });
+  }
+
+  /* Site title: live on input (debounced persist via NB.app.setSiteTitle). */
+  if (siteTitleEl) {
+    siteTitleEl.addEventListener("input", () => {
+      if (NB.app && NB.app.setSiteTitle) NB.app.setSiteTitle(siteTitleEl.value);
     });
   }
 

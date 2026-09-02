@@ -323,6 +323,11 @@ const html = `<!DOCTYPE html><html><head>
         </nav>
         <div class="settings-sections">
           <section class="settings-section" data-section="general" id="settings-section-general">
+            <h3>Site</h3>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-site-title">Site title</label>
+              <input type="text" id="settings-site-title" class="settings-text-input" placeholder="Notebook" maxlength="60" spellcheck="false">
+            </div>
             <h3>File watching</h3>
             <div class="settings-row">
               <span class="settings-label">Status</span>
@@ -364,6 +369,10 @@ const html = `<!DOCTYPE html><html><head>
                 <label><input type="radio" name="fontSize" value="large"> L</label>
                 <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
               </div>
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
+              <input type="checkbox" id="settings-hide-topbar">
             </div>
             <div class="settings-row">
               <span class="settings-label">Settings modal width</span>
@@ -5995,6 +6004,63 @@ function check(label, cond, extra) {
   await tick(20);
   check("shortcuts: Mod+Shift+T shows the topbar again",
     !window.document.body.classList.contains("topbar-hidden"));
+
+  console.log("== site title + hide top bar settings ==");
+  // The site title is editable in General settings and drives both the
+  // browser tab title and the top-bar brand.
+  const brandEl = window.document.querySelector(".brand");
+  check("title: default brand shows 'Notebook'",
+    brandEl && brandEl.textContent.includes("Notebook"),
+    "brand=" + (brandEl && brandEl.textContent));
+  check("title: default document.title is 'Notebook'",
+    window.document.title === "Notebook", "title=" + window.document.title);
+  window.NB.settings.open();
+  await tick(20);
+  const siteTitleInput = $("settings-site-title");
+  check("title: site title field exists in General", !!siteTitleInput);
+  check("title: site title field prefilled from cfg",
+    siteTitleInput.value === "Notebook", "value=" + siteTitleInput.value);
+  siteTitleInput.value = "My Notes";
+  siteTitleInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(20);
+  check("title: typing updates the brand live",
+    brandEl && brandEl.textContent.includes("My Notes"),
+    "brand=" + (brandEl && brandEl.textContent));
+  check("title: typing updates document.title live",
+    window.document.title === "My Notes", "title=" + window.document.title);
+  check("title: cfg.siteTitle updated",
+    window.NB.app.getCfg().siteTitle === "My Notes",
+    "siteTitle=" + window.NB.app.getCfg().siteTitle);
+  // Empty input falls back to the default.
+  siteTitleInput.value = "   ";
+  siteTitleInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(20);
+  check("title: blank input falls back to 'Notebook'",
+    window.document.title === "Notebook" && window.NB.app.getCfg().siteTitle === "Notebook",
+    "title=" + window.document.title);
+  // Restore a known title for the rest of the suite.
+  siteTitleInput.value = "Notebook";
+  siteTitleInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(20);
+
+  // Hide top bar: Appearance checkbox, live + persisted.
+  const hideTopbarCheck = $("settings-hide-topbar");
+  check("topbar: hide-top-bar checkbox exists in Appearance", !!hideTopbarCheck);
+  check("topbar: checkbox unchecked by default", hideTopbarCheck.checked === false);
+  hideTopbarCheck.checked = true;
+  hideTopbarCheck.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("topbar: checking hides the top bar live",
+    window.document.body.classList.contains("topbar-hidden"));
+  check("topbar: cfg.hideTopbar updated",
+    window.NB.app.getCfg().hideTopbar === true);
+  hideTopbarCheck.checked = false;
+  hideTopbarCheck.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("topbar: unchecking shows the top bar again",
+    !window.document.body.classList.contains("topbar-hidden"));
+  window.NB.settings.close();
+  await tick(10);
 
   console.log("== auth ==");
   // The fetch stub defaults to authEnabled=false so the modal is closed and
