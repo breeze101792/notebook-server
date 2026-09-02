@@ -64,15 +64,17 @@
     }
 
     /* The zoom transform combines scale and pan. The pan is applied in
-     * the SVG's local coordinate frame (before the scale), so the drag
-     * deltas are divided by zoomLevel to move the image 1:1 with the
-     * cursor. transform-origin is center-center (set in CSS), so a
-     * translate+scale keeps the image centred then grows it. When fit
-     * (not zoomed) there is nothing to pan, so we drop the transform. */
+     * the SVG's local coordinate frame (before the scale). With CSS
+     * transform translate(panX,panY) scale(s) and transform-origin
+     * center, the translate is NOT amplified by the scale — the
+     * element center moves by exactly (panX, panY) pixels on screen.
+     * In fit mode (not zoomed) we normally drop the transform, but
+     * during an active drag we allow the translate so the user can
+     * reposition the image immediately on open. */
     function applyZoom() {
       const svg = getSvg();
       if (!svg) return;
-      if (zoomFit) {
+      if (zoomFit && !dragging) {
         body.classList.add("svg-fit");
         svg.style.transform = "none";
         panX = 0;
@@ -95,11 +97,13 @@
       body.appendChild(clone);
       zoomLevel = 1;
       zoomFit   = true;
+      panX = 0;
+      panY = 0;
       body.classList.add("svg-fit");
       overlay.hidden = false;
       lightboxOpen = true;
       document.body.classList.add("mermaid-lightbox-active");
-      updateZoomDisplay();
+      applyZoom();
     }
 
     function closeLightbox() {
@@ -188,11 +192,13 @@
       if (e.button !== 0 && e.button !== 2) return;
       // Ignore drags that begin on the controls toolbar.
       if (e.target.closest && e.target.closest(".mermaid-lightbox-controls")) return;
-      // Only pan when actually zoomed (fit mode has nothing to pan).
-      if (zoomFit) return;
       e.preventDefault();
       dragging = { startX: e.clientX, startY: e.clientY, origPanX: panX, origPanY: panY, moved: false };
       setDraggingClass(true);
+      // Apply the transform immediately so the SVG breaks out of the
+      // fit constraint on the same frame the drag begins (no visual
+      // jump on the first mousemove).
+      applyZoom();
     }
 
     function onDragMove(e) {
@@ -200,9 +206,12 @@
       const dx = e.clientX - dragging.startX;
       const dy = e.clientY - dragging.startY;
       if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
-      // Divide by zoomLevel so the image tracks the cursor 1:1.
-      panX = dragging.origPanX + dx / zoomLevel;
-      panY = dragging.origPanY + dy / zoomLevel;
+      // Track the cursor 1:1. With CSS transform
+      // translate(panX,panY) scale(s) and transform-origin:center,
+      // the translate is NOT amplified by the scale — the element
+      // center moves by exactly (panX, panY) regardless of zoom.
+      panX = dragging.origPanX + dx;
+      panY = dragging.origPanY + dy;
       applyZoom();
     }
 
@@ -219,10 +228,10 @@
     // separate and only applies to the file tree, not the lightbox.)
     overlay.addEventListener("mousedown", onDragStart);
     overlay.addEventListener("contextmenu", (e) => {
-      // When zoomed (pan enabled), suppress the context menu so right-
-      // drag isn't interrupted. In fit mode there's nothing to pan, so
+      // Suppress the context menu during a drag (right-drag to pan)
+      // or when zoomed (pan enabled). In fit mode without a drag,
       // allow the menu (matches normal page behaviour).
-      if (!zoomFit) e.preventDefault();
+      if (dragging || !zoomFit) e.preventDefault();
     });
     window.addEventListener("mousemove", onDragMove);
     window.addEventListener("mouseup", onDragEnd);

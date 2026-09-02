@@ -2275,17 +2275,15 @@ body[data-theme="light"] #viewer-content {
   height: auto;
   display: block;
 }
-/* When zoomed (not in fit mode), the SVG scales via transform and
- * the overflow container lets the user scroll around. */
-.mermaid-lightbox-body:not(.svg-fit) svg {
-  cursor: grab;
-}
-.mermaid-lightbox-body:not(.svg-fit) svg.dragging {
-  cursor: grabbing;
-}
+/* Drag-to-pan: always show grab cursor on the SVG in the lightbox.
+ * Dragging works in both fit and zoomed modes. */
 .mermaid-lightbox-body svg {
   display: block;
   transform-origin: center center;
+  cursor: grab;
+}
+.mermaid-lightbox-body svg.dragging {
+  cursor: grabbing;
 }
 .markdown-body table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 10px; }

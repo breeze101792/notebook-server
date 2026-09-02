@@ -1872,6 +1872,53 @@ function check(label, cond, extra) {
     await tick(10);
   }
 
+  // --- lightbox: drag to pan in fit mode (no zoom first) ---------------
+  // The lightbox opens in fit mode. The user should be able to drag
+  // immediately without zooming first. Verify that dragging in fit mode
+  // applies a translate transform and that the 1:1 cursor tracking is
+  // correct (dx, not dx/zoomLevel).
+  {
+    mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    await tick(10);
+    // Lightbox is open in fit mode — zoomFit is true, no transform yet.
+    const lbSvg2 = () => lightboxBody() && lightboxBody().querySelector("svg");
+    check("lightbox fit-drag: opens in fit mode (no transform)",
+      lbSvg2() && lbSvg2().style.transform === "none",
+      lbSvg2() ? lbSvg2().style.transform : "(no svg)");
+
+    // Drag without calling zoomFirst: mousedown (+50, +20).
+    const svg2 = lbSvg2();
+    svg2.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, button: 0, clientX: 100, clientY: 100 }));
+    window.dispatchEvent(new window.MouseEvent("mousemove", { bubbles: true, clientX: 150, clientY: 120 }));
+    await tick(10);
+
+    // Context menu suppressed during active drag in fit mode.
+    let ctxPrevented2 = false;
+    const ctxEvt2 = new window.MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    ctxEvt2.preventDefault = () => { ctxPrevented2 = true; };
+    lightboxOverlay().dispatchEvent(ctxEvt2);
+    check("lightbox fit-drag: context menu suppressed during fit-mode drag",
+      ctxPrevented2,
+      "ctxPrevented=" + ctxPrevented2);
+
+    window.dispatchEvent(new window.MouseEvent("mouseup", { bubbles: true }));
+    await tick(10);
+    // 1:1 tracking: dx=50, dy=20 → translate(50px, 20px).
+    check("lightbox fit-drag: translate applied in fit mode (1:1 tracking)",
+      /translate\(50px, 20px\)/.test(lbSvg2().style.transform),
+      lbSvg2() ? lbSvg2().style.transform : "(no svg)");
+
+    // fitToPage resets the pan.
+    window.NB.mermaid.fitToPage();
+    await tick(10);
+    check("lightbox fit-drag: fitToPage resets transform after fit-mode drag",
+      lbSvg2() && lbSvg2().style.transform === "none",
+      lbSvg2() ? lbSvg2().style.transform : "(no svg)");
+
+    window.NB.mermaid.closeLightbox();
+    await tick(10);
+  }
+
   // Cleanup: close the test files we opened so the rest of the
   // suite isn't carrying them. The TREE / FILES changes stay
   // (they're the test fixture), but the open tabs should match
