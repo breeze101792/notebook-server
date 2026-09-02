@@ -411,6 +411,7 @@
         tabPrev: () => cycleTab("prev"),
         tabNext: () => cycleTab("next"),
         toggleEdit: () => { if (NB.viewer && NB.viewer.toggleEdit) NB.viewer.toggleEdit(); },
+        toggleHybrid: () => { NB.evt.emit("shortcut:toggleHybrid"); },
         openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }

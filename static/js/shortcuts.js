@@ -197,15 +197,11 @@
       }
     }
     const wantMeta  = wantMods.has("mod")   ? (mac ? e.metaKey : e.ctrlKey) : true;
-    const wantCtrl  = wantMods.has("ctrl")  ? e.ctrlKey : true;
-    const wantAlt   = wantMods.has("alt")   ? e.altKey  : true;
-    const wantShift = wantMods.has("shift") ? e.shiftKey : true;
-    // Reject extra "primary" modifiers: e.g. Meta on Linux when the
-    // chord is "Mod+S", or Ctrl when the chord is "Mod+S" on Mac.
-    const primaryExtra = mac
-      ? (e.ctrlKey && !wantMods.has("ctrl"))
-      : (e.metaKey && !wantMods.has("mod"));
-    if (primaryExtra) return false;
+    const wantCtrl  = wantMods.has("ctrl")  ? e.ctrlKey
+                    : (!mac && wantMods.has("mod")) ? true   // Linux: Ctrl IS Mod, don't reject it
+                    : !e.ctrlKey;
+    const wantAlt   = wantMods.has("alt")   ? e.altKey  : !e.altKey;
+    const wantShift = wantMods.has("shift") ? e.shiftKey : !e.shiftKey;
     if (!(wantMeta && wantCtrl && wantAlt && wantShift)) return false;
     // If the chord requires a modifier, the event must carry at
     // least one (so "Mod+S" doesn't match a bare "s").
@@ -271,7 +267,7 @@
     // event. "First match wins" is the collision policy.
     const cfg = (window.NB && NB.app && NB.app.getCfg) ? NB.app.getCfg() : null;
     const overrides = (cfg && cfg.shortcuts) || {};
-    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "openSettings"];
+    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "toggleHybrid", "openSettings"];
     let matchAction = null;
     let matchChord = null;
     for (const action of order) {
@@ -297,18 +293,22 @@
     if (chordHasNoModifiers(matchChord) && typingTargetHasFocus()) return;
     // Claim the chord for the app. preventDefault tells the browser
     // "we handle this key", which is important even when we don't
-    // run the handler below (vim mode on, or a modal is up): in
-    // those cases the keyboard is owned by vimnav or the modal,
-    // but the browser should still not act on the chord (e.g. so
-    // Ctrl+, with vim on doesn't get consumed by a browser default
-    // or by a future Chrome update that adds a Ctrl+, binding).
+    // run the handler below (e.g. a modal is up): in that case the
+    // keyboard is owned by the modal, but the browser should still
+    // not act on the chord (e.g. so Ctrl+, doesn't get consumed by
+    // a browser default or by a future Chrome update that adds a
+    // Ctrl+, binding).
     e.preventDefault();
     // Only fire the handler when the app is actually driving the
-    // keyboard. With vim on, vimnav owns the keys (and has already
-    // preventDefaulted its own chords); with a modal up, the modal
-    // owns the keys. Either way, our handler shouldn't run.
+    // keyboard. With a modal up, the modal owns the keys and our
+    // handler shouldn't run.
     if (modalIsOpen()) return;
-    if (window.NB && NB.vimnav && NB.vimnav.isEnabled && NB.vimnav.isEnabled()) return;
+    // If vimnav already handled this event, don't double-fire.
+    if (e.__vimnavHandled) return;
+    // When CM6 edit mode is active, the editor owns the keyboard.
+    // Don't fire shortcuts that would conflict with editing.
+    const cmHost = document.getElementById("cm-host");
+    if (cmHost && !cmHost.hidden && matchAction === "toggleHybrid") return;
     const fn = handlers[matchAction];
     if (fn) {
       try { fn(e); } catch (err) { console.error("shortcut handler error", err); }

@@ -168,6 +168,7 @@
         e.preventDefault();
         if (NB.search) NB.search.close();
       }
+      e.__vimnavHandled = true;
       return;
     }
     if (ourHelpIsOpen()) {
@@ -175,6 +176,7 @@
         e.preventDefault();
         closeHelp();
       }
+      e.__vimnavHandled = true;
       return;
     }
     // --- global app-level bindings (work in any focus context, including
@@ -195,19 +197,22 @@
         // changes, prompt to save / discard first.
         e.preventDefault();
         cycleTabWithCommit("prev");
+        e.__vimnavHandled = true;
         return;
       }
       if (code === "KeyL") {
         // Next tab. Wraps. Same dirty-check as Alt+H.
         e.preventDefault();
         cycleTabWithCommit("next");
+        e.__vimnavHandled = true;
         return;
       }
     }
     if (e.ctrlKey || e.metaKey) {
       const k = e.key.toLowerCase();
-      if (k === "e") {
+      if (k === "e" && !e.shiftKey) {
         e.preventDefault();
+        e.__vimnavHandled = true;
         const v = NB.viewer;
         if (!v) return;
         const cmHost = document.getElementById("cm-host");
@@ -216,14 +221,16 @@
         else { if (v.startEdit) v.startEdit(); }
         return;
       }
-      if (k === "s") {
+      if (k === "s" && !e.shiftKey) {
         e.preventDefault();
+        e.__vimnavHandled = true;
         if (NB.viewer) NB.viewer.save();
         return;
       }
       if (k === "/") {
         e.preventDefault();
         e.stopImmediatePropagation();
+        e.__vimnavHandled = true;
         // Ctrl+/ turns VIM mode off. The state change is what makes
         // this handler special: without stopImmediatePropagation the
         // shortcuts module (registered after vimnav) would also see
@@ -235,6 +242,7 @@
       }
       if (k === "w") {
         e.preventDefault();
+        e.__vimnavHandled = true;
         cycleWindow();
         return;
       }
@@ -284,6 +292,7 @@
       // no-op (CM6's Esc is its own thing).
       chord = null;
       if (ourHelpIsOpen()) closeHelp();
+      e.__vimnavHandled = true;
       return;
     }
 
@@ -311,6 +320,7 @@
     if (k === "/") {
       const searchInput = document.getElementById("search-input");
       if (searchInput) { searchInput.focus(); searchInput.select(); }
+      e.__vimnavHandled = true;
       return;
     }
 
@@ -320,6 +330,7 @@
       const prefix = chord.key;
       chord = null;
       runChord(prefix, k);
+      e.__vimnavHandled = true;
       return;
     }
     if (isChordable(k) && !e.shiftKey) {
