@@ -5466,13 +5466,13 @@ function check(label, cond, extra) {
   console.log("== shortcuts ==");
   // The non-vim app keymap (Settings -> Shortcuts). Defaults:
   // Mod+S save, / openSearch, Mod+E toggleEdit, Mod+Shift+E toggleHybrid,
-  // Alt+H/L tabPrev/Next, Mod+comma openSettings. Active when VIM mode
-  // is off and no modal is up.
+  // Alt+H/L tabPrev/Next, Mod+Shift+T toggleTopbar, Mod+comma openSettings.
+  // Active when VIM mode is off and no modal is up.
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
   check("shortcuts: NB.shortcuts module loaded", !!sc);
-  check("shortcuts: 8 default actions",
-    sc.getActionOrder().length === 8 &&
+  check("shortcuts: 9 default actions",
+    sc.getActionOrder().length === 9 &&
     sc.getDefaults().save === "Mod+S" &&
     sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
@@ -5480,12 +5480,14 @@ function check(label, cond, extra) {
     sc.getDefaults().toggleEdit === "Mod+E" &&
     sc.getDefaults().toggleHybrid === "Mod+Shift+E" &&
     sc.getDefaults().windowCycle === "Mod+W" &&
+    sc.getDefaults().toggleTopbar === "Mod+Shift+T" &&
     sc.getDefaults().openSettings === "Mod+comma");
   // The list helpers expose the same set the UI renders.
   const labels = sc.getActionLabels();
   check("shortcuts: labels exist for all actions",
     labels.save && labels.openSearch && labels.tabPrev && labels.tabNext &&
-    labels.toggleEdit && labels.toggleHybrid && labels.windowCycle && labels.openSettings);
+    labels.toggleEdit && labels.toggleHybrid && labels.windowCycle &&
+    labels.toggleTopbar && labels.openSettings);
 
   // Open the Shortcuts tab and verify the rendered rows.
   window.NB.settings.open();
@@ -5494,7 +5496,7 @@ function check(label, cond, extra) {
   navBtns.find(b => b.dataset.tab === "shortcuts").click();
   await tick(20);
   let scRows = shortcutsList.querySelectorAll(".shortcut-row");
-  check("shortcuts: 8 rows rendered", scRows.length === 8, "got " + scRows.length);
+  check("shortcuts: 9 rows rendered", scRows.length === 9, "got " + scRows.length);
   const expFmt = {
     save: "Ctrl+S",
     openSearch: "/",
@@ -5503,6 +5505,7 @@ function check(label, cond, extra) {
     toggleEdit: "Ctrl+E",
     toggleHybrid: "Ctrl+Shift+E",
     windowCycle: "Ctrl+W",
+    toggleTopbar: "Ctrl+Shift+T",
     openSettings: "Ctrl+Comma",
   };
   for (const r of scRows) {
@@ -5779,8 +5782,11 @@ function check(label, cond, extra) {
   // without the stopImmediatePropagation fix, the shortcuts module
   // would observe the now-off vim flag and fire its (rebound) Ctrl+/
   // binding, opening search as a side effect of disabling vim.
+  // The shell keymap (and its Ctrl+/ escape hatch) is live only
+  // while editing, so enter edit mode first.
   sc.setBinding("openSearch", "Ctrl+/");
   await tick(10);
+  if (cmIsHidden()) { click("edit-toggle"); await tick(20); }
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
@@ -5798,6 +5804,7 @@ function check(label, cond, extra) {
   // expects the default off state at boot of that block).
   sc.resetBinding("openSearch");
   await tick(10);
+  if (!cmIsHidden()) { click("edit-toggle"); await tick(20); }
   window.NB.app.setVimMode(false);
   await tick(20);
 
@@ -5968,6 +5975,26 @@ function check(label, cond, extra) {
     $("settings-config-dir").textContent === "/tmp/test/config",
     $("settings-config-dir").textContent);
   window.NB.settings.close();
+
+  // --- toggleTopbar (Mod+Shift+T) hides/shows the top bar ---
+  const topbarEl = $("topbar");
+  check("shortcuts: topbar visible by default",
+    !window.document.body.classList.contains("topbar-hidden"));
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "T", code: "KeyT", ctrlKey: true, shiftKey: true,
+    bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Mod+Shift+T hides the topbar",
+    window.document.body.classList.contains("topbar-hidden"),
+    "class=" + window.document.body.className);
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "T", code: "KeyT", ctrlKey: true, shiftKey: true,
+    bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("shortcuts: Mod+Shift+T shows the topbar again",
+    !window.document.body.classList.contains("topbar-hidden"));
 
   console.log("== auth ==");
   // The fetch stub defaults to authEnabled=false so the modal is closed and
@@ -8213,6 +8240,18 @@ function check(label, cond, extra) {
     }
     window.document.body.focus();
   };
+  // The shell VIM keymap is active ONLY while editing (cm-host visible)
+  // AND CodeMirror does not have focus (CM's own vim keymap owns the
+  // keys then). Enter edit mode and drop CM focus so the shell keymap
+  // is live for the navigation tests below.
+  const enterEditShell = async () => {
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(20); }
+    blurActive();
+    await tick(10);
+  };
+  const exitEditShell = async () => {
+    if (!cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(20); }
+  };
 
   // Boot state: VIM is off by default.
   blurActive();
@@ -8281,7 +8320,9 @@ function check(label, cond, extra) {
   // Sidebar window: j moves the vim cursor down. NB.sidebar tracks
   // its own cursor (independent of the .selected highlight); we just
   // check the cursor path changes. From the cycle above we are in
-  // editor; one Ctrl+W gets us to outline, two to sidebar.
+  // editor; one Ctrl+W gets us to outline, two to sidebar. The shell
+  // keymap is live only while editing, so enter edit mode first.
+  await enterEditShell();
   pressKey("w", { ctrlKey: true });   // editor -> outline
   pressKey("w", { ctrlKey: true });   // outline -> sidebar
   await tick(10);
@@ -8316,7 +8357,9 @@ function check(label, cond, extra) {
   // CodeMirror vim keymap while the editor has focus -- it does NOT
   // exit edit mode. (i / e used to enter edit mode; now reserved
   // for VIM.)
-  // First go back to editor.
+  // First go back to editor. Drop out of edit mode (the sidebar
+  // test above entered it) so this section starts in preview.
+  await exitEditShell();
   $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
   await tick(10);
   check("vim: click editor-pane -> active = editor",
@@ -8492,6 +8535,7 @@ function check(label, cond, extra) {
   check("vim: 'gg' chord -> still in preview mode", cmIsHidden());
 
   // Enter in the sidebar opens the file under the cursor.
+  await enterEditShell();
   pressKey("w", { ctrlKey: true });   // editor -> outline
   pressKey("w", { ctrlKey: true });   // outline -> sidebar
   await tick(10);
@@ -8635,6 +8679,7 @@ function check(label, cond, extra) {
   // Outline window: j/k walk the outline vim cursor; h jumps back
   // to the editor window. (l/Enter scroll the editor to a heading,
   // which jsdom can't verify without layout -- we just assert no throw.)
+  await enterEditShell();
   pressKey("w", { ctrlKey: true });   // editor -> outline
   await tick(10);
   check("vim: Ctrl+W from editor -> outline",
@@ -8732,7 +8777,9 @@ function check(label, cond, extra) {
   check("vim: Ctrl+S in editor -> no exception (save is called)", true);
 
   // Editbar still works through the bridge. Enter edit mode by clicking
-  // the Edit button (not via VIM) and run bold on a selection.
+  // the Edit button (not via VIM) and run bold on a selection. Drop
+  // out of edit mode first (the outline section left us in it).
+  await exitEditShell();
   blurActive();
   click("edit-toggle");
   await tick(20);
@@ -8752,8 +8799,9 @@ function check(label, cond, extra) {
   await tick(20);
   check("vim: Ctrl+E exits edit mode (after editbar test)", cmIsHidden());
 
-  // T opens the search box (focuses the search input).
-  blurActive();
+  // T opens the search box (focuses the search input). The shell
+  // keymap is live only while editing, so enter edit mode first.
+  await enterEditShell();
   $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
   await tick(10);
   pressKey("T");
@@ -8765,15 +8813,15 @@ function check(label, cond, extra) {
   $("search-input").blur();
   await tick(10);
 
-  // / (VIM-style search) in preview mode also focuses the search
-  // input. In edit mode, / is owned by CM6's vim keymap (we don't
-  // intercept it). Verify the preview case.
+  // / (VIM-style search) in edit mode (CM not focused) also focuses
+  // the search input. In edit mode with CM focused, / is owned by
+  // CM6's vim keymap (we don't intercept it). Verify the shell case.
   blurActive();
   $("editor-pane").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true }));
   await tick(10);
   pressKey("/");
   await tick(10);
-  check("vim: / in preview focuses search input",
+  check("vim: / in edit mode focuses search input",
     window.document.activeElement === $("search-input"),
     "active=" + (window.document.activeElement && window.document.activeElement.id));
   $("search-input").blur();

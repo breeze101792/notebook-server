@@ -135,8 +135,18 @@
     return k === "g";
   }
 
+  /* True when the CodeMirror editor is mounted and visible (i.e. the
+   * user is in edit mode). The shell VIM keymap only owns the keyboard
+   * while editing; outside edit mode it stays inert so browser keys
+   * (F5, Ctrl+L, Ctrl+F, …) pass through untouched. */
+  function inEditMode() {
+    const host = document.getElementById("cm-host");
+    return !!(host && !host.hidden);
+  }
+
   function handleKey(e) {
     if (!enabled) return;
+    if (!inEditMode()) return;
     if (modalIsOpen() && !ourHelpIsOpen()) return;
     if (searchIsOpen()) {
       // While the search overlay is open the shell keymap yields (the

@@ -53,6 +53,7 @@
     toggleEdit:   "Mod+E",
     toggleHybrid: "Mod+Shift+E",
     windowCycle:  "Mod+W",
+    toggleTopbar: "Mod+Shift+T",
     openSettings: "Mod+comma",
   };
   const ACTION_LABELS = {
@@ -63,6 +64,7 @@
     toggleEdit:   "Toggle edit mode",
     toggleHybrid: "Toggle hybrid (WYSIWYG) mode",
     windowCycle:  "Cycle sidebar / editor / outline",
+    toggleTopbar: "Toggle top bar",
     openSettings: "Open Settings",
   };
 
@@ -269,7 +271,7 @@
     // event. "First match wins" is the collision policy.
     const cfg = (window.NB && NB.app && NB.app.getCfg) ? NB.app.getCfg() : null;
     const overrides = (cfg && cfg.shortcuts) || {};
-    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "toggleHybrid", "windowCycle", "openSettings"];
+    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "toggleHybrid", "windowCycle", "toggleTopbar", "openSettings"];
     let matchAction = null;
     let matchChord = null;
     for (const action of order) {

@@ -405,6 +405,7 @@
         toggleEdit: () => { if (NB.viewer && NB.viewer.toggleEdit) NB.viewer.toggleEdit(); },
         toggleHybrid: () => { NB.evt.emit("shortcut:toggleHybrid"); },
         windowCycle: () => NB.vimnav && NB.vimnav.cycleWindow && NB.vimnav.cycleWindow(),
+        toggleTopbar: () => document.body.classList.toggle("topbar-hidden"),
         openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }

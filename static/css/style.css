@@ -110,6 +110,8 @@ body {
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+body.topbar-hidden #topbar { display: none; }
+body.topbar-hidden { --topbar-h: 0px; }
 .brand { font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
 .topbar-actions { display: flex; gap: 6px; }
 .topbar-spacer { flex: 1 1 auto; }
