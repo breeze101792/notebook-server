@@ -8073,6 +8073,59 @@ function check(label, cond, extra) {
       fcBlock ? fcBlock[0] : "(not found)");
   }
 
+  console.log("== keyboard scroll ==");
+  // Arrow Up/Down and Page Up/Down scroll the markdown content when the
+  // viewer is visible and the user isn't typing. The content lives in an
+  // inner scroller (#viewer-content), so we route the keys to it.
+  {
+    const vc = $("viewer-content");
+    // Ensure a file is active and the viewer is shown (preview mode).
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    check("scroll: viewer content visible (precondition)",
+      !$("viewer").hidden && !$("cm-host").hidden === false);
+    // ArrowDown scrolls down by SCROLL_LINE (48px).
+    const before = vc.scrollTop;
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("scroll: ArrowDown scrolls content down",
+      vc.scrollTop === before + 48, "before=" + before + " after=" + vc.scrollTop);
+    // ArrowUp scrolls back up.
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "ArrowUp", code: "ArrowUp", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("scroll: ArrowUp scrolls content up",
+      vc.scrollTop === before, "after=" + vc.scrollTop);
+    // PageDown scrolls by the client height; PageUp back.
+    const ch = vc.clientHeight || 0;
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "PageDown", code: "PageDown", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("scroll: PageDown scrolls by client height",
+      vc.scrollTop === before + ch, "after=" + vc.scrollTop);
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "PageUp", code: "PageUp", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("scroll: PageUp scrolls back up",
+      vc.scrollTop === before, "after=" + vc.scrollTop);
+    // Typing guard: with an input focused, ArrowDown must NOT scroll.
+    $("search-input").focus();
+    const beforeTyping = vc.scrollTop;
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("scroll: ArrowDown in an input does NOT scroll (typing guard)",
+      vc.scrollTop === beforeTyping, "after=" + vc.scrollTop);
+    $("search-input").blur();
+    await tick(10);
+  }
+
   console.log("== back button ==");
   // The back button (#back-btn) in the topbar returns to the previous
   // note (cross-note) or the previous scroll position (in-page).

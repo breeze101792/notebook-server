@@ -1023,6 +1023,51 @@
 
   NB.viewer = viewer;
 
+  /* --- keyboard scrolling ------------------------------------------- */
+  /* Arrow Up/Down and Page Up/Down scroll the markdown content when the
+   * viewer is visible and the user isn't typing in a field. This is the
+   * natural "read the note" scroll: the browser's default for these keys
+   * scrolls the whole page, but the app's content lives in an inner
+   * scroller (#viewer-content), so we route the keys to it. We yield
+   * when an input/textarea has focus (typing), when the editor is up
+   * (CM owns the keys), or when a special tab (graph/search) is active.
+   * VIM mode's shell keymap already handles arrows in edit mode; this
+   * handler only fires in preview. */
+  const SCROLL_LINE = 48;   // px per Arrow Up/Down press
+  function scrollViewerBy(dy) {
+    if (!viewerContentEl) return;
+    viewerContentEl.scrollTop += dy;
+  }
+  function viewerScrollTargetHasFocus() {
+    const a = document.activeElement;
+    if (!a || a === document.body) return false;
+    if (a.isContentEditable) return true;
+    const tag = a.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+  function viewerIsScrollable() {
+    // The viewer must be the visible content: a file is active, the
+    // viewer shell is shown, and we're not in edit mode (cm-host up)
+    // or on a special tab.
+    if (!active) return false;
+    if (viewerEl.hidden) return false;
+    if (cmHostEl && !cmHostEl.hidden) return false;
+    return true;
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (viewerScrollTargetHasFocus()) return;
+    if (!viewerIsScrollable()) return;
+    let dy = 0;
+    if (e.key === "ArrowUp") dy = -SCROLL_LINE;
+    else if (e.key === "ArrowDown") dy = SCROLL_LINE;
+    else if (e.key === "PageUp") dy = -(viewerContentEl.clientHeight || 0);
+    else if (e.key === "PageDown") dy = (viewerContentEl.clientHeight || 0);
+    else return;
+    e.preventDefault();
+    scrollViewerBy(dy);
+  });
+
   // Register the [[wikilink]] marked extension once at module load so
   // every render (viewer + hybrid) tokenises [[...]] into in-app links.
   registerWikilinkExtension();
