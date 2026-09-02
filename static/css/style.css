@@ -1002,6 +1002,22 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   0%, 100% { box-shadow: 0 0 0 0 transparent; }
   50%      { box-shadow: 0 0 0 3px var(--accent-soft); }
 }
+/* Section heading between shortcut groups (e.g. the fixed hybrid-editor
+ * reference table below the configurable rows). */
+.settings-subheading {
+  margin: 18px 0 4px;
+  font-size: .95rem;
+}
+/* Fixed reference rows (hybrid-editor bindings): no Change/Reset
+ * buttons, slightly quieter so they read as a table, not controls. */
+.shortcut-row-static {
+  padding: 6px 12px;
+  background: transparent;
+  border-style: dashed;
+}
+.shortcut-row-static .shortcut-binding {
+  min-width: 0;
+}
 .shortcut-change,
 .shortcut-reset {
   font-size: .85rem;
@@ -1011,7 +1027,11 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   margin-top: 4px;
   border-top: 1px solid var(--border);
   padding-top: 12px;
+  /* The row's (empty) label column is dropped so the single button
+   * hugs the right edge instead of sitting a label-width from it. */
+  justify-content: flex-end;
 }
+.shortcuts-footer .settings-label { display: none; }
 /* Footer with a single Close button (settings are live; there's no
  * Apply / Save / Cancel flow). Lives inside the modal below the
  * scrollable body so it stays anchored. */
@@ -1907,6 +1927,47 @@ body[data-theme="light"] #viewer-content {
 }
 .code-copy-btn:hover { background: var(--accent-soft); color: var(--fg); }
 .code-copy-btn.copied { color: var(--accent); border-color: var(--accent); }
+
+/* Language chip on a code block being edited in hybrid mode: an inline
+ * editable label on the block's TOP-LEFT showing the fence's language
+ * (shell, python, mermaid, ...). Click and type to change it -- Enter
+ * commits, Esc cancels. Always visible while the block is in edit
+ * mode; clicking it never disturbs the code selection below.
+ *
+ * The padding-top override must out-specify .markdown-body pre's own
+ * padding (14px) or the chip overlaps the first line of the source --
+ * reported on mermaid blocks, whose source starts immediately. */
+.markdown-body pre.hybrid-plugin-editing {
+  position: relative;
+  padding-top: 34px;
+}
+.hybrid-lang-pill {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  font: .72rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px dashed transparent;
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  cursor: text;
+  user-select: none;
+  z-index: 1;
+  outline: none;
+  min-width: 24px;
+  min-height: 18px;
+}
+.hybrid-lang-pill:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+.hybrid-lang-pill:focus {
+  border-color: var(--accent);
+  color: var(--fg);
+  cursor: text;
+  user-select: text;
+}
 /* Mermaid diagrams. The .mermaid-container wraps a rendered SVG
  * produced by the mermaid library; the .mermaid-error block is
  * the fallback shown when mermaid fails to parse a block (a toast

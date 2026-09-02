@@ -566,14 +566,147 @@
     applyInlineRules();
   }
 
-  /* Enter-key input rules:
-   *  - ``` + Enter in a paragraph  -> code block
-   *  - Enter in an EMPTY list item -> outdent (leave the list), the
-   *    same escape-hatch every markdown editor has.
-   * Everything else falls through to the browser's native
-   * contentEditable Enter (new <p>, list-item continuation). */
+  /* --- inline-format shortcuts --------------------------------------- */
+  /* Toggle bold/italic/strike/inline-code on the current selection with
+   * the keyboard (Ctrl/Cmd+B / I / Shift+X / Shift+C). DOM-based, not
+   * execCommand, so it behaves identically in every browser: if the
+   * selection is inside a matching element it UNWRAPS (toggle off),
+   * otherwise it WRAPS the selection contents in the element. With a
+   * collapsed caret an empty element is created and the caret placed
+   * inside, so the next typed characters are styled (Typora behavior).
+   * Chords are chosen to avoid the app's global bindings (Mod+E is
+   * toggleEdit, so inline code uses Mod+Shift+C). */
+  function toggleInline(tag) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    if (!viewerContentEl.contains(sel.anchorNode)) return;
+    if (!viewerContentEl.contains(sel.focusNode)) return;
+    const range = sel.getRangeAt(0);
+    // Closest matching ancestor of the selection's start, but never the
+    // editor root itself.
+    const startEl = (sel.anchorNode.nodeType === Node.TEXT_NODE
+      ? sel.anchorNode.parentElement : sel.anchorNode);
+    const inside = (startEl && startEl !== viewerContentEl)
+      ? startEl.closest(tag) : null;
+    const wrapAncestor = (inside && inside !== viewerContentEl &&
+      viewerContentEl.contains(inside)) ? inside : null;
+    if (range.collapsed && !wrapAncestor) {
+      // Caret with no selection: create the empty element so the next
+      // typed text is styled. The inline input rules will keep the
+      // caret sensible.
+      const el = document.createElement(tag);
+      const marker = document.createTextNode("");
+      range.insertNode(el);
+      el.appendChild(marker);
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      onContentChange();
+      return;
+    }
+    if (wrapAncestor) {
+      // Toggle OFF: unwrap the ancestor of the selection. Clear the
+      // selection FIRST: its live Range points into nodes that are
+      // about to move, and both jsdom and (as caret glitches) real
+      // browsers misbehave when a selected node is detached mid-flight.
+      const parent = wrapAncestor.parentNode;
+      if (!parent) return;
+      const first = wrapAncestor.firstChild;
+      const last = wrapAncestor.lastChild;
+      sel.removeAllRanges();
+      while (wrapAncestor.firstChild) {
+        parent.insertBefore(wrapAncestor.firstChild, wrapAncestor);
+      }
+      parent.removeChild(wrapAncestor);
+      // Keep what the element wrapped selected, so a second toggle or
+      // continued typing acts on the same text.
+      const r3 = document.createRange();
+      if (first && last) { r3.setStartBefore(first); r3.setEndAfter(last); }
+      else r3.selectNodeContents(parent);
+      sel.removeAllRanges();
+      sel.addRange(r3);
+      onContentChange();
+      return;
+    }
+    if (range.collapsed) return;
+    // Toggle ON: wrap the selection contents.
+    const el = document.createElement(tag);
+    try {
+      range.surroundContents(el);
+    } catch (_) {
+      // Selection crosses block boundaries -- wrap the intersection in
+      // each affected block instead of failing.
+      const frag = range.extractContents();
+      el.appendChild(frag);
+      range.insertNode(el);
+    }
+    sel.removeAllRanges();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    sel.addRange(r);
+    onContentChange();
+  }
+
+  /* When the user clicks (mousedown) outside an actively-edited plugin
+   * block, commit it back to preview mode.  This covers the case where
+   * focus stays inside the same contentEditable tree (e.g. clicking a
+   * sibling paragraph) and focusout never fires on the <pre>. */
+  function onContentMouseDown(e) {
+    if (!active) return;
+    const editing = viewerContentEl.querySelector("pre.hybrid-plugin-editing");
+    if (!editing) return;
+    if (editing.contains(e.target)) return;          // click inside the block – let it handle itself
+    editing.dispatchEvent(new FocusEvent("focusout", { relatedTarget: e.target, bubbles: true }));
+  }
+
+  /* Click-to-edit: in hybrid mode, a click on a rendered plugin block
+   * (mermaid / wavedrom / katex / graphviz container or error box) or
+   * a plain code fence swaps it straight into the editable source fence
+   * with a language pill. Blur (or Esc) restores render mode. Clicks
+   * inside a block that is already being edited are ignored (the code
+   * and the language chip handle their own interaction). */
+  function onBlockClick(e) {
+    if (!active) return;
+    if (e.target.closest(".hybrid-lang-pill")) return;
+    if (e.target.closest("pre.hybrid-plugin-editing")) return;
+    const hit = codeBlockAt(e.target);
+    if (!hit) return;
+    e.preventDefault();
+    editPluginSource(hit);
+  }
+
+  /* keydown handler for hybrid mode: the markdown input rules that need
+   * a key (``` + Enter, list outdent) plus the inline-format shortcuts. */
   function onEnterKey(e) {
     if (!active) return;
+    // Inline-format shortcuts. Only when the caret/selection is inside
+    // the contentEditable (checked inside toggleInline too, but skip
+    // earlier when it clearly isn't ours).
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = (e.key || "").toLowerCase();
+      if (!e.shiftKey && k === "b") {
+        e.preventDefault();
+        toggleInline("strong");
+        return;
+      }
+      if (!e.shiftKey && k === "i") {
+        e.preventDefault();
+        toggleInline("em");
+        return;
+      }
+      if (e.shiftKey && k === "x") {
+        e.preventDefault();
+        toggleInline("del");
+        return;
+      }
+      if (e.shiftKey && k === "c") {
+        e.preventDefault();
+        toggleInline("code");
+        return;
+      }
+    }
     const ctx = caretContext();
     if (!ctx) return;
     const { blockEl, range } = ctx;
@@ -928,6 +1061,8 @@
     viewerContentEl.addEventListener("input", onInput);
     viewerContentEl.addEventListener("change", onCheckboxChange);
     viewerContentEl.addEventListener("keydown", onEnterKey);
+    viewerContentEl.addEventListener("click", onBlockClick);
+    viewerContentEl.addEventListener("mousedown", onContentMouseDown);
     editBar.addEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
@@ -947,6 +1082,8 @@
     viewerContentEl.removeEventListener("input", onInput);
     viewerContentEl.removeEventListener("change", onCheckboxChange);
     viewerContentEl.removeEventListener("keydown", onEnterKey);
+    viewerContentEl.removeEventListener("click", onBlockClick);
+    viewerContentEl.removeEventListener("mousedown", onContentMouseDown);
     editBar.removeEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
@@ -1302,6 +1439,211 @@
     addSubItem(fly, "Delete table", () => deleteTable(table));
   }
 
+  /* --- code & plugin blocks: edit source / change language ---------- */
+  /* Rendered plugin blocks keep their original source in a data
+   * attribute (.mermaid-container -> dataset.mermaidSource, etc.) so
+   * domToMarkdown can round-trip them. "Edit source" turns the rendered
+   * block back into a plain editable <pre><code class="language-X"> so
+   * the user can fix the text, then re-renders on blur/Esc. The same
+   * flow works for ANY code block: a raw <pre><code> is focused in
+   * place, and "Language…" re-types the fence's language (shell ->
+   * python, mermaid -> python, ...). */
+  const PLUGIN_TYPES = [
+    { sel: ".mermaid-container,.mermaid-error", lang: "mermaid", name: "mermaid", mod: "mermaid",
+      src: (el) => el.dataset.mermaidSource ||
+        (el.querySelector(".mermaid-source") || {}).textContent || "" },
+    { sel: ".wavedrom-container,.wavedrom-error", lang: "wavedrom", name: "WaveDrom", mod: "wavedrom",
+      src: (el) => el.dataset.wavedromSource ||
+        (el.querySelector(".wavedrom-source") || {}).textContent || "" },
+    { sel: ".katex-container,.katex-error", lang: "math", name: "math", mod: "katex",
+      src: (el) => el.dataset.katexSource ||
+        (el.querySelector(".katex-source") || {}).textContent || "" },
+    { sel: ".viz-container,.viz-error", lang: "dot", name: "Graphviz", mod: "viz",
+      src: (el) => el.dataset.vizSource ||
+        (el.querySelector(".viz-source") || {}).textContent || "" },
+  ];
+  const PLUGIN_BY_LANG = {};
+  for (const t of PLUGIN_TYPES) PLUGIN_BY_LANG[t.lang] = t;
+
+  /* Which plugin module (if any) should re-render a language on commit. */
+  function renderModuleFor(lang) {
+    const t = PLUGIN_BY_LANG[(lang || "").toLowerCase()];
+    return t ? NB[t.mod] : null;
+  }
+
+  /* Resolve the right-clicked target to an editable block. Returns
+   * {el, plugin, raw} where `el` is the DOM element to swap/focus
+   * (a rendered plugin container/error, or the <pre> of a raw code
+   * block), `plugin` is the PLUGIN_TYPES entry when rendered, and
+   * `raw` is true when the block is already an editable fence. */
+  function codeBlockAt(target) {
+    if (!target || !target.closest) return null;
+    for (const t of PLUGIN_TYPES) {
+      const el = target.closest(t.sel);
+      if (el && viewerContentEl.contains(el)) return { el, plugin: t, raw: false };
+    }
+    const pre = target.closest("pre");
+    if (pre && viewerContentEl.contains(pre) && pre.querySelector("code")) {
+      return { el: pre, plugin: null, raw: true };
+    }
+    return null;
+  }
+
+  /* Current source text of a resolved block. */
+  function blockSource(hit) {
+    if (!hit) return "";
+    if (hit.plugin) return hit.plugin.src(hit.el) || "";
+    const code = hit.el.querySelector("code");
+    return code ? code.textContent : "";
+  }
+
+  /* Current language class of the block ("" when the fence is bare). */
+  function blockLanguage(hit) {
+    if (!hit) return "";
+    let code = null;
+    if (hit.plugin) return hit.plugin.lang;
+    code = hit.el.querySelector("code");
+    if (!code) return "";
+    const m = (code.className || "").match(/language-([\w-]+)/);
+    return m ? m[1] : "";
+  }
+
+  /* Swap a rendered plugin container (or any block) for a raw editable
+   * <pre><code class="language-X">. Returns the new <pre>. */
+  function toRawBlock(hit, lang, src) {
+    const pre = document.createElement("pre");
+    pre.className = "hybrid-plugin-editing";
+    const code = document.createElement("code");
+    code.className = lang ? "language-" + lang : "";
+    code.textContent = src;
+    pre.appendChild(code);
+    hit.el.replaceWith(pre);
+    onContentChange();
+    return pre;
+  }
+
+  function editPluginSource(hit) {
+    if (!hit) return;
+    // Rendered plugin containers become a raw fence first; raw code
+    // blocks are focused where they are.
+    let pre, code, lang;
+    if (hit.plugin) {
+      lang = hit.plugin.lang;
+      pre = toRawBlock(hit, lang, hit.plugin.src(hit.el) || "");
+      code = pre.querySelector("code");
+    } else {
+      pre = hit.el;
+      code = pre.querySelector("code");
+      lang = blockLanguage(hit);
+      if (!code) return;
+      pre.classList.add("hybrid-plugin-editing");
+      onContentChange();
+    }
+    // Focus and put the caret at the end of the source.
+    pre.setAttribute("contenteditable", "true");
+    pre.focus();
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(code);
+    r.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    addLanguagePill(pre, code);
+    wireCommit(pre, lang);
+  }
+
+  /* The language chip: an inline editable label rendered on the block
+   * while editing -- on the LEFT side, above the code. Click it and it
+   * becomes a small text input right there (no prompt window): type
+   * "python", "mermaid", ... and Enter commits, Esc/blur cancels. The
+   * chip is a <span contenteditable> so it never steals focus from the
+   * block on click (mousedown is prevented on the wrapper). */
+  function addLanguagePill(pre, code) {
+    const chip = document.createElement("span");
+    chip.className = "hybrid-lang-pill";
+    chip.setAttribute("contenteditable", "true");
+    chip.setAttribute("spellcheck", "false");
+    const label = () => {
+      const m = (code.className || "").match(/language-([\w-]+)/);
+      chip.textContent = m ? m[1] : "";
+    };
+    label();
+    chip.addEventListener("mousedown", (e) => {
+      // Let clicks focus the chip's own caret (it is contenteditable
+      // itself); do not let them reach the <pre> and disturb the code
+      // selection.
+      e.stopPropagation();
+    });
+    chip.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        const next = (chip.textContent || "").trim().toLowerCase();
+        code.className = next ? "language-" + next : "";
+        onContentChange();
+        chip.blur();
+        pre.focus();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        label();   // restore the current language, discard edits
+        chip.blur();
+        pre.focus();
+      }
+    });
+    chip.addEventListener("blur", () => {
+      // Commit whatever was typed on blur too (blur from Enter/Esc
+      // re-runs this but the class is already set, so it's a no-op).
+      const next = (chip.textContent || "").trim().toLowerCase();
+      const m = (code.className || "").match(/language-([\w-]+)/);
+      const cur = m ? m[1] : "";
+      if (next && next !== cur) {
+        code.className = next ? "language-" + next : "";
+        onContentChange();
+      } else {
+        label();
+      }
+    });
+    pre.appendChild(chip);
+  }
+
+  /* Wire the commit-on-blur/Esc behavior for a block being edited.
+   * The blur path is the "restore render mode": when focus leaves the
+   * block it is committed -- a plugin language re-renders through its
+   * module's renderAll, plain code stays a raw fence -- and the
+   * editing decorations (contenteditable, pill) are removed. */
+  function wireCommit(pre, lang) {
+    const commit = () => {
+      pre.removeEventListener("focusout", onFocusOut);
+      pre.removeAttribute("contenteditable");
+      pre.classList.remove("hybrid-plugin-editing");
+      const pill = pre.querySelector(".hybrid-lang-pill");
+      if (pill) pill.remove();
+      const curLang = blockLanguage({ el: pre, plugin: null, raw: true });
+      const mod = renderModuleFor(curLang);
+      if (mod && mod.renderAll) {
+        Promise.resolve(mod.renderAll(viewerContentEl))
+          .then(() => { onContentChange(); })
+          .catch(() => {});
+      } else {
+        onContentChange();
+      }
+    };
+    const onFocusOut = (e) => {
+      // Don't commit when focus moves to a child (e.g. the lang-pill).
+      if (e.relatedTarget && pre.contains(e.relatedTarget)) return;
+      commit();
+    };
+    pre.addEventListener("focusout", onFocusOut);
+    pre.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        pre.blur();
+      }
+    });
+  }
+
   function buildMenu(e) {
     menuEl.innerHTML = "";
 
@@ -1342,6 +1684,19 @@
     const table = e && e.target && e.target.closest ? e.target.closest("table") : null;
     if (table && viewerContentEl.contains(table)) {
       addSubmenu("Table", (fly) => buildTableMenu(fly, table));
+    }
+
+    // Code & plugin blocks (mermaid / wavedrom / katex / graphviz / any
+    // fenced code): edit the raw source. The fence language is edited
+    // via a pill rendered on the block while editing, not from the menu.
+    const blockHit = codeBlockAt(e && e.target);
+    if (blockHit) {
+      addMenuSep();
+      if (blockHit.plugin) {
+        addMenuItem("Edit " + blockHit.plugin.name + " source", () => editPluginSource(blockHit));
+      } else {
+        addMenuItem("Edit code block", () => editPluginSource(blockHit));
+      }
     }
 
     // Insert submenu

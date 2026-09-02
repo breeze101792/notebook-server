@@ -427,6 +427,46 @@ const html = `<!DOCTYPE html><html><head>
               <span class="settings-label"></span>
               <button id="settings-shortcuts-reset-all" class="settings-action">Reset all to defaults</button>
             </div>
+
+            <h3 class="settings-subheading">Hybrid editor (WYSIWYG) shortcuts</h3>
+            <p class="settings-help">
+              Available while editing in hybrid mode. These bindings are fixed
+              (not remappable) and only act on text inside the editor.
+            </p>
+            <div class="shortcuts-list" role="list">
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Bold (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+B"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Italic (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+I"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Strikethrough (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+X"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Inline code (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+C"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Code block (type <code>\`\`\`lang</code> then Enter)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Leave list (on empty list item)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
+              </div>
+            </div>
+
+            <h3 class="settings-subheading">Live markdown syntax</h3>
+            <p class="settings-help">
+              In hybrid mode, typing these at the start of a line renders
+              immediately: # –###### headings, - / * bullets, 1. ordered
+              list, &gt; quote, [ ] / [x] task item, and **bold** /
+              *italic* / ~~strike~~ / \`code\` inline pairs.
+            </p>
           </section>
           <section class="settings-section" data-section="security" id="settings-section-security" hidden>
             <h3>Passwords</h3>
@@ -2960,6 +3000,96 @@ function check(label, cond, extra) {
       preEl !== null && preEl.querySelector("code.language-js") !== null,
       "pre=" + !!preEl);
 
+    // --- inline-format keyboard shortcuts ---------------------------
+    // Ctrl/Cmd+B wraps the selected word in <strong>, Ctrl+B again
+    // unwraps it (toggle). Same for I (em), Shift+X (del), Shift+C
+    // (code). Selection helper over a fresh paragraph. NOTE: picks the
+    // first NON-EMPTY text node -- surroundContents/extractContents
+    // legitimately leaves empty text-node remnants in the block, and
+    // selecting into a zero-length node throws.
+    const selWord = (p, from, to) => {
+      const tn = Array.from(p.childNodes).find(
+        n => n.nodeType === 3 && n.nodeValue.length > 0);
+      const r = window.document.createRange();
+      r.setStart(tn, from);
+      r.setEnd(tn, to);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+    const pressKeys = (opts) => p4.dispatchEvent(
+      new window.KeyboardEvent("keydown",
+        Object.assign({ key: "b", bubbles: true, cancelable: true }, opts)));
+
+    const p4 = window.document.createElement("p");
+    p4.appendChild(window.document.createTextNode("word"));
+    vc.appendChild(p4);
+
+    // Bold on selection.
+    selWord(p4, 0, 4);
+    pressKeys({ ctrlKey: true, key: "b" });
+    check("hybrid: Ctrl+B wraps selection in <strong>",
+      p4.querySelector("strong") !== null &&
+      p4.querySelector("strong").textContent === "word",
+      "p4=" + p4.innerHTML);
+    // Toggle off: select inside the strong, Ctrl+B again.
+    const strongEl = p4.querySelector("strong");
+    const rStrong = window.document.createRange();
+    rStrong.selectNodeContents(strongEl);
+    const sStrong = window.getSelection();
+    sStrong.removeAllRanges();
+    sStrong.addRange(rStrong);
+    pressKeys({ ctrlKey: true, key: "b" });
+    check("hybrid: Ctrl+B again unwraps <strong>",
+      p4.querySelector("strong") === null && p4.textContent === "word",
+      "p4=" + p4.innerHTML);
+
+    // Italic.
+    selWord(p4, 0, 4);
+    pressKeys({ ctrlKey: true, key: "i" });
+    check("hybrid: Ctrl+I wraps selection in <em>",
+      p4.querySelector("em") !== null && p4.querySelector("em").textContent === "word",
+      "p4=" + p4.innerHTML);
+
+    // Strikethrough: Ctrl+Shift+X.
+    const emEl2 = p4.querySelector("em");
+    const rEm = window.document.createRange();
+    rEm.selectNodeContents(emEl2);
+    const sEm = window.getSelection();
+    sEm.removeAllRanges();
+    sEm.addRange(rEm);
+    pressKeys({ ctrlKey: true, shiftKey: true, key: "X" });
+    check("hybrid: Ctrl+Shift+X wraps selection in <del>",
+      p4.querySelector("del") !== null,
+      "p4=" + p4.innerHTML);
+
+    // Inline code: Ctrl+Shift+C (select the word wherever it lives now).
+    const delEl = p4.querySelector("del");
+    const rDel = window.document.createRange();
+    rDel.selectNodeContents(delEl);
+    const sDel = window.getSelection();
+    sDel.removeAllRanges();
+    sDel.addRange(rDel);
+    pressKeys({ ctrlKey: true, shiftKey: true, key: "C" });
+    check("hybrid: Ctrl+Shift+C wraps selection in <code>",
+      p4.querySelector("code") !== null,
+      "p4=" + p4.innerHTML);
+
+    // Enter (no modifiers) must NOT be swallowed by the shortcut path.
+    const p5 = window.document.createElement("p");
+    p5.appendChild(window.document.createTextNode("plain"));
+    vc.appendChild(p5);
+    selWord(p5, 5, 5);
+    let enterDefault = true;
+    p5.addEventListener("keydown", () => {}, { once: true });
+    const evEnter = new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true, cancelable: true });
+    p5.dispatchEvent(evEnter);
+    enterDefault = !evEnter.defaultPrevented ||
+      p5.textContent === "plain";  // no input rule consumed it
+    check("hybrid: plain Enter keeps default behavior",
+      enterDefault, "prevented=" + evEnter.defaultPrevented);
+
     // Exit hybrid mode (discard changes).
     await window.NB.hybrid.exit(false);
     await tick(50);
@@ -3302,6 +3432,246 @@ function check(label, cond, extra) {
     vc.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 100, clientY: 100 }));
     await tick(10);
     check("hybrid menu: does not open when hybrid is inactive", hcm.hidden);
+
+    // --- plugin "Edit source" menu item ---------------------------------
+    // Re-enter hybrid and right-click a rendered mermaid container:
+    // the menu must offer "Edit mermaid source", which swaps the SVG for
+    // an editable <pre><code class="language-mermaid"> holding the
+    // original source; blur re-renders it back into a container.
+    {
+      // The mermaid section earlier opened notes/mermaid.md. Force a
+      // fresh activation (clear the viewer cache + reopen) so the
+      // viewer's render + mermaid.renderAll definitely run, then poll
+      // for the rendered container (both are async).
+      window.NB.viewer.close("notes/mermaid.md");
+      await window.NB.tabs.open("notes/mermaid.md");
+      let container = null;
+      for (let i = 0; i < 20 && !container; i++) {
+        await tick(25);
+        container = vc.querySelector(".mermaid-container");
+      }
+      await window.NB.hybrid.enter();
+      await tick(20);
+      container = vc.querySelector(".mermaid-container");
+      check("plugin edit: mermaid container present in hybrid",
+        !!container, "containers=" + vc.querySelectorAll(".mermaid-container").length);
+      if (container) {
+        container.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, clientX: 100, clientY: 100 }));
+        await tick(10);
+        const editBtn = Array.from(hcm.querySelectorAll("button"))
+          .find(b => /Edit mermaid source/.test(b.textContent));
+        check("plugin edit: menu offers 'Edit mermaid source'",
+          !!editBtn, "labels=" + hcm.textContent.trim().slice(0, 80));
+        if (editBtn) {
+          editBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(20);
+          const rawCode = vc.querySelector("pre > code.language-mermaid");
+          check("plugin edit: container swapped for editable source block",
+            !!rawCode && /graph TD/.test(rawCode.textContent),
+            "raw=" + (rawCode && rawCode.textContent.slice(0, 40)));
+          const preEl = rawCode && rawCode.parentElement;
+          check("plugin edit: raw block is contenteditable",
+            preEl && preEl.getAttribute("contenteditable") === "true",
+            "ce=" + (preEl && preEl.getAttribute("contenteditable")));
+          // Dirty after entering the edit state.
+          check("plugin edit: dirty after swapping in source",
+            window.NB.hybrid.isDirty());
+          // Blur commits: re-render replaces the raw block with a fresh
+          // .mermaid-container carrying the (possibly edited) source.
+          if (preEl) {
+            preEl.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
+            await tick(80);
+            const back = vc.querySelector(".mermaid-container");
+            check("plugin edit: blur re-renders the diagram",
+              !!back && /graph TD/.test(back.dataset.mermaidSource || ""),
+              "back=" + !!back);
+          }
+        }
+      }
+
+      // --- click-to-edit on rendered plugin blocks -----------------
+      // A plain click on a mermaid container in hybrid mode enters edit
+      // mode directly (no context menu); the lightbox stays closed
+      // (it yields to hybrid mode); blur restores render mode.
+      {
+        const cont2 = vc.querySelector(".mermaid-container");
+        check("click-to-edit: rendered container present",
+          !!cont2, "containers=" + vc.querySelectorAll(".mermaid-container").length);
+        if (cont2) {
+          cont2.dispatchEvent(new window.MouseEvent("click",
+            { bubbles: true, cancelable: true }));
+          await tick(20);
+          const lb = $("mermaid-lightbox");
+          check("click-to-edit: lightbox does not open in hybrid mode",
+            !lb || lb.hidden, "lb hidden=" + (lb && lb.hidden));
+          const raw2 = vc.querySelector("pre > code.language-mermaid");
+          check("click-to-edit: click swaps container to editable source",
+            !!raw2 && /graph TD/.test(raw2.textContent),
+            "raw=" + (raw2 && raw2.textContent.slice(0, 30)));
+          const pre2 = raw2 && raw2.parentElement;
+          check("click-to-edit: editable block has the language chip",
+            !!pre2 && pre2.querySelector(".hybrid-lang-pill") !== null,
+            "chip=" + (pre2 && !!pre2.querySelector(".hybrid-lang-pill")));
+          if (pre2) {
+            const chip = pre2.querySelector(".hybrid-lang-pill");
+            // focusout with relatedTarget = chip should NOT commit
+            pre2.dispatchEvent(new window.FocusEvent("focusout",
+              { relatedTarget: chip }));
+            await tick(40);
+            check("click-to-edit: focus on lang-pill does not commit",
+              pre2.getAttribute("contenteditable") === "true",
+              "still_editing=" + (pre2.getAttribute("contenteditable")));
+            // Now focusout with relatedTarget = null should commit
+            pre2.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
+            let back2 = null;
+            for (let i = 0; i < 20 && !back2; i++) {
+              await tick(25);
+              back2 = vc.querySelector(".mermaid-container");
+            }
+            check("click-to-edit: blur restores the rendered diagram",
+              !!back2, "back=" + !!back2);
+          }
+        }
+      }
+
+      // --- mousedown outside editing block commits it ---------------
+      // Re-enter edit mode on the mermaid block, then mousedown on a
+      // sibling paragraph; the block should commit to preview mode.
+      {
+        const cont3 = vc.querySelector(".mermaid-container");
+        if (cont3) {
+          cont3.dispatchEvent(new window.MouseEvent("click",
+            { bubbles: true, cancelable: true }));
+          await tick(20);
+          const pre3 = vc.querySelector("pre.hybrid-plugin-editing");
+          check("mousedown-outside: block is in edit mode",
+            !!pre3 && pre3.getAttribute("contenteditable") === "true",
+            "editing=" + !!pre3);
+          if (pre3) {
+            // Create a target outside the editing pre
+            const outside = window.document.createElement("p");
+            outside.textContent = "outside click target";
+            vc.appendChild(outside);
+            // Dispatch mousedown on the outside element
+            vc.dispatchEvent(new window.MouseEvent("mousedown",
+              { bubbles: true, cancelable: true, target: outside }));
+            await tick(60);
+            const restored = vc.querySelector(".mermaid-container");
+            check("mousedown-outside: block restored to preview",
+              !!restored && !vc.querySelector("pre.hybrid-plugin-editing"),
+              "restored=" + !!restored);
+          }
+        }
+      }
+
+      // --- click-to-edit on a plain (non-plugin) code block ---------
+      // A direct click on a plain code fence should also enter edit
+      // mode with a language pill, same as plugin blocks.
+      {
+        const plainPre = window.document.createElement("pre");
+        const plainCode = window.document.createElement("code");
+        plainCode.className = "language-python";
+        plainCode.textContent = "print('hello')";
+        plainPre.appendChild(plainCode);
+        vc.appendChild(plainPre);
+        await tick(10);
+
+        // Direct click on the code block
+        plainPre.dispatchEvent(new window.MouseEvent("click",
+          { bubbles: true, cancelable: true }));
+        await tick(20);
+        const pill = plainPre.querySelector(".hybrid-lang-pill");
+        check("plain code click-to-edit: language chip rendered",
+          !!pill && pill.textContent === "python",
+          "pill=" + (pill && pill.textContent));
+        check("plain code click-to-edit: block is contenteditable",
+          plainPre.getAttribute("contenteditable") === "true",
+          "ce=" + plainPre.getAttribute("contenteditable"));
+        // Focusout should restore preview
+        if (plainPre.getAttribute("contenteditable") === "true") {
+          plainPre.dispatchEvent(new window.FocusEvent("focusout",
+            { relatedTarget: null }));
+          await tick(60);
+          check("plain code click-to-edit: focusout restores preview",
+            plainPre.getAttribute("contenteditable") !== "true" &&
+            !plainPre.querySelector(".hybrid-lang-pill"),
+            "restored=" + (plainPre.getAttribute("contenteditable") !== "true"));
+        }
+      }
+
+      // --- "Edit code block" on a plain (non-plugin) fence ---------
+      // Add a shell code block to the open file, right-click it, and
+      // verify the generic flow: the block becomes editable with a
+      // language pill ON the block; the pill re-types the fence
+      // (shell -> python stays raw); blur restores render mode; and a
+      // plugin language re-renders through its module.
+      {
+        const pre = window.document.createElement("pre");
+        const code = window.document.createElement("code");
+        code.className = "language-shell";
+        code.textContent = "echo hello";
+        pre.appendChild(code);
+        vc.appendChild(pre);
+
+        pre.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, clientX: 120, clientY: 120 }));
+        await tick(10);
+        const topBtns2 = Array.from(hcm.querySelectorAll("button"));
+        const editBtn2 = topBtns2.find(b => /Edit code block/.test(b.textContent));
+        const langInMenu = topBtns2.find(b => /^Language…$/.test(b.textContent.trim()));
+        check("code block edit: menu offers 'Edit code block' (no Language item)",
+          !!editBtn2 && !langInMenu,
+          "labels=" + topBtns2.map(b => b.textContent.trim()).join("/").slice(0, 100));
+        if (editBtn2) {
+          editBtn2.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(20);
+          const pill = pre.querySelector(".hybrid-lang-pill");
+          check("code block edit: language chip rendered on the block",
+            !!pill && pill.textContent === "shell",
+            "pill=" + (pill && pill.textContent));
+          check("code block edit: block is contenteditable",
+            pre.getAttribute("contenteditable") === "true",
+            "ce=" + pre.getAttribute("contenteditable"));
+          if (pill) {
+            // Inline editing: type "python" + Enter -- no prompt window.
+            const typePill = (txt) => {
+              pill.textContent = txt;
+              pill.dispatchEvent(new window.KeyboardEvent("keydown",
+                { key: "Enter", bubbles: true, cancelable: true }));
+            };
+            typePill("python");
+            await tick(20);
+            check("code block edit: chip edits shell to python inline",
+              code.className === "language-python" && code.textContent === "echo hello",
+              "cls=" + code.className);
+            // python -> mermaid via the chip.
+            typePill("mermaid");
+            await tick(20);
+            check("code block edit: chip edits python to mermaid",
+              code.className === "language-mermaid",
+              "cls=" + code.className);
+            // Blur the block: restore render mode -> mermaid container.
+            pre.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
+            let reRendered = null;
+            for (let i = 0; i < 20 && !reRendered; i++) {
+              await tick(25);
+              const all = vc.querySelectorAll(".mermaid-container");
+              reRendered = Array.from(all).find(c =>
+                /echo hello/.test(c.dataset.mermaidSource || ""));
+            }
+            check("code block edit: blur restores render mode (mermaid container)",
+              !!reRendered &&
+                pre.querySelector(".hybrid-lang-pill") === null &&
+                pre.getAttribute("contenteditable") === null,
+              "rendered=" + !!reRendered +
+                " pill=" + (pre.querySelector(".hybrid-lang-pill") !== null));
+          }
+        }
+      }
+      await window.NB.hybrid.exit(false);
+      await tick(30);
+    }
 
     // --- hybrid tab-switch blocking ---
     // When hybrid mode has unsaved changes, switching tabs should be
@@ -5096,6 +5466,25 @@ function check(label, cond, extra) {
   const shortcutsHelp = $("settings-section-shortcuts").querySelector(".settings-help");
   check("shortcuts: help text mentions VIM is separate",
     shortcutsHelp && /VIM/i.test(shortcutsHelp.textContent));
+
+  // The fixed hybrid-editor reference table below the configurable rows.
+  const staticRows = $("settings-section-shortcuts")
+    .querySelectorAll(".shortcut-row-static");
+  check("shortcuts: 6 fixed hybrid reference rows",
+    staticRows.length === 6, "got " + staticRows.length);
+  const staticKbds = Array.from(staticRows).map(r =>
+    r.querySelector(".shortcut-binding").textContent);
+  check("shortcuts: hybrid rows localized via format() (Mod+B -> Ctrl+B)",
+    staticKbds.includes("Ctrl+B") && staticKbds.includes("Ctrl+I") &&
+    staticKbds.includes("Ctrl+Shift+X") && staticKbds.includes("Ctrl+Shift+C"),
+    JSON.stringify(staticKbds));
+  check("shortcuts: hybrid rows have no Change/Reset buttons",
+    Array.from(staticRows).every(r => !r.querySelector(".shortcut-change") &&
+      !r.querySelector(".shortcut-reset")));
+  // The live-markdown syntax note is in the same section.
+  check("shortcuts: live markdown syntax note present",
+    /live markdown|typing these/i.test(
+      $("settings-section-shortcuts").textContent));
 
   // --- a default binding actually fires ( / -> openSearch) ---
   // Close the modal so the global shortcut dispatch is unblocked.

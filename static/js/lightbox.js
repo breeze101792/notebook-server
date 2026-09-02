@@ -252,6 +252,10 @@
     const viewerContent = document.getElementById("viewer-content");
     if (viewerContent) {
       viewerContent.addEventListener("click", (e) => {
+        // In hybrid (WYSIWYG) mode a click on a block means "edit it"
+        // (hybrid.js swaps it to an editable source fence); the
+        // lightbox only opens in preview mode.
+        if (window.NB && NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
         const container = e.target.closest(cfg.containerSelector);
         if (!container) return;
         if (e.target.closest("a")) return;

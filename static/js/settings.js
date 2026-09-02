@@ -262,6 +262,13 @@
       resetBtn.hidden = (current === (defaults[action] || ""));
       shortcutsListEl.appendChild(row);
     }
+    // Localize the fixed hybrid-editor reference rows: "Mod+B" renders
+    // as Ctrl+B / Cmd+B per platform via the same formatter.
+    if (overlayEl) {
+      overlayEl.querySelectorAll("kbd.shortcut-binding[data-key]").forEach((k) => {
+        k.textContent = NB.shortcuts.format(k.dataset.key || "");
+      });
+    }
   }
 
   // One row at a time can be capturing. We arm the shortcuts module's

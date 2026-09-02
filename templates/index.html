@@ -451,6 +451,51 @@
               <span class="settings-label"></span>
               <button id="settings-shortcuts-reset-all" class="settings-action">Reset all to defaults</button>
             </div>
+
+            <h3 class="settings-subheading">Hybrid editor (WYSIWYG) shortcuts</h3>
+            <p class="settings-help">
+              Available while editing in hybrid mode. These bindings are fixed
+              (not remappable) and only act on text inside the editor.
+            </p>
+            <div class="shortcuts-list" role="list">
+              <!-- Static rows: hybrid.js owns these keydown handlers and
+                   they are deliberately not configurable, so they render
+                   as a plain reference table. -->
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Bold (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+B"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Italic (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+I"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Strikethrough (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+X"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Inline code (toggle selection)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+C"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Code block (type <code>```lang</code> then Enter)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Leave list (on empty list item)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
+              </div>
+            </div>
+
+            <h3 class="settings-subheading">Live markdown syntax</h3>
+            <p class="settings-help">
+              In hybrid mode, typing these at the start of a line renders
+              immediately: <code>#</code>–<code>######</code> headings,
+              <code>-</code> / <code>*</code> bullets, <code>1.</code> ordered
+              list, <code>&gt;</code> quote, <code>[ ]</code> / <code>[x]</code>
+              task item, and <code>**bold**</code> / <code>*italic*</code> /
+              <code>~~strike~~</code> / <code>`code`</code> inline pairs.
+            </p>
           </section>
 
           <!-- Security: passwords (per-section Save/Remove, reloads the page on success). -->
