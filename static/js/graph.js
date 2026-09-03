@@ -265,6 +265,12 @@
     edges = inEdges
       .map(e => ({ source: byId[e.source], target: byId[e.target] }))
       .filter(e => e.source && e.target);
+    // Drop any selection / active-file highlight that points at a node
+    // that no longer exists in the fresh data (e.g. the file was deleted
+    // or renamed). A stale id would otherwise linger and the highlight
+    // would silently never render.
+    if (selectedId && !byId[selectedId]) selectedId = null;
+    if (activeFile && !byId[activeFile]) activeFile = null;
     if (summaryEl) {
       const n = nodes.length, e = edges.length;
       summaryEl.textContent = n + " note" + (n === 1 ? "" : "s") + " · " +

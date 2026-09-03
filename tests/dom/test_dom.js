@@ -4126,14 +4126,24 @@ function check(label, cond, extra) {
       "before=" + scaleBefore.toFixed(3) + " after=" + scaleAfterZoomIn.toFixed(3));
     // defaultPrevented confirms preventDefault() ran (stops page scroll).
     check("graph: wheel handler calls preventDefault", wheelEvt.defaultPrevented);
+    // The wheel zoom was reverted to a fixed 1.15x factor per notch (the
+    // earlier delta-proportional change was reverted). Assert the exact
+    // ratio so a regression back to proportional zoom is caught.
+    check("graph: wheel zoom factor is fixed 1.15x per notch",
+      Math.abs(scaleAfterZoomIn / scaleBefore - 1.15) < 0.001,
+      "ratio=" + (scaleAfterZoomIn / scaleBefore).toFixed(4));
     // Zoom out.
     const wheelOut = new window.WheelEvent("wheel", {
       deltaY: 120, bubbles: true, cancelable: true, clientX: 50, clientY: 50,
     });
     canvasEl.dispatchEvent(wheelOut);
-    check("graph: wheel down (deltaY>0) zooms out", window.NB.graph.scale < scaleAfterZoomIn,
-      "after zoom-out=" + window.NB.graph.scale.toFixed(3));
+    const scaleAfterZoomOut = window.NB.graph.scale;
+    check("graph: wheel down (deltaY>0) zooms out", scaleAfterZoomOut < scaleAfterZoomIn,
+      "after zoom-out=" + scaleAfterZoomOut.toFixed(3));
     check("graph: zoom-out wheel preventDefault", wheelOut.defaultPrevented);
+    check("graph: wheel zoom-out factor is 1/1.15 per notch",
+      Math.abs(scaleAfterZoomOut / scaleAfterZoomIn - (1 / 1.15)) < 0.001,
+      "ratio=" + (scaleAfterZoomOut / scaleAfterZoomIn).toFixed(4));
 
     // --- mousedown / mousemove / mouseup: background pan ---
     const panBefore = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
@@ -4376,6 +4386,100 @@ function check(label, cond, extra) {
         "expected=" + clickNode.id + " got=" + activeAfterDblPath);
     }
 
+    // --- neighbor highlight colors ---
+    // The fixture has no edges, so synthesize one to exercise the
+    // neighbor-highlight path in draw(). The selected node is painted
+    // with the warn color (243,180,84 in dark theme) and its direct
+    // neighbors with the hover color (124,156,255, alpha 1). The default
+    // node fill is the SAME rgb as hover but at alpha 0.8, so the
+    // assertions must match the full rgba string (including alpha) to
+    // prove the neighbor actually got the distinct highlight.
+    const selA = window.NB.graph.nodes[0];
+    const selB = window.NB.graph.nodes[1];
+    if (selA && selB) {
+      // Clear the active-file highlight so the warn color is unambiguous
+      // (activeFile also paints warnFill). Emitting file:open with null
+      // clears graph.js's activeFile.
+      window.NB.evt.emit("file:open", null);
+      // Add a synthetic edge A<->B so B is a direct neighbor of A.
+      window.NB.graph.edges.push({ source: selA, target: selB });
+      await tick(20);
+      // Reset the color recorder so we only see colors from this pass.
+      ctx.log.fills.clear();
+      // Click node A (placed at world origin -> screen pan).
+      selA.x = 0; selA.y = 0;
+      await tick(20);
+      const atA = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atA));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atA));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atA));
+      await tick(20);
+      const fills = () => Array.from(ctx.log.fills);
+      const hasFill = (re) => fills().some(s => re.test(s));
+      // Selected node uses the warn color (243,180,84 in dark theme).
+      check("graph: selected node painted with warn color",
+        hasFill(/243\s*,\s*180\s*,\s*84/),
+        "fills=" + JSON.stringify(fills()));
+      // Its direct neighbor uses the hover color at alpha 1 (distinct
+      // from the default node fill which is the same rgb at alpha 0.8).
+      check("graph: neighbor node painted with hover color",
+        hasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
+        "fills=" + JSON.stringify(fills()));
+      // The selected color must differ from the neighbor color.
+      check("graph: selected color differs from neighbor color",
+        hasFill(/243\s*,\s*180\s*,\s*84/) && hasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
+        "fills=" + JSON.stringify(fills()));
+      // Remove the synthetic edge so later tests see the real (empty) graph.
+      window.NB.graph.edges.length = 0;
+      // Clicking empty space clears selection.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      await tick(20);
+      check("graph: neighbor test clears selection",
+        window.NB.graph.selectedId === null,
+        "got=" + window.NB.graph.selectedId);
+    }
+
+    // --- clicking a node with no neighbors ---
+    // With the synthetic edge removed, every node is isolated. Selecting
+    // one must still set selectedId (warn color) but paint NO neighbor
+    // highlight (no alpha-1 hover color), since neighbourSet() returns
+    // an empty set for an isolated node.
+    const isoNode = window.NB.graph.nodes[0];
+    if (isoNode) {
+      isoNode.x = 0; isoNode.y = 0;
+      await tick(20);
+      ctx.log.fills.clear();
+      const isoFills = () => Array.from(ctx.log.fills);
+      const isoHasFill = (re) => isoFills().some(s => re.test(s));
+      const atIso = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atIso));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atIso));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atIso));
+      await tick(20);
+      check("graph: isolated node still selects (selectedId set)",
+        window.NB.graph.selectedId === isoNode.id,
+        "expected=" + isoNode.id + " got=" + window.NB.graph.selectedId);
+      // No neighbor highlight: the alpha-1 hover color must not appear
+      // (the default node fill is the same rgb at alpha 0.8, so matching
+      // the full string proves no neighbor got the highlight).
+      check("graph: isolated node paints no neighbor highlight",
+        !isoHasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
+        "fills=" + JSON.stringify(isoFills()));
+      // Clear selection for the re-activation test below.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      await tick(20);
+    }
+
     // --- re-activation preserves view state ---
     // The user's bug: zoom in, switch away to a file tab, switch back,
     // and the graph snaps back to its initial zoom + center. The view
@@ -4403,6 +4507,113 @@ function check(label, cond, extra) {
     check("graph: re-activation preserves scale",
       Math.abs(window.NB.graph.scale - scaleBeforeReopen) < 0.001,
       "before=" + scaleBeforeReopen.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+
+    // --- selection persists across re-activation ---
+    // Select a node, switch away to a file tab, switch back, and the
+    // selection (selectedId) must survive -- the highlight the user
+    // chose is part of the view state, like pan/scale.
+    const persistNode = window.NB.graph.nodes[0];
+    if (persistNode) {
+      persistNode.x = 0; persistNode.y = 0;
+      await tick(20);
+      const atPersist = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atPersist));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atPersist));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atPersist));
+      await tick(20);
+      check("graph: selection set before re-activation",
+        window.NB.graph.selectedId === persistNode.id,
+        "expected=" + persistNode.id + " got=" + window.NB.graph.selectedId);
+      // Switch to a file tab and back to the graph.
+      const welcomeTab2 = window.document.querySelector('.tab[data-path="Welcome.md"]');
+      if (welcomeTab2) {
+        welcomeTab2.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(40);
+        const graphTab2 = window.document.querySelector('.tab[data-path="§graph"]');
+        if (graphTab2) {
+          graphTab2.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(40);
+        }
+      }
+      check("graph: selection persists across re-activation",
+        window.NB.graph.selectedId === persistNode.id,
+        "expected=" + persistNode.id + " got=" + window.NB.graph.selectedId);
+      // Clear the selection so the recenter/close steps below are clean.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      await tick(20);
+    }
+
+    // --- selection survives a graph reload (refresh) ---
+    // The refresh button re-fetches /api/graph and rebuilds nodes/edges.
+    // A selected node that still exists in the fresh data must keep its
+    // highlight (selectedId is part of the view state, like pan/scale).
+    const reloadNode = window.NB.graph.nodes[0];
+    if (reloadNode) {
+      reloadNode.x = 0; reloadNode.y = 0;
+      await tick(20);
+      const atReload = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atReload));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atReload));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atReload));
+      await tick(20);
+      check("graph: selection set before refresh",
+        window.NB.graph.selectedId === reloadNode.id,
+        "expected=" + reloadNode.id + " got=" + window.NB.graph.selectedId);
+      // Trigger a reload via the refresh button (same path as the toolbar).
+      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(50);
+      check("graph: selection survives graph reload",
+        window.NB.graph.selectedId === reloadNode.id,
+        "expected=" + reloadNode.id + " got=" + window.NB.graph.selectedId);
+      // Clear the selection for the recenter/close steps below.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      await tick(20);
+    }
+
+    // --- stale selection is cleared when the node disappears ---
+    // If the selected file is deleted, a reload rebuilds nodes without
+    // it. The stale selectedId must be cleared (not linger pointing at a
+    // node that no longer exists), otherwise the highlight silently
+    // never renders.
+    const staleNode = window.NB.graph.nodes[0];
+    if (staleNode) {
+      staleNode.x = 0; staleNode.y = 0;
+      await tick(20);
+      const atStale = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atStale));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atStale));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atStale));
+      await tick(20);
+      check("graph: stale-selection set before delete",
+        window.NB.graph.selectedId === staleNode.id,
+        "expected=" + staleNode.id + " got=" + window.NB.graph.selectedId);
+      // Remove the file from the fixture so the next /api/graph fetch
+      // no longer includes it, then reload.
+      const stalePath = staleNode.id;
+      const hadFile = FILES[stalePath] !== undefined;
+      delete FILES[stalePath];
+      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(50);
+      check("graph: stale selection cleared after node disappears",
+        window.NB.graph.selectedId === null,
+        "expected=null got=" + window.NB.graph.selectedId);
+      // Restore the fixture so later tests see the original file set.
+      if (hadFile) FILES[stalePath] = "";
+    }
+
     // Re-center button is still available for users who want to reset.
     const panBeforeRecenter = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
     $("graph-view-recenter").dispatchEvent(new window.Event("click", { bubbles: true }));
