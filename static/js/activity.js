@@ -146,6 +146,22 @@
     return panelEl && panelEl.classList.contains("collapsed");
   }
 
+  // Build a collapse button for a side-panel view's header. Every view
+  // (Explorer, Recent, Search, AI) gets one so the user can close the
+  // panel from any of them. Clicking it collapses the whole panel via
+  // NB.activity.collapse() (the same path the activity-bar icon toggle
+  // uses), so the state persists and re-expanding returns to this view.
+  function makeCollapseBtn() {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "collapse-btn";
+    btn.title = "Collapse panel";
+    btn.setAttribute("aria-label", "Collapse panel");
+    btn.textContent = "‹";
+    btn.addEventListener("click", () => collapse());
+    return btn;
+  }
+
   // Width used while the side panel is collapsed. 0 -- the activity bar's
   // icons are the re-expand trigger, so no strip is left behind.
   const COLLAPSED_W = 0;
@@ -157,6 +173,7 @@
     expand,
     getActive,
     isCollapsed,
+    makeCollapseBtn,
   };
 
   /* --- Recent / Quick open view -------------------------------------- */
@@ -179,6 +196,7 @@
     title.className = "panel-title";
     title.textContent = "Recent";
     header.appendChild(title);
+    header.appendChild(makeCollapseBtn());
     host.appendChild(header);
 
     const input = document.createElement("input");
@@ -305,6 +323,7 @@
     title.className = "panel-title";
     title.textContent = "Search";
     header.appendChild(title);
+    header.appendChild(makeCollapseBtn());
     host.appendChild(header);
 
     const inputRow = document.createElement("div");

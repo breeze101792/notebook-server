@@ -966,6 +966,8 @@
     title.className = "panel-title";
     title.textContent = "AI Assistant";
     header.appendChild(title);
+    const actions = document.createElement("div");
+    actions.className = "panel-header-actions";
     const clearBtn = document.createElement("button");
     clearBtn.type = "button";
     clearBtn.className = "ai-clear";
@@ -976,7 +978,11 @@
       systemCache = null;
       log.innerHTML = "";
     });
-    header.appendChild(clearBtn);
+    actions.appendChild(clearBtn);
+    if (NB.activity && NB.activity.makeCollapseBtn) {
+      actions.appendChild(NB.activity.makeCollapseBtn());
+    }
+    header.appendChild(actions);
     host.appendChild(header);
 
     const hint = document.createElement("div");

@@ -2589,6 +2589,14 @@ body[data-theme="light"] #viewer-content {
   min-width: 0;
 }
 #ai-view .panel-header { padding-right: 10px; }
+/* Group the header's right-side actions (Clear + collapse) so they sit
+ * together instead of being spread apart by the header's space-between. */
+#ai-view .panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
 
 .ai-config-hint {
   margin: 8px 12px;

@@ -4011,6 +4011,47 @@ function check(label, cond, extra) {
   explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
 
+  console.log("== side-panel view collapse buttons ==");
+  // Every side-panel view (Recent, Search, AI) gets a ‹ collapse button
+  // in its header so the user can close the panel from any view. Clicking
+  // it collapses the whole panel via NB.activity.collapse().
+  {
+    const recentBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="recent"]');
+    recentBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    const recentCollapse = window.document.querySelector('#recent-view .panel-header .collapse-btn');
+    check("collapse: Recent view has a ‹ button in its header", !!recentCollapse);
+    recentCollapse.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("collapse: Recent ‹ collapses the panel",
+      $("side-panel").classList.contains("collapsed"));
+    // Re-expand via the activity bar icon.
+    recentBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("collapse: panel re-expanded", !$("side-panel").classList.contains("collapsed"));
+
+    const searchBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="search"]');
+    searchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    const searchCollapse = window.document.querySelector('#search-view .panel-header .collapse-btn');
+    check("collapse: Search view has a ‹ button in its header", !!searchCollapse);
+    searchCollapse.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("collapse: Search ‹ collapses the panel",
+      $("side-panel").classList.contains("collapsed"));
+    searchBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    // Return to Explorer for the rest of the suite. (The AI view's
+    // collapse button is asserted at the end of the suite, after the AI
+    // block has mounted it with its test config.)
+    const explorerBtn2 = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+    explorerBtn2.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("collapse: back to Explorer, panel expanded",
+      !$("side-panel").classList.contains("collapsed") &&
+      window.NB.activity.getActive() === "explorer");
+  }
+
   console.log("== graph view ==");
   // The graph opens as a special tab (§graph) in the tab bar, not as a
   // side-panel view or a content-area overlay. The 🕸 activity-bar button
@@ -9732,6 +9773,27 @@ function check(label, cond, extra) {
   TREE = TREE.filter(n => n.path !== WRITE_PATH);
   MTIMES[WRITE_PATH] = 1;
   MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+
+  console.log("== side-panel AI collapse button ==");
+  // The AI view is mounted (with its test config) by the block above;
+  // assert its header carries a ‹ collapse button that closes the panel.
+  {
+    const aiCollapse = window.document.querySelector('#ai-view .panel-header .collapse-btn');
+    check("collapse: AI view has a ‹ button in its header", !!aiCollapse);
+    if (aiCollapse) {
+      aiCollapse.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      check("collapse: AI ‹ collapses the panel",
+        $("side-panel").classList.contains("collapsed"));
+      // Re-expand + return to Explorer so the suite ends in a sane state.
+      const explorerBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+      explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      check("collapse: back to Explorer, panel expanded",
+        !$("side-panel").classList.contains("collapsed") &&
+        window.NB.activity.getActive() === "explorer");
+    }
+  }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);
