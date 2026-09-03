@@ -63,6 +63,7 @@
   let filterQuery = "";
   let width = 0, height = 0;
   let activeFile = null;
+  let selectedId = null;
   let mounted = false;
 
   // --- DOM refs (resolved on first mount) -----------------------------
@@ -129,6 +130,7 @@
         if (canvasEl) canvasEl.style.cursor = "";
         requestRedraw();
       });
+      canvasEl.addEventListener("dblclick", onCanvasDblClick);
       canvasEl.addEventListener("click", onCanvasClick);
       canvasEl.addEventListener("touchstart", onTouchStart, { passive: false });
       canvasEl.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -381,6 +383,7 @@
     const labelDim     = rgbaOrFallback(p.dim,   0.4,  "rgba(127,140,160,0.4)");
     const labelNormal  = rgbaOrFallback(p.label, 0.92, "rgba(230,230,234,0.92)");
     const neighbours = hoverId ? neighbourSet(hoverId) : null;
+    const selectedNeighbours = selectedId ? neighbourSet(selectedId) : null;
     for (const e of edges) {
       if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
         ctx.strokeStyle = dimStroke;
@@ -398,9 +401,12 @@
       const dim = hoverId && hoverId !== n.id && !neighbours.has(n.id);
       const isFiltered = filterQuery && !n.id.toLowerCase().includes(filterQuery);
       const isDragged = (n === dragNode);
+      const isSelected = n.id === selectedId;
+      const isSelectedNeighbour = selectedId && !isSelected && selectedNeighbours.has(n.id);
       let r = 4 + Math.min(10, Math.sqrt(n.degree) * 2);
       if (n.id === hoverId) r += 2;
       if (n.id === activeFile) r += 2;
+      if (isSelected) r += 2;
       if (isDragged) r += 3;
       let fill;
       if (dim || isFiltered) {
@@ -409,13 +415,17 @@
         fill = warnFill;
       } else if (isDragged) {
         fill = warnFill;
+      } else if (isSelected) {
+        fill = warnFill;
+      } else if (isSelectedNeighbour) {
+        fill = hoverFill;
       } else if (n.id === hoverId) {
         fill = hoverFill;
       } else {
         fill = nodeFill;
       }
-      // Glow ring for hovered / dragged nodes for clearer feedback.
-      if (n.id === hoverId || isDragged) {
+      // Glow ring for hovered / dragged / selected nodes for clearer feedback.
+      if (n.id === hoverId || isDragged || isSelected) {
         ctx.beginPath();
         ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
         ctx.strokeStyle = isDragged ? glowActive : glowHover;
@@ -594,11 +604,19 @@
     panning = false;
     if (canvasEl) canvasEl.style.cursor = hoverId ? "pointer" : "";
   }
+  function onCanvasDblClick(e) {
+    if (dragMoved) { dragMoved = false; return; }
+    const n = pickNode(e);
+    // Double-clicking a node opens the file as a normal file tab.
+    if (n) NB.evt.emit("file:open-request", n.id);
+  }
   function onCanvasClick(e) {
     if (dragMoved) { dragMoved = false; return; }
     const n = pickNode(e);
-    // Clicking a node opens the file as a normal file tab.
-    if (n) NB.evt.emit("file:open-request", n.id);
+    // Single-clicking a node highlights it (and clears the highlight
+    // when clicking empty space).
+    selectedId = n ? n.id : null;
+    requestRedraw();
   }
   function onWheel(e) {
     e.preventDefault();
@@ -664,6 +682,7 @@
     get nodes() { return nodes; },
     get edges() { return edges; },
     get scale() { return scale; },
+    get selectedId() { return selectedId; },
     get pan() { return pan; },
     get width() { return width; },
     get height() { return height; },

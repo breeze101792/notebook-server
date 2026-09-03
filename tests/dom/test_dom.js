@@ -4328,6 +4328,54 @@ function check(label, cond, extra) {
       }));
     }
 
+    // --- single-click does NOT open, double-click opens ---
+    // A node placed at world (0,0) renders at screen (pan.x, pan.y).
+    const clickNode = window.NB.graph.nodes[0];
+    if (clickNode) {
+      clickNode.x = 0;
+      clickNode.y = 0;
+      await tick(20);
+      const atNode = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      const activeBefore = window.document.querySelector(".tab.active");
+      const activeBeforePath = activeBefore ? activeBefore.dataset.path : null;
+      // A fresh mousedown/mouseup resets the dragMoved guard so the
+      // click handler runs (a real click always follows a mousedown).
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atNode));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atNode));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atNode));
+      await tick(20);
+      const activeAfterClick = window.document.querySelector(".tab.active");
+      const activeAfterClickPath = activeAfterClick ? activeAfterClick.dataset.path : null;
+      check("graph: single click does not open the node",
+        activeAfterClickPath === activeBeforePath,
+        "before=" + activeBeforePath + " after=" + activeAfterClickPath);
+      check("graph: single click selects the node",
+        window.NB.graph.selectedId === clickNode.id,
+        "expected=" + clickNode.id + " got=" + window.NB.graph.selectedId);
+      // Clicking empty space clears the selection.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      await tick(20);
+      check("graph: clicking empty space clears selection",
+        window.NB.graph.selectedId === null,
+        "got=" + window.NB.graph.selectedId);
+      // A fresh mousedown/mouseup resets the dragMoved guard (a real
+      // double-click always follows a mousedown), so the dblclick fires.
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atNode));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atNode));
+      canvasEl.dispatchEvent(new window.MouseEvent("dblclick", atNode));
+      await tick(40);
+      const activeAfterDbl = window.document.querySelector(".tab.active");
+      const activeAfterDblPath = activeAfterDbl ? activeAfterDbl.dataset.path : null;
+      check("graph: double click opens the node",
+        activeAfterDblPath === clickNode.id,
+        "expected=" + clickNode.id + " got=" + activeAfterDblPath);
+    }
+
     // --- re-activation preserves view state ---
     // The user's bug: zoom in, switch away to a file tab, switch back,
     // and the graph snaps back to its initial zoom + center. The view
