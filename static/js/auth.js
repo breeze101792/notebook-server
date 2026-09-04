@@ -161,5 +161,12 @@
     logout:   tryLogout,
   };
 
-  document.addEventListener("DOMContentLoaded", boot);
+  // Boot immediately, NOT on DOMContentLoaded. The scripts sit at the end
+  // of <body>, so the auth overlay + inputs are already parsed by the time
+  // this tiny module runs. Waiting for DOMContentLoaded would delay the
+  // login prompt until every synchronous script has executed -- including
+  // the multi-MB viz/codemirror bundles -- which can take 10-20s on a slow
+  // LAN or machine. Prompting right away lets the user sign in while the
+  // heavy bundles finish loading in the background.
+  boot();
 })();

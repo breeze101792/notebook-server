@@ -285,6 +285,17 @@
     </div>
   </div>
 
+  <!-- Auth gate loads FIRST, before the heavy vendor bundles. api.js is a
+       tiny fetch wrapper; auth.js checks /api/auth and shows the login
+       modal immediately. Loading them here (right after the auth overlay
+       markup, which is already parsed) means the sign-in prompt appears
+       as soon as the page loads -- the user can authenticate while the
+       multi-MB viz/codemirror/katex bundles still download and parse in
+       the background. The rest of the app modules load in dependency
+       order at the bottom of <body>. -->
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/auth.js"></script>
+
   <!-- Right-click context menu for the file tree -->
   <div id="context-menu" class="context-menu" hidden></div>
 
@@ -775,86 +786,45 @@
     </div>
   </div>
 
-  <!-- Vendored libs first (no CDN tags; works offline) -->
-  <script src="/static/vendor/marked.min.js"></script>
-  <script src="/static/vendor/highlight.min.js"></script>
-  <!-- WaveDrom (timing waveform rendering; ~98KB UMD bundle) is loaded
-       synchronously alongside the other libs, so window.wavedrom is
-       available before wavedrom.js runs. The bundle reads JSON code
-       blocks tagged ```wavedrom and renders them to SVG in the viewer.
-       Unlike mermaid it needs no async load, so this tag is a plain
-       <script>, not <script defer>. -->
-  <script src="/static/vendor/wavedrom.unpkg.min.js"></script>
-  <!-- KaTeX (math typesetting; ~275KB UMD bundle) is loaded synchronously
-       so window.katex is available before katex.js runs. Renders ```math
-       code blocks to HTML. -->
-  <script src="/static/vendor/katex/katex.min.js"></script>
-  <!-- Graphviz (compiled to WASM). viz.js is the public API; viz.full.js
-       is the compiled Graphviz module. Loaded in this order so
-       full.render.js auto-attaches its render/Module onto window.Viz.
-       Renders ```dot code blocks to SVG. -->
-  <script src="/static/vendor/viz.js"></script>
-  <script src="/static/vendor/viz.full.js"></script>
-  <!-- Mermaid (3.5MB) is loaded with defer so it doesn't block the
-       page's first paint. The integration waits for window.mermaid
-       to be available before rendering any diagrams, so the async
-       load is invisible to the user. We never need mermaid for
-       rendering the file list / sidebar / tabs, only for the
-       right-pane preview. -->
+  <!-- Vendored libs + app modules, all deferred. defer keeps execution
+       order (so window.marked / window.CM6 / window.Viz / window.katex
+       are set before the modules that use them) but downloads every
+       bundle in parallel and, crucially, does NOT block first paint.
+       The tiny api.js + auth.js at the top of <body> are synchronous, so
+       the login modal is shown at first paint while these multi-MB
+       bundles (viz 1.9MB, codemirror 738KB, katex, wavedrom) still
+       download and parse in the background. -->
+  <script src="/static/vendor/marked.min.js" defer></script>
+  <script src="/static/vendor/highlight.min.js" defer></script>
+  <script src="/static/vendor/wavedrom.unpkg.min.js" defer></script>
+  <script src="/static/vendor/katex/katex.min.js" defer></script>
+  <script src="/static/vendor/viz.js" defer></script>
+  <script src="/static/vendor/viz.full.js" defer></script>
   <script src="/static/vendor/mermaid.min.js" defer></script>
-  <!-- CodeMirror 6 + @replit/codemirror-vim (single IIFE bundle). Loaded
-       before cm-bridge.js so the bridge can see window.CM6. -->
-  <script src="/static/vendor/codemirror.bundle.js"></script>
-  <!-- Turndown (HTML→Markdown) + GFM plugin, used by the hybrid/WYSIWYG
-       edit mode to convert contentEditable edits back to Markdown source.
-       IIFE bundles that attach to window.TurndownService / window.TurndownPluginGfm. -->
-  <script src="/static/vendor/turndown.browser.js"></script>
-  <script src="/static/vendor/turndown-plugin-gfm.browser.js"></script>
-  <!-- App modules, in dependency order -->
-  <script src="/static/js/api.js"></script>
-  <script src="/static/js/auth.js"></script>
-  <script src="/static/js/cm-bridge.js"></script>
-  <!-- lightbox.js: shared full-screen SVG lightbox + zoom controls used
-       by both mermaid.js and wavedrom.js. Loaded before them so
-       NB.lightbox.create exists when each diagram module wires its
-       overlay. -->
-  <script src="/static/js/lightbox.js"></script>
-  <script src="/static/js/mermaid.js"></script>
-  <!-- wavedrom.js: render ```wavedrom timing-diagram code blocks to SVG
-       (window.wavedrom is loaded synchronously above). Loaded before
-       viewer.js so NB.wavedrom exists when the viewer's render pass
-       runs in the app. -->
-  <script src="/static/js/wavedrom.js"></script>
-  <!-- katex.js: render ```math / ```katex code blocks to typeset
-       equations (window.katex is loaded synchronously above). Loaded
-       before viewer.js so NB.katex exists when the viewer's render pass
-       runs. -->
-  <script src="/static/js/katex.js"></script>
-  <!-- viz.js: render ```dot / ```graphviz code blocks to SVG graphs
-       (window.Viz is loaded synchronously above). Loaded before
-       viewer.js so NB.viz exists when the viewer's render pass runs. -->
-  <script src="/static/js/viz.js"></script>
-  <script src="/static/js/viewer.js"></script>
-  <script src="/static/js/editbar.js"></script>
-  <script src="/static/js/hybrid.js"></script>
-  <script src="/static/js/watcher.js"></script>
-  <script src="/static/js/outline.js"></script>
-  <script src="/static/js/sidebar.js"></script>
-  <script src="/static/js/search.js"></script>
-  <script src="/static/js/graph.js"></script>
-  <script src="/static/js/tabs.js"></script>
-  <script src="/static/js/settings.js"></script>
-  <script src="/static/js/vimnav.js"></script>
-  <!-- ai.js: side-panel AI assistant + nb-edit proposal cards. Loaded
-       after viewer.js (uses NB.viewer.getPath) and before app.js. -->
-  <script src="/static/js/ai.js"></script>
-  <!-- activity.js registers the activity-bar views (Explorer, Recent)
-       and owns the icon<->panel swap + collapse. Loaded before app.js
-       so NB.activity.register() calls during boot land on the live
-       registry. -->
-  <script src="/static/js/activity.js"></script>
-  <script src="/static/js/shortcuts.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/vendor/codemirror.bundle.js" defer></script>
+  <script src="/static/vendor/turndown.browser.js" defer></script>
+  <script src="/static/vendor/turndown-plugin-gfm.browser.js" defer></script>
+  <script src="/static/js/cm-bridge.js" defer></script>
+  <script src="/static/js/lightbox.js" defer></script>
+  <script src="/static/js/mermaid.js" defer></script>
+  <script src="/static/js/wavedrom.js" defer></script>
+  <script src="/static/js/katex.js" defer></script>
+  <script src="/static/js/viz.js" defer></script>
+  <script src="/static/js/viewer.js" defer></script>
+  <script src="/static/js/editbar.js" defer></script>
+  <script src="/static/js/hybrid.js" defer></script>
+  <script src="/static/js/watcher.js" defer></script>
+  <script src="/static/js/outline.js" defer></script>
+  <script src="/static/js/sidebar.js" defer></script>
+  <script src="/static/js/search.js" defer></script>
+  <script src="/static/js/graph.js" defer></script>
+  <script src="/static/js/tabs.js" defer></script>
+  <script src="/static/js/settings.js" defer></script>
+  <script src="/static/js/vimnav.js" defer></script>
+  <script src="/static/js/ai.js" defer></script>
+  <script src="/static/js/activity.js" defer></script>
+  <script src="/static/js/shortcuts.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/static/sw.js');
