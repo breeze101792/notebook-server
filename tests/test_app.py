@@ -1977,6 +1977,129 @@ class _StubOpenAIHandler(BaseHTTPRequestHandler):
         pass
 
 
+class TestAiTools(BaseTest):
+    """POST /api/ai/fetch and /api/ai/search: server-side web tools for
+    the AI assistant. Both are admin-gated and bounded."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import HTTPServer
+        cls.httpd = HTTPServer(("127.0.0.1", 0), _StubWebHandler)
+        cls.port = cls.httpd.server_address[1]
+        cls.thread = threading.Thread(
+            target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        super().setUp()
+        nb.LAST_WEB = None
+
+    def test_fetch_returns_body(self):
+        r = self.post("/api/ai/fetch", {"url": "http://127.0.0.1:%d/page" % self.port})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["url"], "http://127.0.0.1:%d/page" % self.port)
+        self.assertIn("text/html", body["contentType"])
+        self.assertIn("hello from stub", body["content"])
+        self.assertFalse(body["truncated"])
+
+    def test_fetch_rejects_bad_urls(self):
+        for bad in ("", "not a url", "file:///etc/passwd", "ftp://x"):
+            r = self.post("/api/ai/fetch", {"url": bad})
+            self.assertEqual(r.status_code, 400, bad)
+        r = self.post("/api/ai/fetch", {})
+        self.assertEqual(r.status_code, 400)
+
+    def test_fetch_upstream_error_is_502(self):
+        r = self.post("/api/ai/fetch", {"url": "http://127.0.0.1:%d/error" % self.port})
+        self.assertEqual(r.status_code, 502)
+
+    def test_search_requires_configured_instance(self):
+        # No searxngUrl configured -> the tool is disabled.
+        r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("No SearXNG", r.get_json()["error"])
+
+    def test_search_queries_instance(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://127.0.0.1:%d" % self.port})
+        r = self.post("/api/ai/search", {"q": "embedded systems"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["query"], "embedded systems")
+        self.assertEqual(len(body["results"]), 2)
+        self.assertEqual(body["results"][0]["title"], "Result One")
+        self.assertIn("http://", body["results"][0]["url"])
+        self.assertIn("snippet", body["results"][0])
+        # The instance was queried with the JSON format + quoted query.
+        self.assertIn("/search?q=", nb.LAST_WEB["path"])
+        self.assertIn("format=json", nb.LAST_WEB["path"])
+
+    def test_search_rejects_bad_query(self):
+        r = self.post("/api/ai/search", {"q": ""})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/ai/search", {})
+        self.assertEqual(r.status_code, 400)
+
+    def test_tools_admin_required_when_auth_on(self):
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        self.assertEqual(
+            self.post("/api/ai/fetch", {"url": "http://x"}).status_code, 401)
+        self.assertEqual(
+            self.post("/api/ai/search", {"q": "x"}).status_code, 401)
+
+
+class _StubWebHandler(BaseHTTPRequestHandler):
+    """A tiny stand-in for the fetch/search targets.
+
+    GET /page returns a small HTML body; GET /error returns 500; GET
+    /search?q=...&format=json returns a SearXNG-style JSON result list.
+    Records the last request path in the module-level LAST_WEB dict.
+    """
+
+    def do_GET(self):
+        import app as _nb
+        _nb.LAST_WEB = {"path": self.path}
+        if self.path.startswith("/error"):
+            self.send_response(500)
+            self.end_headers()
+            return
+        if self.path.startswith("/search"):
+            body = json.dumps({"results": [
+                {"title": "Result One", "url": "http://example.com/1",
+                 "content": "first snippet"},
+                {"title": "Result Two", "url": "http://example.com/2",
+                 "content": "second snippet"},
+            ]}).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        body = b"<html><body>hello from stub</body></html>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, fmt, *args):  # keep test output clean
+        pass
+
+
 class TestAiConfig(BaseTest):
     """GET/POST /api/ai/config: profiles live in config/ai.json, keys
     never echo back."""
@@ -1984,7 +2107,8 @@ class TestAiConfig(BaseTest):
     def test_get_empty_by_default(self):
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
-        self.assertEqual(data, {"servers": [], "default": "", "customPrompt": ""})
+        self.assertEqual(data, {"servers": [], "default": "", "customPrompt": "",
+                                "searxngUrl": ""})
         # No file is created by a read.
         self.assertFalse(os.path.isfile(nb.AI_FILE))
 
@@ -2080,6 +2204,31 @@ class TestAiConfig(BaseTest):
             "name": "p", "baseUrl": "http://x",
             "apiKey": "", "replaceSecret": True,
         }], "default": "p", "customPrompt": "x" * 8001})
+        self.assertEqual(r.status_code, 400)
+
+    def test_searxng_url_global_roundtrip(self):
+        # searxngUrl is a GLOBAL setting (like customPrompt): stored at the
+        # config root, returned to the browser, preserved when a POST omits
+        # it, and cleared when sent as "".
+        r = self.post("/api/ai/config", {"servers": [], "default": "",
+                                         "searxngUrl": "  https://searxng.example.com/  "})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["searxngUrl"],
+                         "https://searxng.example.com")
+        with open(nb.AI_FILE) as f:
+            stored = json.load(f)
+        self.assertEqual(stored["searxng_url"], "https://searxng.example.com")
+        # Provider-only save (no searxngUrl field) PRESERVES it.
+        r = self.post("/api/ai/config", {"servers": [], "default": ""})
+        self.assertEqual(r.get_json()["searxngUrl"],
+                         "https://searxng.example.com")
+        # Explicit empty string clears it.
+        r = self.post("/api/ai/config", {"servers": [], "default": "",
+                                         "searxngUrl": ""})
+        self.assertEqual(r.get_json()["searxngUrl"], "")
+        # Bad scheme rejected.
+        r = self.post("/api/ai/config", {"servers": [], "default": "",
+                                         "searxngUrl": "ftp://x"})
         self.assertEqual(r.status_code, 400)
 
     def test_rename_carries_key_via_replace_secret_for(self):

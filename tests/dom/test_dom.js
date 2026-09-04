@@ -148,7 +148,8 @@ function publicAiConfigBody() {
     name: s.name, baseUrl: s.baseUrl, model: s.model || "",
     hasKey: !!(s.apiKey && s.apiKey.length),
   })), default: aiConfig.default || "",
-    customPrompt: aiConfig.customPrompt || "" };
+    customPrompt: aiConfig.customPrompt || "",
+    searxngUrl: aiConfig.searxngUrl || "" };
 }
 let aiChatStreams = [];           // queued responses for /api/ai/chat
 let aiChatLog = [];               // bodies POSTed to /api/ai/chat
@@ -613,6 +614,20 @@ const html = `<!DOCTYPE html><html><head>
               <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
               <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
             </div>
+
+            <!-- Optional SearXNG instance for the assistant's search tool. -->
+            <div class="settings-form-title">Web search</div>
+            <div class="settings-row settings-row-column">
+              <label class="settings-label" for="settings-ai-searxng">SearXNG instance URL</label>
+              <input id="settings-ai-searxng" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" disabled
+                     placeholder="https://searxng.example.com  (blank = search tool disabled)">
+              <span class="settings-hint">Lets the assistant search the web. Leave blank to disable the search tool.</span>
+            </div>
+            <div class="settings-form-actions">
+              <span id="settings-ai-searxng-status" class="settings-hint" hidden></span>
+              <button id="settings-ai-searxng-save" class="settings-action" disabled>Save search URL</button>
+            </div>
           </section>
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
             <h3>About</h3>
@@ -1051,6 +1066,9 @@ window.fetch = async (url, opts) => {
         // when present — mirrors the server.
         customPrompt: d.customPrompt !== undefined
           ? d.customPrompt : (aiConfig.customPrompt || ""),
+        // SearXNG instance URL: same preserve-when-omitted semantics.
+        searxngUrl: d.searxngUrl !== undefined
+          ? d.searxngUrl : (aiConfig.searxngUrl || ""),
       };
       body = publicAiConfigBody();
     } else {
@@ -1077,6 +1095,26 @@ window.fetch = async (url, opts) => {
       },
     });
     return { ok: true, status: 200, body: stream };
+  } else if (p === "/api/ai/fetch") {
+    const d = JSON.parse(opts.body || "{}");
+    if (!d.url) {
+      return { ok: false, status: 400,
+        text: async () => JSON.stringify({ error: "url required" }),
+        json: async () => ({ error: "url required" }) };
+    }
+    body = { url: d.url, contentType: "text/html", truncated: false,
+             content: "<html><body>fetched " + d.url + "</body></html>" };
+  } else if (p === "/api/ai/search") {
+    const d = JSON.parse(opts.body || "{}");
+    if (!d.q) {
+      return { ok: false, status: 400,
+        text: async () => JSON.stringify({ error: "q required" }),
+        json: async () => ({ error: "q required" }) };
+    }
+    body = { query: d.q, results: [
+      { title: "Result One", url: "http://example.com/1", snippet: "first" },
+      { title: "Result Two", url: "http://example.com/2", snippet: "second" },
+    ] };
   } else if (p === "/api/auth") {
     // Default: auth disabled. Tests flip authEnabled/authRole to exercise
     // the login flow. The shape is {enabled, hasAdmin, hasViewer, role}:
@@ -9933,6 +9971,81 @@ function check(label, cond, extra) {
     lastReq.messages[0].role === "system" &&
     /Additional instructions from the user[\s\S]*Always answer in rhyme/.test(lastReq.messages[0].content),
     lastReq.messages[0].content.slice(-60));
+
+  // --- fetch + search tools: auto-run, trace lines, results fed back ----
+  // The model calls fetch then search; both run immediately (no card) and
+  // their output is fed back as tool-result messages so the model can
+  // continue. The system prompt must declare both tools.
+  aiConfig.customPrompt = "";
+  await window.NB.ai.loadAiConfig();
+  await tick(10);
+  aiChatStreams.push([
+    sseFrame("Let me look that up.\n\n```nb-tool\n" +
+      JSON.stringify({ tool: "fetch", url: "https://example.com/doc" }) + "\n```\n\n" +
+      "```nb-tool\n" + JSON.stringify({ tool: "search", q: "embedded systems" }) + "\n```"),
+  ]);
+  aiChatStreams.push([sseFrame("Here is what I found.")]);
+  aiInput().value = "fetch that page and search";
+  aiSend();
+  await tick(120);
+
+  check("ai: system prompt declares fetch + search tools",
+    /"tool": "fetch"/.test(aiChatLog[0].messages[0].content) &&
+    /"tool": "search"/.test(aiChatLog[0].messages[0].content),
+    "");
+  check("ai: fetch tool ran as a trace line",
+    aiTraces().some(t => t.dataset.testToolTrace === "fetch" &&
+      /https:\/\/example\.com\/doc/.test(t.textContent) &&
+      /chars/.test(t.textContent)),
+    "traces=" + aiTraces().length);
+  check("ai: search tool ran as a trace line",
+    aiTraces().some(t => t.dataset.testToolTrace === "search" &&
+      /embedded systems/.test(t.textContent) && /results/.test(t.textContent)),
+    "traces=" + aiTraces().length);
+  check("ai: fetch + search results fed back to the model (memory)",
+    aiChatLog.at(-1) && /tool fetch result/.test(
+      aiChatLog.at(-1).messages.at(-2).content) &&
+    /Fetched https:\/\/example\.com\/doc/.test(aiChatLog.at(-1).messages.at(-2).content) &&
+    /tool search result/.test(aiChatLog.at(-1).messages.at(-1).content) &&
+    /Result One/.test(aiChatLog.at(-1).messages.at(-1).content),
+    aiChatLog.at(-1) ? aiChatLog.at(-1).messages.length + " msgs" : "none");
+  check("ai: fetch/search are auto tools (no permission card)",
+    aiCards().length === 0,
+    "cards=" + aiCards().length);
+
+  // --- Settings: SearXNG instance URL (own control, own Save) -----------
+  authEnabled = true; authHasAdmin = true; authRole = "admin";
+  window.NB.settings.open(); await tick(30);
+  const aiTabBtn2 = window.document.querySelector('.settings-nav-item[data-tab="ai"]');
+  aiTabBtn2.click(); await tick(20);
+  const searxngEl = window.document.getElementById("settings-ai-searxng");
+  const searxngSave = window.document.getElementById("settings-ai-searxng-save");
+  check("settings: SearXNG URL field present + disabled for non-admin",
+    !!searxngEl && !!searxngSave, "");
+  searxngEl.value = "https://searxng.example.com";
+  searxngEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  check("settings: SearXNG Save enables when value is dirty",
+    !searxngSave.disabled, "");
+  searxngSave.click();
+  await tick(80);
+  check("settings: SearXNG Save persists the URL (config root)",
+    aiConfig.searxngUrl === "https://searxng.example.com",
+    aiConfig.searxngUrl);
+  // Provider edits never touch the saved SearXNG URL.
+  Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"))[0].click();
+  await tick(10);
+  window.document.getElementById("settings-ai-model").value = "m-7";
+  window.document.getElementById("settings-ai-add").click();
+  await tick(60);
+  check("settings: provider save does not clobber the SearXNG URL",
+    aiConfig.searxngUrl === "https://searxng.example.com",
+    aiConfig.searxngUrl);
+  // Reset for later blocks.
+  aiConfig.searxngUrl = "";
+  await window.NB.ai.loadAiConfig();
+  authEnabled = false; authHasAdmin = false; authRole = null;
+  await window.NB.settings.close(); await tick(20);
 
   // --- Settings: Edit button per provider row --------------------------
   // The AI section is admin-only; flip the harness into an admin session

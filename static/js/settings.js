@@ -963,6 +963,9 @@
   const aiPromptEl = document.getElementById("settings-ai-custom-prompt");
   const aiPromptSaveBtn = document.getElementById("settings-ai-prompt-save");
   const aiPromptStatusEl = document.getElementById("settings-ai-prompt-status");
+  const aiSearxngEl = document.getElementById("settings-ai-searxng");
+  const aiSearxngSaveBtn = document.getElementById("settings-ai-searxng-save");
+  const aiSearxngStatusEl = document.getElementById("settings-ai-searxng-status");
   const aiAddBtn   = document.getElementById("settings-ai-add");
   const aiSaveAsBtn = document.getElementById("settings-ai-saveas");
   const aiCancelBtn = document.getElementById("settings-ai-cancel");
@@ -976,6 +979,10 @@
   // prompt's own Save button (independent from provider add/edit).
   let aiPromptSaved = "";
   let ai_prompt_inflight = false;
+  // SearXNG instance URL (global, like the custom prompt): snapshot at
+  // modal open + its own Save button.
+  let aiSearxngSaved = "";
+  let ai_searxng_inflight = false;
   // Edit mode: name of the provider being edited ("" = add-new form).
   let aiEditingName = "";
 
@@ -988,7 +995,8 @@
   function refreshAiControls() {
     if (!aiNameEl || !aiAddBtn) return;
     const canEdit = isAdmin();
-    [aiNameEl, aiUrlEl, aiModelEl, aiKeyEl, aiPromptEl, aiPromptSaveBtn]
+    [aiNameEl, aiUrlEl, aiModelEl, aiKeyEl, aiPromptEl, aiPromptSaveBtn,
+     aiSearxngEl, aiSearxngSaveBtn]
       .forEach(el => { if (el) el.disabled = !canEdit; });
     aiAddBtn.disabled = !canEdit ||
       !aiNameEl.value.trim() || !aiUrlEl.value.trim();
@@ -1007,6 +1015,11 @@
       // Prompt Save only when admin + text differs from the last snapshot.
       aiPromptSaveBtn.disabled = !canEdit ||
         (aiPromptEl && aiPromptEl.value === aiPromptSaved);
+    }
+    if (aiSearxngSaveBtn) {
+      // Search URL Save only when admin + value differs from the snapshot.
+      aiSearxngSaveBtn.disabled = !canEdit ||
+        (aiSearxngEl && aiSearxngEl.value === aiSearxngSaved);
     }
     if (aiHelpEl) {
       aiHelpEl.textContent = canEdit
@@ -1201,6 +1214,43 @@
     }
   }
 
+  /* Save ONLY the SearXNG instance URL: one POST with the stored provider
+   * list (keys ride server-side) + the new URL. Independent from the
+   * provider form and the custom prompt. */
+  async function saveAiSearxng() {
+    if (ai_searxng_inflight || !aiSearxngEl) return;
+    ai_searxng_inflight = true;
+    if (aiSearxngSaveBtn) { aiSearxngSaveBtn.disabled = true; aiSearxngSaveBtn.textContent = "Saving…"; }
+    try {
+      const payload = aiProviders.map(p => ({
+        name: p.name,
+        baseUrl: p.baseUrl,
+        model: p.model || "",
+        apiKey: p.apiKey || "",
+        replaceSecret: p.hasKey === true,
+      }));
+      const cfg = await NB.api.aiSaveConfig(
+        payload, aiDefaultName, aiPromptEl ? aiPromptEl.value : undefined,
+        aiSearxngEl.value);
+      aiSearxngSaved = (cfg && typeof cfg.searxngUrl === "string")
+        ? cfg.searxngUrl : aiSearxngEl.value;
+      if (aiSearxngStatusEl) {
+        aiSearxngStatusEl.textContent = "Saved";
+        aiSearxngStatusEl.hidden = false;
+        setTimeout(() => { aiSearxngStatusEl.hidden = true; }, 2000);
+      }
+    } catch (e) {
+      if (aiSearxngStatusEl) {
+        aiSearxngStatusEl.textContent = e.message || "Save failed";
+        aiSearxngStatusEl.hidden = false;
+      }
+    } finally {
+      ai_searxng_inflight = false;
+      if (aiSearxngSaveBtn) aiSearxngSaveBtn.textContent = "Save search URL";
+      refreshAiControls();
+    }
+  }
+
   function renderAiList() {
     if (!aiListEl || !aiCountEl) return;
     aiCountEl.textContent = String(aiProviders.length);
@@ -1223,6 +1273,9 @@
       aiDefaultName = (cfg && cfg.default) || "";
       aiPromptSaved = (cfg && cfg.customPrompt) || "";
       if (aiPromptEl) aiPromptEl.value = aiPromptSaved;
+      aiSearxngSaved = (cfg && typeof cfg.searxngUrl === "string")
+        ? cfg.searxngUrl : "";
+      if (aiSearxngEl) aiSearxngEl.value = aiSearxngSaved;
       renderAiList();
     } catch (e) {
       aiCountEl.textContent = "—";
@@ -1292,6 +1345,18 @@
   }
   if (aiPromptSaveBtn) {
     aiPromptSaveBtn.addEventListener("click", saveAiPrompt);
+  }
+  if (aiSearxngEl) {
+    aiSearxngEl.addEventListener("input", refreshAiControls);
+    aiSearxngEl.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (aiSearxngSaveBtn && !aiSearxngSaveBtn.disabled) saveAiSearxng();
+      }
+    });
+  }
+  if (aiSearxngSaveBtn) {
+    aiSearxngSaveBtn.addEventListener("click", saveAiSearxng);
   }
   if (aiAddBtn) {
     aiAddBtn.addEventListener("click", async () => {

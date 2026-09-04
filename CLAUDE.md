@@ -160,17 +160,20 @@ the UI can render without exposing hashes.
 **AI assistant (optional; OpenAI-compatible proxy + reviewable edits).**
 `config/ai.json` (own file so the client-posted config blob can never
 hold secrets) stores `{"servers": [{"name", "base_url", "api_key",
-"model"}], "default"}` — a list of provider profiles. All `/api/ai/*`
-routes are `@admin_required` (open only while auth is off, like every
-other admin route):
+"model"}], "default", "custom_prompt", "searxng_url"}` — a list of
+provider profiles plus the global custom prompt and the optional SearXNG
+instance URL. All `/api/ai/*` routes are `@admin_required` (open only
+while auth is off, like every other admin route):
 
 - `GET/POST /api/ai/config` — masked profile list (`{"servers": [{"name",
-  "baseUrl", "model", "hasKey"}], "default"}`); the stored API key is
-  NEVER echoed to any client. POSTing a profile with `apiKey: ""` +
-  `replaceSecret: true` carries the previously stored key over server-side
-  (the Settings UI relies on this). Base URLs are normalized on save
-  (trailing slash + `/v1` stripped; `_chat_url()` appends
-  `/v1/chat/completions`).
+  "baseUrl", "model", "hasKey"}], "default", "customPrompt",
+  "searxngUrl"}`); the stored API key is NEVER echoed to any client.
+  POSTing a profile with `apiKey: ""` + `replaceSecret: true` carries the
+  previously stored key over server-side (the Settings UI relies on this).
+  Base URLs are normalized on save (trailing slash + `/v1` stripped;
+  `_chat_url()` appends `/v1/chat/completions`). `customPrompt` and
+  `searxngUrl` are global, preserved when a POST omits them, cleared when
+  sent as `""`.
 - `GET /api/ai/probe?server=<name>` — reachability check; an upstream
   HTTP error (even 401) counts as "reachable", connection failures return
   `{ok: false}` with HTTP 200 so the UI never sees a trace.
@@ -182,6 +185,16 @@ other admin route):
   (GeneratorExit-safe on early client disconnect); upstream HTTP errors
   are re-emitted in-band as `event: error` / `data: {"error": true,
   "status", "message"}` frames so the browser can show them.
+- `POST /api/ai/fetch` — server-side URL fetch for the assistant's fetch
+  tool (the browser can't cross CORS). Body `{"url": "<http(s) url>"}`;
+  only http(s) is allowed, the body is capped at `AI_FETCH_MAX_BYTES`
+  (512 KiB) and the request times out after `AI_FETCH_TIMEOUT` (15s).
+  Returns `{url, contentType, truncated, content}`.
+- `POST /api/ai/search` — SearXNG search for the assistant's search tool.
+  Body `{"q": "<query>"}`. Requires a `searxngUrl` in `config/ai.json`;
+  when none is configured it returns 400 (the model is told the tool is
+  disabled). Queries the instance's JSON output format and returns the top
+  `AI_SEARXNG_MAX_RESULTS` (10) results as `{title, url, snippet}`.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
@@ -218,17 +231,19 @@ Module responsibilities:
   OpenAI-style `delta.content` frames). It is an **agentic tool loop**, not a
   context-free chat:
 
-  - **Four tools** are declared in `systemPrompt()` and called by the model as
+  - **Six tools** are declared in `systemPrompt()` and called by the model as
     fenced ` ```nb-tool ` JSON blocks: `list` (tree, auto), `read` (file body,
-    auto), `write` (create **new** file, permission card), `patch` (edit an
+    auto), `fetch` (server-side URL fetch, auto), `search` (SearXNG, auto),
+    `write` (create **new** file, permission card), `patch` (edit an
     existing file via a batch of `/api/edit` ops, permission card). Writes on
     an existing path are blocked client-side ("ask the AI to patch it
     instead") — overwrite-via-write is not a flow.
   - **Tool loop**: after each assistant reply, tool calls are executed
-    (list/read immediately, surfaced as `.ai-tool-trace` lines; write/patch as
-    Apply/Reject cards) and their results are fed back as tool-result user
-    messages so the model can continue (`MAX_TOOL_ROUNDS` caps the fan-out;
-    a pending permission card pauses the loop until the user decides).
+    (list/read/fetch/search immediately, surfaced as `.ai-tool-trace` lines;
+    write/patch as Apply/Reject cards) and their results are fed back as
+    tool-result user messages so the model can continue (`MAX_TOOL_ROUNDS`
+    caps the fan-out; a pending permission card pauses the loop until the
+    user decides).
   - **Memory**: `ai.js` owns the full transcript (`conversation`: system
     prompt + user turns + assistant replies + tool outcomes). Every request
     re-uploads it, so follow-ups keep context without re-reading files.
@@ -273,7 +288,9 @@ Module responsibilities:
   editing an existing profile never re-sends its key (blank `apiKey` +
   `replaceSecret: true` carries the stored one over server-side), and
   every commit also refreshes the side-panel picker via
-  `NB.ai.loadAiConfig()`.
+  `NB.ai.loadAiConfig()`. The **Web search** field (same AI tab) sets the
+  global SearXNG instance URL for the assistant's search tool; it has its
+  own Save button and is preserved across provider saves.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,

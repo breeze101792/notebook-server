@@ -1,13 +1,15 @@
 /* ai.js -- AI assistant side-panel view: agentic tool loop + reviewable
  * edit cards.
  *
- * The assistant has four NOTEBOOK TOOLS, declared in the system prompt and
+ * The assistant has six NOTEBOOK TOOLS, declared in the system prompt and
  * emitted by the model as fenced ```nb-tool JSON blocks inside its reply:
  *
  *   list   -- tree listing (auto-approved, read-only)
  *   read   -- one file's content (auto, read-only)
  *   write  -- CREATE a new file (needs the user's permission)
  *   patch  -- update an existing file (needs permission)
+ *   fetch  -- fetch a URL server-side (auto, read-only; CORS-safe)
+ *   search -- query the configured SearXNG instance (auto, read-only)
  *
  * The module runs a TOOL LOOP around the SSE relay: after each assistant
  * message, any nb-tool block is executed (or queued as a permission card)
@@ -16,7 +18,7 @@
  * like "list, then read, then propose patches").
  *
  * Permission model (enforced here, never by the model):
- *   - read/list run immediately, results shown as trace lines.
+ *   - read/list/fetch/search run immediately, results shown as trace lines.
  *   - write/patch become CARDS with Apply/Reject. Apply performs:
  *       write  -> POST /api/create (with content)
  *       patch  -> POST /api/edit (find_replace/reline ops)
@@ -205,6 +207,14 @@
       return (typeof obj.path === "string" && obj.path && Array.isArray(obj.edits))
         ? { tool: "patch", path: obj.path, edits: obj.edits }
         : null;
+    }
+    if (tool === "fetch") {
+      return (typeof obj.url === "string" && obj.url)
+        ? { tool: "fetch", url: obj.url } : null;
+    }
+    if (tool === "search") {
+      return (typeof obj.q === "string" && obj.q)
+        ? { tool: "search", q: obj.q } : null;
     }
     return null;
   }
@@ -638,6 +648,41 @@
         return { ok: false, text: "read " + t.path + " failed: " + (e.message || e) };
       }
     }
+    if (t.tool === "fetch") {
+      const el = makeTrace("fetch", t.url);
+      logEl.appendChild(el);
+      try {
+        const data = await NB.api.aiFetch(t.url);
+        setTraceOut(el, (data.contentType || "text") + " · " +
+          data.content.length + " chars" + (data.truncated ? " (truncated)" : ""), "");
+        return { ok: true, text: "Fetched " + t.url + " (content-type: " +
+          (data.contentType || "unknown") + (data.truncated ? ", truncated" : "") +
+          "):\n" + data.content };
+      } catch (e) {
+        setTraceOut(el, "failed: " + (e.message || e), "err");
+        return { ok: false, text: "fetch " + t.url + " failed: " + (e.message || e) };
+      }
+    }
+    if (t.tool === "search") {
+      const el = makeTrace("search", t.q);
+      logEl.appendChild(el);
+      try {
+        const data = await NB.api.aiSearch(t.q);
+        const results = data.results || [];
+        setTraceOut(el, results.length + " results", "");
+        if (!results.length) {
+          return { ok: true, text: "Search \"" + t.q + "\" returned no results." };
+        }
+        const lines = results.map((r, i) =>
+          (i + 1) + ". " + (r.title || "(untitled)") + "\n   " + r.url +
+          (r.snippet ? "\n   " + r.snippet : ""));
+        return { ok: true, text: "Search results for \"" + t.q + "\":\n" +
+          lines.join("\n") };
+      } catch (e) {
+        setTraceOut(el, "failed: " + (e.message || e), "err");
+        return { ok: false, text: "search \"" + t.q + "\" failed: " + (e.message || e) };
+      }
+    }
     return null;
   }
 
@@ -685,7 +730,7 @@
       "You are the built-in assistant of a markdown notebook web app.",
       "The user's current file is: " + (path || "(none open)"),
       "",
-      "You have four tools to work with the notebook. Call one by outputting a fenced code block:",
+      "You have six tools to work with the notebook and the web. Call one by outputting a fenced code block:",
       "",
       "```nb-tool",
       '{"tool": "list"}',
@@ -699,9 +744,17 @@
       '```nb-tool',
       '{"tool": "patch", "path": "folder/file.md", "edits": [{"op": "find_replace", "find": "<exact text, appears once>", "replace_with": "<new text>"}, {"op": "append", "text": "..."}, {"op": "prepend", "text": "..."}]}',
       "```",
+      '```nb-tool',
+      '{"tool": "fetch", "url": "https://example.com/page"}',
+      "```",
+      '```nb-tool',
+      '{"tool": "search", "q": "search query"}',
+      "```",
       "",
-      "list and read run automatically and you will see the output.",
+      "list, read, fetch, and search run automatically and you will see the output.",
       "write and patch need the user's approval: they appear as cards the user applies manually.",
+      "fetch retrieves a web page server-side (CORS-safe); use it to read a URL the user mentions.",
+      "search queries the configured SearXNG instance; if it fails, no instance is configured and you should say so.",
       "RULES:",
       "- To UPDATE an existing file you MUST use patch. write on an existing file is blocked by the app.",
       "- Use write only for creating a NEW file.",
@@ -921,7 +974,8 @@
       let anyPending = false;         // a card is waiting for the user
       const followUps = [];
       for (const t of toolCalls) {
-        if (t.tool === "list" || t.tool === "read") {
+        if (t.tool === "list" || t.tool === "read" ||
+            t.tool === "fetch" || t.tool === "search") {
           const res = await runAutoTool(t, log);
           followUps.push({
             role: "user",

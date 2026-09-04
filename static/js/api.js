@@ -86,11 +86,17 @@
     aiGetConfig: () => request("GET", "/api/ai/config"),
     // customPrompt is the global assistant instruction text; pass
     // undefined to let the server preserve whatever is stored.
-    aiSaveConfig: (servers, dflt, customPrompt) =>
+    // searxngUrl is the optional SearXNG instance for the search tool;
+    // pass undefined to preserve, "" to clear.
+    aiSaveConfig: (servers, dflt, customPrompt, searxngUrl) =>
       request("POST", "/api/ai/config", Object.assign(
         { servers, default: dflt },
-        customPrompt !== undefined ? { customPrompt } : {})),
+        customPrompt !== undefined ? { customPrompt } : {},
+        searxngUrl !== undefined ? { searxngUrl } : {})),
     aiProbe: (name) => request("GET", "/api/ai/probe?server=" + encodeURIComponent(name)),
+    // AI agent tools: server-side fetch (CORS) and SearXNG search.
+    aiFetch: (url) => request("POST", "/api/ai/fetch", { url }),
+    aiSearch: (q) => request("POST", "/api/ai/search", { q }),
     // SSE relay. Does NOT use request(): the response is a text/event-stream,
     // not JSON -- we parse OpenAI-style deltas and invoke onDelta per token.
     aiChat: async (body, onDelta, signal) => {

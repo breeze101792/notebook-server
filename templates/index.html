@@ -714,6 +714,22 @@
               <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
               <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
             </div>
+
+            <!-- Optional SearXNG instance for the assistant's search tool.
+                 Kept server-side (the browser never needs the LAN address);
+                 blank disables the search tool. -->
+            <div class="settings-form-title">Web search</div>
+            <div class="settings-row settings-row-column">
+              <label class="settings-label" for="settings-ai-searxng">SearXNG instance URL</label>
+              <input id="settings-ai-searxng" type="text" class="auth-input settings-auth-input"
+                     autocomplete="off" disabled
+                     placeholder="https://searxng.example.com  (blank = search tool disabled)">
+              <span class="settings-hint">Lets the assistant search the web. Leave blank to disable the search tool.</span>
+            </div>
+            <div class="settings-form-actions">
+              <span id="settings-ai-searxng-status" class="settings-hint" hidden></span>
+              <button id="settings-ai-searxng-save" class="settings-action" disabled>Save search URL</button>
+            </div>
             <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
 

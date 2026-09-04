@@ -17,6 +17,7 @@ import shutil
 import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import bcrypt
@@ -993,6 +994,14 @@ def auth_tokens_delete(name):
 # progressively just like talking to the provider directly.
 AI_FILE = os.path.join(CONFIG_DIR, "ai.json")
 
+# Caps for the AI fetch tool so a single call can't balloon memory or hang
+# the request thread. The fetch tool is admin-gated (like every /api/ai/*
+# route) and single-user, but still bounded.
+AI_FETCH_MAX_BYTES = 512 * 1024      # 512 KiB of body
+AI_FETCH_TIMEOUT = 15                # seconds
+AI_SEARXNG_TIMEOUT = 15              # seconds
+AI_SEARXNG_MAX_RESULTS = 10
+
 
 @dataclasses.dataclass
 class Upstream:
@@ -1097,9 +1106,12 @@ def _public_ai_config():
             "hasKey": bool(s.get("api_key")),
         })
     # customPrompt is a GLOBAL setting (used by whichever provider is
-    # active), stored outside the server list.
+    # active), stored outside the server list. searxngUrl is the optional
+    # SearXNG instance the search tool queries; it is not a secret but is
+    # kept server-side so the browser never needs to know the LAN address.
     return {"servers": servers, "default": data.get("default", ""),
-            "customPrompt": data.get("custom_prompt", "")}
+            "customPrompt": data.get("custom_prompt", ""),
+            "searxngUrl": data.get("searxng_url", "")}
 
 
 def _saved_server(name):
@@ -1143,13 +1155,16 @@ def ai_config_post():
     """Replace the saved provider profiles wholesale.
 
     Body: {"servers": [{name, baseUrl, apiKey?, model, replaceSecret?},
-    ...], "default": "<name>", "customPrompt": "<global instructions>"}.
+    ...], "default": "<name>", "customPrompt": "<global instructions>",
+    "searxngUrl": "<optional SearXNG instance>"}.
     The list replaces the stored one but entries whose apiKey is "" +
     replaceSecret:true carry over the previously stored key, so the UI can
     round-trip profiles without echoing secrets back through the browser.
     customPrompt is the global assistant instruction text (applies to
     whichever provider is active), stored outside the server list and
-    preserved when the field is omitted (older clients).
+    preserved when the field is omitted (older clients). searxngUrl is the
+    optional SearXNG instance the search tool queries; it is preserved when
+    omitted and cleared when sent as "".
     """
     data, error = expect_json("servers")
     if error:
@@ -1169,6 +1184,18 @@ def ai_config_post():
     if len(custom_prompt) > 8000:
         return err("customPrompt is longer than 8000 chars", 400)
     custom_prompt = custom_prompt.strip()
+    searxng_url = data.get("searxngUrl")
+    if searxng_url is None:
+        # Field absent -> keep whatever is stored (round-trip safety).
+        searxng_url = load_ai_config().get("searxng_url", "")
+    if not isinstance(searxng_url, str):
+        return err("searxngUrl must be a string", 400)
+    searxng_url = searxng_url.strip()
+    if searxng_url and not searxng_url.lower().startswith(("http://", "https://")):
+        return err("searxngUrl must be an http(s) URL", 400)
+    if len(searxng_url) > 300:
+        return err("searxngUrl is longer than 300 chars", 400)
+    searxng_url = searxng_url.rstrip("/")
     cleaned = []
     seen = set()
     for i, raw in enumerate(servers_in):
@@ -1184,7 +1211,8 @@ def ai_config_post():
         return err("default is not one of the server names", 400)
     try:
         save_ai_config({"servers": cleaned, "default": default,
-                        "custom_prompt": custom_prompt})
+                        "custom_prompt": custom_prompt,
+                        "searxng_url": searxng_url})
     except OSError as exc:
         return err("Could not write AI config: %s" % exc, 500)
     return jsonify(_public_ai_config())
@@ -1297,6 +1325,104 @@ def ai_chat():
     return Response(relay(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-store",
                              "X-Accel-Buffering": "no"})
+
+
+@app.route("/api/ai/fetch", methods=["POST"])
+@admin_required
+def ai_fetch():
+    """Fetch a URL server-side for the AI assistant's fetch tool.
+
+    Body: {"url": "<http(s) url>"}. The browser can't fetch arbitrary
+    origins (CORS), so the server does it. The response is capped at
+    AI_FETCH_MAX_BYTES and the request times out after AI_FETCH_TIMEOUT.
+    Only http(s) is allowed (no file://, no localhost/private ranges are
+    blocked -- this is a single-user, admin-gated tool, but the scheme
+    check keeps the obvious foot-guns out). The body is returned as text
+    with a content-type hint so the model can decide how to read it.
+    """
+    data, error = expect_json("url")
+    if error:
+        return error
+    url = data.get("url", "")
+    if not isinstance(url, str) or not url.strip():
+        return err("url must be a non-empty string", 400)
+    url = url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return err("url must be an http(s) URL", 400)
+    if len(url) > 2000:
+        return err("url is longer than 2000 chars", 400)
+    req = urllib.request.Request(url, method="GET", headers={
+        "User-Agent": "notebook-ai-fetch/1.0",
+        "Accept": "text/html,text/plain,application/json,text/markdown,*/*",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=AI_FETCH_TIMEOUT) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            body = resp.read(AI_FETCH_MAX_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        return err("fetch failed: HTTP %d" % exc.code, 502)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return err("fetch failed: %s" % exc, 502)
+    truncated = len(body) > AI_FETCH_MAX_BYTES
+    body = body[:AI_FETCH_MAX_BYTES]
+    text = body.decode("utf-8", "replace")
+    return jsonify({
+        "url": url,
+        "contentType": ctype,
+        "truncated": truncated,
+        "content": text,
+    })
+
+
+@app.route("/api/ai/search", methods=["POST"])
+@admin_required
+def ai_search():
+    """Search the configured SearXNG instance for the AI assistant.
+
+    Body: {"q": "<query>"}. Requires a searxngUrl in config/ai.json; when
+    none is configured the tool is disabled (the model is told so). The
+    instance is queried with the JSON output format and the top
+    AI_SEARXNG_MAX_RESULTS results are returned as {title, url, snippet}.
+    """
+    data, error = expect_json("q")
+    if error:
+        return error
+    q = data.get("q", "")
+    if not isinstance(q, str) or not q.strip():
+        return err("q must be a non-empty string", 400)
+    q = q.strip()
+    if len(q) > 500:
+        return err("q is longer than 500 chars", 400)
+    base = load_ai_config().get("searxng_url", "").strip()
+    if not base:
+        return err("No SearXNG instance configured", 400)
+    base = base.rstrip("/")
+    url = base + "/search?q=" + urllib.parse.quote(q) + "&format=json"
+    req = urllib.request.Request(url, method="GET", headers={
+        "User-Agent": "notebook-ai-search/1.0",
+        "Accept": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=AI_SEARXNG_TIMEOUT) as resp:
+            raw = resp.read(1024 * 1024)
+    except urllib.error.HTTPError as exc:
+        return err("search failed: HTTP %d" % exc.code, 502)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return err("search failed: %s" % exc, 502)
+    try:
+        parsed = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return err("search returned non-JSON", 502)
+    results = []
+    for r in (parsed.get("results") or [])[:AI_SEARXNG_MAX_RESULTS]:
+        if not isinstance(r, dict):
+            continue
+        results.append({
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        })
+    return jsonify({"query": q, "results": results})
 
 
 def _upstream_auth_headers(stored):
