@@ -22,6 +22,9 @@ plain `.md` files on disk — no database, no build step.
   credentials stored in `config/auth.json`.
 - Optional AI assistant (✨) that drives any OpenAI-compatible endpoint
   and proposes notebook edits as reviewable Apply/Reject cards.
+- Export the current note to **PDF** (browser print-to-PDF) or a
+  self-contained **HTML** file, preserving diagrams and syntax
+  highlighting exactly as rendered.
 - All UI state (open files, widths, theme, recent files) is persisted
   to `config/config.json` and restored on next launch.
 
@@ -110,6 +113,38 @@ API key), pick a default, and Test connectivity. The **Custom prompt**
 applied to whichever provider is active sits below the provider list.
 
 
+## Export
+
+The **Export** button in the top bar (to the right of **Edit**) opens a
+small modal to export a note in one of two formats. The same modal is
+also reachable from the **Export…** item in the file tree's right-click
+menu, the bookmark list's right-click menu, and a tab's right-click
+menu — each targets that specific file (which need not be the active
+tab).
+
+- **PDF** — opens the browser's print dialog; choose "Save as PDF". A
+  print stylesheet hides the app chrome (topbar, sidebars, tabs,
+  outline) and prints only the rendered note, so the PDF matches what
+  you see in the viewer — including Mermaid / WaveDrom / Graphviz
+  diagrams, KaTeX math, and syntax-highlighted code blocks.
+- **HTML** — downloads a self-contained `.html` file with the rendered
+  note and embedded styles (the app's markdown rules + the light
+  highlight.js theme). Diagrams are baked in as inline SVG, so the file
+  opens anywhere with no network.
+
+**Scope** lets you export the whole file or just one section:
+
+- **Current file** — the entire active note.
+- **Section** — pick an `h1`–`h3` heading from a dropdown; only that
+  section (from the heading up to the next heading of the same or
+  higher level) is exported.
+
+Export is purely client-side: the note is re-rendered from the viewer's
+content cache through the same pipeline the app uses, so there is no
+backend dependency and the output always matches the on-screen
+rendering.
+
+
 ## Quick start
 
 ```bash
@@ -150,8 +185,8 @@ templates/
 static/
   js/                 api.js, auth.js, viewer.js, editbar.js, watcher.js,
                       outline.js, sidebar.js, search.js, tabs.js,
-                      settings.js, cm-bridge.js, shortcuts.js, vimnav.js,
-                      app.js (loaded in dependency order)
+                      settings.js, export.js, cm-bridge.js, shortcuts.js,
+                      vimnav.js, app.js (loaded in dependency order)
   vendor/             marked.js, highlight.js, codemirror (vendored, no CDN)
 notebook/             your notebooks (.md files) — created on first run
 config/               config.json (UI state), auth.json (passwords) — created on first run

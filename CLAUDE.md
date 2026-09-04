@@ -199,7 +199,7 @@ while auth is off, like every other admin route):
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
 watcher.js → outline.js → sidebar.js → search.js → tabs.js → settings.js →
-ai.js → activity.js → app.js`.
+export.js → ai.js → activity.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`).
 Module responsibilities:
@@ -291,6 +291,25 @@ Module responsibilities:
   `NB.ai.loadAiConfig()`. The **Web search** field (same AI tab) sets the
   global SearXNG instance URL for the assistant's search tool; it has its
   own Save button and is preserved across provider saves.
+- `export.js` — Export modal (top-bar **Export** button, right of **Edit**;
+  also reachable via **Export…** in the file-tree, bookmark, and tab
+  right-click menus, each targeting that specific file). Exports a note
+  to **PDF** or a self-contained **HTML** file.
+  Purely client-side: `renderInto()` re-renders the note from the
+  viewer's content cache through the same pipeline the app uses (marked +
+  highlight.js + the mermaid/wavedrom/katex/viz renderers), so the output
+  always matches the on-screen rendering. **PDF** renders into a
+  `#print-host` container (a direct child of `<body>`, hidden on screen)
+  then calls `window.print()`; the `@media print` block in `style.css`
+  hides the app chrome and shows only that container, so the browser's
+  "Save as PDF" captures the note alone. **HTML** builds a standalone
+  `.html` file with the rendered note + embedded styles (the app's
+  markdown rules + the light highlight.js theme) and downloads it via a
+  Blob. **Scope** is "current file" (the whole note) or "section": the
+  modal lists the note's `h1`–`h3` headings (`extractHeadings`) in a
+  dropdown and `sliceSection` slices the source from the chosen heading
+  up to the next heading of the same or higher level, so only that
+  section is exported.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,

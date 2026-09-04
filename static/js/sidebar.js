@@ -451,6 +451,7 @@
     // mental model is the same: both menus on a file path are
     // identical. doRename() re-keys the bookmark on the file:moved
     // event (see below) so the row follows the file to its new path.
+    addMenuItem("Export…", () => doExport(path));
     addMenuItem("Rename / Move…", () => doRename({ path, type: "file" }));
     addMenuItem("Copy…", () => doCopy({ path, type: "file" }));
     if (treeHasDir(treeCache)) {
@@ -603,6 +604,7 @@
     addMenuItem(isDir ? "New file here…" : "New file beside…", () => doNewFile(node, isDir));
     addMenuItem("New folder here…", () => doNewFolder(node, isDir));
     menuEl.appendChild(document.createElement("hr"));
+    if (!isDir) addMenuItem("Export…", () => doExport(node.path));
     addMenuItem("Rename / Move…", () => doRename(node));
     addMenuItem("Copy…", () => doCopy(node));
     // Bookmark toggle for files only (folders can't be opened as a
@@ -740,6 +742,10 @@
       await NB.api.copyItem(node.path, to);
       await refresh();
     } catch (e) { alert("Copy failed: " + e.message); }
+  }
+
+  function doExport(path) {
+    if (NB.export && NB.export.open) NB.export.open(path);
   }
 
   async function doDelete(node) {

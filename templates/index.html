@@ -40,6 +40,7 @@
         <button id="reload-btn" class="icon-btn" title="Reload content from disk" aria-label="Reload" disabled>⟳</button>
         <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode (edit rendered markdown directly)" aria-label="WYSIWYG" hidden>✎</button>
         <button id="edit-toggle">Edit</button>
+        <button id="export-toggle" title="Export the current note">Export</button>
       </div>
       <button id="logout-btn" class="icon-btn" title="Log out" aria-label="Log out" hidden>⎋</button>
     </header>
@@ -756,6 +757,60 @@
     </div>
   </div>
 
+  <!-- Export modal. Opened by the Export button in the top bar. Lets the
+       user export the current note to PDF (browser print-to-PDF) or a
+       self-contained HTML file. -->
+  <div id="export-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <div class="settings-header">
+        <h2 id="export-title">Export</h2>
+        <button id="export-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-sections">
+          <section class="settings-section">
+            <h3>Format</h3>
+            <div class="settings-row">
+              <span class="settings-label">Output</span>
+              <div class="settings-control export-format-options" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="export-format" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="export-format" value="html"> HTML</label>
+              </div>
+            </div>
+            <p class="settings-help">
+              PDF opens the browser's print dialog — choose "Save as PDF".
+              HTML downloads a self-contained file with the rendered note
+              and diagrams baked in.
+            </p>
+          </section>
+          <section class="settings-section">
+            <h3>Scope</h3>
+            <div class="settings-row">
+              <span class="settings-label">File</span>
+              <div class="settings-control export-scope-options" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="export-scope" value="current" checked> Current file</label>
+                <label><input type="radio" name="export-scope" value="section"> Section</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Note</span>
+              <code id="export-file-label" class="settings-value settings-mono">(no file open)</code>
+            </div>
+            <div class="settings-row" id="export-section-row" hidden>
+              <span class="settings-label">Heading</span>
+              <select id="export-section-select" class="settings-text-input" aria-label="Section heading"></select>
+            </div>
+          </section>
+          <div id="export-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button id="export-close-btn" class="settings-action">Cancel</button>
+        <button id="export-run" class="settings-action">Export</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mermaid lightbox overlay: borderless full-screen backdrop with zoom
        controls. The SVG is cloned into #mermaid-lightbox-body on click;
        the toolbar floats over the top-right corner. -->
@@ -836,6 +891,7 @@
   <script src="/static/js/graph.js" defer></script>
   <script src="/static/js/tabs.js" defer></script>
   <script src="/static/js/settings.js" defer></script>
+  <script src="/static/js/export.js" defer></script>
   <script src="/static/js/vimnav.js" defer></script>
   <script src="/static/js/ai.js" defer></script>
   <script src="/static/js/activity.js" defer></script>

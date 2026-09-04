@@ -3094,3 +3094,73 @@ body[data-theme="light"] #viewer-content {
   border-radius: 6px;
 }
 .settings-ai-edit { color: var(--accent); }
+
+/* ------------------------------------------------------------------ */
+/* Export modal + print-to-PDF                                         */
+/* ------------------------------------------------------------------ */
+/* The export modal reuses .settings-overlay / .settings-modal; only the
+ * bits specific to the export form live here. It's a small modal, so it
+ * sizes to its content instead of inheriting the settings modal's fixed
+ * 80vh (which would leave a tall empty band). */
+.export-modal {
+  width: min(460px, 92vw);
+  height: auto;
+  max-height: 92vh;
+}
+.export-modal .settings-sections { padding: 4px 18px 18px; }
+.export-format-options,
+.export-scope-options {
+  display: flex;
+  gap: 14px;
+}
+.export-format-options label,
+.export-scope-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: .93rem;
+}
+#export-file-label.empty { color: var(--fg-muted); }
+
+/* Print-to-PDF: when the user prints (via the Export modal's PDF option),
+ * hide the entire app chrome and show only the freshly-rendered note in
+ * #print-host. The note is rendered into #print-host (a direct child of
+ * <body>) by export.js right before window.print(), so this is the only
+ * thing on the page. On screen the host is hidden; it only appears in
+ * the print output. */
+#print-host { display: none; }
+@media print {
+  body > #app,
+  body > #auth-overlay,
+  body > #settings-overlay,
+  body > #export-overlay,
+  body > #context-menu,
+  body > #tab-context-menu,
+  body > #hybrid-context-menu,
+  body > #mermaid-lightbox,
+  body > #wavedrom-lightbox,
+  body > #viz-lightbox {
+    display: none !important;
+  }
+  #print-host {
+    display: block !important;
+    margin: 0;
+    padding: 0;
+    color: #1f2330;
+    background: #fff;
+  }
+  #print-host pre,
+  #print-host code,
+  #print-host blockquote,
+  #print-host table {
+    break-inside: avoid;
+  }
+  #print-host img,
+  #print-host svg {
+    max-width: 100%;
+  }
+  #print-host a {
+    color: #2f5fd0;
+  }
+}

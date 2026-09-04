@@ -408,6 +408,9 @@
     addMenuItem("Show in file sidebar", () => {
       if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path);
     });
+    addMenuItem("Export…", () => {
+      if (NB.export && NB.export.open) NB.export.open(path);
+    });
     menuEl.appendChild(document.createElement("hr"));
     addMenuItem("Close", () => close(path), { danger: true });
     addMenuItem("Close others", () => closeOthers(path), { disabled: !others.length });

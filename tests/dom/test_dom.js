@@ -166,6 +166,7 @@ const html = `<!DOCTYPE html><html><head>
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
       <button id="edit-toggle">Edit</button>
+      <button id="export-toggle" title="Export the current note">Export</button>
       <button id="logout-btn" class="icon-btn" hidden>⎋</button>
     </header>
     <main id="layout">
@@ -647,6 +648,52 @@ const html = `<!DOCTYPE html><html><head>
       </div>
     </div>
   </div>
+  <!-- Export modal -->
+  <div id="export-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+      <div class="settings-header">
+        <h2 id="export-title">Export</h2>
+        <button id="export-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-sections">
+          <section class="settings-section">
+            <h3>Format</h3>
+            <div class="settings-row">
+              <span class="settings-label">Output</span>
+              <div class="settings-control export-format-options" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="export-format" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="export-format" value="html"> HTML</label>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section">
+            <h3>Scope</h3>
+            <div class="settings-row">
+              <span class="settings-label">File</span>
+              <div class="settings-control export-scope-options" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="export-scope" value="current" checked> Current file</label>
+                <label><input type="radio" name="export-scope" value="section"> Section</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Note</span>
+              <code id="export-file-label" class="settings-value settings-mono">(no file open)</code>
+            </div>
+            <div class="settings-row" id="export-section-row" hidden>
+              <span class="settings-label">Heading</span>
+              <select id="export-section-select" class="settings-text-input" aria-label="Section heading"></select>
+            </div>
+          </section>
+          <div id="export-error" class="auth-error settings-auth-error" role="alert" hidden></div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button id="export-close-btn" class="settings-action">Cancel</button>
+        <button id="export-run" class="settings-action">Export</button>
+      </div>
+    </div>
+  </div>
   <!-- Mermaid lightbox overlay -->
   <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
     <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
@@ -736,6 +783,28 @@ if (!window.navigator.clipboard) {
     },
   };
 }
+// Export stubs. jsdom has no print dialog and no real object URLs; we
+// record the calls so tests can assert the PDF path opens the print
+// dialog and the HTML path downloads a blob with the rendered note.
+const __export = { prints: 0, downloads: [], blobTexts: [] };
+window.print = () => { __export.prints++; };
+if (typeof window.URL.createObjectURL !== "function") {
+  window.URL.createObjectURL = (blob) => {
+    __export.downloads.push(blob);
+    return "blob:mock-" + __export.downloads.length;
+  };
+  window.URL.revokeObjectURL = () => {};
+}
+// jsdom ships Blob but not a way to read it back synchronously; wrap the
+// constructor so tests can capture the serialized content.
+const __RealBlob = window.Blob;
+window.Blob = class extends __RealBlob {
+  constructor(parts, opts) {
+    super(parts, opts);
+    __export.blobTexts.push(parts.join(""));
+  }
+};
+
 // Mermaid stub. We don't ship the 3.5MB UMD bundle into the test
 // (jsdom can't load the script tag the page would, and the lib
 // needs a real browser DOM). Instead, install a mock that records
@@ -1282,6 +1351,7 @@ evalIn(read("static/js/search.js"));
 evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/settings.js"));
+evalIn(read("static/js/export.js"));
 evalIn(read("static/js/vimnav.js"));
 evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
@@ -7302,6 +7372,180 @@ function check(label, cond, extra) {
   // close: keep the rest of the suite running with a clean modal state.
   window.NB.settings.close();
   await tick(10);
+
+  console.log("== export ==");
+  // The Export button in the top bar opens a modal to export the current
+  // note to PDF (browser print-to-PDF) or a self-contained HTML file.
+  // Scope is the active file. We stub window.print and the Blob/URL
+  // object-URL APIs above so both paths are testable in jsdom.
+  {
+    const exportBtn = $("export-toggle");
+    const overlay = $("export-overlay");
+    check("export: top-bar Export button exists", !!exportBtn);
+    check("export: modal overlay exists", !!overlay);
+    check("export: NB.export module loaded", !!window.NB.export);
+
+    // Open a file so there's something to export. Restore the fixture
+    // first (an earlier rename test may have left it rekeyed), and close
+    // any stale tab so the open forces a fresh fetch.
+    FILES["notes/a.md"] = FILE_A;
+    MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+    if (window.NB.tabs.isOpen("notes/a.md")) window.NB.tabs.close("notes/a.md", { force: true });
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    check("export: active file is notes/a.md",
+      window.NB.viewer.getPath() === "notes/a.md",
+      "path=" + window.NB.viewer.getPath());
+
+    // Open the modal via the top-bar button.
+    exportBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("export: button opens the modal", !overlay.hidden);
+    check("export: modal shows the active file",
+      $("export-file-label").textContent === "notes/a.md",
+      "label=" + $("export-file-label").textContent);
+
+    // PDF path: default format is PDF; clicking Export calls window.print.
+    const printsBefore = __export.prints;
+    $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: PDF path calls window.print", __export.prints === printsBefore + 1,
+      "prints=" + __export.prints);
+    check("export: PDF renders the note into #print-host",
+      !!$("print-host") && /File A/.test($("print-host").textContent),
+      $("print-host") ? "host text=" + $("print-host").textContent.slice(0, 30) : "no host");
+    check("export: #print-host is a direct child of body (print-only container)",
+      $("print-host") && $("print-host").parentElement === window.document.body,
+      $("print-host") ? "parent=" + $("print-host").parentElement.tagName : "no host");
+
+    // HTML path: switch format to HTML, click Export, expect a blob
+    // download containing the rendered note.
+    const htmlRadio = window.document.querySelector('input[name="export-format"][value="html"]');
+    htmlRadio.checked = true;
+    htmlRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const downloadsBefore = __export.downloads.length;
+    $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: HTML path triggers a blob download",
+      __export.downloads.length === downloadsBefore + 1,
+      "downloads=" + __export.downloads.length);
+    const htmlText = __export.blobTexts[__export.blobTexts.length - 1] || "";
+    check("export: HTML blob is a standalone document with the note",
+      /<!DOCTYPE html>/.test(htmlText) && /File A/.test(htmlText),
+      htmlText.slice(0, 60));
+    check("export: HTML blob embeds the markdown styles",
+      /\.markdown-body/.test(htmlText) && /\.hljs/.test(htmlText),
+      "has css=" + /\.markdown-body/.test(htmlText));
+
+    // Section scope: the modal lists h1-h3 headings and can export just
+    // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).
+    const sectionRadio = window.document.querySelector('input[name="export-scope"][value="section"]');
+    check("export: section scope radio exists", !!sectionRadio);
+    const sectionRow = $("export-section-row");
+    const sectionSelect = $("export-section-select");
+    check("export: section heading row hidden by default (current scope)",
+      sectionRow.hidden === true, "hidden=" + sectionRow.hidden);
+    check("export: section dropdown lists h1-h3 headings",
+      sectionSelect.options.length === 2 &&
+        sectionSelect.options[0].textContent === "# File A" &&
+        sectionSelect.options[1].textContent === "## Sub A",
+      "options=" + Array.from(sectionSelect.options).map(o => o.textContent).join("|"));
+
+    // Switch to section scope -> the heading row appears.
+    sectionRadio.checked = true;
+    sectionRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(10);
+    check("export: section scope reveals the heading row",
+      sectionRow.hidden === false, "hidden=" + sectionRow.hidden);
+
+    // Export the "## Sub A" section as HTML; the blob should contain the
+    // section body but NOT the earlier "# File A" content.
+    sectionSelect.value = sectionSelect.options[1].value;
+    const secDownloadsBefore = __export.downloads.length;
+    $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: section-scoped HTML triggers a blob download",
+      __export.downloads.length === secDownloadsBefore + 1,
+      "downloads=" + __export.downloads.length);
+    const secHtml = __export.blobTexts[__export.blobTexts.length - 1] || "";
+    check("export: section-scoped HTML contains the section body",
+      /Sub A/.test(secHtml) && /body/.test(secHtml),
+      secHtml.slice(0, 60));
+    check("export: section-scoped HTML excludes the earlier h1 content",
+      !/File A/.test(secHtml), "has File A=" + /File A/.test(secHtml));
+
+    // Back to current scope for the remaining checks.
+    const currentRadio = window.document.querySelector('input[name="export-scope"][value="current"]');
+    currentRadio.checked = true;
+    currentRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(10);
+    check("export: current scope hides the heading row again",
+      sectionRow.hidden === true, "hidden=" + sectionRow.hidden);
+
+    // Esc closes the modal.
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "Escape", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    check("export: Esc closes the modal", overlay.hidden);
+
+    // Context-menu entry points: the file tree row, the bookmark row, and
+    // the tab all offer "Export…", which opens the modal targeting that
+    // specific file (not necessarily the active tab).
+    // Reset the tree to a known shape first (earlier blocks may have
+    // rekeyed it) so notes/b.md is present.
+    TREE.length = 0;
+    TREE.push(
+      { name: "notes", type: "dir", path: "notes", children: [
+        { name: "a.md", type: "file", path: "notes/a.md" },
+        { name: "b.md", type: "file", path: "notes/b.md" },
+      ]},
+      { name: "Welcome.md", type: "file", path: "Welcome.md" },
+    );
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    const treeRow = (p) => window.document.querySelector('.tree-row[data-path="' + p + '"]');
+    const menuBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+
+    // File tree row context menu.
+    treeRow("notes/b.md").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+    await tick(10);
+    check("export: file tree row menu offers 'Export…'",
+      menuBtns().includes("Export…"), menuBtns().join(" / "));
+    Array.from($("context-menu").querySelectorAll("button"))
+      .find(b => b.textContent === "Export…")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("export: tree 'Export…' opens the modal targeting that file",
+      !overlay.hidden && $("export-file-label").textContent === "notes/b.md",
+      "label=" + $("export-file-label").textContent);
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(10);
+
+    // Tab context menu.
+    await window.NB.tabs.open("notes/b.md");
+    await tick(20);
+    const tabEl = window.document.querySelector('.tab[data-path="notes/b.md"]');
+    tabEl.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+    await tick(10);
+    const tabMenuBtns = () => Array.from($("tab-context-menu").querySelectorAll("button")).map(b => b.textContent);
+    check("export: tab context menu offers 'Export…'",
+      tabMenuBtns().includes("Export…"), tabMenuBtns().join(" / "));
+    Array.from($("tab-context-menu").querySelectorAll("button"))
+      .find(b => b.textContent === "Export…")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("export: tab 'Export…' opens the modal targeting that file",
+      !overlay.hidden && $("export-file-label").textContent === "notes/b.md",
+      "label=" + $("export-file-label").textContent);
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(10);
+
+    // Close the tab to restore suite state.
+    window.NB.tabs.close("notes/a.md", { force: true });
+    window.NB.tabs.close("notes/b.md", { force: true });
+    await tick(10);
+  }
 
   console.log("== light code block theme ==");
   // The hljs-dark and hljs-light <link> tags toggle based on the resolved
