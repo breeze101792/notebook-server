@@ -1805,27 +1805,47 @@ function check(label, cond, extra) {
   check("lightbox: zoom display shows 'Fit'",
     window.document.getElementById("mlb-zoom-pct").textContent === "Fit",
     "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
+  // jsdom has no layout engine, so offsetWidth/offsetHeight are
+  // undefined for the cloned SVG. The zoom branch reads them to write a
+  // fitted-dimension inline style; stub the getters so the value is a real
+  // number and the inline style is valid (not an invalid "undefinedpx").
+  const stubFittedDims = (svg) => {
+    if (!svg) return;
+    Object.defineProperty(svg, "offsetWidth",  { configurable: true, value: 300 });
+    Object.defineProperty(svg, "offsetHeight", { configurable: true, value: 200 });
+  };
+  const zoomedSvg = () => lightboxBody() && lightboxBody().querySelector("svg");
   // Zoom in leaves fit mode and shows 100%.
+  stubFittedDims(zoomedSvg());
   window.NB.mermaid.zoomIn();
   await tick(10);
-  check("lightbox: zoomIn removes svg-fit class",
-    !lightboxBody().classList.contains("svg-fit"),
-    "classes=" + lightboxBody().className);
-  check("lightbox: zoom display shows 100%",
-    window.document.getElementById("mlb-zoom-pct").textContent === "100%",
-    "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
+  check("lightbox: SVG has explicit inline width when zoomed",
+    zoomedSvg() && zoomedSvg().style.width !== "",
+    "width=" + JSON.stringify(zoomedSvg() && zoomedSvg().style.width));
+  check("lightbox: SVG has explicit inline height when zoomed",
+    zoomedSvg() && zoomedSvg().style.height !== "",
+    "height=" + JSON.stringify(zoomedSvg() && zoomedSvg().style.height));
   // Zoom in again → 125%.
   window.NB.mermaid.zoomIn();
   await tick(10);
   check("lightbox: zoomIn to 125%",
     window.document.getElementById("mlb-zoom-pct").textContent === "125%",
     "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
+  check("lightbox: SVG keeps explicit inline width at 125%",
+    zoomedSvg() && zoomedSvg().style.width !== "",
+    "width=" + JSON.stringify(zoomedSvg() && zoomedSvg().style.width));
   // Fit to page restores fit mode.
   window.NB.mermaid.fitToPage();
   await tick(10);
   check("lightbox: fitToPage restores svg-fit class",
     lightboxBody().classList.contains("svg-fit"),
     "classes=" + lightboxBody().className);
+  check("lightbox: fitToPage clears inline SVG width",
+    zoomedSvg() && zoomedSvg().style.width === "",
+    "width=" + JSON.stringify(zoomedSvg() && zoomedSvg().style.width));
+  check("lightbox: fitToPage clears inline SVG height",
+    zoomedSvg() && zoomedSvg().style.height === "",
+    "height=" + JSON.stringify(zoomedSvg() && zoomedSvg().style.height));
   check("lightbox: fit display shows 'Fit'",
     window.document.getElementById("mlb-zoom-pct").textContent === "Fit",
     "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
@@ -1835,6 +1855,12 @@ function check(label, cond, extra) {
   check("lightbox: zoomOut from fit goes to 100%",
     window.document.getElementById("mlb-zoom-pct").textContent === "100%",
     "got=" + window.document.getElementById("mlb-zoom-pct").textContent);
+  // The core fix: .svg-fit must stay active after zooming OUT too, so
+  // the CSS max-width/max-height constraints never drop and cause the
+  // SVG to flash to its intrinsic size.
+  check("lightbox: zoomOut keeps svg-fit class (no flash)",
+    lightboxBody() && lightboxBody().classList.contains("svg-fit"),
+    "classes=" + (lightboxBody() && lightboxBody().className));
   // Ctrl++ keyboard shortcut.
   const ctrlPlus = new window.KeyboardEvent("keydown", {
     key: "=", ctrlKey: true, bubbles: true, cancelable: true,
@@ -2199,26 +2225,52 @@ function check(label, cond, extra) {
     window.document.getElementById("wdlb-zoom-pct").textContent === "Fit",
     "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
   // Zoom in leaves fit mode and shows 100%.
+  // jsdom has no layout engine, so offsetWidth/offsetHeight are
+  // undefined for the cloned SVG. Stub the getters so the zoom branch
+  // writes a valid fitted-dimension inline style (not an invalid
+  // "undefinedpx").
+  const wdZoomSvg = () => wdLightboxBody() && wdLightboxBody().querySelector("svg");
+  const stubWdDims = (svg) => {
+    if (!svg) return;
+    Object.defineProperty(svg, "offsetWidth",  { configurable: true, value: 480 });
+    Object.defineProperty(svg, "offsetHeight", { configurable: true, value: 60 });
+  };
+  stubWdDims(wdZoomSvg());
   window.NB.wavedrom.zoomIn();
   await tick(10);
-  check("wavedrom lightbox: zoomIn removes svg-fit class",
-    !wdLightboxBody().classList.contains("svg-fit"),
+  check("wavedrom lightbox: zoomIn keeps svg-fit class (no flash)",
+    wdLightboxBody().classList.contains("svg-fit"),
     "classes=" + wdLightboxBody().className);
   check("wavedrom lightbox: zoom display shows 100%",
     window.document.getElementById("wdlb-zoom-pct").textContent === "100%",
     "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  check("wavedrom lightbox: SVG has explicit inline width when zoomed",
+    wdZoomSvg() && wdZoomSvg().style.width !== "",
+    "width=" + JSON.stringify(wdZoomSvg() && wdZoomSvg().style.width));
+  check("wavedrom lightbox: SVG has explicit inline height when zoomed",
+    wdZoomSvg() && wdZoomSvg().style.height !== "",
+    "height=" + JSON.stringify(wdZoomSvg() && wdZoomSvg().style.height));
   // Zoom in again → 125%.
   window.NB.wavedrom.zoomIn();
   await tick(10);
   check("wavedrom lightbox: zoomIn to 125%",
     window.document.getElementById("wdlb-zoom-pct").textContent === "125%",
     "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  check("wavedrom lightbox: SVG keeps explicit inline width at 125%",
+    wdZoomSvg() && wdZoomSvg().style.width !== "",
+    "width=" + JSON.stringify(wdZoomSvg() && wdZoomSvg().style.width));
   // Fit to page restores fit mode.
   window.NB.wavedrom.fitToPage();
   await tick(10);
   check("wavedrom lightbox: fitToPage restores svg-fit class",
     wdLightboxBody().classList.contains("svg-fit"),
     "classes=" + wdLightboxBody().className);
+  check("wavedrom lightbox: fitToPage clears inline SVG width",
+    wdZoomSvg() && wdZoomSvg().style.width === "",
+    "width=" + JSON.stringify(wdZoomSvg() && wdZoomSvg().style.width));
+  check("wavedrom lightbox: fitToPage clears inline SVG height",
+    wdZoomSvg() && wdZoomSvg().style.height === "",
+    "height=" + JSON.stringify(wdZoomSvg() && wdZoomSvg().style.height));
   check("wavedrom lightbox: fit display shows 'Fit'",
     window.document.getElementById("wdlb-zoom-pct").textContent === "Fit",
     "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
@@ -2228,6 +2280,9 @@ function check(label, cond, extra) {
   check("wavedrom lightbox: zoomOut from fit goes to 100%",
     window.document.getElementById("wdlb-zoom-pct").textContent === "100%",
     "got=" + window.document.getElementById("wdlb-zoom-pct").textContent);
+  check("wavedrom lightbox: zoomOut keeps svg-fit class (no flash)",
+    wdLightboxBody() && wdLightboxBody().classList.contains("svg-fit"),
+    "classes=" + (wdLightboxBody() && wdLightboxBody().className));
   // Ctrl++ keyboard shortcut.
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
     key: "=", ctrlKey: true, bubbles: true, cancelable: true,
@@ -2490,24 +2545,57 @@ function check(label, cond, extra) {
   check("graphviz lightbox: zoom display shows 'Fit'",
     window.document.getElementById("vizlb-zoom-pct").textContent === "Fit",
     "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  // jsdom has no layout engine -> offsetWidth/offsetHeight undefined.
+  // Stub the getters so the zoom branch writes a valid fitted-dimension
+  // inline style (not an invalid "undefinedpx").
+  const vzZoomSvg = () => vzLightboxBody() && vzLightboxBody().querySelector("svg");
+  const stubVzDims = (svg) => {
+    if (!svg) return;
+    Object.defineProperty(svg, "offsetWidth",  { configurable: true, value: 300 });
+    Object.defineProperty(svg, "offsetHeight", { configurable: true, value: 200 });
+  };
+  stubVzDims(vzZoomSvg());
+  // Zoom in leaves fit mode and shows 100%.
   window.NB.viz.zoomIn();
   await tick(10);
-  check("graphviz lightbox: zoomIn removes svg-fit class",
-    !vzLightboxBody().classList.contains("svg-fit"),
+  check("graphviz lightbox: zoomIn keeps svg-fit class (no flash)",
+    vzLightboxBody().classList.contains("svg-fit"),
     "classes=" + vzLightboxBody().className);
   check("graphviz lightbox: zoom display shows 100%",
     window.document.getElementById("vizlb-zoom-pct").textContent === "100%",
     "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  check("graphviz lightbox: SVG has explicit inline width when zoomed",
+    vzZoomSvg() && vzZoomSvg().style.width !== "",
+    "width=" + JSON.stringify(vzZoomSvg() && vzZoomSvg().style.width));
+  check("graphviz lightbox: SVG has explicit inline height when zoomed",
+    vzZoomSvg() && vzZoomSvg().style.height !== "",
+    "height=" + JSON.stringify(vzZoomSvg() && vzZoomSvg().style.height));
+  // Zoom in again → 125%.
   window.NB.viz.zoomIn();
   await tick(10);
   check("graphviz lightbox: zoomIn to 125%",
     window.document.getElementById("vizlb-zoom-pct").textContent === "125%",
     "got=" + window.document.getElementById("vizlb-zoom-pct").textContent);
+  check("graphviz lightbox: SVG keeps explicit inline width at 125%",
+    vzZoomSvg() && vzZoomSvg().style.width !== "",
+    "width=" + JSON.stringify(vzZoomSvg() && vzZoomSvg().style.width));
   window.NB.viz.fitToPage();
   await tick(10);
   check("graphviz lightbox: fitToPage restores svg-fit class",
     vzLightboxBody().classList.contains("svg-fit"),
     "classes=" + vzLightboxBody().className);
+  check("graphviz lightbox: fitToPage clears inline SVG width",
+    vzZoomSvg() && vzZoomSvg().style.width === "",
+    "width=" + JSON.stringify(vzZoomSvg() && vzZoomSvg().style.width));
+  check("graphviz lightbox: fitToPage clears inline SVG height",
+    vzZoomSvg() && vzZoomSvg().style.height === "",
+    "height=" + JSON.stringify(vzZoomSvg() && vzZoomSvg().style.height));
+  // Zoom out from fit mode keeps the svg-fit class (core flash fix).
+  window.NB.viz.zoomOut();
+  await tick(10);
+  check("graphviz lightbox: zoomOut keeps svg-fit class (no flash)",
+    vzLightboxBody() && vzLightboxBody().classList.contains("svg-fit"),
+    "classes=" + (vzLightboxBody() && vzLightboxBody().className));
   vzLightboxClose().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await tick(10);
   check("graphviz lightbox: close button hides the overlay",

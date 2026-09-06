@@ -77,10 +77,21 @@
       if (zoomFit && !dragging) {
         body.classList.add("svg-fit");
         svg.style.transform = "none";
+        svg.style.width = "";
+        svg.style.height = "";
         panX = 0;
         panY = 0;
       } else {
-        body.classList.remove("svg-fit");
+        // Lock the SVG at its current fitted dimensions so it doesn't
+        // jump to its intrinsic size (mermaid sets large fixed pixel
+        // width/height attrs). The .svg-fit CSS constraints stay active
+        // to prevent overflow; inline style overrides width:auto while
+        // max-width/max-height remain as a safety net. scale() then
+        // handles the visual sizing from this stable baseline.
+        if (!svg.style.width) {
+          svg.style.width  = svg.offsetWidth  + "px";
+          svg.style.height = svg.offsetHeight + "px";
+        }
         svg.style.transform = "translate(" + panX + "px, " + panY + "px) scale(" + zoomLevel + ")";
       }
       updateZoomDisplay();
@@ -192,6 +203,9 @@
       if (e.button !== 0 && e.button !== 2) return;
       // Ignore drags that begin on the controls toolbar.
       if (e.target.closest && e.target.closest(".mermaid-lightbox-controls")) return;
+      // Skip drags on the backdrop (overlay background or body).
+      // The click handler will close the lightbox instead.
+      if (e.target === overlay || e.target === body) return;
       e.preventDefault();
       dragging = { startX: e.clientX, startY: e.clientY, origPanX: panX, origPanY: panY, moved: false };
       setDraggingClass(true);
