@@ -110,10 +110,12 @@
       });
     }
   }
-  if (document.readyState === "loading") {
+  if (NB.tabs && NB.tabs.registerSpecial) {
+    registerTab();
+  } else if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", registerTab);
   } else {
-    registerTab();
+    document.addEventListener("DOMContentLoaded", registerTab);
   }
 
   async function runSearch() {

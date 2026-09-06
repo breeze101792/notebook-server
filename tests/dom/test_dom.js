@@ -10411,6 +10411,44 @@ function check(label, cond, extra) {
     }
   }
 
+  // --- registration timing: graph.js and search.js load before tabs.js
+  // in the HTML (defer scripts execute in document order). When their
+  // IIFEs run, NB.tabs doesn't exist yet, so the immediate registerSpecial
+  // call is skipped. The fix defers registration to DOMContentLoaded,
+  // which fires after tabs.js has created NB.tabs. Verify both special
+  // tabs are registered by opening them. ---
+  console.log("== special-tab registration timing ==");
+  {
+    // Close any open tabs first so we get clean openSpecial results.
+    const openBefore = window.NB.tabs.getOpen();
+    for (const p of openBefore) { await window.NB.tabs.close(p, { force: true }); }
+    await tick(10);
+
+    // §graph: openSpecial should succeed (tab created + activated).
+    await window.NB.tabs.openSpecial("§graph");
+    await tick(30);
+    check("registration: §graph opens via openSpecial",
+      window.NB.tabs.isOpen("§graph") && window.NB.tabs.getActive() === "§graph");
+    check("registration: §graph container visible",
+      !$("graph-view").hidden);
+    // Close it for the next check.
+    await window.NB.tabs.close("§graph", { force: true });
+    await tick(10);
+
+    // §search: openSpecial should succeed.
+    await window.NB.tabs.openSpecial("§search");
+    await tick(30);
+    check("registration: §search opens via openSpecial",
+      window.NB.tabs.isOpen("§search") && window.NB.tabs.getActive() === "§search");
+    check("registration: §search container visible",
+      !$("search-results").hidden);
+
+    // Restore: close the search tab and re-open the original file.
+    await window.NB.tabs.close("§search", { force: true });
+    await tick(10);
+    if (openBefore.length) await window.NB.tabs.open(openBefore[0]);
+  }
+
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);
 })();

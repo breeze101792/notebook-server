@@ -172,10 +172,12 @@
       });
     }
   }
-  if (document.readyState === "loading") {
+  if (NB.tabs && NB.tabs.registerSpecial) {
+    registerOnLoad();
+  } else if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", registerOnLoad);
   } else {
-    registerOnLoad();
+    document.addEventListener("DOMContentLoaded", registerOnLoad);
   }
 
   function bindBtn(id, fn) {
