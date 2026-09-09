@@ -965,6 +965,7 @@
     saveBtn.hidden = false;
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
+    scheduleAutosave();
   }
 
   function isDirty() { return dirty; }
@@ -975,6 +976,53 @@
     saveBtn.hidden = true;
     closeEditBtn.classList.remove("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: false });
+  }
+
+  /* --- autosave --------------------------------------------------
+   * Debounced silent save while hybrid-editing. WYSIWYG is a
+   * word-processor mental model, so the note saves itself shortly
+   * after the user pauses typing. Gated by cfg.autosave (Settings →
+   * General → "Autosave"); on by default.
+   *
+   * The debounce is generous (AUTOSAVE_MS) because domToMarkdown()
+   * clones the whole DOM and runs turndown + the mermaid/wavedrom/
+   * katex/viz round-trips, which is not free on a long note. We also
+   * skip when not dirty, so idle time doesn't write. */
+  const AUTOSAVE_MS = 2000;
+  let autosaveTimer = null;
+  let autosaveInFlight = null;
+
+  function autosaveEnabled() {
+    return !!(NB.app && NB.app.getCfg && NB.app.getCfg().autosave);
+  }
+
+  function scheduleAutosave() {
+    if (!active || !autosaveEnabled()) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(flushAutosave, AUTOSAVE_MS);
+  }
+
+  async function flushAutosave() {
+    autosaveTimer = null;
+    if (!active || !dirty) return;
+    if (autosaveInFlight) return;   // a save is already running; the next keystroke re-arms
+    try {
+      autosaveInFlight = doSave(domToMarkdown());
+      await autosaveInFlight;
+    } catch (err) {
+      // Autosave errors surface on the next manual save / exit; don't
+      // interrupt the user mid-edit with an alert.
+      console.warn("autosave failed:", err && err.message ? err.message : err);
+    } finally {
+      autosaveInFlight = null;
+      scheduleAutosave();   // re-arm in case more edits landed during the write
+    }
+  }
+
+  /* Cancel a pending autosave (e.g. on exit / tab switch). */
+  function cancelAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
   }
 
   /* --- input listener -------------------------------------------- */
@@ -1073,6 +1121,7 @@
 
   async function exit(save) {
     if (!active) return;
+    cancelAutosave();
     let md = null;
     if (save) {
       md = domToMarkdown();

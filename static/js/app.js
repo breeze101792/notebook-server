@@ -69,6 +69,12 @@
     // tab. The live state is mirrored to NB.vimnav.setEnabled() on
     // boot + on every toggle.
     vimMode: false,
+    // Autosave (WYSIWYG / hybrid edit mode only). When on, the note
+    // saves itself shortly after the user pauses typing while
+    // hybrid-editing. Vim / CodeMirror edit mode is unaffected. On by
+    // default -- the WYSIWYG editor is expected to behave like a word
+    // processor. Gated in hybrid.js.
+    autosave: true,
     // Per-action keyboard bindings for the non-vim keymap. See
     // static/js/shortcuts.js for the chord format and the list of
     // actions. Missing keys fall back to that module's DEFAULTS,
@@ -761,6 +767,15 @@
       persistConfig();
     },
     getVimMode: () => !!cfg.vimMode,
+    // Autosave toggle (hybrid / WYSIWYG edit mode only). Flipping it
+    // just persists the flag + emits config:changed; hybrid.js reads
+    // cfg.autosave live via getCfg() on each keystroke, so no further
+    // wiring is needed.
+    setAutosave: (on) => {
+      cfg.autosave = on !== false;
+      persistConfig();
+    },
+    getAutosave: () => cfg.autosave !== false,
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
     // Replace the full bookmark list. The sidebar module is the only
     // caller on the user-mutation path; the config load path also

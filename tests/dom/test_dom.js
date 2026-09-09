@@ -339,6 +339,10 @@ const html = `<!DOCTYPE html><html><head>
               <span class="settings-label"></span>
               <button id="settings-watch-toggle" class="settings-action">Enable</button>
             </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-autosave-toggle">Autosave (WYSIWYG)</label>
+              <input type="checkbox" id="settings-autosave-toggle" checked>
+            </div>
             <h3>Keyboard</h3>
             <div class="settings-row">
               <label class="settings-label" for="settings-vim-toggle">VIM mode</label>
@@ -4149,6 +4153,32 @@ function check(label, cond, extra) {
       await window.NB.sidebar.refresh();
       await tick(20);
     }
+  }
+
+  console.log("== hybrid autosave ==");
+  {
+    // Autosave is on by default (cfg.autosave=true). Enter hybrid mode,
+    // type, and assert the file saves itself after a debounce without
+    // the user pressing Save -- and that it stays silent (no toast).
+    await window.NB.tabs.open("notes/notes.md");
+    await window.NB.hybrid.enter();
+    const postsBefore = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
+    // Type into the contentEditable (fires 'input' -> onInput marks dirty
+    // via the 50ms debounce, which schedules the autosave).
+    $("viewer-content").innerHTML += "<p>autosaved text</p>";
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);            // let the dirty debounce fire
+    check("autosave: pre-autosave dirty flag set", window.NB.hybrid.isDirty());
+    await tick(2500);           // exceed AUTOSAVE_MS (2000)
+    const postsAfter = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
+    check("autosave: dirty edit auto-saved without Save click",
+      postsAfter > postsBefore,
+      "file posts=" + postsAfter + " (before=" + postsBefore + ")");
+    check("autosave: save cleared the dirty flag",
+      !window.NB.hybrid.isDirty());
+    check("autosave: Save button hidden after autosave (clean)",
+      $("save-btn").hidden);
+    await window.NB.hybrid.exit(false);
   }
 
   console.log("== empty-tree right-click create ==");
@@ -9079,6 +9109,29 @@ function check(label, cond, extra) {
   await tick(10);
   check("vim: settings closed -> overlay hidden",
     $("settings-overlay").hidden === true);
+
+  // --- autosave toggle (Settings -> General) --------------------------
+  // Autosave (hybrid/WYSIWYG only) is on by default. The checkbox is
+  // live: toggling it flips cfg.autosave and persists to /api/config.
+  window.NB.settings.open();
+  await tick(20);
+  const asToggle = $("settings-autosave-toggle");
+  check("autosave: settings toggle present in General section", !!asToggle);
+  check("autosave: toggle checked by default", asToggle.checked === true);
+  asToggle.checked = false;
+  asToggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(400);  // wait for debounced config POST
+  const asPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastAsPost = asPosts[asPosts.length - 1] || "";
+  check("autosave: toggling off -> config POST has autosave:false",
+    /"autosave":false/.test(lastAsPost), lastAsPost);
+  check("autosave: getAutosave() now false",
+    window.NB.app.getAutosave() === false);
+  // Flip back on so the rest of the suite runs with the shipped default.
+  asToggle.checked = true;
+  asToggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+  window.NB.settings.close();
+  await tick(10);
 
   // Once enabled, the three layout panels are tagged .vim-window and
   // have data-vim-window. Exactly one has .vim-active.

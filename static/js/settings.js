@@ -41,6 +41,7 @@
   const wallpaperIntensityRadios = Array.from(overlayEl.querySelectorAll('input[name="wallpaperIntensity"]'));
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
+  const autosaveToggleEl = document.getElementById("settings-autosave-toggle");
   const vimToggleEl = document.getElementById("settings-vim-toggle");
   const vimrcEl     = document.getElementById("settings-vimrc");
   const vimrcSaveEl = document.getElementById("settings-vimrc-save");
@@ -161,6 +162,7 @@
     // current state, not whatever the HTML defaults to.
     syncRadios();
     syncVimToggle();
+    syncAutosaveToggle();
     syncVimrc();
     syncAppearanceText();
     refreshWatchStatus();
@@ -380,6 +382,14 @@
     }
   }
 
+  /* Sync the autosave checkbox from the live cfg. */
+  function syncAutosaveToggle() {
+    if (!autosaveToggleEl) return;
+    if (NB.app && NB.app.getAutosave) {
+      autosaveToggleEl.checked = NB.app.getAutosave();
+    }
+  }
+
   /* Sync the hide-top-bar checkbox + site-title field from the live cfg. */
   function syncAppearanceText() {
     if (NB.app && NB.app.getCfg) {
@@ -397,6 +407,14 @@
     vimToggleEl.addEventListener("change", () => {
       const on = vimToggleEl.checked;
       if (NB.app && NB.app.setVimMode) NB.app.setVimMode(on);
+    });
+  }
+
+  /* Autosave toggle: live. hybrid.js reads cfg.autosave via getCfg()
+   * on each keystroke, so just persisting the flag is enough. */
+  if (autosaveToggleEl) {
+    autosaveToggleEl.addEventListener("change", () => {
+      if (NB.app && NB.app.setAutosave) NB.app.setAutosave(autosaveToggleEl.checked);
     });
   }
 
