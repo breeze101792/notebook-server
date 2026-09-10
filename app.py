@@ -9,12 +9,14 @@ config/ -- two separate folders by design.
 import argparse
 import dataclasses
 import fnmatch
+import itertools
 import json
 import os
 import re
 import secrets
 import shutil
 import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -148,10 +150,21 @@ def seed(verbose=False):
 def safe_path(rel_path):
     """Resolve a user-supplied relative path against DATA_DIR safely.
 
-    Returns the real absolute path if it stays within DATA_DIR, else None.
-    Blocks `..` traversal and absolute input. Interior symlinks that point
-    outside the resolved DATA_DIR are allowed (the user created them
-    intentionally via the filesystem).
+    Returns the normalised absolute path if it stays within DATA_DIR,
+    else None. Blocks `..` traversal and absolute input. Interior
+    symlinks that point outside the resolved DATA_DIR are allowed (the
+    user created them intentionally via the filesystem).
+
+    The returned path is the LEXICALLY normalised one (no realpath),
+    so it always starts with DATA_DIR itself. Callers use it both as a
+    filesystem path (open/os.remove: the kernel follows interior
+    symlinks transparently) and as an identity for boundary checks
+    (delete/move/copy root guards, rel_from()). Resolving symlinks here
+    would break both: the guards would compare a resolved path against
+    the unresolved DATA_DIR string, and rel_from() would emit garbage
+    like ../real_notebook/x when DATA_DIR itself is a symlink. It also
+    keeps operations ON a symlink operating on the LINK (delete removes
+    the link, not its target), matching rm/mv/cp semantics.
     """
     if not rel_path or not isinstance(rel_path, str):
         return None
@@ -166,10 +179,13 @@ def safe_path(rel_path):
     # Boundary check against the unresolved DATA_DIR so that interior
     # symlinks (e.g. notebook/projects -> /some/other/folder) are not
     # blocked — the normalized path still starts with DATA_DIR before
-    # symlink resolution.
+    # symlink resolution. `..` segments are resolved lexically by
+    # normpath, so a symlink component followed by ".." cannot escape
+    # either (the ".." applies to the DATA_DIR prefix, not the link
+    # target).
     norm_data = os.path.normpath(DATA_DIR)
     if candidate == norm_data or candidate.startswith(norm_data + os.sep):
-        return os.path.realpath(candidate)
+        return candidate
     return None
 
 
@@ -192,16 +208,39 @@ def expect_json(*required_keys):
 
 
 def rel_from(abs_path):
-    """Render an absolute path inside DATA_DIR as a forward-slash relative path."""
-    rel = os.path.relpath(abs_path, DATA_DIR)
+    """Render an absolute path inside DATA_DIR as a forward-slash relative path.
+
+    abs_path comes from safe_path(), which returns the lexically
+    normalised path (NOT a symlink-resolved one), so the relpath() here
+    stays a pure string operation on the shared DATA_DIR prefix.
+    """
+    rel = os.path.relpath(abs_path, os.path.normpath(DATA_DIR))
     return rel.replace(os.sep, "/")
 
 
 def atomic_write(path, content):
-    tmp = path + ".tmp"
+    """Write `content` to `path` atomically (temp file + os.replace).
+
+    The temp file gets a UNIQUE name (pid + thread id + counter): a
+    fixed "<path>.tmp" is shared by every concurrent writer to the same
+    target, so one writer's os.replace() would unlink the temp file out
+    from under the others (FileNotFoundError on their replace, i.e. a
+    500 for a user save) and two interleaved open("w")s could publish
+    torn content. Unique names keep each write self-contained while
+    still replacing atomically; the counter is process-unique.
+    """
+    tmp = "%s.%s.tmp" % (path, _tmp_suffix())
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
     os.replace(tmp, path)
+
+
+_tmp_counter = itertools.count()
+
+
+def _tmp_suffix():
+    """Unique-per-call temp-file suffix (pid + thread id + counter)."""
+    return "%d.%d.%d" % (os.getpid(), threading.get_ident(), next(_tmp_counter))
 
 
 def build_tree(path):
@@ -408,10 +447,16 @@ def load_auth():
 
 
 def save_auth(data):
-    """Persist the auth dict atomically (same pattern as config.json)."""
-    with open(AUTH_FILE + ".tmp", "w", encoding="utf-8") as f:
+    """Persist the auth dict atomically (same pattern as config.json).
+
+    Uses a unique temp name (see atomic_write): a fixed "<file>.tmp" is
+    shared across concurrent writers and one writer's os.replace makes
+    the others' replace raise FileNotFoundError.
+    """
+    tmp = "%s.%s.tmp" % (AUTH_FILE, _tmp_suffix())
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    os.replace(AUTH_FILE + ".tmp", AUTH_FILE)
+    os.replace(tmp, AUTH_FILE)
 
 
 def ensure_auth_secret():
@@ -691,9 +736,13 @@ def set_config():
     if not isinstance(data, dict):
         return err("Expected a JSON object body", 400)
     try:
-        with open(CONFIG_FILE + ".tmp", "w", encoding="utf-8") as f:
+        # Unique temp name (see atomic_write): the debounced UI persist
+        # plus a Settings save can land concurrently, and a shared
+        # "<file>.tmp" makes one writer's replace crash the other.
+        tmp = "%s.%s.tmp" % (CONFIG_FILE, _tmp_suffix())
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-        os.replace(CONFIG_FILE + ".tmp", CONFIG_FILE)
+        os.replace(tmp, CONFIG_FILE)
     except OSError as exc:
         return err("Could not write config: %s" % exc, 500)
     return jsonify({"ok": True})
@@ -1029,10 +1078,14 @@ def load_ai_config():
 
 
 def save_ai_config(data):
-    """Persist the AI settings atomically (same temp+replace as auth.json)."""
-    with open(AI_FILE + ".tmp", "w", encoding="utf-8") as f:
+    """Persist the AI settings atomically (same temp+replace as auth.json).
+
+    Unique temp name for the same concurrent-writer reason as save_auth.
+    """
+    tmp = "%s.%s.tmp" % (AI_FILE, _tmp_suffix())
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
-    os.replace(AI_FILE + ".tmp", AI_FILE)
+    os.replace(tmp, AI_FILE)
 
 
 def _sanitize_server(raw, index):
@@ -1771,6 +1824,16 @@ def move():
     dst = safe_path(data["to"])
     if src is None or dst is None:
         return err("Invalid path", 400)
+    # The notebook root itself is not a movable object: renaming it away
+    # (or unlinking it as an overwrite "conflict") would take the whole
+    # data tree with it. Same path on both ends is a no-op at best and a
+    # self-clobber at worst (overwrite removes the destination -- which
+    # IS the source -- before the copy), so reject it outright.
+    norm_data = os.path.normpath(DATA_DIR)
+    if src == norm_data or dst == norm_data:
+        return err("Invalid path", 400)
+    if src == dst:
+        return err("Source and destination are the same path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
     src_is_dir = os.path.isdir(src) and not os.path.islink(src)
@@ -1787,7 +1850,11 @@ def move():
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     # Atomic move-if-absent for files: link() refuses to clobber.
     moved = False
-    if not src_is_dir:
+    if not src_is_dir and not os.path.islink(src):
+        # Symlinked sources go straight to rename() below: link() would
+        # hardlink the link's TARGET and unlink would then drop the
+        # user's symlink, silently changing what the notebook points at.
+        # rename() moves the link itself (the mv(1) behaviour).
         try:
             os.link(src, dst)
             os.unlink(src)
@@ -1829,6 +1896,14 @@ def copy():
     dst = safe_path(data["to"])
     if src is None or dst is None:
         return err("Invalid path", 400)
+    # Same guards as /api/move: the notebook root is not a copyable/
+    # replaceable object, and copying onto the source itself would (with
+    # overwrite) delete the file before copying it -- silent data loss.
+    norm_data = os.path.normpath(DATA_DIR)
+    if src == norm_data or dst == norm_data:
+        return err("Invalid path", 400)
+    if src == dst:
+        return err("Source and destination are the same path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
     src_is_dir = os.path.isdir(src) and not os.path.islink(src)
@@ -1871,15 +1946,12 @@ def delete():
     if error:
         return error
     abs_path = safe_path(data["path"])
-    if abs_path is None or abs_path == DATA_DIR:
+    if abs_path is None or abs_path == os.path.normpath(DATA_DIR):
         return err("Invalid path", 400)
     if not os.path.exists(abs_path):
         return err("Not found", 404)
     try:
-        if os.path.isdir(abs_path):
-            shutil.rmtree(abs_path)
-        else:
-            os.remove(abs_path)
+        _remove_path(abs_path)
     except OSError as exc:
         return err("Could not delete: %s" % exc, 500)
     return jsonify({"path": data["path"]})

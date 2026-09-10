@@ -162,14 +162,23 @@
   }
 
   /* --- open / activate / close --------------------------------------- */
+  /* Guards activate() against overlapping async activations: two rapid
+   * tab clicks can both be awaiting viewer.activate (an uncached file
+   * fetch); whichever resolves LAST must not be allowed to flip
+   * activePath back to the stale, earlier click's file. Each activate
+   * bumps the token; a call that resumes with a stale token abandons
+   * the switch and leaves the display to the newer call. */
+  let activateToken = 0;
   async function activate(path) {
     if (!openSet.has(path)) return;
+    const token = ++activateToken;
+    const isStale = () => token !== activateToken;
     // Block tab switching when hybrid mode has unsaved changes, so the
     // user doesn't silently lose their WYSIWYG edits. Prompt to save;
     // on Cancel, stay on the current tab. On OK, save then proceed.
     if (path !== activePath && NB.hybrid && NB.hybrid.isActive) {
       const ok = await NB.hybrid.commitForTabSwitch();
-      if (!ok) return;
+      if (!ok || isStale()) return;
     }
     // Special tabs don't go through viewer.activate; they own their
     // own content-area container. The viewer hides itself + welcome so
@@ -193,6 +202,7 @@
     // listens for "file:open" to hide itself, so we just emit it below.
     try {
       await NB.viewer.activate(path);
+      if (isStale()) return;   // a newer click took over mid-fetch
       if (!openSet.has(path)) {
         NB.viewer.close(path);
         if (ordered.length) activate(ordered[0]);
@@ -203,6 +213,7 @@
       render();
       emitChanged();
     } catch (e) {
+      if (isStale()) return;
       const idx = ordered.indexOf(path);
       dropTab(path);
       const next = pickNeighbor(idx);
@@ -222,10 +233,29 @@
   function close(path, opts) {
     opts = opts || {};
     if (!openSet.has(path)) return;
+    // Hybrid (WYSIWYG) edits live in the contentEditable DOM, not the
+    // viewer cache, so viewer.isDirty() can't see them. Hybrid always
+    // edits the ACTIVE tab's file (enter() grabs viewer.getPath()), so
+    // when that tab is being closed, fold hybrid's dirty flag into the
+    // confirm and exit hybrid mode -- otherwise the edits vanish with
+    // no prompt and the hybrid listeners + contenteditable attribute
+    // leak onto whatever file opens next.
+    const hybridEditing = (activePath === path && NB.hybrid &&
+                            NB.hybrid.isActive && NB.hybrid.isActive());
     // Confirm before discarding unsaved edits (skipped for force-close on
     // delete, and for special tabs which have no edit state).
-    if (!opts.force && !isSpecial(path) && NB.viewer.isDirty(path)) {
+    if (!opts.force && !isSpecial(path) &&
+        (NB.viewer.isDirty(path) ||
+         (hybridEditing && NB.hybrid.isDirty && NB.hybrid.isDirty()))) {
       if (!confirm('Close "' + baseName(path) + '"? Unsaved changes will be lost.')) return;
+    }
+    if (hybridEditing) {
+      // Discard-mode exit. The user already confirmed (or this is a
+      // force close); exit unwires the listeners + contenteditable
+      // synchronously. exit's trailing re-activate sees the tab still
+      // open and re-renders this file in preview mode, then the close
+      // proceeds below as usual.
+      NB.hybrid.exit(false);
     }
     const idx = ordered.indexOf(path);
     const wasActive = (activePath === path);
@@ -371,6 +401,12 @@
   // bar doesn't keep showing files the user can no longer read).
   function clearAll() {
     if (!ordered.length) return;
+    // Drop hybrid mode too if it's on: its contentEditable + listeners
+    // target the file being dropped, and the auth-lock flow wipes the
+    // viewer right after -- leaving hybrid on would re-edit stale DOM.
+    if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
+      NB.hybrid.exit(false);
+    }
     ordered.slice().forEach(p => dropTab(p));
     activePath = null;
     if (NB.viewer && NB.viewer.clear) NB.viewer.clear();

@@ -272,6 +272,45 @@ class TestFileSave(BaseTest):
         r = self.post("/api/file", {"path": "x.md"})  # no content
         self.assertEqual(r.status_code, 400)
 
+    def test_concurrent_atomic_writes_do_not_crash_or_tear(self):
+        # atomic_write used a FIXED "<path>.tmp" shared by every writer:
+        # with two writers in flight, one os.replace consumed the temp
+        # file and the other writer died with FileNotFoundError (a 500
+        # for a user save), and interleaved open("w")s could publish
+        # torn content. The temp name is now unique per write, so
+        # concurrent saves to the same target all succeed and every
+        # published file is exactly one writer's content.
+        import threading
+
+        path = os.path.join(nb.DATA_DIR, "race.md")
+        payload = {c: c * 64 * 1024 for c in "ABCDEFGH"}
+        errors = []
+        barrier = threading.Barrier(len(payload))
+        stop = threading.Event()
+
+        def writer(ch):
+            try:
+                barrier.wait()
+                for _ in range(20):
+                    nb.atomic_write(path, payload[ch])
+            except Exception as exc:   # noqa: BLE001 - record any failure
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(ch,)) for ch in payload]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        stop.set()
+        self.assertEqual(errors, [], "concurrent atomic_write raised: %r" % errors[:3])
+        with open(path) as f:
+            final = f.read()
+        self.assertIn(final, [payload[c] for c in payload],
+                      "published file is torn (not one writer's content)")
+        # Normal operation leaves no temp litter behind.
+        leftovers = [n for n in os.listdir(nb.DATA_DIR) if ".tmp" in n]
+        self.assertEqual(leftovers, [], "leftover temp files: %r" % leftovers)
+
 
 class TestCreate(BaseTest):
     def test_create_file_and_dir(self):
@@ -392,6 +431,42 @@ class TestMove(BaseTest):
                                     "onConflict": "merge"})
         self.assertEqual(r.status_code, 400)
 
+    def test_move_onto_itself_rejected(self):
+        # Overwrite mode removes the destination first; when source ==
+        # destination that destroys the file before the rename happens.
+        # Reject outright so the file is never lost.
+        self.post("/api/file", {"path": "v.md", "content": "IMPORTANT"})
+        r = self.post("/api/move", {"from": "v.md", "to": "v.md",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        code, data = self.jget("/api/file?path=v.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_move_to_root_rejected(self):
+        # The notebook root is not a valid destination: with overwrite,
+        # the conflict resolution would rmtree the whole data tree.
+        self.post("/api/file", {"path": "a.md", "content": "A"})
+        r = self.post("/api/move", {"from": "a.md", "to": ".",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "a.md")))
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
+
+    def test_move_symlink_dir_moves_link_not_target(self):
+        # A symlinked "directory" must move as a link (mv semantics),
+        # never relocate the real target tree it points at.
+        target = os.path.join(_TMP, "mv-target")
+        os.makedirs(os.path.join(target, "proj"), exist_ok=True)
+        with open(os.path.join(target, "proj", "keep.md"), "w") as f:
+            f.write("keep")
+        os.symlink(target, os.path.join(nb.DATA_DIR, "proj"))
+        r = self.post("/api/move", {"from": "proj", "to": "proj2"})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(os.path.lexists(os.path.join(nb.DATA_DIR, "proj")))
+        self.assertTrue(os.path.islink(os.path.join(nb.DATA_DIR, "proj2")))
+        self.assertTrue(os.path.isfile(os.path.join(target, "proj", "keep.md")),
+                        "the link target must not have moved")
+
     def test_move_dir_overwrite(self):
         self.post("/api/create", {"path": "d1", "type": "dir"})
         self.post("/api/create", {"path": "d2", "type": "dir"})
@@ -447,6 +522,27 @@ class TestCopy(BaseTest):
         code, data = self.jget("/api/file?path=b.md")
         self.assertEqual(data["content"], "A")
 
+    def test_copy_onto_itself_rejected(self):
+        # Overwrite removes the destination first; source == destination
+        # would truncate the file to zero before copying from the (gone)
+        # source. Reject outright so content is never lost.
+        self.post("/api/file", {"path": "w.md", "content": "IMPORTANT"})
+        r = self.post("/api/copy", {"from": "w.md", "to": "w.md",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        code, data = self.jget("/api/file?path=w.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_copy_to_root_rejected(self):
+        # The notebook root is not a copyable destination: with
+        # overwrite the conflict resolution would delete the whole tree.
+        self.post("/api/file", {"path": "b.md", "content": "B"})
+        r = self.post("/api/copy", {"from": "b.md", "to": ".",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "b.md")))
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
+
     def test_copy_bad_conflict_mode(self):
         r = self.post("/api/copy", {"from": "a.md", "to": "b.md",
                                     "onConflict": "dedupe"})
@@ -476,6 +572,95 @@ class TestDelete(BaseTest):
         self.assertEqual(r.status_code, 400)
         r = self.post("/api/delete", {"path": ".."})
         self.assertEqual(r.status_code, 400)
+
+    def test_delete_dot_variants_rejected(self):
+        # "." (and spellings that normalise to it) resolve to the notebook
+        # root itself; deleting it would wipe every note in one call.
+        for probe in (".", "./", "x/..", "sub/.."):
+            r = self.post("/api/delete", {"path": probe})
+            self.assertEqual(r.status_code, 400, probe)
+        self.assertTrue(os.path.isdir(nb.DATA_DIR))
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
+
+    def test_delete_symlink_dir_removes_link_not_target(self):
+        # An interior symlink is a link, not a directory: delete must
+        # unlink the link (rm semantics) and leave the target's tree
+        # untouched -- the target may hold data outside the notebook.
+        target = os.path.join(_TMP, "outside-target")
+        os.makedirs(os.path.join(target, "important"), exist_ok=True)
+        with open(os.path.join(target, "important", "db.txt"), "w") as f:
+            f.write("precious")
+        link = os.path.join(nb.DATA_DIR, "link")
+        os.symlink(target, link)
+        r = self.post("/api/delete", {"path": "link"})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(os.path.lexists(link))
+        self.assertTrue(os.path.isfile(os.path.join(target, "important", "db.txt")),
+                        "delete must not rmtree the symlink target")
+
+
+class TestSymlinkedDataDir(BaseTest):
+    """safe_path()/rel_from() with DATA_DIR itself a symlink.
+
+    The production layout symlinks notebook/ (e.g. to another folder),
+    so the lexical/realpath distinction is load-bearing: safe_path()
+    must return paths that stay textually under DATA_DIR so boundary
+    guards and rel_from() agree with it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Re-point the module's DATA_DIR at a symlinked view of the
+        # seeded test notebook. seed() already ran in BaseTest.setUp on
+        # the real folder; move it behind a symlink and re-seed via the
+        # app's own helpers (no route touches DATA_DIR between the two).
+        real = nb.DATA_DIR + ".real"
+        if os.path.isdir(real):
+            shutil.rmtree(real)
+        if os.path.isdir(nb.DATA_DIR):
+            shutil.move(nb.DATA_DIR, real)
+        os.symlink(real, nb.DATA_DIR)
+
+    def tearDown(self):
+        # Restore the real dir before the next test's setUp wipes it.
+        if os.path.islink(nb.DATA_DIR):
+            os.unlink(nb.DATA_DIR)
+            real = nb.DATA_DIR + ".real"
+            if os.path.isdir(real):
+                shutil.move(real, nb.DATA_DIR)
+        super().tearDown()
+
+    def test_delete_root_rejected_through_symlink(self):
+        # safe_path(".") must return a path the root guard recognises.
+        r = self.post("/api/delete", {"path": "."})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/delete", {"path": "./"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
+
+    def test_ls_reports_clean_relative_paths(self):
+        self.post("/api/create", {"path": "sub", "type": "dir"})
+        self.post("/api/file", {"path": "sub/a.md", "content": "needle here"})
+        r = self.client.get("/api/ls?path=sub")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["path"], "sub")
+        r = self.client.get("/api/search?q=needle&file=sub/a.md")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data["file"], "sub/a.md")
+        self.assertEqual(data["matches"][0]["file"], "sub/a.md")
+
+    def test_move_and_copy_root_rejected(self):
+        self.post("/api/file", {"path": "a.md", "content": "A"})
+        r = self.post("/api/move", {"from": "a.md", "to": ".",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "a.md")))
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
+        r = self.post("/api/copy", {"from": "a.md", "to": ".",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "a.md")))
 
 
 class TestLs(BaseTest):

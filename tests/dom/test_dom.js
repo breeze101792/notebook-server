@@ -4181,6 +4181,64 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
   }
 
+  console.log("== hybrid: close active tab exits hybrid (no mode leak) ==");
+  {
+    // Regression: hybrid edits live in the contentEditable DOM, not the
+    // viewer cache, so the old close() confirm (viewer.isDirty only)
+    // never fired and hybrid mode leaked onto the next file: closing
+    // the hybrid-edited tab must (a) prompt about the unsaved WYSIWYG
+    // edits, (b) exit hybrid mode (contenteditable + listeners gone),
+    // and (c) leave the next opened file in plain preview mode.
+    // NB: hybrid always edits the ACTIVE file, so we close whatever
+    // NB.hybrid has under edit, not a hardcoded path. Force-close any
+    // OTHER tabs first so the hybrid-edited one is the only tab: with a
+    // neighbor tab present, close() switches to it and the neighbor's
+    // activation routes through commitForTabSwitch (which prompts on
+    // its own); the leak the regression pins only shows when closing
+    // the LAST tab (no neighbor -> no incidental prompt on old code).
+    const hybridPath = window.NB.viewer.getPath();
+    check("hybrid close: a file is active before the test", !!hybridPath,
+      "active=" + hybridPath);
+    for (const open of window.NB.tabs.getOpen()) {
+      if (open !== hybridPath) window.NB.tabs.close(open, { force: true });
+    }
+    await tick(20);
+    check("hybrid close: hybrid tab is the only open tab",
+      window.NB.tabs.getOpen().length === 1,
+      "open=" + JSON.stringify(window.NB.tabs.getOpen()));
+    await window.NB.hybrid.enter();
+    $("viewer-content").innerHTML += "<p>hybrid unsaved close-edit</p>";
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    check("hybrid close: dirty before close", window.NB.hybrid.isDirty());
+    let confirmCount = 0;
+    window.confirm = () => { confirmCount++; return true; };   // discard edits
+    window.NB.tabs.close(hybridPath);                          // close the ACTIVE hybrid tab
+    await tick(40);
+    window.confirm = () => true;
+    check("hybrid close: close prompted about the WYSIWYG edits",
+      confirmCount === 1, "confirm calls=" + confirmCount);
+    check("hybrid close: hybrid mode exited",
+      !window.NB.hybrid.isActive());
+    check("hybrid close: contenteditable removed",
+      !$("viewer-content").getAttribute("contenteditable"));
+    // The next file must open as a normal read-only preview.
+    await window.NB.tabs.open("Welcome.md");
+    await tick(30);
+    check("hybrid close: next file opens in preview (no contenteditable)",
+      !$("viewer-content").getAttribute("contenteditable"));
+    window.NB.tabs.close("Welcome.md", { force: true });
+    // Restore the tab layout the later sections (bookmarks etc.)
+    // expect: re-open what the force-close dropped, and make notes/a.md
+    // active again so "pre-click active tab is notes/a.md" holds.
+    window.NB.tabs.open("notes/a.md", { activate: false });
+    if (hybridPath !== "notes/a.md") {
+      window.NB.tabs.open(hybridPath, { activate: false });
+    }
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+  }
+
   console.log("== empty-tree right-click create ==");
   TREE.length = 0;
   await window.NB.sidebar.refresh();
@@ -4276,6 +4334,91 @@ function check(label, cond, extra) {
     check("collapse: back to Explorer, panel expanded",
       !$("side-panel").classList.contains("collapsed") &&
       window.NB.activity.getActive() === "explorer");
+  }
+
+  console.log("== recent files (Quick open) view ==");
+  // The Recent view (activity-bar 🕒) lists recently opened files with a
+  // fuzzy filter, arrow-key selection, and Enter-to-open. It reads
+  // cfg.recentFiles (kept up to date by app.js on every file:open) and
+  // re-renders on each activation. The collapse test above already
+  // mounted the view, so the filter input + list exist.
+  {
+    const recentFilter = window.document.querySelector("#recent-view .recent-filter");
+    const recentList = window.document.querySelector("#recent-view .recent-list");
+    check("recent: view mounted with a filter input + list", !!recentFilter && !!recentList);
+
+    // Seed recents deterministically by writing cfg.recentFiles directly
+    // (the view re-reads it on every render). Order matters: most-recent
+    // first. Use distinctive names so the fuzzy filter below matches
+    // exactly one entry.
+    window.NB.app.getCfg().recentFiles = ["Welcome.md", "notes/a.md", "notes/b.md"];
+
+    // Activate the Recent view so it re-renders from the seeded list.
+    const recentBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="recent"]');
+    recentBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    const rows = () => Array.from(recentList.querySelectorAll(".recent-row"));
+    check("recent: lists the seeded files most-recent-first",
+      rows().map(r => r.dataset.path).join(",") === "Welcome.md,notes/a.md,notes/b.md",
+      rows().map(r => r.dataset.path).join(","));
+
+    // Fuzzy filter: "a.md" matches notes/a.md (a-.-m-d in order) but not
+    // Welcome.md or notes/b.md.
+    recentFilter.value = "a.md";
+    recentFilter.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("recent: fuzzy filter narrows to notes/a.md",
+      rows().length === 1 && rows()[0].dataset.path === "notes/a.md",
+      rows().map(r => r.dataset.path).join(","));
+
+    // Arrow keys move the selection; Enter opens the selected file.
+    recentFilter.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "ArrowDown", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    // With one row, ArrowDown stays on it (clamped). Add a second match
+    // so selection actually moves.
+    recentFilter.value = "";
+    recentFilter.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    recentFilter.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "ArrowDown", bubbles: true, cancelable: true,
+    }));
+    await tick(10);
+    const selAfterDown = recentList.querySelector(".recent-row.selected");
+    check("recent: ArrowDown selects the second row",
+      selAfterDown && selAfterDown.dataset.path === "notes/a.md",
+      selAfterDown ? selAfterDown.dataset.path : "(none)");
+
+    // Enter opens the selected file via file:open-request -> tabs.open.
+    const openBefore = window.NB.tabs.getOpen().slice();
+    recentFilter.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "Enter", bubbles: true, cancelable: true,
+    }));
+    await tick(30);
+    check("recent: Enter opens the selected file",
+      window.NB.tabs.isOpen("notes/a.md"),
+      "open=" + JSON.stringify(window.NB.tabs.getOpen()));
+
+    // Empty filter + no matches shows the empty state.
+    recentFilter.value = "zzz-no-match";
+    recentFilter.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("recent: no-match shows the empty state",
+      !!recentList.querySelector(".recent-empty"),
+      "rows=" + rows().length);
+
+    // Restore: clear the filter, return to Explorer, and close the tab
+    // the Enter opened so later blocks see a clean state.
+    recentFilter.value = "";
+    recentFilter.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const explorerBtn3 = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+    explorerBtn3.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    for (const p of window.NB.tabs.getOpen().slice()) {
+      if (!openBefore.includes(p)) window.NB.tabs.close(p, { force: true });
+    }
+    await tick(10);
   }
 
   console.log("== graph view ==");
@@ -5344,6 +5487,53 @@ function check(label, cond, extra) {
   check("restore reads openFiles -> 2 tabs", tabs().length === 2, "got " + tabs().length);
   check("restore activates activeFile (Welcome)", activeTabPath() === "Welcome.md");
   check("restore includes notes/a.md tab (lazy)", !!window.document.querySelector('.tab[data-path="notes/a.md"]'));
+
+  // --- stale-async activation race (regression) -------------------------
+  // Two rapid tab clicks on uncached files: the FIRST click's fetch is
+  // slow, the second is fast. The earlier activate() resolves after the
+  // later one and must NOT flip the viewer content or the active tab
+  // back -- the last click the user made has to win. This pins the
+  // activate-token guards in viewer.js + tabs.js.
+  {
+    // Add fresh uncached files to the fixture the fetch stub serves.
+    FILES["slow.md"] = "SLOW FILE CONTENT\n";
+    FILES["fast.md"] = "FAST FILE CONTENT\n";
+    TREE.push({ name: "slow.md", type: "file", path: "slow.md" });
+    TREE.push({ name: "fast.md", type: "file", path: "fast.md" });
+    // Wrap fetch so /api/file?path=slow.md stalls 120ms before answering;
+    // every other request goes straight through to the normal stub.
+    const plainFetch = window.fetch;
+    window.fetch = async (url, opts) => {
+      if (String(url).includes("/api/file?path=slow.md")) {
+        await tick(120);
+      }
+      return plainFetch(url, opts);
+    };
+    window.NB.tabs.open("slow.md", { activate: false });
+    window.NB.tabs.open("fast.md", { activate: false });
+    const act1 = window.NB.tabs.activate("slow.md");   // slow fetch in flight
+    const act2 = window.NB.tabs.activate("fast.md");    // fast fetch wins?
+    await Promise.all([act1, act2]);
+    await tick(250);
+    window.fetch = plainFetch;
+    check("race: viewer shows the LAST clicked file (fast.md)",
+      /FAST FILE CONTENT/.test($("viewer-content").textContent),
+      "shown=" + JSON.stringify($("viewer-content").textContent.slice(0, 30)));
+    check("race: active tab is fast.md", activeTabPath() === "fast.md",
+      "active=" + activeTabPath());
+    check("race: NB.viewer.getPath() is fast.md", window.NB.viewer.getPath() === "fast.md",
+      "path=" + window.NB.viewer.getPath());
+    // The abandoned fetch still warmed the cache: activating slow.md now
+    // shows its content without a refetch (and no stale flip).
+    await window.NB.tabs.activate("slow.md");
+    await tick(30);
+    check("race: slow.md activates afterwards with its content",
+      /SLOW FILE CONTENT/.test($("viewer-content").textContent),
+      "shown=" + JSON.stringify($("viewer-content").textContent.slice(0, 30)));
+    window.NB.tabs.close("slow.md", { force: true });
+    window.NB.tabs.close("fast.md", { force: true });
+    await tick(20);
+  }
 
   // Switching tabs while in edit mode preserves unsaved edits (regression).
   await window.NB.tabs.activate("notes/a.md");

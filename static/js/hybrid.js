@@ -1163,13 +1163,15 @@
     // Re-render the file as normal preview (from the cache, which
     // doSave updated if we saved; otherwise from the original content).
     if (path && NB.viewer) {
-      // Force a re-render by re-activating the file. The viewer's
-      // cache already has the (possibly updated) content.
+      // Force a re-render by re-activating the file -- but only if the
+      // tab is still open. tabs.close() calls exit(false) for the tab
+      // being closed; re-activating it would resurrect a closed path
+      // (viewer.activate re-caches it and emits file:open, making the
+      // tab bar and viewer disagree about what is open). The viewer's
+      // cache already has the (possibly updated) content; either way,
+      // the caller decides what the display shows next.
       const viewer = NB.viewer;
-      // If we saved, the cache was updated via doSave -> we just need
-      // to re-render. If we didn't save, the cache still has the
-      // original content. Either way, re-activating is safe.
-      if (viewer.activate) {
+      if (viewer.activate && NB.tabs && NB.tabs.isOpen(path)) {
         await viewer.activate(path);
       }
     }

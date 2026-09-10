@@ -31,6 +31,10 @@
   // path -> { content, editMode, savedContent }
   const cache = new Map();
   let active = null;   // path currently displayed
+  // Guards viewer.activate against overlapping async activations: each
+  // call increments the token; a call whose fetch resolves after a NEWER
+  // activate() started is stale and must not touch the display.
+  let activateToken = 0;
   let showPreview = true;  // preview pane visible in edit mode
   let liveTimer = null;    // debounce timer for live preview
 
@@ -548,8 +552,18 @@
     /* Load `path` into the cache (fetch on miss) and show it. Emits
      * file:open so the sidebar highlight and recent list stay in sync.
      * Flushes any in-flight textarea edits from the tab being left into its
-     * cache entry, so unsaved edits survive switching tabs mid-edit. */
+     * cache entry, so unsaved edits survive switching tabs mid-edit.
+     *
+     * A monotonically increasing activation token guards the async
+     * fetch: if the user clicks another tab while this activate's
+     * getFile is still in flight, the later call bumps the token and
+     * this one becomes stale -- it must NOT touch `active`, the DOM, or
+     * emit file:open, or the slow earlier fetch would overwrite the
+     * later click's content (and flip the tab bar back). The cache
+     * entry is still populated; only the UI switch is abandoned. */
     async activate(path) {
+      const token = ++activateToken;
+      const isStale = () => token !== activateToken;
       if (active && active !== path) {
         const prev = cache.get(active);
         if (prev && prev.editMode) prev.content = NB.cmEditor.getValue();
@@ -557,6 +571,15 @@
       let t = cache.get(path);
       if (!t) {
         const data = await NB.api.getFile(path);
+        if (isStale()) {
+          // A newer activate() took over mid-fetch. Still seed the
+          // cache (so the file is warm for its next activation) but
+          // leave the display to the newer call.
+          const content = (data && data.content) || "";
+          cache.set(path, { content, editMode: false, savedContent: content,
+                            mtime: (data && data.mtime) || null });
+          return content;
+        }
         const content = (data && data.content) || "";
         t = { content, editMode: false, savedContent: content, mtime: (data && data.mtime) || null };
         cache.set(path, t);
