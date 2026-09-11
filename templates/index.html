@@ -788,6 +788,31 @@
             </p>
           </section>
           <section class="settings-section">
+            <h3>Options</h3>
+            <div class="settings-row">
+              <span class="settings-label">Width</span>
+              <div class="settings-control export-width-options" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="export-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="export-width" value="80"> 80%</label>
+                <label><input type="radio" name="export-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Colors</span>
+              <div class="settings-control export-theme-options" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="export-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="export-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">Contents</span>
+              <label class="settings-checkbox">
+                <input type="checkbox" id="export-toc" checked>
+                <span>Table of contents</span>
+              </label>
+            </div>
+          </section>
+          <section class="settings-section">
             <h3>Scope</h3>
             <div class="settings-row">
               <span class="settings-label">File</span>
@@ -810,6 +835,7 @@
       </div>
       <div class="settings-footer">
         <button id="export-close-btn" class="settings-action">Cancel</button>
+        <button id="export-preview" class="settings-action">Preview</button>
         <button id="export-run" class="settings-action">Export</button>
       </div>
     </div>

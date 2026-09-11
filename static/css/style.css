@@ -3103,23 +3103,38 @@ body[data-theme="light"] #viewer-content {
  * sizes to its content instead of inheriting the settings modal's fixed
  * 80vh (which would leave a tall empty band). */
 .export-modal {
-  width: min(460px, 92vw);
+  width: min(520px, 92vw);
   height: auto;
   max-height: 92vh;
 }
 .export-modal .settings-sections { padding: 4px 18px 18px; }
 .export-format-options,
-.export-scope-options {
+.export-scope-options,
+.export-width-options,
+.export-theme-options {
   display: flex;
   gap: 14px;
 }
 .export-format-options label,
-.export-scope-options label {
+.export-scope-options label,
+.export-width-options label,
+.export-theme-options label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   cursor: pointer;
   font-size: .93rem;
+}
+.export-modal .settings-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: .93rem;
+}
+.export-modal .settings-checkbox input {
+  margin: 0;
+  accent-color: var(--accent, #2f5fd0);
 }
 #export-file-label.empty { color: var(--fg-muted); }
 
@@ -3149,6 +3164,31 @@ body[data-theme="light"] #viewer-content {
     padding: 0;
     color: #1f2330;
     background: #fff;
+  }
+  #print-host.export-width-fit { max-width: 100%; }
+  #print-host.export-width-80 { max-width: 80%; }
+  #print-host.export-width-full { max-width: none; }
+  #print-host.export-theme-dark {
+    color: #c9d1d9;
+    background: #0d1117;
+  }
+  #print-host.export-theme-dark a { color: #58a6ff; }
+  #print-host.export-theme-dark pre,
+  #print-host.export-theme-dark code { background: #161b22; }
+  #print-host.export-theme-dark blockquote {
+    color: #8b949e;
+    background: rgba(88,166,255,.12);
+    border-left-color: #58a6ff;
+  }
+  #print-host.export-theme-dark table { border-color: #30363d; }
+  #print-host.export-theme-dark th,
+  #print-host.export-theme-dark td { border-color: #30363d; }
+  #print-host.export-theme-dark tbody tr:nth-child(odd) { background: #161b22; }
+  #print-host.export-theme-dark hr { border-top-color: #30363d; }
+  #print-host.export-theme-dark h1 { border-bottom-color: #30363d; }
+  #print-host.export-theme-dark .export-toc {
+    border-color: #30363d;
+    background: #161b22;
   }
   #print-host pre,
   #print-host code,

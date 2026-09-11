@@ -27,7 +27,11 @@
   const closeFooterBtn = document.getElementById("export-close-btn");
   const formatRadios = Array.from(document.querySelectorAll('input[name="export-format"]'));
   const scopeRadios  = Array.from(document.querySelectorAll('input[name="export-scope"]'));
+  const widthRadios  = Array.from(document.querySelectorAll('input[name="export-width"]'));
+  const themeRadios  = Array.from(document.querySelectorAll('input[name="export-theme"]'));
+  const tocCheckbox  = document.getElementById("export-toc");
   const exportBtn    = document.getElementById("export-run");
+  const previewBtn   = document.getElementById("export-preview");
   const fileLabelEl  = document.getElementById("export-file-label");
   const sectionRowEl = document.getElementById("export-section-row");
   const sectionSelectEl = document.getElementById("export-section-select");
@@ -49,6 +53,17 @@
   function selectedScope() {
     const r = scopeRadios.find(x => x.checked);
     return r ? r.value : "current";
+  }
+  function selectedWidth() {
+    const r = widthRadios.find(x => x.checked);
+    return r ? r.value : "fit";
+  }
+  function selectedTheme() {
+    const r = themeRadios.find(x => x.checked);
+    return r ? r.value : "light";
+  }
+  function includeToc() {
+    return tocCheckbox ? tocCheckbox.checked : true;
   }
 
   /* --- section (h1-h3) extraction ------------------------------------ */
@@ -85,6 +100,45 @@
       }
     }
     return content.slice(start.index, end);
+  }
+
+  /* Build a table-of-contents <nav> from the rendered host's headings
+   * (h1-h3). Each entry links to the heading's id (assigned by renderInto
+   * via the same slugify the viewer uses). Returns null when there are no
+   * headings. */
+  function buildToc(host) {
+    const headings = Array.from(host.querySelectorAll("h1,h2,h3"));
+    if (headings.length === 0) return null;
+    const nav = document.createElement("nav");
+    nav.className = "export-toc";
+    const title = document.createElement("p");
+    title.className = "export-toc-title";
+    title.textContent = "Contents";
+    nav.appendChild(title);
+    const list = document.createElement("ul");
+    for (const h of headings) {
+      const li = document.createElement("li");
+      li.className = "export-toc-level-" + h.tagName.toLowerCase();
+      const a = document.createElement("a");
+      a.href = "#" + (h.id || "");
+      a.textContent = h.textContent;
+      li.appendChild(a);
+      list.appendChild(li);
+    }
+    nav.appendChild(list);
+    return nav;
+  }
+
+  /* Apply the selected page-width and theme classes to a rendered
+   * container. The classes drive max-width and colors via CSS (see
+   * style.css / exportCss). */
+  function applyWidth(host) {
+    const w = selectedWidth();
+    host.classList.remove("export-width-fit", "export-width-80", "export-width-full");
+    host.classList.add("export-width-" + w);
+    const t = selectedTheme();
+    host.classList.remove("export-theme-light", "export-theme-dark");
+    host.classList.add("export-theme-" + t);
   }
 
   /* Resolve the content to export. For the active file we read the
@@ -177,6 +231,15 @@
       h.id = NB.slugify ? NB.slugify(h.textContent) : h.textContent;
     });
 
+    // Table of contents (h1-h3), prepended when requested.
+    if (includeToc()) {
+      const toc = buildToc(host);
+      if (toc) host.insertBefore(toc, host.firstChild);
+    }
+
+    // Page width.
+    applyWidth(host);
+
     // Syntax highlighting.
     if (window.hljs) {
       host.querySelectorAll("pre code").forEach(el => {
@@ -229,6 +292,16 @@
     return renderInto(host, scope).then(() => {
       const title = path.split("/").pop().replace(/\.md$/i, "") || "note";
       const css = exportCss();
+      // The width/theme classes are set on `host` by renderInto; carry them
+      // onto the exported <main> so the embedded CSS can style the page.
+      const mainClass = ["markdown-body", "export-body"]
+        .concat(Array.from(host.classList).filter(c => c.indexOf("export-width-") === 0 || c.indexOf("export-theme-") === 0))
+        .join(" ");
+      // Pull the TOC nav out of the content (renderInto prepends it) and
+      // place it in a fixed sidebar instead of inline.
+      const toc = host.querySelector(".export-toc");
+      const tocHtml = toc ? toc.outerHTML : "";
+      if (toc) toc.remove();
       const html =
         "<!DOCTYPE html>\n" +
         "<html lang=\"en\">\n" +
@@ -239,7 +312,8 @@
         "  <style>" + css + "</style>\n" +
         "</head>\n" +
         "<body>\n" +
-        "  <main class=\"markdown-body export-body\">\n" +
+        (tocHtml ? "  <aside class=\"export-sidebar\">" + tocHtml + "</aside>\n" : "") +
+        "  <main class=\"" + mainClass + "\">\n" +
         host.innerHTML +
         "  </main>\n" +
         "</body>\n" +
@@ -248,51 +322,118 @@
     });
   }
 
-  /* The CSS embedded in an HTML export: the app's markdown rules (light
-   * theme) + the light highlight.js theme. Kept in sync with style.css's
-   * .markdown-body block and static/vendor/highlight-styles/github.css. */
+  /* The CSS embedded in an HTML export: the app's markdown rules + the
+   * highlight.js theme, in the selected color theme (light or dark). Kept
+   * in sync with style.css's .markdown-body block and the vendored
+   * highlight-styles/github.css / github-dark.css. */
   function exportCss() {
+    const dark = selectedTheme() === "dark";
+    const base = dark ? {
+      bg: "#0d1117", fg: "#c9d1d9", border: "#30363d", muted: "#8b949e",
+      link: "#58a6ff", codeBg: "#161b22", preBg: "#161b22",
+      quoteBg: "rgba(88,166,255,.12)", quoteColor: "#8b949e",
+      rowOdd: "#161b22", accent: "#58a6ff",
+    } : {
+      bg: "#fff", fg: "#1f2330", border: "#d8dde4", muted: "#5d6470",
+      link: "#2f5fd0", codeBg: "#f0f2f5", preBg: "#f0f2f5",
+      quoteBg: "rgba(47,95,208,.12)", quoteColor: "#5d6470",
+      rowOdd: "#f6f7f9", accent: "#2f5fd0",
+    };
+    const hljs = dark ? DARK_HLJS : LIGHT_HLJS;
     return [
-      "body{margin:0;background:#fff;color:#1f2330;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
+      "body{margin:0;background:" + base.bg + ";color:" + base.fg + ";font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
+      ".export-sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;overflow-y:auto;background:" + base.rowOdd + ";border-right:1px solid " + base.border + ";padding:20px 16px;box-sizing:border-box}",
+      ".export-sidebar .export-toc{border:none;background:none;padding:0;margin:0}",
+      ".export-sidebar .export-toc-title{font-size:1.1em;font-weight:700;margin:0 0 .6em}",
+      ".export-sidebar .export-toc ul{list-style:none;margin:0;padding:0}",
+      ".export-sidebar .export-toc li{margin:.2em 0;line-height:1.35}",
+      ".export-sidebar .export-toc a{color:" + base.link + ";text-decoration:none;display:block;padding:2px 6px;border-radius:4px}",
+      ".export-sidebar .export-toc a:hover{background:" + base.quoteBg + ";text-decoration:none}",
+      ".export-sidebar .export-toc-level-h2{padding-left:1.1em}",
+      ".export-sidebar .export-toc-level-h3{padding-left:2.2em}",
       ".export-body{max-width:820px;margin:0 auto;padding:32px 24px 80px}",
+      ".export-body.export-width-fit{max-width:820px}",
+      ".export-body.export-width-80{max-width:80%}",
+      ".export-body.export-width-full{max-width:none}",
+      "body:has(.export-sidebar) .export-body{margin-left:240px}",
+      "@media (max-width:900px){.export-sidebar{display:none}body:has(.export-sidebar) .export-body{margin-left:auto}}",
+      ".export-toc{border:1px solid " + base.border + ";border-radius:8px;background:" + base.rowOdd + ";padding:14px 18px;margin:0 0 1.5em}",
+      ".export-toc-title{margin:0 0 .4em;font-weight:650;font-size:1.05em}",
+      ".export-toc ul{list-style:none;margin:0;padding:0}",
+      ".export-toc li{margin:.15em 0}",
+      ".export-toc a{color:" + base.link + ";text-decoration:none}",
+      ".export-toc a:hover{text-decoration:underline}",
+      ".export-toc-level-h2{padding-left:1.2em}",
+      ".export-toc-level-h3{padding-left:2.4em}",
+      ".export-toc-title{margin:0 0 .4em;font-weight:650;font-size:1.05em}",
+      ".export-toc ul{list-style:none;margin:0;padding:0}",
+      ".export-toc li{margin:.15em 0}",
+      ".export-toc a{color:" + base.link + ";text-decoration:none}",
+      ".export-toc a:hover{text-decoration:underline}",
+      ".export-toc-level-h2{padding-left:1.2em}",
+      ".export-toc-level-h3{padding-left:2.4em}",
       ".markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{margin:1.4em 0 .5em;font-weight:650;line-height:1.25}",
       ".markdown-body> :first-child{margin-top:0}",
-      ".markdown-body h1{font-size:1.9em;border-bottom:1px solid #d8dde4;padding-bottom:.2em}",
+      ".markdown-body h1{font-size:1.9em;border-bottom:1px solid " + base.border + ";padding-bottom:.2em}",
       ".markdown-body h2{font-size:1.5em}",
       ".markdown-body h3{font-size:1.25em}",
       ".markdown-body p{margin:.7em 0}",
-      ".markdown-body a{color:#2f5fd0}",
+      ".markdown-body a{color:" + base.link + "}",
       ".markdown-body ul,.markdown-body ol{padding-left:1.6em}",
-      ".markdown-body blockquote{border-left:3px solid #2f5fd0;margin:.8em 0;padding:.2em 1em;color:#5d6470;background:rgba(47,95,208,.12);border-radius:0 6px 6px 0}",
-      ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:#f0f2f5;padding:.12em .4em;border-radius:4px;font-size:.9em}",
-      ".markdown-body pre{background:#f0f2f5;border:1px solid #d8dde4;border-radius:8px;padding:14px 16px;overflow-x:auto}",
+      ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.8em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
+      ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:" + base.codeBg + ";padding:.12em .4em;border-radius:4px;font-size:.9em}",
+      ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;overflow-x:auto}",
       ".markdown-body pre code{background:none;padding:0;font-size:.88em}",
       ".markdown-body table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto}",
-      ".markdown-body th,.markdown-body td{border:1px solid #d8dde4;padding:6px 10px}",
-      ".markdown-body tbody tr:nth-child(odd){background:#f6f7f9}",
-      ".markdown-body hr{border:none;border-top:1px solid #d8dde4;margin:1.5em 0}",
+      ".markdown-body th,.markdown-body td{border:1px solid " + base.border + ";padding:6px 10px}",
+      ".markdown-body tbody tr:nth-child(odd){background:" + base.rowOdd + "}",
+      ".markdown-body hr{border:none;border-top:1px solid " + base.border + ";margin:1.5em 0}",
       ".markdown-body img{max-width:100%}",
       ".markdown-body svg{max-width:100%;height:auto}",
-      // Light highlight.js theme (github.css), inlined.
-      "pre code.hljs{display:block;overflow-x:auto;padding:1em}",
-      "code.hljs{padding:3px 5px}",
-      ".hljs{color:#24292e;background:#fff}",
-      ".hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#d73a49}",
-      ".hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f42c1}",
-      ".hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-variable,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id{color:#005cc5}",
-      ".hljs-regexp,.hljs-string,.hljs-meta .hljs-string{color:#032f62}",
-      ".hljs-built_in,.hljs-symbol{color:#e36209}",
-      ".hljs-comment,.hljs-code,.hljs-formula{color:#6a737d}",
-      ".hljs-name,.hljs-quote,.hljs-selector-tag,.hljs-selector-pseudo{color:#22863a}",
-      ".hljs-subst{color:#24292e}",
-      ".hljs-section{color:#005cc5;font-weight:bold}",
-      ".hljs-bullet{color:#735c0f}",
-      ".hljs-emphasis{color:#24292e;font-style:italic}",
-      ".hljs-strong{color:#24292e;font-weight:bold}",
-      ".hljs-addition{color:#22863a;background-color:#f0fff4}",
-      ".hljs-deletion{color:#b31d28;background-color:#ffeef0}",
+      hljs,
     ].join("\n");
   }
+
+  /* Inlined highlight.js themes (github.css / github-dark.css). */
+  const LIGHT_HLJS = [
+    "pre code.hljs{display:block;overflow-x:auto;padding:1em}",
+    "code.hljs{padding:3px 5px}",
+    ".hljs{color:#24292e;background:#fff}",
+    ".hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#d73a49}",
+    ".hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#6f42c1}",
+    ".hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-variable,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id{color:#005cc5}",
+    ".hljs-regexp,.hljs-string,.hljs-meta .hljs-string{color:#032f62}",
+    ".hljs-built_in,.hljs-symbol{color:#e36209}",
+    ".hljs-comment,.hljs-code,.hljs-formula{color:#6a737d}",
+    ".hljs-name,.hljs-quote,.hljs-selector-tag,.hljs-selector-pseudo{color:#22863a}",
+    ".hljs-subst{color:#24292e}",
+    ".hljs-section{color:#005cc5;font-weight:bold}",
+    ".hljs-bullet{color:#735c0f}",
+    ".hljs-emphasis{color:#24292e;font-style:italic}",
+    ".hljs-strong{color:#24292e;font-weight:bold}",
+    ".hljs-addition{color:#22863a;background-color:#f0fff4}",
+    ".hljs-deletion{color:#b31d28;background-color:#ffeef0}",
+  ].join("\n");
+
+  const DARK_HLJS = [
+    "pre code.hljs{display:block;overflow-x:auto;padding:1em}",
+    "code.hljs{padding:3px 5px}",
+    ".hljs{color:#c9d1d9;background:#0d1117}",
+    ".hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#ff7b72}",
+    ".hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#d2a8ff}",
+    ".hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#79c0ff}",
+    ".hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#a5d6ff}",
+    ".hljs-built_in,.hljs-symbol{color:#ffa657}",
+    ".hljs-code,.hljs-comment,.hljs-formula{color:#8b949e}",
+    ".hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#7ee787}",
+    ".hljs-subst{color:#c9d1d9}",
+    ".hljs-section{color:#1f6feb;font-weight:bold}",
+    ".hljs-bullet{color:#f2cc60}",
+    ".hljs-emphasis{color:#c9d1d9;font-style:italic}",
+    ".hljs-strong{color:#c9d1d9;font-weight:bold}",
+    ".hljs-addition{color:#aff5b4;background-color:#033a16}",
+    ".hljs-deletion{color:#ffdcd7;background-color:#67060c}",
+  ].join("\n");
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({
@@ -324,9 +465,55 @@
     });
   }
 
+  /* Open the exported HTML in a new browser tab without downloading it.
+   * Only meaningful for the HTML format (PDF goes through the print
+   * dialog, which is its own preview). */
+  function preview() {
+    if (errorEl) errorEl.hidden = true;
+    const scope = selectedScope();
+    const path = targetPath || (NB.viewer && NB.viewer.getPath()) || "";
+    if (!path) { if (errorEl) { errorEl.textContent = "No file is open to preview."; errorEl.hidden = false; } return; }
+    const host = document.createElement("div");
+    host.className = "markdown-body";
+    renderInto(host, scope).then(() => {
+      const title = path.split("/").pop().replace(/\.md$/i, "") || "note";
+      const css = exportCss();
+      const mainClass = ["markdown-body", "export-body"]
+        .concat(Array.from(host.classList).filter(c => c.indexOf("export-width-") === 0 || c.indexOf("export-theme-") === 0))
+        .join(" ");
+      const toc = host.querySelector(".export-toc");
+      const tocHtml = toc ? toc.outerHTML : "";
+      if (toc) toc.remove();
+      const html =
+        "<!DOCTYPE html>\n" +
+        "<html lang=\"en\">\n" +
+        "<head>\n" +
+        "  <meta charset=\"utf-8\">\n" +
+        "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n" +
+        "  <title>" + escapeHtml(title) + "</title>\n" +
+        "  <style>" + css + "</style>\n" +
+        "</head>\n" +
+        "<body>\n" +
+        (tocHtml ? "  <aside class=\"export-sidebar\">" + tocHtml + "</aside>\n" : "") +
+        "  <main class=\"" + mainClass + "\">\n" +
+        host.innerHTML +
+        "  </main>\n" +
+        "</body>\n" +
+        "</html>\n";
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }).catch(e => {
+      if (errorEl) { errorEl.textContent = (e && e.message) || "Preview failed."; errorEl.hidden = false; }
+      else alert("Preview failed: " + ((e && e.message) || e));
+    });
+  }
+
   const topbarBtn = document.getElementById("export-toggle");
   if (topbarBtn) topbarBtn.addEventListener("click", open);
   if (exportBtn) exportBtn.addEventListener("click", run);
+  if (previewBtn) previewBtn.addEventListener("click", preview);
   if (closeBtn) closeBtn.addEventListener("click", close);
   if (closeFooterBtn) closeFooterBtn.addEventListener("click", close);
   if (overlayEl) {
@@ -338,5 +525,5 @@
     if (e.key === "Escape" && isOpen()) close();
   });
 
-  NB.export = { open, close, isOpen, exportPdf, exportHtml, extractHeadings, sliceSection };
+  NB.export = { open, close, isOpen, exportPdf, exportHtml, preview, extractHeadings, sliceSection };
 })();
