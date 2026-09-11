@@ -1354,6 +1354,7 @@ evalIn(read("static/js/sidebar.js"));
 evalIn(read("static/js/search.js"));
 evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
+evalIn(read("static/js/windows.js"));
 evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/export.js"));
 evalIn(read("static/js/vimnav.js"));
@@ -7732,6 +7733,76 @@ function check(label, cond, extra) {
 
   // close: keep the rest of the suite running with a clean modal state.
   window.NB.settings.close();
+  await tick(10);
+
+  console.log("== windows (draggable/resizable modals) ==");
+  // NB.windows upgrades every .settings-modal into a free-floating window:
+  // drag by the header, resize with the bottom-right grip, persist the
+  // geometry in localStorage. jsdom has no layout engine and no
+  // PointerEvent, but window.innerWidth/innerHeight and dispatchEvent by
+  // type name work, and getBoundingClientRect returns zeros -- so we stub
+  // the modal's rect to a concrete box and assert the resulting inline
+  // left/top/width/height after driving pointer events.
+  const winModule = window.NB && window.NB.windows;
+  check("windows: NB.windows module is loaded", !!(winModule && winModule.wire),
+    winModule ? "loaded" : "missing");
+  check("windows: every .settings-modal has a resize grip",
+    window.document.querySelectorAll(".settings-modal .resize-grip").length >= 1,
+    "grips=" + window.document.querySelectorAll(".settings-modal .resize-grip").length);
+
+  const wModal = window.document.querySelector("#settings-overlay .settings-modal");
+  check("windows: modal has a wireable header", !!(wModal && wModal.querySelector(".settings-header")),
+    wModal ? "header present" : "no modal");
+
+  // Clear localStorage geometry so the test is deterministic, then reopen.
+  window.localStorage.removeItem("nb:windowGeometry");
+  const wStubRect = { width: 400, height: 260, left: 300, top: 120, right: 700, bottom: 380, x: 300, y: 120, toJSON() {} };
+  const wModalRect = wModal.getBoundingClientRect.bind(wModal);
+  wModal.getBoundingClientRect = () => wStubRect;
+
+  // Drag: pointerdown on the header, pointermove, pointerup on window.
+  const wHeader = wModal.querySelector(".settings-header");
+  wHeader.dispatchEvent(new window.MouseEvent("pointerdown", {
+    bubbles: true, cancelable: true, button: 0, clientX: 320, clientY: 130 }));
+  window.document.dispatchEvent(new window.MouseEvent("pointermove", {
+    bubbles: true, clientX: 380, clientY: 180 }));
+  window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+  check("windows: dragging the header moves the modal (left:300 + 60 = ~360)",
+    Math.round(parseFloat(wModal.style.left)) === 360,
+    "left=" + wModal.style.left);
+  check("windows: dragging the header moves the modal (top:120 + 50 = ~170)",
+    Math.round(parseFloat(wModal.style.top)) === 170,
+    "top=" + wModal.style.top);
+
+  // Resize: pointerdown on the grip, pointermove, pointerup.
+  const wGrip = wModal.querySelector(".resize-grip");
+  wGrip.dispatchEvent(new window.MouseEvent("pointerdown", {
+    bubbles: true, cancelable: true, button: 0, clientX: 700, clientY: 380 }));
+  window.document.dispatchEvent(new window.MouseEvent("pointermove", {
+    bubbles: true, clientX: 760, clientY: 430 }));
+  window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+  check("windows: resizing widens the modal (400 + 60 = ~460)",
+    Math.round(parseFloat(wModal.style.width)) === 460,
+    "width=" + wModal.style.width);
+  check("windows: resizing grows the modal (260 + 50 = ~310)",
+    Math.round(parseFloat(wModal.style.height)) === 310,
+    "height=" + wModal.style.height);
+
+  // Persistence: geometry was saved to localStorage.
+  let winGeo = null;
+  try { winGeo = JSON.parse(window.localStorage.getItem("nb:windowGeometry")); } catch (e) {}
+  const winKey = "settings-overlay";
+  check("windows: geometry persisted to localStorage under the overlay id",
+    !!winGeo && !!winGeo[winKey],
+    winKey + "=" + (winGeo && winGeo[winKey] ? "saved" : "(missing)"));
+  check("windows: persisted geometry has left/top/width/height",
+    !!winGeo && !!winGeo[winKey] && "left" in winGeo[winKey] && "top" in winGeo[winKey] &&
+      "w" in winGeo[winKey] && "h" in winGeo[winKey],
+    winGeo && winGeo[winKey] ? Object.keys(winGeo[winKey]).sort().join(",") : "(none)");
+
+  // Restore: unbind the rect stub so later code is unaffected.
+  wModal.getBoundingClientRect = wModalRect;
+  window.localStorage.removeItem("nb:windowGeometry");
   await tick(10);
 
   console.log("== export ==");

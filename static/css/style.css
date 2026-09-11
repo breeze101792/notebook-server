@@ -632,17 +632,14 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   z-index: 2000;
-  /* The overlay is the centering flex parent. `min-width: 0` on the
-   * row axis (default direction) lets the centered child actually
-   * shrink to its preferred width instead of growing to the viewport
-   * when its content has a wide intrinsic min-size (e.g. a long file
-   * path in the About section's .settings-mono code block). Without
-   * this, the flex item's default min-width:auto would let any
-   * unbreakable child push the modal wider than the chosen size. */
+  /* No centering here: each .settings-modal is itself position: fixed
+   * and centered on the viewport by default (with left/top: 50% plus a
+   * translate). NB.windows moves / resizes the modal by overriding those
+   * inline styles, so the overlay only ever acts as the dim backdrop.
+   * `min-width: 0` on the row axis lets an unbreakable intrinsic child
+   * (e.g. a long file path in the About section) shrink the modal
+   * instead of pushing it open. */
   min-width: 0;
   min-height: 0;
 }
@@ -651,38 +648,32 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * so the overlay starts closed and stays closed. */
 .settings-overlay[hidden] { display: none; }
 .settings-modal {
-  /* Width and height are driven by --settings-modal-width /
-   * --settings-modal-height, set on :root by JS
-   * (app.js:applySettingsModalWidth / Height). The user picks from
-   * compact / medium / wide, each of which is a viewport percentage
-   * (vw / vh), so the modal scales with the browser window: on a
-   * 1920x1080 display 75vw = 1440px and 80vh = 864px; on a 1280x768
-   * laptop the same "medium" preset = 960 x 614px. The fall-through
-   * defaults (75vw / 80vh) match the DEFAULTS values, so a missing
-   * inline style (e.g. before applyConfig() runs on first boot)
-   * still renders the modal at the medium size.
+  /* The modal is its own positioned window on the viewport, not a flex
+   * item. `--settings-modal-width / --settings-modal-height` (set on
+   * :root by JS) pick the default size; NB.windows overrides them with
+   * saved pixel sizes / absolute left+top once the user drags or
+   * resizes. Until then the standard CSS centering (left/top 50% minus
+   * half the box via a translate) keeps it dead-center like before.
    *
-   * The outer `min(..., 96vw)` and `min(..., 92vh)` clamps keep the
-   * modal slightly inset from the viewport edge on unusually small
-   * screens -- there is always a sliver of dim backdrop visible on
-   * the sides and top/bottom, and the modal can never be pushed off
-   * the visible area.
+   * The outer `min(..., 96vw)` and `min(..., 92vh)` clamps were kept
+   * for the initial centered size so a missing inline style still
+   * renders the modal inset from the edge on tiny screens. Once the
+   * user drags/resizes, NB.windows applies explicit inline pixel size
+   * (and clamps to the viewport in JS), which overrides these.
    *
-   * `flex: 0 0 auto` pins the modal to its chosen size inside the
-   * overlay's centering flex parent. Without this, the modal would
-   * expand to fit the widest section's intrinsic min-content (a long
-   * file path in About, the Security status row, etc.), so switching
-   * tabs would visibly resize the modal. The body / sections / rows
-   * min-width:0 chain (added in the previous turn) lets any wide
-   * intrinsic child shrink instead of expanding the outer width.
-   *
-   * The inner .settings-body fills the available space, and the
-   * inner .settings-sections pane has overflow-y: auto, so a future
-   * section taller than the chosen height scrolls inside the modal
-   * -- the outer size stays the same. */
+   * The inner .settings-body fills the available space, and the inner
+   * .settings-sections pane has overflow-y: auto, so a section taller
+   * than the chosen height scrolls inside the modal -- the outer size
+   * stays the same. */
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   flex: 0 0 auto;
   width: min(var(--settings-modal-width, 75vw), 96vw);
   height: min(var(--settings-modal-height, 80vh), 92vh);
+  max-width: 96vw;
+  max-height: 92vh;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -693,6 +684,44 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
    * owns the scroll. `overflow: hidden` keeps the rounded corners
    * crisp instead of clipping to a scrollbar. */
   overflow: hidden;
+  /* User can drag by the header (cursor cue) and resize from the grip. */
+  touch-action: none;
+}
+.settings-header {
+  cursor: move;
+}
+/* Bottom-right resize grip, injected by NB.windows. A diagonal gradient
+ * suggests dragging; sits over the rounded corner. */
+.settings-modal .resize-grip {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 5;
+  border-radius: 0 0 10px 0;
+}
+.settings-modal .resize-grip::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--fg-muted);
+  border-bottom: 2px solid var(--fg-muted);
+  opacity: .55;
+  border-bottom-right-radius: 2px;
+}
+/* During a drag/resize, suppress text selection. */
+.modal-dragging,
+.modal-resizing {
+  user-select: none !important;
+}
+.modal-dragging .settings-header,
+.modal-resizing .settings-header {
+  cursor: grabbing;
 }
 .settings-header {
   display: flex;
