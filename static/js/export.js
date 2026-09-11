@@ -104,29 +104,111 @@
 
   /* Build a table-of-contents <nav> from the rendered host's headings
    * (h1-h3). Each entry links to the heading's id (assigned by renderInto
-   * via the same slugify the viewer uses). Returns null when there are no
-   * headings. */
-  function buildToc(host) {
+   * via the same slugify the viewer uses).
+   *
+   * `flat` (default) produces a single flat list, used for the inline
+   * block in PDF export.
+   *
+   * `sidebar` produces a nested collapsible tree for the HTML export's
+   * sidebar: only h1 headings are visible by default; clicking an h1
+   * toggles its h2 children, clicking an h2 toggles its h3 children. A
+   * "Hide sidebar" button is prepended and a collapse toggle (▸/▾)
+   * shown before the indent-able headings that have children.
+   */
+  function buildToc(host, mode) {
     const headings = Array.from(host.querySelectorAll("h1,h2,h3"));
     if (headings.length === 0) return null;
+    const isSidebar = mode === "sidebar";
+
     const nav = document.createElement("nav");
     nav.className = "export-toc";
     const title = document.createElement("p");
     title.className = "export-toc-title";
     title.textContent = "Contents";
     nav.appendChild(title);
-    const list = document.createElement("ul");
-    for (const h of headings) {
-      const li = document.createElement("li");
-      li.className = "export-toc-level-" + h.tagName.toLowerCase();
-      const a = document.createElement("a");
-      a.href = "#" + (h.id || "");
-      a.textContent = h.textContent;
-      li.appendChild(a);
-      list.appendChild(li);
+
+    let hideBtn = null;
+    if (isSidebar) {
+      hideBtn = document.createElement("button");
+      hideBtn.type = "button";
+      hideBtn.className = "export-toc-hide";
+      hideBtn.textContent = "Hide sidebar";
+      nav.appendChild(hideBtn);
     }
+
+    const list = document.createElement("ul");
+    list.className = "export-toc-root";
+
+    if (isSidebar) {
+      // Nested tree. Headings come in document order; nest each heading
+      // under the most recent heading at a level one above it.
+      const stack = [];
+      for (const h of headings) {
+        const level = parseInt(h.tagName.slice(1), 10);
+        const li = document.createElement("li");
+        const a = document.createElement("a");
+        a.href = "#" + (h.id || "");
+        a.textContent = h.textContent;
+        li.appendChild(a);
+        while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+        let parentUl = list;
+        if (stack.length) {
+          let children = stack[stack.length - 1].li.querySelector("ul.export-toc-children");
+          if (!children) {
+            children = document.createElement("ul");
+            children.className = "export-toc-children";
+            children.hidden = true;
+            stack[stack.length - 1].li.appendChild(children);
+          }
+          parentUl = children;
+          // Add a ▸/▾ toggle to the parent so it can expand/collapse.
+          addToggle(stack[stack.length - 1].a, children);
+        }
+        parentUl.appendChild(li);
+        stack.push({ level, li, a });
+      }
+      // Only h1 visible by default: collapse every nested branch.
+      nav.querySelectorAll("ul.export-toc-children").forEach(u => { u.hidden = true; });
+    } else {
+      for (const h of headings) {
+        const li = document.createElement("li");
+        li.className = "export-toc-level-" + h.tagName.toLowerCase();
+        const a = document.createElement("a");
+        a.href = "#" + (h.id || "");
+        a.textContent = h.textContent;
+        li.appendChild(a);
+        list.appendChild(li);
+      }
+    }
+
     nav.appendChild(list);
+
+    if (isSidebar) {
+      // Hide button collapses the whole sidebar.
+      hideBtn.addEventListener("click", () => {
+        nav.closest(".export-sidebar").classList.add("collapsed");
+        document.body.classList.add("export-sidebar-hidden");
+      });
+    }
+
     return nav;
+  }
+
+  /* Add (or move, if present) a ▸/▾ collapse toggle to a TOC heading
+   * that has children, and wire it to toggle the children <ul>. */
+  function addToggle(a, childrenUl) {
+    if (!a.querySelector(".export-toc-toggle")) {
+      const toggle = document.createElement("span");
+      toggle.className = "export-toc-toggle";
+      toggle.textContent = "▸";
+      toggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        childrenUl.hidden = !childrenUl.hidden;
+        toggle.textContent = childrenUl.hidden ? "▸" : "▾";
+      });
+      a.appendChild(toggle);
+    }
   }
 
   /* Apply the selected page-width and theme classes to a rendered
@@ -209,7 +291,7 @@
    * export matches the on-screen rendering. `scope` is "current" (the whole
    * file) or "section" (only the selected h1-h3 section). Returns the
    * rendered element. */
-  async function renderInto(host, scope) {
+  async function renderInto(host, scope, tocMode) {
     const path = targetPath || (NB.viewer && NB.viewer.getPath()) || "";
     if (!path) throw new Error("No file is open to export.");
     let content = await resolveContent(path);
@@ -233,7 +315,7 @@
 
     // Table of contents (h1-h3), prepended when requested.
     if (includeToc()) {
-      const toc = buildToc(host);
+      const toc = buildToc(host, tocMode);
       if (toc) host.insertBefore(toc, host.firstChild);
     }
 
@@ -289,7 +371,7 @@
     // we render the base markdown + highlight now and let the caller await
     // the diagram pass before serializing. To keep this simple we reuse
     // renderInto on a detached node.
-    return renderInto(host, scope).then(() => {
+    return renderInto(host, scope, "sidebar").then(() => {
       const title = path.split("/").pop().replace(/\.md$/i, "") || "note";
       const css = exportCss();
       // The width/theme classes are set on `host` by renderInto; carry them
@@ -342,29 +424,27 @@
     const hljs = dark ? DARK_HLJS : LIGHT_HLJS;
     return [
       "body{margin:0;background:" + base.bg + ";color:" + base.fg + ";font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
-      ".export-sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;overflow-y:auto;background:" + base.rowOdd + ";border-right:1px solid " + base.border + ";padding:20px 16px;box-sizing:border-box}",
+      ".export-sidebar{position:fixed;top:0;left:0;bottom:0;width:240px;overflow-y:auto;background:" + base.rowOdd + ";border-right:1px solid " + base.border + ";padding:16px;box-sizing:border-box}",
       ".export-sidebar .export-toc{border:none;background:none;padding:0;margin:0}",
       ".export-sidebar .export-toc-title{font-size:1.1em;font-weight:700;margin:0 0 .6em}",
+      ".export-sidebar .export-toc-hide{display:block;width:100%;margin-bottom:.8em;padding:5px 8px;font-size:.85em;text-align:center;cursor:pointer;color:" + base.fg + ";background:transparent;border:1px solid " + base.border + ";border-radius:6px}",
+      ".export-sidebar .export-toc-hide:hover{background:" + base.quoteBg + "}",
       ".export-sidebar .export-toc ul{list-style:none;margin:0;padding:0}",
-      ".export-sidebar .export-toc li{margin:.2em 0;line-height:1.35}",
-      ".export-sidebar .export-toc a{color:" + base.link + ";text-decoration:none;display:block;padding:2px 6px;border-radius:4px}",
+      ".export-sidebar .export-toc li{margin:.15em 0;line-height:1.4}",
+      ".export-sidebar .export-toc a{color:" + base.link + ";text-decoration:none;display:block;padding:3px 6px;border-radius:4px;cursor:pointer}",
       ".export-sidebar .export-toc a:hover{background:" + base.quoteBg + ";text-decoration:none}",
-      ".export-sidebar .export-toc-level-h2{padding-left:1.1em}",
-      ".export-sidebar .export-toc-level-h3{padding-left:2.2em}",
+      ".export-sidebar .export-toc .export-toc-children{margin-left:.9em;border-left:1px solid " + base.border + ";padding-left:.4em}",
+      ".export-sidebar.collapsed{display:none}",
+      ".export-sidebar .export-toc-toggle{margin-left:4px;color:" + base.muted + ";font-weight:400}",
       ".export-body{max-width:820px;margin:0 auto;padding:32px 24px 80px}",
       ".export-body.export-width-fit{max-width:820px}",
       ".export-body.export-width-80{max-width:80%}",
       ".export-body.export-width-full{max-width:none}",
       "body:has(.export-sidebar) .export-body{margin-left:240px}",
+      "body.export-sidebar-hidden:has(.export-sidebar) .export-body{margin-left:auto}",
       "@media (max-width:900px){.export-sidebar{display:none}body:has(.export-sidebar) .export-body{margin-left:auto}}",
+      // Inline (PDF) table of contents block.
       ".export-toc{border:1px solid " + base.border + ";border-radius:8px;background:" + base.rowOdd + ";padding:14px 18px;margin:0 0 1.5em}",
-      ".export-toc-title{margin:0 0 .4em;font-weight:650;font-size:1.05em}",
-      ".export-toc ul{list-style:none;margin:0;padding:0}",
-      ".export-toc li{margin:.15em 0}",
-      ".export-toc a{color:" + base.link + ";text-decoration:none}",
-      ".export-toc a:hover{text-decoration:underline}",
-      ".export-toc-level-h2{padding-left:1.2em}",
-      ".export-toc-level-h3{padding-left:2.4em}",
       ".export-toc-title{margin:0 0 .4em;font-weight:650;font-size:1.05em}",
       ".export-toc ul{list-style:none;margin:0;padding:0}",
       ".export-toc li{margin:.15em 0}",
@@ -475,7 +555,7 @@
     if (!path) { if (errorEl) { errorEl.textContent = "No file is open to preview."; errorEl.hidden = false; } return; }
     const host = document.createElement("div");
     host.className = "markdown-body";
-    renderInto(host, scope).then(() => {
+    renderInto(host, scope, "sidebar").then(() => {
       const title = path.split("/").pop().replace(/\.md$/i, "") || "note";
       const css = exportCss();
       const mainClass = ["markdown-body", "export-body"]
