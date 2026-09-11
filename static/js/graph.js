@@ -391,15 +391,32 @@
     const labelDim     = rgbaOrFallback(p.dim,   0.4,  "rgba(127,140,160,0.4)");
     const labelNormal  = rgbaOrFallback(p.label, 0.92, "rgba(230,230,234,0.92)");
     const neighbours = hoverId ? neighbourSet(hoverId) : null;
-    const selectedNeighbours = selectedId ? neighbourSet(selectedId) : null;
+    const selectedDist = selectedId ? distanceMap(selectedId) : null;
+    const selectedEdge1   = rgbaOrFallback(mixTriple(p.edge, p.warn, 0.15), 0.75, activeEdge);
+    const selectedEdge2   = rgbaOrFallback(mixTriple(p.edge, p.dim, 0.3),  0.55, activeEdge);
+    const selectedEdge3   = rgbaOrFallback(mixTriple(p.edge, p.dim, 0.55), 0.4,  activeEdge);
     for (const e of edges) {
-      if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
-        ctx.strokeStyle = dimStroke;
-        ctx.lineWidth = 1 / scale;
+      let stroke = null, lw = 1.5;
+      if (selectedId) {
+        // Fade edges out by hop distance from the clicked node: direct
+        // links burn brightest, links between 2nd-hop nodes dimmer, and
+        // anything outside the selected component recedes to the dim line.
+        const ds = selectedDist.get(e.source.id);
+        const dt = selectedDist.get(e.target.id);
+        const d = Math.min(ds === undefined ? Infinity : ds,
+                           dt === undefined ? Infinity : dt);
+        if (d === 1)      { stroke = selectedEdge1; lw = 2; }
+        else if (d === 2) { stroke = selectedEdge2; lw = 1.6; }
+        else if (d === 3) { stroke = selectedEdge3; lw = 1.3; }
+        else if (d === Infinity) { stroke = dimStroke; lw = 1; }
+        else              { stroke = selectedEdge3; lw = 1.1; }
+      } else if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
+        stroke = dimStroke; lw = 1;
       } else {
-        ctx.strokeStyle = activeEdge;
-        ctx.lineWidth = 1.5 / scale;
+        stroke = activeEdge; lw = 1.5;
       }
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lw / scale;
       ctx.beginPath();
       ctx.moveTo(e.source.x, e.source.y);
       ctx.lineTo(e.target.x, e.target.y);
@@ -410,7 +427,8 @@
       const isFiltered = filterQuery && !n.id.toLowerCase().includes(filterQuery);
       const isDragged = (n === dragNode);
       const isSelected = n.id === selectedId;
-      const isSelectedNeighbour = selectedId && !isSelected && selectedNeighbours.has(n.id);
+      const selDist = selectedDist ? selectedDist.get(n.id) : undefined;
+      const isSelectedNeighbour = selectedId && !isSelected && selDist !== undefined;
       let r = 4 + Math.min(10, Math.sqrt(n.degree) * 2);
       if (n.id === hoverId) r += 2;
       if (n.id === activeFile) r += 2;
@@ -426,7 +444,16 @@
       } else if (isSelected) {
         fill = warnFill;
       } else if (isSelectedNeighbour) {
-        fill = hoverFill;
+        // Colour connected nodes by hop distance: direct neighbours glow
+        // amber-ish, 2nd-hop and beyond fade toward the dim tone so the
+        // graph reads as a heat-map radiating from the clicked node.
+        if (selDist === 1) {
+          fill = rgbaOrFallback(mixTriple(p.node, p.warn, 0.85), 0.95, hoverFill);
+        } else if (selDist === 2) {
+          fill = rgbaOrFallback(mixTriple(p.node, p.warn, 0.5), 0.9, nodeFill);
+        } else {
+          fill = rgbaOrFallback(mixTriple(p.node, p.dim, 0.55), 0.65, nodeFill);
+        }
       } else if (n.id === hoverId) {
         fill = hoverFill;
       } else {
@@ -463,6 +490,37 @@
       else if (e.target.id === id) s.add(e.source.id);
     }
     return s;
+  }
+
+  // BFS hop distance from a starting node to every reachable node
+  // (component). Nodes outside the component are absent from the map.
+  // Used to colour the selection as a heat-map radiating from the click.
+  function distanceMap(startId) {
+    const dist = new Map([[startId, 0]]);
+    const queue = [startId];
+    while (queue.length) {
+      const cur = queue.shift();
+      const d = dist.get(cur);
+      for (const e of edges) {
+        const nxt = e.source.id === cur ? e.target.id
+                  : e.target.id === cur ? e.source.id : null;
+        if (nxt && !dist.has(nxt)) {
+          dist.set(nxt, d + 1);
+          queue.push(nxt);
+        }
+      }
+    }
+    return dist;
+  }
+
+  // Linear blend between two [r,g,b] triplets (t=0 -> a, t=1 -> b).
+  function mixTriple(a, b, t) {
+    if (!a || !b) return a || b || null;
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t),
+    ];
   }
 
   // --- theme-aware colors ----------------------------------------------
