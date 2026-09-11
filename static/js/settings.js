@@ -47,6 +47,7 @@
   const vimrcSaveEl = document.getElementById("settings-vimrc-save");
   const vimrcStatus = document.getElementById("settings-vimrc-status");
   const hideTopbarEl = document.getElementById("settings-hide-topbar");
+  const graphParticlesEl = document.getElementById("settings-graph-particles");
   const siteTitleEl  = document.getElementById("settings-site-title");
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
@@ -395,6 +396,7 @@
     if (NB.app && NB.app.getCfg) {
       const cfg = NB.app.getCfg();
       if (hideTopbarEl) hideTopbarEl.checked = !!cfg.hideTopbar;
+      if (graphParticlesEl) graphParticlesEl.checked = !!(NB.graph && NB.graph.getParticleField && NB.graph.getParticleField());
       if (siteTitleEl) siteTitleEl.value = cfg.siteTitle || "Notebook";
     }
   }
@@ -422,6 +424,15 @@
   if (hideTopbarEl) {
     hideTopbarEl.addEventListener("change", () => {
       if (NB.app && NB.app.setHideTopbar) NB.app.setHideTopbar(hideTopbarEl.checked);
+    });
+  }
+
+  /* Graph background particles: live. Toggles the ambient drift field
+   * in the graph view and persists via NB.app's debounced config path. */
+  if (graphParticlesEl) {
+    graphParticlesEl.addEventListener("change", () => {
+      if (NB.graph && NB.graph.setParticleField) NB.graph.setParticleField(graphParticlesEl.checked);
+      if (NB.app && NB.app.setGraphParticles) NB.app.setGraphParticles(graphParticlesEl.checked);
     });
   }
 

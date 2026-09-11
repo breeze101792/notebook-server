@@ -65,6 +65,9 @@
   let activeFile = null;
   let selectedId = null;
   let mounted = false;
+  let reducedMotion = false;
+  let particleFieldEnabled = false;
+  let particles = null;
 
   // --- DOM refs (resolved on first mount) -----------------------------
   let viewEl, canvasHostEl, canvasEl, summaryEl, filterEl;
@@ -95,7 +98,18 @@
       const body = document.body;
       if (body && typeof MutationObserver === "function") {
         new MutationObserver(() => {
-          resolveColors();
+    resolveColors();
+    // Respect the user's system-level reduced-motion preference: it gates
+    // the breathing ring, particle drift, and fast edge pulses.
+    try {
+      reducedMotion = window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (_) { reducedMotion = false; }
+    // Honour the persisted "background particles" preference (Settings ->
+    // Appearance). Default stays off when NB.app is unavailable (tests).
+    if (window.NB && NB.app && NB.app.getCfg) {
+      particleFieldEnabled = !!NB.app.getCfg().graphParticles;
+    }
           requestRedraw();
         }).observe(body, { attributes: true, attributeFilter: ["data-theme"] });
       }
@@ -273,6 +287,12 @@
     // would silently never render.
     if (selectedId && !byId[selectedId]) selectedId = null;
     if (activeFile && !byId[activeFile]) activeFile = null;
+    // Very dense graphs lose the ambient particle drift field entirely
+    // (bloom + pulses remain) to protect the frame budget.
+    if (nodes.length + edges.length > 500 && particleFieldEnabled) {
+      particleFieldEnabled = false;
+      if (NB.evt) NB.evt.emit("graph:pardensity", false);
+    }
     if (summaryEl) {
       const n = nodes.length, e = edges.length;
       summaryEl.textContent = n + " note" + (n === 1 ? "" : "s") + " · " +
@@ -370,16 +390,36 @@
     // dpr scaling was set once in sizeCanvas(); don't reset to identity
     // or the dpr multiplier would be lost.
     ctx.clearRect(0, 0, width, height);
+    // Color fallbacks match the previous (dark-mode) hardcoded values
+    // so the canvas still looks sensible if the CSS tokens are missing
+    // (e.g. tests or a stray custom stylesheet).
+    const p = _palette || {};
+    // Screen-space ambient layers (drawn BEFORE the world transform so
+    // they cover the whole canvas and never follow pan/zoom).
+    const W = width, H = height;
+    // 1. Radial vignette: faint depth glow at the centre of the canvas.
+    const cx = W * 0.5, cy = H * 0.5;
+    const r0 = Math.min(W, H) * 0.10;
+    const r1 = Math.max(W, H) * 0.75;
+    const vinIn  = p.vinIn  && rgba(p.vinIn,  0.40);
+    const vinOut = p.vinOut && rgba(p.vinOut, 0.00);
+    if (vinIn && vinOut && typeof ctx.createRadialGradient === "function") {
+      const vg = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
+      vg.addColorStop(0, vinIn);
+      vg.addColorStop(1, vinOut);
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
+    // 2. Optional background particle field (Settings toggle, default
+    // off). Drifts in normalised [0..1] canvas space so it stays put
+    // while the user pans/zooms the graph.
+    if (particleFieldEnabled && !reducedMotion) drawParticles();
     // Apply the view transform: world (n.x, n.y) -> screen pixels.
     // ctx is already scaled by dpr, so on top of that we translate by
     // pan and scale by `scale`.
     ctx.save();
     ctx.translate(pan.x, pan.y);
     ctx.scale(scale, scale);
-    // Color fallbacks match the previous (dark-mode) hardcoded values
-    // so the canvas still looks sensible if the CSS tokens are missing
-    // (e.g. tests or a stray custom stylesheet).
-    const p = _palette || {};
     const dimStroke    = rgbaOrFallback(p.dim,   0.07, "rgba(127,140,160,0.07)");
     const activeEdge   = rgbaOrFallback(p.edge,  0.5,  "rgba(124,156,255,0.5)");
     const dimFill      = rgbaOrFallback(p.dim,   0.18, "rgba(127,140,160,0.18)");
@@ -421,6 +461,13 @@
       ctx.moveTo(e.source.x, e.source.y);
       ctx.lineTo(e.target.x, e.target.y);
       ctx.stroke();
+      // Animated signal pulses on top of the base line. Which edges
+      // pulse + how fast is decided by pulseSpeedFor(); the resting
+      // state is quiet (see §4.6 in the design).
+      if (!reducedMotion) {
+        const pspeed = pulseSpeedFor(e, selectedDist);
+        if (pspeed) drawEdgePulse(e, lw, pspeed);
+      }
     }
     for (const n of nodes) {
       const dim = hoverId && hoverId !== n.id && !neighbours.has(n.id);
@@ -459,12 +506,38 @@
       } else {
         fill = nodeFill;
       }
+      // Bloom: a soft additive radial gradient under the core so every
+      // node glows like a synapse. Skipped on dimmed/filtered nodes to
+      // avoid visual noise. Guarded so reduced 2D contexts (jsdom) no-op.
+      if (!dim && !isFiltered && typeof ctx.createRadialGradient === "function") {
+        const bt = tripletFromRgba(fill);
+        if (bt) {
+          const bloom = ctx.createRadialGradient(n.x, n.y, r * 0.5, n.x, n.y, r * 4);
+          bloom.addColorStop(0, rgba(bt, 0.35));
+          bloom.addColorStop(1, rgba(bt, 0.00));
+          ctx.fillStyle = bloom;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       // Glow ring for hovered / dragged / selected nodes for clearer feedback.
       if (n.id === hoverId || isDragged || isSelected) {
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
         ctx.strokeStyle = isDragged ? glowActive : glowHover;
         ctx.lineWidth = 2 / scale;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Breathing ring on the selected node: a soft pulse that eases
+      // in/out so the selection reads as "live". Static under
+      // prefers-reduced-motion.
+      if (isSelected) {
+        const phase = reducedMotion ? 0.5 : (Math.sin(performance.now() / 380) + 1) * 0.5;
+        ctx.strokeStyle = rgba(p.warn, 0.25 + 0.4 * phase);
+        ctx.lineWidth = (2 + 4 * phase) / scale;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 4 + 12 * phase, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.beginPath();
@@ -538,6 +611,13 @@
     if (!triple) return null;
     return "rgba(" + triple[0] + "," + triple[1] + "," + triple[2] + "," + a + ")";
   }
+  // Extract an [r,g,b] triplet from an rgba()/rgb() color string (used
+  // to derive the bloom gradient triple from a node's fill color).
+  function tripletFromRgba(s) {
+    const m = String(s || "").match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (!m) return null;
+    return [+m[1], +m[2], +m[3]];
+  }
   let _palette = null;
   function resolveColors() {
     // Real browsers cascade :root + body[data-theme] into a single
@@ -563,11 +643,134 @@
       warn:    parseRgbTriplet(read("--graph-warn-rgb")),
       dim:     parseRgbTriplet(read("--graph-dim-rgb")),
       label:   parseRgbTriplet(read("--graph-label-rgb")),
+      pulse:    parseRgbTriplet(read("--graph-pulse-rgb")),
+      particle: parseRgbTriplet(read("--graph-particle-rgb")),
+      vinIn:    parseRgbTriplet(read("--graph-vignette-inner-rgb")),
+      vinOut:   parseRgbTriplet(read("--graph-vignette-edge-rgb")),
     };
   }
   function rgbaOrFallback(triple, a, fallback) {
     const v = rgba(triple, a);
     return v || fallback;
+  }
+
+  // --- neural pulse + particle effects --------------------------------
+
+  // Return the pulse speed (px/ms) if the edge should carry a travelling
+  // signal right now, else 0 (resting state = no pulses). Priority: the
+  // most interesting trigger wins. selectedDist is the BFS hop map from
+  // the clicked node, or null.
+  function pulseSpeedFor(e, selectedDist) {
+    if (dragNode && (e.source === dragNode || e.target === dragNode)) return 0.018;
+    if (selectedDist !== null) {
+      const ds = selectedDist.get(e.source.id);
+      const dt = selectedDist.get(e.target.id);
+      // Only direct (hop-1) links off the selection carry the energetic
+      // signal; outer links stay quiet so the eye follows the burst.
+      if (ds === 1 || dt === 1) return 0.020;
+    }
+    if (hoverId && (e.source.id === hoverId || e.target.id === hoverId)) return 0.012;
+    if (activeFile && (e.source.id === activeFile || e.target.id === activeFile)) return 0.012;
+    return 0;
+  }
+
+  // Draw one or more short, bright, travelling signal segments along an
+  // edge from source -> target. Each edge's world length, in canvas
+  // pixels, is `len` (the sim keeps edges ~SPRING_LEN world units which
+  // the scale transform stretches into screen space).
+  function drawEdgePulse(e, baseLw, speed) {
+    const sx = e.source.x, sy = e.source.y;
+    const tx = e.target.x, ty = e.target.y;
+    let dx = tx - sx, dy = ty - sy;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 1) return;
+    const ux = dx / len, uy = dy / len;
+    const segLen = Math.min(36, len * 0.35);
+    const period = 80;
+    // The leading edge of the first pulse travels forward in time from
+    // the source end. Speed is normalised to world px/ms; the gradient is
+    // drawn in world space so it scales with zoom like the edge itself.
+    const tNow = performance.now();
+    const lead = -segLen + tNow * speed;
+    const startPhase = lead % period;
+    const first = startPhase - period;  // leftmost pulse offset < len
+    ctx.lineWidth = (baseLw + 1.4) / scale;
+    for (let off = first; off < len + segLen; off += period) {
+      const pStart = Math.max(0, off);
+      const pEnd = Math.min(len, off + segLen);
+      if (pEnd <= 0 || pStart >= len) continue;
+      const ax = sx + ux * pStart;
+      const ay = sy + uy * pStart;
+      const bx = sx + ux * pEnd;
+      const by = sy + uy * pEnd;
+      const g = ctx.createLinearGradient(ax, ay, bx, by);
+      if (typeof g.addColorStop === "function" && typeof g.addColorStop === "function") {
+        g.addColorStop(0,   rgbaOrFallback(_palette && _palette.pulse, 0.00, "rgba(180,230,255,0.00)"));
+        g.addColorStop(0.5, rgbaOrFallback(_palette && _palette.pulse, 0.95, "rgba(180,230,255,0.95)"));
+        g.addColorStop(1,   rgbaOrFallback(_palette && _palette.pulse, 0.00, "rgba(180,230,255,0.00)"));
+        ctx.strokeStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Lazy particle drift field. Runs in normalised [0..1] canvas space so
+  // it covers the viewport regardless of pan/zoom and never follows the
+  // world transform.
+  function initParticles() {
+    if (particles) return;
+    const count = Math.min(100, Math.max(60, Math.round((width * height) / 24000)));
+    particles = new Array(count);
+    for (let i = 0; i < count; i++) {
+      particles[i] = {
+        x: Math.random(),
+        y: Math.random(),
+        vx: (Math.random() - 0.5) * 0.0004,
+        vy: (Math.random() - 0.5) * 0.0004,
+      };
+    }
+  }
+  function drawParticles() {
+    initParticles();
+    const W = width || 1, H = height || 1;
+    const part = (_palette && _palette.particle) || [130, 168, 255];
+    for (let i = 0; i < particles.length; i++) {
+      const a = particles[i];
+      // Advance + wrap.
+      a.x = (a.x + a.vx + 1) % 1;
+      a.y = (a.y + a.vy + 1) % 1;
+      const ax = a.x * W, ay = a.y * H;
+      ctx.fillStyle = rgba(part, 0.20);
+      ctx.beginPath();
+      ctx.arc(ax, ay, 1, 0, Math.PI * 2);
+      ctx.fill();
+      for (let j = i + 1; j < particles.length; j++) {
+        const b = particles[j];
+        let ddx = a.x - b.x, ddy = a.y - b.y;
+        const d2 = ddx * ddx + ddy * ddy;
+        if (d2 > 0.01) continue;   // proximity radius = 10% of side
+        const d = Math.sqrt(d2);
+        const t = 1 - d / 0.1;
+        ctx.strokeStyle = rgba(part, 0.06 + 0.10 * t);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(b.x * W, b.y * H);
+        ctx.stroke();
+      }
+    }
+  }
+  function setParticleField(on) {
+    particleFieldEnabled = !!on;
+    if (particleFieldEnabled && !reducedMotion) {
+      initParticles();
+      requestRedraw();
+    } else {
+      requestRedraw();
+    }
   }
 
   // --- rAF loop --------------------------------------------------------
@@ -752,6 +955,8 @@
     get pan() { return pan; },
     get width() { return width; },
     get height() { return height; },
+    setParticleField,
+    getParticleField: () => particleFieldEnabled,
     TAB_ID,
   };
 })();

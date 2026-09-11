@@ -955,12 +955,14 @@ function makeFakeCtx(canvasEl) {
     current: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
     fills: new Set(),         // every fillStyle string seen across draws
     strokes: new Set(),       // every strokeStyle string seen across draws
+    gradients: { radial: 0, linear: 0 },  // gradient objects created
+    gradientStops: [],        // every [type,x,y,stop,color] recorded
   };
   // Track each fillStyle/strokeStyle write into a Set so a test can
   // assert "the canvas used the dark-theme accent" without coupling
   // to the order of operations inside draw().
-  const fillProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; log.fills.add(v); } };
-  const strokeProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; log.strokes.add(v); } };
+  const fillProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; if (typeof v === "string") log.fills.add(v); } };
+  const strokeProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; if (typeof v === "string") log.strokes.add(v); } };
   const apply = (name) => (...args) => {
     log.calls.push(name);
     log.ops[name] = (log.ops[name] || 0) + 1;
@@ -986,9 +988,9 @@ function makeFakeCtx(canvasEl) {
     log,
     canvas: canvasEl || null,
     get fillStyle()   { return fillProxy._last; },
-    set fillStyle(v)  { fillProxy._last = v; log.fills.add(v); },
+    set fillStyle(v)  { fillProxy._last = v; if (typeof v === "string") log.fills.add(v); },
     get strokeStyle() { return strokeProxy._last; },
-    set strokeStyle(v){ strokeProxy._last = v; log.strokes.add(v); },
+    set strokeStyle(v){ strokeProxy._last = v; if (typeof v === "string") log.strokes.add(v); },
     lineWidth: 1, font: "",
     save: apply("save"), restore: apply("restore"),
     translate: apply("translate"), scale: apply("scale"), setTransform: apply("setTransform"),
@@ -996,6 +998,27 @@ function makeFakeCtx(canvasEl) {
     beginPath: apply("beginPath"), moveTo: apply("moveTo"), lineTo: apply("lineTo"),
     arc: apply("arc"), fill: apply("fill"), stroke: apply("stroke"),
     fillText: apply("fillText"),
+    // Gradient stubs. The neural styling uses radial gradients (node
+    // bloom + vignette) and linear gradients (edge signal pulses); the
+    // real production code guards on 'typeof createRadialGradient ===
+    // "function"', so recording them here is what lets those paths run
+    // and asserts they're actually exercised.
+    createRadialGradient: (x0, y0, r0, x1, y1, r1) => {
+      log.gradients.radial++;
+      const g = { _type: "radial", _coords: [x0, y0, r0, x1, y1, r1] };
+      g.addColorStop = (stop, color) => {
+        log.gradientStops.push(["radial", stop, color]);
+      };
+      return g;
+    },
+    createLinearGradient: (x0, y0, x1, y1) => {
+      log.gradients.linear++;
+      const g = { _type: "linear", _coords: [x0, y0, x1, y1] };
+      g.addColorStop = (stop, color) => {
+        log.gradientStops.push(["linear", stop, color]);
+      };
+      return g;
+    },
   };
   return ctx;
 }
@@ -4476,6 +4499,22 @@ function check(label, cond, extra) {
   }
 
   console.log("== graph view ==");
+  // CSS sanity for the neural-network redesign tokens: they must exist in
+  // style.css for both themes so resolveColors() has real values to read
+  // (the canvas can't read var() directly; it depends on these triples).
+  const graphCss = read("static/css/style.css");
+  check("graph: neural-effect CSS tokens are declared (root)",
+    /--graph-pulse-rgb/.test(graphCss) && /--graph-pulse-rgb/.test(graphCss),
+    "no --graph-pulse-rgb in style.css");
+  check("graph: vignette CSS tokens are declared (root)",
+    /--graph-vignette-inner-rgb/.test(graphCss) && /--graph-vignette-edge-rgb/.test(graphCss),
+    "no vignette tokens in style.css");
+  check("graph: particle token + host bg are declared",
+    /--graph-particle-rgb/.test(graphCss) && /\.graph-view-host\s*\{[^}]*--graph-bg/.test(graphCss),
+    "missing particle token or host bg");
+  check("graph: Settings toggle for background particles exists",
+    /settings-graph-particles/.test(read("templates/index.html")),
+    "no settings-graph-particles checkbox in index.html");
   // The graph opens as a special tab (§graph) in the tab bar, not as a
   // side-panel view or a content-area overlay. The 🕸 activity-bar button
   // triggers NB.tabs.openSpecial("§graph"), which creates a tab with a
@@ -4846,14 +4885,15 @@ function check(label, cond, extra) {
       check("graph: selected node painted with warn color",
         hasFill(/243\s*,\s*180\s*,\s*84/),
         "fills=" + JSON.stringify(fills()));
-      // Its direct neighbor uses the hover color at alpha 1 (distinct
-      // from the default node fill which is the same rgb at alpha 0.8).
-      check("graph: neighbor node painted with hover color",
-        hasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
+      // Its direct (hop-1) neighbor is coloured as the warm distance
+      // blend: mixTriple(hover, warn, 0.85) = rgba(225,176,110,0.95),
+      // distinct from the selected warn and from the default node fill.
+      check("graph: neighbor node painted with warm distance blend",
+        hasFill(/225\s*,\s*176\s*,\s*110\s*,\s*0\.95/),
         "fills=" + JSON.stringify(fills()));
       // The selected color must differ from the neighbor color.
       check("graph: selected color differs from neighbor color",
-        hasFill(/243\s*,\s*180\s*,\s*84/) && hasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
+        hasFill(/243\s*,\s*180\s*,\s*84/) && hasFill(/225\s*,\s*176\s*,\s*110/),
         "fills=" + JSON.stringify(fills()));
       // Remove the synthetic edge so later tests see the real (empty) graph.
       window.NB.graph.edges.length = 0;
@@ -5046,6 +5086,82 @@ function check(label, cond, extra) {
       Math.abs(window.NB.graph.scale - 1) > 0.001,
       "after recenter pan=" + JSON.stringify(window.NB.graph.pan) +
       " scale=" + window.NB.graph.scale.toFixed(3));
+
+    // --- particle field toggle ---
+    // The ambient background particle drift is off by default and is
+    // toggled via Settings -> Appearance (NB.app.setGraphParticles ->
+    // NB.graph.setParticleField). Verify the public surface routes the
+    // setting through and that enabling it is observable.
+    const hadParticles = !!window.NB.graph.getParticleField();
+    window.NB.app && window.NB.app.setGraphParticles ? window.NB.app.setGraphParticles(true) : window.NB.graph.setParticleField(true);
+    await tick(20);
+    check("graph: particle field can be enabled",
+      !!window.NB.graph.getParticleField(),
+      "particleField=" + window.NB.graph.getParticleField());
+    window.NB.app && window.NB.app.setGraphParticles ? window.NB.app.setGraphParticles(false) : window.NB.graph.setParticleField(false);
+    await tick(20);
+    check("graph: particle field can be disabled",
+      !window.NB.graph.getParticleField(),
+      "particleField=" + window.NB.graph.getParticleField());
+    if (hadParticles) window.NB.graph.setParticleField(true);
+
+    // --- neural-network effects: bloom + vignette + edge pulses ---
+    // These tests exercise the new draw() passes. They build a small
+    // graph with synthetic edges so the pulse path, node bloom, and
+    // radial vignette all run against the recorded gradient stub. The
+    // effects are gated on gradient factories existing, which the stub
+    // now provides, so the assertions prove the effects actually fire.
+    const effectA = window.NB.graph.nodes[0];
+    const effectB = window.NB.graph.nodes[1];
+    if (effectA && effectB && ctx) {
+      // Record a before-pass count of gradient objects.
+      const g0 = ctx.log.gradients.radial + ctx.log.gradients.linear;
+      // Build a tiny A<->B edge so pulseSpeedFor() has a hop-1 link.
+      window.NB.graph.edges.push({ source: effectA, target: effectB });
+      effectA.x = 0; effectA.y = 0;
+      effectB.x = 30; effectB.y = 30;
+      // Select A so pulsing activates on the hop-1 edge.
+      ctx.log.fills.clear();
+      await tick(20);
+      const atE = {
+        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
+        bubbles: true, cancelable: true, button: 0,
+      };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atE));
+      window.document.dispatchEvent(new window.MouseEvent("mouseup", atE));
+      canvasEl.dispatchEvent(new window.MouseEvent("click", atE));
+      await tick(40);
+      const gAfter = ctx.log.gradients.radial + ctx.log.gradients.linear;
+      check("graph: neural effects create gradient objects (bloom/pulse/vignette)",
+        gAfter > g0,
+        "before=" + g0 + " after=" + gAfter +
+        " radial=" + ctx.log.gradients.radial + " linear=" + ctx.log.gradients.linear);
+      // The vignette always runs a radial gradient centered on the canvas.
+      check("graph: vignette paints a radial gradient",
+        ctx.log.gradients.radial > 0,
+        "radial=" + ctx.log.gradients.radial);
+      // Node bloom (radial) + edge pulses (linear) both fire when a
+      // node is selected (bloom on every non-dimmed node, pulse on the
+      // hop-1 edge). With A selected, we expect at least one radial
+      // AND one linear gradient from this frame's effects.
+      check("graph: selecting a node fires bloom radials + edge-pulse linears",
+        ctx.log.gradients.radial > 0 && ctx.log.gradients.linear > 0,
+        "radial=" + ctx.log.gradients.radial + " linear=" + ctx.log.gradients.linear);
+      // A pulse's linear gradient fades 0 -> ~1 -> 0 along its length so
+      // the head brightens and the tail recedes; capture a linear stop
+      // set and confirm it has a mid (≈0.95) brightness stop.
+      const linearStops = ctx.log.gradientStops.filter(s => s[0] === "linear");
+      const hasMidPulse = linearStops.some(s => s[1] > 0.4 && s[1] < 0.6 && /0\.9/.test(s[2]) || /180\s*,\s*230\s*,\s*255/.test(s[2]));
+      check("graph: edge pulse gradient has a bright mid stop",
+        hasMidPulse,
+        "stops=" + JSON.stringify(linearStops.slice(0, 6)));
+      // Clean up: clear selection + remove the synthetic edge.
+      canvasEl.dispatchEvent(new window.MouseEvent("click", {
+        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
+      }));
+      window.NB.graph.edges.length = 0;
+      await tick(20);
+    }
 
     // Close the graph tab before subsequent tests run so it doesn't
     // interfere with tab-close / restore assertions below.

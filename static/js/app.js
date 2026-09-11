@@ -33,6 +33,10 @@
     sidebarCollapsed: false,
     outlineCollapsed: false,
     searchCaseSensitive: false,
+    // Ambient background particle drift in the graph view (neural
+    // "network" feel). Off by default so it doesn't distract while
+    // reading the graph; toggle in Settings -> Appearance.
+    graphParticles: false,
     // Hide the top bar (brand, search, actions). Toggled live from the
     // Appearance settings tab or the Ctrl+Shift+T shortcut. When on,
     // body gets .topbar-hidden and --topbar-h collapses to 0 so the
@@ -747,6 +751,12 @@
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
     setHideTopbar: (on) => { applyTopbar(!!on); persistConfig(); },
     getHideTopbar: () => !!cfg.hideTopbar,
+    setGraphParticles: (on) => {
+      cfg.graphParticles = !!on;
+      if (NB.graph && NB.graph.setParticleField) NB.graph.setParticleField(cfg.graphParticles);
+      persistConfig();
+    },
+    getGraphParticles: () => !!cfg.graphParticles,
     setSiteTitle: (title) => { applySiteTitle(title); persistConfig(); },
     getSiteTitle: () => cfg.siteTitle || "Notebook",
     setVimMode: (on) => {
