@@ -235,7 +235,10 @@
     let md = td.turndown(clone);
     const cut = md.indexOf(SENTINEL);
     if (cut >= 0) md = md.slice(0, cut);
-    return md;
+    // Strip the zero-width-space placeholder we inject into empty list
+    // items (see ensureListMarker) so it never leaks into the saved
+    // markdown. A bare ZWS text node is invisible and meaningless.
+    return md.replace(/\u200B/g, "");
   }
 
   /* Re-render Markdown into #viewer-content (same pipeline as
@@ -272,6 +275,9 @@
     // toggle. The click handler below flips `checked` and marks dirty;
     // turndown then emits [x]/[ ] on save.
     enableCheckboxes();
+    // Empty list items get a zero-width-space placeholder so their
+    // markers render (see ensureListMarker).
+    addListPlaceholders();
   }
 
   /* --- edit bar integration -------------------------------------- */
@@ -445,6 +451,25 @@
     sel.addRange(r);
   }
 
+  /* Ensure an empty list item shows its marker. A completely empty <li>
+   * (no text, no <br>) does not render its list marker in some browsers,
+   * so the "1." / "-" the user just typed would vanish. A zero-width
+   * space keeps the item non-empty (marker renders) while staying
+   * invisible; it is stripped from the markdown on save. */
+  function ensureListMarker(li) {
+    if (!li) return;
+    if (!li.textContent && !li.querySelector("img,br,canvas,svg,iframe,input")) {
+      li.appendChild(document.createTextNode("\u200B"));
+    }
+  }
+
+  /* Add a zero-width-space placeholder to every empty list item in the
+   * current DOM so their markers render. Called on hybrid enter and after
+   * any re-render (the markdown may contain empty items). */
+  function addListPlaceholders() {
+    viewerContentEl.querySelectorAll("li").forEach(ensureListMarker);
+  }
+
   const INPUT_RULES = [
     { re: /^(#{1,6}) $/, apply: (m) => {
       const made = wrapBlock("h" + m[1].length);
@@ -454,14 +479,20 @@
       const made = toggleList("ul");
       if (made) {
         const li = made.querySelector("li");
-        if (li) caretToStart(li);
+        if (li) {
+          ensureListMarker(li);
+          caretToStart(li);
+        }
       }
     } },
     { re: /^\d+\. $/, apply: () => {
       const made = toggleList("ol");
       if (made) {
         const li = made.querySelector("li");
-        if (li) caretToStart(li);
+        if (li) {
+          ensureListMarker(li);
+          caretToStart(li);
+        }
       }
     } },
     { re: /^> $/, apply: () => {
@@ -479,6 +510,7 @@
         cb.type = "checkbox";
         cb.checked = m[1] !== " ";
         li.insertBefore(cb, li.firstChild);
+        ensureListMarker(li);
         caretToStart(li);
       }
     } },
@@ -500,6 +532,22 @@
     // Only plain paragraphs convert (never inside lists, headings,
     // blockquotes, code blocks -- those are already formatted).
     if (blockEl.tagName !== "P" && blockEl.tagName !== "DIV") return false;
+    // When the caret sits directly in the root container (an empty note
+    // has no <p> yet -- the browser types straight into #viewer-content),
+    // wrap the content in a <p> first so the block transforms below have
+    // a real element to replace instead of the container itself.
+    if (blockEl === viewerContentEl) {
+      const p = document.createElement("p");
+      while (blockEl.firstChild) p.appendChild(blockEl.firstChild);
+      blockEl.appendChild(p);
+      // Re-anchor the caret inside the new <p>.
+      const r = document.createRange();
+      r.selectNodeContents(p);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      return applyBlockRules();
+    }
     // The trigger must be at the very start of the line; whatever text
     // follows the caret (or before it on the same line) is preserved and
     // becomes the content of the new element.
@@ -677,6 +725,46 @@
     editPluginSource(hit);
   }
 
+  /* --- list indentation (Tab / Shift+Tab) --------------------------- */
+  /* Nest the current list item one level deeper (Tab) or shallower
+   * (Shift+Tab). Indenting wraps the item in a new nested <ul>/<ol>
+   * under the previous sibling; outdenting moves it up to its parent
+   * list. Returns true when the caret's block was a list item. */
+  function indentListItem(li, outdent) {
+    if (!li) return false;
+    const list = li.closest("ul,ol");
+    if (!list || !viewerContentEl.contains(list)) return false;
+    if (outdent) {
+      const parentList = list.parentElement.closest("ul,ol");
+      const parentLi = list.parentElement.closest("li");
+      if (!parentList || !parentLi) return false;   // already top level
+      // Move this item (and any following siblings) up into the parent list.
+      const items = [];
+      let cur = li;
+      while (cur) { const nx = cur.nextElementSibling; items.push(cur); cur = nx; }
+      const insertBefore = parentLi.nextSibling;
+      items.forEach((it) => parentList.insertBefore(it, insertBefore));
+      if (!list.firstElementChild) list.remove();
+      onContentChange();
+      return true;
+    }
+    // Indent: nest under the previous sibling item.
+    const prev = li.previousElementSibling;
+    if (!prev || prev.tagName !== "LI") return false;
+    let childList = prev.querySelector(":scope > ul, :scope > ol");
+    if (!childList) {
+      childList = document.createElement(list.tagName);
+      prev.appendChild(childList);
+    }
+    const items = [];
+    let cur = li;
+    while (cur) { const nx = cur.nextElementSibling; items.push(cur); cur = nx; }
+    items.forEach((it) => childList.appendChild(it));
+    if (!list.firstElementChild) list.remove();
+    onContentChange();
+    return true;
+  }
+
   /* keydown handler for hybrid mode: the markdown input rules that need
    * a key (``` + Enter, list outdent) plus the inline-format shortcuts. */
   function onEnterKey(e) {
@@ -707,6 +795,19 @@
         return;
       }
     }
+    // Tab / Shift+Tab: indent / outdent the current list item. Only when
+    // the caret is inside a list item (never steal Tab elsewhere).
+    if (e.key === "Tab") {
+      const ctx = caretContext();
+      if (ctx) {
+        const li = ctx.blockEl.closest("li");
+        if (li) {
+          e.preventDefault();
+          indentListItem(li, e.shiftKey);
+          return;
+        }
+      }
+    }
     const ctx = caretContext();
     if (!ctx) return;
     const { blockEl, range } = ctx;
@@ -725,29 +826,33 @@
       onContentChange();
       return;
     }
-    // Empty list item -> outdent to a paragraph.
-    const li = blockEl.closest("li");
-    if (li && li.textContent.trim() === "") {
-      e.preventDefault();
-      const list = li.closest("ul,ol");
-      if (list) {
-        const p = document.createElement("p");
-        const atEnd = list.lastElementChild === li;
-        if (atEnd) {
-          list.after(p);
-          li.remove();
-          if (!list.firstElementChild) list.remove();
-        } else {
-          // Split the list and drop the empty item between.
-          const rest = document.createElement(list.tagName);
-          let cur = li.nextElementSibling;
-          while (cur) { const nx = cur.nextElementSibling; rest.appendChild(cur); cur = nx; }
-          list.after(p, rest);
-          li.remove();
-          if (!list.firstElementChild) list.remove();
+    // Empty list item -> outdent to a paragraph. Only on Enter (the
+    // handler also runs for other keys, and outdenting on a plain
+    // character would eat the first keystroke into an empty item).
+    if (e.key === "Enter") {
+      const li = blockEl.closest("li");
+      if (li && li.textContent.replace(/\u200B/g, "").trim() === "") {
+        e.preventDefault();
+        const list = li.closest("ul,ol");
+        if (list) {
+          const p = document.createElement("p");
+          const atEnd = list.lastElementChild === li;
+          if (atEnd) {
+            list.after(p);
+            li.remove();
+            if (!list.firstElementChild) list.remove();
+          } else {
+            // Split the list and drop the empty item between.
+            const rest = document.createElement(list.tagName);
+            let cur = li.nextElementSibling;
+            while (cur) { const nx = cur.nextElementSibling; rest.appendChild(cur); cur = nx; }
+            list.after(p, rest);
+            li.remove();
+            if (!list.firstElementChild) list.remove();
+          }
+          caretToStart(p);
+          onContentChange();
         }
-        caretToStart(p);
-        onContentChange();
       }
     }
   }
@@ -1028,11 +1133,26 @@
   /* --- input listener -------------------------------------------- */
 
   let inputDebounce = null;
+  let inputRuleTimer = null;
+
   function onInput() {
     // contentEditable fires 'input' on every keystroke; we just mark dirty.
-    // Live markdown input rules run first (they mutate the DOM and move
-    // the caret, and themselves mark dirty on success).
-    applyInputRules();
+    // Live markdown input rules mutate the DOM (turn "1. " into a list,
+    // "### " into a heading, ...). They must NOT run synchronously inside
+    // the 'input' event: the browser's editing engine is still mid-operation
+    // and reverts any DOM change we make here, so the transform would be
+    // undone (the "1." vanishes). Defer to the next task, by which point
+    // the browser has finished its own edit and the caret/block are stable.
+    clearTimeout(inputRuleTimer);
+    inputRuleTimer = setTimeout(() => {
+      inputRuleTimer = null;
+      if (!active) return;
+      applyInputRules();
+      // The browser's default Enter inside a list creates a new empty <li>
+      // (no marker). Re-apply the zero-width-space placeholder so the new
+      // item's marker renders too. Idempotent and cheap.
+      addListPlaceholders();
+    }, 0);
     clearTimeout(inputDebounce);
     inputDebounce = setTimeout(onContentChange, 50);
   }
@@ -1104,6 +1224,9 @@
     // The DOM is already rendered by viewer.js (checkboxes disabled);
     // re-enable them so the user can toggle task items.
     enableCheckboxes();
+    // Empty list items get a zero-width-space placeholder so their
+    // markers render (see ensureListMarker).
+    addListPlaceholders();
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);

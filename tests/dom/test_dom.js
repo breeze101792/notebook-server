@@ -3128,8 +3128,10 @@ function check(label, cond, extra) {
 
     // --- live markdown input rules ----------------------------------
     // Simulate typing a trigger into a fresh <p>: put a collapsed caret
-    // after the trigger text inside a text node, then fire 'input'.
-    const typeIn = (text, tag) => {
+    // after the trigger text inside a text node, then fire 'input'. The
+    // rule application is deferred (setTimeout 0) so the browser's own
+    // edit completes first, so we await a tick before returning.
+    const typeIn = async (text, tag) => {
       const p = window.document.createElement(tag || "p");
       const tn = window.document.createTextNode(text);
       p.appendChild(tn);
@@ -3141,10 +3143,11 @@ function check(label, cond, extra) {
       sel.removeAllRanges();
       sel.addRange(range);
       p.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(10);
       return p;
     };
 
-    typeIn("### ");
+    await typeIn("### ");
     check("hybrid: input rule '### ' makes an h3",
       (vc.querySelector("h3") !== null) ||
       vc.lastElementChild.tagName === "H3",
@@ -3153,29 +3156,77 @@ function check(label, cond, extra) {
       !/#/.test(vc.lastElementChild.textContent),
       JSON.stringify(vc.lastElementChild.textContent));
 
-    typeIn("- ");
+    await typeIn("- ");
     check("hybrid: input rule '- ' makes a bullet list",
       vc.querySelector("ul li") !== null,
       "ul present=" + !!vc.querySelector("ul"));
 
-    typeIn("1. ");
+    await typeIn("1. ");
     check("hybrid: input rule '1. ' makes an ordered list",
       vc.querySelector("ol li") !== null,
       "ol present=" + !!vc.querySelector("ol"));
+    // The empty <li> must hold a zero-width-space placeholder so its
+    // marker ("1.") renders; and that placeholder must NOT leak into the
+    // saved markdown.
+    const olLi = vc.querySelector("ol li");
+    check("hybrid: empty ordered-list item has marker placeholder",
+      olLi !== null && olLi.textContent === "\u200B",
+      "li text=" + JSON.stringify(olLi && olLi.textContent));
+    check("hybrid: marker placeholder stripped from markdown",
+      !window.NB.hybrid.domToMarkdown().includes("\u200B"),
+      JSON.stringify(window.NB.hybrid.domToMarkdown()));
 
-    typeIn("> ");
+    // Tab indents a list item into a nested list; Shift+Tab outdents.
+    {
+      // Build a two-item ordered list with the caret in the second item.
+      const ol = window.document.createElement("ol");
+      const li1 = window.document.createElement("li");
+      li1.textContent = "first";
+      const li2 = window.document.createElement("li");
+      li2.textContent = "second";
+      ol.appendChild(li1);
+      ol.appendChild(li2);
+      vc.appendChild(ol);
+      const r = window.document.createRange();
+      r.setStart(li2.firstChild, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      // Tab -> indent li2 under li1.
+      ol.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Tab", bubbles: true, cancelable: true }));
+      const nested = li1.querySelector(":scope > ol");
+      check("hybrid: Tab indents list item into nested list",
+        nested !== null && nested.contains(li2),
+        "nested=" + !!nested);
+      // Shift+Tab -> outdent li2 back to the top-level list.
+      const r2 = window.document.createRange();
+      r2.setStart(li2.firstChild, 0);
+      r2.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r2);
+      ol.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+      check("hybrid: Shift+Tab outdents list item",
+        ol.contains(li2) && !li1.querySelector(":scope > ol"),
+        "outdented=" + ol.contains(li2));
+      ol.remove();
+    }
+
+    await typeIn("> ");
     check("hybrid: input rule '> ' makes a blockquote",
       vc.querySelector("blockquote") !== null,
       "bq present=" + !!vc.querySelector("blockquote"));
 
-    typeIn("[ ] ");
+    await typeIn("[ ] ");
     const taskLi = vc.querySelector("li.task-list-item");
     check("hybrid: input rule '[ ] ' makes a task item with checkbox",
       taskLi !== null && taskLi.querySelector('input[type="checkbox"]') !== null,
       "task li=" + !!taskLi);
 
     // Inline rules: '**bold**' with the caret after the final '*'.
-    typeIn("**bold**");
+    await typeIn("**bold**");
     const lastEl = vc.lastElementChild;
     check("hybrid: input rule '**bold**' makes a <strong>",
       lastEl.querySelector("strong") !== null,
@@ -3184,7 +3235,7 @@ function check(label, cond, extra) {
       lastEl.querySelector("strong") && lastEl.querySelector("strong").textContent === "bold",
       JSON.stringify(lastEl.textContent));
 
-    typeIn("`code`");
+    await typeIn("`code`");
     check("hybrid: input rule '`code`' makes inline <code>",
       vc.lastElementChild.querySelector("code") !== null,
       "last=" + vc.lastElementChild.textContent);
@@ -3192,7 +3243,7 @@ function check(label, cond, extra) {
     // No false positives: plain text with a leading '#' but no space after
     // the hashes must NOT convert.
     vc.querySelectorAll("ul,ol,blockquote,h3").forEach(el => el.remove());
-    const plain = typeIn("#no-space heading text");
+    const plain = await typeIn("#no-space heading text");
     check("hybrid: plain '#no-space' text is not converted",
       plain.tagName === "P" && plain.textContent === "#no-space heading text",
       plain.tagName + ":" + plain.textContent);
@@ -3214,6 +3265,7 @@ function check(label, cond, extra) {
       sel2.removeAllRanges();
       sel2.addRange(r2);
       p2.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(10);
       // wrapBlock REPLACES the <p> with an <h1>, so p2 is detached;
       // look at the viewer's current last element instead.
       const last2 = vc.lastElementChild;
@@ -3236,13 +3288,14 @@ function check(label, cond, extra) {
       sel3.removeAllRanges();
       sel3.addRange(r3);
       p3.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(10);
       check("hybrid: non-breaking space after '##' still converts to h2",
         vc.lastElementChild.tagName === "H2",
         "last=" + vc.lastElementChild.tagName);
     }
 
     // ``` + Enter -> code block.
-    const cbPara = typeIn("```js");
+    const cbPara = await typeIn("```js");
     const rangeCb = window.document.createRange();
     rangeCb.selectNodeContents(cbPara);
     rangeCb.collapse(false);
