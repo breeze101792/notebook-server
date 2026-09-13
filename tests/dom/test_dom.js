@@ -166,12 +166,12 @@ const html = `<!DOCTYPE html><html><head>
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
       <button id="edit-toggle">Edit</button>
-      <button id="logout-btn" class="icon-btn" hidden>⎋</button>
     </header>
     <main id="layout">
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
         <div class="activity-bar-spacer"></div>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
+        <button id="logout-btn" class="activity-btn activity-action" hidden>⎋</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
       </nav>
       <aside id="side-panel">
