@@ -56,6 +56,155 @@ class TestIndexAndSeed(BaseTest):
         self.assertEqual(r.status_code, 200)
         self.assertIn("viewer", r.get_data(as_text=True))
 
+    def test_index_paints_saved_boot_state(self):
+        # The saved chrome must be rendered into the shell itself so the
+        # first frame matches the config -- otherwise the browser paints
+        # the defaults and visibly reflows once /api/config lands (title
+        # text, font size, and pane widths all jump). Regression cover for
+        # that flash.
+        self.post("/api/config", {
+            "theme": "light", "siteTitle": "My Notes", "fontSize": "xlarge",
+            "sidebarWidth": 312, "outlineWidth": 344,
+            "sidebarCollapsed": False, "outlineCollapsed": True,
+            "wallpaper": "grid", "wallpaperColor": "green",
+            "wallpaperIntensity": "bold", "wallpaperScroll": "fixed",
+        })
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("<title>My Notes</title>", html)
+        self.assertIn("--font-scale: 1.3", html)
+        self.assertIn("--side-panel-width: 312px", html)
+        # The outline is collapsed -> its width is 0 and it carries the
+        # collapsed class, matching what app.js would apply post-fetch.
+        self.assertIn("--outline-width: 0px", html)
+        self.assertIn('id="outline-pane" class="collapsed"', html)
+        self.assertIn("wallpaper-grid", html)
+        self.assertIn("wallpaper-color-green", html)
+        self.assertIn("wallpaper-intensity-bold", html)
+        self.assertIn("wallpaper-fixed", html)
+
+    def test_index_defaults_when_config_empty(self):
+        # Fresh install: the same defaults app.js's DEFAULTS use, so the
+        # first frame is correct even before any config is saved.
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("<title>Notebook</title>", html)
+        self.assertIn("--font-scale: 1.0", html)
+        self.assertIn("--side-panel-width: 240px", html)
+        self.assertIn("--outline-width: 220px", html)
+        self.assertNotIn('id="side-panel" class="collapsed"', html)
+        self.assertNotIn('id="outline-pane" class="collapsed"', html)
+        self.assertIn("wallpaper-none", html)
+
+    def test_boot_state_sanitizes_hostile_config(self):
+        # A hand-edited config.json must never inject markup into the
+        # shell or produce an out-of-range layout. boot_state() is the
+        # allowlist/clamp chokepoint; this exercises it directly with the
+        # nasty values a text editor could produce.
+        state = nb.boot_state({
+            "theme": "<script>alert(1)</script>",
+            "siteTitle": "  <img src=x onerror=alert(1)>  ",
+            "fontSize": "' onmouseover='alert(1)",
+            "sidebarWidth": "not-a-number",
+            "outlineWidth": 999999,
+            "wallpaper": "javascript:alert(1)",
+            "wallpaperColor": "rgb(1,2,3);background:url(javascript:1)",
+            "wallpaperIntensity": "nope",
+            "wallpaperScroll": "evil",
+        })
+        self.assertEqual(state["theme"], "auto")
+        self.assertEqual(state["font_scale"], 1.0)
+        self.assertEqual(state["side_panel_width"], 240)   # bad -> default
+        self.assertEqual(state["outline_width"], 2000)     # clamped to ceiling
+        self.assertEqual(state["wallpaper_classes"],
+                         "wallpaper-none wallpaper-intensity-subtle")
+        # The hostile strings must be allowlist-rejected, so they never
+        # appear in the rendered page. Jinja autoescaping is the second
+        # line of defense for the free-text title.
+        self.post("/api/config", {
+            "theme": "x", "siteTitle": "<script>alert(1)</script>",
+            "fontSize": "x", "wallpaper": "x",
+        })
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("javascript:", html)
+        # The title is escaped, never emitted as live markup.
+        self.assertNotIn("<img src=x", html)
+
+    def test_boot_state_clamps_pane_widths(self):
+        # Widths below the drag minimum or above the max are clamped, so a
+        # corrupt value can't collapse the layout to an unusable size.
+        self.assertEqual(nb.boot_state({"sidebarWidth": 1})["side_panel_width"], 140)
+        self.assertEqual(nb.boot_state({"sidebarWidth": 9999})["side_panel_width"], 2000)
+        # Collapsed wins over the saved width: the pane is 0 either way.
+        self.assertEqual(
+            nb.boot_state({"sidebarWidth": 300, "sidebarCollapsed": True})["side_panel_width"], 0)
+        self.assertEqual(
+            nb.boot_state({"outlineWidth": 300, "outlineCollapsed": True})["outline_width"], 0)
+
+    def test_boot_state_does_not_leak_content(self):
+        # The shell is served before auth, so nothing content-bearing may
+        # be embedded. Guard the allowlist so recent/open file lists and
+        # bookmarks can never sneak into the page.
+        self.post("/api/config", {
+            "recentFiles": ["secret/recent.md"],
+            "openFiles": ["secret/open.md"],
+            "bookmarks": ["secret/bookmark.md"],
+            "activeFile": "secret/active.md",
+            "lastFile": "secret/last.md",
+            "vimrc": "nmap x :!rm -rf /<CR>",
+        })
+        html = self.client.get("/").get_data(as_text=True)
+        for secret in ("secret/recent.md", "secret/open.md",
+                       "secret/bookmark.md", "secret/active.md",
+                       "secret/last.md"):
+            self.assertNotIn(secret, html)
+
+    def test_index_paints_defaults_until_authenticated(self):
+        # With auth on, the shell is served before login. An unauthenticated
+        # /api/config 401s, so app.js falls back to DEFAULTS -- the server
+        # must paint those same defaults, or the first frame (saved values)
+        # would visibly reflow to defaults (and leak the saved prefs) once
+        # the 401 lands. Once logged in, the saved chrome is embedded so a
+        # reload is flash-free.
+        import bcrypt as _bcrypt
+        # Save the prefs while auth is still off (POST /api/config is
+        # admin-gated), then turn auth on for the anonymous check.
+        self.post("/api/config", {
+            "theme": "dark", "siteTitle": "Secret Title",
+            "fontSize": "xlarge", "sidebarWidth": 333,
+            "sidebarCollapsed": True, "wallpaper": "grid",
+        })
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "x" * 64,
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw-secret", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        anon = nb.app.test_client()
+        html = anon.get("/").get_data(as_text=True)
+        self.assertIn("<title>Notebook</title>", html)
+        self.assertIn("--font-scale: 1.0", html)
+        self.assertIn("--side-panel-width: 240px", html)
+        self.assertNotIn("Secret Title", html)
+        self.assertIn("wallpaper-none", html)
+        # The saved theme is not a secret; keep it so the login screen
+        # matches the user's chosen theme.
+        self.assertIn("dark", html)
+        # After a real login the shell embeds the saved chrome.
+        client = nb.app.test_client()
+        client.post("/api/login", json={"password": "admin-pw-secret"})
+        authed = client.get("/").get_data(as_text=True)
+        self.assertIn("<title>Secret Title</title>", authed)
+        self.assertIn("--font-scale: 1.3", authed)
+
+    def test_spa_catch_all_also_paints_boot_state(self):
+        # The catch-all route (e.g. /README.md) renders the same shell, so
+        # a deep-link reload must not flash either.
+        self.post("/api/config", {"fontSize": "large", "siteTitle": "Deep"})
+        html = self.client.get("/README.md").get_data(as_text=True)
+        self.assertIn("<title>Deep</title>", html)
+        self.assertIn("--font-scale: 1.15", html)
+
+
     def test_seed_creates_welcome_and_empty_config(self):
         self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "Welcome.md")))
         with open(nb.CONFIG_FILE) as f:

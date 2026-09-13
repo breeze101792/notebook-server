@@ -97,7 +97,12 @@
       collapse();
       return;
     }
-    if (panelEl.classList.contains("collapsed")) expand();
+    // Only a user toggle (icon click) may expand a collapsed panel. The
+    // boot activation below calls activate("explorer", false) while the
+    // shell is already rendered with the saved collapsed state; expanding
+    // here would flash the panel open and (once app.js has wired its
+    // activity:expanded listener) persist the wrong sidebarCollapsed.
+    if (toggle && panelEl.classList.contains("collapsed")) expand();
     // Hide every view's host, then show the target.
     if (panelEl) {
       panelEl.querySelectorAll(".side-panel-view").forEach(el => {

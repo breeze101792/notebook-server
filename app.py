@@ -692,18 +692,137 @@ def read_login_required(view):
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    theme = _read_theme_preference()
-    return render_template("index.html", theme=theme)
+    return _render_index()
 
 
-def _read_theme_preference():
-    """Read the user's saved theme from config, defaulting to 'auto'."""
+# --------------------------------------------------------------------------- #
+# First-paint boot state
+# --------------------------------------------------------------------------- #
+# The SPA applies the saved theme, title, font size, pane widths, collapse
+# state, and wallpaper from /api/config -- but that fetch is async, so the
+# browser paints the defaults first and then visibly reflows once the
+# response lands (title changes, icon/text size jumps, panes snap open or
+# shut). To avoid that flash we render the same values into the HTML shell
+# server-side, so the very first frame already matches the saved config.
+#
+# These defaults must stay in sync with DEFAULTS in static/js/app.js. The
+# values are the ONLY config fields ever embedded in the page, and every
+# one is validated/clamped here so a hand-edited config.json can't inject
+# markup or break the layout. Notebook content (recentFiles, openFiles,
+# bookmarks, ...) is deliberately NOT embedded -- the page is served
+# before auth, so it must not leak anything content-bearing.
+_FONT_SCALES = {"small": 0.9, "medium": 1.0, "large": 1.15, "xlarge": 1.3}
+_DEFAULT_SIDEBAR_WIDTH = 240
+_DEFAULT_OUTLINE_WIDTH = 220
+_MIN_PANE_WIDTH = 140
+_MAX_PANE_WIDTH = 2000
+_WALLPAPERS = ("none", "lines", "grid")
+_WALLPAPER_COLORS = ("neutral", "blue", "green", "purple", "amber")
+_WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
+
+
+def _read_public_config():
+    """Return the stored config as a dict, or {} if missing/corrupt.
+
+    Only ever used to derive first-paint chrome values -- callers must not
+    embed content-bearing keys into the HTML (see boot_state)."""
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg = json.load(f)
-        return cfg.get("theme", "auto")
     except (OSError, ValueError):
-        return "auto"
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def boot_state(cfg=None):
+    """Sanitized subset of config used to render the first paint.
+
+    Mirrors the fields app.js's applyConfig() touches. Every value is
+    validated against an allowlist or clamped to a numeric range so a
+    hand-edited config.json can never inject markup into the shell.
+    """
+    if cfg is None:
+        cfg = _read_public_config()
+
+    theme = cfg.get("theme", "auto")
+    if theme not in ("auto", "light", "dark"):
+        theme = "auto"
+
+    font_name = cfg.get("fontSize", "medium")
+    if font_name not in _FONT_SCALES:
+        font_name = "medium"
+
+    def _pane_width(key, default):
+        try:
+            w = float(cfg.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        if w != w or w in (float("inf"), float("-inf")):   # NaN / inf
+            return default
+        return int(max(_MIN_PANE_WIDTH, min(_MAX_PANE_WIDTH, w)))
+
+    def _choice(key, allowed, default):
+        val = cfg.get(key, default)
+        return val if val in allowed else default
+
+    sidebar_collapsed = bool(cfg.get("sidebarCollapsed"))
+    outline_collapsed = bool(cfg.get("outlineCollapsed"))
+
+    site_title = cfg.get("siteTitle", "Notebook")
+    if not isinstance(site_title, str) or not site_title.strip():
+        site_title = "Notebook"
+    site_title = site_title.strip()[:60]
+
+    wallpaper = _choice("wallpaper", _WALLPAPERS, "none")
+    wallpaper_color = _choice("wallpaperColor", _WALLPAPER_COLORS, "neutral")
+    wallpaper_intensity = _choice("wallpaperIntensity", _WALLPAPER_INTENSITIES, "subtle")
+    wallpaper_scroll = _choice("wallpaperScroll", ("scroll", "fixed"), "scroll")
+
+    # The viewer-content classes are assembled here so the shell can render
+    # them directly; keep them in the same shape app.js applies.
+    wallpaper_classes = ["wallpaper-" + wallpaper]
+    if wallpaper_color != "neutral":
+        wallpaper_classes.append("wallpaper-color-" + wallpaper_color)
+    wallpaper_classes.append("wallpaper-intensity-" + wallpaper_intensity)
+    if wallpaper_scroll == "fixed":
+        wallpaper_classes.append("wallpaper-fixed")
+
+    return {
+        "theme": theme,
+        "site_title": site_title,
+        "font_scale": _FONT_SCALES[font_name],
+        # Collapsed panes collapse to 0 regardless of the saved width.
+        "side_panel_width": 0 if sidebar_collapsed
+                            else _pane_width("sidebarWidth", _DEFAULT_SIDEBAR_WIDTH),
+        "outline_width": 0 if outline_collapsed
+                         else _pane_width("outlineWidth", _DEFAULT_OUTLINE_WIDTH),
+        "sidebar_collapsed": sidebar_collapsed,
+        "outline_collapsed": outline_collapsed,
+        "topbar_hidden": bool(cfg.get("hideTopbar")),
+        "wallpaper_classes": " ".join(wallpaper_classes),
+    }
+
+
+def _render_index():
+    """Render the SPA shell with the saved chrome pre-applied.
+
+    Only embed the saved chrome when the requester is allowed to read the
+    config: auth is off, or a session role is present. The page is served
+    before auth, and an unauthenticated /api/config call returns 401, so
+    for the login screen app.js falls back to DEFAULTS -- the server must
+    paint those same defaults, or the first frame (saved values) would
+    visibly reflow to defaults (and leak the saved preferences) when the
+    401 lands. Authenticated requests get the real saved state so a
+    reload is flash-free.
+    """
+    if auth_enabled() and not session.get("role"):
+        # Login screen: defaults only. Theme is safe to keep (it is not a
+        # secret and avoids a theme flip on the login screen).
+        cfg = _read_public_config()
+        state = boot_state({"theme": cfg.get("theme", "auto")})
+    else:
+        state = boot_state()
+    return render_template("index.html", boot=state)
 
 
 @app.route("/api/config", methods=["GET"])
@@ -2290,8 +2409,7 @@ def graph():
 @app.route("/", defaults={"p": ""})
 @app.route("/<path:p>")
 def spa(p):
-    theme = _read_theme_preference()
-    return render_template("index.html", theme=theme)
+    return _render_index()
 
 
 # --------------------------------------------------------------------------- #

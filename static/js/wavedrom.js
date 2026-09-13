@@ -27,11 +27,13 @@
   "use strict";
   window.NB = window.NB || {};
 
-  // UMD bundle loaded via a plain <script> tag in index.html (synchronously
-  // with the other vendored libs, so window.wavedrom exists before this
-  // module runs). If it somehow didn't, the render pass simply no-ops and
-  // the blocks stay as readable source code.
+  // UMD bundle fetched on demand by whenReady (see there). If it never
+  // loads, the render pass simply no-ops and the blocks stay as readable
+  // source code.
+  const VENDOR_SRC = "/static/vendor/wavedrom.unpkg.min.js";
+
   let ready = false;
+  let loadPromise = null;
   // Every call gets a unique index (WaveDrom wants distinct suffix ids so
   // concurrent blocks never collide).
   let idCounter = 0;
@@ -51,26 +53,32 @@
       ensureSkin();
       return Promise.resolve(true);
     }
-    // The bundle is loaded synchronously so this should be immediate, but
-    // stay defensive: wait briefly in case the script tag is deferred or
-    // the bundle failed to load.
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        if (window.wavedrom && typeof window.wavedrom.renderWaveForm === "function") {
-          ready = true;
-          ensureSkin();
-          resolve(true);
-        } else if (Date.now() - start > 2500) {
-          // 2.5s timeout: bundle failed to load. The viewer falls through
-          // to the plain-source path on its own.
-          resolve(false);
-        } else {
-          setTimeout(tick, 20);
-        }
-      };
-      tick();
-    });
+    // Pull the bundle on demand; the timeout runs independently of the
+    // fetch so a failed/unreachable load resolves false (leaving the
+    // source block in place) instead of hanging.
+    if (!loadPromise) {
+      loadPromise = new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          ready = ok;
+          if (!ok) loadPromise = null;   // allow a later retry
+          resolve(ok);
+        };
+        const isReady = () =>
+          !!(window.wavedrom && typeof window.wavedrom.renderWaveForm === "function");
+        const start = Date.now();
+        Promise.resolve(NB.lazyload.script(VENDOR_SRC)).catch(() => {});
+        const tick = () => {
+          if (isReady()) { ensureSkin(); finish(true); }
+          else if (Date.now() - start > 2500) finish(false);
+          else setTimeout(tick, 20);
+        };
+        tick();
+      });
+    }
+    return loadPromise;
   }
 
   /* renderOne(pre) -- render a single <pre><code class="language-wavedrom">.
@@ -204,8 +212,10 @@
    * preview so diagrams update as the user types. */
   async function renderAll(container) {
     if (!container) return;
-    if (!(await whenReady())) return;
     const blocks = container.querySelectorAll("pre > code.language-wavedrom");
+    // Nothing to render -> don't fetch the bundle.
+    if (!blocks.length) return;
+    if (!(await whenReady())) return;
     for (const code of blocks) {
       const pre = code.parentElement;
       if (!pre || pre.tagName !== "PRE") continue;

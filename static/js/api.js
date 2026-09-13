@@ -151,6 +151,39 @@
     },
   };
 
+  /* --- on-demand vendor loading --------------------------------------
+   * The heavy renderers (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom)
+   * are only needed once a note actually contains a diagram / the user
+   * enters edit mode. Eager-loading them blocks first paint for several
+   * seconds, so the renderer modules pull their bundle through here the
+   * first time it is required. Scripts already in the page (or already
+   * requested) resolve immediately.
+   *
+   * `async = false` keeps dynamically inserted scripts in insertion
+   * order, which matters for bundles with an internal dependency
+   * (viz.js must define window.Viz before viz.full.js augments it). */
+  const scriptLoads = {};
+  function loadScript(src) {
+    if (scriptLoads[src]) return scriptLoads[src];
+    const p = new Promise((resolve, reject) => {
+      const el = document.createElement("script");
+      el.src = src;
+      el.async = false;
+      el.onload = () => resolve(src);
+      el.onerror = () => reject(new Error("Failed to load " + src));
+      document.head.appendChild(el);
+    });
+    // Drop the memo on failure so a later render can retry (offline blip,
+    // transient 5xx) instead of being permanently poisoned.
+    scriptLoads[src] = p.catch((e) => { delete scriptLoads[src]; throw e; });
+    return scriptLoads[src];
+  }
+  async function loadScripts(srcs) {
+    const out = [];
+    for (const s of srcs) out.push(await loadScript(s));
+    return out;
+  }
+
   /* Tiny pub/sub so modules decouple. */
   const listeners = {};
   const evt = {
@@ -165,5 +198,6 @@
   };
 
   window.NB.api = api;
+  window.NB.lazyload = { script: loadScript, scripts: loadScripts };
   window.NB.evt = evt;
 })();

@@ -27,29 +27,56 @@
   "use strict";
   window.NB = window.NB || {};
 
+  // Loaded on demand (see whenReady): the two bundles total ~2MB, so a
+  // notebook with no graphviz block never pays for them at boot. Order
+  // matters -- viz.js defines window.Viz, viz.full.js augments it.
+  const VENDOR_SRCS = [
+    "/static/vendor/viz.js",
+    "/static/vendor/viz.full.js",
+  ];
+
   let ready = false;
   let vizInstance = null;
+  let loadPromise = null;
+
+  // Both bundles must be done: viz.js defines window.Viz, but only
+  // viz.full.js attaches Viz.render (renderString delegates to it). If
+  // we resolved on window.Viz alone we'd render before render exists.
+  function isReady() {
+    return !!(window.Viz && typeof window.Viz === "function" &&
+              typeof window.Viz.render === "function");
+  }
 
   function whenReady() {
     if (ready) return Promise.resolve(true);
-    if (window.Viz && typeof window.Viz === "function") {
+    if (isReady()) {
       ready = true;
       return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        if (window.Viz && typeof window.Viz === "function") {
-          ready = true;
-          resolve(true);
-        } else if (Date.now() - start > 2500) {
-          resolve(false);
-        } else {
-          setTimeout(tick, 20);
-        }
-      };
-      tick();
-    });
+    // Pull the bundles on demand; the timeout runs independently of the
+    // fetch so a failed/unreachable load resolves false (leaving the
+    // source block in place) instead of hanging.
+    if (!loadPromise) {
+      loadPromise = new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          ready = ok;
+          if (!ok) loadPromise = null;   // allow a later retry
+          resolve(ok);
+        };
+        const start = Date.now();
+        Promise.resolve(NB.lazyload.scripts(VENDOR_SRCS)).catch(() => {});
+        const tick = () => {
+          if (isReady()) finish(true);
+          else if (Date.now() - start > 5000) finish(false);
+          else setTimeout(tick, 20);
+        };
+        tick();
+      });
+    }
+    return loadPromise;
   }
 
   function getViz() {
@@ -131,9 +158,11 @@
    * pick it up again. Runs in view mode AND live preview. */
   async function renderAll(container) {
     if (!container) return;
-    if (!(await whenReady())) return;
     const blocks = container.querySelectorAll(
       "pre > code.language-dot, pre > code.language-graphviz");
+    // Nothing to render -> don't fetch the ~2MB bundles.
+    if (!blocks.length) return;
+    if (!(await whenReady())) return;
     for (const code of blocks) {
       const pre = code.parentElement;
       if (!pre || pre.tagName !== "PRE") continue;

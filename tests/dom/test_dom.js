@@ -972,6 +972,10 @@ window.Viz = class {
     return Promise.resolve(__viz.nextSvg);
   }
 };
+// viz.full.js attaches Viz.render after viz.js defines the class; the
+// on-demand loader waits for it before rendering, so the stub must carry
+// it too. (The stub's renderString above is what actually produces SVG.)
+window.Viz.render = function () {};
 // matchMedia stub: report a dark system preference (auto -> dark).
 window.matchMedia = () => ({
   matches: false, media: "", onchange: null,
@@ -11151,6 +11155,284 @@ function check(label, cond, extra) {
     await window.NB.tabs.close("§search", { force: true });
     await tick(10);
     if (openBefore.length) await window.NB.tabs.open(openBefore[0]);
+  }
+
+  // --- lazy vendor loading -------------------------------------------
+  // The heavy renderer bundles (mermaid 3.5MB, graphviz 2MB, CodeMirror
+  // 738KB, KaTeX, WaveDrom) must NOT load at boot: eager parsing used to
+  // delay DOMContentLoaded -- and the file tree / first note -- by
+  // several seconds on a cold load. They are fetched on demand by
+  // NB.lazyload the first time a note contains that diagram type or the
+  // user opens edit mode. These checks guard the boot budget so the
+  // regression can't sneak back in.
+  console.log("== lazy vendor loading ==");
+  {
+    const indexHtml = read("templates/index.html");
+    // No heavy bundle may be referenced by a static <script src> in the
+    // page. (A dynamic NB.lazyload.script() call is fine -- it is not in
+    // the HTML.)
+    const heavyEager = [
+      "/static/vendor/mermaid.min.js",
+      "/static/vendor/viz.js",
+      "/static/vendor/viz.full.js",
+      "/static/vendor/codemirror.bundle.js",
+      "/static/vendor/katex/katex.min.js",
+      "/static/vendor/wavedrom.unpkg.min.js",
+    ];
+    for (const src of heavyEager) {
+      check("lazy: index.html does not eagerly load " + src,
+        indexHtml.indexOf(src) === -1,
+        indexHtml.indexOf(src) === -1 ? "" : "found eager <script> for " + src);
+    }
+    // The lightweight always-needed libs stay eager so the first render
+    // works without a round trip.
+    for (const src of ["/static/vendor/marked.min.js",
+                       "/static/vendor/highlight.min.js",
+                       "/static/vendor/turndown.browser.js"]) {
+      check("lazy: index.html still eagerly loads " + src,
+        indexHtml.indexOf(src) !== -1);
+    }
+    // Each renderer must point at its own bundle so the on-demand path
+    // is wired, not just removed.
+    check("lazy: mermaid points at its bundle",
+      /static\/vendor\/mermaid\.min\.js/.test(read("static/js/mermaid.js")));
+    check("lazy: katex points at its bundle",
+      /static\/vendor\/katex\/katex\.min\.js/.test(read("static/js/katex.js")));
+    check("lazy: viz points at both bundles",
+      /static\/vendor\/viz\.js/.test(read("static/js/viz.js")) &&
+      /static\/vendor\/viz\.full\.js/.test(read("static/js/viz.js")));
+    check("lazy: wavedrom points at its bundle",
+      /static\/vendor\/wavedrom\.unpkg\.min\.js/.test(read("static/js/wavedrom.js")));
+    check("lazy: cm-bridge points at the codemirror bundle",
+      /static\/vendor\/codemirror\.bundle\.js/.test(read("static/js/cm-bridge.js")));
+
+    // Service worker: the on-demand bundles must not be precached at
+    // install or the "first load" cost comes right back. They still get
+    // cached on first real use (network-first), so offline keeps working.
+    const sw = read("static/sw.js");
+    for (const src of ["vendor/mermaid.min.js", "vendor/viz.full.js",
+                       "vendor/codemirror.bundle.js",
+                       "vendor/katex/katex.min.js",
+                       "vendor/wavedrom.unpkg.min.js"]) {
+      check("lazy: service worker precache excludes " + src,
+        sw.indexOf(src) === -1,
+        sw.indexOf(src) === -1 ? "" : "still in PRECACHE");
+    }
+
+    // NB.lazyload is the single shared loader.
+    check("lazy: NB.lazyload.script is a function",
+      typeof window.NB.lazyload.script === "function");
+    check("lazy: NB.lazyload.scripts is a function",
+      typeof window.NB.lazyload.scripts === "function");
+    // loadScript injects a <script> with the requested src (jsdom
+    // doesn't execute external scripts, so the promise stays pending;
+    // we just verify the tag was appended).
+    {
+      const appended = [];
+      const origAppend = window.document.head.appendChild.bind(window.document.head);
+      window.document.head.appendChild = (el) => {
+        if (el && el.tagName === "SCRIPT") appended.push(el.src);
+        return origAppend(el);
+      };
+      const uniqueSrc = "/static/vendor/__lazy_probe_" + Date.now() + ".js";
+      window.NB.lazyload.script(uniqueSrc);
+      window.document.head.appendChild = origAppend;
+      const tag = Array.from(window.document.head.querySelectorAll("script"))
+        .find(s => s.src && s.src.indexOf("__lazy_probe_") !== -1);
+      check("lazy: loadScript appends a <script> with the requested src",
+        !!tag && /__lazy_probe_/.test(tag.src),
+        "appended=" + JSON.stringify(appended));
+    }
+
+    // Per-renderer gate: a container with NO matching block must not
+    // trigger a bundle fetch; a container WITH one must. We evaluate a
+    // fresh copy of each renderer in an isolated vm context (without the
+    // vendor global) so the module's memoized "ready" latch doesn't hide
+    // the gate, and stub NB.lazyload to record requests.
+    function loadModuleSandbox(rel) {
+      const loads = [];
+      const el = (tag) => ({
+        tagName: String(tag || "div").toUpperCase(),
+        style: {}, dataset: {}, className: "", children: [],
+        appendChild(c) { this.children.push(c); return c; },
+        querySelector() { return null; },
+        querySelectorAll() { return []; },
+        insertAdjacentElement() {}, remove() {}, replaceWith() {},
+        removeChild() {}, setAttribute() {}, getAttribute() { return null; },
+        removeAttribute() {}, innerHTML: "", textContent: "",
+      });
+      const sandbox = {
+        console, setTimeout, clearTimeout, Promise, Date, Math, JSON,
+        Object, Array, String, Number, Error, RegExp,
+        document: {
+          createElement: el, getElementById: () => null,
+          body: { dataset: { theme: "dark" } },
+        },
+        NB: {
+          lazyload: {
+            script(src) { loads.push(src); return Promise.resolve(src); },
+            scripts(srcs) { loads.push.apply(loads, srcs); return Promise.resolve(srcs); },
+          },
+          lightbox: { create() { return {}; } },
+        },
+      };
+      sandbox.window = sandbox;
+      vm.createContext(sandbox);
+      vm.runInContext(read(rel), sandbox, { filename: rel });
+      return { sandbox, loads, el };
+    }
+    function blockContainer(sandbox, text) {
+      const code = { textContent: text };
+      const pre = {
+        tagName: "PRE",
+        querySelector: (s) => (s === "code" ? code : null),
+        insertAdjacentElement() {},
+        replaceWith() {},
+      };
+      return { querySelectorAll: () => [pre] };
+    }
+    const emptyContainer = { querySelectorAll: () => [] };
+
+    // katex
+    {
+      const { sandbox, loads } = loadModuleSandbox("static/js/katex.js");
+      await sandbox.NB.katex.renderAll(emptyContainer);
+      check("lazy: katex with no math block does not fetch the bundle",
+        loads.length === 0, "loads=" + JSON.stringify(loads));
+      const p = sandbox.NB.katex.renderAll(blockContainer(sandbox, "E=mc^2"));
+      check("lazy: katex with a math block fetches the bundle",
+        loads.some(s => /katex\.min\.js$/.test(s)), "loads=" + JSON.stringify(loads));
+      sandbox.window.katex = { renderToString() { return "<span></span>"; } };
+      await p;
+    }
+    // mermaid
+    {
+      const { sandbox, loads } = loadModuleSandbox("static/js/mermaid.js");
+      await sandbox.NB.mermaid.renderAll(emptyContainer);
+      check("lazy: mermaid with no diagram does not fetch the bundle",
+        loads.length === 0, "loads=" + JSON.stringify(loads));
+      const p = sandbox.NB.mermaid.renderAll(blockContainer(sandbox, "graph TD; A-->B;"));
+      check("lazy: mermaid with a diagram fetches the bundle",
+        loads.some(s => /mermaid\.min\.js$/.test(s)), "loads=" + JSON.stringify(loads));
+      sandbox.window.mermaid = {
+        initialize() {},
+        render() { return Promise.resolve({ svg: "<svg viewBox='0 0 10 10'></svg>" }); },
+      };
+      await p;
+    }
+    // viz (graphviz)
+    {
+      const { sandbox, loads } = loadModuleSandbox("static/js/viz.js");
+      await sandbox.NB.viz.renderAll(emptyContainer);
+      check("lazy: viz with no graph does not fetch the bundles",
+        loads.length === 0, "loads=" + JSON.stringify(loads));
+      const p = sandbox.NB.viz.renderAll(blockContainer(sandbox, "digraph { a -> b }"));
+      check("lazy: viz with a graph fetches both bundles (ordered)",
+        loads.indexOf("/static/vendor/viz.js") === 0 &&
+        loads.indexOf("/static/vendor/viz.full.js") === 1,
+        "loads=" + JSON.stringify(loads));
+      const V = function () {};
+      V.render = function () {};
+      V.prototype.renderString = () => Promise.resolve("<svg viewBox='0 0 10 10'></svg>");
+      sandbox.window.Viz = V;
+      await p;
+    }
+    // wavedrom
+    {
+      const { sandbox, loads } = loadModuleSandbox("static/js/wavedrom.js");
+      await sandbox.NB.wavedrom.renderAll(emptyContainer);
+      check("lazy: wavedrom with no waveform does not fetch the bundle",
+        loads.length === 0, "loads=" + JSON.stringify(loads));
+      const p = sandbox.NB.wavedrom.renderAll(blockContainer(sandbox, '{"signal":[]}'));
+      check("lazy: wavedrom with a waveform fetches the bundle",
+        loads.some(s => /wavedrom\.unpkg\.min\.js$/.test(s)), "loads=" + JSON.stringify(loads));
+      sandbox.window.WaveSkin = {};
+      sandbox.window.wavedrom = { waveSkin: {}, renderWaveForm() {} };
+      await p;
+    }
+    // cm-bridge: edit mode pulls CodeMirror on demand.
+    {
+      const { sandbox, loads } = loadModuleSandbox("static/js/cm-bridge.js");
+      check("lazy: cm-bridge exposes load()", typeof sandbox.NB.cmEditor.load === "function");
+      check("lazy: cm-bridge isReady() is false before load",
+        sandbox.NB.cmEditor.isReady() === false);
+      await sandbox.NB.cmEditor.load().catch(() => {});
+      check("lazy: cm-bridge.load() fetches the codemirror bundle",
+        loads.some(s => /codemirror\.bundle\.js$/.test(s)),
+        "loads=" + JSON.stringify(loads));
+    }
+  }
+
+  // --- first-paint boot state (no reload flash) ----------------------
+  // On reload the shell must already carry the saved theme, title, font
+  // size, pane widths/collapse state, and wallpaper, so the first frame
+  // matches the config instead of painting defaults and reflowing once
+  // the async /api/config fetch lands. The server renders these (see
+  // boot_state() in app.py); these checks guard the template + the JS
+  // path that must agree with it.
+  console.log("== first-paint boot state ==");
+  {
+    const tpl = read("templates/index.html");
+    // The inline <html> style must set the three layout vars before the
+    // stylesheet loads; otherwise style.css :root defaults win and the
+    // pane sizes/scale flash.
+    check("boot: <html> has an inline --font-scale style",
+      /<html[^>]*style="[^"]*--font-scale:/.test(tpl));
+    check("boot: <html> has an inline --side-panel-width style",
+      /<html[^>]*style="[^"]*--side-panel-width:/.test(tpl));
+    check("boot: <html> has an inline --outline-width style",
+      /<html[^>]*style="[^"]*--outline-width:/.test(tpl));
+    check("boot: <title> is rendered from boot state",
+      /<title>\{\{\s*boot\.site_title\s*\}\}<\/title>/.test(tpl));
+    check("boot: brand text is rendered from boot state",
+      /class="brand">📓\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
+    check("boot: side panel collapse state is rendered server-side",
+      /id="side-panel"\{%.*sidebar_collapsed.*%\}\s*class="collapsed"/.test(tpl));
+    check("boot: outline collapse state is rendered server-side",
+      /id="outline-pane"\{%.*outline_collapsed.*%\}\s*class="collapsed"/.test(tpl));
+    check("boot: topbar-hidden is rendered server-side",
+      /<body\{%.*topbar_hidden.*%\}\s*class="topbar-hidden"/.test(tpl));
+    check("boot: wallpaper classes are rendered on #viewer-content",
+      /id="viewer-content" class="markdown-body \{\{\s*boot\.wallpaper_classes\s*\}\}"/.test(tpl));
+    // The boot_state values must match DEFAULTS in app.js for a fresh
+    // install, or the first frame would still differ from what app.js
+    // applies after the config fetch.
+    const appJs = read("static/js/app.js");
+    check("boot: app.js still owns the same default font scale base",
+      /--font-scale/.test(appJs));
+  }
+
+  // --- activity boot must not undo a server-collapsed panel -----------
+  // Regression: activity.js runs at load and called activate("explorer")
+  // which used to call expand() whenever the panel carried .collapsed.
+  // That briefly flashed the panel open and persisted the wrong state.
+  // The boot activation must leave the shell's collapsed state alone.
+  console.log("== activity boot collapse regression ==");
+  {
+    // Simulate a fresh shell: panel pre-collapsed (as the server would
+    // render it), then run the boot activation the way activity.js does.
+    const panel = $("side-panel");
+    const widthBefore = cssVar("--side-panel-width");
+    panel.classList.add("collapsed");
+    window.document.documentElement.style.setProperty("--side-panel-width", "0px");
+    const savedWidth = window.NB.app.getSidePanelWidth();
+    window.NB.activity.activate("explorer", false);
+    await tick(10);
+    check("activity boot: a non-toggle activate keeps .collapsed", 
+      panel.classList.contains("collapsed"));
+    check("activity boot: a non-toggle activate keeps width 0",
+      cssVar("--side-panel-width") === "0px", cssVar("--side-panel-width"));
+    // A real user toggle (icon click) MUST still expand it.
+    const explorerBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+    explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("activity boot: an icon toggle still expands the panel",
+      !panel.classList.contains("collapsed"));
+    check("activity boot: expanding restores the saved width",
+      cssVar("--side-panel-width") === savedWidth + "px",
+      "width=" + cssVar("--side-panel-width") + " saved=" + savedWidth);
+    // Leave the suite in the state it started (expanded).
+    window.document.documentElement.style.setProperty("--side-panel-width", widthBefore);
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

@@ -26,7 +26,12 @@
   "use strict";
   window.NB = window.NB || {};
 
+  // Fetched on demand (see whenReady) so a notebook with no math never
+  // pays for the 275KB bundle + its fonts at boot.
+  const VENDOR_SRC = "/static/vendor/katex/katex.min.js";
+
   let ready = false;
+  let loadPromise = null;
 
   function whenReady() {
     if (ready) return Promise.resolve(true);
@@ -34,23 +39,32 @@
       ready = true;
       return Promise.resolve(true);
     }
-    // The bundle is loaded synchronously so this should be immediate, but
-    // stay defensive: wait briefly in case the script tag is deferred or
-    // the bundle failed to load.
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        if (window.katex && typeof window.katex.renderToString === "function") {
-          ready = true;
-          resolve(true);
-        } else if (Date.now() - start > 2500) {
-          resolve(false);
-        } else {
-          setTimeout(tick, 20);
-        }
-      };
-      tick();
-    });
+    // Pull the bundle on demand; the timeout runs independently of the
+    // fetch so a failed/unreachable load resolves false (leaving the
+    // source block in place) instead of hanging.
+    if (!loadPromise) {
+      loadPromise = new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          ready = ok;
+          if (!ok) loadPromise = null;   // allow a later retry
+          resolve(ok);
+        };
+        const isReady = () =>
+          !!(window.katex && typeof window.katex.renderToString === "function");
+        const start = Date.now();
+        Promise.resolve(NB.lazyload.script(VENDOR_SRC)).catch(() => {});
+        const tick = () => {
+          if (isReady()) finish(true);
+          else if (Date.now() - start > 2500) finish(false);
+          else setTimeout(tick, 20);
+        };
+        tick();
+      });
+    }
+    return loadPromise;
   }
 
   function decodeHtml(str) {
@@ -110,9 +124,11 @@
    * won't pick it up again. Runs in view mode AND live preview. */
   async function renderAll(container) {
     if (!container) return;
-    if (!(await whenReady())) return;
     const blocks = container.querySelectorAll(
       "pre > code.language-math, pre > code.language-katex");
+    // Nothing to render -> don't fetch the bundle.
+    if (!blocks.length) return;
+    if (!(await whenReady())) return;
     for (const code of blocks) {
       const pre = code.parentElement;
       if (!pre || pre.tagName !== "PRE") continue;

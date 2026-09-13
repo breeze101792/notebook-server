@@ -634,6 +634,14 @@
 
     startEdit() {
       const t = cur(); if (!t) return;
+      // The CodeMirror bundle is fetched on demand. If it isn't in the
+      // page yet, load it first, then enter edit mode; otherwise this
+      // stays synchronous (a reader who never edits never downloads it).
+      if (NB.cmEditor.isReady && !NB.cmEditor.isReady()) {
+        return Promise.resolve(NB.cmEditor.load())
+          .catch(() => {})
+          .then(() => { if (cur() === t) { t.editMode = true; showPreview = true; NB.cmEditor.setValue(t.content); showEditor(); } });
+      }
       t.editMode = true;
       showPreview = true;  // always start with the preview pane visible
       NB.cmEditor.setValue(t.content);

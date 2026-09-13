@@ -30,8 +30,15 @@
   // light mode; "dark" works in dark mode. The user can pin a
   // specific theme later if we ever expose that in Settings; for
   // now we follow body[data-theme] like the rest of the app.
+  // The 3.5MB UMD bundle is fetched on demand (see whenReady) instead of
+  // at boot -- most notes have no diagram, so eagerly parsing it just
+  // delays first paint. Kept as a named constant so the path has one owner.
+  const VENDOR_SRC = "/static/vendor/mermaid.min.js";
+
   let initializedFor = null;        // last theme we initialized for
   let initPromise = null;            // pending init (mermaid.initialize is async-ish in v10+)
+  let loadPromise = null;            // pending on-demand bundle load
+  let ready = false;                 // bundle attached + usable
   // Counter used to mint unique diagram ids. Mermaid requires
   // globally unique ids per render call, so we bump this for each
   // block. The id is also used to find the rendered SVG container
@@ -40,30 +47,40 @@
 
   function nextId() { return "mermaid-svg-" + (++idCounter); }
 
-  // Wait for the vendored UMD bundle to attach window.mermaid. The
-  // <script> tag is `defer`, so the global is available shortly
-  // after DOMContentLoaded; this helper covers the gap so the
-  // caller's `await renderAll(container)` is robust to load order.
+  // Pull the vendored UMD bundle on first use. Resolves once
+  // window.mermaid exists, or after the timeout if the bundle fails to
+  // load (the viewer then falls back to showing the block as source).
+  // The timeout is independent of the fetch so an unreachable bundle
+  // can't hang the render pass forever.
   function whenReady() {
+    if (ready) return Promise.resolve(true);
     if (window.mermaid && typeof window.mermaid.render === "function") {
-      return Promise.resolve();
+      ready = true;
+      return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        if (window.mermaid && typeof window.mermaid.render === "function") {
-          resolve();
-        } else if (Date.now() - start > 5000) {
-          // 5s timeout: if the bundle failed to load, surface the
-          // error rather than hang forever. The viewer will fall
-          // through to the source-fallback path on its own.
-          resolve();
-        } else {
-          setTimeout(tick, 20);
-        }
-      };
-      tick();
-    });
+    if (!loadPromise) {
+      loadPromise = new Promise((resolve) => {
+        let done = false;
+        const finish = (ok) => {
+          if (done) return;
+          done = true;
+          ready = ok;
+          if (!ok) loadPromise = null;   // allow a later retry
+          resolve(ok);
+        };
+        const isReady = () =>
+          !!(window.mermaid && typeof window.mermaid.render === "function");
+        const start = Date.now();
+        Promise.resolve(NB.lazyload.script(VENDOR_SRC)).catch(() => {});
+        const tick = () => {
+          if (isReady()) finish(true);
+          else if (Date.now() - start > 5000) finish(false);
+          else setTimeout(tick, 20);
+        };
+        tick();
+      });
+    }
+    return loadPromise;
   }
 
   function currentTheme() {
@@ -225,6 +242,10 @@
    */
   async function renderAll(container) {
     if (!container) return;
+    const blocks = container.querySelectorAll("pre > code.language-mermaid");
+    // Nothing to render -> don't pull the 3.5MB bundle. Checking for
+    // blocks before whenReady is what keeps a diagram-free note cheap.
+    if (!blocks.length) return;
     await whenReady();
     if (!window.mermaid) {
       // Bundle never loaded (offline, blocked, etc.). Don't try to
@@ -234,7 +255,6 @@
       // available.
       return;
     }
-    const blocks = container.querySelectorAll("pre > code.language-mermaid");
     for (const code of blocks) {
       const pre = code.parentElement;
       if (!pre) continue;

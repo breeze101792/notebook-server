@@ -13,7 +13,13 @@
  * CACHE is versioned: bumping the name makes every installed worker
  * re-run install (re-precache the current assets) and activate (delete
  * the old cache). */
-const CACHE = "notebook-v2";
+const CACHE = "notebook-v3";
+// Only the assets needed to boot are precached. The heavy on-demand
+// renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
+// deliberately NOT listed: precaching 6.8MB at install would make the
+// first page load slow again. They are fetched on first use and mirror
+// into the cache through the network-first handler like any other asset,
+// so offline still works once a note has used that renderer.
 const PRECACHE = [
   "/",
   "/static/manifest.json",
@@ -25,7 +31,8 @@ const PRECACHE = [
   "/static/css/vimnav.css",
   "/static/vendor/marked.min.js",
   "/static/vendor/highlight.min.js",
-  "/static/vendor/codemirror.bundle.js",
+  "/static/vendor/turndown.browser.js",
+  "/static/vendor/turndown-plugin-gfm.browser.js",
   "/static/js/api.js",
   "/static/js/auth.js",
   "/static/js/cm-bridge.js",

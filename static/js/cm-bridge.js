@@ -27,6 +27,11 @@
 
   let view = null;
   const onChangeHandlers = [];
+  // The 738KB CodeMirror bundle is pulled on demand the first time edit
+  // mode opens (see ensureView), so a reader who never edits never pays
+  // to download + parse it. `loadPromise` memoizes the fetch.
+  const VENDOR_SRC = "/static/vendor/codemirror.bundle.js";
+  let loadPromise = null;
   // The vim extension lives in a Compartment so Settings → "VIM mode"
   // can turn ALL of vim (shell keymap AND the editor's vim) on/off at
   // runtime. `vimOn` mirrors cfg.vimMode; ensureView() also seeds it
@@ -87,6 +92,28 @@
       }
       return orig(ranges, primIndex);
     };
+  }
+
+  /* Fetch the CodeMirror bundle if it isn't in the page yet. Resolves
+   * once window.CM6 is available; rejects on a network/script error. */
+  function loadCm() {
+    if (window.CM6) return Promise.resolve();
+    if (!loadPromise) {
+      const p = NB.lazyload.script(VENDOR_SRC);
+      // Drop the memo on failure so a later edit attempt can retry
+      // instead of being permanently poisoned by one failed fetch.
+      loadPromise = p.catch((e) => { loadPromise = null; throw e; });
+    }
+    return loadPromise;
+  }
+
+  /* Async entry point for edit mode: awaits the bundle, then builds the
+   * view. The rest of the API can stay synchronous because it only runs
+   * after this has resolved once. */
+  async function ensure() {
+    if (view) return view;
+    await loadCm();
+    return ensureView();
   }
 
   function ensureView() {
@@ -280,6 +307,13 @@
    * view hasn't been created yet (they return empty values). The
    * write methods create the view on demand. */
   NB.cmEditor = {
+    /** Load the CM6 bundle and create the view if needed. Edit mode must
+     *  await this before touching the view; it is a no-op after the first
+     *  resolution. */
+    load() { return ensure(); },
+    /** True once the bundle is in the page (the view may still be
+     *  unmounted). Edit mode uses this to avoid awaiting a no-op. */
+    isReady() { return !!window.CM6; },
     /** Return the current document as a string. */
     getValue() {
       if (!view) return "";

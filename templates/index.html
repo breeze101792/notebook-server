@@ -1,13 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Notebook">
+  <meta name="apple-mobile-web-app-title" content="{{ boot.site_title }}">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Markdown Notebook</title>
+  <title>{{ boot.site_title }}</title>
+  <!-- First-paint boot state. The values above come from the saved config
+       (see boot_state() in app.py) and are applied as an inline style on
+       <html> BEFORE the stylesheets and body render, so the first frame
+       already has the right font size and pane widths (an inline style
+       also beats the :root defaults in style.css). The site title is
+       rendered into <title>/.brand, the collapse state into .collapsed on
+       the asides, and the wallpaper into #viewer-content's classes below.
+       Without this the browser painted the defaults and then visibly
+       reflowed once the async /api/config fetch in app.js landed (title
+       text, icon size, and pane widths all jumped). app.js still applies
+       the same state on boot, so a live config change and the first paint
+       converge on identical values. The theme is applied at the top of
+       <body>, where document.body exists. -->
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
@@ -21,13 +34,13 @@
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head>
-<body>
+<body{% if boot.topbar_hidden %} class="topbar-hidden"{% endif %}>
 <script>
-(function(){var t="{{ theme }}",r=t==="auto"?(window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):t==="light"?"light":"dark";document.body.dataset.theme=r;var l=document.getElementById("hljs-light"),d=document.getElementById("hljs-dark");if(l)l.disabled=r!=="light";if(d)d.disabled=r==="light"})();
+(function(){var t={{ boot.theme|tojson }},r=t==="auto"?(window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"):t==="light"?"light":"dark";document.body.dataset.theme=r;var l=document.getElementById("hljs-light"),d=document.getElementById("hljs-dark");if(l)l.disabled=r!=="light";if(d)d.disabled=r==="light"})();
 </script>
   <div id="app">
     <header id="topbar">
-      <div class="brand">📓 Notebook</div>
+      <div class="brand">📓 {{ boot.site_title }}</div>
       <div class="search-wrap">
         <input id="search-input" type="search" placeholder="Search notebooks…  (Enter to run)">
         <label class="case-toggle" title="Case sensitive">
@@ -68,7 +81,7 @@
            view changes. The panel shares one resize handle and one
            --side-panel-width CSS var; individual views never resize
            independently. -->
-      <aside id="side-panel">
+      <aside id="side-panel"{% if boot.sidebar_collapsed %} class="collapsed"{% endif %}>
         <!-- Explorer view: the original file tree + bookmarks. Stays in
              the DOM so its state (collapsed folders, selection, scroll)
              survives view switches; hidden via [hidden] when inactive. -->
@@ -188,7 +201,7 @@
                #viewer-content so it's anchored to the content itself
                and scrolls in perfect lockstep with the text. -->
           <div id="viewer">
-            <div id="viewer-content" class="markdown-body"></div>
+            <div id="viewer-content" class="markdown-body {{ boot.wallpaper_classes }}"></div>
           </div>
           <!-- #welcome shows when there's no file open. Same shell-scoping
                idea as #viewer: a single sibling that owns the empty-state
@@ -253,7 +266,7 @@
         </div>
       </section>
 
-      <aside id="outline-pane">
+      <aside id="outline-pane"{% if boot.outline_collapsed %} class="collapsed"{% endif %}>
         <div class="panel-header">
           <span class="panel-title">Outline</span>
           <button class="collapse-btn" id="outline-collapse" title="Collapse outline (right arrow)">›</button>
@@ -891,21 +904,19 @@
   </div>
 
   <!-- Vendored libs + app modules, all deferred. defer keeps execution
-       order (so window.marked / window.CM6 / window.Viz / window.katex
-       are set before the modules that use them) but downloads every
-       bundle in parallel and, crucially, does NOT block first paint.
-       The tiny api.js + auth.js at the top of <body> are synchronous, so
-       the login modal is shown at first paint while these multi-MB
-       bundles (viz 1.9MB, codemirror 738KB, katex, wavedrom) still
-       download and parse in the background. -->
+       order (so window.marked / window.TurndownService are set before the
+       modules that use them) but downloads every bundle in parallel and,
+       crucially, does NOT block first paint.
+
+       Only the always-needed lightweight libs load eagerly (marked,
+       highlight.js, turndown). The heavy renderers -- mermaid (3.5MB),
+       graphviz (2MB), CodeMirror (738KB), KaTeX, WaveDrom -- are fetched
+       on demand the first time a note contains that diagram type or the
+       user opens edit mode (see NB.lazyload in api.js). Eagerly parsing
+       them used to delay DOMContentLoaded -- and therefore the file tree
+       and first note -- by several seconds on a cold load. -->
   <script src="/static/vendor/marked.min.js" defer></script>
   <script src="/static/vendor/highlight.min.js" defer></script>
-  <script src="/static/vendor/wavedrom.unpkg.min.js" defer></script>
-  <script src="/static/vendor/katex/katex.min.js" defer></script>
-  <script src="/static/vendor/viz.js" defer></script>
-  <script src="/static/vendor/viz.full.js" defer></script>
-  <script src="/static/vendor/mermaid.min.js" defer></script>
-  <script src="/static/vendor/codemirror.bundle.js" defer></script>
   <script src="/static/vendor/turndown.browser.js" defer></script>
   <script src="/static/vendor/turndown-plugin-gfm.browser.js" defer></script>
   <script src="/static/js/cm-bridge.js" defer></script>
