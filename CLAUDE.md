@@ -291,10 +291,9 @@ Module responsibilities:
   `NB.ai.loadAiConfig()`. The **Web search** field (same AI tab) sets the
   global SearXNG instance URL for the assistant's search tool; it has its
   own Save button and is preserved across provider saves.
-- `export.js` — Export modal (top-bar **Export** button, right of **Edit**;
-  also reachable via **Export…** in the file-tree, bookmark, and tab
-  right-click menus, each targeting that specific file). Exports a note
-  to **PDF** or a self-contained **HTML** file.
+- `export.js` — Export modal (opened via **Export…** in the file-tree,
+  bookmark, and tab right-click menus, each targeting that specific file).
+  Exports a note to **PDF** or a self-contained **HTML** file.
   Purely client-side: `renderInto()` re-renders the note from the
   viewer's content cache through the same pipeline the app uses (marked +
   highlight.js + the mermaid/wavedrom/katex/viz renderers), so the output

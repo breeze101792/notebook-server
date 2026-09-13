@@ -59,9 +59,9 @@
   // Created lazily and reused across exports.
   let printFrame = null;
 
-  // The file the modal is exporting. null means "the active file" (the
-  // top-bar Export button); a path means a specific file (the sidebar /
-  // tab context menus), which may not be the active tab.
+  // The file the modal is exporting. null means "the active file" (open()
+  // with no argument); a path means a specific file (the sidebar / tab
+  // context menus), which may not be the active tab.
   let targetPath = null;
 
   function selectedFormat() {
@@ -911,8 +911,6 @@
     });
   }
 
-  const topbarBtn = document.getElementById("export-toggle");
-  if (topbarBtn) topbarBtn.addEventListener("click", open);
   if (exportBtn) exportBtn.addEventListener("click", run);
   if (previewBtn) previewBtn.addEventListener("click", preview);
   if (closeBtn) closeBtn.addEventListener("click", close);

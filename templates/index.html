@@ -40,7 +40,6 @@
         <button id="reload-btn" class="icon-btn" title="Reload content from disk" aria-label="Reload" disabled>⟳</button>
         <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode (edit rendered markdown directly)" aria-label="WYSIWYG" hidden>✎</button>
         <button id="edit-toggle">Edit</button>
-        <button id="export-toggle" title="Export the current note">Export</button>
       </div>
       <button id="logout-btn" class="icon-btn" title="Log out" aria-label="Log out" hidden>⎋</button>
     </header>
@@ -765,9 +764,9 @@
     </div>
   </div>
 
-  <!-- Export modal. Opened by the Export button in the top bar. Lets the
-       user export the current note to PDF (browser print-to-PDF) or a
-       self-contained HTML file. -->
+  <!-- Export modal. Opened from the file-tree, bookmark, or tab right-click
+       menu's "Export…" item. Lets the user export the targeted note to PDF
+       (browser print-to-PDF) or a self-contained HTML file. -->
   <div id="export-overlay" class="settings-overlay" hidden>
     <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
       <div class="settings-header">

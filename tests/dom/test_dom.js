@@ -166,7 +166,6 @@ const html = `<!DOCTYPE html><html><head>
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
       <button id="edit-toggle">Edit</button>
-      <button id="export-toggle" title="Export the current note">Export</button>
       <button id="logout-btn" class="icon-btn" hidden>⎋</button>
     </header>
     <main id="layout">
@@ -7974,14 +7973,13 @@ function check(label, cond, extra) {
   await tick(10);
 
   console.log("== export ==");
-  // The Export button in the top bar opens a modal to export the current
-  // note to PDF (browser print-to-PDF) or a self-contained HTML file.
-  // Scope is the active file. We stub window.print and the Blob/URL
-  // object-URL APIs above so both paths are testable in jsdom.
+  // Export lives in the file-tree, bookmark, and tab right-click menus
+  // (there is no top-bar button). Scope is the active file. We stub
+  // window.print and the Blob/URL object-URL APIs above so both the PDF
+  // and HTML paths are testable in jsdom.
   {
-    const exportBtn = $("export-toggle");
     const overlay = $("export-overlay");
-    check("export: top-bar Export button exists", !!exportBtn);
+    check("export: no top-bar Export button", !$("export-toggle"));
     check("export: modal overlay exists", !!overlay);
     check("export: NB.export module loaded", !!window.NB.export);
 
@@ -7997,10 +7995,10 @@ function check(label, cond, extra) {
       window.NB.viewer.getPath() === "notes/a.md",
       "path=" + window.NB.viewer.getPath());
 
-    // Open the modal via the top-bar button.
-    exportBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    // Open the modal (as the context menus do).
+    window.NB.export.open();
     await tick(10);
-    check("export: button opens the modal", !overlay.hidden);
+    check("export: open() shows the modal", !overlay.hidden);
     check("export: modal shows the active file",
       $("export-file-label").textContent === "notes/a.md",
       "label=" + $("export-file-label").textContent);
