@@ -19,8 +19,8 @@
  * there is no whenReady() gate -- rendering is a synchronous DOM swap.
  *
  * Why a module at all: it keeps the block-selection, the iframe
- * construction, the source/live toggle, and the error fallback out of
- * viewer.js, mirroring mermaid.js / wavedrom.js.
+ * construction, and the frame sizing out of viewer.js, mirroring
+ * mermaid.js / wavedrom.js.
  */
 (function () {
   "use strict";
@@ -238,8 +238,11 @@
   }
 
   /* renderOne(pre) -- replace <pre><code class="language-html-live">
-   * with a .htmlpreview-card holding the sandboxed iframe + a header
-   * with a "Source" / "Preview" toggle. */
+   * with a .htmlpreview-card holding just the sandboxed iframe. No
+   * header, label, or source toggle: the preview reads like the other
+   * rendered blocks (mermaid/graphviz), and the fenced source is still
+   * reachable via the hybrid click-to-edit / "Edit source" flow and the
+   * Save round-trip. */
   function renderOne(pre) {
     const code = pre.querySelector("code");
     if (!code) return;
@@ -257,60 +260,8 @@
     // round-trip the block back to a ```html-live fence.
     card.dataset.htmlpreviewSource = source;
 
-    const bar = document.createElement("div");
-    bar.className = "htmlpreview-bar";
-    const label = document.createElement("span");
-    label.className = "htmlpreview-label";
-    label.textContent = "HTML preview";
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "htmlpreview-toggle";
-    toggle.textContent = "Source";
-    bar.appendChild(label);
-    bar.appendChild(toggle);
-
-    const body = document.createElement("div");
-    body.className = "htmlpreview-body";
-
     const frame = buildFrame(source, height);
-    body.appendChild(frame);
-
-    // The source pane is created lazily on first toggle so a note with
-    // many previews does not pay for the highlighted copy up front.
-    let srcPane = null;
-    let showingSource = false;
-    function toggleView() {
-      showingSource = !showingSource;
-      if (showingSource) {
-        if (!srcPane) {
-          srcPane = document.createElement("pre");
-          srcPane.className = "htmlpreview-source";
-          const c = document.createElement("code");
-          c.className = "language-html";
-          c.textContent = source;
-          srcPane.appendChild(c);
-          if (window.hljs) {
-            try { hljs.highlightElement(c); } catch (_) {}
-          }
-        }
-        frame.hidden = true;
-        if (!srcPane.parentNode) body.appendChild(srcPane);
-        srcPane.hidden = false;
-        toggle.textContent = "Preview";
-      } else {
-        if (srcPane) srcPane.hidden = true;
-        frame.hidden = false;
-        toggle.textContent = "Source";
-      }
-    }
-    toggle.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleView();
-    });
-
-    card.appendChild(bar);
-    card.appendChild(body);
+    card.appendChild(frame);
     pre.replaceWith(card);
   }
 

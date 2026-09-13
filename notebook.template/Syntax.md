@@ -365,11 +365,13 @@ sine trace with a grid — the browser's `requestAnimationFrame` drives it.
 
 ### Sizing the frame
 
-Put a `height:` hint in a comment on the first line to size the frame
-(the canvas example above uses `<!-- height: 220 -->`). Without a hint
-the frame defaults to a modest height and is **resizable** — drag its
-bottom edge to enlarge it. The **Source** button in the card header
-toggles the highlighted source, and **Preview** switches back.
+Put a `height:` hint in a comment on the first line to set a minimum
+height (the canvas example above uses `<!-- height: 220 -->`). Without a
+hint the frame defaults to a modest height and is **resizable** — drag
+its bottom edge to enlarge it. The frame always grows to fit its
+content, so it never scrolls internally. To see or edit the source of a
+live block, right-click it in hybrid edit mode and choose **Edit HTML
+preview source**.
 
 ```html-live
 <!-- height: 120 -->

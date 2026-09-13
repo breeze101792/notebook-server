@@ -2094,8 +2094,7 @@ body[data-theme="light"] #viewer-content {
 .mermaid-source,
 .wavedrom-source,
 .katex-source,
-.viz-source,
-.htmlpreview-source {
+.viz-source {
   margin: 0;
   background: var(--code-bg);
   color: var(--fg);
@@ -2182,40 +2181,16 @@ body[data-theme="light"] #viewer-content {
   cursor: zoom-in;
 }
 /* Live HTML previews. A ```html-live fenced block is replaced with a
- * .htmlpreview-card holding a sandboxed iframe (allow-scripts, no
- * allow-same-origin) plus a header with a Source/Preview toggle. The
- * card mirrors the diagram containers; the frame is resizable so a
- * demo taller than the default can be enlarged without editing the
- * note. The source pane reuses the code-block look when toggled. */
+ * .htmlpreview-card holding just a sandboxed iframe (allow-scripts, no
+ * allow-same-origin). The card mirrors the diagram containers; the frame
+ * is resizable so a demo taller than the default can be enlarged without
+ * editing the note. */
 .htmlpreview-card {
   margin: 12px 0;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-}
-.htmlpreview-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--border);
-  font-size: .76rem;
-  color: var(--muted, var(--fg));
-  opacity: .85;
-}
-.htmlpreview-toggle {
-  font: inherit;
-  padding: 2px 8px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg-elev);
-  color: var(--fg);
-  cursor: pointer;
-}
-.htmlpreview-body {
-  display: block;
 }
 .htmlpreview-frame {
   display: block;

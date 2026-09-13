@@ -2783,25 +2783,19 @@ function check(label, cond, extra) {
     hpCards()[0] && /<button id="go">Go<\/button>/.test(hpCards()[0].dataset.htmlpreviewSource || ""),
     "src=" + (hpCards()[0] && (hpCards()[0].dataset.htmlpreviewSource || "").slice(0, 60)));
 
-  // Source/Preview toggle.
-  const hpToggle = hpCards()[0] && hpCards()[0].querySelector(".htmlpreview-toggle");
-  check("html-live: a Source/Preview toggle button exists", !!hpToggle);
-  check("html-live: the frame is visible initially", hpFrame && !hpFrame.hidden);
-  hpToggle.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
-  await tick(10);
-  const hpSrc = hpCards()[0] && hpCards()[0].querySelector(".htmlpreview-source");
-  check("html-live: clicking Source hides the frame", hpFrame && hpFrame.hidden);
-  check("html-live: clicking Source reveals the highlighted source pane",
-    hpSrc && !hpSrc.hidden && /<button id="go">/.test(hpSrc.textContent || ""),
-    "text=" + (hpSrc && (hpSrc.textContent || "").slice(0, 60)));
-  check("html-live: the toggle label flips to Preview",
-    hpToggle.textContent === "Preview", "label=" + hpToggle.textContent);
-  hpToggle.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
-  await tick(10);
-  check("html-live: clicking Preview restores the frame",
-    hpFrame && !hpFrame.hidden && (hpSrc ? hpSrc.hidden : true));
-  check("html-live: the toggle label flips back to Source",
-    hpToggle.textContent === "Source", "label=" + hpToggle.textContent);
+  // The card is a bare preview: no header/label/source toggle. The
+  // fenced source stays reachable via hybrid click-to-edit and the Save
+  // round-trip, so the rendered block reads like the other containers.
+  check("html-live: no header bar in the card",
+    hpCards()[0] && !hpCards()[0].querySelector(".htmlpreview-bar"));
+  check("html-live: no Source/Preview toggle button in the card",
+    hpCards()[0] && !hpCards()[0].querySelector(".htmlpreview-toggle"));
+  check("html-live: the card contains only the iframe",
+    hpCards()[0] && hpCards()[0].children.length === 1 &&
+    hpCards()[0].children[0].tagName === "IFRAME",
+    "children=" + (hpCards()[0] && hpCards()[0].children.length));
+  check("html-live: the frame is visible (not hidden)",
+    hpFrame && !hpFrame.hidden);
 
   // Height hint.
   FILES["notes/htmlliveh.md"] = "```html-live\n<!-- height: 480 -->\n<div>x</div>\n```\n";
@@ -4532,12 +4526,59 @@ function check(label, cond, extra) {
         if (liveBack) liveBack.remove();
       }
 
+      // --- right-click context menu on an html-live card ------------
+      // The card has no header/toggle now, so the ONLY way to reach the
+      // source is hybrid's right-click "Edit HTML preview source". Verify
+      // the registry-derived menu path works for this type.
+      {
+        const rcCard = window.document.createElement("div");
+        rcCard.className = "htmlpreview-card";
+        rcCard.dataset.htmlpreview = "ok";
+        rcCard.dataset.htmlpreviewSource = "<div id='rc'>menu</div>";
+        rcCard.appendChild(window.document.createElement("iframe"));
+        vc.appendChild(rcCard);
+        await tick(10);
+        rcCard.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, clientX: 120, clientY: 120 }));
+        await tick(10);
+        const editLiveBtn = Array.from(hcm.querySelectorAll("button"))
+          .find(b => /Edit HTML preview source/.test(b.textContent));
+        check("html-live edit: menu offers 'Edit HTML preview source'",
+          !!editLiveBtn, "labels=" + hcm.textContent.trim().slice(0, 100));
+        if (editLiveBtn) {
+          editLiveBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(20);
+          const rcRaw = vc.querySelector("pre > code.language-html-live");
+          check("html-live edit: menu swaps card to editable source",
+            !!rcRaw && /id='rc'/.test(rcRaw.textContent),
+            "raw=" + (rcRaw && rcRaw.textContent.slice(0, 40)));
+          const rcPre = rcRaw && rcRaw.parentElement;
+          if (rcPre) {
+            rcPre.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
+            let rcBack = null;
+            for (let i = 0; i < 20 && !rcBack; i++) {
+              await tick(25);
+              rcBack = vc.querySelector(".htmlpreview-card");
+            }
+            check("html-live edit: blur restores the preview card",
+              !!rcBack && /id='rc'/.test(rcBack.dataset.htmlpreviewSource || ""),
+              "back=" + !!rcBack);
+            if (rcBack) rcBack.remove();
+          }
+        }
+      }
+
       // CSS: the preview iframe must be click-transparent in hybrid mode
       // so the viewer-level (not frame-level) click handler fires.
       const hybridCssText = read("static/css/style.css");
       check("html-live click-to-edit: iframe is pointer-events:none in hybrid mode",
         /#viewer\.hybrid-active\s+\.htmlpreview-frame\s*\{[^}]*pointer-events:\s*none/.test(hybridCssText),
         "no hybrid-active iframe rule");
+      // The removed header/toggle/source-pane CSS must be gone so no
+      // stray rule implies a bar that is no longer rendered.
+      check("html-live: dead .htmlpreview-bar/toggle/body/source CSS is removed",
+        !/\.htmlpreview-(bar|toggle|body|source)\b/.test(hybridCssText),
+        "stale rule still present");
       await window.NB.hybrid.exit(false);
       await tick(30);
     }

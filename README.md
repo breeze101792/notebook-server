@@ -68,8 +68,10 @@ and by `?file=…&heading=…` deep links).
   keeps its usual meaning and stays highlighted source. The preview is
   sandboxed with `` allow-scripts `` and **not** `` allow-same-origin ``,
   so it runs but cannot read the app's cookies, DOM, or authenticated
-  API. A `` <!-- height: 480 --> `` comment in the block sizes the frame;
-  a Source/Preview button toggles the highlighted source.
+  API. A `` <!-- height: 480 --> `` comment sets a minimum frame height;
+  the frame still grows to fit taller content, so the preview never
+  scrolls internally and the note keeps the only scrollbar. Edit the
+  source from hybrid mode's right-click "Edit source".
 - **Copy button** — every fenced code block gets a hover "Copy" that
   copies the raw source (pre-highlight).
 - **Wikilinks** — Obsidian-style `[[Target]]` internal note links. A
