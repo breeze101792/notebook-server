@@ -277,40 +277,14 @@
       });
     }
 
-    // Mermaid diagrams: blocks tagged ```mermaid are replaced with
-    // rendered SVGs (or a warning error box + source block with a
-    // toast notification on parse failure). Runs in BOTH view mode
-    // and live preview so the user sees the diagram update as they
-    // type. renderAll awaits each block sequentially -- mermaid.render
-    // is heavy and Promise.all-ing 10 blocks would spike the main
-    // thread.
-    if (NB.mermaid && NB.mermaid.renderAll) {
-      NB.mermaid.renderAll(viewerContentEl);
-    }
-
-    // WaveDrom timing diagrams: blocks tagged ```wavedrom are replaced
-    // with rendered waveform SVGs (or a warning error box + source block
-    // on failure). Mirrors the mermaid pass above; runs in BOTH view mode
-    // and live preview so the user sees the diagram update as they type.
-    // NB.wavedrom.renderAll awaits each block sequentially (WaveDrom is
-    // lighter than mermaid, but the same sequential discipline keeps the
-    // main thread calm on a large document).
-    if (NB.wavedrom && NB.wavedrom.renderAll) {
-      NB.wavedrom.renderAll(viewerContentEl);
-    }
-
-    // KaTeX math: blocks tagged ```math (or ```katex) are replaced with
-    // typeset equations. Renders to HTML (not SVG), so no lightbox.
-    // Runs in BOTH view mode and live preview.
-    if (NB.katex && NB.katex.renderAll) {
-      NB.katex.renderAll(viewerContentEl);
-    }
-
-    // Graphviz diagrams: blocks tagged ```dot (or ```graphviz) are
-    // replaced with rendered SVG graphs. Uses the shared lightbox for
-    // click-to-inspect + zoom. Runs in BOTH view mode and live preview.
-    if (NB.viz && NB.viz.renderAll) {
-      NB.viz.renderAll(viewerContentEl);
+    // Render every registered plugin block (mermaid / wavedrom / katex /
+    // graphviz / html-live) through the shared blocks registry. Each
+    // renderer owns its own lazy-load gate (a diagram-free note never
+    // fetches the heavy bundles) and renders its blocks sequentially;
+    // the driver runs the modules concurrently, matching the previous
+    // fire-and-forget calls. Runs in BOTH view mode and live preview.
+    if (NB.blocks && NB.blocks.renderAll) {
+      NB.blocks.renderAll(viewerContentEl);
     }
 
     // Copy buttons on code blocks. Only in view mode (content is

@@ -2208,6 +2208,8 @@ class TestAgentGuide(BaseTest):
             "Authorization: Bearer nbtk_",
             "/api/auth/tokens",
             "ifModifiedSince",
+            "html-live",
+            "```mermaid",
         ):
             self.assertIn(marker, body, "missing %r on /agent.md page" % marker)
 

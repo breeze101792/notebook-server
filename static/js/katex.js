@@ -67,20 +67,15 @@
     return loadPromise;
   }
 
-  function decodeHtml(str) {
-    const el = document.createElement("div");
-    el.innerHTML = str;
-    return el.textContent || "";
-  }
-
   /* renderOne(pre) -- render a single <pre><code class="language-math">
    * (or language-katex) into a .katex-container div holding the typeset
-   * HTML. The block's raw text is decoded (marked leaves <pre><code>
-   * bodies entity-encoded) then passed to KaTeX. */
+   * HTML. The source is code.textContent, which the DOM has already
+   * entity-decoded; re-parsing it as HTML (the old decodeHtml helper)
+   * silently ate `<...>` in the source. */
   async function renderOne(pre) {
     const code = pre.querySelector("code");
     if (!code) return;
-    const source = decodeHtml(code.textContent);
+    const source = code.textContent;
     if (!(await whenReady())) return; // katex unavailable -> leave source
     const container = document.createElement("div");
     container.className = "katex-container";
@@ -137,4 +132,22 @@
   }
 
   NB.katex = { renderAll, whenReady };
+
+  // Register with the shared blocks registry: one authoritative list for
+  // the render pipelines, the hybrid click-to-edit table, and the Save
+  // round-trip (```math/```katex blocks are written back as ```math).
+  if (NB.blocks) {
+    NB.blocks.register({
+      mod: "katex",
+      langs: ["math", "katex"],
+      name: "math",
+      fence: "math",
+      selector: "pre > code.language-math, pre > code.language-katex",
+      containerClass: "katex-container",
+      datasetKey: "katexSource",
+      errorClass: "katex-error",
+      sourceClass: "katex-source",
+      renderAll,
+    });
+  }
 })();

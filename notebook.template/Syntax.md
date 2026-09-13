@@ -3,7 +3,7 @@
 A live demo of every feature the notebook supports. Open this file in
 the app and you'll see each section render the way it's meant to —
 code blocks with one-click **Copy** buttons, Mermaid diagrams, WaveDrom
-timing plots, KaTeX math, Graphviz graphs, syntax
+timing plots, KaTeX math, Graphviz graphs, live HTML previews, syntax
 highlighting, the heading outline, the search field, the sidebar's
 **Bookmarks** section, and so on. The "how to use" notes under each
 section tell you where to click to exercise the feature.
@@ -143,7 +143,7 @@ pie title Where the bytes go
 
 ## WaveDrom timing diagrams
 
-Blocks tagged ```wavedrom render as timing / waveform plots — handy for
+Blocks tagged `wavedrom` render as timing / waveform plots — handy for
 digital logic, bus transactions, or SPI/I[2]C captures in your notes.
 The JSON source uses WaveDrom's notation: unquoted keys are fine, and
 each signal maps a `wave` string (letters like `p` = rising edge,
@@ -184,7 +184,7 @@ source stays visible to correct it.
 
 ## KaTeX math
 
-Blocks tagged ```math (or ```katex) render as typeset equations — handy
+Blocks tagged `math` (or `katex`) render as typeset equations — handy
 for DSP, control theory, and signal notes. KaTeX is fast and works
 offline; the math is black-on-transparent so it reads on both light and
 dark themes.
@@ -218,7 +218,7 @@ A malformed expression renders the raw source in red (KaTeX's
 
 ## Graphviz diagrams
 
-Blocks tagged ```dot (or ```graphviz) render as Graphviz graphs —
+Blocks tagged `dot` (or `graphviz`) render as Graphviz graphs —
 state machines, dependency graphs, and call graphs. Graphviz is compiled
 to WASM and runs entirely in the browser, offline. Click a rendered
 graph to open it full-size with zoom in/out (like Mermaid and WaveDrom).
@@ -250,6 +250,131 @@ digraph deps {
 
 A block with a Graphviz syntax error falls back to an inline error box
 (plus a toast) so the source stays visible to correct it.
+
+---
+
+## Live HTML previews
+
+A block tagged `html-live` is loaded into a sandboxed iframe and
+**runs** — CSS transitions and keyframes, SVG animation, inline
+`<script>`, and `<canvas>` all work. Plain `html` keeps its usual
+meaning and is shown as highlighted source, so your snippets stay
+copyable.
+
+The preview is sandboxed with `allow-scripts` and **not**
+`allow-same-origin`. It gets an opaque origin: the demo can animate and
+run its own JS, but it cannot read the notebook app's cookies or DOM, or
+call its authenticated API. That is safe enough to keep in a shared
+notebook, but it is still code you pasted — read a demo before you trust
+it with anything.
+
+### CSS animation (an animated LED chaser)
+
+Pure CSS keyframes — no script needed. Each LED animation is offset by
+its `animation-delay`, so the lit LED walks down the row like a running
+indicator.
+
+```html-live
+<style>
+  .leds { display: flex; gap: 10px; padding: 16px; }
+  .led {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #2a1a1a; box-shadow: inset 0 0 4px #000;
+    animation: chase 1.4s linear infinite;
+  }
+  @keyframes chase {
+    0%, 100% { background: #2a1a1a; box-shadow: inset 0 0 4px #000; }
+    15%      { background: #ff5b4a; box-shadow: 0 0 16px 3px #ff5b4a; }
+  }
+</style>
+<div class="leds">
+  <div class="led" style="animation-delay: 0s"></div>
+  <div class="led" style="animation-delay: .14s"></div>
+  <div class="led" style="animation-delay: .28s"></div>
+  <div class="led" style="animation-delay: .42s"></div>
+  <div class="led" style="animation-delay: .56s"></div>
+  <div class="led" style="animation-delay: .70s"></div>
+  <div class="led" style="animation-delay: .84s"></div>
+  <div class="led" style="animation-delay: .98s"></div>
+</div>
+```
+
+### SVG animation (a rotating gyroscope)
+
+SVG `<animateTransform>` and `<animate>` run without JavaScript. This
+spins the outer ring while a gradient sweeps around the inner one.
+
+```html-live
+<!-- height: 200 -->
+<svg viewBox="0 0 120 120" width="160" height="160">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4da3ff"/>
+      <stop offset="1" stop-color="#7cf6c0"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(60 60)">
+    <circle r="46" fill="none" stroke="url(#g)" stroke-width="3">
+      <animateTransform attributeName="transform" type="rotate"
+        from="0" to="360" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="30" fill="none" stroke="url(#g)" stroke-width="3">
+      <animateTransform attributeName="transform" type="rotate"
+        from="360" to="0" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <circle r="12" fill="#4da3ff">
+      <animate attributeName="r" values="10;14;10" dur="1.6s"
+        repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>
+```
+
+### Canvas + JavaScript (a live oscilloscope)
+
+A `<script>` inside the preview runs normally. This one draws a moving
+sine trace with a grid — the browser's `requestAnimationFrame` drives it.
+
+```html-live
+<!-- height: 240 -->
+<canvas id="scope" width="560" height="200"></canvas>
+<script>
+  const c = document.getElementById('scope');
+  const g = c.getContext('2d');
+  let t = 0;
+  function frame() {
+    const { width: W, height: H } = c;
+    g.fillStyle = '#0b1220'; g.fillRect(0, 0, W, H);
+    // grid
+    g.strokeStyle = 'rgba(120,180,255,.18)'; g.lineWidth = 1;
+    for (let x = 0; x <= W; x += 40) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+    for (let y = 0; y <= H; y += 40) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+    // trace
+    g.strokeStyle = '#57e38a'; g.lineWidth = 2; g.beginPath();
+    for (let x = 0; x <= W; x += 2) {
+      const y = H / 2 + Math.sin((x + t) / 40) * Math.sin((x + t) / 9) * 55;
+      x ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke();
+    t += 3;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+```
+
+### Sizing the frame
+
+Put a `height:` hint in a comment on the first line to size the frame
+(the canvas example above uses `<!-- height: 220 -->`). Without a hint
+the frame defaults to a modest height and is **resizable** — drag its
+bottom edge to enlarge it. The **Source** button in the card header
+toggles the highlighted source, and **Preview** switches back.
+
+```html-live
+<!-- height: 120 -->
+<div style="font-size:2rem">👋 interactive demo</div>
+```
 
 ---
 

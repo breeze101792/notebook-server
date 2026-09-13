@@ -2068,20 +2068,34 @@ body[data-theme="light"] #viewer-content {
   width: auto;
   cursor: zoom-in;
 }
-.mermaid-error {
+/* Error box, header, and source pane shared by every plugin renderer
+ * (mermaid / wavedrom / katex / viz). The declarations were identical
+ * per renderer; grouping them keeps the fallback chrome in one place.
+ * htmlpreview has no error box. */
+.mermaid-error,
+.wavedrom-error,
+.katex-error,
+.viz-error {
   margin: 12px 0;
   border: 1px solid var(--warn);
   border-radius: 8px;
   overflow: hidden;
 }
-.mermaid-error-head {
+.mermaid-error-head,
+.wavedrom-error-head,
+.katex-error-head,
+.viz-error-head {
   background: var(--warn);
   color: var(--bg);
   font-size: .86rem;
   padding: 6px 12px;
   font-weight: 600;
 }
-.mermaid-source {
+.mermaid-source,
+.wavedrom-source,
+.katex-source,
+.viz-source,
+.htmlpreview-source {
   margin: 0;
   background: var(--code-bg);
   color: var(--fg);
@@ -2124,31 +2138,6 @@ body[data-theme="light"] #viewer-content {
   width: auto;
   cursor: zoom-in;
 }
-.wavedrom-error {
-  margin: 12px 0;
-  border: 1px solid var(--warn);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.wavedrom-error-head {
-  background: var(--warn);
-  color: var(--bg);
-  font-size: .86rem;
-  padding: 6px 12px;
-  font-weight: 600;
-}
-.wavedrom-source {
-  margin: 0;
-  background: var(--code-bg);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  padding: 10px 12px;
-  font-size: .85rem;
-  line-height: 1.4;
-  white-space: pre;
-  overflow-x: auto;
-}
 /* KaTeX math blocks. The .katex-container wraps a typeset equation
  * (HTML, not SVG). KaTeX's own stylesheet handles the glyphs; we just
  * give the block a card so it reads as a distinct element in the note,
@@ -2164,31 +2153,6 @@ body[data-theme="light"] #viewer-content {
 }
 .katex-container .katex-display {
   margin: 0;
-}
-.katex-error {
-  margin: 12px 0;
-  border: 1px solid var(--warn);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.katex-error-head {
-  background: var(--warn);
-  color: var(--bg);
-  font-size: .86rem;
-  padding: 6px 12px;
-  font-weight: 600;
-}
-.katex-source {
-  margin: 0;
-  background: var(--code-bg);
-  color: var(--fg);
-  border: 0;
-  border-radius: 0;
-  padding: 10px 12px;
-  font-size: .85rem;
-  line-height: 1.4;
-  white-space: pre;
-  overflow-x: auto;
 }
 /* Graphviz diagrams. The .viz-container wraps a rendered SVG produced
  * by the graphviz (viz.js) library (```dot code blocks). Styling
@@ -2217,30 +2181,63 @@ body[data-theme="light"] #viewer-content {
   width: auto;
   cursor: zoom-in;
 }
-.viz-error {
+/* Live HTML previews. A ```html-live fenced block is replaced with a
+ * .htmlpreview-card holding a sandboxed iframe (allow-scripts, no
+ * allow-same-origin) plus a header with a Source/Preview toggle. The
+ * card mirrors the diagram containers; the frame is resizable so a
+ * demo taller than the default can be enlarged without editing the
+ * note. The source pane reuses the code-block look when toggled. */
+.htmlpreview-card {
   margin: 12px 0;
-  border: 1px solid var(--warn);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
 }
-.viz-error-head {
-  background: var(--warn);
-  color: var(--bg);
-  font-size: .86rem;
-  padding: 6px 12px;
-  font-weight: 600;
+.htmlpreview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: .76rem;
+  color: var(--muted, var(--fg));
+  opacity: .85;
 }
-.viz-source {
-  margin: 0;
-  background: var(--code-bg);
+.htmlpreview-toggle {
+  font: inherit;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-elev);
   color: var(--fg);
+  cursor: pointer;
+}
+.htmlpreview-body {
+  display: block;
+}
+.htmlpreview-frame {
+  display: block;
+  width: 100%;
   border: 0;
-  border-radius: 0;
-  padding: 10px 12px;
-  font-size: .85rem;
-  line-height: 1.4;
-  white-space: pre;
-  overflow-x: auto;
+  background: #fff;
+  /* The frame auto-fits its content (the injected resize bridge reports
+   * the content height), so it never scrolls internally -- the note
+   * keeps the only scrollbar and the wheel reaches the page. `resize`
+   * still lets the reader drag it larger; it needs a non-visible
+   * overflow to render the handle. */
+  resize: vertical;
+  overflow: hidden;
+}
+/* In hybrid (WYSIWYG) edit mode the preview iframe must not swallow the
+ * click that swaps the block to its editable source fence -- the viewer
+ * listens on #viewer-content, and a click inside the frame never reaches
+ * it. pointer-events:none lets the click hit the card so the same
+ * click-to-edit flow the diagram containers use works here too. The
+ * demo pauses reacting while editing, which is expected. */
+#viewer.hybrid-active .htmlpreview-frame {
+  pointer-events: none;
 }
 
 /* Mermaid lightbox: borderless full-screen overlay with a blurred

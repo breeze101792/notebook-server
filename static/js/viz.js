@@ -84,18 +84,14 @@
     return vizInstance;
   }
 
-  function decodeHtml(str) {
-    const el = document.createElement("div");
-    el.innerHTML = str;
-    return el.textContent || "";
-  }
-
   /* renderOne(pre) -- render a single <pre><code class="language-dot">
-   * (or language-graphviz) into a .viz-container holding the SVG. */
+   * (or language-graphviz) into a .viz-container holding the SVG. The
+   * source is code.textContent, already entity-decoded by the DOM;
+   * re-parsing it as HTML (the old decodeHtml helper) ate `<...>`. */
   async function renderOne(pre) {
     const code = pre.querySelector("code");
     if (!code) return;
-    const source = decodeHtml(code.textContent);
+    const source = code.textContent;
     if (!(await whenReady())) return; // viz unavailable -> leave source
     const container = document.createElement("div");
     container.className = "viz-container";
@@ -195,4 +191,22 @@
     zoomIn: lightbox.zoomIn,
     zoomOut: lightbox.zoomOut,
     fitToPage: lightbox.fitToPage };
+
+  // Register with the shared blocks registry: one authoritative list for
+  // the render pipelines, the hybrid click-to-edit table, and the Save
+  // round-trip (both ```dot and ```graphviz are written back as ```dot).
+  if (NB.blocks) {
+    NB.blocks.register({
+      mod: "viz",
+      langs: ["dot", "graphviz"],
+      name: "Graphviz",
+      fence: "dot",
+      selector: "pre > code.language-dot, pre > code.language-graphviz",
+      containerClass: "viz-container",
+      datasetKey: "vizSource",
+      errorClass: "viz-error",
+      sourceClass: "viz-source",
+      renderAll,
+    });
+  }
 })();

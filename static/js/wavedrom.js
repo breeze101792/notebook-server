@@ -83,9 +83,12 @@
 
   /* renderOne(pre) -- render a single <pre><code class="language-wavedrom">.
    *
-   * The block's raw text is decoded (marked leaves <pre><code> bodies
-   * entity-encoded), then parsed to a JS object by parseSource() (strict
-   * JSON first, lenient WaveDrom notation via eval on failure).
+   * The block's text comes straight from textContent, already
+   * entity-decoded by the DOM. The old decodeHtml helper re-parsed it as
+   * HTML and ate `<...>` in the source; don't reintroduce it.
+   *
+   * The parsed object is built by parseSource() (strict JSON first,
+   * lenient WaveDrom notation via eval on failure).
    *
    * On success: replace the <pre> with a <div class="wavedrom-container">
    * holding the rendered SVG.
@@ -97,7 +100,7 @@
   async function renderOne(pre) {
     const code = pre.querySelector("code");
     if (!code) return;
-    const source = decodeHtml(code.textContent);
+    const source = code.textContent;
     const index = ++idCounter;
     const output = "Wavedrom_NB__";
     // WaveDrom renders into / creates an element with id output+index.
@@ -223,12 +226,6 @@
     }
   }
 
-  function decodeHtml(str) {
-    const el = document.createElement("div");
-    el.innerHTML = str;
-    return el.textContent || "";
-  }
-
   /* parseSource(raw) -- parse a ```wavedrom block body into a JS object.
    *
    * The official WaveDrom notation is not strict JSON: keys may be
@@ -282,4 +279,22 @@
     zoomIn: lightbox.zoomIn,
     zoomOut: lightbox.zoomOut,
     fitToPage: lightbox.fitToPage };
+
+  // Register with the shared blocks registry: one authoritative list for
+  // the render pipelines, the hybrid click-to-edit table, and the Save
+  // round-trip.
+  if (NB.blocks) {
+    NB.blocks.register({
+      mod: "wavedrom",
+      langs: ["wavedrom"],
+      name: "WaveDrom",
+      fence: "wavedrom",
+      selector: "pre > code.language-wavedrom",
+      containerClass: "wavedrom-container",
+      datasetKey: "wavedromSource",
+      errorClass: "wavedrom-error",
+      sourceClass: "wavedrom-source",
+      renderAll,
+    });
+  }
 })();

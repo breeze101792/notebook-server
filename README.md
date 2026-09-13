@@ -62,6 +62,14 @@ and by `?file=…&heading=…` deep links).
   `` graphviz ``) language renders as a Graphviz graph (state machines,
   dependency graphs, …). Compiled to WASM, runs offline. Click a graph
   to open it full-size with zoom in/out.
+- **Live HTML previews** — a fenced block tagged `` html-live `` is
+  replaced with a sandboxed iframe that actually runs the markup (CSS /
+  SVG animation, inline `` <script> ``, canvas, …). Plain `` ```html ``
+  keeps its usual meaning and stays highlighted source. The preview is
+  sandboxed with `` allow-scripts `` and **not** `` allow-same-origin ``,
+  so it runs but cannot read the app's cookies, DOM, or authenticated
+  API. A `` <!-- height: 480 --> `` comment in the block sizes the frame;
+  a Source/Preview button toggles the highlighted source.
 - **Copy button** — every fenced code block gets a hover "Copy" that
   copies the raw source (pre-highlight).
 - **Wikilinks** — Obsidian-style `[[Target]]` internal note links. A

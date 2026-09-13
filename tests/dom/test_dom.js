@@ -1419,10 +1419,12 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/auth.js"));
   evalIn(read("static/js/cm-bridge.js"));
   evalIn(read("static/js/lightbox.js"));
+  evalIn(read("static/js/blocks.js"));
   evalIn(read("static/js/mermaid.js"));
   evalIn(read("static/js/wavedrom.js"));
   evalIn(read("static/js/katex.js"));
   evalIn(read("static/js/viz.js"));
+  evalIn(read("static/js/htmlpreview.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
@@ -1829,7 +1831,7 @@ function check(label, cond, extra) {
     /\.mermaid-container\s*\{/.test(mermaidCssText),
     "no .mermaid-container rule");
   check("mermaid: .mermaid-error style is in style.css",
-    /\.mermaid-error\s*\{/.test(mermaidCssText),
+    /\.mermaid-error\b/.test(mermaidCssText),
     "no .mermaid-error rule");
   check("mermaid: error toast warn style is in style.css",
     /\.toast\.warn/.test(mermaidCssText),
@@ -2256,7 +2258,7 @@ function check(label, cond, extra) {
     /\.wavedrom-container\s*\{/.test(wavedromCssText),
     "no .wavedrom-container rule");
   check("wavedrom: .wavedrom-error style is in style.css",
-    /\.wavedrom-error\s*\{/.test(wavedromCssText),
+    /\.wavedrom-error\b/.test(wavedromCssText),
     "no .wavedrom-error rule");
 
   // --- wavedrom lightbox: click a waveform to see it full-size ------
@@ -2490,6 +2492,30 @@ function check(label, cond, extra) {
     katexErrs().length === 0 && katexContainers().length === 1,
     "errs=" + katexErrs().length + " containers=" + katexContainers().length);
 
+  // Regression: a math fence containing angle brackets must reach the
+  // renderer intact. The old decodeHtml helper re-parsed the already
+  // decoded textContent as HTML and ate `<...>` (e.g. "a <b> c" -> "a  c").
+  __katex.renders = 0;
+  const ENTITY_MATH_BODY = "# Entity math\n\n```math\na <b> c\nd < e\n```\n";
+  FILES["notes/mathentity.md"] = ENTITY_MATH_BODY;
+  TREE.push({ name: "mathentity.md", type: "file", path: "notes/mathentity.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/mathentity.md");
+  await tick(80);
+  check("katex: angle brackets in the source reach renderToString intact (no double-decode)",
+    /a <b> c/.test(__katex.lastSource || "") && /d < e/.test(__katex.lastSource || ""),
+    "source=" + JSON.stringify(__katex.lastSource));
+  check("katex: the container stores the undecoded source for round-trip",
+    (window.document.querySelector("#viewer .katex-container") || {}).dataset &&
+    /a <b> c/.test(
+      (window.document.querySelector("#viewer .katex-container") || {}).dataset.katexSource || ""),
+    "stored=" + JSON.stringify(
+      ((window.document.querySelector("#viewer .katex-container") || {}).dataset || {}).katexSource));
+  await window.NB.tabs.close("notes/mathentity.md", { force: true });
+  await window.NB.tabs.activate("notes/katex.md");
+  await tick(40);
+
   // NB.katex façade surface.
   check("katex: NB.katex.renderAll is a function", typeof window.NB.katex.renderAll === "function");
   check("katex: NB.katex.whenReady is a function", typeof window.NB.katex.whenReady === "function");
@@ -2500,7 +2526,7 @@ function check(label, cond, extra) {
     /\.katex-container\s*\{/.test(katexCssText),
     "no .katex-container rule");
   check("katex: .katex-error style is in style.css",
-    /\.katex-error\s*\{/.test(katexCssText),
+    /\.katex-error\b/.test(katexCssText),
     "no .katex-error rule");
 
   console.log("== graphviz ==");
@@ -2588,7 +2614,7 @@ function check(label, cond, extra) {
     /\.viz-container\s*\{/.test(vizCssText),
     "no .viz-container rule");
   check("graphviz: .viz-error style is in style.css",
-    /\.viz-error\s*\{/.test(vizCssText),
+    /\.viz-error\b/.test(vizCssText),
     "no .viz-error rule");
 
   // --- graphviz lightbox: click a graph to see it full-size ----------
@@ -2699,6 +2725,365 @@ function check(label, cond, extra) {
   await window.NB.tabs.close("notes/katex.md", { force: true });
   await window.NB.tabs.close("notes/badwd.md", { force: true });
   await window.NB.tabs.close("notes/wavedrom.md", { force: true });
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(40);
+
+  console.log("== html-live preview ==");
+  // The html-live integration is in static/js/htmlpreview.js + the
+  // viewer's render() pipeline. It wraps the block source in a
+  // sandboxed iframe (allow-scripts, NOT allow-same-origin) so the
+  // preview runs but cannot reach the app's origin. jsdom does not
+  // execute frame documents, so these checks assert the DOM shape.
+  const HTML_LIVE_BODY =
+    "# Live\n\n" +
+    "```html-live\n" +
+    "<button id=\"go\">Go</button>\n" +
+    "<script>document.title = 'ran';</script>\n" +
+    "```\n\n" +
+    "Plain source:\n\n" +
+    "```html\n" +
+    "<p>not live</p>\n" +
+    "```\n";
+  FILES["notes/htmllive.md"] = HTML_LIVE_BODY;
+  const hlNotesDir = (TREE.find(n => n.path === "notes"));
+  if (hlNotesDir && !hlNotesDir.children.some(c => c.path === "notes/htmllive.md")) {
+    hlNotesDir.children.push({ name: "htmllive.md", type: "file", path: "notes/htmllive.md" });
+  } else {
+    TREE.push({ name: "htmllive.md", type: "file", path: "notes/htmllive.md" });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/htmllive.md");
+  await tick(80);
+  const hpCards = () => window.document.querySelectorAll("#viewer .htmlpreview-card");
+  check("html-live: NB.htmlpreview module is loaded", !!window.NB.htmlpreview);
+  check("html-live: a ```html-live block produces a .htmlpreview-card",
+    hpCards().length === 1,
+    "cards=" + hpCards().length);
+  check("html-live: the original <pre> was replaced (no orphan code.language-html-live left)",
+    window.document.querySelectorAll("#viewer pre > code.language-html-live").length === 0,
+    "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-html-live").length);
+  check("html-live: plain ```html stays a highlighted source block (not rendered)",
+    window.document.querySelectorAll("#viewer pre > code.language-html").length === 1 &&
+    hpCards().length === 1,
+    "html_blocks=" + window.document.querySelectorAll("#viewer pre > code.language-html").length);
+  const hpFrame = hpCards()[0] && hpCards()[0].querySelector("iframe.htmlpreview-frame");
+  check("html-live: the card holds an iframe",
+    !!hpFrame);
+  check("html-live: the iframe is sandboxed with allow-scripts only",
+    hpFrame && hpFrame.getAttribute("sandbox") === "allow-scripts",
+    "sandbox=" + (hpFrame && hpFrame.getAttribute("sandbox")));
+  check("html-live: the iframe has NO allow-same-origin (opaque origin)",
+    hpFrame && !/allow-same-origin/.test(hpFrame.getAttribute("sandbox") || ""),
+    "sandbox=" + (hpFrame && hpFrame.getAttribute("sandbox")));
+  check("html-live: the iframe carries the source via srcdoc",
+    hpFrame && /<button id="go">Go<\/button>/.test(hpFrame.getAttribute("srcdoc") || ""),
+    "srcdoc=" + (hpFrame && (hpFrame.getAttribute("srcdoc") || "").slice(0, 80)));
+  check("html-live: the card stores the original source for round-trip",
+    hpCards()[0] && /<button id="go">Go<\/button>/.test(hpCards()[0].dataset.htmlpreviewSource || ""),
+    "src=" + (hpCards()[0] && (hpCards()[0].dataset.htmlpreviewSource || "").slice(0, 60)));
+
+  // Source/Preview toggle.
+  const hpToggle = hpCards()[0] && hpCards()[0].querySelector(".htmlpreview-toggle");
+  check("html-live: a Source/Preview toggle button exists", !!hpToggle);
+  check("html-live: the frame is visible initially", hpFrame && !hpFrame.hidden);
+  hpToggle.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  const hpSrc = hpCards()[0] && hpCards()[0].querySelector(".htmlpreview-source");
+  check("html-live: clicking Source hides the frame", hpFrame && hpFrame.hidden);
+  check("html-live: clicking Source reveals the highlighted source pane",
+    hpSrc && !hpSrc.hidden && /<button id="go">/.test(hpSrc.textContent || ""),
+    "text=" + (hpSrc && (hpSrc.textContent || "").slice(0, 60)));
+  check("html-live: the toggle label flips to Preview",
+    hpToggle.textContent === "Preview", "label=" + hpToggle.textContent);
+  hpToggle.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  await tick(10);
+  check("html-live: clicking Preview restores the frame",
+    hpFrame && !hpFrame.hidden && (hpSrc ? hpSrc.hidden : true));
+  check("html-live: the toggle label flips back to Source",
+    hpToggle.textContent === "Source", "label=" + hpToggle.textContent);
+
+  // Height hint.
+  FILES["notes/htmlliveh.md"] = "```html-live\n<!-- height: 480 -->\n<div>x</div>\n```\n";
+  TREE.push({ name: "htmlliveh.md", type: "file", path: "notes/htmlliveh.md" });
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open("notes/htmlliveh.md");
+  await tick(80);
+  const hpHFrame = window.document.querySelector("#viewer .htmlpreview-card iframe");
+  check("html-live: a height hint sets the frame's initial/floor height",
+    hpHFrame && hpHFrame.style.height === "480px" &&
+    hpHFrame.dataset.minHeight === "480",
+    "height=" + (hpHFrame && hpHFrame.style.height) +
+    " floor=" + (hpHFrame && hpHFrame.dataset.minHeight));
+
+  // NB.htmlpreview façade surface.
+  check("html-live: NB.htmlpreview.renderAll is a function",
+    typeof window.NB.htmlpreview.renderAll === "function");
+
+  // --- key bridge: modified keys from a focused preview reach the app ---
+  // Clicking the preview focuses the sandboxed iframe, so the app's
+  // document-level shortcut listener would normally miss the chord. The
+  // injected bridge postMessages modified keys back; the parent replays
+  // them as a real keydown. jsdom runs no frame scripts, so we drive the
+  // message path directly.
+  {
+    const liveCard = window.document.querySelector("#viewer .htmlpreview-card");
+    const liveFrame = liveCard && liveCard.querySelector("iframe.htmlpreview-frame");
+    check("html-live key bridge: a live preview frame exists", !!liveFrame);
+
+    // A modified key from a known live frame is replayed as a keydown.
+    // Use Ctrl+U (no default app shortcut) so the replay is observable
+    // without side effects like entering edit mode.
+    let replayed = null;
+    const onReplay = (e) => {
+      if (e.__nbHtmlPreviewSynthetic) replayed = e;
+    };
+    window.document.addEventListener("keydown", onReplay, true);
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewKey: true, key: "u", ctrlKey: true },
+      source: liveFrame,
+    }));
+    await tick(10);
+    check("html-live key bridge: modified key from a live frame is replayed",
+      !!replayed && replayed.key === "u" && replayed.ctrlKey === true,
+      "replayed=" + (replayed && replayed.key + " ctrl=" + replayed.ctrlKey));
+    window.document.removeEventListener("keydown", onReplay, true);
+
+    // A message from an unknown source is ignored.
+    let forged = null;
+    const onForged = (e) => { if (e.__nbHtmlPreviewSynthetic) forged = e; };
+    window.document.addEventListener("keydown", onForged, true);
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewKey: true, key: "u", ctrlKey: true },
+      source: window,
+    }));
+    await tick(10);
+    check("html-live key bridge: message from an unknown source is ignored",
+      forged === null, "forged=" + !!forged);
+    window.document.removeEventListener("keydown", onForged, true);
+
+    // A non-bridge message is ignored even from a live frame.
+    let other = null;
+    const onOther = (e) => { if (e.__nbHtmlPreviewSynthetic) other = e; };
+    window.document.addEventListener("keydown", onOther, true);
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { hello: "world" }, source: liveFrame,
+    }));
+    await tick(10);
+    check("html-live key bridge: non-bridge message is ignored",
+      other === null, "other=" + !!other);
+    window.document.removeEventListener("keydown", onOther, true);
+
+    // The bridge script is injected into the preview document.
+    const srcdoc = liveFrame && liveFrame.getAttribute("srcdoc") || "";
+    check("html-live key bridge: script is injected into the frame",
+      /postMessage/.test(srcdoc) && /__nbHtmlPreviewKey/.test(srcdoc));
+
+    // End-to-end: a bridged Ctrl+E reaches the real shortcut handler and
+    // calls NB.viewer.toggleEdit (spied so the test does not actually
+    // enter edit mode). This is the bug the bridge fixes.
+    const origToggle = window.NB.viewer.toggleEdit;
+    let toggleCalls = 0;
+    window.NB.viewer.toggleEdit = function () { toggleCalls++; };
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewKey: true, key: "e", ctrlKey: true },
+      source: liveFrame,
+    }));
+    await tick(20);
+    check("html-live key bridge: bridged Ctrl+E fires toggleEdit",
+      toggleCalls === 1, "calls=" + toggleCalls);
+    window.NB.viewer.toggleEdit = origToggle;
+  }
+
+  // --- resize bridge: content height sizes the frame (no inner scroll) ---
+  // The sandbox blocks the parent from measuring the child DOM, so the
+  // injected bridge reports the content height; the parent grows the
+  // frame to fit. A height hint is a floor, not a fixed size.
+  {
+    const card = window.document.querySelector("#viewer .htmlpreview-card");
+    const frame = card && card.querySelector("iframe.htmlpreview-frame");
+    check("html-live resize: preview frame present", !!frame);
+    // Simulate a tall report -> frame grows to the content height.
+    const tall = 730;
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewSize: true, h: tall },
+      source: frame,
+    }));
+    await tick(10);
+    check("html-live resize: tall content grows the frame to fit",
+      frame && frame.style.height === tall + "px",
+      "height=" + (frame && frame.style.height));
+    // A smaller report must not shrink the frame (transient 0 guard).
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewSize: true, h: 120 },
+      source: frame,
+    }));
+    await tick(10);
+    check("html-live resize: a smaller report does not shrink the frame",
+      frame && frame.style.height === tall + "px",
+      "height=" + (frame && frame.style.height));
+    // A size report from an unknown source is ignored.
+    const before = frame.style.height;
+    window.dispatchEvent(new window.MessageEvent("message", {
+      data: { __nbHtmlPreviewSize: true, h: 5000 },
+      source: window,
+    }));
+    await tick(10);
+    check("html-live resize: size report from an unknown source is ignored",
+      frame.style.height === before, "height=" + frame.style.height);
+    // The frame never scrolls internally; the note owns the scrollbar.
+    const hpFrameCss = read("static/css/style.css")
+      .match(/\.htmlpreview-frame\s*\{[^}]*\}/);
+    check("html-live resize: .htmlpreview-frame sets overflow:hidden",
+      hpFrameCss && /overflow:\s*hidden/.test(hpFrameCss[0]),
+      "rule=" + (hpFrameCss && hpFrameCss[0].replace(/\s+/g, " ")));
+    // The resize bridge is injected into the preview document.
+    const srcdoc = frame.getAttribute("srcdoc") || "";
+    check("html-live resize: resize bridge is injected into the frame",
+      /__nbHtmlPreviewSize/.test(srcdoc));
+  }
+
+  // CSS sanity.
+  const hpCssText = read("static/css/style.css");
+  check("html-live: .htmlpreview-card style is in style.css",
+    /\.htmlpreview-card\s*\{/.test(hpCssText), "no .htmlpreview-card rule");
+  check("html-live: .htmlpreview-frame style is in style.css",
+    /\.htmlpreview-frame\s*\{/.test(hpCssText), "no .htmlpreview-frame rule");
+
+  // --- blocks registry: one authoritative list for every renderer ----
+  // static/js/blocks.js replaces the hand-copied type lists in viewer.js,
+  // hybrid.js (render pipeline + round-trip) and export.js. These checks
+  // pin the registry surface and the derived hybrid type table.
+  console.log("== blocks registry ==");
+  {
+    const blocks = window.NB.blocks;
+    check("blocks: NB.blocks module is loaded", !!blocks);
+    const reg = blocks.all();
+    check("blocks: five renderers registered",
+      reg.length === 5, "count=" + reg.length);
+    const mods = reg.map(d => d.mod).sort().join(",");
+    check("blocks: registered modules are mermaid,wavedrom,katex,viz,htmlpreview",
+      mods === "htmlpreview,katex,mermaid,viz,wavedrom", "mods=" + mods);
+    check("blocks: every descriptor names a fence and containerClass",
+      reg.every(d => d.fence && d.containerClass && typeof d.renderAll === "function"),
+      "bad=" + JSON.stringify(reg.filter(d => !(d.fence && d.containerClass)).map(d => d.mod)));
+    // forLang resolves every claimed language and the round-trip fence.
+    check("blocks: forLang resolves both graphviz spellings",
+      blocks.forLang("dot") && blocks.forLang("dot").mod === "viz" &&
+      blocks.forLang("graphviz") && blocks.forLang("graphviz").mod === "viz");
+    check("blocks: forLang resolves both math spellings",
+      blocks.forLang("math") && blocks.forLang("math").mod === "katex" &&
+      blocks.forLang("katex") && blocks.forLang("katex").mod === "katex");
+    check("blocks: forLang resolves html-live", 
+      blocks.forLang("html-live") && blocks.forLang("html-live").mod === "htmlpreview");
+    check("blocks: forLang returns null for an unknown language",
+      blocks.forLang("python") === null && blocks.forLang("") === null);
+    // The hybrid type table is derived from the registry.
+    const types = blocks.pluginTypes();
+    check("blocks: pluginTypes derives one entry per renderer",
+      types.length === 5, "count=" + types.length);
+    const byLang = {};
+    for (const t of types) byLang[t.lang] = t;
+    check("blocks: pluginTypes writes math/dot back under their canonical fence",
+      byLang.math && byLang.math.mod === "katex" &&
+      byLang.dot && byLang.dot.mod === "viz",
+      "langs=" + types.map(t => t.lang).join(","));
+    check("blocks: pluginTypes selector covers container + error box",
+      byLang.mermaid.sel === ".mermaid-container,.mermaid-error",
+      "sel=" + (byLang.mermaid && byLang.mermaid.sel));
+
+    // --- round-trip equivalence: rendered DOM -> fenced markdown ------
+    // The data-loss-critical path. Build a clone containing a rendered
+    // container AND an error box of every type, run the registry
+    // restore, and assert each becomes the expected fence with the
+    // original source preserved byte-for-byte.
+    const cases = [
+      { type: "mermaid", fence: "mermaid", src: "graph TD; A-->B;" },
+      { type: "wavedrom", fence: "wavedrom", src: "{signal:[{name:'clk'}]}" },
+      { type: "katex", fence: "math", src: "E = mc^2" },
+      { type: "viz", fence: "dot", src: "digraph { a -> b }" },
+      { type: "htmlpreview", fence: "html-live", src: "<b>live</b>" },
+    ];
+    const clone = window.document.createElement("div");
+    for (const c of cases) {
+      const container = window.document.createElement("div");
+      container.className = c.type + "-container";
+      // htmlpreview uses .htmlpreview-card, not .htmlpreview-container.
+      if (c.type === "htmlpreview") container.className = "htmlpreview-card";
+      container.dataset[c.type + "Source"] = c.src;
+      clone.appendChild(container);
+      // Error box (htmlpreview has none).
+      if (c.type !== "htmlpreview") {
+        const err = window.document.createElement("div");
+        err.className = c.type + "-error";
+        const srcEl = window.document.createElement("pre");
+        srcEl.className = c.type + "-source";
+        srcEl.textContent = c.src + " (broken)";
+        err.appendChild(srcEl);
+        clone.appendChild(err);
+      }
+    }
+    blocks.restoreForMarkdown(clone);
+    // Every container/error box is gone, replaced by a fence.
+    check("blocks round-trip: no rendered containers remain",
+      clone.querySelectorAll(
+        ".mermaid-container,.wavedrom-container,.katex-container," +
+        ".viz-container,.htmlpreview-card,.mermaid-error," +
+        ".wavedrom-error,.katex-error,.viz-error").length === 0,
+      "remaining=" + clone.querySelectorAll(
+        ".mermaid-container,.wavedrom-container,.katex-container," +
+        ".viz-container,.htmlpreview-card,.mermaid-error," +
+        ".wavedrom-error,.katex-error,.viz-error").length);
+    const fences = Array.from(clone.querySelectorAll("pre > code"))
+      .map(c => ({ lang: (c.className.match(/language-(\S+)/) || [])[1],
+                   text: c.textContent }));
+    check("blocks round-trip: one fence per rendered block (5 containers + 4 error boxes)",
+      fences.length === 9, "count=" + fences.length);
+    for (const c of cases) {
+      const hit = fences.find(f => f.lang === c.fence && f.text === c.src);
+      check("blocks round-trip: " + c.type + " container -> ```" + c.fence + " source preserved",
+        !!hit, "fences=" + JSON.stringify(fences.map(f => f.lang)));
+    }
+    // Error boxes keep their (broken) source under the canonical fence.
+    check("blocks round-trip: error-box source uses the canonical fence",
+      fences.some(f => f.lang === "math" && f.text === "E = mc^2 (broken)") &&
+      fences.some(f => f.lang === "dot" && f.text === "digraph { a -> b } (broken)"),
+      "fences=" + JSON.stringify(fences.map(f => f.lang)));
+    // A missing container dataset yields an empty fence, never a crash.
+    const edge = window.document.createElement("div");
+    const orphan = window.document.createElement("div");
+    orphan.className = "mermaid-container";
+    edge.appendChild(orphan);
+    blocks.restoreForMarkdown(edge);
+    check("blocks round-trip: container with no source still becomes a fence (no throw)",
+      edge.querySelector("pre > code.language-mermaid") !== null);
+
+    // --- registry completeness guard ---------------------------------
+    // Every registered module must appear in the boot script list, the
+    // service-worker precache, and the shared docs. This is the test the
+    // architect noted was missing when sw.js silently dropped modules.
+    const idxHtml = read("templates/index.html");
+    const swJs = read("static/sw.js");
+    const aiJs = read("static/js/ai.js");
+    const agentMd = read("agent.md");
+    for (const d of reg) {
+      check("blocks completeness: " + d.mod + ".js is in index.html",
+        idxHtml.indexOf("/static/js/" + d.mod + ".js") !== -1);
+      check("blocks completeness: " + d.mod + ".js is in sw.js PRECACHE",
+        swJs.indexOf("/static/js/" + d.mod + ".js") !== -1);
+      check("blocks completeness: " + d.fence + " is documented for the AI",
+        aiJs.indexOf("```" + d.fence) !== -1,
+        "fence=" + d.fence);
+      check("blocks completeness: " + d.fence + " is documented in agent.md",
+        agentMd.indexOf("```" + d.fence) !== -1,
+        "fence=" + d.fence);
+    }
+  }
+
+  // Cleanup.
+  await window.NB.tabs.close("notes/htmlliveh.md", { force: true });
+  await window.NB.tabs.close("notes/htmllive.md", { force: true });
   await window.NB.tabs.activate("notes/a.md");
   await tick(40);
 
@@ -4057,6 +4442,56 @@ function check(label, cond, extra) {
           }
         }
       }
+      // --- click-to-edit on an html-live preview card --------------
+      // The sandboxed iframe would normally swallow the click; in hybrid
+      // mode CSS makes it pointer-events:none so the viewer-level click
+      // handler still fires. jsdom has no layout so we simulate the
+      // click reaching the card and assert the same swap-to-source flow
+      // the diagram containers use.
+      {
+        const card = window.document.createElement("div");
+        card.className = "htmlpreview-card";
+        card.dataset.htmlpreview = "ok";
+        card.dataset.htmlpreviewSource = "<div id='demo'>hi</div>";
+        const frame = window.document.createElement("iframe");
+        frame.className = "htmlpreview-frame";
+        frame.setAttribute("sandbox", "allow-scripts");
+        card.appendChild(frame);
+        vc.appendChild(card);
+        await tick(10);
+
+        card.dispatchEvent(new window.MouseEvent("click",
+          { bubbles: true, cancelable: true }));
+        await tick(20);
+        const rawLive = vc.querySelector("pre > code.language-html-live");
+        check("html-live click-to-edit: click swaps card to editable source",
+          !!rawLive && /id='demo'/.test(rawLive.textContent),
+          "raw=" + (rawLive && rawLive.textContent.slice(0, 40)));
+        const rawPre = rawLive && rawLive.parentElement;
+        check("html-live click-to-edit: raw block is contenteditable with a chip",
+          !!rawPre && rawPre.getAttribute("contenteditable") === "true" &&
+          !!rawPre.querySelector(".hybrid-lang-pill"),
+          "ce=" + (rawPre && rawPre.getAttribute("contenteditable")));
+        let liveBack = null;
+        if (rawPre) {
+          rawPre.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
+          for (let i = 0; i < 20 && !liveBack; i++) {
+            await tick(25);
+            liveBack = vc.querySelector(".htmlpreview-card");
+          }
+          check("html-live click-to-edit: blur restores the preview card",
+            !!liveBack && /id='demo'/.test(liveBack.dataset.htmlpreviewSource || ""),
+            "back=" + !!liveBack);
+        }
+        if (liveBack) liveBack.remove();
+      }
+
+      // CSS: the preview iframe must be click-transparent in hybrid mode
+      // so the viewer-level (not frame-level) click handler fires.
+      const hybridCssText = read("static/css/style.css");
+      check("html-live click-to-edit: iframe is pointer-events:none in hybrid mode",
+        /#viewer\.hybrid-active\s+\.htmlpreview-frame\s*\{[^}]*pointer-events:\s*none/.test(hybridCssText),
+        "no hybrid-active iframe rule");
       await window.NB.hybrid.exit(false);
       await tick(30);
     }
@@ -10616,6 +11051,12 @@ function check(label, cond, extra) {
     /\bnb-tool\b/.test(aiChatLog[0].messages[0].content) &&
     /"tool": "list"/.test(aiChatLog[0].messages[0].content) &&
     /"tool": "patch"/.test(aiChatLog[0].messages[0].content),
+    "");
+  check("ai: system prompt documents the renderer fences (incl. html-live)",
+    /mermaid/.test(aiChatLog[0].messages[0].content) &&
+    /html-live/.test(aiChatLog[0].messages[0].content) &&
+    /wavedrom/.test(aiChatLog[0].messages[0].content) &&
+    /graphviz/.test(aiChatLog[0].messages[0].content),
     "");
   check("ai: request 2 re-uploads history + tool result (memory)",
     aiChatLog[1] && aiChatLog[1].messages.length >= 4 &&

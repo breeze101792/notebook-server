@@ -764,6 +764,13 @@
       "- After the tool result arrives, continue your answer in normal prose.",
       "- Read the relevant file(s) BEFORE proposing patches; never invent file content.",
       "When the user just asks a question, answer in prose with no nb-tool blocks.",
+      "",
+      "MARKDOWN RENDERING — the notebook renders these fenced languages specially. Use them when they make the note clearer:",
+      "- ```mermaid — flowchart / sequence / class / state / ER / gantt diagram.",
+      "- ```wavedrom — digital timing / waveform diagram (WaveDrom JSON).",
+      "- ```math or ```katex — a LaTeX equation.",
+      "- ```dot or ```graphviz — a Graphviz graph.",
+      "- ```html-live — a live preview that RUNS the markup (CSS / SVG animation, inline script, canvas). Plain ```html only shows source. The preview is sandboxed: scripts run but cannot reach the app, its cookies, or its API, so it is safe for demos. An optional first-line comment like <!-- height: 480 --> sizes the frame.",
     ].join("\n") + customPromptSuffix();
   }
 

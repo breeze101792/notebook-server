@@ -13,7 +13,7 @@
  * CACHE is versioned: bumping the name makes every installed worker
  * re-run install (re-precache the current assets) and activate (delete
  * the old cache). */
-const CACHE = "notebook-v3";
+const CACHE = "notebook-v4";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -36,7 +36,13 @@ const PRECACHE = [
   "/static/js/api.js",
   "/static/js/auth.js",
   "/static/js/cm-bridge.js",
+  "/static/js/lightbox.js",
+  "/static/js/blocks.js",
   "/static/js/mermaid.js",
+  "/static/js/wavedrom.js",
+  "/static/js/katex.js",
+  "/static/js/viz.js",
+  "/static/js/htmlpreview.js",
   "/static/js/viewer.js",
   "/static/js/editbar.js",
   "/static/js/hybrid.js",
@@ -45,7 +51,9 @@ const PRECACHE = [
   "/static/js/sidebar.js",
   "/static/js/search.js",
   "/static/js/tabs.js",
+  "/static/js/windows.js",
   "/static/js/settings.js",
+  "/static/js/export.js",
   "/static/js/ai.js",
   "/static/js/activity.js",
   "/static/js/graph.js",

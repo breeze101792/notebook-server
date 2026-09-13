@@ -303,4 +303,22 @@
     zoomIn: lightbox.zoomIn,
     zoomOut: lightbox.zoomOut,
     fitToPage: lightbox.fitToPage };
+
+  // Register with the shared blocks registry: one authoritative list for
+  // the render pipelines, the hybrid click-to-edit table, and the Save
+  // round-trip.
+  if (NB.blocks) {
+    NB.blocks.register({
+      mod: "mermaid",
+      langs: ["mermaid"],
+      name: "mermaid",
+      fence: "mermaid",
+      selector: "pre > code.language-mermaid",
+      containerClass: "mermaid-container",
+      datasetKey: "mermaidSource",
+      errorClass: "mermaid-error",
+      sourceClass: "mermaid-source",
+      renderAll,
+    });
+  }
 })();

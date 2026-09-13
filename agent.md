@@ -136,6 +136,26 @@ POST /api/auth/tokens           {"name": "my-agent", "role": "viewer"}
 DELETE /api/auth/tokens/<name>  → {"ok": true}
 ```
 
+## Markdown rendering (when authoring notes)
+
+Note bodies are Markdown. The client renders these fenced languages
+specially, so include them when a note benefits from a diagram or a live
+demo — they are just ordinary fenced blocks in the file:
+
+| Fence | Renders as |
+| --- | --- |
+| ```` ```mermaid ```` | Mermaid diagram (flowchart, sequence, class, state, ER, gantt, …). |
+| ```` ```wavedrom ```` | WaveDrom digital timing / waveform diagram (WaveDrom JSON). |
+| ```` ```math ```` / ```` ```katex ```` | Typeset LaTeX equation. |
+| ```` ```dot ```` / ```` ```graphviz ```` | Graphviz graph. |
+| ```` ```html-live ```` | **Live HTML preview** — the markup is loaded into a sandboxed iframe and runs (CSS / SVG animation, inline `<script>`, canvas). ```` ```html ```` (without `-live`) only shows the source. |
+
+`html-live` runs arbitrary JavaScript, so the client sandboxes it:
+`allow-scripts` **without** `allow-same-origin`. The preview therefore
+gets an opaque origin — it can animate, but it cannot read the notebook
+app's cookies, DOM, or call its authenticated API. Put an optional
+`<!-- height: 480 -->` comment on the first line to size the frame.
+
 ## Path rules
 
 - All paths are relative to the notebook root and use forward slashes:

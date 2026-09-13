@@ -197,11 +197,28 @@ while auth is off, like every other admin route):
   `AI_SEARXNG_MAX_RESULTS` (10) results as `{title, url, snippet}`.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
-then app modules in dependency order: `api.js → auth.js → viewer.js → editbar.js →
-watcher.js → outline.js → sidebar.js → search.js → tabs.js → settings.js →
-export.js → ai.js → activity.js → app.js`.
+then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
+lightbox.js → blocks.js → mermaid.js → wavedrom.js → katex.js → viz.js →
+htmlpreview.js → viewer.js → editbar.js → hybrid.js → watcher.js → outline.js →
+sidebar.js → search.js → graph.js → tabs.js → windows.js → settings.js →
+export.js → vimnav.js → ai.js → activity.js → shortcuts.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
-`NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`).
+`NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
+`NB.blocks`).
+
+The five code-block renderers (`mermaid.js`, `wavedrom.js`, `katex.js`,
+`viz.js`, `htmlpreview.js`) each register a descriptor with `blocks.js` at
+load. `NB.blocks` owns the one authoritative renderer list and drives the
+render pipeline (`renderAll`, called by `viewer.js` / `hybrid.js` /
+`export.js`), the hybrid Save round-trip (`restoreForMarkdown`, replacing
+each rendered container or error box with its fenced source so turndown
+doesn't strip the SVG/HTML), and the hybrid click-to-edit type table
+(`pluginTypes`). Each renderer still owns its own `renderOne` and lazy-load
+gate — the cores are genuinely different library glue, so only the plumbing
+is shared. Adding a renderer means: add the module, register it, add the
+`<script>` tag, and add its `sw.js` PRECACHE entry; the registry-completeness
+test in `tests/dom/test_dom.js` checks index.html / sw.js / the ai.js prompt
+/ agent.md all mention it.
 Module responsibilities:
 
 - `api.js` — fetch wrappers + a tiny pub/sub (`NB.api`); always sends

@@ -402,11 +402,9 @@
       });
     }
 
-    // Diagrams. Each renderer is idempotent and awaits sequentially.
-    if (NB.mermaid && NB.mermaid.renderAll) await NB.mermaid.renderAll(host);
-    if (NB.wavedrom && NB.wavedrom.renderAll) await NB.wavedrom.renderAll(host);
-    if (NB.katex && NB.katex.renderAll) await NB.katex.renderAll(host);
-    if (NB.viz && NB.viz.renderAll) await NB.viz.renderAll(host);
+    // Diagrams + live previews. The shared blocks registry runs every
+    // renderer (each idempotent, each owning its own lazy gate).
+    if (NB.blocks && NB.blocks.renderAll) await NB.blocks.renderAll(host);
 
     return host;
   }

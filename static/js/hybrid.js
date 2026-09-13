@@ -127,101 +127,13 @@
     const clone = viewerContentEl.cloneNode(true);
     // Remove injected copy buttons so they don't appear in the output.
     clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
-    // Restore mermaid diagrams: replace each .mermaid-container (which
-    // holds a rendered SVG) with a <pre><code class="language-mermaid">
-    // block containing the original source, so turndown produces a
-    // ```mermaid fenced block instead of stripping the SVG to text.
-    clone.querySelectorAll(".mermaid-container").forEach((c) => {
-      const src = c.dataset.mermaidSource || "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-mermaid";
-      code.textContent = src;
-      pre.appendChild(code);
-      c.replaceWith(pre);
-    });
-    // Also restore mermaid error blocks (.mermaid-error) the same way,
-    // using the .mermaid-source <pre> inside them.
-    clone.querySelectorAll(".mermaid-error").forEach((e) => {
-      const srcEl = e.querySelector(".mermaid-source");
-      const src = srcEl ? srcEl.textContent : "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-mermaid";
-      code.textContent = src;
-      pre.appendChild(code);
-      e.replaceWith(pre);
-    });
-    // Same round-trip for WaveDrom waveform diagrams: replace each
-    // .wavedrom-container (a rendered SVG) and .wavedrom-error box with a
-    // <pre><code class="language-wavedrom"> of the original source so
-    // turndown produces a ```wavedrom fenced block instead of stripping
-    // the SVG to text.
-    clone.querySelectorAll(".wavedrom-container").forEach((c) => {
-      const src = c.dataset.wavedromSource || "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-wavedrom";
-      code.textContent = src;
-      pre.appendChild(code);
-      c.replaceWith(pre);
-    });
-    clone.querySelectorAll(".wavedrom-error").forEach((e) => {
-      const srcEl = e.querySelector(".wavedrom-source");
-      const src = srcEl ? srcEl.textContent : "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-wavedrom";
-      code.textContent = src;
-      pre.appendChild(code);
-      e.replaceWith(pre);
-    });
-    // Same round-trip for KaTeX math: replace each .katex-container (a
-    // typeset equation) and .katex-error box with a <pre><code
-    // class="language-math"> of the original source so turndown produces
-    // a ```math fenced block instead of stripping the HTML to text.
-    clone.querySelectorAll(".katex-container").forEach((c) => {
-      const src = c.dataset.katexSource || "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-math";
-      code.textContent = src;
-      pre.appendChild(code);
-      c.replaceWith(pre);
-    });
-    clone.querySelectorAll(".katex-error").forEach((e) => {
-      const srcEl = e.querySelector(".katex-source");
-      const src = srcEl ? srcEl.textContent : "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-math";
-      code.textContent = src;
-      pre.appendChild(code);
-      e.replaceWith(pre);
-    });
-    // Same round-trip for Graphviz diagrams: replace each .viz-container
-    // (a rendered SVG) and .viz-error box with a <pre><code
-    // class="language-dot"> of the original source so turndown produces a
-    // ```dot fenced block instead of stripping the SVG to text.
-    clone.querySelectorAll(".viz-container").forEach((c) => {
-      const src = c.dataset.vizSource || "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-dot";
-      code.textContent = src;
-      pre.appendChild(code);
-      c.replaceWith(pre);
-    });
-    clone.querySelectorAll(".viz-error").forEach((e) => {
-      const srcEl = e.querySelector(".viz-source");
-      const src = srcEl ? srcEl.textContent : "";
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.className = "language-dot";
-      code.textContent = src;
-      pre.appendChild(code);
-      e.replaceWith(pre);
-    });
+    // Round-trip every registered plugin block (mermaid / wavedrom /
+    // katex / graphviz / html-live) back to its fenced source. The
+    // registry owns the container + error-box shapes, so a new renderer
+    // cannot be silently dropped from this data-loss-critical path.
+    if (NB.blocks && NB.blocks.restoreForMarkdown) {
+      NB.blocks.restoreForMarkdown(clone);
+    }
     // Turndown's bundled postProcess() trims trailing whitespace from
     // its final output, which would silently drop blank lines the user
     // added at the end of a note (whether they live in <p>, <div>, or
@@ -258,17 +170,8 @@
         try { hljs.highlightElement(el); } catch (_) {}
       });
     }
-    if (NB.mermaid && NB.mermaid.renderAll) {
-      NB.mermaid.renderAll(viewerContentEl);
-    }
-    if (NB.wavedrom && NB.wavedrom.renderAll) {
-      NB.wavedrom.renderAll(viewerContentEl);
-    }
-    if (NB.katex && NB.katex.renderAll) {
-      NB.katex.renderAll(viewerContentEl);
-    }
-    if (NB.viz && NB.viz.renderAll) {
-      NB.viz.renderAll(viewerContentEl);
+    if (NB.blocks && NB.blocks.renderAll) {
+      NB.blocks.renderAll(viewerContentEl);
     }
     // Make task-list checkboxes interactive: marked renders them
     // disabled, so remove the disabled flag so the user can click to
@@ -1621,38 +1524,29 @@
    * the user can fix the text, then re-renders on blur/Esc. The same
    * flow works for ANY code block: a raw <pre><code> is focused in
    * place, and "Language…" re-types the fence's language (shell ->
-   * python, mermaid -> python, ...). */
-  const PLUGIN_TYPES = [
-    { sel: ".mermaid-container,.mermaid-error", lang: "mermaid", name: "mermaid", mod: "mermaid",
-      src: (el) => el.dataset.mermaidSource ||
-        (el.querySelector(".mermaid-source") || {}).textContent || "" },
-    { sel: ".wavedrom-container,.wavedrom-error", lang: "wavedrom", name: "WaveDrom", mod: "wavedrom",
-      src: (el) => el.dataset.wavedromSource ||
-        (el.querySelector(".wavedrom-source") || {}).textContent || "" },
-    { sel: ".katex-container,.katex-error", lang: "math", name: "math", mod: "katex",
-      src: (el) => el.dataset.katexSource ||
-        (el.querySelector(".katex-source") || {}).textContent || "" },
-    { sel: ".viz-container,.viz-error", lang: "dot", name: "Graphviz", mod: "viz",
-      src: (el) => el.dataset.vizSource ||
-        (el.querySelector(".viz-source") || {}).textContent || "" },
-  ];
-  const PLUGIN_BY_LANG = {};
-  for (const t of PLUGIN_TYPES) PLUGIN_BY_LANG[t.lang] = t;
+   * python, mermaid -> python, ...).
+   *
+   * The type table comes from the shared blocks registry
+   * (static/js/blocks.js), so a new renderer is automatically
+   * click-to-editable without editing this file. */
+  function pluginTypes() {
+    return (NB.blocks && NB.blocks.pluginTypes) ? NB.blocks.pluginTypes() : [];
+  }
 
   /* Which plugin module (if any) should re-render a language on commit. */
   function renderModuleFor(lang) {
-    const t = PLUGIN_BY_LANG[(lang || "").toLowerCase()];
-    return t ? NB[t.mod] : null;
+    const d = NB.blocks && NB.blocks.forLang ? NB.blocks.forLang(lang) : null;
+    return d ? NB[d.mod] : null;
   }
 
   /* Resolve the right-clicked target to an editable block. Returns
    * {el, plugin, raw} where `el` is the DOM element to swap/focus
    * (a rendered plugin container/error, or the <pre> of a raw code
-   * block), `plugin` is the PLUGIN_TYPES entry when rendered, and
-   * `raw` is true when the block is already an editable fence. */
+   * block), `plugin` is the registry-derived type entry when rendered,
+   * and `raw` is true when the block is already an editable fence. */
   function codeBlockAt(target) {
     if (!target || !target.closest) return null;
-    for (const t of PLUGIN_TYPES) {
+    for (const t of pluginTypes()) {
       const el = target.closest(t.sel);
       if (el && viewerContentEl.contains(el)) return { el, plugin: t, raw: false };
     }
