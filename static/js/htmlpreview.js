@@ -36,9 +36,11 @@
   const DEFAULT_HEIGHT = 260;
   // Floor for the auto-fit height so a nearly-empty demo is still tappable.
   const MIN_HEIGHT = 80;
-  // Ceiling for the auto-fit height, so a runaway/growing document cannot
-  // expand the note without bound. Content beyond this is clipped.
-  const AUTO_MAX_HEIGHT = 10000;
+  // Runaway guard only. The frame is meant to fit its content, so this
+  // is set far above any sane demo -- it exists solely so a pathological
+  // self-growing document cannot expand the note without bound. Content
+  // is NOT trimmed at any realistic height.
+  const AUTO_MAX_HEIGHT = 100000;
 
   // Build the selector for the supported fences.
   const SELECTOR = LANGS.map((l) => "pre > code.language-" + l).join(", ");
@@ -83,19 +85,34 @@
 
   /* Injected into every preview. Reports the document's content height
    * to the parent so it can size the frame to fit -- the parent cannot
-   * measure a cross-origin (sandboxed) document itself. The frame must
-   * therefore never scroll internally; the outer note keeps the one
-   * scrollbar. `max(html, body)` covers either being the taller box; a
-   * ResizeObserver catches canvas/animation growth after load. */
+   * measure a cross-origin (sandboxed) document itself.
+   *
+   * Three things matter here:
+   *   1. Run only after the body exists. This script is injected in
+   *      <head>, so at parse time document.body is null; calling
+   *      ResizeObserver.observe(null) threw and aborted the whole bridge
+   *      (no size report ever fired -> the frame stayed clipped). We
+   *      defer setup to DOMContentLoaded.
+   *   2. Observe document.documentElement, not body. The body box is
+   *      only as tall as its content, but the html element grows with
+   *      it, and observing the root reliably catches later growth
+   *      (canvas, animations).
+   *   3. Report the max of documentElement/body scrollHeight. */
   const RESIZE_BRIDGE =
     "<script>(function(){" +
     "function h(){return Math.max(" +
-    "document.documentElement.scrollHeight,document.body.scrollHeight);}" +
+    "document.documentElement.scrollHeight," +
+    "(document.body?document.body.scrollHeight:0));}" +
     "function post(){try{parent.postMessage(" +
     "{__nbHtmlPreviewSize:true,h:h()},'*');}catch(_){}}" +
-    'if(window.ResizeObserver){new ResizeObserver(post).observe(document.body);}' +
+    "function setup(){post();" +
+    'if(window.ResizeObserver){try{new ResizeObserver(post)' +
+    ".observe(document.documentElement);}catch(_){}}" +
+    "}" +
+    'if(document.readyState==="loading"){' +
+    'document.addEventListener("DOMContentLoaded",setup);' +
+    "}else{setup();}" +
     'window.addEventListener("load",post);' +
-    "document.addEventListener(\"DOMContentLoaded\",post);" +
     "setTimeout(post,50);setTimeout(post,400);" +
     "})();</" + "script>";
 
@@ -198,13 +215,18 @@
     // still grows to fit content so no inner scrollbar appears.
     frame.dataset.minHeight = String(height || MIN_HEIGHT);
 
-    // Center the demo and keep the body from inheriting nothing useful.
-    // The wrapped user markup is inserted between the two style tags.
+    // Left/top-align the demo so the content flows from the top. The
+    // earlier vertical centering (align-items:center) pushed content
+    // above the frame's top edge when it was taller than the initial
+    // height; scrollHeight does not count overflow above the origin, so
+    // it under-reported and the frame stayed too short. Horizontal
+    // centering (justify-content) is kept.
     const head = '<!DOCTYPE html><html><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       "<style>html,body{margin:0;padding:12px;font-family:system-ui,sans-serif;" +
       "overflow:hidden}" +
-      "body{display:flex;align-items:center;justify-content:center;min-height:0}</style>" +
+      "body{display:flex;align-items:flex-start;justify-content:center;" +
+      "min-height:0}</style>" +
       KEY_BRIDGE +
       RESIZE_BRIDGE +
       "</head><body>";

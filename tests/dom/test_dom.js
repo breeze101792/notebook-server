@@ -2942,6 +2942,52 @@ function check(label, cond, extra) {
     const srcdoc = frame.getAttribute("srcdoc") || "";
     check("html-live resize: resize bridge is injected into the frame",
       /__nbHtmlPreviewSize/.test(srcdoc));
+
+    // Regression: the injected bridge runs in <head>, where document.body
+    // is still null. The old bridge called
+    // ResizeObserver.observe(document.body) immediately, threw
+    // observe(null), and aborted before registering any handler -- so no
+    // size report ever fired and content taller than the default height
+    // stayed clipped. Run the REAL bridge script in a context with a null
+    // body and assert it survives and still reports a height.
+    const resizeScript = (srcdoc.match(/<script>[\s\S]*?<\/script>/g) || [])
+      .find(s => /__nbHtmlPreviewSize/.test(s));
+    check("html-live resize: bridge script extracted", !!resizeScript);
+    if (resizeScript) {
+      const bridgeCode = resizeScript.replace(/^<script>/, "").replace(/<\/script>$/, "");
+      let posted = null;
+      let domReady = null;
+      const fakeDoc = {
+        readyState: "loading",
+        documentElement: { scrollHeight: 640 },
+        body: null,                         // the head-time state
+        addEventListener(type, fn) { if (type === "DOMContentLoaded") domReady = fn; },
+      };
+      const bridgeCtx = {
+        document: fakeDoc,
+        parent: { postMessage(msg) { if (msg && msg.__nbHtmlPreviewSize) posted = msg; } },
+        window: {
+          addEventListener() {},
+          ResizeObserver: class { observe(el) { if (!el) throw new Error("observe(null)"); } },
+        },
+        setTimeout() { return 0; },
+        Math, Error, Object,
+      };
+      vm.createContext(bridgeCtx);
+      let threw = null;
+      try { vm.runInContext(bridgeCode, bridgeCtx); }
+      catch (e) { threw = e.message; }
+      check("html-live resize: bridge survives a null body (no observe(null) abort)",
+        threw === null, "threw=" + threw);
+      check("html-live resize: bridge defers setup to DOMContentLoaded when body is absent",
+        typeof domReady === "function");
+      if (typeof domReady === "function") {
+        fakeDoc.body = { scrollHeight: 640 };
+        domReady();
+        check("html-live resize: bridge reports the content height after DOM ready",
+          posted && posted.h === 640, "posted=" + JSON.stringify(posted));
+      }
+    }
   }
 
   // CSS sanity.
