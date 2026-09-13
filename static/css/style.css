@@ -124,7 +124,8 @@ body {
 }
 body.topbar-hidden #topbar { display: none; }
 body.topbar-hidden { --topbar-h: 0px; }
-.brand { font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
+.brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
+.brand-icon { width: 1.1em; height: 1.1em; display: block; }
 .topbar-actions { display: flex; gap: 6px; }
 .topbar-spacer { flex: 1 1 auto; }
 

@@ -11385,7 +11385,7 @@ function check(label, cond, extra) {
     check("boot: <title> is rendered from boot state",
       /<title>\{\{\s*boot\.site_title\s*\}\}<\/title>/.test(tpl));
     check("boot: brand text is rendered from boot state",
-      /class="brand">📓\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
+      /class="brand">\s*<img class="brand-icon" src="\/static\/favicon\.svg"[^>]*>\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
     check("boot: side panel collapse state is rendered server-side",
       /id="side-panel"\{%.*sidebar_collapsed.*%\}\s*class="collapsed"/.test(tpl));
     check("boot: outline collapse state is rendered server-side",
