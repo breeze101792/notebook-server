@@ -2210,6 +2210,16 @@ class TestAgentGuide(BaseTest):
             "ifModifiedSince",
             "html-live",
             "```mermaid",
+            # Fixed vendored versions + html-live sandbox restrictions, so
+            # external agents emit only syntax the build supports and do
+            # not assume blocked capabilities.
+            "Mermaid **11.16**",
+            "WaveDrom **3.3**",
+            "KaTeX **0.16**",
+            "Graphviz **2.40.1**",
+            "allow-same-origin",
+            "opaque origin",
+            "localStorage",
         ):
             self.assertIn(marker, body, "missing %r on /agent.md page" % marker)
 

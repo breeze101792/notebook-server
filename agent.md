@@ -140,21 +140,27 @@ DELETE /api/auth/tokens/<name>  → {"ok": true}
 
 Note bodies are Markdown. The client renders these fenced languages
 specially, so include them when a note benefits from a diagram or a live
-demo — they are just ordinary fenced blocks in the file:
+demo — they are just ordinary fenced blocks in the file. Each engine is
+a **fixed vendored version**; use only syntax that version supports:
 
 | Fence | Renders as |
 | --- | --- |
-| ```` ```mermaid ```` | Mermaid diagram (flowchart, sequence, class, state, ER, gantt, …). |
-| ```` ```wavedrom ```` | WaveDrom digital timing / waveform diagram (WaveDrom JSON). |
-| ```` ```math ```` / ```` ```katex ```` | Typeset LaTeX equation. |
-| ```` ```dot ```` / ```` ```graphviz ```` | Graphviz graph. |
+| ```` ```mermaid ```` | Mermaid **11.16** diagram (flowchart, sequence, class, state, ER, gantt, …). Rendered with `securityLevel:"strict"` — interactive click/link directives are disabled. |
+| ```` ```wavedrom ```` | WaveDrom **3.3** digital timing / waveform diagram. The body is WaveDrom JSON; unquoted keys are allowed (e.g. `{signal:[{name:'clk',wave:'p...'}]}`), unlike strict JSON. |
+| ```` ```math ```` / ```` ```katex ```` | KaTeX **0.16** LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros). |
+| ```` ```dot ```` / ```` ```graphviz ```` | Graphviz **2.40.1** (Viz.js 2.1.2). Older Graphviz — avoid syntax newer than 2.40. |
 | ```` ```html-live ```` | **Live HTML preview** — the markup is loaded into a sandboxed iframe and runs (CSS / SVG animation, inline `<script>`, canvas). ```` ```html ```` (without `-live`) only shows the source. |
 
-`html-live` runs arbitrary JavaScript, so the client sandboxes it:
-`allow-scripts` **without** `allow-same-origin`. The preview therefore
-gets an opaque origin — it can animate, but it cannot read the notebook
-app's cookies, DOM, or call its authenticated API. Put an optional
-`<!-- height: 480 -->` comment on the first line to size the frame.
+The `html-live` iframe is sandboxed with `allow-scripts` **without**
+`allow-same-origin`, so the document gets an opaque origin. Scripts run,
+but these are **blocked**: cookies, `localStorage` / `sessionStorage`
+(an opaque origin throws), the parent page's DOM, the notebook API
+(`/api/*`), same-origin `fetch`, form submission, `window.open` /
+popups, file downloads, `alert` / `confirm` / `prompt`, and top-level
+navigation. External `fetch` is subject to CORS. Use it only for
+self-contained, offline demos. The frame auto-fits its content; an
+optional first-line comment like `<!-- height: 480 -->` sets a minimum
+height.
 
 ## Path rules
 

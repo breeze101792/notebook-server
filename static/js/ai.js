@@ -765,12 +765,13 @@
       "- Read the relevant file(s) BEFORE proposing patches; never invent file content.",
       "When the user just asks a question, answer in prose with no nb-tool blocks.",
       "",
-      "MARKDOWN RENDERING — the notebook renders these fenced languages specially. Use them when they make the note clearer:",
-      "- ```mermaid — flowchart / sequence / class / state / ER / gantt diagram.",
-      "- ```wavedrom — digital timing / waveform diagram (WaveDrom JSON).",
-      "- ```math or ```katex — a LaTeX equation.",
-      "- ```dot or ```graphviz — a Graphviz graph.",
-      "- ```html-live — a live preview that RUNS the markup (CSS / SVG animation, inline script, canvas). Plain ```html only shows source. The preview is sandboxed: scripts run but cannot reach the app, its cookies, or its API, so it is safe for demos. An optional first-line comment like <!-- height: 480 --> sizes the frame.",
+      "MARKDOWN RENDERING — the notebook renders these fenced languages specially. Use them when they make the note clearer. Each engine is a fixed vendored version, so use only syntax that version supports:",
+      "- ```mermaid — Mermaid 11.16 diagram (flowchart / sequence / class / state / ER / gantt). Rendered with securityLevel:strict, so interactive click/link directives are disabled.",
+      "- ```wavedrom — WaveDrom 3.3 timing / waveform diagram. The body is WaveDrom JSON: unquoted keys are allowed (e.g. {signal:[{name:'clk',wave:'p...'}]}), unlike strict JSON.",
+      "- ```math or ```katex — KaTeX 0.16 LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros).",
+      "- ```dot or ```graphviz — Graphviz 2.40.1 (Viz.js 2.1.2). That is an older Graphviz; avoid syntax newer than 2.40.",
+      "- ```html-live — a live preview that RUNS the markup (CSS / SVG animation, inline script, canvas). Plain ```html only shows the source. The frame auto-fits its content; an optional first-line comment like <!-- height: 480 --> sets a minimum height.",
+      "  html-live restrictions: the preview is a sandboxed iframe with allow-scripts and NOT allow-same-origin, so it has an opaque origin. Scripts run, but these are BLOCKED: cookies, localStorage / sessionStorage (opaque origin throws), the parent page's DOM, the notebook API (/api/*), same-origin fetch, form submission, window.open / popups, file downloads, alert / confirm / prompt, and top-level navigation. External fetch is subject to CORS. Use it for self-contained, offline demos only.",
     ].join("\n") + customPromptSuffix();
   }
 

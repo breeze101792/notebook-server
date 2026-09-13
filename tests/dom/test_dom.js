@@ -11145,6 +11145,24 @@ function check(label, cond, extra) {
     /wavedrom/.test(aiChatLog[0].messages[0].content) &&
     /graphviz/.test(aiChatLog[0].messages[0].content),
     "");
+  // The prompt must state each engine's fixed version and the html-live
+  // sandbox restrictions, so the model does not emit syntax the vendored
+  // build cannot parse or assume capabilities the sandbox blocks.
+  {
+    const sys = aiChatLog[0].messages[0].content;
+    check("ai: system prompt names the vendored versions",
+      /Mermaid 11\.16/.test(sys) && /WaveDrom 3\.3/.test(sys) &&
+      /KaTeX 0\.16/.test(sys) && /Graphviz 2\.40/.test(sys),
+      "");
+    check("ai: system prompt states the html-live sandbox restrictions",
+      /allow-scripts/.test(sys) && /allow-same-origin/.test(sys) &&
+      /opaque origin/.test(sys) && /localStorage/.test(sys) &&
+      /\/api\/\*/.test(sys) && /window\.open/.test(sys),
+      "");
+    check("ai: system prompt warns about the strict mermaid security level",
+      /securityLevel:strict|securityLevel:"strict"/.test(sys),
+      "");
+  }
   check("ai: request 2 re-uploads history + tool result (memory)",
     aiChatLog[1] && aiChatLog[1].messages.length >= 4 &&
     /tool read notes\/a\.md result/.test(aiChatLog[1].messages.at(-1).content) &&
