@@ -666,8 +666,8 @@ const html = `<!DOCTYPE html><html><head>
             <div class="settings-row">
               <span class="settings-label">Output</span>
               <div class="settings-control export-format-options" role="radiogroup" aria-label="Export format">
-                <label><input type="radio" name="export-format" value="pdf" checked> PDF</label>
-                <label><input type="radio" name="export-format" value="html"> HTML</label>
+                <label><input type="radio" name="export-format" value="pdf"> PDF</label>
+                <label><input type="radio" name="export-format" value="html" checked> HTML</label>
               </div>
             </div>
           </section>
@@ -694,6 +694,7 @@ const html = `<!DOCTYPE html><html><head>
       </div>
       <div class="settings-footer">
         <button id="export-close-btn" class="settings-action">Cancel</button>
+        <button id="export-preview" class="settings-action">Preview</button>
         <button id="export-run" class="settings-action">Export</button>
       </div>
     </div>
@@ -790,8 +791,59 @@ if (!window.navigator.clipboard) {
 // Export stubs. jsdom has no print dialog and no real object URLs; we
 // record the calls so tests can assert the PDF path opens the print
 // dialog and the HTML path downloads a blob with the rendered note.
-const __export = { prints: 0, downloads: [], blobTexts: [] };
+const __export = { prints: 0, downloads: [], blobTexts: [], opens: [] };
 window.print = () => { __export.prints++; };
+// Preview opens a blob URL in a new tab (`window.open`); record the call.
+// jsdom can't open real windows, so hand back a minimal inert window.
+window.open = (url) => {
+  __export.opens.push(url);
+  return { focus() {}, close() {}, addEventListener() {}, document: window.document };
+};
+// PDF export paginates the note in a hidden same-origin iframe (scripts
+// never run in a jsdom iframe document), then moves the resulting
+// `.pagedjs_pages` sheets into the main document under #pdf-print-root.
+// Stub the iframe window with the Paged.js globals, and wrap the iframe
+// document's close() to append a fake `.pagedjs_pages` node built from the
+// written content, so mountPrintRoot() has sheets to relocate.
+const __iframeWinDesc = Object.getOwnPropertyDescriptor(
+  window.HTMLIFrameElement.prototype, "contentWindow");
+Object.defineProperty(window.HTMLIFrameElement.prototype, "contentWindow", {
+  configurable: true,
+  get() {
+    const w = __iframeWinDesc.get.call(this);
+    if (w && !w.__nbStubbed) {
+      w.__nbStubbed = true;
+      w.Paged = function Paged() {};
+      w.__nbPagedRendered = true;
+    }
+    return w;
+  },
+});
+const __iframeDocDesc = Object.getOwnPropertyDescriptor(
+  window.HTMLIFrameElement.prototype, "contentDocument");
+Object.defineProperty(window.HTMLIFrameElement.prototype, "contentDocument", {
+  configurable: true,
+  get() {
+    const d = __iframeDocDesc.get.call(this);
+    if (d && !d.__nbStubbed) {
+      d.__nbStubbed = true;
+      const origClose = d.close.bind(d);
+      d.close = () => {
+        origClose();
+        if (!d.querySelector(".pagedjs_pages")) {
+          const pages = d.createElement("div");
+          pages.className = "pagedjs_pages";
+          const page = d.createElement("div");
+          page.className = "pagedjs_page";
+          page.textContent = "PAGE " + (d.body ? d.body.textContent : "");
+          pages.appendChild(page);
+          d.body.appendChild(pages);
+        }
+      };
+    }
+    return d;
+  },
+});
 if (typeof window.URL.createObjectURL !== "function") {
   window.URL.createObjectURL = (blob) => {
     __export.downloads.push(blob);
@@ -7953,18 +8005,63 @@ function check(label, cond, extra) {
       $("export-file-label").textContent === "notes/a.md",
       "label=" + $("export-file-label").textContent);
 
-    // PDF path: default format is PDF; clicking Export calls window.print.
+    // The default format is HTML; verify before forcing the PDF path below.
+    const pdfRadio = window.document.querySelector('input[name="export-format"][value="pdf"]');
+    check("export: default format is HTML",
+      !pdfRadio.checked &&
+        window.document.querySelector('input[name="export-format"][value="html"]').checked,
+      "pdfChecked=" + pdfRadio.checked);
+
+    // PDF path: switch format to PDF; clicking Export paginates the note
+    // with Paged.js in a hidden iframe, moves the finished sheets into
+    // #pdf-print-root, and prints the current page (no new tab).
+    pdfRadio.checked = true;
+    pdfRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
     const printsBefore = __export.prints;
+    const opensBeforePdf = __export.opens.length;
     $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
-    await tick(80);
-    check("export: PDF path calls window.print", __export.prints === printsBefore + 1,
-      "prints=" + __export.prints);
-    check("export: PDF renders the note into #print-host",
-      !!$("print-host") && /File A/.test($("print-host").textContent),
-      $("print-host") ? "host text=" + $("print-host").textContent.slice(0, 30) : "no host");
-    check("export: #print-host is a direct child of body (print-only container)",
-      $("print-host") && $("print-host").parentElement === window.document.body,
-      $("print-host") ? "parent=" + $("print-host").parentElement.tagName : "no host");
+    await tick(120);
+    check("export: PDF path calls print on the current page",
+      __export.prints === printsBefore + 1, "prints=" + __export.prints);
+    check("export: PDF export does NOT open a new tab",
+      __export.opens.length === opensBeforePdf,
+      "opens=" + __export.opens.length);
+    const printFrame = $("pdf-print-frame");
+    check("export: PDF paginates in a hidden same-origin iframe",
+      !!printFrame, printFrame ? "found" : "missing");
+    check("export: print iframe is invisible but in-viewport (Firefox doesn't throttle it)",
+      !!printFrame && printFrame.style.position === "fixed" &&
+        printFrame.parentElement === window.document.body &&
+        printFrame.style.opacity === "0" && printFrame.style.left === "0px",
+      printFrame ? "pos=" + printFrame.style.position + " opacity=" + printFrame.style.opacity : "no frame");
+    // The paginated document was written into the frame.
+    check("export: print iframe document loads the Paged.js paginator",
+      !!printFrame && /paged\.polyfill\.min\.js/.test(printFrame.contentDocument.documentElement.innerHTML),
+      printFrame ? "has pagedjs=" + /paged\.polyfill\.min\.js/.test(printFrame.contentDocument.documentElement.innerHTML) : "no frame");
+    const printRoot = $("pdf-print-root");
+    check("export: PDF moves paginated sheets into #pdf-print-root",
+      !!printRoot && printRoot.querySelectorAll(".pagedjs_page").length > 0,
+      printRoot ? "sheets=" + printRoot.querySelectorAll(".pagedjs_page").length : "no root");
+    check("export: #pdf-print-root hides on screen and replaces the app in print",
+      !!printRoot && /#pdf-print-root\{display:none/.test(printRoot.textContent) &&
+        /body>\*:not\(#pdf-print-root\)\{display:none/.test(printRoot.textContent),
+      printRoot ? "has toggle css" : "no root");
+    // The inline PagedConfig must be valid JS: a stray ';' inside the
+    // object literal once made the browser drop the whole script, leaving
+    // the completion flag unset and print firing after page 1.
+    const cfgMatch = printFrame
+      ? printFrame.contentDocument.documentElement.innerHTML.match(
+          /<script>(window\.__nbPagedRendered[\s\S]*?)<\/script>/)
+      : null;
+    let cfgValid = false;
+    try { if (cfgMatch) { new Function(cfgMatch[1]); cfgValid = true; } } catch (_) {}
+    check("export: injected PagedConfig script parses as valid JS",
+      cfgValid, cfgMatch ? cfgMatch[1].slice(0, 60) : "no config script");
+    // afterprint tears the print layer back down.
+    window.dispatchEvent(new window.Event("afterprint"));
+    await tick(10);
+    check("export: afterprint removes the print layer",
+      !$("pdf-print-root"), $("pdf-print-root") ? "still present" : "removed");
 
     // HTML path: switch format to HTML, click Export, expect a blob
     // download containing the rendered note.
@@ -8029,6 +8126,44 @@ function check(label, cond, extra) {
     await tick(10);
     check("export: current scope hides the heading row again",
       sectionRow.hidden === true, "hidden=" + sectionRow.hidden);
+
+    // Preview respects the selected format. HTML preview shows the
+    // collapsible sidebar layout; PDF preview shows the inline-TOC,
+    // print-styled layout (no sidebar, print pagination rules applied).
+    htmlRadio.checked = true;
+    htmlRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const opensBefore = __export.opens.length;
+    $("export-preview").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: HTML preview opens a new tab",
+      __export.opens.length === opensBefore + 1,
+      "opens=" + __export.opens.length);
+    const htmlPreview = __export.blobTexts[__export.blobTexts.length - 1] || "";
+    check("export: HTML preview keeps the sidebar TOC",
+      /export-sidebar/.test(htmlPreview) && /export-toc-expandall/.test(htmlPreview),
+      "has sidebar=" + /export-sidebar/.test(htmlPreview));
+
+    pdfRadio.checked = true;
+    pdfRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const pdfOpensBefore = __export.opens.length;
+    $("export-preview").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: PDF preview opens a new tab",
+      __export.opens.length === pdfOpensBefore + 1,
+      "opens=" + __export.opens.length);
+    const pdfPreview = __export.blobTexts[__export.blobTexts.length - 1] || "";
+    check("export: PDF preview drops the sidebar layout",
+      !/class="export-sidebar"/.test(pdfPreview),
+      "has sidebar=" + /class="export-sidebar"/.test(pdfPreview));
+    check("export: PDF preview applies the print stylesheet inline",
+      /break-before:page/.test(pdfPreview) && /@media print/.test(pdfPreview),
+      "has print rules=" + /break-before:page/.test(pdfPreview));
+    check("export: PDF preview loads the Paged.js paginator",
+      /paged\.polyfill\.min\.js/.test(pdfPreview) && /pagedjs_page/.test(pdfPreview),
+      "has pagedjs=" + /paged\.polyfill\.min\.js/.test(pdfPreview));
+    check("export: HTML preview does not load the paginator",
+      !/paged\.polyfill\.min\.js/.test(htmlPreview),
+      "has pagedjs=" + /paged\.polyfill\.min\.js/.test(htmlPreview));
 
     // Esc closes the modal.
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", {

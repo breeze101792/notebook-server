@@ -298,11 +298,23 @@ Module responsibilities:
   Purely client-side: `renderInto()` re-renders the note from the
   viewer's content cache through the same pipeline the app uses (marked +
   highlight.js + the mermaid/wavedrom/katex/viz renderers), so the output
-  always matches the on-screen rendering. **PDF** renders into a
-  `#print-host` container (a direct child of `<body>`, hidden on screen)
-  then calls `window.print()`; the `@media print` block in `style.css`
-  hides the app chrome and shows only that container, so the browser's
-  "Save as PDF" captures the note alone. **HTML** builds a standalone
+  always matches the on-screen rendering. **PDF** paginates the note with
+  the vendored Paged.js polyfill: `buildExportDoc` builds the same
+  standalone document the Preview uses and loads it into a hidden
+  same-origin `#pdf-print-frame` iframe, waits for the inline
+  `PagedConfig.after` hook to flip `window.__nbPagedRendered` once every
+  A4 page sheet is laid out, then moves the finished `.pagedjs_pages`
+  sheets (and Paged.js's injected styles, cloned with `media="print"`)
+  into a `#pdf-print-root` container on the current page and calls
+  `window.print()` — no preview tab opens. The container is hidden on
+  screen and, under `@media print`, replaces every other body child, so
+  only the paginated note prints; `afterprint` removes it. The saved PDF
+  is paginated exactly like the Preview. Printing the current top-level
+  page is required because Firefox can render a paginated subframe and
+  show its print preview, but saving that subframe to PDF produces no file
+  — only a top-level document saves reliably. Completion must come from
+  the hook, never from a page-count guess.
+  **HTML** builds a standalone
   `.html` file with the rendered note + embedded styles (the app's
   markdown rules + the light highlight.js theme) and downloads it via a
   Blob. **Scope** is "current file" (the whole note) or "section": the
