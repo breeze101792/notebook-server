@@ -44,6 +44,16 @@
   const topbar         = document.getElementById("topbar");
   const menuEl         = document.getElementById("hybrid-context-menu");
 
+  // Elements the turndown `blank` rule must never match. <p>/<div> are
+  // handled by the paragraph rule; table structure belongs to the GFM
+  // table rule, which emits a cell for every <td>/<th> -- an empty one
+  // included. Without the table tags here, an empty cell is swallowed
+  // and the row silently loses a column on save.
+  const BLANK_RULE_EXEMPT_TAGS = [
+    "P", "DIV",
+    "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH",
+  ];
+
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
   let turndownSvc = null;   // lazily created TurndownService instance
@@ -75,28 +85,30 @@
         return "[[" + target + (content === target ? "" : "|" + content) + "]]";
       },
     });
-    // Preserve blank lines. Turndown's default `blank` rule drops empty
-    // paragraphs entirely (it matches any element with no text content),
-    // so blank lines the user adds in hybrid mode would silently vanish
-    // on save. Two changes:
-    //   1. Exclude <p> AND <div> from the `blank` rule so empty blocks
-    //      aren't swallowed before the paragraph rule sees them. (<div>
-    //      matters because a real browser's contentEditable inserts
-    //      <div><br></div> when the user presses Enter, even when the
-    //      surrounding content is <p>-based.)
-    //   2. Override the `paragraph` rule for both tags. An empty block
-    //      (only <br> or whitespace) emits an explicit <p><br></p> HTML
-    //      line rather than bare newlines, for two reasons:
-    //        - turndown's join() collapses consecutive "\n\n" outputs,
-    //          so N blank lines would collapse into one;
-    //        - marked collapses consecutive blank lines when rendering,
-    //          so the space would visually disappear on reopen anyway.
-    //      <p><br></p> is passed through by marked as an HTML block, so
-    //      the empty line renders, survives save, and round-trips
-    //      stably (empty block -> <p><br></p> -> renders as empty block).
+    // Preserve blank lines, but as plain Markdown. Turndown's default
+    // `blank` rule drops empty paragraphs entirely (it matches any
+    // element with no text content), so blank lines the user adds in
+    // hybrid mode would silently vanish on save. Two changes:
+    //   1. Exclude <p>, <div>, and every table-structure element from
+    //      the `blank` rule. <p>/<div> are handled by the paragraph rule
+    //      below; table cells must be left to the GFM table rule even
+    //      when empty, or an empty <td>/<th> would be dropped and the
+    //      row would lose a column. (<div> also matters because a real
+    //      browser's contentEditable inserts <div><br></div> when the
+    //      user presses Enter, even when the surrounding content is
+    //      <p>-based.)
+    //   2. Override the `paragraph` rule for both tags so an empty block
+    //      (only <br> or whitespace) emits a blank line -- never an HTML
+    //      tag. The notebook is Markdown; writing <p><br></p> into it
+    //      would leak presentation HTML into the user's source. An
+    //      empty block becomes "\n\n", which join() collapses so a run
+    //      of empty blocks saves as a single blank line. That matches
+    //      what Markdown and marked can represent: marked collapses
+    //      consecutive blank lines on render, so extra ones carry no
+    //      meaning anyway.
     turndownSvc.addRule("blank", {
       filter(node) {
-        if (node.nodeName === "P" || node.nodeName === "DIV") return false;
+        if (BLANK_RULE_EXEMPT_TAGS.indexOf(node.nodeName) !== -1) return false;
         return ["A", "IFRAME", "OBJECT", "EMBED", "IMG", "BR", "HR",
                 "INPUT", "TEXTAREA", "SELECT", "BUTTON"].indexOf(node.nodeName) === -1 &&
                !node.textContent.trim();
@@ -106,7 +118,7 @@
     turndownSvc.addRule("paragraph", {
       filter: ["p", "div"],
       replacement(content, node) {
-        if (!node.textContent.trim()) return "\n\n<p><br></p>\n\n";
+        if (!node.textContent.trim()) return "\n\n";
         return "\n\n" + content + "\n\n";
       },
     });
@@ -668,6 +680,96 @@
     return true;
   }
 
+  /* Insert an empty `tag` block directly AFTER `refEl` and return it.
+   * A plain DOM insert, deliberately NOT document.execCommand: the
+   * browser's insertHTML is inconsistent about finding its own output
+   * (it can wrap or strip the markup), which produced two blocks for
+   * one Shift+Enter and left the document in a state domToMarkdown
+   * could not save. Hybrid owns its own undo history instead (see
+   * pushHistory), so the insert does not need the native stack. */
+  function insertEmptyBlock(refEl, tag) {
+    const node = document.createElement(tag);
+    refEl.after(node);
+    return node;
+  }
+
+  /* The DOM element holding the caret, or null. The SELECTION is the
+   * source of truth: a keydown inside a contentEditable targets the
+   * contentEditable root, so e.target tells us nothing about where the
+   * caret is. Returns a text node's parent, and may return the root
+   * itself, which callers must treat as "no specific block". */
+  function caretElement() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (node && node.nodeType === Node.ELEMENT_NODE &&
+        viewerContentEl.contains(node)) {
+      return node;
+    }
+    return null;
+  }
+
+  /* Shift+Enter inserts an empty line and moves the caret onto it.
+   *
+   * The browser's native Shift+Enter (and Enter) CONTAINERS continue
+   * themselves: a quote grows another "> " line, a list another "- "
+   * item, a table another "| " row, a code block swallows the break
+   * into its source. That native edit also bypasses onContentChange(),
+   * so the note never became dirty and exiting did not save it.
+   *
+   * One uniform rule covers every element: climb from the caret to its
+   * TOP-LEVEL ancestor (the direct child of #viewer-content) and add
+   * the new line RIGHT AFTER that element. The container is never
+   * extended, never modified; an in-place code editor is committed by
+   * the resulting blur. (Plain Enter stays native: it inserts a real
+   * newline in code and continues lists/quotes, which is what typing
+   * there means.)
+   *
+   * When the caret sits directly on the root (between top-level
+   * elements) the line is inserted at that position; if the caret
+   * cannot be resolved at all it is appended at the end of the note. */
+  function insertLineBelow(e) {
+    if (e.key !== "Enter" || !e.shiftKey) return false;
+    if (e.altKey || e.ctrlKey || e.metaKey) return false;
+    e.preventDefault();
+
+    const node = caretElement();
+    // Climb to the top-level element the caret lives in.
+    let top = node;
+    while (top && top !== viewerContentEl &&
+           top.parentElement !== viewerContentEl) {
+      top = top.parentElement;
+    }
+    if (top && top !== viewerContentEl) {
+      const p = insertEmptyBlock(top, "p");
+      caretToStart(p);
+      onContentChange();
+      return true;
+    }
+    // Caret sits on the root between top-level blocks: honour the
+    // position instead of always appending at the very end.
+    let ref = null;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && sel.getRangeAt(0).startContainer === viewerContentEl) {
+      const offset = sel.getRangeAt(0).startOffset;
+      ref = viewerContentEl.childNodes[offset - 1] || null;
+      while (ref && ref.nodeType !== Node.ELEMENT_NODE) ref = ref.previousSibling;
+    }
+    if (ref && ref.parentElement === viewerContentEl) {
+      const p = insertEmptyBlock(ref, "p");
+      caretToStart(p);
+      onContentChange();
+      return true;
+    }
+    // Last resort: append at the end of the note.
+    const p = document.createElement("p");
+    viewerContentEl.appendChild(p);
+    caretToStart(p);
+    onContentChange();
+    return true;
+  }
+
   /* keydown handler for hybrid mode: the markdown input rules that need
    * a key (``` + Enter, list outdent) plus the inline-format shortcuts. */
   function onEnterKey(e) {
@@ -677,6 +779,18 @@
     // earlier when it clearly isn't ours).
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const k = (e.key || "").toLowerCase();
+      // Undo / redo through hybrid's own history, so structural edits
+      // (Shift+Enter, list/table transforms) undo like typed text.
+      if (k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      }
+      if (!e.shiftKey && k === "y") {
+        e.preventDefault();
+        redo();
+        return;
+      }
       if (!e.shiftKey && k === "b") {
         e.preventDefault();
         toggleInline("strong");
@@ -697,6 +811,12 @@
         toggleInline("code");
         return;
       }
+    }
+    // Shift+Enter: insert an empty line just below this one (a new
+    // Markdown block) instead of the browser's same-paragraph <br>.
+    if (insertLineBelow(e)) {
+      e.preventDefault();
+      return;
     }
     // Tab / Shift+Tab: indent / outdent the current list item. Only when
     // the caret is inside a list item (never steal Tab elsewhere).
@@ -861,8 +981,8 @@
         if (table) deleteTable(table);
         break;
       }
-      case "undo": execCommand("undo"); break;
-      case "redo": execCommand("redo"); break;
+      case "undo": undo(); break;
+      case "redo": redo(); break;
       case "clear": {
         // Strip formatting from selection.
         execCommand("removeFormat");
@@ -968,12 +1088,14 @@
   /* --- dirty tracking -------------------------------------------- */
 
   let dirty = false;
+  let restoring = false;
   function onContentChange() {
     dirty = true;
     saveBtn.hidden = false;
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
     scheduleAutosave();
+    scheduleSnapshot();
   }
 
   function isDirty() { return dirty; }
@@ -984,6 +1106,99 @@
     saveBtn.hidden = true;
     closeEditBtn.classList.remove("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: false });
+  }
+
+  /* --- undo / redo history ---------------------------------------
+   * Structural edits in hybrid mode (Shift+Enter, a list transform, a
+   * table row insert, ...) mutate the DOM directly, so the browser's
+   * native undo stack never records them -- Ctrl+Z would skip straight
+   * past a Shift+Enter. Hybrid therefore keeps its own linear history
+   * of DOM snapshots. Every change (typed or structural) pushes a
+   * snapshot, coalesced for typing so a word is one undo step, and
+   * Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) walk it. The caret is stored as a
+   * top-level block index so it returns near where it was. */
+  const HISTORY_LIMIT = 100;
+  const HISTORY_COALESCE_MS = 400;
+  let history = [];
+  let historyIndex = -1;
+  let historyTimer = null;
+
+  function captureCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    let top = node;
+    while (top && top.parentElement !== viewerContentEl) top = top.parentElement;
+    const index = top
+      ? Array.prototype.indexOf.call(viewerContentEl.children, top) : -1;
+    return { index: index };
+  }
+
+  function pushSnapshot() {
+    if (!active) return;
+    if (historyIndex < history.length - 1) {
+      history = history.slice(0, historyIndex + 1);
+    }
+    history.push({ html: viewerContentEl.innerHTML, caret: captureCaret() });
+    if (history.length > HISTORY_LIMIT) history.shift();
+    historyIndex = history.length - 1;
+  }
+
+  function scheduleSnapshot() {
+    if (!active || restoring) return;
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(() => {
+      historyTimer = null;
+      pushSnapshot();
+    }, HISTORY_COALESCE_MS);
+  }
+
+  function resetHistory() {
+    clearTimeout(historyTimer);
+    historyTimer = null;
+    history = [];
+    historyIndex = -1;
+    if (active) pushSnapshot();
+  }
+
+  function restoreSnapshot(state) {
+    if (!state) return;
+    viewerContentEl.innerHTML = state.html;
+    enableCheckboxes();
+    addListPlaceholders();
+    const child = state.caret ? viewerContentEl.children[state.caret.index] : null;
+    if (child) {
+      const r = document.createRange();
+      r.selectNodeContents(child);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+    // Mark dirty but do NOT schedule a new snapshot: the state we just
+    // restored is already in the history, and pushing it again would
+    // make the next undo jump forward instead of back.
+    restoring = true;
+    onContentChange();
+    restoring = false;
+  }
+
+  function undo() {
+    if (!active) return;
+    if (historyTimer) { clearTimeout(historyTimer); historyTimer = null; pushSnapshot(); }
+    if (historyIndex <= 0) return;
+    historyIndex -= 1;
+    restoreSnapshot(history[historyIndex]);
+  }
+
+  function redo() {
+    if (!active) return;
+    if (historyTimer) { clearTimeout(historyTimer); historyTimer = null; pushSnapshot(); }
+    if (historyIndex >= history.length - 1) return;
+    historyIndex += 1;
+    restoreSnapshot(history[historyIndex]);
   }
 
   /* --- autosave --------------------------------------------------
@@ -1130,6 +1345,8 @@
     // Empty list items get a zero-width-space placeholder so their
     // markers render (see ensureListMarker).
     addListPlaceholders();
+    // Seed the undo history with the freshly rendered DOM.
+    resetHistory();
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
@@ -1148,6 +1365,8 @@
   async function exit(save) {
     if (!active) return;
     cancelAutosave();
+    clearTimeout(historyTimer);
+    historyTimer = null;
     let md = null;
     if (save) {
       md = domToMarkdown();
@@ -1807,8 +2026,8 @@
 
     // History
     addSubmenu("History", (fly) => {
-      addSubItem(fly, "Undo", () => execCommand("undo"));
-      addSubItem(fly, "Redo", () => execCommand("redo"));
+      addSubItem(fly, "Undo", () => undo());
+      addSubItem(fly, "Redo", () => redo());
     });
 
     // Save (top-level)

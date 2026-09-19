@@ -472,6 +472,10 @@ const html = `<!DOCTYPE html><html><head>
                 <span class="shortcut-label">Leave list (on empty list item)</span>
                 <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
               </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">New line below</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Shift+Enter</kbd></span>
+              </div>
             </div>
 
             <h3 class="settings-subheading">Live markdown syntax</h3>
@@ -3903,6 +3907,391 @@ function check(label, cond, extra) {
     check("hybrid: plain Enter keeps default behavior",
       enterDefault, "prevented=" + evEnter.defaultPrevented);
 
+    // Shift+Enter inserts an empty line below and moves the caret onto
+    // it, leaving the current block untouched.
+    const pressShiftEnter = (node) => node.dispatchEvent(
+      new window.KeyboardEvent("keydown",
+        { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }));
+    const caretAtEnd = (node) => {
+      const r = window.document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+
+    // From a paragraph: a fresh empty <p> appears after it.
+    const p6 = window.document.createElement("p");
+    p6.appendChild(window.document.createTextNode("last line"));
+    vc.appendChild(p6);
+    caretAtEnd(p6);
+    pressShiftEnter(p6);
+    const addedP = p6.nextElementSibling;
+    check("hybrid: Shift+Enter adds a new empty <p> below",
+      addedP && addedP.tagName === "P" && !addedP.textContent.trim() &&
+      addedP !== p6,
+      "next=" + (addedP && addedP.outerHTML));
+    const selAfterShift = window.getSelection();
+    check("hybrid: Shift+Enter moves caret into the new line",
+      selAfterShift.anchorNode && addedP.contains(selAfterShift.anchorNode),
+      "anchor=" + (selAfterShift.anchorNode && selAfterShift.anchorNode.parentNode &&
+        selAfterShift.anchorNode.parentNode.outerHTML));
+
+    // From an ALREADY-EMPTY line: a second empty line still appears
+    // (this was the bug -- the empty block must not be disturbed).
+    caretAtEnd(addedP);
+    pressShiftEnter(addedP);
+    const addedP2 = addedP.nextElementSibling;
+    check("hybrid: Shift+Enter from an empty line adds another line",
+      addedP2 && addedP2.tagName === "P" && !addedP2.textContent.trim(),
+      "next=" + (addedP2 && addedP2.outerHTML));
+    check("hybrid: the original empty line stays put",
+      vc.contains(addedP) && !addedP.textContent.trim(),
+      "p=" + addedP.outerHTML);
+
+    // Mid-paragraph: the current paragraph is left unchanged.
+    const p7 = window.document.createElement("p");
+    p7.appendChild(window.document.createTextNode("hello world"));
+    vc.appendChild(p7);
+    const rMid = window.document.createRange();
+    rMid.setStart(p7.firstChild, 5);
+    rMid.collapse(true);
+    const sMid = window.getSelection();
+    sMid.removeAllRanges();
+    sMid.addRange(rMid);
+    pressShiftEnter(p7);
+    check("hybrid: Shift+Enter leaves the current paragraph intact",
+      p7.textContent === "hello world" &&
+      p7.nextElementSibling && p7.nextElementSibling.tagName === "P" &&
+      !p7.nextElementSibling.textContent.trim(),
+      "p7=" + p7.outerHTML + " next=" +
+        (p7.nextElementSibling && p7.nextElementSibling.outerHTML));
+
+    // Inside a list item: Shift+Enter exits the list -- an empty <p> is
+    // added after the <ul>, never another "- " item inside it (the
+    // same continuation bug as "> " in a blockquote).
+    const ul6 = window.document.createElement("ul");
+    const li6 = window.document.createElement("li");
+    li6.appendChild(window.document.createTextNode("item"));
+    ul6.appendChild(li6);
+    vc.appendChild(ul6);
+    caretAtEnd(li6);
+    pressShiftEnter(li6);
+    const afterUl = ul6.nextElementSibling;
+    check("hybrid: Shift+Enter in a list adds a line after it",
+      afterUl && afterUl.tagName === "P" &&
+      !afterUl.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterUl && afterUl.outerHTML));
+    check("hybrid: Shift+Enter does not add a list item",
+      ul6.children.length === 1,
+      "ul=" + ul6.outerHTML);
+
+    // Ordered list: same exit rule as the unordered list.
+    const ol6 = window.document.createElement("ol");
+    const olLi6 = window.document.createElement("li");
+    olLi6.appendChild(window.document.createTextNode("first"));
+    ol6.appendChild(olLi6);
+    vc.appendChild(ol6);
+    caretAtEnd(olLi6);
+    pressShiftEnter(olLi6);
+    const afterOl = ol6.nextElementSibling;
+    check("hybrid: Shift+Enter in an ordered list adds a line after it",
+      afterOl && afterOl.tagName === "P" &&
+      !afterOl.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterOl && afterOl.outerHTML));
+    check("hybrid: Shift+Enter does not add an ordered item",
+      ol6.children.length === 1,
+      "ol=" + ol6.outerHTML);
+
+    // Nested list: the climb must reach the TOP-LEVEL <ul>, so the new
+    // line lands after the whole outer list, not between its items.
+    const ulOuter = window.document.createElement("ul");
+    const liOuter = window.document.createElement("li");
+    liOuter.appendChild(window.document.createTextNode("outer"));
+    const ulInner = window.document.createElement("ul");
+    const liInner = window.document.createElement("li");
+    liInner.appendChild(window.document.createTextNode("inner"));
+    ulInner.appendChild(liInner);
+    liOuter.appendChild(ulInner);
+    ulOuter.appendChild(liOuter);
+    vc.appendChild(ulOuter);
+    const itemChildrenBefore = liOuter.children.length;
+    caretAtEnd(liInner);
+    pressShiftEnter(liInner);
+    const afterOuter = ulOuter.nextElementSibling;
+    check("hybrid: Shift+Enter in a nested list adds a line after the outer list",
+      afterOuter && afterOuter.tagName === "P" &&
+      !afterOuter.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterOuter && afterOuter.outerHTML));
+    check("hybrid: nested list structure is untouched",
+      liOuter.children.length === itemChildrenBefore &&
+      ulOuter.children.length === 1,
+      "outer=" + ulOuter.outerHTML);
+
+    // Task-list item (checkbox): still a list item -- exits the list.
+    const ulTask = window.document.createElement("ul");
+    const liTask = window.document.createElement("li");
+    liTask.className = "task-list-item";
+    const cbTask = window.document.createElement("input");
+    cbTask.type = "checkbox";
+    liTask.appendChild(cbTask);
+    liTask.appendChild(window.document.createTextNode("task"));
+    ulTask.appendChild(liTask);
+    vc.appendChild(ulTask);
+    caretAtEnd(liTask);
+    pressShiftEnter(liTask);
+    const afterTask = ulTask.nextElementSibling;
+    check("hybrid: Shift+Enter in a task list adds a line after it",
+      afterTask && afterTask.tagName === "P" &&
+      !afterTask.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterTask && afterTask.outerHTML));
+
+    // Heading: the new line goes right after the heading.
+    const h6 = window.document.createElement("h3");
+    h6.appendChild(window.document.createTextNode("Heading 3"));
+    vc.appendChild(h6);
+    caretAtEnd(h6);
+    pressShiftEnter(h6);
+    const afterH = h6.nextElementSibling;
+    check("hybrid: Shift+Enter in a heading adds a line after it",
+      afterH && afterH.tagName === "P" &&
+      !afterH.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterH && afterH.outerHTML));
+
+    // Inside a table cell: Shift+Enter leaves the table -- an empty <p>
+    // is added after it, never a "| " row inside it. The keydown is
+    // dispatched on the contentEditable ROOT (#viewer-content), which is
+    // where a real browser sends it; the caret is what identifies the
+    // cell. Regression: an earlier version only handled a cell-target
+    // event, so a REAL keydown resolved to the root, fell through to the
+    // browser default, and appended a broken "| " row without dirtying.
+    const table6 = window.document.createElement("table");
+    table6.innerHTML = "<thead><tr><th>a</th><th>b</th></tr></thead>" +
+      "<tbody><tr><td>1</td><td>2</td></tr></tbody>";
+    vc.appendChild(table6);
+    const bodyRow = table6.tBodies[0].rows[0];
+    caretAtEnd(bodyRow.cells[0]);
+    pressShiftEnter(vc);   // dispatched on the root, like a real browser
+    const afterTable = table6.nextElementSibling;
+    check("hybrid: Shift+Enter in a table adds a line after the table",
+      afterTable && afterTable.tagName === "P" &&
+      !afterTable.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterTable && afterTable.outerHTML));
+    check("hybrid: Shift+Enter does not add a row to the table",
+      table6.tBodies[0].rows.length === 1,
+      "table=" + table6.outerHTML);
+    check("hybrid: Shift+Enter in a table marks the note dirty",
+      window.NB.hybrid.isDirty());
+    const mdTable = window.NB.hybrid.domToMarkdown();
+    const tableRows = mdTable.split("\n").filter((l) => l.startsWith("|"));
+    check("hybrid: table saves as clean GFM (no stray <br>)",
+      /\| 1 \| 2 \|/.test(mdTable) && !mdTable.includes("<br>"),
+      JSON.stringify(mdTable).slice(-80));
+    check("hybrid: every saved table row keeps both columns",
+      tableRows.length === 3 &&
+      tableRows.every((r) => r.split("|").length - 2 === 2),
+      JSON.stringify(tableRows));
+
+    // A caret that resolves to the contentEditable ROOT (between
+    // top-level blocks) must still insert a line, not fall through to
+    // the browser.
+    const pRoot = window.document.createElement("p");
+    pRoot.appendChild(window.document.createTextNode("root caret"));
+    vc.appendChild(pRoot);
+    const rRoot = window.document.createRange();
+    rRoot.setStart(vc, vc.childNodes.length);
+    rRoot.collapse(true);
+    const sRoot = window.getSelection();
+    sRoot.removeAllRanges();
+    sRoot.addRange(rRoot);
+    const rootPCount = vc.querySelectorAll("p").length;
+    pressShiftEnter(vc);
+    check("hybrid: Shift+Enter with a root-level caret adds a line",
+      vc.querySelectorAll("p").length === rootPCount + 1,
+      "p count " + rootPCount + " -> " + vc.querySelectorAll("p").length);
+
+    // Inside a blockquote: Shift+Enter exits the quote, adding a <p>
+    // AFTER it, not another "> " line inside it. The caret's nearest
+    // block is the quote's inner <p>, so a naive "insert after the
+    // block" would extend the quote instead of leaving it.
+    const bq6 = window.document.createElement("blockquote");
+    const bqP = window.document.createElement("p");
+    bqP.appendChild(window.document.createTextNode("quoted"));
+    bq6.appendChild(bqP);
+    vc.appendChild(bq6);
+    caretAtEnd(bqP);
+    pressShiftEnter(vc);
+    const afterBq = bq6.nextElementSibling;
+    check("hybrid: Shift+Enter in a blockquote adds a line after it",
+      afterBq && afterBq.tagName === "P" &&
+      !afterBq.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterBq && afterBq.outerHTML));
+    check("hybrid: Shift+Enter does not extend the blockquote",
+      bq6.querySelectorAll("p").length === 1,
+      "blockquote=" + bq6.outerHTML);
+    const bqMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid: blockquote Shift+Enter saves without a second quote line",
+      /> quoted\n\n/.test(bqMd) && !/> quoted\n>/.test(bqMd),
+      JSON.stringify(bqMd).slice(-60));
+
+    // Inside a code block: Shift+Enter also leaves it, adding a <p>
+    // after the block rather than a newline inside the code.
+    const pre6 = window.document.createElement("pre");
+    const code6 = window.document.createElement("code");
+    code6.className = "language-js";
+    code6.textContent = "let x = 1;";
+    pre6.appendChild(code6);
+    vc.appendChild(pre6);
+    caretAtEnd(code6);
+    pressShiftEnter(code6);
+    const afterPre = pre6.nextElementSibling;
+    check("hybrid: Shift+Enter in a code block adds a line after it",
+      afterPre && afterPre.tagName === "P" &&
+      !afterPre.textContent.trim(),
+      "after=" + (afterPre && afterPre.outerHTML));
+    check("hybrid: code is unchanged by Shift+Enter",
+      code6.textContent === "let x = 1;",
+      "code=" + code6.textContent);
+
+    // An in-place code editor (pre.hybrid-plugin-editing) must also
+    // yield to Shift+Enter -- regression: an earlier guard returned
+    // false for editing fences, so the browser inserted a soft break
+    // inside the code instead of adding a line after the block.
+    const preEdit = window.document.createElement("pre");
+    preEdit.className = "hybrid-plugin-editing";
+    const codeEdit = window.document.createElement("code");
+    codeEdit.className = "language-python";
+    codeEdit.textContent = "def f():\n    return 1";
+    preEdit.appendChild(codeEdit);
+    vc.appendChild(preEdit);
+    caretAtEnd(codeEdit);
+    pressShiftEnter(codeEdit);
+    const afterEdit = preEdit.nextElementSibling;
+    check("hybrid: Shift+Enter in an in-place code editor adds a line after it",
+      afterEdit && afterEdit.tagName === "P" &&
+      !afterEdit.textContent.replace(/\u200B/g, "").trim(),
+      "after=" + (afterEdit && afterEdit.outerHTML));
+    check("hybrid: in-place code is unchanged by Shift+Enter",
+      codeEdit.textContent === "def f():\n    return 1",
+      "code=" + JSON.stringify(codeEdit.textContent));
+    check("hybrid: no <br> was inserted into the edited code",
+      !codeEdit.querySelector("br"),
+      "code=" + codeEdit.innerHTML);
+
+    // One Shift+Enter must add exactly ONE line (regression: an
+    // execCommand fallback used to insert a second block).
+    const p8 = window.document.createElement("p");
+    p8.appendChild(window.document.createTextNode("one line"));
+    vc.appendChild(p8);
+    const psBefore = vc.querySelectorAll("p").length;
+    caretAtEnd(p8);
+    pressShiftEnter(p8);
+    check("hybrid: one Shift+Enter adds exactly one <p>",
+      vc.querySelectorAll("p").length === psBefore + 1,
+      "p count " + psBefore + " -> " + vc.querySelectorAll("p").length);
+
+    // The whole Shift+Enter flow (insert then save) must produce clean
+    // Markdown with no HTML tags.
+    const stMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid: Shift+Enter output saves cleanly (no HTML)",
+      !/<p>|<\/p>|<br\s*\/?>|<div>/i.test(stMd),
+      JSON.stringify(stMd).slice(-80));
+
+    // Ctrl+Z must undo a Shift+Enter (a structural DOM edit that the
+    // browser's native undo stack does not record).
+    const p9 = window.document.createElement("p");
+    p9.appendChild(window.document.createTextNode("undo me"));
+    vc.appendChild(p9);
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(500);
+    caretAtEnd(p9);
+    pressShiftEnter(p9);
+    await tick(500);
+    const afterInsertCount = vc.querySelectorAll("p").length;
+    p9.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+    await tick(50);
+    check("hybrid: Ctrl+Z undoes a Shift+Enter",
+      vc.querySelectorAll("p").length === afterInsertCount - 1,
+      "p count " + afterInsertCount + " -> " + vc.querySelectorAll("p").length);
+    // Ctrl+Shift+Z (redo) brings it back. Dispatch on the live container:
+    // the undo restore replaced innerHTML, so p9 is now detached.
+    vc.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "z", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    await tick(50);
+    check("hybrid: Ctrl+Shift+Z redoes the Shift+Enter",
+      vc.querySelectorAll("p").length === afterInsertCount,
+      "p count -> " + vc.querySelectorAll("p").length);
+
+    // End-to-end: a Shift+Enter followed by Save must persist clean
+    // Markdown, and the file must actually change on disk (the user
+    // reported a save that failed after Shift+Enter).
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const lastP = vc.querySelector("p:last-of-type") || vc.lastElementChild;
+    caretAtEnd(lastP);
+    pressShiftEnter(lastP);
+    await tick(20);
+    const shiftSaveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(50);
+    check("hybrid: save after Shift+Enter fires",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - shiftSaveBefore === 1,
+      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - shiftSaveBefore));
+    const shiftSaved = FILES["notes/a.md"] || "";
+    check("hybrid: Shift+Enter save persists clean Markdown",
+      !/<\/?p>|<\/?div>|<br\s*\/?>/i.test(shiftSaved),
+      JSON.stringify(shiftSaved).slice(-60));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // End-to-end for the reported bug: when a TABLE is the last block,
+    // Shift+Enter then Exit must save. An earlier version let the
+    // browser's default run here (appending a "| " row), so the note was
+    // never marked dirty and Exit did not save.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    const tblSaveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const liveTable = window.document.createElement("table");
+    liveTable.innerHTML = "<thead><tr><th>a</th><th>b</th></tr></thead>" +
+      "<tbody><tr><td>1</td><td>2</td></tr></tbody>";
+    vc.appendChild(liveTable);
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(500);
+    const cell2 = liveTable.tBodies[0].rows[0].cells[0];
+    caretAtEnd(cell2);
+    pressShiftEnter(vc);
+    await tick(500);
+    check("hybrid: table Shift+Enter then exit is dirty",
+      window.NB.hybrid.isDirty());
+    // Exit via the Exit button; confirm() is stubbed true, so it saves.
+    $("close-edit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("hybrid: exiting after a table Shift+Enter saves",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - tblSaveBefore === 1,
+      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - tblSaveBefore));
+    const tblSaved = FILES["notes/a.md"] || "";
+    check("hybrid: table Shift+Enter exit save has no broken pipe row",
+      !/^\|\s*$/m.test(tblSaved) && /body/.test(tblSaved),
+      JSON.stringify(tblSaved).slice(-80));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+    FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+
     // Exit hybrid mode (discard changes).
     await window.NB.hybrid.exit(false);
     await tick(50);
@@ -3971,14 +4360,14 @@ function check(label, cond, extra) {
     await tick(50);
     check("hybrid: clean exit after save", !window.NB.hybrid.isActive());
 
-    // --- hybrid trailing-blank-line preservation ---
-    // The user reported that adding blank lines (empty space) in hybrid
-    // mode was silently dropped on save. A REAL browser's contentEditable
-    // inserts <div><br></div> on Enter (Chrome's default paragraph
-    // separator is div) -- NOT the <p><br></p> that marked renders.
-    // Empty blocks must save as explicit <p><br></p> lines (marked
-    // collapses bare blank lines when rendering, so the space would
-    // visually vanish on reopen otherwise).
+    // --- hybrid blank-line handling: plain Markdown, no HTML ---
+    // Empty blocks (a real browser's contentEditable inserts
+    // <div><br></div> on Enter; marked renders <p><br></p>) must save as
+    // plain Markdown. The notebook is Markdown, so leaking <p><br></p>
+    // presentation HTML into the source is not acceptable. Empty lines
+    // are allowed to collapse to a single blank line: marked collapses
+    // consecutive blank lines when rendering, so extra ones carry no
+    // meaning.
     FILES["notes/a.md"] = "# File A\n\nbody\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
@@ -3996,23 +4385,19 @@ function check(label, cond, extra) {
     check("hybrid: blank-line save POST fired", blankAfter - blankBefore === 1,
       "delta=" + (blankAfter - blankBefore));
     const blankSaved = FILES["notes/a.md"] || "";
-    const blankCount = (blankSaved.match(/<p><br><\/p>/g) || []).length;
-    check("hybrid: saved content keeps BOTH trailing blank lines",
-      /tail\n+/.test(blankSaved) && blankCount === 2,
+    check("hybrid: blank lines save as plain Markdown (no HTML tags)",
+      !/<\/?p>|<\/?div>|<br\s*\/?>/i.test(blankSaved),
+      JSON.stringify(blankSaved).slice(-60));
+    check("hybrid: trailing blank line is preserved as a newline",
+      /tail\n/.test(blankSaved),
       JSON.stringify(blankSaved).slice(-60));
     check("hybrid: saved content has no sentinel leftover",
       blankSaved.indexOf("\u0000") === -1,
       JSON.stringify(blankSaved).slice(-60));
-    // Round-trip stability: exiting re-renders the saved content; the
-    // empty paragraphs must be back in the DOM (the space stays visible).
     await window.NB.hybrid.exit(false);
     await tick(50);
-    const emptyPs = Array.from(vc.querySelectorAll("p"))
-      .filter(p => !p.textContent.trim() && !p.querySelector("img"));
-    check("hybrid: blank lines survive the save -> re-render round-trip",
-      emptyPs.length === 2,
-      "empty <p> count=" + emptyPs.length);
-    // Mid-document blank lines (a div between two paragraphs) survive too.
+    // Mid-document blank line (a div between two paragraphs) survives as
+    // a blank line, not an HTML tag.
     FILES["notes/a.md"] = "# File A\n\nbody\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
@@ -4028,8 +4413,8 @@ function check(label, cond, extra) {
     check("hybrid: mid-doc save POST fired",
       fetchLog.filter((x) => x.startsWith("POST /api/file")).length - midBefore === 1);
     const midSaved = FILES["notes/a.md"] || "";
-    check("hybrid: saved content keeps mid-document blank line",
-      /top\n+<p><br><\/p>\n+bottom/.test(midSaved),
+    check("hybrid: mid-document blank line is a plain blank line",
+      /top\n\n+bottom/.test(midSaved) && !/<\/?p>|<\/?div>/.test(midSaved),
       JSON.stringify(midSaved).slice(0, 90));
     await window.NB.hybrid.exit(false);
     await tick(50);
@@ -6997,8 +7382,8 @@ function check(label, cond, extra) {
   // The fixed hybrid-editor reference table below the configurable rows.
   const staticRows = $("settings-section-shortcuts")
     .querySelectorAll(".shortcut-row-static");
-  check("shortcuts: 6 fixed hybrid reference rows",
-    staticRows.length === 6, "got " + staticRows.length);
+  check("shortcuts: 7 fixed hybrid reference rows",
+    staticRows.length === 7, "got " + staticRows.length);
   const staticKbds = Array.from(staticRows).map(r =>
     r.querySelector(".shortcut-binding").textContent);
   check("shortcuts: hybrid rows localized via format() (Mod+B -> Ctrl+B)",
