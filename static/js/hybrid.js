@@ -193,6 +193,9 @@
     // Empty list items get a zero-width-space placeholder so their
     // markers render (see ensureListMarker).
     addListPlaceholders();
+    // Unwrap <thead> so Firefox can arrow-walk through table rows (see
+    // flattenTheads).
+    flattenTheads();
   }
 
   /* --- edit bar integration -------------------------------------- */
@@ -383,6 +386,38 @@
    * any re-render (the markdown may contain empty items). */
   function addListPlaceholders() {
     viewerContentEl.querySelectorAll("li").forEach(ensureListMarker);
+  }
+
+  /* Flatten every <thead> into its table's <tbody>.
+   *
+   * Firefox cannot traverse a real thead vertically: with the caret in a
+   * header cell, ArrowDown exits the table entirely (the header group is
+   * opaque to caret movement) instead of stepping into the body rows.
+   * GFM tables always render a thead, so tables were one-line-only in
+   * hybrid mode. Unwrapping the thead -- moving its rows to the top of
+   * the first tbody -- makes the header an ordinary first row, which
+   * Firefox walks like any other row. Turndown's GFM table rule does not
+   * need the wrapper: isHeadingRow() also matches a first tbody row whose
+   * cells are all <th>, and the tableSection rule strips tbody wrappers,
+   * so domToMarkdown saves byte-identical markdown. The preview DOM is
+   * untouched (marked re-renders with thead on exit). */
+  function flattenTheads() {
+    viewerContentEl.querySelectorAll("table thead").forEach((thead) => {
+      const table = thead.closest("table");
+      if (!table) return;
+      let tbody = table.tBodies[0];
+      if (!tbody) {
+        tbody = document.createElement("tbody");
+        table.insertBefore(tbody, table.tFoot || null);
+      }
+      // Move the thead rows ahead of every current tbody row, keeping
+      // their order: walk the thead rows from LAST to FIRST and insert
+      // each before the tbody's current first row.
+      Array.from(thead.rows).reverse().forEach((row) => {
+        tbody.insertBefore(row, tbody.rows[0] || null);
+      });
+      thead.remove();
+    });
   }
 
   const INPUT_RULES = [
@@ -1345,6 +1380,9 @@
     // Empty list items get a zero-width-space placeholder so their
     // markers render (see ensureListMarker).
     addListPlaceholders();
+    // Unwrap <thead> so Firefox can arrow-walk through table rows (see
+    // flattenTheads).
+    flattenTheads();
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
 
@@ -2134,6 +2172,7 @@
     isActive,
     isDirty,
     domToMarkdown,
+    flattenTheads,
     updateButtonVisibility,
     commitForTabSwitch,
   };

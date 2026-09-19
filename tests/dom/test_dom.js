@@ -4093,6 +4093,99 @@ function check(label, cond, extra) {
       tableRows.every((r) => r.split("|").length - 2 === 2),
       JSON.stringify(tableRows));
 
+    // --- thead flattening (Firefox arrow-walk) ---
+    // Firefox cannot move the caret from a header cell into the body
+    // rows when the row group is a real <thead>; ArrowDown exits the
+    // table. enter() unwraps every thead into its tbody so the header
+    // becomes an ordinary first row. The save path is unaffected:
+    // turndown's GFM rule treats a first-tbody all-<th> row as the
+    // heading row, so markdown round-trips byte-identically.
+    {
+      const vc = $("viewer-content");
+      const tHead = window.document.createElement("table");
+      tHead.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td>r1</td><td>r1b</td></tr>" +
+        "<tr><td>r2</td><td>r2b</td></tr></tbody>";
+      vc.appendChild(tHead);
+      window.NB.hybrid.flattenTheads();
+      check("hybrid: thead flattened to first tbody row (th kept, order kept)",
+        tHead.tHead === null &&
+        tHead.tBodies[0].rows[0].cells[0].tagName === "TH" &&
+        tHead.tBodies[0].rows[0].cells[1].tagName === "TH" &&
+        tHead.tBodies[0].rows[1].textContent === "r1r1b" &&
+        tHead.tBodies[0].rows[2].textContent === "r2r2b",
+        "table=" + tHead.outerHTML);
+      const mdFlat = window.NB.hybrid.domToMarkdown();
+      const flatRows = mdFlat.split("\n").filter((l) => l.startsWith("|"));
+      // The document also holds the earlier Shift+Enter test's table; the
+      // flattened one is the trailing "| A | B |" group.
+      const flat = flatRows.slice(flatRows.findIndex((r) => /^\| A \| B \|/.test(r)));
+      check("hybrid: flattened thead saves identical GFM table",
+        flat.length === 4 &&
+        /^\| A \| B \|/.test(flat[0]) &&
+        /^\| --- \| --- \|/.test(flat[1]) &&
+        /^\| r1 \| r1b \|/.test(flat[2]) &&
+        /^\| r2 \| r2b \|/.test(flat[3]),
+        JSON.stringify(flatRows));
+      tHead.remove();
+
+      // Edge: a GFM table with ONLY a thead (no tbody) — the wrapper is
+      // dropped and a tbody is created to receive the rows.
+      const tOnly = window.document.createElement("table");
+      tOnly.innerHTML = "<thead><tr><th>H1</th><th>H2</th></tr></thead>";
+      vc.appendChild(tOnly);
+      window.NB.hybrid.flattenTheads();
+      check("hybrid: thead-only table gains a tbody",
+        tOnly.tHead === null &&
+        tOnly.tBodies.length === 1 &&
+        tOnly.tBodies[0].rows.length === 1 &&
+        tOnly.tBodies[0].rows[0].cells[0].tagName === "TH" &&
+        tOnly.tBodies[0].rows[0].cells[0].textContent === "H1",
+        "table=" + tOnly.outerHTML);
+      tOnly.remove();
+
+      // A table WITHOUT a thead is left untouched.
+      const tPlain = window.document.createElement("table");
+      tPlain.innerHTML = "<tbody><tr><td>a</td><td>b</td></tr></tbody>";
+      vc.appendChild(tPlain);
+      const plainBefore = tPlain.outerHTML;
+      window.NB.hybrid.flattenTheads();
+      check("hybrid: table without thead is not modified",
+        tPlain.outerHTML === plainBefore,
+        "before=" + JSON.stringify(plainBefore) + " after=" + JSON.stringify(tPlain.outerHTML));
+      tPlain.remove();
+
+      // Multiple theads are flattened in ONE call (renderMarkdown /
+      // enter() only run it once).
+      const tA = window.document.createElement("table");
+      tA.innerHTML = "<thead><tr><th>xA</th></tr></thead><tbody><tr><td>ya</td></tr></tbody>";
+      const tB = window.document.createElement("table");
+      tB.innerHTML = "<thead><tr><th>xB</th></tr></thead><tbody><tr><td>yb</td></tr></tbody>";
+      vc.appendChild(tA);
+      vc.appendChild(tB);
+      window.NB.hybrid.flattenTheads();
+      check("hybrid: all theads flattened in one call",
+        tA.tHead === null && tB.tHead === null &&
+        tA.tBodies[0].rows[0].cells[0].textContent === "xA" &&
+        tB.tBodies[0].rows[0].cells[0].textContent === "xB",
+        "A=" + tA.outerHTML + " B=" + tB.outerHTML);
+      tA.remove();
+      tB.remove();
+
+      // Row order is preserved exactly: header first, then body rows.
+      const tOrder = window.document.createElement("table");
+      tOrder.innerHTML = "<thead><tr><th>h1</th></tr><tr><th>h2</th></tr></thead>" +
+        "<tbody><tr><td>b1</td></tr><tr><td>b2</td></tr></tbody>";
+      vc.appendChild(tOrder);
+      window.NB.hybrid.flattenTheads();
+      const orderTexts = Array.from(tOrder.tBodies[0].rows).map((r) => r.textContent);
+      check("hybrid: multi-row thead keeps its row order",
+        tOrder.tHead === null &&
+        JSON.stringify(orderTexts) === JSON.stringify(["h1", "h2", "b1", "b2"]),
+        "rows=" + JSON.stringify(orderTexts));
+      tOrder.remove();
+    }
+
     // A caret that resolves to the contentEditable ROOT (between
     // top-level blocks) must still insert a line, not fall through to
     // the browser.
@@ -5191,6 +5284,25 @@ function check(label, cond, extra) {
       delete FILES["notes/bad-mermaid.md"];
       await window.NB.sidebar.refresh();
       await tick(20);
+    }
+
+    // --- Firefox caret navigation across code/table ---
+    // Firefox treats any scroll container (overflow: auto/hidden/scroll)
+    // as atomic for vertical caret movement, so ArrowDown cannot enter a
+    // code block or table whose inner element owns a horizontal scroller
+    // (highlight.js sets `pre code { overflow-x: auto }`, and the app's
+    // own pre/table rules do too). Hybrid mode drops those inner
+    // scrollers and scrolls #viewer-content instead. jsdom has no layout
+    // engine, so we assert the CSS rules directly -- the same approach
+    // the code-copy-button regression above uses.
+    {
+      const hybridCss = read("static/css/style.css");
+      check("hybrid fx-caret: pre/pre code/table override inner overflow",
+        /#viewer-content\.hybrid-editing pre,[\s\S]*?#viewer-content\.hybrid-editing pre code,[\s\S]*?#viewer-content\.hybrid-editing table\s*\{[^}]*overflow:\s*visible/.test(hybridCss),
+        "no hybrid overflow:visible rule for pre/pre code/table");
+      check("hybrid fx-caret: #viewer-content becomes the horizontal scroller",
+        /#viewer-content\.hybrid-editing\s*\{[^}]*overflow-x:\s*auto/.test(hybridCss),
+        "no #viewer-content.hybrid-editing{overflow-x:auto} rule");
     }
   }
 

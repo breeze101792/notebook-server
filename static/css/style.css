@@ -1532,6 +1532,28 @@ body[data-theme="light"] #viewer-content {
   outline-color: var(--accent);
 }
 
+/* Firefox caret navigation across code blocks and tables.
+ *
+ * Firefox treats any scroll container (overflow: auto / hidden / scroll)
+ * as atomic for vertical caret movement: an ArrowDown from the block
+ * above cannot put the caret inside it, so it skips the whole block --
+ * a code block jumps to its last line, a table is stepped over. The
+ * code/table rules below normally own their own horizontal scrollers
+ * (the vendored highlight.js theme sets `pre code { overflow-x: auto }`,
+ * and `.markdown-body pre` / table set `overflow-x: auto` too), which is
+ * what triggers the skip. In hybrid mode we drop the inner scrollers and
+ * move horizontal scrolling to #viewer-content itself, so the caret can
+ * enter normally. The other browsers are unaffected (they already
+ * descend into scroll containers). */
+#viewer-content.hybrid-editing pre,
+#viewer-content.hybrid-editing pre code,
+#viewer-content.hybrid-editing table {
+  overflow: visible;
+}
+#viewer-content.hybrid-editing {
+  overflow-x: auto;
+}
+
 /* The .hybrid-active class on #viewer (the shell) signals that the
  * content pane is editable. We use it to bump the padding slightly so
  * the outline doesn't hug the content. */
