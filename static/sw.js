@@ -46,6 +46,7 @@ const PRECACHE = [
   "/static/js/viewer.js",
   "/static/js/editbar.js",
   "/static/js/hybrid.js",
+  "/static/js/table-edit.js",
   "/static/js/watcher.js",
   "/static/js/outline.js",
   "/static/js/sidebar.js",

@@ -154,6 +154,11 @@
           <span class="eb-overflow eb-table">
             <button class="eb eb-table-btn" data-act="table-menu" title="Table actions">▦</button>
             <div class="eb-menu eb-table-menu" hidden>
+              <button class="eb" data-act="table-row-up">Move row up</button>
+              <button class="eb" data-act="table-row-down">Move row down</button>
+              <button class="eb" data-act="table-col-left-move">Move column left</button>
+              <button class="eb" data-act="table-col-right-move">Move column right</button>
+              <button class="eb" data-act="table-col-align">Align column (cycle)</button>
               <button class="eb" data-act="table-row-above">Insert row above</button>
               <button class="eb" data-act="table-row-below">Insert row below</button>
               <button class="eb" data-act="table-row-delete">Delete row</button>
@@ -530,6 +535,14 @@
               <div class="shortcut-row shortcut-row-static" role="listitem">
                 <span class="shortcut-label">New line below</span>
                 <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Shift+Enter</kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Move row up / down (in table)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Alt+Up</kbd> / <kbd class="shortcut-binding">Alt+Down</kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Move column left / right (in table)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Alt+Shift+Left</kbd> / <kbd class="shortcut-binding">Alt+Shift+Right</kbd></span>
               </div>
             </div>
 
@@ -934,6 +947,7 @@
   <script src="/static/js/viewer.js" defer></script>
   <script src="/static/js/editbar.js" defer></script>
   <script src="/static/js/hybrid.js" defer></script>
+  <script src="/static/js/table-edit.js" defer></script>
   <script src="/static/js/watcher.js" defer></script>
   <script src="/static/js/outline.js" defer></script>
   <script src="/static/js/sidebar.js" defer></script>

@@ -1432,6 +1432,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
+  evalIn(read("static/js/table-edit.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -5303,6 +5304,273 @@ function check(label, cond, extra) {
       check("hybrid fx-caret: #viewer-content becomes the horizontal scroller",
         /#viewer-content\.hybrid-editing\s*\{[^}]*overflow-x:\s*auto/.test(hybridCss),
         "no #viewer-content.hybrid-editing{overflow-x:auto} rule");
+    }
+
+    // --- table reordering (moveRow / moveCol / drag overlay) ---------
+    // The drag overlay (table-edit.js) and the keyboard chords both call
+    // the same hybrid helpers, so these DOM-level tests cover both paths.
+    // jsdom has no layout engine, so the overlay's geometry (grip
+    // positioning, drop-line coordinates) is covered by the real-browser
+    // check instead; here we verify the DOM contracts that drive it.
+    {
+      const vc = $("viewer-content");
+      check("hybrid tables: table-edit overlay module loaded",
+        !!window.NB.tableEdit);
+
+      // Overlay wiring: entering hybrid enables the overlay, exiting
+      // disables it. The overlay is a child of #viewer (NOT of the
+      // contenteditable), so turndown and undo snapshots never see it.
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+      check("hybrid tables: overlay disabled+empty after exit",
+        !window.NB.tableEdit.isEnabled &&
+        ($("viewer").querySelector(".nb-table-overlay") || { textContent: "" })
+          .textContent === "");
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const overlayEl = $("viewer").querySelector(".nb-table-overlay");
+      check("hybrid tables: overlay is a child of #viewer after enter",
+        window.NB.tableEdit.isEnabled && !!overlayEl &&
+        !$("viewer-content").contains(overlayEl));
+      check("hybrid tables: overlay not part of domToMarkdown clone",
+        !window.NB.hybrid.domToMarkdown().includes("nb-table-overlay"));
+
+      // moveRow: the header (rows[0]) is pinned and never moves.
+      const tbl = window.document.createElement("table");
+      tbl.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td>1</td><td>a</td></tr><tr><td>2</td><td>b</td></tr>" +
+        "<tr><td>3</td><td>c</td></tr></tbody>";
+      vc.appendChild(tbl);
+      window.NB.hybrid.flattenTheads();
+      const rows = () => Array.from(tbl.rows).map((r) => r.cells[0].textContent);
+      const h0 = tbl.rows[0];
+      check("hybrid tables: header row cannot be moved",
+        window.NB.hybrid.moveRow(h0, tbl.rows[1]) === false &&
+        tbl.rows[0] === h0 && tbl.rows[0].cells[0].tagName === "TH");
+
+      // Move row 2 above row 1: the nodes move, order follows.
+      check("hybrid tables: moveRow reorders body rows",
+        window.NB.hybrid.moveRow(tbl.rows[2], tbl.rows[1]) === true &&
+        JSON.stringify(Array.from(tbl.rows).map((r) => r.cells[0].textContent))
+          === JSON.stringify(["A", "2", "1", "3"]),
+        JSON.stringify(Array.from(tbl.rows).map((r) => r.cells[0].textContent)));
+      check("hybrid tables: moveRow marks the note dirty",
+        window.NB.hybrid.isDirty());
+
+      // No-op move (onto its own position) must not dirty the note.
+      const dirtyBefore = window.NB.hybrid.isDirty();
+      check("hybrid tables: dropping a row onto itself is a no-op",
+        window.NB.hybrid.moveRow(tbl.rows[1], tbl.rows[1]) === false &&
+        window.NB.hybrid.moveRow(tbl.rows[1], tbl.rows[2]) === false &&
+        window.NB.hybrid.isDirty() === dirtyBefore);
+
+      // moveCol: alignment + th/td travel with the moved cells. After
+      // moveCol(1, 0), column 1 ("B"/"b") becomes column 0; the header
+      // cell keeps its th tag and every cell keeps its align attribute.
+      // Rows are [A,2,1,3] after the earlier moveRow, so body row 1 is
+      // "2"|"a".
+      Array.from(tbl.rows).forEach((r) => r.cells[1].setAttribute("align", "left"));
+      check("hybrid tables: moveCol moves every row's cell, align follows",
+        window.NB.hybrid.moveCol(tbl, 1, 0) === true &&
+        tbl.rows[0].cells[0].tagName === "TH" &&
+        tbl.rows[0].cells[0].textContent === "B" &&
+        tbl.rows[0].cells[0].getAttribute("align") === "left" &&
+        tbl.rows[1].cells[0].tagName === "TD" &&
+        tbl.rows[1].cells[0].textContent === "b" &&
+        tbl.rows[1].cells[0].getAttribute("align") === "left" &&
+        tbl.rows[1].cells[1].textContent === "2",
+        tbl.rows[0].outerHTML + " | " + tbl.rows[1].outerHTML);
+
+      // Ragged rows are tolerated (missing index skipped) on a scratch
+      // copy, so the round-trip test below still sees a full table.
+      const ragTbl = window.document.createElement("table");
+      ragTbl.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td>1</td><td>x</td></tr><tr><td>only</td></tr></tbody>";
+      vc.appendChild(ragTbl);
+      ragTbl.rows[1].removeChild(ragTbl.rows[1].cells[0]);
+      check("hybrid tables: ragged row tolerated by moveCol",
+        window.NB.hybrid.moveCol(ragTbl, 0, 1) === true &&
+        ragTbl.rows[0].cells[0].textContent === "B" &&
+        ragTbl.rows[1].cells[0].textContent === "x" &&
+        ragTbl.rows[2].cells[0].textContent === "only",
+        Array.from(ragTbl.rows).map((r) => r.textContent).join(" | "));
+      ragTbl.remove();
+
+      // Merged cells refuse to reorder (GFM cannot represent spans).
+      const spanTbl = window.document.createElement("table");
+      spanTbl.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>";
+      vc.appendChild(spanTbl);
+      check("hybrid tables: merged cells refuse reordering",
+        window.NB.hybrid.tableHasSpans(spanTbl) === true &&
+        window.NB.hybrid.moveCol(spanTbl, 0, 1) === false);
+
+      // The overlay renders the merged-cell note instead of grips, and
+      // grips exist with aria labels for normal tables.
+      window.NB.tableEdit.reveal(spanTbl);
+      window.NB.tableEdit.renderGrips();
+      check("hybrid tables: merged-cell table renders a note, no grips",
+        overlayEl.textContent.includes("Merged cells") &&
+        overlayEl.querySelectorAll(".nb-row-grip").length === 0,
+        "overlay=" + JSON.stringify(overlayEl.innerHTML).slice(0, 120));
+      window.NB.tableEdit.hide();
+      spanTbl.remove();
+
+      // Layout (design2 spec, §3): grips own the margins, insert/delete
+      // own the roomy sides. jsdom gives zeroed rects, so the pairs are
+      // exercised via the setActiveLine hook; the geometry (no-overlap,
+      // clamping, corner nudge) is covered by the real-browser check.
+      window.NB.tableEdit.reveal(tbl);
+      // Point at body row 0, column 0.
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const grips = overlayEl.querySelectorAll(".nb-row-grip");
+      const colGrips = overlayEl.querySelectorAll(".nb-col-grip");
+      // jsdom rects are zero-height -> denseRows is TRUE -> only the
+      // header grip and the active row's grip render (design2 §4).
+      check("hybrid tables: grips rendered for the active table (dense fallback)",
+        grips.length === 2 &&
+        colGrips.length === 1,
+        "row grips=" + grips.length + " col grips=" + colGrips.length);
+      check("hybrid tables: header grip is disabled, body grips enabled",
+        grips[0].getAttribute("aria-disabled") === "true" &&
+        grips[1] && grips[1].getAttribute("aria-disabled") === null &&
+        grips[1].getAttribute("aria-label") !== null);
+      // Exactly ONE pair per axis, two buttons each.
+      const rowPairs = overlayEl.querySelectorAll(".nb-pair.is-row");
+      const colPairs = overlayEl.querySelectorAll(".nb-pair.is-col");
+      check("hybrid tables: exactly one pair per axis (active line only)",
+        rowPairs.length === 1 && colPairs.length === 1 &&
+        rowPairs[0].querySelectorAll("button").length === 2 &&
+        colPairs[0].querySelectorAll("button").length === 2,
+        "row pairs=" + rowPairs.length + " col pairs=" + colPairs.length);
+      window.NB.tableEdit.hide();
+      check("hybrid tables: hide() clears the overlay",
+        overlayEl.textContent === "");
+
+      // GFM round-trip after the row+column moves: the live table is
+      // [B|A header] with body [b|2, a|1, c|3], align ":--" on col 0,
+      // and the separator row still separates header from body.
+      const mdMoved = window.NB.hybrid.domToMarkdown();
+      const moveRows = mdMoved.split("\n").filter((l) => /^\|/.test(l));
+      const tail = moveRows.slice(-5);
+      check("hybrid tables: reordered table saves valid GFM",
+        /^\| B \| A \|$/.test(tail[0]) &&
+        /^\| :-- \| --- \|$/.test(tail[1].trim()) &&
+        /^\| b \| 2 \|$/.test(tail[2]) &&
+        /^\| a \| 1 \|$/.test(tail[3]) &&
+        /^\| c \| 3 \|$/.test(tail[4]),
+        JSON.stringify(moveRows.slice(-6)));
+      tbl.remove();
+
+      // Click-to-insert "+" and click-to-delete "-" via the pairs.
+      // Layout: row pair = vertical rail RIGHT of the active row's
+      // cells; column pair = horizontal strip BELOW the table under the
+      // active column. The header has no pair (GFM keeps the header
+      // first, and a Markdown table cannot insert above it).
+      const tPlus = window.document.createElement("table");
+      tPlus.innerHTML = "<thead><tr><th>H</th></tr></thead>" +
+        "<tbody><tr><td>1</td></tr><tr><td>2</td></tr></tbody>";
+      vc.appendChild(tPlus);
+      window.NB.hybrid.flattenTheads();
+      window.NB.tableEdit.reveal(tPlus);
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const rowPair = overlayEl.querySelector(".nb-pair.is-row");
+      const colPair = overlayEl.querySelector(".nb-pair.is-col");
+      const addRows = rowPair.querySelectorAll(".nb-add-row");
+      const delRows = rowPair.querySelectorAll(".nb-del-row");
+      const addCols = colPair.querySelectorAll(".nb-add-col");
+      const delCols = colPair.querySelectorAll(".nb-del-col");
+      check("hybrid tables: + / - pair rendered for the active row and column",
+        addRows.length === 1 && delRows.length === 1 &&
+        addCols.length === 1 && delCols.length === 1,
+        "row+= " + addRows.length + " row-=" + delRows.length +
+        " col+= " + addCols.length + " col-=" + delCols.length);
+      // No control in the removed slots: no per-line buttons left over.
+      check("hybrid tables: no per-line +/- buttons outside the pairs",
+        overlayEl.querySelectorAll(".nb-add-row").length === 1 &&
+        overlayEl.querySelectorAll(".nb-del-row").length === 1 &&
+        overlayEl.querySelectorAll(".nb-add-col-end").length === 0,
+        "add-row=" + overlayEl.querySelectorAll(".nb-add-row").length +
+        " del-row=" + overlayEl.querySelectorAll(".nb-del-row").length +
+        " append=" + overlayEl.querySelectorAll(".nb-add-col-end").length);
+      addRows[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      // jsdom never sets activeElement for <td>, so we assert the DOM
+      // facts (row inserted below, cell seeded) — the caret-follows
+      // behaviour is covered by the real-browser check.
+      check("hybrid tables: row + inserts a row below",
+        tPlus.rows.length === 4 &&
+        tPlus.rows[2].cells[0].textContent !== "" &&
+        tPlus.rows[2].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
+        "rows=" + tPlus.rows.length + " cell=" +
+        JSON.stringify(tPlus.rows[2].cells[0] && tPlus.rows[2].cells[0].innerHTML));
+      // Delete: re-render (row count changed) with the active line
+      // still 0, then click the pair's "-". After [H][1][nbsp][2],
+      // deleting "1" leaves [H][nbsp][2].
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const delRows2 = overlayEl.querySelector(".nb-pair.is-row")
+        .querySelector(".nb-del-row");
+      delRows2.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      check("hybrid tables: row - deletes that row",
+        tPlus.rows.length === 3 &&
+        tPlus.rows[1].cells[0].innerHTML.indexOf("&nbsp;") !== -1 &&
+        tPlus.rows[2].cells[0].textContent === "2",
+        "rows=" + tPlus.rows.length + " order=" +
+        Array.from(tPlus.rows).map((r) => r.cells[0].textContent).join(","));
+      // Column pair: point at column 0, insert right of it.
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const colPair2 = overlayEl.querySelector(".nb-pair.is-col");
+      colPair2.querySelector(".nb-add-col").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      check("hybrid tables: column + inserts right of that column (th/td kept)",
+        tPlus.rows[0].cells.length === 2 &&
+        tPlus.rows[0].cells[1].tagName === "TH" &&
+        tPlus.rows[1].cells[1].tagName === "TD",
+        tPlus.rows[0].outerHTML + " | " + tPlus.rows[1].outerHTML);
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const colPair3 = overlayEl.querySelector(".nb-pair.is-col");
+      // Column 0 is "H": deleting it must leave the nbsp column.
+      colPair3.querySelector(".nb-del-col").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      check("hybrid tables: column - deletes that column",
+        tPlus.rows[0].cells.length === 1 &&
+        tPlus.rows[0].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
+        tPlus.rows[0].outerHTML);
+      check("hybrid tables: + / - insert/delete mark the note dirty",
+        window.NB.hybrid.isDirty());
+      // Minimum-shape guards: strip the table down to header + ONE body
+      // row (delete body row 1 = "2" via its pair), then the last body
+      // row's "-" is aria-disabled and a click must not change the
+      // table; same for the single column's "-".
+      window.NB.tableEdit.setActiveLine(1, 0);
+      window.NB.tableEdit.renderGrips();
+      const pairDelLast = overlayEl.querySelector(".nb-pair.is-row .nb-del-row");
+      pairDelLast.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      window.NB.tableEdit.setActiveLine(0, 0);
+      window.NB.tableEdit.renderGrips();
+      const pairDelRow = overlayEl.querySelector(".nb-pair.is-row .nb-del-row");
+      const rowsBefore = tPlus.rows.length;
+      check("hybrid tables: last body row's - is aria-disabled",
+        tPlus.rows.length === 2 &&
+        pairDelRow.getAttribute("aria-disabled") === "true",
+        "rows=" + tPlus.rows.length);
+      pairDelRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      check("hybrid tables: last body row cannot be deleted",
+        tPlus.rows.length === rowsBefore);
+      window.NB.tableEdit.renderGrips();
+      const pairDelCol = overlayEl.querySelector(".nb-pair.is-col .nb-del-col");
+      const colsBefore = tPlus.rows[0].cells.length;
+      check("hybrid tables: last column's - is aria-disabled",
+        pairDelCol.getAttribute("aria-disabled") === "true");
+      pairDelCol.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      check("hybrid tables: last column cannot be deleted",
+        tPlus.rows[0].cells.length === colsBefore);
+      window.NB.tableEdit.hide();
+      tPlus.remove();
     }
   }
 
@@ -10330,7 +10598,10 @@ function check(label, cond, extra) {
     // #viewer-content padding must not have a 60vh / 50vh / etc. (units
     // relative to viewport create huge empty bands on tall windows).
     // Top padding should be a small absolute value.
-    const viewerBlock = css.match(/#viewer-content\s*\{[^}]*\}/);
+    // Anchor at a line start so selector-composed rules like
+    // "body.nb-table-drag #viewer-content" (which legitimately have no
+    // padding) don't shadow the base layout rule.
+    const viewerBlock = css.match(/(^|\n)#viewer-content\s*\{[^}]*\}/);
     check("viewer: #viewer-content rule exists in stylesheet", !!viewerBlock,
       viewerBlock ? viewerBlock[0].slice(0, 80) : "(not found)");
     const topPadMatch = viewerBlock && viewerBlock[0].match(/padding\s*:\s*([^;]+);/);

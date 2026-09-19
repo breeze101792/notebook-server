@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Table-editing overlay — corrected (design 2)</title>
+<style>
+/* ==================================================================
+ * Self-contained mockup for design/table-editing-design2.md
+ *
+ *  - Dark + light themes via the real app tokens. Toggle in the bar.
+ *  - Two demo tables: narrow 3-col (roomy) and wide 8-col dense
+ *    (22px rows). Hover a table to reveal the corrected overlay.
+ *  - The overlay is rebuilt with the SAME placement math the spec
+ *    gives, using real getBoundingClientRect(), so the "0 overlaps"
+ *    badge is a measurement of the actual geometry, not a claim.
+ *  - "Current (buggy) layout" reproduces the shipped constants and
+ *    makes the counter go red, proving the root cause.
+ * ================================================================== */
+
+/* --- tokens: dark (default) -------------------------------------- */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+}
+html[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+h1 { font-size: 14px; margin: 0; font-weight: 600; }
+h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--fg-muted); margin: 26px 0 8px; font-weight: 600;
+}
+h2:first-child { margin-top: 6px; }
+
+/* --- top bar ----------------------------------------------------- */
+.bar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.bar .spacer { flex: 1; }
+.bar .hint { color: var(--fg-muted); font-size: 12px; }
+.btn {
+  font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--fg); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; cursor: pointer;
+}
+.btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.btn[aria-pressed="true"] {
+  background: var(--accent); color: var(--bg); border-color: var(--accent);
+}
+.badge {
+  font-size: 12px; font-weight: 700; border-radius: 999px;
+  padding: 4px 10px; border: 1px solid var(--border);
+  background: var(--bg-elev); color: var(--fg-muted);
+}
+.badge.ok { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.badge.bad { color: var(--bg); background: var(--danger); border-color: var(--danger); }
+
+/* --- viewer shell + scroller (mirrors the app) ------------------- */
+.app { padding: 0 0 40px; }
+#viewer {
+  position: relative;         /* overlay containing block */
+  overflow: hidden;           /* clips the overlay, as in the app */
+  min-height: 620px;
+}
+#viewer-content {
+  overflow-x: auto;           /* hybrid mode */
+  overflow-y: visible;
+  padding: 16px 40px 200px;   /* the 40px gutter the design fights over */
+  background: var(--bg);
+}
+html[data-theme="light"] #viewer-content { background: var(--bg); }
+
+/* --- markdown-ish table styling ---------------------------------- */
+.markdown-body table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.markdown-body tbody tr:nth-child(odd) { background: var(--bg-panel); }
+.markdown-body tbody tr:nth-child(even) { background: var(--bg); }
+.markdown-body th { background: var(--bg-elev); font-weight: 600; }
+
+/* dense demo rows */
+table[data-demo="wide"] th,
+table[data-demo="wide"] td { padding: 2px 8px; height: 22px; }
+
+/* narrow demo column widths (inline style keeps the mockup honest
+ * about "cells can be narrow"; real tables get this from content) */
+
+/* --- overlay (design 2 §5) --------------------------------------- */
+.nb-table-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.nb-table-overlay:empty { display: none; }
+
+.nb-row-grip,
+.nb-col-grip,
+.nb-add-btn,
+.nb-del-btn {
+  width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;
+  touch-action: none;
+}
+.nb-row-grip, .nb-col-grip { position: absolute; z-index: 1; }
+.nb-grip-icon { fill: currentColor; display: block; }
+.nb-col-grip .nb-grip-icon { transform: rotate(90deg); }
+
+.nb-row-grip:hover, .nb-col-grip:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.nb-row-grip:active, .nb-col-grip:active {
+  background: var(--accent); color: var(--bg); cursor: grabbing;
+}
+.nb-row-grip[aria-disabled="true"],
+.nb-col-grip[aria-disabled="true"],
+.nb-add-btn[aria-disabled="true"],
+.nb-del-btn[aria-disabled="true"] {
+  opacity: .35; cursor: default; pointer-events: none;
+}
+
+/* pair buttons: filled resting surface, so the "act" family reads
+ * apart from the ghost "reorder" grips (spec §5.1) */
+.nb-add-btn, .nb-del-btn {
+  cursor: pointer; touch-action: auto;
+  font-size: .9rem; line-height: 1; font-weight: 600;
+  background: var(--bg-elev);
+  border-color: var(--border);
+}
+.nb-add-btn:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+.nb-del-btn:hover { color: var(--danger); background: var(--danger-soft); border-color: var(--danger); }
+.nb-add-btn:active { background: var(--accent); color: var(--bg); }
+.nb-del-btn:active { background: var(--danger); color: var(--bg); }
+
+.nb-row-grip:focus-visible, .nb-col-grip:focus-visible,
+.nb-add-btn:focus-visible, .nb-del-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* the pair container: static children, one instance per axis */
+.nb-pair {
+  position: absolute;
+  display: flex;
+  gap: 4px;               /* PAIR_GAP */
+  z-index: 1;
+  pointer-events: none;
+}
+.nb-pair.is-row { flex-direction: column; }  /* right rail */
+.nb-pair.is-col { flex-direction: row; }     /* bottom strip */
+.nb-pair > .nb-add-btn,
+.nb-pair > .nb-del-btn { position: static; pointer-events: auto; }
+
+/* "current (buggy)" mode keeps the absolute placement of the old code */
+.buggy .nb-add-btn, .buggy .nb-del-btn { position: absolute; }
+
+/* note shown instead of grips */
+.nb-table-note {
+  position: absolute; padding: 2px 8px; font-size: .74rem;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 4px;
+  pointer-events: none; white-space: nowrap;
+}
+
+/* legend */
+.legend {
+  max-width: 900px; margin: 0 16px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-panel); color: var(--fg-muted);
+  font-size: 12.5px;
+}
+.legend b { color: var(--fg); }
+.legend table { border-collapse: collapse; margin-top: 8px; width: 100%; }
+.legend th, .legend td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.legend th { background: var(--bg-elev); color: var(--fg); }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <h1>Table-editing overlay — corrected (design 2)</h1>
+  <span class="hint">hover a table &rarr; grips + one pair per axis</span>
+  <span class="spacer"></span>
+  <button class="btn" id="themeBtn" type="button">Light theme</button>
+  <button class="btn" id="modeBtn" type="button" aria-pressed="false">Current (buggy) layout</button>
+  <span class="badge" id="overlapBadge">&mdash;</span>
+</header>
+
+<div class="app">
+  <div id="viewer">
+    <div id="viewer-content" class="markdown-body">
+      <h2>Narrow table — 3 columns (60 / 150 / 90 px)</h2>
+      <table data-demo="narrow">
+        <thead>
+          <tr>
+            <th style="width:60px">ID</th>
+            <th style="width:150px">Register</th>
+            <th style="width:90px">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>0x00</td><td>CTRL_STATUS</td><td>0x1F</td></tr>
+          <tr><td>0x04</td><td>CTRL_ENABLE</td><td>0x01</td></tr>
+          <tr><td>0x08</td><td>IRQ_MASK</td><td>0x00</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Wide dense table — 8 columns, 22&nbsp;px rows</h2>
+      <table data-demo="wide">
+        <thead>
+          <tr>
+            <th style="width:78px">Pin</th>
+            <th style="width:78px">Port</th>
+            <th style="width:78px">Mode</th>
+            <th style="width:78px">Pull</th>
+            <th style="width:78px">Speed</th>
+            <th style="width:78px">AF</th>
+            <th style="width:78px">Alt</th>
+            <th style="width:78px">Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>PA0</td><td>A</td><td>AF</td><td>none</td><td>hi</td><td>1</td><td>USART</td><td>tx</td></tr>
+          <tr><td>PA1</td><td>A</td><td>AF</td><td>none</td><td>hi</td><td>1</td><td>USART</td><td>rx</td></tr>
+          <tr><td>PA2</td><td>A</td><td>IN</td><td>up</td><td>lo</td><td>0</td><td>&mdash;</td><td>btn</td></tr>
+          <tr><td>PA3</td><td>A</td><td>OUT</td><td>none</td><td>lo</td><td>0</td><td>&mdash;</td><td>led</td></tr>
+          <tr><td>PA4</td><td>A</td><td>AN</td><td>none</td><td>&mdash;</td><td>0</td><td>ADC1</td><td>sns</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="overlay" class="nb-table-overlay"></div>
+  </div>
+</div>
+
+<div class="legend">
+  <b>What this demonstrates.</b> Under the corrected layout every table gets
+  <b>one</b> row pair (right rail) and <b>one</b> column pair (bottom strip) for
+  the line under the pointer; drag grips are the only per-line controls, and
+  they collapse to the active line when a row or column is thinner than 24&nbsp;px.
+  <br><br>
+  <b>Try it:</b> hover the narrow table (per-line grips on both axes), then the
+  wide table (22&nbsp;px rows &rarr; a single row grip). Toggle
+  <b>Current (buggy) layout</b> to reproduce the shipped constants — the badge
+  turns red and lists the overlapping control pairs. The badge is computed from
+  the real <code>getBoundingClientRect()</code> of the buttons on screen, so it
+  measures the geometry rather than asserting it.
+  <table>
+    <tr><th>Zone</th><th>Current collision</th><th>Corrected</th></tr>
+    <tr><td>Left gutter</td><td>row grip &amp; row <code>+</code> at the same slot (576&nbsp;px²)</td><td>only the grip; <code>+</code> moved to the right rail</td></tr>
+    <tr><td>Top strip</td><td>col grip vs next <code>+</code> below 60&nbsp;px; append always 12&nbsp;px over</td><td>only grips; col pair moved below</td></tr>
+    <tr><td>Bottom strip</td><td>adjacent <code>−</code> touch below 24&nbsp;px</td><td>one pair, clamped above the scrollbar</td></tr>
+  </table>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* --- constants: corrected (design 2 §3.1) ---------------------- */
+  const GRIP_SIZE = 24, GUTTER_X = 28, COL_OVERLAP = 12;
+  const BTN_SIZE = 24, PAIR_GAP = 4, ROW_PAIR_GAP = 6, COL_PAIR_GAP = 6;
+  const EDGE_SAFE = 8, DENSE_PITCH = 24, SCROLLBAR_SAFE = 22;
+  const PAIR_W = 2 * BTN_SIZE + PAIR_GAP;   // 52
+  const PAIR_H = 2 * BTN_SIZE + PAIR_GAP;   // 52
+
+  const viewer = document.getElementById("viewer");
+  const content = document.getElementById("viewer-content");
+  const overlay = document.getElementById("overlay");
+  const badge = document.getElementById("overlapBadge");
+  const modeBtn = document.getElementById("modeBtn");
+  const themeBtn = document.getElementById("themeBtn");
+
+  let buggy = false;
+  let active = null;            // { table, activeRow, activeCol }
+  let graceTimer = null;
+  let locked = false;           // pointer is on a control: keep the pair
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+
+  function placeAt(node, left, top) {
+    node.style.left = Math.round(left) + "px";
+    node.style.top = Math.round(top) + "px";
+  }
+
+  function dotGrid(cols, rows) {
+    let s = '<svg class="nb-grip-icon" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">';
+    for (let ry = 0; ry < rows; ry++)
+      for (let cx = 0; cx < cols; cx++)
+        s += '<circle cx="' + (cx * 4 + 1) + '" cy="' + (ry * 4 + 1) + '" r="1.1"/>';
+    return s + "</svg>";
+  }
+
+  /* rects are converted to overlay (#viewer) space */
+  const rel = (r, host) => ({ left: r.left - host.left, top: r.top - host.top, width: r.width, height: r.height });
+
+  /* The block <table> box is full width under display:block; the visible
+   * table content is the union of the header cells (design 2 §3.2). */
+  function contentBox(table, host) {
+    const cells = Array.from(table.rows[0] ? table.rows[0].cells : []);
+    if (!cells.length) return null;
+    let l = Infinity, r = -Infinity;
+    cells.forEach((c) => { const b = rel(c.getBoundingClientRect(), host); l = Math.min(l, b.left); r = Math.max(r, b.left + b.width); });
+    const rows = Array.from(table.rows);
+    let b = -Infinity;
+    rows.forEach((row) => { const rr = rel(row.getBoundingClientRect(), host); b = Math.max(b, rr.top + rr.height); });
+    const head = rel(table.rows[0].getBoundingClientRect(), host);
+    return { left: l, right: r, top: head.top, bottom: b };
+  }
+
+  /* --- control builders ------------------------------------------ */
+  function grip(kind, label, disabled) {
+    const b = el("button", kind);
+    b.type = "button"; b.tabIndex = disabled ? -1 : 0;
+    b.setAttribute("aria-label", label);
+    b.innerHTML = kind === "nb-col-grip" ? dotGrid(3, 2) : dotGrid(2, 3);
+    if (disabled) b.setAttribute("aria-disabled", "true");
+    return b;
+  }
+  function actBtn(kind, label, disabled) {
+    const b = el("button", kind);
+    b.type = "button"; b.tabIndex = disabled ? -1 : 0;
+    b.textContent = kind.indexOf("nb-del-btn") !== -1 ? "\u2212" : "+";
+    b.setAttribute("aria-label", label);
+    if (disabled) b.setAttribute("aria-disabled", "true");
+    return b;
+  }
+  function pair(kind, buttons) {
+    const p = el("div", "nb-pair is-" + kind);
+    buttons.forEach((b) => p.appendChild(b));
+    return p;
+  }
+
+  /* --- corrected render (design 2 §3.2) -------------------------- */
+  function renderCorrected(table, host) {
+    const rows = Array.from(table.rows);
+    const body = rows.slice(1);
+    const header = rows[0];
+    const cb = contentBox(table, host);
+    if (!cb) return;
+    const cells = Array.from(header.cells);
+    const minRowH = body.length ? Math.min.apply(null, body.map((r) => r.getBoundingClientRect().height)) : Infinity;
+    const minColW = Math.min.apply(null, cells.map((c) => c.getBoundingClientRect().width));
+    const denseRows = minRowH < DENSE_PITCH;
+    const denseCols = minColW < DENSE_PITCH;
+
+    const V = { left: 0, top: 0, right: viewer.clientWidth, bottom: viewer.clientHeight };
+    let ar = active ? active.activeRow : body.length - 1;
+    let ac = active ? active.activeCol : cells.length - 1;
+    if (ar < 0 || ar >= body.length) ar = body.length - 1;
+    if (ac < 0 || ac >= cells.length) ac = cells.length - 1;
+
+    /* row grips (all body rows, or active only when dense) */
+    rows.forEach((row, i) => {
+      if (i === 0) {
+        const r = rel(row.getBoundingClientRect(), host);
+        const g = grip("nb-row-grip", "Header row (fixed)", true);
+        placeAt(g, r.left - GUTTER_X, r.top + r.height / 2 - GRIP_SIZE / 2);
+        overlay.appendChild(g);
+        return;
+      }
+      if (denseRows && i - 1 !== ar) return;
+      const r = rel(row.getBoundingClientRect(), host);
+      const g = grip("nb-row-grip", "Move row " + i, body.length <= 1);
+      g.dataset.row = i;
+      placeAt(g, r.left - GUTTER_X, r.top + r.height / 2 - GRIP_SIZE / 2);
+      attachRowDrag(g, row);
+      overlay.appendChild(g);
+    });
+
+    /* column grips (all columns, or active only when dense) */
+    cells.forEach((cell, i) => {
+      if (denseCols && i !== ac) return;
+      const c = rel(cell.getBoundingClientRect(), host);
+      const g = grip("nb-col-grip", "Move column " + (i + 1), cells.length <= 1);
+      g.dataset.col = i;
+      placeAt(g, c.left + c.width / 2 - GRIP_SIZE / 2, cb.top - COL_OVERLAP);
+      attachColDrag(g, i);
+      overlay.appendChild(g);
+    });
+
+    /* row pair: right rail, active body row. Vertical, clamped. */
+    let rowPairEl = null;
+    if (body.length) {
+      const r = rel(body[ar].getBoundingClientRect(), host);
+      const left = clamp(cb.right + ROW_PAIR_GAP, V.left + EDGE_SAFE, V.right - EDGE_SAFE - BTN_SIZE);
+      const top = clamp(r.top + r.height / 2 - PAIR_H / 2, V.top + EDGE_SAFE, V.bottom - EDGE_SAFE - PAIR_H);
+      const add = actBtn("nb-add-btn", "Insert row below", false);
+      const del = actBtn("nb-del-btn", "Delete row", rows.length <= 2);
+      add.addEventListener("click", () => { insertRow(table, ar); });
+      if (rows.length > 2) del.addEventListener("click", () => { deleteRow(table, ar); });
+      rowPairEl = pair("row", [add, del]);
+      placeAt(rowPairEl, left, top);
+      overlay.appendChild(rowPairEl);
+    }
+
+    /* column pair: bottom strip, active column. Horizontal, clamped,
+     * nudged clear of the row pair (cross-axis clash, §3.4). */
+    if (cells.length) {
+      const c = rel(cells[ac].getBoundingClientRect(), host);
+      const hasHScroll = content.scrollWidth > content.clientWidth;
+      const reserve = hasHScroll ? SCROLLBAR_SAFE : 0;
+      const left = clamp(c.left + c.width / 2 - PAIR_W / 2, V.left + EDGE_SAFE, V.right - EDGE_SAFE - PAIR_W);
+      let top = cb.bottom + COL_PAIR_GAP;
+      top = clamp(top, V.top + EDGE_SAFE, V.bottom - EDGE_SAFE - BTN_SIZE - reserve);
+      const add = actBtn("nb-add-btn", "Insert column right", false);
+      const del = actBtn("nb-del-btn", "Delete column", cells.length <= 1);
+      add.addEventListener("click", () => { insertCol(table, ac); });
+      if (cells.length > 1) del.addEventListener("click", () => { deleteCol(table, ac); });
+      const colPairEl = pair("col", [add, del]);
+      placeAt(colPairEl, left, top);
+      overlay.appendChild(colPairEl);
+
+      if (rowPairEl && intersects(rowPairEl, colPairEl)) {
+        const nudgeTop = clamp(rel(rowPairEl.getBoundingClientRect(), host).top + PAIR_H + PAIR_GAP,
+          V.top + EDGE_SAFE, V.bottom - EDGE_SAFE - BTN_SIZE - reserve);
+        colPairEl.style.top = Math.round(nudgeTop) + "px";
+      }
+    }
+  }
+
+  /* --- current (buggy) render, for the A/B toggle ----------------- */
+  function renderBuggy(table, host) {
+    const rows = Array.from(table.rows);
+    const body = rows.slice(1);
+    const header = rows[0];
+    const cells = header ? Array.from(header.cells) : [];
+    const trect = rel(table.getBoundingClientRect(), host);      // block box
+    const cb = contentBox(table, host);
+    const hr = rel(header.getBoundingClientRect(), host);
+
+    /* row grips + row "+" (same slot) and row "-" */
+    rows.forEach((row, i) => {
+      const r = rel(row.getBoundingClientRect(), host);
+      const g = grip("nb-row-grip", "Move row " + i, i === 0 || body.length <= 1);
+      placeAt(g, r.left - GUTTER_X, r.top + r.height / 2 - GRIP_SIZE / 2);
+      overlay.appendChild(g);
+      if (i === 0) return;
+      const add = actBtn("nb-add-btn", "Insert row below", false);
+      placeAt(add, trect.left - GUTTER_X, r.top + r.height / 2 - GRIP_SIZE / 2);   // <-- collision
+      add.addEventListener("click", () => insertRow(table, i - 1));
+      overlay.appendChild(add);
+      const del = actBtn("nb-del-btn", "Delete row", rows.length <= 2);
+      placeAt(del, trect.left + trect.width + 6, r.top + r.height / 2 - GRIP_SIZE / 2);
+      if (rows.length > 2) del.addEventListener("click", () => deleteRow(table, i - 1));
+      overlay.appendChild(del);
+    });
+
+    /* column grips + column "+" + column "-" + append "+" */
+    cells.forEach((cell, i) => {
+      const c = rel(cell.getBoundingClientRect(), host);
+      const g = grip("nb-col-grip", "Move column " + (i + 1), cells.length <= 1);
+      placeAt(g, c.left + c.width / 2 - GRIP_SIZE / 2, hr.top - COL_OVERLAP);
+      overlay.appendChild(g);
+      const add = actBtn("nb-add-btn", "Insert column right", false);
+      placeAt(add, c.left + c.width - GRIP_SIZE / 2 + 6, hr.top - COL_OVERLAP);     // <-- collision
+      add.addEventListener("click", () => insertCol(table, i));
+      overlay.appendChild(add);
+      const del = actBtn("nb-del-btn", "Delete column", cells.length <= 1);
+      placeAt(del, c.left + c.width / 2 - GRIP_SIZE / 2, cb.bottom + 6);
+      if (cells.length > 1) del.addEventListener("click", () => deleteCol(table, i));
+      overlay.appendChild(del);
+    });
+    if (cells.length) {
+      const last = rel(cells[cells.length - 1].getBoundingClientRect(), host);
+      const app = actBtn("nb-add-btn", "Add column", false);
+      placeAt(app, last.left + last.width + 6, hr.top - COL_OVERLAP);               // <-- collision
+      app.addEventListener("click", () => insertCol(table, cells.length - 1));
+      overlay.appendChild(app);
+    }
+  }
+
+  function intersects(a, b) {
+    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+    const x = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
+    const y = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
+    return x > 0.5 && y > 0.5;
+  }
+
+  /* --- live overlap measurement (the proof) ---------------------- */
+  function measure() {
+    const ctrls = Array.from(overlay.querySelectorAll(".nb-add-btn,.nb-del-btn,.nb-row-grip,.nb-col-grip"));
+    const hits = [];
+    for (let i = 0; i < ctrls.length; i++)
+      for (let j = i + 1; j < ctrls.length; j++)
+        if (intersects(ctrls[i], ctrls[j]))
+          hits.push((ctrls[i].getAttribute("aria-label") || "?") + " \u2194 " + (ctrls[j].getAttribute("aria-label") || "?"));
+    if (!active) { badge.textContent = "\u2014"; badge.className = "badge"; return; }
+    if (hits.length === 0) {
+      badge.textContent = "0 overlaps \u00b7 " + ctrls.length + " controls";
+      badge.className = "badge ok";
+    } else {
+      badge.textContent = hits.length + " overlap" + (hits.length > 1 ? "s" : "") + " \u00b7 " + ctrls.length + " controls";
+      badge.className = "badge bad";
+      badge.title = hits.join("\n");
+    }
+  }
+
+  /* --- render + reveal ------------------------------------------- */
+  function render() {
+    overlay.textContent = "";
+    if (!active || !content.contains(active.table)) { measure(); return; }
+    const host = viewer.getBoundingClientRect();
+    if (buggy) renderBuggy(active.table, host);
+    else renderCorrected(active.table, host);
+    measure();
+  }
+
+  function hide() {
+    active = null;
+    overlay.textContent = "";
+    measure();
+  }
+  function scheduleHide() {
+    clearTimeout(graceTimer);
+    graceTimer = setTimeout(() => {
+      graceTimer = null;
+      if (!overlay.matches(":hover") && !locked) hide();
+    }, 120);
+  }
+
+  /* Map the pointer to the table line it means. If the pointer is on a
+   * control, keep the current line (hover-intent lock, §6.2). */
+  function updateFromEvent(e) {
+    const onCtl = e.target.closest && e.target.closest(".nb-row-grip,.nb-col-grip,.nb-pair");
+    if (onCtl) { locked = true; return; }
+    locked = false;
+    const table = e.target.closest && e.target.closest("#viewer-content table");
+    if (!table) { scheduleHide(); return; }
+    if (active && table !== active.table) active = { table: table, activeRow: -1, activeCol: -1 };
+    else if (!active) active = { table: table, activeRow: -1, activeCol: -1 };
+    if (e.target.closest("th")) {
+      const th = e.target.closest("th");
+      active.activeCol = th.cellIndex;
+    } else if (e.target.closest("td")) {
+      const td = e.target.closest("td");
+      active.activeCol = td.cellIndex;
+      active.activeRow = Array.from(table.rows).indexOf(td.parentNode) - 1;
+    }
+    render();
+  }
+
+  /* --- row / column mutations (mockup-scale, mirrors hybrid.js) --- */
+  function insertRow(table, bodyIndex) {
+    const ref = table.rows[bodyIndex + 1];
+    const cells = Array.from(ref.cells).map(() => "<td>&nbsp;</td>").join("");
+    const tr = document.createElement("tr");
+    tr.innerHTML = cells;
+    ref.parentNode.insertBefore(tr, ref.nextSibling);
+    render();
+  }
+  function deleteRow(table, bodyIndex) {
+    if (table.rows.length <= 2) return;
+    table.rows[bodyIndex + 1].remove();
+    render();
+  }
+  function insertCol(table, index) {
+    Array.from(table.rows).forEach((row) => {
+      const isHead = row.parentNode.tagName === "THEAD" || row === table.rows[0];
+      const cell = document.createElement(isHead ? "th" : "td");
+      cell.innerHTML = "&nbsp;";
+      cell.style.width = "78px";
+      const ref = row.cells[index];
+      row.insertBefore(cell, ref ? ref.nextSibling : null);
+    });
+    render();
+  }
+  function deleteCol(table, index) {
+    if (table.rows[0].cells.length <= 1) return;
+    Array.from(table.rows).forEach((row) => { if (row.cells[index]) row.cells[index].remove(); });
+    render();
+  }
+
+  /* drag hooks: the mockup does not reorder, it just shows the handle
+   * and the grabbing cursor so the affordance is visible. */
+  function attachRowDrag(g) { g.addEventListener("pointerdown", (e) => e.preventDefault()); }
+  function attachColDrag(g) { g.addEventListener("pointerdown", (e) => e.preventDefault()); }
+
+  /* --- wiring ----------------------------------------------------- */
+  content.addEventListener("mousemove", updateFromEvent);
+  content.addEventListener("mouseleave", scheduleHide);
+  overlay.addEventListener("mouseleave", () => { locked = false; scheduleHide(); });
+
+  document.getElementById("themeBtn").addEventListener("click", (e) => {
+    const light = document.documentElement.getAttribute("data-theme") === "light";
+    document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+    e.target.textContent = light ? "Light theme" : "Dark theme";
+    render();
+  });
+  modeBtn.addEventListener("click", (e) => {
+    buggy = !buggy;
+    document.body.classList.toggle("buggy", buggy);
+    e.target.setAttribute("aria-pressed", String(buggy));
+    render();
+  });
+  window.addEventListener("resize", () => { if (active) render(); });
+  content.addEventListener("scroll", hide, { passive: true });
+
+  measure();
+})();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@
   --outline-active: #7c9cff;
   --code-bg: #14151a;
   --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);  /* delete-button hover fill */
   --ok: #5fd49a;       /* "watching is on" -- green for the active state */
   --warn: #f3b454;     /* "watching is off" -- amber draws the eye */
   --sidebar-width: 240px;   /* legacy alias; kept for any external callers */
@@ -65,6 +66,7 @@ body[data-theme="light"] {
   --outline-active: #2f5fd0;
   --code-bg: #f0f2f5;
   --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);   /* delete-button hover fill */
   --ok: #2faa66;
   --warn: #c9831d;
   /* Graph canvas colors on a light body: same hue families as dark but
@@ -493,6 +495,183 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   right: auto;
   left: 0;
   min-width: 170px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hybrid table drag overlay (table-edit.js)                           */
+/* ------------------------------------------------------------------ */
+/* One layer, a child of #viewer: outside the contentEditable subtree,
+ * so turndown's clone and hybrid's innerHTML undo snapshots never see
+ * it, and the Firefox table caret-walk is untouched. The layer itself
+ * is pointer-events:none; only the grips take pointers, so typing and
+ * clicking in cells is unaffected. Positions are computed from row /
+ * cell rects (the table is display:block and may be wider than its
+ * columns); the overlay hides on scroll rather than tracking drift. */
+.nb-table-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;                 /* below .context-menu (1000) */
+  pointer-events: none;
+}
+.nb-table-overlay:empty { display: none; }
+
+.nb-row-grip,
+.nb-col-grip {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;       /* the only interactive part of the overlay */
+  touch-action: none;         /* a touch drag must not become a scroll */
+}
+.nb-row-grip:hover,
+.nb-col-grip:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.nb-row-grip:active,
+.nb-col-grip:active {
+  cursor: grabbing;
+  background: var(--accent);
+  color: var(--bg);           /* theme bg on the accent fill reads on BOTH
+                                 themes (white would fail on the light accent) */
+}
+.nb-row-grip:focus-visible,
+.nb-col-grip:focus-visible,
+.nb-add-btn:focus-visible,
+.nb-del-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.nb-row-grip[aria-disabled="true"],
+.nb-col-grip[aria-disabled="true"],
+.nb-add-btn[aria-disabled="true"],
+.nb-del-btn[aria-disabled="true"] {
+  opacity: .35;
+  cursor: default;
+  pointer-events: none;
+}
+.nb-grip-icon { fill: currentColor; display: block; }
+.nb-col-grip .nb-grip-icon { transform: rotate(90deg); }
+
+/* Click-to-insert "+" and click-to-delete "-" buttons live as flex
+ * children of a .nb-pair (one pair per axis, active line only): the row
+ * pair is a vertical rail right of the table, the column pair sits
+ * below the table. Filled (--bg-elev) surfaces separate the two control
+ * families: ghost grips reorder, solid buttons act. "-" hovers danger so
+ * a destructive click is unambiguous before it happens. */
+.nb-pair {
+  position: absolute;         /* placed via placeAt in table-edit.js */
+  display: flex;
+  gap: 4px;                   /* PAIR_GAP */
+  z-index: 1;
+  pointer-events: none;       /* only the buttons opt in */
+}
+.nb-pair.is-row { flex-direction: column; }   /* right rail */
+.nb-pair.is-col { flex-direction: row; }      /* bottom strip */
+.nb-pair > .nb-add-btn,
+.nb-pair > .nb-del-btn {
+  position: static;
+  pointer-events: auto;
+  width: 24px;                /* BTN_SIZE: the a11y hit target */
+  height: 24px;
+  flex: 0 0 24px;
+}
+
+.nb-add-btn,
+.nb-del-btn {
+  cursor: pointer;
+  touch-action: auto;
+  font-size: .9rem;
+  line-height: 1;
+  font-weight: 600;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+.nb-add-btn:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.nb-del-btn:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Drop indicator: 2px accent line with a soft ring so it reads over the
+ * alternating row fills in both themes. */
+.nb-drop-line {
+  position: absolute;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.nb-drop-line.is-row { height: 2px; }
+.nb-drop-line.is-col { width: 2px; }
+
+/* The "lifted" source row, drawn in the overlay only -- never a class
+ * on the <tr>, which would leak into undo snapshots taken mid-drag. */
+.nb-drag-ghost {
+  position: absolute;
+  background: var(--accent-soft);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* Floating chip that follows the pointer during a drag. */
+.nb-drag-proxy {
+  position: absolute;
+  max-width: 220px;
+  overflow: hidden;
+  padding: 3px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .8rem;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);   /* matches .context-menu/.toast */
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Merged-cell notice shown instead of grips (GFM cannot express spans). */
+.nb-table-note {
+  position: absolute;
+  padding: 2px 8px;
+  font-size: .74rem;
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Drag-scoped cursor + selection guards: on body, outside the
+ * contentEditable, so neither turndown nor undo snapshots see them. */
+body.nb-table-drag { cursor: grabbing; }
+body.nb-table-drag #viewer-content { user-select: none; }
+
+/* Keyboard hints inside the hybrid context menu (Move row/column rows). */
+.context-menu button .context-menu-kbd,
+kbd.context-menu-kbd {
+  float: right;
+  margin-left: 16px;
+  color: var(--fg-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .74rem;
 }
 /* Any .eb that carries the [hidden] attribute must actually hide, despite
  * the .eb rule above setting `display: inline-flex` (which outranks the

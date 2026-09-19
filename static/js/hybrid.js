@@ -847,6 +847,24 @@
         return;
       }
     }
+    // Alt+arrows inside a table: move the caret's row/column. The
+    // keyboard path for the drag overlay (table-edit.js); Alt+Left/
+    // Right is browser Back/Forward, so the column chords add Shift.
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      if (getRowFromSelection()) {
+        e.preventDefault();
+        moveRowBySelection(e.key === "ArrowUp" ? "up" : "down");
+        return;
+      }
+    }
+    if (e.altKey && e.shiftKey &&
+        (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      if (getCellFromSelection()) {
+        e.preventDefault();
+        moveColBySelection(e.key === "ArrowLeft" ? "left" : "right");
+        return;
+      }
+    }
     // Shift+Enter: insert an empty line just below this one (a new
     // Markdown block) instead of the browser's same-paragraph <br>.
     if (insertLineBelow(e)) {
@@ -976,6 +994,21 @@
         if (menu) menu.hidden = !menu.hidden;
         break;
       }
+      case "table-row-up":
+        moveRowBySelection("up");
+        break;
+      case "table-row-down":
+        moveRowBySelection("down");
+        break;
+      case "table-col-left-move":
+        moveColBySelection("left");
+        break;
+      case "table-col-right-move":
+        moveColBySelection("right");
+        break;
+      case "table-col-align":
+        cycleColAlign(getCellFromSelection());
+        break;
       case "table-row-above": {
         const row = getRowFromSelection();
         if (row) insertRow(row, "above");
@@ -1619,16 +1652,25 @@
     menuEl.appendChild(wrap);
   }
 
-  /* Helper: add a plain button to a submenu element (not the root menu). */
-  function addSubItem(subEl, label, handler) {
+  /* Helper: add a plain button to a submenu element (not the root menu).
+   * `hint` (optional) renders a right-aligned chord label, e.g. "Alt+Up",
+   * so the Move entries advertise their keyboard equivalents. */
+  function addSubItem(subEl, label, handler, hint) {
     const btn = document.createElement("button");
     btn.textContent = label;
+    if (hint) {
+      const kbd = document.createElement("kbd");
+      kbd.className = "context-menu-kbd";
+      kbd.textContent = hint;
+      btn.appendChild(kbd);
+    }
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       hideMenu();
       handler();
     });
     subEl.appendChild(btn);
+    return btn;
   }
 
   function hideMenu() {
@@ -1759,8 +1801,132 @@
     onContentChange();
   }
 
-  /* Build the Table submenu for the given table. */
+  /* --- row / column reordering ------------------------------------ */
+  /* Shared by the drag overlay (table-edit.js) and the keyboard /
+   * context-menu paths. Every completed move is ONE undo step: the
+   * pending typing snapshot is flushed first (so the move isn't
+   * coalesced into preceding keystrokes), then the DOM is mutated by
+   * MOVING the existing nodes -- never cloning -- so th/td tags, align
+   * attributes, checkboxes and inline formatting all travel with the
+   * row/column. The selection is cleared before detaching because a
+   * live Range over a detached node glitches the caret in both engines. */
+
+  /* Commit any pending (debounced) history snapshot immediately, so a
+   * structural move lands as its own undo step rather than being
+   * coalesced into the keystrokes before it. Same pattern undo() uses. */
+  function flushPendingSnapshot() {
+    if (historyTimer) {
+      clearTimeout(historyTimer);
+      historyTimer = null;
+      pushSnapshot();
+    }
+  }
+
+  /* True when the table contains merged cells. GFM cannot represent
+   * colspan/rowspan (marked never emits them, so any span came from
+   * pasted HTML); reordering such a table is refused rather than
+   * silently normalising the user's data. */
+  function tableHasSpans(table) {
+    return !!table.querySelector("td[colspan],th[colspan],td[rowspan],th[rowspan]");
+  }
+
+  /* Move `srcRow` before `before` (null = append at the end). The
+   * header row (rows[0]) is pinned: callers never pass it and it is
+   * never a boundary target. Returns true when the table changed. */
+  function moveRow(srcRow, before) {
+    if (!srcRow) return false;
+    const tbody = srcRow.parentNode;
+    if (!tbody || !srcRow.parentNode) return false;
+    if (before === srcRow || before === srcRow.nextElementSibling) return false;
+    const header = srcRow.closest("table") && srcRow.closest("table").rows[0];
+    if (srcRow === header) return false;
+    if (before && before.parentNode !== tbody) return false;
+    if (before === srcRow.nextElementSibling) return false;
+    clearSelection();
+    flushPendingSnapshot();
+    tbody.insertBefore(srcRow, before);
+    onContentChange();
+    return true;
+  }
+
+  /* Move the column `srcIndex` to `destIndex` in every row. The
+   * reference index is computed on the ORIGINAL cells array before any
+   * node is detached (insertBefore removes the node from its old
+   * position itself). Ragged rows missing that index are skipped.
+   * Returns true when the table changed. */
+  function moveCol(table, srcIndex, destIndex) {
+    if (!table || srcIndex === destIndex) return false;
+    const n = Math.max(...Array.from(table.rows).map((r) => r.cells.length));
+    if (srcIndex < 0 || destIndex < 0 || srcIndex >= n || destIndex >= n) return false;
+    if (tableHasSpans(table)) return false;
+    clearSelection();
+    flushPendingSnapshot();
+    let moved = false;
+    Array.from(table.rows).forEach((row) => {
+      const cells = Array.from(row.cells);
+      if (srcIndex >= cells.length) return;
+      const cell = cells[srcIndex];
+      const ref = (srcIndex < destIndex)
+        ? (cells[destIndex + 1] || null)
+        : (cells[destIndex] || null);
+      row.insertBefore(cell, ref);
+      moved = true;
+    });
+    if (moved) onContentChange();
+    return moved;
+  }
+
+  /* Clear any text selection (see moveRow/moveCol rationale). */
+  function clearSelection() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) sel.removeAllRanges();
+  }
+
+  /* Cycle the alignment of a whole column: left -> center -> right ->
+   * left. Alignment is the one per-column property Markdown persists
+   * (`:--` / `:-:` / `--:`), so it travels with the cells and
+   * round-trips through domToMarkdown. */
+  /* Append a column at the end of the table (the overlay's "+"
+   * button). Uses the last header cell as the anchor so insertCol
+   * creates a th in the header and td elsewhere, matching the column
+   * before it. The cell tag for each row comes from that row's last
+   * cell inside insertCol. */
+  function insertColAfterTable(table) {
+    if (!table || !table.rows.length) return;
+    const last = table.rows[0].cells[table.rows[0].cells.length - 1];
+    if (!last) return;
+    insertCol(last, "right");
+  }
+
+  function cycleColAlign(cell) {
+    if (!cell) return;
+    const table = cell.closest("table");
+    if (!table) return;
+    const idx = cell.cellIndex;
+    const order = { left: "center", center: "right", right: "left" };
+    // The header cell carries the column's current alignment.
+    const head = table.rows[0] && table.rows[0].cells[idx];
+    const cur = (head && head.getAttribute("align")) || "left";
+    const next = order[cur] || "center";
+    Array.from(table.rows).forEach((row) => {
+      const c = row.cells[idx];
+      if (c) c.setAttribute("align", next);
+    });
+    onContentChange();
+  }
+
+  /* Build the Table submenu for the given table. The Move entries are
+   * the keyboard path for the drag overlay (table-edit.js) and the
+   * touch fallback; the caret must be inside the table, which it is
+   * because the submenu only exists when the right-click landed there. */
   function buildTableMenu(fly, table) {
+    addSubItem(fly, "Move row up", () => moveRowBySelection("up"), "Alt+Up");
+    addSubItem(fly, "Move row down", () => moveRowBySelection("down"), "Alt+Down");
+    fly.appendChild(document.createElement("hr"));
+    addSubItem(fly, "Move column left", () => moveColBySelection("left"), "Alt+Shift+Left");
+    addSubItem(fly, "Move column right", () => moveColBySelection("right"), "Alt+Shift+Right");
+    addSubItem(fly, "Align column (cycle)", () => cycleColAlign(getCellFromSelection()));
+    fly.appendChild(document.createElement("hr"));
     addSubItem(fly, "Insert row above", () => insertRow(getRowFromSelection(), "above"));
     addSubItem(fly, "Insert row below", () => insertRow(getRowFromSelection(), "below"));
     addSubItem(fly, "Delete row", () => deleteRow(getRowFromSelection()));
@@ -1771,6 +1937,64 @@
     fly.appendChild(document.createElement("hr"));
     addSubItem(fly, "Toggle header row", () => toggleHeaderRow(table));
     addSubItem(fly, "Delete table", () => deleteTable(table));
+  }
+
+  /* Keyboard/menu wrappers: resolve the caret's row/column and move it
+   * one slot. After the move the caret follows into the moved row /
+   * column's first cell, so pressing the chord again moves the same
+   * item again. */
+  function moveRowBySelection(dir) {
+    const row = getRowFromSelection();
+    if (!row) return;
+    const header = row.closest("table").rows[0];
+    if (row === header) return;
+    const target = dir === "up" ? row.previousElementSibling : row.nextElementSibling;
+    // Never move the header: moving down from the row under it must
+    // skip the header, and moving up onto it is a no-op.
+    const before = (dir === "up")
+      ? (target && target !== header ? target : null)
+      : (target ? target.nextElementSibling : null);
+    if (dir === "down" && !target) return;      // already last
+    if (dir === "up" && (!target || target === header)) return;
+    if (moveRow(row, before)) focusRow(row);
+  }
+
+  function moveColBySelection(dir) {
+    const cell = getCellFromSelection();
+    if (!cell) return;
+    const table = cell.closest("table");
+    const src = cell.cellIndex;
+    const dest = src + (dir === "left" ? -1 : 1);
+    const n = table.rows[0] ? table.rows[0].cells.length : 0;
+    if (dest < 0 || dest >= n) return;
+    if (moveCol(table, src, dest)) focusCol(table, dest);
+  }
+
+  /* Put the caret at the start of a row's first cell. */
+  function focusRow(row) {
+    const cell = row && row.cells && row.cells[0];
+    focusCell(cell);
+  }
+
+  /* Put the caret at the start of row 0's cell in column `idx` (the
+   * header cell), so a follow-up Move column chord targets the same
+   * column again. */
+  function focusCol(table, idx) {
+    const head = table && table.rows[0] && table.rows[0].cells[idx];
+    focusCell(head);
+  }
+
+  /* Put the caret at the start of the given cell. */
+  function focusCell(cell) {
+    if (!cell || !viewerContentEl.contains(cell)) return;
+    cell.focus({ preventScroll: true });
+    const sel = window.getSelection();
+    if (!sel) return;
+    const r = document.createRange();
+    r.selectNodeContents(cell);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
   /* --- code & plugin blocks: edit source / change language ---------- */
@@ -2085,6 +2309,12 @@
     const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
     menuEl.style.left = x + "px";
     menuEl.style.top = y + "px";
+    // Keyboard support: the menu is a real menu. Focus the first item
+    // so arrows/Enter work without a pointer, and walk with the
+    // keyboard (see menuKeyHandler below).
+    menuEl.setAttribute("role", "menu");
+    const first = menuEl.querySelector("button:not([disabled])");
+    if (first) first.focus({ preventScroll: true });
   }
 
   // Wire the contextmenu event on #viewer-content. Only fires when
@@ -2098,6 +2328,31 @@
   });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && menuEl && !menuEl.hidden) hideMenu();
+  });
+  // Menu keyboard navigation: Up/Down move between enabled items (in
+  // DOM order, including submenus), Enter/Space activate the focused
+  // button, Escape/right-click-away closes. Focus starts on the first
+  // item (see openMenu).
+  document.addEventListener("keydown", (e) => {
+    if (!menuEl || menuEl.hidden) return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" &&
+        e.key !== "Enter" && e.key !== " ") return;
+    if (!menuEl.contains(e.target)) return;
+    e.preventDefault();
+    if (e.key === "Enter" || e.key === " ") {
+      if (e.target.closest("button")) e.target.closest("button").click();
+      return;
+    }
+    const items = Array.from(menuEl.querySelectorAll("button"))
+      .filter((b) => !b.disabled &&
+        (b.closest(".submenu") ? b.closest(".submenu").classList.contains("open") || b.classList.contains("submenu")
+                               : true));
+    const visible = items.filter((b) => b.offsetParent !== null);
+    const i = visible.indexOf(document.activeElement);
+    const next = e.key === "ArrowDown"
+      ? visible[(i + 1 + visible.length) % visible.length]
+      : visible[(i - 1 + visible.length) % visible.length];
+    if (next) next.focus({ preventScroll: true });
   });
   // Close on another contextmenu event outside #viewer-content (e.g.
   // right-clicking the sidebar) so the hybrid menu doesn't stay open.
@@ -2175,5 +2430,23 @@
     flattenTheads,
     updateButtonVisibility,
     commitForTabSwitch,
+    // Table reordering: shared by the drag overlay (table-edit.js) and
+    // the keyboard/context-menu paths.
+    moveRow,
+    moveCol,
+    moveRowBySelection,
+    moveColBySelection,
+    cycleColAlign,
+    insertColAfterTable,
+    insertRow,
+    insertCol,
+    deleteRow,
+    deleteCol,
+    tableHasSpans,
+    getTableFromSelection,
+    getRowFromSelection,
+    getCellFromSelection,
+    onContentChange,
+    flushPendingSnapshot,
   };
 })();

@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Table editing in hybrid mode — design mockup</title>
+<style>
+/* ==========================================================================
+   Table editing in hybrid mode — self-contained design mockup
+   --------------------------------------------------------------------------
+   This file is a design reference, not production code. It renders a fake
+   "hybrid edit" note area and demonstrates, side by side and without needing
+   a server:
+     * grips revealed on hover / focus-within
+     * a static, visually simulated drag-in-progress state (row + column)
+     * the drop indicator for rows and columns
+     * the drag proxy chip
+     * the disabled header-row grip and the merged-cells rejection state
+     * the context-menu fallback styling (static replica of .context-menu)
+   It uses ONLY the notebook-server design tokens. Dark and light sections are
+   both shown so the two themes can be compared at a glance.
+   ========================================================================== */
+
+/* --- tokens (copied verbatim from static/css/style.css) ------------------- */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --danger: #ff6b6b;
+  --warn: #f3b454;
+  --topbar-h: 46px;
+  --font-scale: 1;
+}
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --danger: #c0392b;
+  --warn: #c9831d;
+}
+
+* { box-sizing: border-box; }
+html { font-size: calc(14px * var(--font-scale, 1)); }
+body {
+  margin: 0;
+  background: #0c0d10;
+  color: var(--fg);
+  font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 80px; }
+.page > h1 { font-size: 1.5rem; margin: 0 0 4px; color: #fff; }
+.page > p.sub { color: #9aa0ad; margin: 0 0 26px; font-size: .92rem; }
+.page h2 {
+  font-size: 1.05rem; margin: 40px 0 6px; color: #fff;
+  display: flex; align-items: center; gap: 8px;
+}
+.page h2 .tag {
+  font-size: .68rem; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px;
+}
+.page .hint { color: #9aa0ad; font-size: .88rem; margin: 0 0 14px; max-width: 70ch; }
+.page code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; }
+
+/* Each demo is a real themed body, exactly like the app's body[data-theme]. */
+.demo {
+  margin: 0 0 26px;
+  border: 1px solid #2b2d36;
+  border-radius: 10px;
+  overflow: hidden;
+  max-width: 100%;
+}
+body, .themed {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* --- faux app chrome ------------------------------------------------------ */
+.app { display: flex; flex-direction: column; min-height: 0; }
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  height: var(--topbar-h); padding: 0 12px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  font-size: .9rem;
+}
+.topbar .brand { font-weight: 700; letter-spacing: .3px; opacity: .9; }
+.topbar .spacer { flex: 1; }
+.topbar .pill {
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 6px;
+  padding: 4px 9px; font-size: .84rem; font-weight: 600;
+}
+.edit-bar {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 12px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); font-size: .9rem;
+}
+.edit-bar .eb {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 26px; padding: 0 7px;
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  color: var(--fg); cursor: pointer; font-size: .9rem;
+}
+.edit-bar .eb:hover { background: var(--bg-elev); border-color: var(--border); }
+.edit-bar .eb.primary { color: var(--accent); font-weight: 600; }
+.edit-bar .eb-sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
+.edit-bar .eb-spacer { flex: 1; }
+
+/* #viewer / #viewer-content stand-ins. #viewer-content is the scroller and
+ * the thing that becomes contenteditable; #viewer is the overlay's host. */
+.viewer {
+  position: relative;              /* the overlay's containing block */
+  overflow: hidden;
+  background: var(--bg);
+  padding: 18px 40px 22px;
+  min-height: 240px;
+}
+.viewer-content { position: relative; }
+.viewer-content.hybrid-editing {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: -2px;
+  cursor: text;
+}
+.markdown-body { color: var(--fg); }
+.markdown-body p { margin: .7em 0; }
+.markdown-body h3 { font-size: 1.1rem; margin: 0 0 .4em; }
+
+/* --- tables (the app's current rules, verbatim) --------------------------- */
+.markdown-body table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 2px 0 6px;
+}
+.viewer-content.hybrid-editing table { overflow: visible; }
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+  min-width: 96px;
+}
+.markdown-body tbody tr:nth-child(odd) { background: var(--bg-panel); }
+.markdown-body tbody tr:nth-child(even) { background: var(--bg); }
+.markdown-body th { font-weight: 600; }
+
+/* ==========================================================================
+   THE DESIGN: overlay, grips, drop indicators, proxy
+   ========================================================================== */
+
+/* The overlay is a sibling of the content inside #viewer — outside the
+ * contenteditable subtree and outside turndown's clone. It never eats a
+ * click; only the grips inside it are interactive. */
+.nb-table-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.nb-table-overlay[hidden] { display: none; }
+
+/* Grips: 24x24 px hit targets, transparent until hovered. */
+.nb-row-grip,
+.nb-col-grip {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;
+  z-index: 1;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.nb-row-grip:hover,
+.nb-col-grip:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.nb-row-grip:active,
+.nb-col-grip:active {
+  cursor: grabbing;
+  background: var(--accent);
+  color: var(--bg);
+}
+.nb-row-grip:focus-visible,
+.nb-col-grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.nb-row-grip[aria-disabled="true"],
+.nb-col-grip[aria-disabled="true"] {
+  opacity: .35;
+  cursor: default;
+  pointer-events: none;
+}
+.nb-col-grip .nb-grip-icon { transform: rotate(90deg); }
+.nb-grip-icon { fill: currentColor; display: block; }
+
+/* Drop indicators. The soft ring keeps the line readable over the
+ * alternating row fills and over the white light-theme body. */
+.nb-drop-line {
+  position: absolute;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.nb-drop-line.is-row { height: 2px; }
+.nb-drop-line.is-col { width: 2px; }
+
+/* Overlay-only "lifted" row ghost — no class ever lands on the <tr>. */
+.nb-drag-ghost {
+  position: absolute;
+  background: var(--accent-soft);
+  border-radius: 2px;
+  pointer-events: none;
+}
+/* Dashed scope rectangle around the table during a drag (optional polish). */
+.nb-table-outline {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* Drag proxy chip. Matches .eb-menu / .toast elevation. */
+.nb-drag-proxy {
+  position: absolute;
+  padding: 3px 8px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .8rem;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* --- context menu fallback (static replica of the app's .context-menu) ---- */
+.context-menu {
+  position: absolute;
+  min-width: 200px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  padding: 4px;
+  z-index: 20;
+}
+.context-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--fg);
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: .93rem;
+  cursor: pointer;
+}
+.context-menu button:hover { background: var(--accent-soft); }
+.context-menu button.danger { color: var(--danger); }
+.context-menu button .key {
+  color: var(--fg-muted);
+  font-size: .78rem;
+  margin-left: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.context-menu hr { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+.context-menu .submenu::after { content: "▸"; color: var(--fg-muted); font-size: .8em; }
+
+/* --- annotations / labels for the mockup only ----------------------------- */
+.note-inline {
+  position: absolute;
+  font-size: .72rem;
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px 22px;
+  margin: 10px 0 0; padding: 10px 12px;
+  background: #14151a; border: 1px solid #2b2d36; border-radius: 8px;
+  font-size: .84rem; color: #b6bcc8;
+}
+.legend b { color: #fff; font-weight: 600; }
+.legend .swatch {
+  display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+  vertical-align: -2px; margin-right: 5px; border: 1px solid #3a3d47;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Table editing in hybrid mode</h1>
+  <p class="sub">
+    Design mockup — dark and light themes. Grips, drop indicators and the drag
+    state are drawn statically here; in the app they appear on hover or focus.
+    Colored tokens only: <code>--bg --bg-panel --bg-elev --fg --fg-muted
+    --accent --accent-soft --border --danger --warn</code>.
+  </p>
+
+  <!-- =====================  DARK  ===================== -->
+  <h2>Dark theme <span class="tag">hover / focus reveal</span></h2>
+  <p class="hint">
+    The table on the left is in the resting state. The table on the right is
+    shown as if the pointer were over it: a disabled grip sits beside the pinned
+    header row, live grips beside each body row, and a column grip above each
+    header cell.
+  </p>
+
+  <div class="demo themed" data-theme="">
+
+    <div class="app">
+      <div class="topbar">
+        <span class="brand">⌘ Notebook</span>
+        <span class="pill">Editing</span>
+        <span class="spacer"></span>
+        <span style="color:var(--fg-muted)">notes/hardware.md</span>
+      </div>
+      <div class="edit-bar">
+        <button class="eb" title="Bold">B</button>
+        <button class="eb" title="Italic">I</button>
+        <button class="eb" title="Code">{}</button>
+        <span class="eb-sep"></span>
+        <button class="eb" title="Table actions">▦</button>
+        <span class="eb-sep"></span>
+        <button class="eb" title="Undo">↶</button>
+        <button class="eb" title="Redo">↷</button>
+        <span class="eb-spacer"></span>
+        <button class="eb">Exit</button>
+        <button class="eb primary">Save &amp; Exit</button>
+      </div>
+
+      <div class="viewer">
+        <div class="viewer-content hybrid-editing markdown-body" contenteditable="true" spellcheck="false">
+          <h3>Pin map</h3>
+          <p>Signal assignment for the debug header.</p>
+
+          <!-- resting table -->
+          <table>
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th><th>Voltage</th></tr>
+              <tr><td>1</td><td>GND</td><td>0 V</td></tr>
+              <tr><td>2</td><td>SWDIO</td><td>3.3 V</td></tr>
+              <tr><td>3</td><td>SWCLK</td><td>3.3 V</td></tr>
+            </tbody>
+          </table>
+
+          <p style="color:var(--fg-muted);font-size:.85rem">← resting table (no grips)</p>
+
+          <!-- revealed table with grips + overlay -->
+          <table id="dark-revealed">
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th><th>Voltage</th></tr>
+              <tr><td>1</td><td>GND</td><td>0 V</td></tr>
+              <tr><td>2</td><td>SWDIO</td><td>3.3 V</td></tr>
+              <tr><td>3</td><td>SWCLK</td><td>3.3 V</td></tr>
+            </tbody>
+          </table>
+
+          <p style="color:var(--fg-muted);font-size:.85rem">← grips revealed (hover / focus-within)</p>
+        </div>
+
+        <!-- The overlay. In the app this is built by table-edit.js. -->
+        <div class="nb-table-overlay" id="dark-overlay"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><b>Grip</b> — 24×24, <code>--fg-muted</code> glyph, transparent at rest</span>
+      <span><span class="swatch" style="background:var(--accent-soft)"></span>hover: <code>--accent-soft</code> fill</span>
+      <span><span class="swatch" style="background:var(--accent)"></span>active: <code>--accent</code> fill, <code>--bg</code> glyph</span>
+      <span><span class="swatch" style="background:var(--accent)"></span>drop line: 2px <code>--accent</code></span>
+    </div>
+  </div>
+
+  <!-- =====================  LIGHT  ===================== -->
+  <h2>Light theme <span class="tag">same tokens, no overrides</span></h2>
+  <p class="hint">
+    Every rule above resolves through the same tokens, so the light theme needs
+    no extra CSS. Only the token block changes.
+  </p>
+
+  <div class="demo themed" data-theme="light">
+    <div class="app">
+      <div class="viewer" style="background:var(--bg)">
+        <div class="viewer-content hybrid-editing markdown-body" contenteditable="true" spellcheck="false">
+          <table id="light-revealed">
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th><th>Voltage</th></tr>
+              <tr><td>1</td><td>GND</td><td>0 V</td></tr>
+              <tr><td>2</td><td>SWDIO</td><td>3.3 V</td></tr>
+              <tr><td>3</td><td>SWCLK</td><td>3.3 V</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nb-table-overlay" id="light-overlay"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================  DRAG STATE  ===================== -->
+  <h2>Drag in progress <span class="tag">static simulation</span></h2>
+  <p class="hint">
+    Row drag: the source row is drawn as a translucent ghost in the overlay, a
+    proxy chip follows the pointer, and a horizontal drop line marks the
+    insertion boundary. Nothing is added to the table DOM. The same pattern
+    applies to a column drag, with a vertical drop line.
+  </p>
+
+  <div class="demo themed" data-theme="">
+    <div class="app">
+      <div class="viewer">
+        <div class="viewer-content hybrid-editing markdown-body" contenteditable="true" spellcheck="false">
+          <table id="drag-row">
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th><th>Voltage</th></tr>
+              <tr id="drag-src"><td>2</td><td>SWDIO</td><td>3.3 V</td></tr>
+              <tr><td>3</td><td>SWCLK</td><td>3.3 V</td></tr>
+              <tr><td>4</td><td>NRST</td><td>3.3 V</td></tr>
+              <tr><td>5</td><td>BOOT0</td><td>3.3 V</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nb-table-overlay" id="drag-overlay"></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Column drag in progress <span class="tag">static simulation</span></h2>
+  <div class="demo themed" data-theme="light">
+    <div class="app">
+      <div class="viewer">
+        <div class="viewer-content hybrid-editing markdown-body" contenteditable="true" spellcheck="false">
+          <table id="drag-col">
+            <tbody>
+              <tr><th>Pin</th><th align="center">Signal</th><th align="right">Voltage</th></tr>
+              <tr><td>1</td><td align="center">GND</td><td align="right">0 V</td></tr>
+              <tr><td>2</td><td align="center">SWDIO</td><td align="right">3.3 V</td></tr>
+              <tr><td>3</td><td align="center">SWCLK</td><td align="right">3.3 V</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nb-table-overlay" id="drag-col-overlay"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================  EDGE CASES  ===================== -->
+  <h2>Edge cases <span class="tag">disabled states</span></h2>
+  <p class="hint">
+    The header row is pinned: its grip is shown but disabled, because a Markdown
+    table's first row must stay all-<code>&lt;th&gt;</code> or turndown saves
+    the whole table as raw HTML. A table with merged cells disables reordering
+    entirely rather than silently normalising.
+  </p>
+
+  <div class="demo themed" data-theme="">
+    <div class="app">
+      <div class="viewer">
+        <div class="viewer-content hybrid-editing markdown-body" contenteditable="true" spellcheck="false">
+          <p style="margin-top:0"><b>Single body row</b> — nothing to reorder</p>
+          <table id="single-row">
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th></tr>
+              <tr><td>1</td><td>GND</td></tr>
+            </tbody>
+          </table>
+          <p><b>Single column</b> — column grip disabled</p>
+          <table id="single-col">
+            <tbody>
+              <tr><th>Pin</th></tr>
+              <tr><td>1</td></tr>
+              <tr><td>2</td></tr>
+            </tbody>
+          </table>
+          <p><b>Merged cells</b> — reordering disabled, toast shown</p>
+          <table id="merged">
+            <tbody>
+              <tr><th colspan="2">Debug header</th></tr>
+              <tr><td>Pin</td><td>Signal</td></tr>
+              <tr><td>1</td><td>GND</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="nb-table-overlay" id="edge-overlay"></div>
+        <div class="toast-mock" style="
+          position:absolute; right:20px; bottom:20px; z-index:30;
+          padding:8px 14px; background:var(--bg-elev); color:var(--fg);
+          border:1px solid var(--border); border-radius:6px; font-size:.86rem;
+          box-shadow:0 4px 12px rgba(0,0,0,.3);">
+          This table has merged cells; reordering is disabled.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================  CONTEXT MENU  ===================== -->
+  <h2>Context-menu fallback <span class="tag">keyboard + touch</span></h2>
+  <p class="hint">
+    The existing Table submenu gains the four Move commands at the top and keeps
+    every insert/delete command. This is the canonical keyboard path: the menu
+    takes focus on open and ↑/↓/Enter/Escape navigate it. Chords are shown for
+    the new commands only.
+  </p>
+
+  <div class="demo themed" data-theme="">
+    <div class="app">
+      <div class="viewer" style="min-height:520px">
+        <div class="viewer-content markdown-body">
+          <table>
+            <tbody>
+              <tr><th>Pin</th><th>Signal</th><th>Voltage</th></tr>
+              <tr><td>1</td><td>GND</td><td>0 V</td></tr>
+              <tr><td>2</td><td>SWDIO</td><td>3.3 V</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="context-menu" style="left:220px; top:96px">
+          <button>Copy<span class="key"></span></button>
+          <button>Paste</button>
+          <hr>
+          <button>Inline<span class="key">▸</span></button>
+          <button>Heading<span class="key">▸</span></button>
+          <button>List<span class="key">▸</span></button>
+          <button>Insert<span class="key">▸</span></button>
+          <hr>
+          <button style="background:var(--accent-soft)">Table<span class="key">▸</span></button>
+        </div>
+
+        <!-- the Table flyout -->
+        <div class="context-menu" style="left:430px; top:96px; min-width:230px">
+          <button>Move row up<span class="key">Alt+↑</span></button>
+          <button>Move row down<span class="key">Alt+↓</span></button>
+          <button>Move column left<span class="key">Alt+Shift+←</span></button>
+          <button>Move column right<span class="key">Alt+Shift+→</span></button>
+          <hr>
+          <button>Insert row above</button>
+          <button>Insert row below</button>
+          <button>Delete row</button>
+          <hr>
+          <button>Insert column left</button>
+          <button>Insert column right</button>
+          <button>Delete column</button>
+          <hr>
+          <button>Align left</button>
+          <button>Align center</button>
+          <button>Align right</button>
+          <hr>
+          <button>Toggle header row</button>
+          <button class="danger">Delete table</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="hint" style="margin-top:26px">
+    Column <em>width</em> resize is intentionally absent. Markdown cannot store a
+    width, so a resize control would silently reset on the next load. Column
+    <em>alignment</em> round-trips (<code>:--</code> / <code>:-:</code> /
+    <code>--:</code>) and is offered instead.
+  </p>
+</div>
+
+<script>
+/* ==========================================================================
+   Tiny mockup script — draws the overlay contents statically.
+   In the app this logic lives in static/js/table-edit.js and reacts to pointer
+   events. Here it just renders the states once, at load.
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  var ROW_DOTS = '<svg class="nb-grip-icon" width="10" height="14" viewBox="0 0 10 14" aria-hidden="true">' +
+    '<circle cx="2.5" cy="2.5" r="1.3"/><circle cx="7.5" cy="2.5" r="1.3"/>' +
+    '<circle cx="2.5" cy="7"   r="1.3"/><circle cx="7.5" cy="7"   r="1.3"/>' +
+    '<circle cx="2.5" cy="11.5" r="1.3"/><circle cx="7.5" cy="11.5" r="1.3"/></svg>';
+
+  function el(cls, style) {
+    var d = document.createElement("div");
+    d.className = cls;
+    if (style) d.style.cssText = style;
+    return d;
+  }
+  function grip(cls, label, disabled) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.innerHTML = ROW_DOTS;
+    b.setAttribute("aria-label", label);
+    b.title = label;
+    if (disabled) b.setAttribute("aria-disabled", "true");
+    return b;
+  }
+  function rects(scope, sel) {
+    var o = [];
+    scope.querySelectorAll(sel).forEach(function (n) { o.push(n.getBoundingClientRect()); });
+    return o;
+  }
+  function union(rs) {
+    var l = Math.min.apply(null, rs.map(function (r) { return r.left; }));
+    var t = Math.min.apply(null, rs.map(function (r) { return r.top; }));
+    var r2 = Math.max.apply(null, rs.map(function (r) { return r.right; }));
+    var b = Math.max.apply(null, rs.map(function (r) { return r.bottom; }));
+    return { left: l, top: t, right: r2, bottom: b };
+  }
+
+  /* Draw the resting "revealed" grips for a table into its overlay.
+   * Positions are derived from ROW and CELL rects, never the table box. */
+  function reveal(table, overlay, viewer) {
+    var vr = viewer.getBoundingClientRect();
+    var rows = table.tBodies[0].rows;
+    var bodyCount = rows.length - 1;
+
+    // Column grips: one per header cell, centered above it.
+    var h = rows[0];
+    Array.from(h.cells).forEach(function (cell, i) {
+      var r = cell.getBoundingClientRect();
+      var g = grip("nb-col-grip", "Move column " + (i + 1), false);
+      g.style.left = (r.left - vr.left + r.width / 2 - 12) + "px";
+      g.style.top = (r.top - vr.top - 12) + "px";
+      if (h.cells.length <= 1) g.setAttribute("aria-disabled", "true");
+      overlay.appendChild(g);
+    });
+
+    // Row grips: header disabled (pinned), body enabled.
+    if (bodyCount >= 1) {
+      Array.from(rows).forEach(function (row, i) {
+        var r = row.getBoundingClientRect();
+        var g = grip("nb-row-grip",
+          i === 0 ? "Header row is fixed (Markdown tables always put the header first)"
+                  : "Move row " + i,
+          i === 0 || bodyCount <= 1);
+        g.style.left = (r.left - vr.left - 28) + "px";
+        g.style.top = (r.top - vr.top + r.height / 2 - 12) + "px";
+        overlay.appendChild(g);
+      });
+    }
+  }
+
+  /* Static drag simulation: ghost + proxy + drop line. */
+  function simulateRowDrag(table, overlay, viewer, srcRow) {
+    var vr = viewer.getBoundingClientRect();
+    var rows = Array.from(table.tBodies[0].rows);
+    var srcRect = srcRow.getBoundingClientRect();
+
+    // Lifted source row ghost (overlay only).
+    overlay.appendChild(el("nb-drag-ghost",
+      "left:" + (srcRect.left - vr.left) + "px;top:" + (srcRect.top - vr.top) + "px;" +
+      "width:" + srcRect.width + "px;height:" + srcRect.height + "px;"));
+
+    // Table scope outline.
+    var tr = table.getBoundingClientRect();
+    overlay.appendChild(el("nb-table-outline",
+      "left:" + (tr.left - vr.left - 3) + "px;top:" + (tr.top - vr.top - 3) + "px;" +
+      "width:" + (tr.width + 6) + "px;height:" + (tr.height + 6) + "px;"));
+
+    // Drop line at the boundary before row index 3 (NRST) -> after SWCLK.
+    var before = rows[3];
+    var br = before.getBoundingClientRect();
+    var cells = rects(table, "tr:nth-child(1) > th, tr:nth-child(1) > td");
+    var u = union(cells);
+    overlay.appendChild(el("nb-drop-line is-row",
+      "left:" + (u.left - vr.left) + "px;top:" + (br.top - vr.top - 1) + "px;" +
+      "width:" + (u.right - u.left) + "px;"));
+
+    // Proxy chip above the pointer.
+    var proxy = el("nb-drag-proxy", "left:" + (srcRect.left - vr.left + 60) + "px;" +
+      "top:" + (srcRect.top - vr.top - 30) + "px;");
+    proxy.textContent = "Row 2 — SWDIO";
+    overlay.appendChild(proxy);
+
+    // Grips stay visible during the drag; grey the source grip.
+    Array.from(rows).forEach(function (row, i) {
+      var r = row.getBoundingClientRect();
+      var g = grip("nb-row-grip", "Move row " + i, i === 0 || row === srcRow);
+      g.style.left = (r.left - vr.left - 28) + "px";
+      g.style.top = (r.top - vr.top + r.height / 2 - 12) + "px";
+      overlay.appendChild(g);
+    });
+  }
+
+  function simulateColDrag(table, overlay, viewer, srcIndex) {
+    var vr = viewer.getBoundingClientRect();
+    var rows = Array.from(table.rows);
+
+    var tr = table.getBoundingClientRect();
+    overlay.appendChild(el("nb-table-outline",
+      "left:" + (tr.left - vr.left - 3) + "px;top:" + (tr.top - vr.top - 3) + "px;" +
+      "width:" + (tr.width + 6) + "px;height:" + (tr.height + 6) + "px;"));
+
+    // Vertical drop line at the boundary before column index 2.
+    var boundary = 2;
+    var colCells = rows.map(function (r) { return r.cells[boundary]; }).filter(Boolean);
+    var br = colCells[0].getBoundingClientRect();
+    var all = [];
+    rows.forEach(function (r) {
+      Array.from(r.cells).forEach(function (c) { all.push(c.getBoundingClientRect()); });
+    });
+    var u = union(all);
+    overlay.appendChild(el("nb-drop-line is-col",
+      "left:" + (br.left - vr.left - 1) + "px;top:" + (u.top - vr.top) + "px;" +
+      "height:" + (u.bottom - u.top) + "px;"));
+
+    // Column grips, with the source greyed.
+    var h = rows[0];
+    Array.from(h.cells).forEach(function (cell, i) {
+      var r = cell.getBoundingClientRect();
+      var g = grip("nb-col-grip", "Move column " + (i + 1), i === srcIndex);
+      g.style.left = (r.left - vr.left + r.width / 2 - 12) + "px";
+      g.style.top = (r.top - vr.top - 12) + "px";
+      overlay.appendChild(g);
+    });
+
+    // Ghost of the dragged column over its cells.
+    var srcCells = rows.map(function (r) { return r.cells[srcIndex]; }).filter(Boolean);
+    var su = union(srcCells.map(function (c) { return c.getBoundingClientRect(); }));
+    overlay.appendChild(el("nb-drag-ghost",
+      "left:" + (su.left - vr.left) + "px;top:" + (su.top - vr.top) + "px;" +
+      "width:" + (su.right - su.left) + "px;height:" + (su.bottom - su.top) + "px;"));
+
+    var proxy = el("nb-drag-proxy",
+      "left:" + (su.left - vr.left + su.right - su.left + 8) + "px;" +
+      "top:" + (su.top - vr.top + (su.bottom - su.top) / 2 - 12) + "px;");
+    proxy.textContent = "Column 2 — Signal";
+    overlay.appendChild(proxy);
+  }
+
+  /* Edge-case overlays: disabled grips, and the merged-cell rejection. */
+  function edgeCases(overlay, viewer) {
+    var vr = viewer.getBoundingClientRect();
+    function disabledGrips(table, opts) {
+      var rows = table.tBodies[0].rows;
+      var h = rows[0];
+      if (!opts.noCol) {
+        Array.from(h.cells).forEach(function (cell, i) {
+          var r = cell.getBoundingClientRect();
+          var g = grip("nb-col-grip", "Move column " + (i + 1), opts.colDisabled);
+          g.style.left = (r.left - vr.left + r.width / 2 - 12) + "px";
+          g.style.top = (r.top - vr.top - 12) + "px";
+          overlay.appendChild(g);
+        });
+      }
+      Array.from(rows).forEach(function (row, i) {
+        var r = row.getBoundingClientRect();
+        var dis = i === 0 || opts.rowDisabled;
+        var g = grip("nb-row-grip", dis && i === 0 ? "Header row is fixed" : "Move row " + i, dis);
+        g.style.left = (r.left - vr.left - 28) + "px";
+        g.style.top = (r.top - vr.top + r.height / 2 - 12) + "px";
+        overlay.appendChild(g);
+      });
+    }
+    disabledGrips(document.getElementById("single-row"), { rowDisabled: true });
+    disabledGrips(document.getElementById("single-col"), { noCol: true, rowDisabled: true });
+    var merged = document.getElementById("merged");
+    // Merged cells: all grips disabled.
+    (function () {
+      var rows = merged.tBodies[0].rows;
+      Array.from(rows).forEach(function (row, i) {
+        var r = row.getBoundingClientRect();
+        var g = grip("nb-row-grip", "Merged cells: drag reordering is unavailable", true);
+        g.style.left = (r.left - vr.left - 28) + "px";
+        g.style.top = (r.top - vr.top + r.height / 2 - 12) + "px";
+        overlay.appendChild(g);
+      });
+      var h = rows[0];
+      Array.from(h.cells).forEach(function (cell, i) {
+        var r = cell.getBoundingClientRect();
+        var g = grip("nb-col-grip", "Merged cells: drag reordering is unavailable", true);
+        g.style.left = (r.left - vr.left + r.width / 2 - 12) + "px";
+        g.style.top = (r.top - vr.top - 12) + "px";
+        overlay.appendChild(g);
+      });
+    })();
+  }
+
+  function run() {
+    var dViewer = document.querySelector("#dark-revealed").closest(".viewer");
+    reveal(document.getElementById("dark-revealed"),
+      document.getElementById("dark-overlay"), dViewer);
+
+    var lViewer = document.querySelector("#light-revealed").closest(".viewer");
+    reveal(document.getElementById("light-revealed"),
+      document.getElementById("light-overlay"), lViewer);
+
+    var dragViewer = document.querySelector("#drag-row").closest(".viewer");
+    simulateRowDrag(document.getElementById("drag-row"),
+      document.getElementById("drag-overlay"), dragViewer,
+      document.getElementById("drag-src"));
+
+    var colViewer = document.querySelector("#drag-col").closest(".viewer");
+    simulateColDrag(document.getElementById("drag-col"),
+      document.getElementById("drag-col-overlay"), colViewer, 1);
+
+    var edgeViewer = document.querySelector("#single-row").closest(".viewer");
+    edgeCases(document.getElementById("edge-overlay"), edgeViewer);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else {
+    run();
+  }
+})();
+</script>
+</body>
+</html>
