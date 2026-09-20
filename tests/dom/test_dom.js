@@ -4386,13 +4386,18 @@ function check(label, cond, extra) {
     await window.NB.hybrid.enter();
     await tick(20);
 
-    // --- horizontal rule: caret repair around a top-level <hr> --------
-    // A rule cannot hold a caret. Chromium resolves a click on the rule
-    // (or in the empty band around it) to a ROOT child offset BEFORE the
-    // <hr>, with no painted caret, and from there plain Enter wraps the
-    // surrounding blocks in a stray <p>. mousedown must repair the caret
-    // into a real block, and a keyboard-stranded root caret must be
-    // claimed on Enter instead of falling through to the browser.
+    // --- horizontal rule: edited as a character ------------------------
+    // A rule is a void block: no engine can place a text caret inside it.
+    // It is edited like a character instead:
+    //   - clicking it inserts NOTHING; the caret moves to the neighbour
+    //     edge on the clicked side (or a root-level caret against the
+    //     rule when that side has no block);
+    //   - Delete removes it when the caret is immediately BEFORE it,
+    //     Backspace when immediately AFTER (Delete forward, Backspace
+    //     backward);
+    //   - the first character or plain Enter typed against it opens a
+    //     fresh line on the caret's side first, so a heading / fence /
+    //     list / table on the other side is never corrupted.
     {
       const pressEnter = (node, mods) => node.dispatchEvent(
         new window.KeyboardEvent("keydown",
@@ -4413,410 +4418,507 @@ function check(label, cond, extra) {
         s.removeAllRanges();
         s.addRange(r);
       };
-
-      // A mousedown ON the rule opens a fresh caret line just after it
-      // (NOT the edge of the following block: putting the caret there
-      // made Enter split the next heading / corrupt a code fence).
-      FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      const rule = vc.querySelector("hr");
-      const omegaP = Array.from(vc.querySelectorAll("p")).find((p) => p.textContent === "omega");
-      vc.querySelectorAll("p[data-hybrid-caret]").forEach((p) => p.remove());
-      rule.dispatchEvent(new window.MouseEvent("mousedown",
-        { bubbles: true, cancelable: true, button: 0, clientY: 10 }));
-      await tick(10);
-      const openedLine = rule.nextElementSibling;
-      const anchor = window.getSelection().anchorNode;
-      check("hybrid hr: mousedown on a rule opens a caret line just after it",
-        openedLine && openedLine.tagName === "P" &&
-        openedLine.getAttribute("data-hybrid-caret") === "1" &&
-        anchor && openedLine.contains(anchor),
-        "after=" + (openedLine && openedLine.outerHTML));
-      check("hybrid hr: the following block is untouched by the rule click",
-        omegaP && omegaP.parentElement === vc && omegaP.textContent === "omega" &&
-        omegaP.previousElementSibling === openedLine,
-        "omega=" + (omegaP && omegaP.outerHTML));
-
-      // Typing into that line must not merge into the next block.
-      openedLine.textContent = "typed";
-      openedLine.setAttribute("data-hybrid-caret", "");
-      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
-      await tick(50);
-      check("hybrid hr: text typed below the rule stays on its own line",
-        omegaP.textContent === "omega" &&
-        /typed[\s\S]*omega/.test(vc.textContent),
-        "omega=" + omegaP.textContent + " text=" + vc.textContent.slice(0, 60));
-
-      // Plain Enter with a caret stranded at the ROOT right after the
-      // rule (keyboard path): must open a paragraph after the rule, not
-      // wrap the note in a <p>.
-      vc.querySelectorAll("p[data-hybrid-caret]").forEach((p) => p.remove());
-      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule) + 1);
-      const pCount0 = vc.querySelectorAll(":scope > p").length;
-      const evPlain = new window.KeyboardEvent("keydown",
-        { key: "Enter", bubbles: true, cancelable: true });
-      vc.dispatchEvent(evPlain);
-      await tick(10);
-      const ruleIdx = Array.prototype.indexOf.call(vc.childNodes, rule);
-      const afterRule = vc.childNodes[ruleIdx + 1];
-      check("hybrid hr: plain Enter at a root caret after the rule opens a line below",
-        evPlain.defaultPrevented && afterRule && afterRule.tagName === "P" &&
-        afterRule.getAttribute("data-hybrid-caret") === "1",
-        "prevented=" + evPlain.defaultPrevented + " after=" +
-        (afterRule && afterRule.outerHTML));
-      check("hybrid hr: plain Enter does not nest the note's blocks in a <p>",
-        vc.querySelectorAll(":scope > p").length === pCount0 + 1 &&
-        !vc.querySelector(":scope > p > :scope > p") &&
-        !vc.querySelector("p > hr"),
-        "p count=" + vc.querySelectorAll(":scope > p").length);
-      check("hybrid hr: the opened caret line saves as a blank line",
-        // The placeholder paragraph is empty, so it must not leak into
-        // the saved markdown (the user never typed into it).
-        !window.NB.hybrid.domToMarkdown().includes("data-hybrid-caret") &&
-        /\* \* \*|\n\n/.test(window.NB.hybrid.domToMarkdown()),
-        JSON.stringify(window.NB.hybrid.domToMarkdown()).slice(-80));
-
-      // Same stranded caret right BEFORE the rule: the line opens above.
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      const rule2 = vc.querySelector("hr");
-      const alphaP = Array.from(vc.querySelectorAll("p")).find((p) => p.textContent === "alpha");
-      vc.querySelectorAll("p[data-hybrid-caret]").forEach((p) => p.remove());
-      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule2));
-      const evBefore = new window.KeyboardEvent("keydown",
-        { key: "Enter", bubbles: true, cancelable: true });
-      vc.dispatchEvent(evBefore);
-      await tick(10);
-      const beforeRule = vc.childNodes[Array.prototype.indexOf.call(vc.childNodes, rule2) - 1];
-      check("hybrid hr: plain Enter at a root caret before the rule opens a line above",
-        evBefore.defaultPrevented && beforeRule && beforeRule.tagName === "P",
-        "after=" + (beforeRule && beforeRule.outerHTML));
-      check("hybrid hr: Enter before the rule keeps alpha intact",
-        alphaP && alphaP.parentElement === vc && alphaP.textContent === "alpha",
-        "alpha=" + (alphaP && alphaP.outerHTML));
-
-      // Shift+Enter anchored on a stranded root caret BEFORE the rule:
-      // the line goes above the rule (the caret's own side).
-      const liHost = vc.querySelector("p[data-hybrid-caret]");
-      if (liHost) liHost.remove();
-      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule2));
-      pressShiftEnter(vc);
-      await tick(10);
-      const shiftIdx = Array.prototype.indexOf.call(vc.childNodes, rule2);
-      const shiftBefore = vc.childNodes[shiftIdx - 1];
-      check("hybrid hr: Shift+Enter beside the rule anchors on the rule",
-        shiftBefore && shiftBefore.tagName === "P" &&
-        shiftBefore.getAttribute("data-hybrid-caret") === "1",
-        "before=" + (shiftBefore && shiftBefore.outerHTML));
-      window.NB.hybrid.exit(false);
-      await tick(20);
-
-      // A mousedown in the empty area below a TRAILING rule opens a
-      // fresh line after it (the reported flow), and typing there saves.
-      FILES["notes/a.md"] = "alpha\n\n---\n";
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      const tailRule = vc.querySelector("hr");
-      tailRule.dispatchEvent(new window.MouseEvent("mousedown",
-        { bubbles: true, cancelable: true, button: 0, clientY: 40 }));
-      await tick(10);
-      const opened = tailRule.nextElementSibling;
-      check("hybrid hr: clicking below a trailing rule opens a line after it",
-        opened && opened.tagName === "P" &&
-        window.getSelection().anchorNode && opened.contains(window.getSelection().anchorNode),
-        "after=" + (opened && opened.outerHTML));
-      // Typing into the opened line marks dirty and saves clean markdown.
-      opened.textContent = "typed";
-      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
-      await tick(500);
-      check("hybrid hr: typing after a trailing rule marks the note dirty",
-        window.NB.hybrid.isDirty());
-      const hrSaveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-      $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(50);
-      const hrSaved = FILES["notes/a.md"] || "";
-      check("hybrid hr: save fires after the rule repair",
-        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - hrSaveBefore === 1,
-        "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - hrSaveBefore));
-      check("hybrid hr: typed line saves after the rule with no HTML leakage",
-        /(\* \* \*|---)/.test(hrSaved) && /typed/.test(hrSaved) &&
-        !/<\/?p>|<br\s*\/?>|data-hybrid/i.test(hrSaved),
-        JSON.stringify(hrSaved).slice(-80));
-      await window.NB.hybrid.exit(false);
-      await tick(20);
-
-      // Clicking below a rule must NEVER hand the caret to the following
-      // block: Enter/typing there used to split a heading, corrupt a
-      // code fence or merge text into the next block. Each case opens a
-      // fresh line instead, and the neighbour survives untouched.
-      const clickRule = async (side) => {
-        const hr = vc.querySelector("hr");
-        const r = hr.getBoundingClientRect();
-        const y = side === "on" ? r.top + r.height / 2 : r.bottom + 4;
-        // Dispatch ON the rule: jsdom reports zero-size rects, so the
-        // band-based hit test cannot be exercised here -- and the
-        // element hit path is what a real click on the rule takes.
-        hr.dispatchEvent(new window.MouseEvent("mousedown",
-          { bubbles: true, cancelable: true, button: 0, clientY: y }));
-        await tick(10);
+      const caretAtStart = (node) => {
+        const r = window.document.createRange();
+        r.selectNodeContents(node);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
       };
-      const nextBlockCases = [
-        ["heading", "alpha\n\n---\n\n## Heading\n\nbody\n", "H2", "Heading"],
-        ["list", "alpha\n\n---\n\n- item\n\nbody\n", "UL", null],
-        ["code fence", "alpha\n\n---\n\n```js\nlet x=1;\n```\n\nbody\n", "PRE", null],
-        ["table", "alpha\n\n---\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nbody\n", "TABLE", null],
-      ];
-      for (const [label, md, tag, text] of nextBlockCases) {
-        FILES["notes/a.md"] = md;
-        window.NB.viewer.close("notes/a.md");
-        await window.NB.tabs.open("notes/a.md");
-        await tick(20);
-        await window.NB.hybrid.enter();
-        await tick(20);
-        const before = vc.querySelector(tag).outerHTML;
-        const beforeText = text ? vc.querySelector(tag).textContent : null;
-        await clickRule("below");
-        vc.dispatchEvent(new window.KeyboardEvent("keydown",
-          { key: "Enter", bubbles: true, cancelable: true }));
-        await tick(10);
-        const opened = vc.querySelector("hr").nextElementSibling;
-        if (opened && opened.tagName === "P") opened.textContent = "NEW";
-        vc.dispatchEvent(new window.Event("input", { bubbles: true }));
-        await tick(50);
-        const after = vc.querySelector(tag).outerHTML;
-        check("hybrid hr: clicking below a rule does not corrupt the next " + label,
-          before === after && (text ? after.includes(text) : true),
-          "before=" + before.slice(0, 60) + " after=" + after.slice(0, 60));
-        check("hybrid hr: the typed line lands between the rule and the " + label,
-          opened && opened.tagName === "P" && /NEW/.test(opened.textContent) &&
-          opened.nextElementSibling === vc.querySelector(tag),
-          "opened=" + (opened && opened.outerHTML));
-        await window.NB.hybrid.exit(false);
-        await tick(20);
-      }
-
-      // Delete the rule line from the caret line the repair opened:
-      // Backspace/Delete must remove the rule (and the empty line) and
-      // join the neighbours, not eat a character from either side.
-      for (const key of ["Backspace", "Delete"]) {
-        FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-        window.NB.viewer.close("notes/a.md");
-        await window.NB.tabs.open("notes/a.md");
-        await tick(20);
-        await window.NB.hybrid.enter();
-        await tick(20);
-        await clickRule("below");
-        const evDel = new window.KeyboardEvent("keydown",
-          { key, bubbles: true, cancelable: true });
-        vc.dispatchEvent(evDel);
-        await tick(20);
-        check("hybrid hr: " + key + " on the rule line removes the rule",
-          evDel.defaultPrevented && !vc.querySelector("hr") &&
-          vc.querySelectorAll(":scope > p").length === 2 &&
-          vc.textContent.includes("alpha") && vc.textContent.includes("omega"),
-          "prevented=" + evDel.defaultPrevented +
-          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
-        check("hybrid hr: " + key + " leaves no empty caret placeholder behind",
-          vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
-          "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
-        await window.NB.hybrid.exit(false);
-        await tick(20);
-      }
-
-      // Clicking the rule twice must not stack empty caret lines.
-      FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      await clickRule("below");
-      const afterOne = vc.querySelectorAll("p[data-hybrid-caret]").length;
-      await clickRule("below");
-      const afterTwo = vc.querySelectorAll("p[data-hybrid-caret]").length;
-      check("hybrid hr: a second click on the rule does not stack caret lines",
-        afterOne === 1 && afterTwo === 1,
-        "afterOne=" + afterOne + " afterTwo=" + afterTwo);
-      await window.NB.hybrid.exit(false);
-      await tick(20);
-
-      // Backspace/Delete must remove the rule from EVERY caret position
-      // that means "delete the * * * line", not just the caret line the
-      // click repair opened. A caret stranded at the ROOT beside the
-      // rule (ArrowDown/ArrowUp onto it) used to fall through to the
-      // browser: Backspace ate the last character of the block before
-      // and Delete ate the FIRST character of the block after ("omega"
-      // -> "mega") while the rule survived untouched.
-      for (const [side, key] of [
-        ["before", "Backspace"], ["before", "Delete"],
-        ["after", "Backspace"], ["after", "Delete"],
-      ]) {
-        FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-        window.NB.viewer.close("notes/a.md");
-        await window.NB.tabs.open("notes/a.md");
-        await tick(20);
-        await window.NB.hybrid.enter();
-        await tick(20);
-        const hr = vc.querySelector("hr");
-        const hrIdx = Array.prototype.indexOf.call(vc.childNodes, hr);
-        setRootCaret(side === "after" ? hrIdx + 1 : hrIdx);
-        const evRoot = new window.KeyboardEvent("keydown",
-          { key, bubbles: true, cancelable: true });
-        vc.dispatchEvent(evRoot);
-        await tick(20);
-        const alpha = Array.from(vc.querySelectorAll(":scope > p"))
-          .find((p) => p.textContent === "alpha");
-        const omega = Array.from(vc.querySelectorAll(":scope > p"))
-          .find((p) => p.textContent === "omega");
-        check("hybrid hr: " + key + " at a root caret " + side +
-          " the rule removes the rule and both neighbours survive",
-          evRoot.defaultPrevented && !vc.querySelector("hr") &&
-          alpha && omega,
-          "prevented=" + evRoot.defaultPrevented +
-          " alpha=" + (alpha && alpha.outerHTML) +
-          " omega=" + (omega && omega.outerHTML) +
-          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
-        await window.NB.hybrid.exit(false);
-        await tick(20);
-      }
-
-      // A caret parked ON the rule element itself (the selection API
-      // accepts (HR, 0) even though no text caret fits inside a void
-      // element; Firefox produces it when caret-walking over a rule):
-      // native Enter left a stray root <br> that saved as junk text,
-      // and the delete keys hit whichever neighbour the engine picked.
-      for (const [key, label, expectLine] of [
-        ["Enter", "opens a line below it", true],
-        ["Backspace", "removes the rule", false],
-        ["Delete", "removes the rule", false],
-      ]) {
-        FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-        window.NB.viewer.close("notes/a.md");
-        await window.NB.tabs.open("notes/a.md");
-        await tick(20);
-        await window.NB.hybrid.enter();
-        await tick(20);
-        const hr = vc.querySelector("hr");
+      // Set the caret on the rule element itself (the selection API
+      // accepts (HR, 0); Firefox produces it when caret-walking).
+      const caretOnRule = (hr) => {
         const r = window.document.createRange();
         r.setStart(hr, 0);
         r.collapse(true);
         const s = window.getSelection();
         s.removeAllRanges();
         s.addRange(r);
-        const evOn = new window.KeyboardEvent("keydown",
+      };
+      // mousedown ON the rule. jsdom reports a zero-size rect, so the
+      // side is chosen by clientY relative to the rect top: a clientY
+      // BELOW the (zero-height) rect's top+height/2 selects "below".
+      const clickRule = async (below) => {
+        const hr = vc.querySelector("hr");
+        hr.dispatchEvent(new window.MouseEvent("mousedown",
+          { bubbles: true, cancelable: true, button: 0,
+            clientY: hr.getBoundingClientRect().top + (below ? 20 : -20) }));
+        await tick(10);
+      };
+      const press = (key) => {
+        const ev = new window.KeyboardEvent("keydown",
           { key, bubbles: true, cancelable: true });
-        vc.dispatchEvent(evOn);
+        vc.dispatchEvent(ev);
+        return ev;
+      };
+      const blockHTML = (sel) => {
+        const el = vc.querySelector(sel);
+        return el ? el.outerHTML : null;
+      };
+      const loadRuleNote = async (md) => {
+        FILES["notes/a.md"] = md;
+        window.NB.viewer.close("notes/a.md");
+        await window.NB.tabs.open("notes/a.md");
+        await tick(20);
+        await window.NB.hybrid.enter();
+        await tick(20);
+      };
+      const exitRuleNote = async () => {
+        await window.NB.hybrid.exit(false);
+        await tick(20);
+      };
+      const caretHost = () => {
+        const s = window.getSelection();
+        const n = s.anchorNode;
+        if (!n) return null;
+        return n.nodeType === 3 ? n.parentElement : n;
+      };
+
+      // --- clicking a rule inserts nothing ---------------------------
+      // A click on / below the rule puts the caret at the START of the
+      // following block; a click above puts it at the END of the block
+      // before. No placeholder line, no DOM change beyond the caret <br>.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const before = vc.innerHTML.replace(/<br[^>]*>/g, "");
+        const omegaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "omega");
+        const alphaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        await clickRule(true);
+        const after = vc.innerHTML.replace(/<br[^>]*>/g, "");
+        check("hybrid hr: clicking below a rule inserts nothing",
+          before === after, "before=" + before.slice(0, 80) + " after=" + after.slice(0, 80));
+        check("hybrid hr: clicking below a rule adds no caret placeholder",
+          vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
+          "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
+        check("hybrid hr: clicking below a rule puts the caret at the next block start",
+          omegaP && caretHost() === omegaP &&
+          window.getSelection().anchorOffset === 0,
+          "host=" + (caretHost() && caretHost().outerHTML) +
+          " off=" + window.getSelection().anchorOffset);
+        check("hybrid hr: clicking a rule leaves the neighbours untouched",
+          alphaP && alphaP.parentElement === vc && alphaP.textContent === "alpha" &&
+          omegaP && omegaP.parentElement === vc && omegaP.textContent === "omega",
+          "alpha=" + (alphaP && alphaP.outerHTML) + " omega=" + (omegaP && omegaP.outerHTML));
+      }
+      // Click ABOVE the rule -> end of the block before it.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const alphaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        await clickRule(false);
+        check("hybrid hr: clicking above a rule puts the caret at the previous block end",
+          alphaP && caretHost() === alphaP && alphaP.textContent === "alpha",
+          "host=" + (caretHost() && caretHost().outerHTML));
+        check("hybrid hr: clicking above a rule inserts nothing",
+          vc.querySelectorAll("p[data-hybrid-caret]").length === 0 &&
+          vc.querySelectorAll("hr").length === 1,
+          "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
+      }
+      // Clicking a rule beside an EMPTY heading (as in test.md) must not
+      // change the saved markdown: the caret <br> is stripped again.
+      await loadRuleNote("alpha\n\n* * *\n\n##\n\nomega\n");
+      {
+        const mdBefore = window.NB.hybrid.domToMarkdown();
+        await clickRule(true);
+        const mdAfter = window.NB.hybrid.domToMarkdown();
+        check("hybrid hr: clicking a rule beside an empty heading does not change the markdown",
+          mdAfter === mdBefore && !/##[ \t]+\n/.test(mdAfter) && /##/.test(mdAfter),
+          JSON.stringify(mdAfter).slice(0, 90));
+      }
+
+      // --- Delete / Backspace at a rule (character model) -------------
+      // Caret at the START of the block after the rule (where a click
+      // leaves it): Backspace removes the rule, Delete eats forward into
+      // the block.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const omegaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "omega");
+        caretAtStart(omegaP);
+        const ev = press("Backspace");
         await tick(20);
         const alpha = Array.from(vc.querySelectorAll(":scope > p"))
           .find((p) => p.textContent === "alpha");
         const omega = Array.from(vc.querySelectorAll(":scope > p"))
           .find((p) => p.textContent === "omega");
-        const strayBr = expectLine
-          ? null   // Enter: the opened placeholder <p> is expected instead
-          : vc.querySelector(":scope > br");
-        check("hybrid hr: " + key + " with the caret parked on the rule " + label,
-          evOn.defaultPrevented &&
-          (expectLine
-            ? hr.nextElementSibling &&
-              hr.nextElementSibling.tagName === "P" &&
-              hr.nextElementSibling.getAttribute("data-hybrid-caret") === "1"
-            : !vc.querySelector("hr") && !strayBr) &&
-          alpha && omega,
-          "prevented=" + evOn.defaultPrevented +
-          " alpha=" + (alpha && alpha.outerHTML) +
-          " omega=" + (omega && omega.outerHTML) +
+        check("hybrid hr: Backspace at the next block start removes the rule",
+          ev.defaultPrevented && !vc.querySelector("hr") && alpha && omega,
+          "prevented=" + ev.defaultPrevented +
           " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
-        // The rule-line removal must save clean markdown: no junk from
-        // a native stray <br>, and no leftover HTML markup.
-        check("hybrid hr: " + key + " on the rule saves clean markdown",
-          !/<br\s*\/?>|data-hybrid/i.test(window.NB.hybrid.domToMarkdown()) &&
-          window.NB.hybrid.domToMarkdown().includes("alpha") &&
-          window.NB.hybrid.domToMarkdown().includes("omega"),
-          JSON.stringify(window.NB.hybrid.domToMarkdown()).slice(0, 60));
-        await window.NB.hybrid.exit(false);
+        check("hybrid hr: removing the rule leaves no placeholder behind",
+          vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
+          "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
+      }
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const omegaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "omega");
+        caretAtStart(omegaP);
+        const ev = press("Delete");
         await tick(20);
+        check("hybrid hr: Delete at the next block start keeps the rule (native forward edit)",
+          !ev.defaultPrevented && !!vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      // Caret at the END of the block before the rule: Delete removes
+      // the rule, Backspace eats backward into the block.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const alphaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        caretAtEnd(alphaP);
+        const ev = press("Delete");
+        await tick(20);
+        check("hybrid hr: Delete at the previous block end removes the rule",
+          ev.defaultPrevented && !vc.querySelector("hr") &&
+          vc.textContent.includes("alpha") && vc.textContent.includes("omega"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const alphaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        caretAtEnd(alphaP);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace at the previous block end keeps the rule (native backward edit)",
+          !ev.defaultPrevented && !!vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      // ROOT-level caret immediately after the rule: Backspace removes
+      // it; Delete does not.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr) + 1);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace at a root caret after the rule removes it",
+          ev.defaultPrevented && !vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr) + 1);
+        const ev = press("Delete");
+        await tick(20);
+        check("hybrid hr: Delete at a root caret after the rule leaves it",
+          !ev.defaultPrevented && vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      // ROOT-level caret immediately before the rule: Delete removes it;
+      // Backspace does not.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr));
+        const ev = press("Delete");
+        await tick(20);
+        check("hybrid hr: Delete at a root caret before the rule removes it",
+          ev.defaultPrevented && !vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr));
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace at a root caret before the rule leaves it",
+          !ev.defaultPrevented && vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      // Caret parked ON the rule element: both keys remove it.
+      for (const key of ["Backspace", "Delete"]) {
+        await loadRuleNote("alpha\n\n---\n\nomega\n");
+        caretOnRule(vc.querySelector("hr"));
+        const ev = press(key);
+        await tick(20);
+        check("hybrid hr: " + key + " with the caret parked on the rule removes it",
+          ev.defaultPrevented && !vc.querySelector("hr") &&
+          vc.textContent.includes("alpha") && vc.textContent.includes("omega"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
       }
 
-      // Removing the rule from the caret line on the ABOVE side must
-      // leave the caret in a block that is still in the document: the
-      // placeholder IS the rule's previous sibling there, and
-      // resolving the caret host after the removal used to point the
-      // selection into a detached node (the next gesture then hit
-      // whatever Chromium re-anchored to).
-      FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      const hrAbove = vc.querySelector("hr");
-      hrAbove.dispatchEvent(new window.MouseEvent("mousedown",
-        { bubbles: true, cancelable: true, button: 0,
-          clientY: hrAbove.getBoundingClientRect().top - 8 }));
-      await tick(10);
-      const phAbove = hrAbove.previousElementSibling;
-      check("hybrid hr: clicking above the rule opens the caret line before it",
-        phAbove && phAbove.tagName === "P" &&
-        phAbove.getAttribute("data-hybrid-caret") === "1" &&
-        window.getSelection().anchorNode && phAbove.contains(window.getSelection().anchorNode),
-        "ph=" + (phAbove && phAbove.outerHTML));
-      const evAbove = new window.KeyboardEvent("keydown",
-        { key: "Backspace", bubbles: true, cancelable: true });
-      vc.dispatchEvent(evAbove);
-      await tick(20);
-      const anchorEl = window.getSelection().anchorNode &&
-        (window.getSelection().anchorNode.nodeType === 3
-          ? window.getSelection().anchorNode.parentElement
-          : window.getSelection().anchorNode);
-      check("hybrid hr: removing the rule from above leaves the caret in a live block",
-        evAbove.defaultPrevented && !vc.querySelector("hr") &&
-        anchorEl && anchorEl.isConnected && vc.contains(anchorEl) &&
-        anchorEl.textContent === "alpha",
-        "anchor=" + (anchorEl && anchorEl.outerHTML));
-      check("hybrid hr: removing the rule from above leaves no placeholder behind",
-        vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
-        "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
-      await window.NB.hybrid.exit(false);
-      await tick(20);
+      // --- typing / Enter against a rule opens a fresh line -----------
+      // The first character typed where a click leaves the caret (start
+      // of the block after the rule) must land on a NEW line between the
+      // rule and that block; the block itself is never modified. This is
+      // the reported corruption, across every kind of following block.
+      const typeCases = [
+        ["heading", "alpha\n\n---\n\n## Heading\n\nbody\n", "h2"],
+        ["list", "alpha\n\n---\n\n- item\n\nbody\n", "ul"],
+        ["code fence", "alpha\n\n---\n\n```js\nlet x=1;\n```\n\nbody\n", "pre"],
+        ["table", "alpha\n\n---\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nbody\n", "table"],
+        ["empty heading", "alpha\n\n---\n\n##\n\nbody\n", "h2"],
+      ];
+      for (const [label, md, tag] of typeCases) {
+        await loadRuleNote(md);
+        const beforeHTML = blockHTML(tag);
+        const nextEl = vc.querySelector("hr").nextElementSibling;
+        caretAtStart(nextEl);
+        press("x");
+        await tick(30);
+        const opened = vc.querySelector("hr").nextElementSibling;
+        // jsdom performs no native text insertion, so stand in for the
+        // browser: type into the line the keydown opened.
+        if (opened && opened.tagName === "P") {
+          opened.textContent = "x";
+          opened.removeAttribute("data-hybrid-caret");
+        }
+        vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(30);
+        const afterHTML = blockHTML(tag);
+        check("hybrid hr: typing at the rule edge before a " + label +
+          " does not corrupt it",
+          beforeHTML === afterHTML,
+          "before=" + String(beforeHTML).slice(0, 60) +
+          " after=" + String(afterHTML).slice(0, 60));
+        check("hybrid hr: typing at the rule edge before a " + label +
+          " lands on its own line",
+          opened && opened.tagName === "P" && /x/.test(opened.textContent) &&
+          opened.nextElementSibling === vc.querySelector(tag),
+          "opened=" + (opened && opened.outerHTML));
+        await exitRuleNote();
+      }
+      // Plain Enter at that same edge opens the line; typing then lands
+      // in it, and the following block is untouched.
+      for (const [label, md, tag] of typeCases) {
+        await loadRuleNote(md);
+        const beforeHTML = blockHTML(tag);
+        const nextEl = vc.querySelector("hr").nextElementSibling;
+        caretAtStart(nextEl);
+        pressEnter(vc);
+        await tick(20);
+        const opened = vc.querySelector("hr").nextElementSibling;
+        if (opened && opened.tagName === "P") opened.textContent = "x";
+        vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(30);
+        check("hybrid hr: Enter at the rule edge before a " + label +
+          " opens a line and leaves the block intact",
+          beforeHTML === blockHTML(tag) &&
+          opened && opened.tagName === "P" && /x/.test(opened.textContent) &&
+          opened.nextElementSibling === vc.querySelector(tag),
+          "before=" + String(beforeHTML).slice(0, 50) +
+          " after=" + String(blockHTML(tag)).slice(0, 50));
+        await exitRuleNote();
+      }
+      // A caret INSIDE the following structure (a table cell, a list
+      // item) is editing that structure, not sitting at the rule's edge:
+      // Backspace must not delete the rule, and typing must not eject the
+      // caret out of the cell/item into a new paragraph.
+      await loadRuleNote("alpha\n\n---\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nbody\n");
+      {
+        const cell = vc.querySelector("td");
+        caretAtStart(cell);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace inside the first table cell keeps the rule",
+          !ev.defaultPrevented && !!vc.querySelector("hr") &&
+          cell.isConnected && !!cell.closest("table"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+        const ev2 = press("x");
+        await tick(20);
+        check("hybrid hr: typing inside the first table cell keeps its structure",
+          !ev2.defaultPrevented && !!vc.querySelector("table") &&
+          cell.closest("table") === vc.querySelector("table") &&
+          !vc.querySelector("p[data-hybrid-caret]"),
+          "html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      await loadRuleNote("alpha\n\n---\n\n- item\n\nbody\n");
+      {
+        const li = vc.querySelector("li");
+        const textNode = li.firstChild;
+        const r = window.document.createRange();
+        r.setStart(textNode, 0);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace inside the first list item keeps the rule",
+          !ev.defaultPrevented && !!vc.querySelector("hr") && !!vc.querySelector("li"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+        press("x");
+        await tick(20);
+        check("hybrid hr: typing inside the first list item keeps its structure",
+          !!vc.querySelector("li") && !vc.querySelector("p[data-hybrid-caret]"),
+          "html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+      // A rule NESTED in a blockquote (marked renders `> ---` that way)
+      // is not a top-level rule: clicking it must not throw and must not
+      // modify the note.
+      await loadRuleNote("> ---\n\nafter\n");
+      {
+        const hadHr = !!vc.querySelector("hr");
+        const before = vc.innerHTML;
+        let threw = null;
+        try {
+          const nestedHr = vc.querySelector("hr");
+          if (nestedHr) {
+            nestedHr.dispatchEvent(new window.MouseEvent("mousedown",
+              { bubbles: true, cancelable: true, button: 0, clientY: 10 }));
+          }
+        } catch (err) { threw = err.name + ": " + err.message; }
+        await tick(20);
+        check("hybrid hr: clicking a nested rule does not throw",
+          threw === null, "threw=" + threw);
+        check("hybrid hr: clicking a nested rule leaves the note unchanged",
+          hadHr === !!vc.querySelector("hr") &&
+          vc.innerHTML.replace(/<br[^>]*>/g, "") === before.replace(/<br[^>]*>/g, ""),
+          "before=" + before.replace(/\n/g, "").slice(0, 60) +
+          " after=" + vc.innerHTML.replace(/\n/g, "").slice(0, 60));
+      }
 
-      // The rule must be deletable when it is the note's ONLY block
-      // (no neighbouring block exists to fall back to): the removal
-      // opens a fresh caret line instead of resolving to a detached
-      // neighbour, and the note saves as empty.
-      FILES["notes/a.md"] = "---\n";
-      window.NB.viewer.close("notes/a.md");
-      await window.NB.tabs.open("notes/a.md");
-      await tick(20);
-      await window.NB.hybrid.enter();
-      await tick(20);
-      const onlyRule = vc.querySelector("hr");
-      onlyRule.dispatchEvent(new window.MouseEvent("mousedown",
-        { bubbles: true, cancelable: true, button: 0,
-          clientY: onlyRule.getBoundingClientRect().bottom + 4 }));
-      await tick(10);
-      const evOnly = new window.KeyboardEvent("keydown",
-        { key: "Backspace", bubbles: true, cancelable: true });
-      vc.dispatchEvent(evOnly);
-      await tick(20);
-      check("hybrid hr: Backspace removes a rule that is the note's only block",
-        evOnly.defaultPrevented && !vc.querySelector("hr"),
-        "prevented=" + evOnly.defaultPrevented +
-        " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
-      check("hybrid hr: the emptied note saves as empty markdown",
-        window.NB.hybrid.domToMarkdown().trim() === "",
-        JSON.stringify(window.NB.hybrid.domToMarkdown()));
-      await window.NB.hybrid.exit(false);
-      await tick(20);
+      // TRAILING rule: the clicked side has no block, so the caret rests
+      // against the rule at the root. Typing must open a line AFTER it.
+      await loadRuleNote("alpha\n\n* * *\n");
+      {
+        await clickRule(true);
+        vc.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "T", bubbles: true, cancelable: true }));
+        // Simulate what the browser does with the key: insert the text.
+        const host = caretHost();
+        if (host && host.getAttribute && host.getAttribute("data-hybrid-caret") === "1") {
+          host.textContent = "T";
+          host.setAttribute("data-hybrid-caret", "");
+        }
+        vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(30);
+        check("hybrid hr: typing below a trailing rule lands after it",
+          /T/.test(vc.textContent) &&
+          vc.textContent.indexOf("alpha") < vc.textContent.indexOf("T"),
+          "text=" + vc.textContent.slice(0, 40));
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace after a trailing rule removes the rule",
+          ev.defaultPrevented && !vc.querySelector("hr") && /alpha/.test(vc.textContent),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+      }
+
+      // --- plain Enter at a root caret beside a rule ------------------
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr) + 1);
+        const pCount0 = vc.querySelectorAll(":scope > p").length;
+        const ev = press("Enter");
+        await tick(20);
+        const idx = Array.prototype.indexOf.call(vc.childNodes, hr);
+        const afterRule = vc.childNodes[idx + 1];
+        check("hybrid hr: plain Enter at a root caret after the rule opens a line below",
+          ev.defaultPrevented && afterRule && afterRule.tagName === "P" &&
+          afterRule.getAttribute("data-hybrid-caret") === "1",
+          "after=" + (afterRule && afterRule.outerHTML));
+        check("hybrid hr: plain Enter does not nest the note's blocks in a <p>",
+          vc.querySelectorAll(":scope > p").length === pCount0 + 1 &&
+          !vc.querySelector(":scope > p > :scope > p") &&
+          !vc.querySelector("p > hr"),
+          "p count=" + vc.querySelectorAll(":scope > p").length);
+        check("hybrid hr: the opened caret line saves as a blank line",
+          window.NB.hybrid.domToMarkdown().includes("alpha") &&
+          window.NB.hybrid.domToMarkdown().includes("omega") &&
+          !/data-hybrid/.test(window.NB.hybrid.domToMarkdown()),
+          JSON.stringify(window.NB.hybrid.domToMarkdown()).slice(-60));
+      }
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        const alphaP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr));
+        const ev = press("Enter");
+        await tick(20);
+        const beforeRule = vc.childNodes[
+          Array.prototype.indexOf.call(vc.childNodes, hr) - 1];
+        check("hybrid hr: plain Enter at a root caret before the rule opens a line above",
+          ev.defaultPrevented && beforeRule && beforeRule.tagName === "P" &&
+          beforeRule.getAttribute("data-hybrid-caret") === "1",
+          "before=" + (beforeRule && beforeRule.outerHTML));
+        check("hybrid hr: Enter before the rule keeps alpha intact",
+          alphaP && alphaP.parentElement === vc && alphaP.textContent === "alpha",
+          "alpha=" + (alphaP && alphaP.outerHTML));
+      }
+      // Shift+Enter beside a rule anchors on the caret's own side.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr));
+        pressEnter(vc, { shiftKey: true });
+        await tick(20);
+        const beforeRule = vc.childNodes[
+          Array.prototype.indexOf.call(vc.childNodes, hr) - 1];
+        check("hybrid hr: Shift+Enter beside the rule anchors on the rule",
+          beforeRule && beforeRule.tagName === "P" &&
+          beforeRule.getAttribute("data-hybrid-caret") === "1",
+          "before=" + (beforeRule && beforeRule.outerHTML));
+      }
+
+      // --- a rule that is the note's only block -----------------------
+      await loadRuleNote("---\n");
+      {
+        await clickRule(true);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: Backspace removes a rule that is the note's only block",
+          ev.defaultPrevented && !vc.querySelector("hr"),
+          "prevented=" + ev.defaultPrevented +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
+        check("hybrid hr: the emptied note saves as empty markdown",
+          window.NB.hybrid.domToMarkdown().trim() === "",
+          JSON.stringify(window.NB.hybrid.domToMarkdown()));
+      }
+
+      // --- removing a rule must not delete a blank line the user made --
+      // A blank line beside the rule is real content; the rule removal
+      // takes the rule ONLY, never the line.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        const blank = window.document.createElement("p");
+        blank.innerHTML = "<br>";
+        hr.before(blank);   // the user's own blank line, unmarked
+        // Root caret immediately after the rule -> Backspace removes it.
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr) + 1);
+        const ev = press("Backspace");
+        await tick(20);
+        check("hybrid hr: deleting a rule keeps a blank line the user made",
+          ev.defaultPrevented && !vc.querySelector("hr") &&
+          blank.parentElement === vc,
+          "prevented=" + ev.defaultPrevented +
+          " blank=" + blank.outerHTML +
+          " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 90));
+      }
+
+      // --- a removed rule saves clean markdown ------------------------
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        setRootCaret(Array.prototype.indexOf.call(vc.childNodes, hr) + 1);
+        press("Backspace");
+        await tick(20);
+        const md = window.NB.hybrid.domToMarkdown();
+        check("hybrid hr: removing a rule saves clean markdown",
+          !/<br\s*\/?>|data-hybrid/i.test(md) && !/\* \* \*/.test(md) &&
+          md.includes("alpha") && md.includes("omega"),
+          JSON.stringify(md).slice(0, 70));
+      }
 
       FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
       window.NB.viewer.close("notes/a.md");

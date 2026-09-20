@@ -54,6 +54,13 @@
     "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH",
   ];
 
+  // The marker appended to the caret line-box <br> (see caretToStart /
+  // caretToEdge) and the sentinel given to an empty heading in the
+  // turndown clone. Both are stripped by domToMarkdown; they are named
+  // here so the create/strip sites cannot drift apart.
+  const CARET_BR_ATTR = "data-hybrid-caret-br";
+  const EMPTY_HEADING_SENTINEL = "\u0000nbemptyh";
+
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
   let turndownSvc = null;   // lazily created TurndownService instance
@@ -120,6 +127,9 @@
         return "\n\n" + content + "\n\n";
       },
     });
+    // An EMPTY heading ("##" with no text yet) is handled in
+    // domToMarkdown, not here: turndown's isBlank() check runs before any
+    // added rule, so the fix must happen on the clone. See that method.
     return turndownSvc;
   }
 
@@ -147,6 +157,30 @@
     clone.querySelectorAll("p[data-hybrid-caret]").forEach((p) => {
       if (!p.textContent.trim() && !p.querySelector("img,hr,input")) p.remove();
     });
+    // Drop the caret line-box <br> appended by caretToStart / caretToEdge.
+    // It is an editing artifact, not content: it exists only so the
+    // caret has a line to sit on in an empty block. Removing it on every
+    // save keeps an untouched empty heading as "##" (not "##   ") and
+    // stops it being serialized as a Markdown hard break ("  \n") after
+    // the user types a character in front of it. The attribute is set
+    // ONLY by those two functions, so a <br> the user actually typed is
+    // never marked and always survives.
+    clone.querySelectorAll("[" + CARET_BR_ATTR + "]").forEach((br) => br.remove());
+    // An EMPTY heading ("##" with no text yet) must keep its marker.
+    // Turndown's built-in isBlank() applies the blank rule to an
+    // all-whitespace heading BEFORE any added rule runs, dropping the
+    // element entirely -- so entering hybrid mode and saving without
+    // touching anything silently deleted a "##" line from the note. Give
+    // such a heading a unique sentinel child in the CLONE so isBlank()
+    // is false; the normal heading rule then emits "## <sentinel>", which
+    // is turned back into "##" below. A sentinel (not a bare ZWS) is used
+    // so the rewrite can target EXACTLY the heading line and never touch
+    // a "## " line inside a code fence or plugin source.
+    clone.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => {
+      if (!h.textContent.trim()) {
+        h.appendChild(document.createTextNode(EMPTY_HEADING_SENTINEL));
+      }
+    });
     // Round-trip every registered plugin block (mermaid / wavedrom /
     // katex / graphviz / html-live) back to its fenced source. The
     // registry owns the container + error-box shapes, so a new renderer
@@ -170,7 +204,12 @@
     // Strip the zero-width-space placeholder we inject into empty list
     // items (see ensureListMarker) so it never leaks into the saved
     // markdown. A bare ZWS text node is invisible and meaningless.
-    return md.replace(/\u200B/g, "");
+    md = md.replace(/\u200B/g, "");
+    // An empty ATX heading was given EMPTY_HEADING_SENTINEL so turndown
+    // would not drop it; the heading rule emits "## <sentinel>". Remove
+    // the sentinel and the separating space, restoring exactly "##".
+    md = md.split(" " + EMPTY_HEADING_SENTINEL).join("");
+    return md.split(EMPTY_HEADING_SENTINEL).join("");
   }
 
   /* Re-render Markdown into #viewer-content (same pipeline as
@@ -482,11 +521,17 @@
   /* Put the caret at the start of `el`'s editable content (after a
    * block transform the selection is often stale). An empty block gets
    * a <br> line box first: without it Chrome has no line to attach the
-   * caret to and draws it on the neighboring line instead. */
+   * caret to and draws it on the neighboring line instead. That <br> is
+   * a pure caret artifact -- it must never reach the saved markdown (a
+   * click that only moves the caret must not add a blank line or turn an
+   * empty heading's source into "##   "), so it is marked and stripped
+   * again in domToMarkdown. */
   function caretToStart(el) {
     if (!el) return;
     if (!el.textContent && !el.querySelector("img,br,canvas,svg,iframe")) {
-      el.appendChild(document.createElement("br"));
+      const br = document.createElement("br");
+      br.setAttribute(CARET_BR_ATTR, "1");
+      el.appendChild(br);
     }
     const sel = window.getSelection();
     const r = document.createRange();
@@ -906,11 +951,14 @@
 
   /* Put the caret at the start or end of `el`'s editable content. An
    * empty block gets a <br> line box first (see caretToStart), so the
-   * caret has a line to sit on in every browser. */
+   * caret has a line to sit on in every browser; that <br> is marked and
+   * stripped on save (see domToMarkdown). */
   function caretToEdge(el, atEnd) {
     if (!el) return;
     if (!el.textContent && !el.querySelector("img,br,canvas,svg,iframe")) {
-      el.appendChild(document.createElement("br"));
+      const br = document.createElement("br");
+      br.setAttribute(CARET_BR_ATTR, "1");
+      el.appendChild(br);
     }
     const sel = window.getSelection();
     const r = document.createRange();
@@ -920,27 +968,44 @@
     sel.addRange(r);
   }
 
-  /* --- horizontal rule caret repair --------------------------------- */
-  /* An <hr> is a void block: Chromium cannot place a text caret beside
-   * it. A click ON the rule -- or anywhere in the empty band around it
-   * (the rule's own margins, and the whole empty area below a rule that
-   * ends the note) -- resolves the selection to a ROOT child offset
-   * BEFORE the rule and paints no caret at all. From there the native
-   * edits corrupt the note: plain Enter wraps the surrounding blocks in
-   * a stray <p>, and typed text lands inside that wrapper. Repair such
-   * a click into a real caret in the nearest editable block on the
-   * clicked side. */
+  /* --- horizontal rule editing -------------------------------------- */
+  /* An <hr> is a void block: no engine can place a text caret inside it,
+   * so a click on the rule -- or in the empty band around it -- either
+   * paints no caret at all or parks one on an unrelated offset, and the
+   * native edits then corrupt the neighbouring block (plain Enter wraps
+   * the surrounding blocks in a stray <p>, typed text lands inside that
+   * wrapper). The rule is treated as an ordinary character for editing:
+   *
+   *   - clicking it moves the caret to the neighbouring block edge on
+   *     the clicked side and inserts NOTHING into the note. No
+   *     placeholder line appears while the user is only navigating.
+   *   - Delete removes the rule when the caret sits immediately to its
+   *     LEFT, Backspace when it sits immediately to its RIGHT -- the
+   *     standard character model (Delete deletes forward, Backspace
+   *     backward). The other key/side combinations are ordinary text
+   *     edits.
+   *   - the first text keystroke or plain Enter at the edge opens a
+   *     fresh line on the caret's side before editing, so the
+   *     neighbouring block is never mangled (see openLineAtCaretRule).
+   *
+   * The caret can still sit ON the rule element itself: the selection
+   * API accepts (HR, 0) and Firefox produces it when caret-walking. */
 
-  /* The top-level <hr> a mousedown belongs to, or null. */
+  /* The top-level <hr> a mousedown belongs to, or null. A rule nested
+   * inside a blockquote or list item is NOT claimed: the caret repair
+   * and the delete/open-line handlers all resolve top-level siblings of
+   * the editor root, so a nested rule has no valid root offset. Such a
+   * rule keeps the browser's native editing. */
   function hrUnderClick(e) {
     const target = e.target;
     if (target && target.tagName === "HR" &&
-        viewerContentEl.contains(target)) return target;
+        viewerContentEl.contains(target) &&
+        target.parentElement === viewerContentEl) return target;
     if (target !== viewerContentEl) return null;
     // Click on the editor surface (not inside a block). Claim it when a
-    // rule is the nearest caret target: the click sits in the empty band
-    // between the blocks around a rule -- which for a trailing rule
-    // extends to the end of the note.
+    // top-level rule is the nearest caret target: the click sits in the
+    // empty band between the blocks around a rule -- which for a trailing
+    // rule extends to the end of the note.
     for (let i = 0; i < viewerContentEl.children.length; i += 1) {
       const el = viewerContentEl.children[i];
       if (el.tagName !== "HR") continue;
@@ -954,115 +1019,124 @@
   }
 
   /* The nearest top-level sibling of `hr` that can hold a text caret,
-   * skipping further rules. dir is +1 (after) or -1 (before). `exclude`
-   * (optional) is a sibling to step over as well: removeRuleLine passes
-   * the caret placeholder it is about to delete with the rule, so the
-   * caret never resolves to a node that is already detached. */
-  function adjacentHost(hr, dir, exclude) {
+   * skipping further rules. dir is +1 (after) or -1 (before). */
+  function adjacentHost(hr, dir) {
     let node = dir > 0 ? hr.nextElementSibling : hr.previousElementSibling;
     while (node) {
-      if (node !== exclude && node.tagName !== "HR") return node;
+      if (node.tagName !== "HR") return node;
       node = dir > 0 ? node.nextElementSibling : node.previousElementSibling;
     }
     return null;
   }
 
-  /* The empty caret paragraph the rule repair opened on the given side
-   * of `hr`, or null. Reused on a repeated click so clicking a rule
-   * twice does not stack empty lines. */
-  function emptyCaretLine(hr, below) {
-    const sib = below ? hr.nextElementSibling : hr.previousElementSibling;
-    if (sib && sib.tagName === "P" &&
-        sib.getAttribute("data-hybrid-caret") === "1" &&
-        !sib.textContent.trim()) return sib;
-    return null;
-  }
-
-  /* Put a real caret where a click on/near `hr` meant to land. Clicking
-   * on or below the rule opens a line just AFTER it; above it opens a
-   * line just BEFORE.
-   *
-   * Always a FRESH paragraph, never the edge of the neighbouring block:
-   * putting the caret at the start of the block after the rule makes
-   * Enter/typing operate on THAT block, which mangles it -- Enter splits
-   * a heading into two, typing merges text into it ("NEW" + "Heading"),
-   * and inside a code fence or a list item it corrupts the fence/item.
-   * The new line carries data-hybrid-caret so domToMarkdown drops it
-   * again while the user never types into it. */
+  /* Put the caret where a click on/near `hr` meant to land, WITHOUT
+   * changing the note. Clicking on or below the rule lands at the START
+   * of the nearest block after it; clicking above lands at the END of
+   * the nearest block before it. When there is no block on the clicked
+   * side (a rule that starts or ends the note) the caret is parked on
+   * that empty side directly against the rule -- a real caret beside the
+   * void rule, from where the first keystroke or Enter opens a fresh
+   * line on the clicked side (see openLineAtCaretRule / strandCaretAtRule).
+   * Resolving to the FAR edge of the opposite block instead would make
+   * the very next edit land on the wrong side of the rule. */
   function placeCaretForRule(hr, clientY) {
     const rect = hr.getBoundingClientRect();
     const below = clientY >= rect.top + rect.height / 2;
     viewerContentEl.focus();
-    const reuse = emptyCaretLine(hr, below);
-    if (reuse) {
-      caretToStart(reuse);
+    const host = adjacentHost(hr, below ? 1 : -1);
+    if (host) {
+      caretToEdge(host, !below);   // below -> start of next; above -> end of previous
       return;
     }
-    const p = document.createElement("p");
-    p.setAttribute("data-hybrid-caret", "1");
-    if (below) hr.after(p); else hr.before(p);
-    caretToStart(p);
+    strandCaretAtRule(hr, below);
   }
 
-  /* The empty caret line the rule repair opened, with the rule it sits
-   * beside: { p, hr } or null. */
-  function caretLineAtRule() {
+  /* Park the caret at a ROOT-level offset directly beside `hr`, on the
+   * requested side. This is the shape keyboard navigation (ArrowDown /
+   * ArrowUp over a rule) already leaves behind, and every rule handler
+   * (Enter, the delete keys, a printable character) claims it. If the
+   * rule is NOT a direct child of the editor (a nested rule inside a
+   * blockquote or list item, which marked can render), there is no root
+   * offset to use: fall back to a caret immediately before/after the
+   * rule element itself. */
+  function strandCaretAtRule(hr, after) {
+    const r = document.createRange();
+    let i = 0;
+    for (; i < viewerContentEl.childNodes.length; i += 1) {
+      if (viewerContentEl.childNodes[i] === hr) break;
+    }
+    if (i >= viewerContentEl.childNodes.length) {
+      // Not a direct child: no valid root offset exists.
+      if (after) r.setStartAfter(hr); else r.setStartBefore(hr);
+    } else {
+      r.setStart(viewerContentEl, after ? i + 1 : i);
+    }
+    r.collapse(true);
     const sel = window.getSelection();
-    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
-    let el = sel.getRangeAt(0).startContainer;
-    if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
-    if (!el || !el.closest) return null;
-    const p = el.closest("p[data-hybrid-caret]");
-    if (!p || p.textContent.trim()) return null;
-    const prev = p.previousElementSibling;
-    const next = p.nextElementSibling;
-    if (prev && prev.tagName === "HR") return { p, hr: prev };
-    if (next && next.tagName === "HR") return { p, hr: next };
-    return null;
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
-  /* Remove a rule line: the <hr>, plus the empty caret line the repair
-   * opened for it. The caret moves to the end of the nearest block
-   * before the rule (or the start of the nearest one after), so
-   * Backspace again joins the neighbours. The neighbours are resolved
-   * BEFORE the removal and with the placeholder excluded: with the
-   * caret line on the above side the placeholder IS hr's previous
-   * sibling, and resolving after the removal handed the caret to a
-   * node that was no longer in the document. */
-  function removeRuleLine(hr, placeholder) {
-    if (!hr || !hr.parentElement) return;
-    // Direction from which the caret approaches the gap the rule leaves:
-    // prefer the block before the rule (Backspace semantics), fall back
-    // to the block after it when the note starts with the rule.
-    const prev = adjacentHost(hr, -1, placeholder);
-    const next = adjacentHost(hr, 1, placeholder);
-    hr.remove();
-    if (placeholder && placeholder.parentElement) placeholder.remove();
-    onContentChange();
-    viewerContentEl.focus();
-    if (prev) {
-      caretToEdge(prev, true);
-      return;
+  /* Structural containers a caret can be nested inside. A caret inside
+   * one of these is editing that structure, not sitting at the rule's
+   * edge, even when the text before it is empty (a range from a table's
+   * start to a caret in its first cell contains no text, which would
+   * otherwise read as "at the very start"). */
+  const NESTED_STRUCTURE_TAGS = [
+    "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH",
+    "UL", "OL", "LI", "BLOCKQUOTE",
+  ];
+
+  /* True when the collapsed caret sits directly in `top` -- not nested
+   * inside a table cell, list item or blockquote. The rule-click repair
+   * leaves the caret ON `top` itself (startContainer === top) whatever
+   * the block type; a deliberate click into a table cell or list item
+   * leaves it in a nested element, which must keep its own editing. An
+   * inline chain (a fence's <code> inside its <pre>) still counts, since
+   * that is the block's own text. The caller pairs this with a
+   * start-of-block or end-of-block test to pick the edge. */
+  function caretDirectlyInTop(top, range) {
+    if (range.startContainer === top) return true;
+    if (range.startContainer.nodeType !== Node.TEXT_NODE) return false;
+    let el = range.startContainer.parentElement;
+    while (el && el !== top) {
+      if (NESTED_STRUCTURE_TAGS.indexOf(el.tagName) !== -1) return false;
+      el = el.parentElement;
     }
-    if (next) {
-      caretToEdge(next, false);
-      return;
+    return el === top;
+  }
+
+  /* The top-level block (direct child of #viewer-content) an element
+   * belongs to, or null when it resolves to the editor root itself. */
+  function topLevelBlock(el) {
+    let top = el;
+    while (top && top !== viewerContentEl &&
+           top.parentElement !== viewerContentEl) {
+      top = top.parentElement;
     }
-    // The rule was the only block left: open an empty line for the caret.
-    const p = document.createElement("p");
-    p.setAttribute("data-hybrid-caret", "1");
-    viewerContentEl.appendChild(p);
-    caretToStart(p);
+    return (top && top !== viewerContentEl) ? top : null;
+  }
+
+  /* True when the collapsed caret sits at the very END of `blockEl`
+   * (nothing but whitespace between it and the block's end). */
+  function caretAtBlockEnd(blockEl, range) {
+    const after = document.createRange();
+    after.selectNodeContents(blockEl);
+    after.setStart(range.startContainer, range.startOffset);
+    return after.toString().replace(/\u200B/g, "") === "";
   }
 
   /* The top-level <hr> a ROOT-level caret sits beside, with the side the
    * caret is on: { hr, after } or null. Keyboard navigation (ArrowDown
    * from the block above a rule) and the very end of a note that ends
    * with a rule leave the caret here, where the browser's native Enter
-   * wraps the neighbouring blocks in a <p>. */
+   * wraps the neighbouring blocks in a <p>. Only a COLLAPSED caret is
+   * reported: a selection that merely starts at a root offset near a
+   * rule is a real selection the user is acting on, and claiming it
+   * would open a stray line or delete the rule under their selection. */
   function strandedRuleAtRoot() {
     const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return null;
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
     const r = sel.getRangeAt(0);
     if (r.startContainer !== viewerContentEl) return null;
     const nodes = viewerContentEl.childNodes;
@@ -1094,27 +1168,157 @@
     return node;
   }
 
-  /* The rule a delete key press is "aimed at", with the caret line it
-   * must take with it: { hr, p } or null. Covers every caret position
-   * that means "remove the * * * line":
-   *   - the caret line the click repair opened beside the rule
-   *     (p is that placeholder, dropped together with the rule);
-   *   - a caret stranded at the ROOT beside the rule (keyboard
-   *     navigation: ArrowDown/ArrowUp onto the rule) -- no placeholder
-   *     to drop, natively Backspace eats into the block before and
-   *     Delete eats into the block AFTER while the rule stays;
-   *   - a caret parked on the rule element itself (Firefox caret
-   *     walking) -- same, plus native Enter leaves a stray <br>.
-   * A placeholder is only reported when it is still empty: one the
-   * user typed into is real content and must never be deleted here. */
-  function ruleBesideCaret() {
-    const atLine = caretLineAtRule();
-    if (atLine) return { hr: atLine.hr, p: atLine.p };
-    const stranded = strandedRuleAtRoot();
-    if (stranded) return { hr: stranded.hr, p: null };
+  /* The rule a delete key press removes, per the standard character
+   * model: Delete removes what is to the caret's RIGHT, Backspace what
+   * is to its LEFT. So the rule is claimed only when the caret sits
+   * immediately BEFORE it (Delete) or immediately AFTER it (Backspace).
+   * A caret parked ON the rule element itself (Firefox caret-walking)
+   * has no side; it is normalised to "after" for Backspace and "before"
+   * for Delete, so both engines and both keys agree that the rule is
+   * deletable from that parking spot. A ROOT-level caret beside the rule
+   * resolves by the same rule. Returns { hr, after } or null. */
+  function ruleForDeleteKey(key) {
     const onRule = ruleUnderCaret();
-    if (onRule) return { hr: onRule, p: null };
+    if (onRule) return { hr: onRule, after: key === "Backspace" };
+    const stranded = strandedRuleAtRoot();
+    if (stranded) {
+      if (key === "Backspace" && stranded.after) return { hr: stranded.hr, after: true };
+      if (key === "Delete" && !stranded.after) return { hr: stranded.hr, after: false };
+      return null;
+    }
+    const at = caretTopBlock();
+    if (!at) return null;
+    const { top, range } = at;
+    const prev = top.previousElementSibling;
+    const next = top.nextElementSibling;
+    if (key === "Backspace" && prev && prev.tagName === "HR" &&
+        caretDirectlyInTop(top, range) &&
+        textBeforeCaret(top, range) === "") {
+      return { hr: prev, after: true };
+    }
+    if (key === "Delete" && next && next.tagName === "HR" &&
+        caretDirectlyInTop(top, range) && caretAtBlockEnd(top, range)) {
+      return { hr: next, after: false };
+    }
     return null;
+  }
+
+  /* Remove a rule: the <hr> alone. The caret moves to the edge of the
+   * nearest block on the side it came from, so the next edit continues
+   * there. No placeholder is created or deleted -- clicking a rule never
+   * inserted one, and a blank line the user made with Shift+Enter is
+   * real content that must survive. */
+  function removeRuleLine(hr) {
+    if (!hr || !hr.parentElement) return;
+    const prev = adjacentHost(hr, -1);
+    const next = adjacentHost(hr, 1);
+    hr.remove();
+    onContentChange();
+    viewerContentEl.focus();
+    if (prev) {
+      caretToEdge(prev, true);
+      return;
+    }
+    if (next) {
+      caretToEdge(next, false);
+      return;
+    }
+    // The rule was the only block left: open a real empty line.
+    const p = document.createElement("p");
+    p.setAttribute("data-hybrid-caret", "1");
+    viewerContentEl.appendChild(p);
+    caretToStart(p);
+  }
+
+  /* The top-level block holding the collapsed caret, with the range:
+   * { top, range } or null. Unlike caretContext() this resolves ANY
+   * top-level child -- table, fence, list, plugin container included.
+   * caretContext() whitelists a set of tags and would report the ROOT
+   * for a caret inside a table cell or a plugin block, which the rule
+   * handlers must still see. */
+  function caretTopBlock() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    const top = topLevelBlock(node);
+    if (!top) return null;
+    return { top, range };
+  }
+
+  /* The rule whose leading edge the collapsed caret sits on, or null:
+   * the caret is at the very START of the block immediately AFTER a
+   * top-level rule. This is where a click on the rule leaves the caret,
+   * and where a plain keystroke would otherwise prepend into that block
+   * and corrupt it ("NEW" merged into a heading, a fence's source, a
+   * list item). A caret at the END of the block BEFORE a rule is NOT an
+   * edge to protect: appending there is ordinary text editing. */
+  function ruleEdgeAtCaret() {
+    const at = caretTopBlock();
+    if (!at) return null;
+    const { top, range } = at;
+    // Already sitting in a fresh caret line: this IS the line the previous
+    // open created (keydown opens it, then beforeinput for the same
+    // keystroke runs with the caret already moved). Nothing to do -- and
+    // opening again would stack a second empty line for one keystroke.
+    if (top.tagName === "P" &&
+        top.getAttribute("data-hybrid-caret") === "1" &&
+        !top.textContent.trim()) return null;
+    const prev = top.previousElementSibling;
+    if (prev && prev.tagName === "HR" &&
+        caretDirectlyInTop(top, range) &&
+        textBeforeCaret(top, range) === "") {
+      return { hr: prev, after: true };
+    }
+    return null;
+  }
+
+  /* Open a fresh, empty line on the caret's side of the rule the caret
+   * sits against, and move the caret onto it. Called before a text
+   * insertion (keydown / beforeinput) or a plain Enter, both of which
+   * would otherwise merge into the block after the rule. The new line
+   * carries data-hybrid-caret so domToMarkdown drops it while it stays
+   * empty. Returns false when the caret is not on a rule edge. */
+  function openRuleEdgeLine() {
+    const edge = ruleEdgeAtCaret();
+    if (!edge) return false;
+    const p = document.createElement("p");
+    p.setAttribute("data-hybrid-caret", "1");
+    if (edge.after) edge.hr.after(p); else edge.hr.before(p);
+    caretToStart(p);
+    return true;
+  }
+
+  /* Open the line the input about to happen needs, for EITHER caret
+   * shape that sits against a rule:
+   *   - a ROOT-level caret directly beside the rule (a click whose
+   *     clicked side has no block, or arrow-walking onto the rule);
+   *   - a caret at the very start of the block that follows a rule
+   *     (where a click on the rule leaves it).
+   * In both cases the input would otherwise merge into a neighbouring
+   * block. The line opens on the caret's own side. Returns false when
+   * the caret is not against a rule. */
+  function openLineAtCaretRule() {
+    const stranded = strandedRuleAtRoot();
+    if (stranded) {
+      const p = insertEmptyBlockAround(stranded.hr, "p", stranded.after);
+      p.setAttribute("data-hybrid-caret", "1");
+      caretToStart(p);
+      return true;
+    }
+    // Caret parked ON the rule element itself (Firefox caret-walking):
+    // treat it as the "after" side, the same place a click on the rule
+    // lands when nothing follows it.
+    const onRule = ruleUnderCaret();
+    if (onRule) {
+      const p = insertEmptyBlockAround(onRule, "p", true);
+      p.setAttribute("data-hybrid-caret", "1");
+      caretToStart(p);
+      return true;
+    }
+    return openRuleEdgeLine();
   }
 
   /* Shift+Enter inserts an empty line and moves the caret onto it.
@@ -1287,53 +1491,50 @@
       return;
     }
     // A caret stranded at the ROOT next to a horizontal rule (keyboard
-    // navigation; mouse clicks are repaired on mousedown): the native
-    // Enter wraps the surrounding blocks in a <p>. Claim the Enter and
-    // continue on the caret's side of the rule -- the caret before the
-    // rule continues alpha's line, the caret after it continues the
-    // rule's line below.
-    const strandedRule = (e.key === "Enter" && !e.shiftKey &&
-                          !e.altKey && !e.ctrlKey && !e.metaKey)
-      ? strandedRuleAtRoot() : null;
-    if (strandedRule) {
-      e.preventDefault();
-      const p = insertEmptyBlockAround(
-        strandedRule.hr, "p", strandedRule.after);
-      p.setAttribute("data-hybrid-caret", "1");
-      caretToStart(p);
-      onContentChange();
-      return;
+    // navigation), or parked ON the rule element itself (Firefox caret
+    // walking): the native Enter wraps the surrounding blocks in a <p>
+    // or leaves a stray root <br>. Claim the Enter and open a line on
+    // the caret's side of the rule.
+    if (e.key === "Enter" && !e.shiftKey &&
+        !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // A caret against a rule -- a ROOT-level caret beside it, a caret
+      // parked ON the rule element (Firefox caret-walking), or the
+      // leading edge of the block after it: a native Enter would wrap
+      // the neighbours in a stray <p>, split that block, or leave a
+      // stray root <br>. Open the line on the caret's own side instead.
+      if (openLineAtCaretRule()) {
+        e.preventDefault();
+        onContentChange();
+        return;
+      }
     }
-    // A caret parked ON the rule element itself (Firefox caret walking;
-    // the selection API accepts it even though no text caret fits
-    // inside a void element): the native Enter leaves a stray root
-    // <br> that saves as junk text. Open a line below the rule -- the
-    // same place a click on the rule lands the caret.
-    const onRule = (e.key === "Enter" && !e.shiftKey &&
-                    !e.altKey && !e.ctrlKey && !e.metaKey)
-      ? ruleUnderCaret() : null;
-    if (onRule) {
-      e.preventDefault();
-      const p = insertEmptyBlockAround(onRule, "p", true);
-      p.setAttribute("data-hybrid-caret", "1");
-      caretToStart(p);
-      onContentChange();
-      return;
-    }
-    // Delete the rule line the caret is on or beside: from the caret
-    // line the rule repair opened, from a ROOT caret beside the rule
-    // (ArrowDown/ArrowUp onto the rule -- natively Backspace eats into
-    // the block before and Delete eats into the block after, while the
-    // rule itself survives), or from a caret parked on the rule
-    // element (where the engine picks whichever neighbour it likes).
-    // "Cannot delete the * * * line" is every one of these. Claim
-    // Backspace and Delete and remove the rule instead.
+    // The rule as a character: Delete removes it when the caret sits
+    // immediately BEFORE it, Backspace when immediately AFTER (the
+    // standard model -- Delete deletes forward, Backspace backward).
+    // Every other key/side combination stays an ordinary text edit.
     if ((e.key === "Backspace" || e.key === "Delete") &&
         !e.altKey && !e.ctrlKey && !e.metaKey) {
-      const at = ruleBesideCaret();
+      const at = ruleForDeleteKey(e.key);
       if (at) {
         e.preventDefault();
-        removeRuleLine(at.hr, at.p);
+        removeRuleLine(at.hr);
+        return;
+      }
+    }
+    // A printable character typed against a rule would merge into the
+    // block on the other side of it ("NEW" prepended into a heading, a
+    // fence's source, a list item; or appended onto the block above).
+    // Open the line on the caret's side first; the browser then inserts
+    // the character into it. No preventDefault: the key must still
+    // produce its text. IME composition is left alone, and a plain key
+    // inside the in-place code editor keeps its own meaning (the editor
+    // owns its text).
+    if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey &&
+        !e.altKey && !e.isComposing &&
+        !(e.target && e.target.closest &&
+          e.target.closest("pre.hybrid-plugin-editing"))) {
+      if (openLineAtCaretRule()) {
+        onContentChange();
         return;
       }
     }
@@ -1933,6 +2134,35 @@
     inputDebounce = setTimeout(onContentChange, 50);
   }
 
+  /* beforeinput: the last line of defence for text typed at a rule's
+   * leading edge. The keydown handler above usually opens the fresh line
+   * first (and the browser then routes the text there), but some input
+   * paths bypass it -- an IME commit, a synthetic insertion, an engine
+   * that fires beforeinput without a matching printable keydown. Opening
+   * the line HERE, before the engine performs the insertion, guarantees
+   * the text can never land inside the block after the rule.
+   *
+   * Only plain text insertion is claimed: composition (IME) is left
+   * untouched -- rewriting the DOM mid-composition breaks it -- and
+   * insertParagraph is left to the keydown handler, which preventDefaults
+   * it; acting here too would open one line and then have the browser
+   * insert another paragraph into it. Structural types (formatting,
+   * history) are never ours. */
+  function onBeforeInput(e) {
+    if (!active) return;
+    if (e.isComposing) return;
+    if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste" &&
+        e.inputType !== "insertFromDrop") return;
+    if (e.target && e.target.closest &&
+        (e.target.closest(".hybrid-lang-pill") ||
+         e.target.closest("pre.hybrid-plugin-editing"))) return;
+    // Only when the caret is at a top-level rule edge: an insertion
+    // inside a table cell / list item / code fence has its own block, and
+    // stealing it would eject the user from that structure.
+    if (!ruleEdgeAtCaret()) return;
+    if (openRuleEdgeLine()) onContentChange();
+  }
+
   /* Toggle task-list checkboxes on click. marked renders them disabled;
    * we re-enable them in renderMarkdown and let the browser handle the
    * native toggle. The `change` event fires after the native toggle, so
@@ -2022,6 +2252,7 @@
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
+    viewerContentEl.addEventListener("beforeinput", onBeforeInput);
     viewerContentEl.addEventListener("change", onCheckboxChange);
     viewerContentEl.addEventListener("keydown", onEnterKey);
     viewerContentEl.addEventListener("click", onBlockClick);
@@ -2053,6 +2284,7 @@
     }
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
+    viewerContentEl.removeEventListener("beforeinput", onBeforeInput);
     viewerContentEl.removeEventListener("change", onCheckboxChange);
     viewerContentEl.removeEventListener("keydown", onEnterKey);
     viewerContentEl.removeEventListener("click", onBlockClick);
