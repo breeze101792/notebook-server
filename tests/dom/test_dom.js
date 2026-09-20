@@ -6783,11 +6783,17 @@ function check(label, cond, extra) {
     const namesOf = (t) =>
       Array.from(t.tBodies[0].rows).map((r) => r.cells[0].textContent);
     const sessionOf = (t) => window.NB.tableView.sessions.get(t);
+    const controlsEl = () => $("viewer").querySelector(".nb-tv-controls");
     const toolbarEl = () => $("viewer").querySelector(".nb-tv-toolbar");
+    const toggleEl = () => $("viewer").querySelector(".nb-tv-toggle");
     // Open a toolbar popover by its button label and return the pop element.
-    // openChooser closes any pop of a different kind first, so a fresh pop
-    // is always the one returned.
+    // The hover icon reveals only the icon, so the toolbar must be opened
+    // first. openChooser closes any pop of a different kind first, so a
+    // fresh pop is always the one returned.
     const openChooser = (label) => {
+      if (!window.NB.tableView.toolbarOpen) {
+        toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+      }
       const btn = Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
         .find((b) => b.textContent === label);
       btn.dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -6847,9 +6853,45 @@ function check(label, cond, extra) {
       window.NB.tableView.sessions.size === 2,
       "sessions=" + window.NB.tableView.sessions.size);
 
-    // --- (2) column hide is class-based and restorable -----------------
+    // --- (2) hover reveals only the icon; a click opens the toolbar ----
     window.NB.tableView.resetTable(t0);
     window.NB.tableView.reveal(t0);
+    check("table view: reveal shows the control row and its icon",
+      !!controlsEl() && !controlsEl().hidden && !!toggleEl(),
+      "controls=" + (controlsEl() ? controlsEl().outerHTML.slice(0, 80) : "none"));
+    check("table view: the toolbar stays closed until the icon is clicked",
+      toolbarEl().hidden === true && toggleEl().getAttribute("aria-expanded") === "false",
+      "hidden=" + toolbarEl().hidden);
+    toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("table view: clicking the icon opens the toolbar",
+      toolbarEl().hidden === false && window.NB.tableView.toolbarOpen === true &&
+      toggleEl().getAttribute("aria-expanded") === "true");
+    check("table view: the opened toolbar offers Rows, Columns and Reset",
+      Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
+        .map((b) => b.textContent).join(",") === "Rows,Columns,Reset");
+    // A pointerdown elsewhere dismisses everything and drops the anchor.
+    window.NB.tableView.reveal(t0);
+    toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+    window.document.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    check("table view: a click elsewhere closes the open toolbar",
+      toolbarEl().hidden === true && window.NB.tableView.toolbarOpen === false &&
+      window.NB.tableView.activeTable === null,
+      "hidden=" + toolbarEl().hidden);
+    // A click on the controls themselves must NOT close it.
+    window.NB.tableView.reveal(t0);
+    toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+    toggleEl().dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    await tick(5);
+    check("table view: a click on the controls keeps it open",
+      window.NB.tableView.toolbarOpen === true && toolbarEl().hidden === false);
+    // A second click on the icon (now an X) closes it explicitly.
+    toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("table view: clicking the icon again closes the toolbar",
+      toolbarEl().hidden === true && window.NB.tableView.toolbarOpen === false &&
+      window.NB.tableView.activeTable === null);
+    window.NB.tableView.reveal(t0);
+
+    // --- (3) column hide is class-based and restorable -----------------
     let pop = openChooser("Columns");
     check("table view: column chooser lists one checkbox per column",
       !!pop && checkInputs(pop).length === 2,

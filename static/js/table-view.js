@@ -1,7 +1,8 @@
 /* table-view.js -- hover/focus view controls for GFM tables in PREVIEW.
  *
- * Preview mode gets a toolbar over the table under the pointer or
- * containing focus: hide rows, hide columns, and a single-column sort.
+ * Preview mode shows a small icon over the table under the pointer or
+ * containing focus. Clicking the icon opens a toolbar with hide rows,
+ * hide columns, and reset; clicking a column header sorts it.
  * The state is a per-file, per-table view overlay kept in localStorage
  * (`nb:tableView`) -- it is NEVER written to the note, never sent to
  * the server, and never appears in an export, because nothing here
@@ -43,8 +44,9 @@
   const GRACE_MS = 120;        // hide delay after the pointer leaves a table
   const EDGE_SAFE = 4;         // min gap a control keeps from a #viewer edge
   const TOOLBAR_H = 28;        // fallback toolbar height before first measure
-  const TOOLBAR_GAP = 8;       // table top -> toolbar bottom
-  const TOOLBAR_MIN_W = 180;   // fallback toolbar width before first measure
+  const TOGGLE_H = 24;         // icon hit target (must match its CSS size)
+  const TOGGLE_GAP = 6;        // table top -> icon bottom
+  const TOOLBAR_GAP = 6;       // icon/toolbar gap inside the .nb-tv-controls
   const POP_GAP = 4;           // anchor cell bottom -> popover top
   const POP_MIN_W = 180;       // fallback popover width before first measure
   const LABEL_MAX = 28;        // chars of a row/column label before the ellipsis
@@ -67,9 +69,12 @@
   let viewerEl = null;         // #viewer: overlay host, position:relative
   let viewerContentEl = null;
   let overlay = null;          // .nb-tv-overlay
-  let toolbar = null;          // .nb-tv-toolbar (persistent child of overlay)
+  let controls = null;         // .nb-tv-controls (icon + toolbar; child of overlay)
+  let toggle = null;           // .nb-tv-toggle icon; click opens the toolbar
+  let toolbar = null;          // .nb-tv-toolbar (hidden until the icon is clicked)
+  let toolbarOpen = false;     // toolbar revealed by a toggle click
   let sessions = new Map();    // tableEl -> session
-  let activeTable = null;      // table whose toolbar is shown
+  let activeTable = null;      // table whose controls are shown
   let openPop = null;          // open popover descriptor, or null
   let graceTimer = null;
   let lastRenderLive = false;  // last viewer:rendered was the live preview
@@ -451,13 +456,13 @@
 
   /* --- overlay geometry ------------------------------------------- */
 
-  /* Position the toolbar above the table's CONTENT, anchored to cell
+  /* Position the controls above the table's CONTENT, anchored to cell
    * rects (the <table> box is display:block and full width, so its rect
-   * would strand the toolbar at the pane edge). Top-clipping falls back
-   * to the pane's top edge rather than off-screen. */
-  function placeToolbar(table) {
-    if (!toolbar) return;
-    toolbar.hidden = false;
+   * would strand the controls at the pane edge). Top-clipping falls back
+   * to the pane's top edge rather than off-screen. The whole row is
+   * measured, so growing the toolbar on click keeps it inside the pane. */
+  function placeControls(table) {
+    if (!controls) return;
     const session = sessions.get(table);
     const header = (session && session.header) ||
       (table.tHead && table.tHead.rows[0]) || table.rows[0];
@@ -475,13 +480,13 @@
       contentTop = r.top;
     }
     const V = paneSize();
-    const w = toolbar.offsetWidth || TOOLBAR_MIN_W;
-    const h = toolbar.offsetHeight || TOOLBAR_H;
+    const w = controls.offsetWidth || TOGGLE_H;
+    const h = controls.offsetHeight || TOGGLE_H;
     let left = clamp(contentLeft, EDGE_SAFE, V.w - w - EDGE_SAFE);
-    let top = contentTop - h - TOOLBAR_GAP;
+    let top = contentTop - h - TOGGLE_GAP;
     if (top < EDGE_SAFE) top = EDGE_SAFE;   // top-clipping fallback
-    toolbar.style.left = Math.round(left) + "px";
-    toolbar.style.top = Math.round(top) + "px";
+    controls.style.left = Math.round(left) + "px";
+    controls.style.top = Math.round(top) + "px";
   }
 
   /* Position a popover below its anchor cell (or toolbar button),
@@ -512,6 +517,22 @@
     b.title = title;
     b.setAttribute("aria-label", title || label);
     return b;
+  }
+
+  /* The icon-only affordance shown on hover. Clicking it opens the
+   * toolbar; the icon then acts as an X (its glyph flips) and a second
+   * click closes the toolbar. */
+  const TOGGLE_GLYPH = "\u2261";       // hamburger / list marks
+  const TOGGLE_GLYPH_OPEN = "\u2715";  // X when the toolbar is open
+
+  function buildToggle() {
+    if (!toggle) return;
+    const open = toolbarOpen;
+    toggle.textContent = open ? TOGGLE_GLYPH_OPEN : TOGGLE_GLYPH;
+    const label = open ? "Close table controls" : "Table controls";
+    toggle.title = label;
+    toggle.setAttribute("aria-label", label);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
   }
 
   function buildToolbar() {
@@ -546,10 +567,30 @@
     openPop = null;
   }
 
+  /* Open/close the toolbar without losing the icon. The control row is
+   * re-measured because opening widens it, and a wider row can cross the
+   * pane's right edge on a table flush against it. Closing also clears
+   * the explicit-open flag so a pending grace hide may proceed. */
+  function setControlsOpen(open) {
+    if (!toolbar || !toggle) return;
+    toolbarOpen = !!open;
+    if (toolbarOpen) {
+      buildToolbar();
+      toolbar.hidden = false;
+    } else {
+      toolbar.hidden = true;
+      toolbar.textContent = "";
+    }
+    buildToggle();
+    if (activeTable) placeControls(activeTable);
+  }
+
   function hideToolbar() {
     if (!toolbar) return;
+    toolbarOpen = false;
     toolbar.hidden = true;
     toolbar.textContent = "";
+    buildToggle();
   }
 
   /* A checkbox menu row: label text, live-applied on change. */
@@ -722,7 +763,8 @@
 
   function hide() {
     closePop();
-    hideToolbar();
+    hideToolbar();       // clears toolbarOpen and the X glyph
+    hideControls();
     activeTable = null;
     if (overlay) {
       overlay.querySelectorAll(".nb-tv-note,.nb-tv-pop").forEach((n) => n.remove());
@@ -734,8 +776,9 @@
     graceTimer = setTimeout(() => {
       graceTimer = null;
       // Only hide when the pointer isn't resting on the overlay (moving
-      // from a table onto its toolbar must not dismiss the controls).
-      if (!overlay.matches(":hover") && !openPop) hide();
+      // from a table onto its icon/toolbar must not dismiss the controls)
+      // and the user hasn't explicitly opened the toolbar.
+      if (!overlay.matches(":hover") && !openPop && !toolbarOpen) hide();
     }, GRACE_MS);
   }
 
@@ -756,8 +799,8 @@
     // Merged cells: no controls. Show the same kind of note table-edit
     // shows, anchored to the table's rect (there is no session).
     if (NB.hybrid && NB.hybrid.tableHasSpans && NB.hybrid.tableHasSpans(table)) {
-      if (activeTable === table && !toolbar.hidden) return;
-      hideToolbar();
+      if (activeTable === table && controls && !controls.hidden) return;
+      hideControls();
       activeTable = table;
       if (!overlay.querySelector(".nb-tv-note")) {
         const note = el("div", "nb-tv-note");
@@ -768,11 +811,28 @@
       return;
     }
     if (!canInteract(table)) return;
-    if (activeTable === table && !toolbar.hidden) return;
+    // Same table already showing: keep the open/closed state as-is, just
+    // re-anchor (scroll may have moved it under a stationary pointer).
+    if (activeTable === table && controls && !controls.hidden) {
+      placeControls(table);
+      return;
+    }
     overlay.querySelectorAll(".nb-tv-note").forEach((n) => n.remove());
+    closePop();
     activeTable = table;
-    buildToolbar();
-    placeToolbar(table);
+    showControls(table);
+  }
+
+  /* Show the icon for a table; the toolbar itself stays closed until the
+   * user clicks the icon. */
+  function showControls(table) {
+    controls.hidden = false;
+    buildToggle();
+    placeControls(table);
+  }
+
+  function hideControls() {
+    if (controls) controls.hidden = true;
   }
 
   /* Last synchronous moment before contenteditable and the undo
@@ -781,6 +841,7 @@
   function tearDownForEdit() {
     closePop();
     hideToolbar();
+    hideControls();
     sessions.forEach((session) => {
       revertTable(session);
       Array.from(session.header.cells).forEach((cell) => {
@@ -811,6 +872,7 @@
     const editActive = NB.hybrid && NB.hybrid.isActive();
     closePop();
     hideToolbar();
+    hideControls();
     lastRenderLive = live;
     lastPath = path || null;
     if (live || editActive || !path) {
@@ -924,13 +986,20 @@
     }
   }
 
-  /* Outside pointerdown closes an open popover; a pointerdown on its
-   * anchor is exempt so the anchor's click handler can cycle the sort. */
+  /* A pointerdown anywhere outside the controls dismisses everything:
+   * an open popover and an open toolbar. The controls themselves and a
+   * popover's own anchor are exempt (the anchor click cycles the sort,
+   * the icon click closes the toolbar on its own). */
   function onDocPointerDown(e) {
-    if (!openPop) return;
-    if (openPop.el && openPop.el.contains(e.target)) return;
-    if (openPop.anchor && openPop.anchor.contains(e.target)) return;
-    closePop();
+    const inControls = controls && controls.contains(e.target);
+    const inPop = openPop && openPop.el && openPop.el.contains(e.target);
+    const onAnchor = openPop && openPop.anchor && openPop.anchor.contains(e.target);
+    if (openPop && !inPop && !onAnchor && !inControls) closePop();
+    if (toolbarOpen && !inControls) {
+      setControlsOpen(false);
+      activeTable = null;
+      hideControls();
+    }
   }
 
   function onDocKey(e) {
@@ -948,9 +1017,33 @@
     viewerContentEl = document.getElementById("viewer-content");
     if (!viewerEl || !viewerContentEl) return;
     overlay = el("div", "nb-tv-overlay");
+    // One control row above the table: the always-on icon plus the
+    // toolbar it opens. Keeping both in one absolutely-positioned box
+    // means the icon never moves when the toolbar appears.
+    controls = el("div", "nb-tv-controls");
+    controls.hidden = true;
+    toggle = el("button", "nb-tv-toggle");
+    toggle.type = "button";
+    toggle.textContent = TOGGLE_GLYPH;
+    toggle.setAttribute("aria-haspopup", "true");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (toolbarOpen) {
+        setControlsOpen(false);
+        // A second click is an explicit dismiss: reset the pointer state
+        // too, so nothing is left anchored to a table the user has
+        // finished with. The next hover shows it again.
+        activeTable = null;
+        hideControls();
+      } else {
+        setControlsOpen(true);
+      }
+    });
     toolbar = el("div", "nb-tv-toolbar");
     toolbar.hidden = true;
-    overlay.appendChild(toolbar);
+    controls.append(toggle, toolbar);
+    overlay.appendChild(controls);
     // A child of #viewer, outside the contenteditable subtree: preview
     // mode owns it, hybrid teardown clears it.
     viewerEl.appendChild(overlay);
@@ -982,6 +1075,8 @@
     reveal,
     hide,
     hideToolbar,
+    setControlsOpen,
+    get toolbarOpen() { return toolbarOpen; },
     onRendered,
     applyState,
     revertTable,

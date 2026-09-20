@@ -681,8 +681,38 @@ body.nb-table-drag #viewer-content { user-select: none; }
 }
 .nb-tv-overlay:empty { display: none; }
 
-.nb-tv-toolbar {
+/* The control row sits above the table. Only the small icon is shown on
+ * hover; clicking it reveals the toolbar beside the icon. Both share one
+ * absolutely-positioned box so the icon does not shift when it opens. */
+.nb-tv-controls {
   position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;   /* only this box takes pointers; overlay is none */
+}
+.nb-tv-controls[hidden] { display: none; }
+
+.nb-tv-toggle {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: .8rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.nb-tv-toggle:hover { background: var(--accent-soft); color: var(--fg); }
+.nb-tv-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nb-tv-toolbar {
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -690,7 +720,6 @@ body.nb-table-drag #viewer-content { user-select: none; }
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 6px 24px rgba(0,0,0,.35);   /* matches .nb-drag-proxy */
-  pointer-events: auto;
 }
 .nb-tv-toolbar[hidden] { display: none; }
 .nb-tv-btn {
