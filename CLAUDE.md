@@ -219,6 +219,21 @@ is shared. Adding a renderer means: add the module, register it, add the
 `<script>` tag, and add its `sw.js` PRECACHE entry; the registry-completeness
 test in `tests/dom/test_dom.js` checks index.html / sw.js / the ai.js prompt
 / agent.md all mention it.
+
+**Agent-facing docs are part of the renderer contract.** The fence
+languages are documented for two audiences that must stay in sync with the
+code: the built-in assistant's system prompt in `static/js/ai.js`, and the
+`/agent.md` guide served to external agents. Whenever you change a
+renderer's fence name, its vendored library version (e.g. Mermaid 11.16,
+WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1 / Viz.js 2.1.2), or its
+constraints (version-specific syntax, mermaid's `securityLevel:strict`,
+and — always — the `html-live` sandbox limits: `allow-scripts` without
+`allow-same-origin`, opaque origin, blocked cookies / storage / parent
+DOM / `/api/*` / popups / navigation), update **both** `ai.js` and
+`agent.md` in the same change. Tests in `tests/dom/test_dom.js` and
+`tests/test_app.py` assert the versions and restrictions appear in both,
+so a drift fails the suite. Bump the vendored bundle and these docs
+together; never update one without the other.
 Module responsibilities:
 
 - `api.js` — fetch wrappers + a tiny pub/sub (`NB.api`); always sends
