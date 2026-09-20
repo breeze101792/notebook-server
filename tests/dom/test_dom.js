@@ -6244,6 +6244,69 @@ function check(label, cond, extra) {
     await tick(20);
   }
 
+  console.log("== hybrid: rendered plugin blocks are atomic (arrow-walk) ==");
+  {
+    // A rendered plugin block (mermaid / wavedrom / katex / viz /
+    // html-live) has no caret line box. Chromium still parks the caret
+    // on the container when the user arrow-walks past it, and because
+    // that position has no client rect the browser scrolls the WHOLE
+    // element into view -- on a tall block the note leaps to its top or
+    // bottom. hybrid marks those containers contenteditable="false" so
+    // the caret skips from the block before to the block after.
+    //
+    // Drive it through a real container element built like the renderers
+    // build theirs (class + dataset source). The mode's marker is what
+    // the browser reacts to, so asserting the attribute is the right
+    // jsdom-level check.
+    // Use a REAL html-live fence: its renderer runs synchronously in
+    // jsdom (it only builds an iframe), so the card is exactly what the
+    // user sees. The mermaid bundle is lazy and absent here, which would
+    // leave an error box instead of a container.
+    FILES["notes/a.md"] = "# File A\n\nbefore\n\n```html-live\n<div>demo</div>\n```\n\nafter\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(50);
+    const vcA = $("viewer-content");
+    const card = vcA.querySelector(".htmlpreview-card");
+    check("hybrid atomic: the html-live card rendered before the check", !!card);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    check("hybrid atomic: a rendered plugin container is non-editable while active",
+      card.getAttribute("contenteditable") === "false" &&
+      card.getAttribute("data-hybrid-atomic") === "1",
+      "ce=" + card.getAttribute("contenteditable") +
+      " marker=" + card.getAttribute("data-hybrid-atomic"));
+    check("hybrid atomic: tables stay editable (table editing needs it)",
+      // A table is a normal, caret-addressable block -- it must NOT be
+      // marked atomic, or the drag/row/col editing breaks.
+      $("viewer-content").querySelectorAll("table[data-hybrid-atomic]").length === 0);
+
+    // Click-to-edit still works: the container swaps to an editable
+    // fence even though the container itself is not editable.
+    card.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(50);
+    const editPre = $("viewer-content").querySelector("pre.hybrid-plugin-editing");
+    check("hybrid atomic: click-to-edit still swaps the block to a fence",
+      !!editPre && editPre.getAttribute("contenteditable") === "true" &&
+      /demo/.test(editPre.textContent),
+      "pre=" + (editPre && editPre.outerHTML.slice(0, 80)));
+
+    // The round-trip must still recover the fenced source.
+    const atomicMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid atomic: the block still round-trips to its fence",
+      /```html-live/.test(atomicMd) && /<div>demo<\/div>/.test(atomicMd) &&
+      (atomicMd.match(/```html-live/g) || []).length === 1,
+      JSON.stringify(atomicMd).slice(0, 160));
+
+    // Exit must clear the marker and the attribute.
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+    const leftover = $("viewer-content").querySelectorAll("[data-hybrid-atomic]").length;
+    check("hybrid atomic: exit clears the atomic marker",
+      leftover === 0 && !$("viewer-content").querySelector('[contenteditable="false"]'),
+      "leftover=" + leftover);
+  }
+
   console.log("== hybrid: close active tab exits hybrid (no mode leak) ==");
   {
     // Regression: hybrid edits live in the contentEditable DOM, not the

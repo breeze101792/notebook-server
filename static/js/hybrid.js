@@ -178,6 +178,86 @@
    * viewer already owns). We call NB.viewer's internal render by
    * emitting a file:open event which causes a re-activate; but simpler:
    * we just set innerHTML via marked directly, then post-process. */
+  /* --- atomic rendered blocks -------------------------------------- */
+  /* A rendered plugin block (mermaid / wavedrom / katex / graphviz /
+   * html-live) is NOT text: it has no caret line box. Chromium still
+   * moves the caret onto such a block when the user arrow-walks past
+   * it, and because that caret position has no client rect the browser
+   * scrolls the WHOLE element into view -- on a tall block (a
+   * full-height html-live demo) the viewport leaps to the document top
+   * or bottom ("the cursor jumps").
+   *
+   * Marking them contenteditable=false makes them atomic: the caret
+   * skips straight from the block before to the block after, exactly as
+   * it does for an <hr>. The click-to-edit swap (onBlockClick ->
+   * editPluginSource) still fires -- click-to-edit reads the DOM, it
+   * does not need the container to be editable -- and the source <pre>
+   * it creates is given contenteditable="true" explicitly. */
+  const ATOMIC_BLOCK_SELECTOR =
+    ".htmlpreview-card, .mermaid-container, .wavedrom-container, " +
+    ".katex-container, .viz-container, .mermaid-error, .wavedrom-error, " +
+    ".katex-error, .viz-error";
+  const ATOMIC_BLOCK_MARKER = "data-hybrid-atomic";
+
+  function markOneAtomic(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return;
+    // Already non-editable (a re-run, or nested in an atomic parent):
+    // nothing to do. In jsdom isContentEditable is undefined, so the
+    // attributes are still applied there.
+    if (el.isContentEditable === false) return;
+    el.setAttribute("contenteditable", "false");
+    el.setAttribute(ATOMIC_BLOCK_MARKER, "1");
+  }
+
+  function markAtomicBlocks(root) {
+    (root || viewerContentEl).querySelectorAll(ATOMIC_BLOCK_SELECTOR)
+      .forEach(markOneAtomic);
+  }
+
+  function unmarkAtomicBlocks(root) {
+    (root || viewerContentEl).querySelectorAll("[" + ATOMIC_BLOCK_MARKER + "]")
+      .forEach((el) => {
+        el.removeAttribute("contenteditable");
+        el.removeAttribute(ATOMIC_BLOCK_MARKER);
+      });
+  }
+
+  /* Renderer bundles load lazily, so a container can appear AFTER
+   * enter() already marked the existing ones (cold loads, slow network).
+   * Watch for added nodes while the mode is active and mark the new
+   * containers too; without this the arrow-walk bug would come back for
+   * any block rendered after the mode was entered. Disconnected on
+   * exit().
+   *
+   * Only the ADDED subtrees are inspected -- a full re-scan on every
+   * mutation would run the selector over the whole note on each
+   * keystroke. */
+  let atomicObserver = null;
+
+  function watchAtomicBlocks() {
+    if (atomicObserver || !window.MutationObserver) return;
+    atomicObserver = new MutationObserver((records) => {
+      if (!active) return;
+      for (const rec of records) {
+        if (!rec.addedNodes || !rec.addedNodes.length) continue;
+        rec.addedNodes.forEach((node) => {
+          if (node.nodeType !== Node.ELEMENT_NODE) return;
+          if (node.matches && node.matches(ATOMIC_BLOCK_SELECTOR)) {
+            markOneAtomic(node);
+          }
+          if (node.querySelectorAll) markAtomicBlocks(node);
+        });
+      }
+    });
+    atomicObserver.observe(viewerContentEl, { childList: true, subtree: true });
+  }
+
+  function unwatchAtomicBlocks() {
+    if (!atomicObserver) return;
+    atomicObserver.disconnect();
+    atomicObserver = null;
+  }
+
   function renderMarkdown(md) {
     if (!window.marked) return;
     viewerContentEl.innerHTML = marked.parse(md, { gfm: true, breaks: false });
@@ -204,6 +284,10 @@
     // Unwrap <thead> so Firefox can arrow-walk through table rows (see
     // flattenTheads).
     flattenTheads();
+    // Make rendered plugin blocks atomic so arrow-walking past them
+    // doesn't park the caret on a rect-less element and fling the
+    // viewport to the top/bottom (see markAtomicBlocks).
+    markAtomicBlocks();
   }
 
   /* --- edit bar integration -------------------------------------- */
@@ -1781,6 +1865,13 @@
     // Unwrap <thead> so Firefox can arrow-walk through table rows (see
     // flattenTheads).
     flattenTheads();
+    // Make rendered plugin blocks atomic (see markAtomicBlocks): without
+    // this, arrow-walking past a tall rendered block parks the caret on
+    // the rect-less container and the browser scrolls the whole element
+    // into view, leaping the note to its top or bottom. Late containers
+    // (lazy bundles) are covered by the observer.
+    markAtomicBlocks();
+    watchAtomicBlocks();
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
     // A fresh session starts a fresh autosave generation: any timer left
@@ -1833,6 +1924,10 @@
 
     // Remove contentEditable.
     viewerContentEl.removeAttribute("contenteditable");
+    // Undo the atomic-block markers (see markAtomicBlocks) so the
+    // preview DOM is left exactly as the renderers produced it.
+    unwatchAtomicBlocks();
+    unmarkAtomicBlocks();
     viewerContentEl.classList.remove("hybrid-editing");
     viewerEl.classList.remove("hybrid-active");
     topbar.classList.remove("editing");
