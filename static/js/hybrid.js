@@ -1030,24 +1030,19 @@
   }
 
   /* Put the caret where a click on/near `hr` meant to land, WITHOUT
-   * changing the note. Clicking on or below the rule lands at the START
-   * of the nearest block after it; clicking above lands at the END of
-   * the nearest block before it. When there is no block on the clicked
-   * side (a rule that starts or ends the note) the caret is parked on
-   * that empty side directly against the rule -- a real caret beside the
-   * void rule, from where the first keystroke or Enter opens a fresh
-   * line on the clicked side (see openLineAtCaretRule / strandCaretAtRule).
-   * Resolving to the FAR edge of the opposite block instead would make
-   * the very next edit land on the wrong side of the rule. */
+   * changing the note. The rule itself is the target: a click on the
+   * rule (or in the empty band around it) parks the caret at a ROOT-level
+   * offset directly beside the rule on the clicked side, so the cursor
+   * sits ON the rule line the user aimed at. From there the first
+   * keystroke or Enter opens a fresh line on that side (see
+   * openLineAtCaretRule) and the delete keys treat the rule as a
+   * character (see ruleForDeleteKey). Landing in the nearest block
+   * instead would put the caret in text the user did not click -- and an
+   * edit made from the neighbour lands on the far side of the rule. */
   function placeCaretForRule(hr, clientY) {
     const rect = hr.getBoundingClientRect();
     const below = clientY >= rect.top + rect.height / 2;
     viewerContentEl.focus();
-    const host = adjacentHost(hr, below ? 1 : -1);
-    if (host) {
-      caretToEdge(host, !below);   // below -> start of next; above -> end of previous
-      return;
-    }
     strandCaretAtRule(hr, below);
   }
 

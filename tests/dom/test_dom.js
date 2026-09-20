@@ -4476,9 +4476,10 @@ function check(label, cond, extra) {
       };
 
       // --- clicking a rule inserts nothing ---------------------------
-      // A click on / below the rule puts the caret at the START of the
-      // following block; a click above puts it at the END of the block
-      // before. No placeholder line, no DOM change beyond the caret <br>.
+      // A click on / below the rule parks the caret at a ROOT-level
+      // offset directly AFTER the rule; a click above parks it directly
+      // BEFORE. The cursor stays on the rule line the user clicked, and
+      // the note is unchanged (no placeholder, no DOM edit).
       await loadRuleNote("alpha\n\n---\n\nomega\n");
       {
         const before = vc.innerHTML.replace(/<br[^>]*>/g, "");
@@ -4493,25 +4494,29 @@ function check(label, cond, extra) {
         check("hybrid hr: clicking below a rule adds no caret placeholder",
           vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
           "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
-        check("hybrid hr: clicking below a rule puts the caret at the next block start",
-          omegaP && caretHost() === omegaP &&
-          window.getSelection().anchorOffset === 0,
-          "host=" + (caretHost() && caretHost().outerHTML) +
+        check("hybrid hr: clicking below a rule parks the caret at the rule",
+          caretHost() === vc &&
+          window.getSelection().anchorOffset ===
+            Array.prototype.indexOf.call(vc.childNodes, vc.querySelector("hr")) + 1,
+          "host=" + (caretHost() && caretHost().id) +
           " off=" + window.getSelection().anchorOffset);
         check("hybrid hr: clicking a rule leaves the neighbours untouched",
           alphaP && alphaP.parentElement === vc && alphaP.textContent === "alpha" &&
           omegaP && omegaP.parentElement === vc && omegaP.textContent === "omega",
           "alpha=" + (alphaP && alphaP.outerHTML) + " omega=" + (omegaP && omegaP.outerHTML));
       }
-      // Click ABOVE the rule -> end of the block before it.
+      // Click ABOVE the rule -> root caret directly before it.
       await loadRuleNote("alpha\n\n---\n\nomega\n");
       {
         const alphaP = Array.from(vc.querySelectorAll("p"))
           .find((p) => p.textContent === "alpha");
         await clickRule(false);
-        check("hybrid hr: clicking above a rule puts the caret at the previous block end",
-          alphaP && caretHost() === alphaP && alphaP.textContent === "alpha",
-          "host=" + (caretHost() && caretHost().outerHTML));
+        check("hybrid hr: clicking above a rule parks the caret at the rule",
+          caretHost() === vc &&
+          window.getSelection().anchorOffset ===
+            Array.prototype.indexOf.call(vc.childNodes, vc.querySelector("hr")),
+          "host=" + (caretHost() && caretHost().id) +
+          " off=" + window.getSelection().anchorOffset);
         check("hybrid hr: clicking above a rule inserts nothing",
           vc.querySelectorAll("p[data-hybrid-caret]").length === 0 &&
           vc.querySelectorAll("hr").length === 1,
