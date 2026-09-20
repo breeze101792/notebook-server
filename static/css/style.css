@@ -809,21 +809,48 @@ body.nb-table-drag #viewer-content { user-select: none; }
 #viewer-content tr.nb-tv-hide-row { display: none; }
 #viewer-content .nb-tv-hide-col { display: none; }
 
-/* Header cells are the keyboard path into the controls. The sort arrow
- * is a pseudo-element (never a child node: turndown would serialize a
- * real <span> into the cell text). */
-#viewer-content thead th[tabindex="0"] { cursor: pointer; }
-#viewer-content thead th[tabindex="0"]:focus-visible {
+/* Clicking a header TITLE toggles the sort, so the whole cell is the hit
+ * target. */
+#viewer-content thead th { cursor: pointer; }
+#viewer-content thead th:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;   /* inside the cell: outlines must not overlap */
 }
-#viewer-content thead th[aria-sort="ascending"]::after {
-  content: " \25B2";
+
+/* The per-header menu icon opens the column menu (sort actions + hide
+ * column); a title click only toggles the sort. The same icon doubles as
+ * the sort indicator (its glyph flips to the active direction), so no
+ * separate arrow is drawn. It is a real <span> child because a
+ * pseudo-element cannot receive a click -- hybrid's teardown removes it,
+ * so it never reaches turndown. The slot is RESERVED at all times
+ * (visibility, never display) so revealing the icon on hover does not
+ * shift the title text. */
+#viewer-content thead th .nb-tv-head-menu {
+  display: inline-block;
+  visibility: hidden;
+  margin-left: 6px;
+  padding: 0 3px;
+  border-radius: 3px;
   color: var(--fg-muted);
+  font-size: .7rem;
+  line-height: 1.4;
+  cursor: pointer;
 }
-#viewer-content thead th[aria-sort="descending"]::after {
-  content: " \25BC";
-  color: var(--fg-muted);
+#viewer-content thead th:hover .nb-tv-head-menu,
+#viewer-content thead th:focus-within .nb-tv-head-menu,
+#viewer-content thead th.nb-tv-sorted .nb-tv-head-menu,
+#viewer-content thead th .nb-tv-head-menu.is-open { visibility: visible; }
+#viewer-content thead th .nb-tv-head-menu:hover,
+#viewer-content thead th .nb-tv-head-menu.is-open {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+/* The active sort keeps its icon visible and accent-coloured: the icon is
+ * the only sort indicator, so it must read at a glance. */
+#viewer-content thead th.nb-tv-sorted .nb-tv-head-menu { color: var(--accent); }
+#viewer-content thead th .nb-tv-head-menu:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Keyboard hints inside the hybrid context menu (Move row/column rows). */

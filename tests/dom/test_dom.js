@@ -7026,6 +7026,46 @@ function check(label, cond, extra) {
       hdrCells.every((c) => c.getAttribute("aria-sort") === null));
     window.NB.tableView.resetTable(t0);
 
+    // --- (6c) the menu icon doubles as the sort indicator --------------
+    // There is exactly ONE icon per header, and its glyph tracks the
+    // direction (down chevron idle, up triangle asc, down triangle desc).
+    // The old ::after arrow is gone, so no second indicator is drawn.
+    const iconOf = (i) => hdrCells[i].querySelector(".nb-tv-head-menu");
+    check("table view: each header has exactly one menu icon",
+      hdrCells.every((c) => c.querySelectorAll(".nb-tv-head-menu").length === 1),
+      hdrCells.map((c) => c.querySelectorAll(".nb-tv-head-menu").length).join(","));
+    check("table view: the idle icon glyph is the menu chevron",
+      iconOf(0).textContent === "\u25BE" && iconOf(1).textContent === "\u25BE",
+      JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
+    window.NB.tableView.cycleSort(t0, 1);   // Qty asc
+    check("table view: an ascending sort flips its icon to the up triangle",
+      iconOf(1).textContent === "\u25B2" &&
+      hdrCells[1].classList.contains("nb-tv-sorted") &&
+      !hdrCells[0].classList.contains("nb-tv-sorted"),
+      JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
+    window.NB.tableView.cycleSort(t0, 1);   // Qty desc
+    check("table view: a descending sort flips its icon to the down triangle",
+      iconOf(1).textContent === "\u25BC",
+      JSON.stringify(iconOf(1).textContent));
+    window.NB.tableView.cycleSort(t0, 0);   // switch to Name asc
+    check("table view: switching the sorted column resets the old icon",
+      iconOf(0).textContent === "\u25B2" && iconOf(1).textContent === "\u25BE" &&
+      hdrCells[0].classList.contains("nb-tv-sorted") &&
+      !hdrCells[1].classList.contains("nb-tv-sorted"),
+      JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
+    window.NB.tableView.cycleSort(t0, 0);   // Name asc -> desc
+    check("table view: the newly sorted column's icon tracks its direction",
+      iconOf(0).textContent === "\u25BC" && iconOf(1).textContent === "\u25BE");
+    window.NB.tableView.cycleSort(t0, 0);   // Name desc -> clear
+    check("table view: clearing the sort resets the icon to the menu chevron",
+      iconOf(0).textContent === "\u25BE" && iconOf(1).textContent === "\u25BE" &&
+      hdrCells.every((c) => !c.classList.contains("nb-tv-sorted")),
+      JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
+    check("table view: the old ::after sort arrow CSS is gone",
+      read("static/css/style.css").indexOf('th[aria-sort="ascending"]::after') === -1,
+      "style.css still has a sort-arrow pseudo-element");
+    window.NB.tableView.resetTable(t0);
+
     // --- (6b) a body cell click must not sort or open a popover ---------
     // Regression: the click handler matched th,td, so clicking any body
     // cell reordered rows, persisted a sort, and anchored a popover to
@@ -7103,7 +7143,9 @@ function check(label, cond, extra) {
     await tick(30);
     const t0s = tvTables()[0], t1s = tvTables()[1];
     check("table view: a sig mismatch does not apply the stale entry",
-      t1s.tHead.rows[0].cells[0].textContent === "Town" &&
+      // The header cell text includes the view-only menu icon glyph, so
+      // match the title via startsWith rather than a full equality.
+      t1s.tHead.rows[0].cells[0].textContent.indexOf("Town") === 0 &&
       JSON.stringify(namesOf(t1s)) === JSON.stringify(["Tokyo", "Paris"]) &&
       t1s.tHead.rows[0].cells[0].getAttribute("aria-sort") === null,
       "t1=" + t1s.outerHTML.slice(0, 140));
@@ -7152,14 +7194,15 @@ function check(label, cond, extra) {
     await tick(10);
     window.NB.tableView.cycleSort(tA, 1);
     await tick(10);
-    // Open the header-1 popover so that header cell carries
+    // Open the header-1 menu (via its icon) so the icon carries
     // aria-expanded="true" at the seam; the teardown must REMOVE it, not
     // leave a stale value in the editable DOM.
-    tA.tHead.rows[0].cells[1].dispatchEvent(
+    tA.tHead.rows[0].cells[1].querySelector(".nb-tv-head-menu").dispatchEvent(
       new window.MouseEvent("click", { bubbles: true }));
     await tick(10);
-    check("table view seam: the open header popover marks its cell aria-expanded",
-      tA.tHead.rows[0].cells[1].getAttribute("aria-expanded") === "true" &&
+    check("table view seam: the open header menu marks its icon aria-expanded",
+      tA.tHead.rows[0].cells[1].querySelector(".nb-tv-head-menu")
+        .getAttribute("aria-expanded") === "true" &&
       !!$("viewer").querySelector(".nb-tv-pop"));
     check("table view seam: sorted + hidden before entering hybrid",
       tA.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&

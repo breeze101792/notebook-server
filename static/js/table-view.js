@@ -2,7 +2,11 @@
  *
  * Preview mode shows a small icon over the table under the pointer or
  * containing focus. Clicking the icon opens a toolbar with hide rows,
- * hide columns, and reset; clicking a column header sorts it.
+ * hide columns, and reset. Clicking a column TITLE toggles the sort
+ * (ascending <-> descending, first click ascending) and shows a small
+ * menu icon at the right edge of that header cell; clicking that icon
+ * opens the header menu (sort actions + hide column). Title clicks
+ * never open the menu.
  * The state is a per-file, per-table view overlay kept in localStorage
  * (`nb:tableView`) -- it is NEVER written to the note, never sent to
  * the server, and never appears in an export, because nothing here
@@ -52,6 +56,15 @@
   const LABEL_MAX = 28;        // chars of a row/column label before the ellipsis
   const SIG_SEP = "\u0001";    // header signature separator
 
+  // Header menu icon. It doubles as the sort indicator: an idle column
+  // shows a down chevron (the menu affordance), the active column shows
+  // an up/down triangle matching its direction. It is a view-only child
+  // element, so hybrid's teardown removes it alongside every view-only
+  // class before contenteditable and the undo snapshot.
+  const HEAD_MENU_GLYPH = "\u25BE";             // idle: menu chevron
+  const HEAD_MENU_GLYPH_ASC = "\u25B2";         // sorted ascending
+  const HEAD_MENU_GLYPH_DESC = "\u25BC";        // sorted descending
+
   const LS_KEY = "nb:tableView";       // localStorage namespace
   const SCHEMA_VERSION = 1;            // blob schema version
   const MAX_FILES = 50;                // LRU files kept in the blob
@@ -63,6 +76,9 @@
 
   const HIDE_ROW_CLASS = "nb-tv-hide-row";
   const HIDE_COL_CLASS = "nb-tv-hide-col";
+  const HEAD_MENU_CLASS = "nb-tv-head-menu";     // per-header menu icon
+  const HEAD_MENU_OPEN_CLASS = "is-open";        // icon whose menu is open
+  const SORTED_CLASS = "nb-tv-sorted";           // header cell with the active sort
 
   const NUM_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 
@@ -107,6 +123,17 @@
 
   function truncate(s, n) {
     return s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
+  }
+
+  /* Text of a header cell EXCLUDING the view-only menu icon, so the icon
+   * glyph never leaks into a signature or a chooser label. */
+  function headerText(cell) {
+    let s = "";
+    Array.from(cell.childNodes).forEach((n) => {
+      if (n.nodeType === 1 && n.classList && n.classList.contains(HEAD_MENU_CLASS)) return;
+      s += n.textContent;
+    });
+    return normText(s);
   }
 
   /* Overlay-space rect helper: convert a viewport rect into the
@@ -290,11 +317,35 @@
       return arr;
     });
     const sig = Array.from(header.cells)
-      .map((c) => normText(c.textContent)).join(SIG_SEP);
-    // Header cells are the keyboard path into the controls; hybrid's
-    // teardown strips these before the DOM can be edited.
-    Array.from(header.cells).forEach((c) => c.setAttribute("tabindex", "0"));
+      .map((c) => headerText(c)).join(SIG_SEP);
+    // The header menu icon is the keyboard path into the controls, so the
+    // header cells themselves carry no tabindex. The icons are view-only
+    // nodes; hybrid's teardown removes them before the DOM can be edited.
+    Array.from(header.cells).forEach((c) => {
+      if (!c.querySelector("." + HEAD_MENU_CLASS)) c.appendChild(buildHeadMenuIcon(c));
+    });
     return { index, header, tbody, sourceRows, keys, sig };
+  }
+
+  /* One menu icon per header cell, anchored at the cell's right edge. It
+   * is a real <span> child because a pseudo-element cannot receive a
+   * click; teardown removes it, so it never reaches turndown. */
+  function buildHeadMenuIcon(cell) {
+    const icon = el("span", HEAD_MENU_CLASS);
+    icon.textContent = HEAD_MENU_GLYPH;
+    icon.setAttribute("role", "button");
+    icon.setAttribute("aria-haspopup", "true");
+    icon.setAttribute("aria-expanded", "false");
+    icon.setAttribute("aria-label", "Column menu");
+    icon.title = "Column menu";
+    return icon;
+  }
+
+  function removeHeadMenuIcons(session) {
+    Array.from(session.header.cells).forEach((cell) => {
+      const icon = cell.querySelector("." + HEAD_MENU_CLASS);
+      if (icon) icon.remove();
+    });
   }
 
   /* --- applying view state ---------------------------------------- */
@@ -337,11 +388,24 @@
   }
 
   /* aria-sort belongs ONLY on the active sorted header; every other
-   * header cell has it removed. */
+   * header cell has it removed. `.nb-tv-sorted` is the CSS hook that
+   * keeps that cell's menu icon visible, and the icon glyph itself shows
+   * the direction: it is the only sort indicator. */
   function refreshHeaderAttrs(session, sort) {
     Array.from(session.header.cells).forEach((cell, i) => {
-      if (sort && sort.col === i) cell.setAttribute("aria-sort", sort.dir);
-      else cell.removeAttribute("aria-sort");
+      const icon = cell.querySelector("." + HEAD_MENU_CLASS);
+      if (sort && sort.col === i) {
+        cell.setAttribute("aria-sort", sort.dir);
+        cell.classList.add(SORTED_CLASS);
+        if (icon) {
+          icon.textContent = sort.dir === SORT_DESC
+            ? HEAD_MENU_GLYPH_DESC : HEAD_MENU_GLYPH_ASC;
+        }
+      } else {
+        cell.removeAttribute("aria-sort");
+        cell.classList.remove(SORTED_CLASS);
+        if (icon) icon.textContent = HEAD_MENU_GLYPH;
+      }
     });
   }
 
@@ -559,10 +623,11 @@
   function closePop() {
     if (!openPop) return;
     if (openPop.el && openPop.el.parentNode) openPop.el.remove();
-    // Remove, never set false: a header cell must not carry any
-    // view-only attribute (even a stale false) into the editable DOM.
+    // Remove, never set false: neither a header cell nor its icon may
+    // carry a stale view-only attribute into the editable DOM.
     if (openPop.anchor && openPop.anchor.removeAttribute) {
       openPop.anchor.removeAttribute("aria-expanded");
+      openPop.anchor.classList.remove(HEAD_MENU_OPEN_CLASS);
     }
     openPop = null;
   }
@@ -620,8 +685,9 @@
       .filter((c) => !c.classList.contains(HIDE_COL_CLASS)).length;
   }
 
-  /* The header popover: explicit sort actions plus "Hide this column".
-   * Exactly one radio is checked, mirroring the live sort state. */
+  /* The header menu, opened only by the cell's menu icon: explicit sort
+   * actions plus "Hide this column". Exactly one radio is checked,
+   * mirroring the live sort state. */
   function openHeaderPop(table, session, cell, col, focusFirst) {
     closePop();
     const pop = el("div", "nb-tv-pop");
@@ -651,9 +717,13 @@
     });
     pop.appendChild(hide);
     overlay.appendChild(pop);
-    openPop = { table, col, kind: "header", el: pop, anchor: cell, radios };
-    cell.setAttribute("aria-expanded", "true");
-    placePopover(cell, pop);
+    const icon = cell.querySelector("." + HEAD_MENU_CLASS);
+    openPop = { table, col, kind: "header", el: pop, anchor: icon || cell, radios };
+    if (icon) {
+      icon.setAttribute("aria-expanded", "true");
+      icon.classList.add(HEAD_MENU_OPEN_CLASS);
+    }
+    placePopover(icon || cell, pop);
     if (focusFirst) {
       const first = pop.querySelector("button");
       if (first) first.focus({ preventScroll: true });
@@ -693,7 +763,7 @@
     } else {
       Array.from(session.header.cells).forEach((cell, i) => {
         const label = "#" + (i + 1) + " \u2014 " +
-          truncate(normText(cell.textContent), LABEL_MAX);
+          truncate(headerText(cell), LABEL_MAX);
         pop.appendChild(menuCheckbox(label, cell.classList.contains(HIDE_COL_CLASS),
           (checked, input) => {
             if (checked && visibleColCount(session) <= 1) {
@@ -738,9 +808,19 @@
     }
   }
 
+  /* The direction a title click applies to `col`: the unsorted column
+   * (or a different column) sorts ascending; a column already sorted
+   * ascending flips to descending. */
+  function toggleSortDir(session, col) {
+    const cur = readSort(session);
+    return (cur && cur.col === col && cur.dir === SORT_ASC) ? SORT_DESC : SORT_ASC;
+  }
+
   /* Cycle the clicked column: none -> asc -> desc -> none. Clicking a
    * DIFFERENT header replaces the sort (ascending); the caller decides
-   * which of those two branches runs. Returns the applied direction. */
+   * which of those two branches runs. Returns the applied direction.
+   * Kept for the programmatic API and the existing tests; the UI path
+   * (a title click) uses toggleSortDir(). */
   function cycleSort(table, col) {
     const session = sessions.get(table);
     if (!session) return null;
@@ -847,7 +927,9 @@
       Array.from(session.header.cells).forEach((cell) => {
         cell.removeAttribute("tabindex");
         cell.removeAttribute("aria-sort");
+        cell.classList.remove(SORTED_CLASS);
       });
+      removeHeadMenuIcons(session);
     });
     sessions.clear();
     activeTable = null;
@@ -939,7 +1021,7 @@
 
   /* A click/keypress only controls the table when it lands on a cell of
    * the table's HEADER row: body cells (<td>) are plain note content and
-   * must never sort or open a popover. Returns the session when `cell`
+   * must never sort or open a menu. Returns the session when `cell`
    * belongs to the header row, else null. */
   function headerCell(table, cell) {
     const session = sessions.get(table);
@@ -947,49 +1029,71 @@
     return Array.from(session.header.cells).indexOf(cell) !== -1 ? session : null;
   }
 
-  /* Header click: a new header opens its popover and sorts ascending;
-   * a repeated click on the same header advances the cycle while the
-   * popover stays open. Clicks on real content (links, buttons, inputs)
-   * inside the cell are left alone. */
+  /* Header click. The menu icon opens the column menu; anywhere else on
+   * the header TITLE toggles the sort (none/descending -> ascending,
+   * ascending -> descending) and never opens a menu. Clicks on real
+   * content (links, buttons, inputs) inside the cell are left alone. */
   function onHeaderClick(e) {
-    if (e.target.closest && e.target.closest("a,button,input")) return;
-    const cell = e.target.closest && e.target.closest("th,td");
+    const t = e.target;
+    if (t.closest && t.closest("a,button,input")) return;
+    if (t.closest && t.closest("." + HEAD_MENU_CLASS)) {
+      const icon = t.closest("." + HEAD_MENU_CLASS);
+      const cell = icon.closest("th,td");
+      const table = cell && cell.closest("table");
+      const session = table && headerCell(table, cell);
+      if (!session) return;
+      if (openPop && openPop.table === table && openPop.kind === "header" &&
+          openPop.col === cell.cellIndex) {
+        closePop();
+      } else {
+        openHeaderPop(table, session, cell, cell.cellIndex, false);
+      }
+      return;
+    }
+    const cell = t.closest && t.closest("th,td");
     if (!cell || !cell.closest) return;
     const table = cell.closest("table");
     const session = headerCell(table, cell);
     if (!session) return;
-    const col = cell.cellIndex;
-    if (openPop && openPop.table === table && openPop.kind === "header" &&
-        openPop.col === col) {
-      cycleSort(table, col);
-    } else {
-      openHeaderPop(table, session, cell, col, false);
-      setSort(table, session, col, SORT_ASC);
-    }
+    setSort(table, session, cell.cellIndex, toggleSortDir(session, cell.cellIndex));
   }
 
   function onHeaderKey(e) {
-    if (e.target.closest && e.target.closest("a,button,input")) return;
-    const cell = e.target.closest && e.target.closest("th,td");
-    if (!cell || !cell.closest) return;
-    const table = cell.closest("table");
-    const session = headerCell(table, cell);
-    if (!session) return;
-    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+    const t = e.target;
+    if (t.closest && t.closest("a,button,input")) return;
+    // The menu icon is the keyboard path into the column menu.
+    if (t.closest && t.closest("." + HEAD_MENU_CLASS)) {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
       e.preventDefault();   // Space must not scroll the pane
+      const icon = t.closest("." + HEAD_MENU_CLASS);
+      const cell = icon.closest("th,td");
+      const table = cell && cell.closest("table");
+      const session = table && headerCell(table, cell);
+      if (!session) return;
       if (openPop && openPop.kind === "header" && openPop.table === table &&
           openPop.col === cell.cellIndex) {
         closePop();
       } else {
         openHeaderPop(table, session, cell, cell.cellIndex, true);
       }
+      return;
+    }
+    // Enter/Space on a header TITLE toggles the sort.
+    const cell = t.closest && t.closest("th,td");
+    if (!cell || !cell.closest) return;
+    const table = cell.closest("table");
+    const session = headerCell(table, cell);
+    if (!session) return;
+    if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+      e.preventDefault();
+      setSort(table, session, cell.cellIndex, toggleSortDir(session, cell.cellIndex));
     }
   }
 
   /* A pointerdown anywhere outside the controls dismisses everything:
    * an open popover and an open toolbar. The controls themselves and a
-   * popover's own anchor are exempt (the anchor click cycles the sort,
-   * the icon click closes the toolbar on its own). */
+   * popover's own anchor (the header menu icon, or a toolbar button) are
+   * exempt, so their own click toggles the popover instead. */
   function onDocPointerDown(e) {
     const inControls = controls && controls.contains(e.target);
     const inPop = openPop && openPop.el && openPop.el.contains(e.target);

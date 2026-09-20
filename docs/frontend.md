@@ -103,7 +103,7 @@ implemented today.
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 3330 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. |
 | `table-edit.js` | 802 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
-| `table-view.js` | 1099 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
+| `table-view.js` | 1181 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
 | `watcher.js` | 299 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s conditional-GET poll of `/api/file?ifModifiedSince=`. Pauses when the tab is hidden. |
 | `outline.js` | 167 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 997 | `NB.sidebar` | File tree, bookmarks, and right-click menus (new, rename/move, copy, delete, Export…). |
@@ -309,9 +309,13 @@ last synchronous moment before the snapshot.
 ### Table view and table edit
 
 Table view adds hover/focus controls over a GFM table in preview: hide
-rows, hide columns, single-column sort. Hiding is class-based; sorting
-moves `<tr>` nodes. Table edit (`table-edit.js`) overlays drag handles
-outside the `contentEditable` subtree for row/column reorder.
+rows, hide columns, single-column sort. Clicking a column title toggles
+the sort (none/descending -> ascending, ascending -> descending); the
+one icon at the right of the title opens the column menu (sort
+ascending/descending, clear sort, hide column) and doubles as the sort
+indicator (up/down glyph, accent-coloured). Hiding is class-based;
+sorting moves `<tr>` nodes. Table edit (`table-edit.js`) overlays drag
+handles outside the `contentEditable` subtree for row/column reorder.
 
 ### Bookmarks, wallpaper, floating modals
 
