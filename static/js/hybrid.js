@@ -2187,6 +2187,14 @@
     // Get the current file's content from the viewer cache.
     activePath = path || (NB.viewer && NB.viewer.getPath ? NB.viewer.getPath() : null);
     if (!activePath) return;
+    // Last synchronous moment before contenteditable is set below and
+    // before resetHistory() seeds the undo snapshot from the CURRENT
+    // viewerContentEl.innerHTML. Listeners (e.g. table-view.js) must
+    // restore canonical source row order and strip any view-only
+    // classes/attributes HERE, synchronously -- anything left in the
+    // DOM after this returns leaks into the editable document, the
+    // turndown round-trip, and the undo snapshot.
+    NB.evt.emit("hybrid:will-enter", activePath);
     active = true;
     dirty = false;
 

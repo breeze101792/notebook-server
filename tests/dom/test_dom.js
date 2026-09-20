@@ -1433,6 +1433,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
   evalIn(read("static/js/table-edit.js"));
+  evalIn(read("static/js/table-view.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -6747,6 +6748,552 @@ function check(label, cond, extra) {
     if (hybridPath !== "notes/a.md") {
       window.NB.tabs.open(hybridPath, { activate: false });
     }
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+  }
+
+  console.log("== table view ==");
+  // Preview-only table view controls (static/js/table-view.js): a hover
+  // toolbar over a GFM table that hides rows/columns and sorts a single
+  // column, persisted per file in localStorage["nb:tableView"]. Hiding is
+  // class-based (no node is removed) and sorting physically moves <tr>s;
+  // every view-only class/attribute is stripped synchronously at
+  // hybrid:will-enter, so the WYSIWYG round-trip and an export (which
+  // reads the viewer cache, not the DOM) can never see the overlay.
+  {
+    const TV_PATH = "notes/tableview.md";
+    const TV_MOVED = "notes/tableview-moved.md";
+    const TV_MD =
+      "# Table view\n\n" +
+      "| Name | Qty |\n" +
+      "| --- | --- |\n" +
+      "| beta | 2 |\n" +
+      "| alpha | 10 |\n" +
+      "| gamma | 3 |\n" +
+      "| delta |  |\n" +
+      "| epsilon | 3 |\n\n" +
+      "| City | Pop |\n" +
+      "| --- | --- |\n" +
+      "| Tokyo | 9 |\n" +
+      "| Paris | 2 |\n";
+    FILES[TV_PATH] = TV_MD;
+
+    const vcTV = $("viewer-content");
+    const tvTables = () => Array.from(vcTV.querySelectorAll("table"));
+    const namesOf = (t) =>
+      Array.from(t.tBodies[0].rows).map((r) => r.cells[0].textContent);
+    const sessionOf = (t) => window.NB.tableView.sessions.get(t);
+    const toolbarEl = () => $("viewer").querySelector(".nb-tv-toolbar");
+    // Open a toolbar popover by its button label and return the pop element.
+    // openChooser closes any pop of a different kind first, so a fresh pop
+    // is always the one returned.
+    const openChooser = (label) => {
+      const btn = Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
+        .find((b) => b.textContent === label);
+      btn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      return $("viewer").querySelector(".nb-tv-pop");
+    };
+    const toggleCheck = (input, on) => {
+      input.checked = on;
+      input.dispatchEvent(new window.Event("change", { bubbles: true }));
+    };
+    const checkInputs = (pop) =>
+      Array.from(pop.querySelectorAll(".nb-tv-item.is-check input"));
+
+    check("table view: NB.tableView is loaded", !!window.NB.tableView);
+    check("table view: exposes the documented API",
+      typeof window.NB.tableView.cycleSort === "function" &&
+      typeof window.NB.tableView.getState === "function" &&
+      typeof window.NB.tableView.revertTable === "function" &&
+      typeof window.NB.tableView.tearDownForEdit === "function" &&
+      // sessions is a Map built in the jsdom VM realm, so `instanceof Map`
+      // (the test runner's realm) is false; duck-type it instead.
+      window.NB.tableView.sessions &&
+      typeof window.NB.tableView.sessions.get === "function" &&
+      typeof window.NB.tableView.sessions.has === "function" &&
+      typeof window.NB.tableView.sessions.size === "number" &&
+      !!window.NB.tableView._storage);
+
+    // --- (1) rendered seam: live:false real render, live:true preview --
+    const renderedEvents = [];
+    const recRender = (e) => renderedEvents.push({ path: e.path, live: e.live });
+    window.NB.evt.on("viewer:rendered", recRender);
+    if (window.NB.tabs.isOpen(TV_PATH)) window.NB.tabs.close(TV_PATH, { force: true });
+    await window.NB.tabs.open(TV_PATH);
+    await tick(20);
+    check("table view: two GFM tables rendered",
+      tvTables().length === 2, "tables=" + tvTables().length);
+    check("table view: real render emits viewer:rendered live:false",
+      renderedEvents.some((e) => e.path === TV_PATH && e.live === false),
+      JSON.stringify(renderedEvents.slice(-3)));
+    // Live preview (split edit mode) must emit live:true.
+    await window.NB.viewer.startEdit();
+    await tick(20);
+    cmSetValue(TV_MD + "\n");
+    await tick(250);
+    check("table view: live preview emits viewer:rendered live:true",
+      renderedEvents.some((e) => e.path === TV_PATH && e.live === true),
+      JSON.stringify(renderedEvents.slice(-3)));
+    // Leave edit mode without changing the cached source (closeEdit is
+    // clean when the editor matches savedContent, so the cache stays TV_MD).
+    cmSetValue(TV_MD);
+    await tick(60);
+    window.NB.viewer.closeEdit();
+    await tick(40);
+    window.NB.evt.off("viewer:rendered", recRender);
+    const t0 = tvTables()[0], t1 = tvTables()[1];
+    check("table view: sessions built for both plain tables",
+      !!sessionOf(t0) && !!sessionOf(t1) &&
+      window.NB.tableView.sessions.size === 2,
+      "sessions=" + window.NB.tableView.sessions.size);
+
+    // --- (2) column hide is class-based and restorable -----------------
+    window.NB.tableView.resetTable(t0);
+    window.NB.tableView.reveal(t0);
+    let pop = openChooser("Columns");
+    check("table view: column chooser lists one checkbox per column",
+      !!pop && checkInputs(pop).length === 2,
+      "inputs=" + (pop ? checkInputs(pop).length : 0));
+    const bodyRowsBefore = t0.tBodies[0].children.length;
+    toggleCheck(checkInputs(pop)[1], true);
+    await tick(10);
+    const colHidden = (t, i) => Array.from(t.rows).every(
+      (r) => r.cells[i] && r.cells[i].classList.contains("nb-tv-hide-col"));
+    check("table view: hiding a column marks every row's cell (header included)",
+      colHidden(t0, 1) &&
+      !Array.from(t0.rows).some((r) => r.cells[0] &&
+        r.cells[0].classList.contains("nb-tv-hide-col")),
+      "t0=" + t0.outerHTML.slice(0, 120));
+    check("table view: hiding is class-based (body rows are not removed)",
+      t0.tBodies[0].children.length === bodyRowsBefore,
+      "before=" + bodyRowsBefore + " after=" + t0.tBodies[0].children.length);
+    const st0 = window.NB.tableView.getState(TV_PATH, 0);
+    check("table view: the hidden column is recorded",
+      !!st0 && st0.hiddenCols.indexOf(1) !== -1, JSON.stringify(st0));
+    // The chooser restores it (uncheck, same pop).
+    toggleCheck(checkInputs(pop)[1], false);
+    await tick(10);
+    check("table view: the chooser restores a hidden column",
+      !Array.from(t0.rows).some((r) => r.cells[1] &&
+        r.cells[1].classList.contains("nb-tv-hide-col")),
+      "t0=" + t0.outerHTML.slice(0, 120));
+
+    // --- (3) row hide; the header row is never a target ----------------
+    pop = openChooser("Rows");
+    const s0 = sessionOf(t0);
+    const rowInputs = checkInputs(pop);
+    check("table view: row chooser lists only body rows (header excluded)",
+      rowInputs.length === s0.sourceRows.length && s0.sourceRows.length === 5,
+      "inputs=" + rowInputs.length + " body=" + s0.sourceRows.length);
+    check("table view: the header row is not a chooser target",
+      s0.sourceRows.indexOf(s0.header) === -1 &&
+      !s0.header.classList.contains("nb-tv-hide-row"));
+    toggleCheck(rowInputs[0], true);
+    await tick(10);
+    check("table view: hiding a row marks that <tr> with .nb-tv-hide-row",
+      s0.sourceRows[0].classList.contains("nb-tv-hide-row") &&
+      !s0.header.classList.contains("nb-tv-hide-row") &&
+      s0.sourceRows.filter((r) => r.classList.contains("nb-tv-hide-row")).length === 1,
+      "t0=" + t0.outerHTML.slice(0, 120));
+    toggleCheck(rowInputs[0], false);
+    await tick(10);
+
+    // --- (4) the last visible column cannot be hidden ------------------
+    // Apply a state that hides column 1, leaving only column 0 visible,
+    // then try to hide column 0 through the chooser: refused + toast.
+    window.NB.tableView.applyState(t0, s0, {
+      sig: s0.sig, hiddenRows: [], hiddenCols: [1],
+    });
+    await tick(10);
+    window.NB.tableView.reveal(t0);
+    pop = openChooser("Columns");
+    const lastInputs = checkInputs(pop);
+    toggleCheck(lastInputs[0], true);
+    await tick(10);
+    check("table view: hiding the last visible column is refused (nothing hidden)",
+      !Array.from(t0.rows).some((r) => r.cells[0] &&
+        r.cells[0].classList.contains("nb-tv-hide-col")) &&
+      colHidden(t0, 1),
+      "t0=" + t0.outerHTML.slice(0, 120));
+    const tvToast = window.document.querySelector(".toast");
+    check("table view: the refusal shows the 'at least one column' toast",
+      !!tvToast && tvToast.classList.contains("show") &&
+      /At least one column must stay visible/.test(tvToast.textContent),
+      tvToast ? "text=" + JSON.stringify(tvToast.textContent) : "no toast");
+    check("table view: the refused checkbox is reset",
+      lastInputs[0].checked === false);
+    window.NB.tableView.cycleSort(t0, 0);
+    await tick(10);
+    check("table view: the table is still usable after the refusal",
+      s0.header.cells[0].getAttribute("aria-sort") === "ascending");
+    window.NB.tableView.resetTable(t0);
+
+    // --- (5) sort: none -> asc -> desc -> none, numeric + text ---------
+    // Qty values: 2, 10, 3, "", 3. Empty sorts last in both directions;
+    // equal numeric keys keep source order (gamma before epsilon).
+    let dir = window.NB.tableView.cycleSort(t0, 1);
+    check("table view: cycleSort none -> asc", dir === "ascending");
+    check("table view: numeric ascending puts 2 before 10, empty last",
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["beta", "gamma", "epsilon", "alpha", "delta"]),
+      JSON.stringify(namesOf(t0)));
+    dir = window.NB.tableView.cycleSort(t0, 1);
+    check("table view: cycleSort asc -> desc", dir === "descending");
+    check("table view: numeric descending reverses, empty still last, stable ties",
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["alpha", "gamma", "epsilon", "beta", "delta"]),
+      JSON.stringify(namesOf(t0)));
+    dir = window.NB.tableView.cycleSort(t0, 1);
+    check("table view: cycleSort desc -> none restores source order",
+      dir === null &&
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["beta", "alpha", "gamma", "delta", "epsilon"]),
+      JSON.stringify(namesOf(t0)));
+    window.NB.tableView.cycleSort(t0, 0);
+    check("table view: text ascending uses the collator",
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["alpha", "beta", "delta", "epsilon", "gamma"]),
+      JSON.stringify(namesOf(t0)));
+    window.NB.tableView.cycleSort(t0, 0);
+    check("table view: text descending reverses",
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["gamma", "epsilon", "delta", "beta", "alpha"]),
+      JSON.stringify(namesOf(t0)));
+    window.NB.tableView.cycleSort(t0, 0);
+    check("table view: text none restores source order",
+      JSON.stringify(namesOf(t0)) ===
+        JSON.stringify(["beta", "alpha", "gamma", "delta", "epsilon"]),
+      JSON.stringify(namesOf(t0)));
+
+    // --- (6) a single sorted column: exactly one aria-sort -------------
+    window.NB.tableView.cycleSort(t0, 1);   // Qty asc
+    window.NB.tableView.cycleSort(t0, 0);   // switch to Name asc
+    const hdrCells = Array.from(s0.header.cells);
+    check("table view: sorting a second column clears the first's aria-sort",
+      hdrCells[0].getAttribute("aria-sort") === "ascending" &&
+      hdrCells[1].getAttribute("aria-sort") === null &&
+      hdrCells.filter((c) => c.hasAttribute("aria-sort")).length === 1,
+      hdrCells.map((c) => c.getAttribute("aria-sort")).join(","));
+    window.NB.tableView.cycleSort(t0, 0);   // Name desc
+    check("table view: the sorted header carries aria-sort=descending alone",
+      hdrCells[0].getAttribute("aria-sort") === "descending" &&
+      hdrCells[1].getAttribute("aria-sort") === null,
+      hdrCells.map((c) => c.getAttribute("aria-sort")).join(","));
+    window.NB.tableView.cycleSort(t0, 0);   // clear
+    check("table view: clearing removes aria-sort from every header",
+      hdrCells.every((c) => c.getAttribute("aria-sort") === null));
+    window.NB.tableView.resetTable(t0);
+
+    // --- (6b) a body cell click must not sort or open a popover ---------
+    // Regression: the click handler matched th,td, so clicking any body
+    // cell reordered rows, persisted a sort, and anchored a popover to
+    // the body cell. Only a real header cell may drive the controls.
+    window.NB.tableView.resetTable(t0);
+    window.NB.tableView.hide();
+    const bodyNamesBefore = JSON.stringify(namesOf(t0));
+    const bodyCell = t0.tBodies[0].rows[1].cells[0];
+    bodyCell.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(10);
+    const stBody = window.NB.tableView.getState(TV_PATH, 0);
+    check("table view: clicking a body cell does not reorder rows",
+      JSON.stringify(namesOf(t0)) === bodyNamesBefore,
+      "rows=" + JSON.stringify(namesOf(t0)));
+    check("table view: clicking a body cell does not persist a sort",
+      !stBody || !stBody.sort, JSON.stringify(stBody));
+    check("table view: clicking a body cell opens no popover",
+      !$("viewer").querySelector(".nb-tv-pop"));
+    check("table view: clicking a body cell sets no aria-sort on the header",
+      hdrCells.every((c) => c.getAttribute("aria-sort") === null));
+
+    // --- (7) persistence: versioned schema + re-apply on activate ------
+    window.NB.tableView.reveal(t0);
+    pop = openChooser("Rows");
+    toggleCheck(checkInputs(pop)[0], true);
+    await tick(10);
+    pop = openChooser("Columns");
+    toggleCheck(checkInputs(pop)[1], true);
+    await tick(10);
+    window.NB.tableView.cycleSort(t0, 1);
+    await tick(10);
+    const blob = JSON.parse(window.localStorage.getItem("nb:tableView"));
+    const rec = blob && blob.files && blob.files[TV_PATH];
+    const tst = rec && rec.tables && rec.tables["0"];
+    check("table view: localStorage blob is versioned",
+      !!blob && blob.v === 1, JSON.stringify(blob && blob.v));
+    check("table view: stored entry has sig/hiddenRows/hiddenCols/sort",
+      !!tst && typeof tst.sig === "string" &&
+      Array.isArray(tst.hiddenRows) && Array.isArray(tst.hiddenCols) &&
+      !!tst.sort, JSON.stringify(tst));
+    check("table view: sig is the normalized header texts joined by \\u0001",
+      !!tst && tst.sig === "Name\u0001Qty", JSON.stringify(tst && tst.sig));
+    check("table view: hidden row/column indices and sort are recorded",
+      !!tst && tst.hiddenRows.indexOf(0) !== -1 &&
+      tst.hiddenCols.indexOf(1) !== -1 &&
+      tst.sort.col === 1 && tst.sort.dir === "ascending",
+      JSON.stringify(tst));
+    // Re-open the file: a fresh render must re-apply the stored overlay.
+    window.NB.tabs.close(TV_PATH, { force: true });
+    await window.NB.tabs.open(TV_PATH);
+    await tick(30);
+    const t0r = tvTables()[0];
+    check("table view: re-activating the file re-applies hidden row/col + sort",
+      t0r.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&
+      t0r.tHead.rows[0].cells[1].classList.contains("nb-tv-hide-col") &&
+      t0r.tHead.rows[0].cells[1].getAttribute("aria-sort") === "ascending" &&
+      JSON.stringify(namesOf(t0r)) ===
+        JSON.stringify(["beta", "gamma", "epsilon", "alpha", "delta"]),
+      "rows=" + JSON.stringify(namesOf(t0r)));
+
+    // --- (8) two tables keep independent state; a stale sig is ignored --
+    const t1r = tvTables()[1];
+    window.NB.tableView.cycleSort(t1r, 0);   // City asc -> Paris, Tokyo
+    const st0b = window.NB.tableView.getState(TV_PATH, 0);
+    const st1b = window.NB.tableView.getState(TV_PATH, 1);
+    check("table view: the two tables keep independent stored entries",
+      !!st0b && !!st1b && st0b.sort.col === 1 && st1b.sort.col === 0,
+      JSON.stringify({ t0: st0b && st0b.sort, t1: st1b && st1b.sort }));
+    // Edit table 2's header on disk and re-open: the stored entry's sig no
+    // longer matches, so it is ignored -- and deliberately NOT deleted.
+    FILES[TV_PATH] = TV_MD.replace("| City | Pop |", "| Town | Pop |");
+    MTIMES[TV_PATH] = (MTIMES[TV_PATH] || 1) + 1;
+    window.NB.viewer.close(TV_PATH);
+    await window.NB.tabs.activate(TV_PATH);
+    await tick(30);
+    const t0s = tvTables()[0], t1s = tvTables()[1];
+    check("table view: a sig mismatch does not apply the stale entry",
+      t1s.tHead.rows[0].cells[0].textContent === "Town" &&
+      JSON.stringify(namesOf(t1s)) === JSON.stringify(["Tokyo", "Paris"]) &&
+      t1s.tHead.rows[0].cells[0].getAttribute("aria-sort") === null,
+      "t1=" + t1s.outerHTML.slice(0, 140));
+    check("table view: a sig mismatch does NOT delete the stored entry",
+      !!window.NB.tableView.getState(TV_PATH, 1),
+      JSON.stringify(window.NB.tableView.getState(TV_PATH, 1)));
+    check("table view: the matching table still gets its stored state",
+      t0s.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&
+      t0s.tHead.rows[0].cells[1].getAttribute("aria-sort") === "ascending",
+      "t0=" + t0s.outerHTML.slice(0, 140));
+    // Restore the original headers; the stored t1 entry matches again.
+    FILES[TV_PATH] = TV_MD;
+    MTIMES[TV_PATH] = (MTIMES[TV_PATH] || 1) + 1;
+    window.NB.viewer.close(TV_PATH);
+    await window.NB.tabs.activate(TV_PATH);
+    await tick(30);
+
+    // --- (9) out-of-range stored indices are tolerated -----------------
+    const tA = tvTables()[0], tB = tvTables()[1];
+    window.NB.tableView.resetTable(tA);
+    window.NB.tableView.resetTable(tB);
+    const sA = sessionOf(tA);
+    let tvThrew = false;
+    try {
+      window.NB.tableView.applyState(tA, sA, {
+        sig: sA.sig, hiddenRows: [0, 99, -1], hiddenCols: [1, 42],
+        sort: { col: 99, dir: "ascending" },
+      });
+    } catch (e) { tvThrew = true; }
+    check("table view: out-of-range stored indices do not throw", !tvThrew);
+    check("table view: in-range indices apply, out-of-range are ignored",
+      sA.sourceRows[0].classList.contains("nb-tv-hide-row") &&
+      tA.tHead.rows[0].cells[1].classList.contains("nb-tv-hide-col") &&
+      !tA.tHead.rows[0].cells[0].classList.contains("nb-tv-hide-col") &&
+      tA.tHead.rows[0].cells[0].getAttribute("aria-sort") === null,
+      "tA=" + tA.outerHTML.slice(0, 140));
+    window.NB.tableView.revertTable(tA);
+
+    // --- (10) seam: hybrid:will-enter strips the overlay first ---------
+    window.NB.tableView.reveal(tA);
+    pop = openChooser("Rows");
+    toggleCheck(checkInputs(pop)[0], true);
+    await tick(10);
+    pop = openChooser("Columns");
+    toggleCheck(checkInputs(pop)[1], true);
+    await tick(10);
+    window.NB.tableView.cycleSort(tA, 1);
+    await tick(10);
+    // Open the header-1 popover so that header cell carries
+    // aria-expanded="true" at the seam; the teardown must REMOVE it, not
+    // leave a stale value in the editable DOM.
+    tA.tHead.rows[0].cells[1].dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }));
+    await tick(10);
+    check("table view seam: the open header popover marks its cell aria-expanded",
+      tA.tHead.rows[0].cells[1].getAttribute("aria-expanded") === "true" &&
+      !!$("viewer").querySelector(".nb-tv-pop"));
+    check("table view seam: sorted + hidden before entering hybrid",
+      tA.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&
+      tA.tHead.rows[0].cells[1].classList.contains("nb-tv-hide-col") &&
+      JSON.stringify(namesOf(tA)) ===
+        JSON.stringify(["beta", "gamma", "epsilon", "alpha", "delta"]),
+      "rows=" + JSON.stringify(namesOf(tA)));
+    // A listener registered on hybrid:will-enter must observe the
+    // contenteditable attribute still unset AND the view overlay already
+    // stripped: table-view's own listener registers at module load, so a
+    // later listener runs after it. This pins that the teardown really
+    // happens on the seam (a listener on hybrid:entered alone would leave
+    // the view classes in the undo snapshot seeded by resetHistory()).
+    let ceAtEmit = "unset";
+    let seamDirty = "unset";
+    const seamListener = () => {
+      ceAtEmit = $("viewer-content").getAttribute("contenteditable");
+      seamDirty = vcTV.querySelectorAll(
+        ".nb-tv-hide-row,.nb-tv-hide-col,[aria-sort],[aria-expanded]").length;
+    };
+    window.NB.evt.on("hybrid:will-enter", seamListener);
+    await window.NB.hybrid.enter();
+    await tick(30);
+    window.NB.evt.off("hybrid:will-enter", seamListener);
+    check("table view seam: contenteditable is null when hybrid:will-enter fires",
+      ceAtEmit === null, "ce=" + ceAtEmit);
+    check("table view seam: the overlay is already stripped at will-enter time",
+      seamDirty === 0, "residual view nodes=" + seamDirty);
+    const seamMd = window.NB.hybrid.domToMarkdown();
+    check("table view seam: the round-trip preserves the original markdown",
+      seamMd.trim() === TV_MD.trim(), JSON.stringify(seamMd).slice(0, 200));
+    check("table view seam: no view-only class/attr survives into the editable DOM",
+      vcTV.querySelectorAll(
+        ".nb-tv-hide-row,.nb-tv-hide-col,[aria-sort],[aria-expanded]").length === 0 &&
+      vcTV.querySelectorAll("table th[tabindex],table td[tabindex]").length === 0,
+      "rows=" + vcTV.querySelectorAll(".nb-tv-hide-row").length +
+      " cols=" + vcTV.querySelectorAll(".nb-tv-hide-col").length);
+    // Finding 1 regression: a REAL render firing while hybrid is active
+    // (reload button / ai:applied / watcher external change) must not
+    // re-apply stored view state, or the sorted DOM lands inside the
+    // contenteditable and domToMarkdown()/autosave could serialize it.
+    const hvTablesBefore = vcTV.querySelectorAll("table").length;
+    window.NB.evt.emit("ai:applied", {
+      path: TV_PATH,
+      data: { content: TV_MD, mtime: (MTIMES[TV_PATH] || 1) + 1 },
+    });
+    await tick(30);
+    const hvTables = tvTables();
+    check("table view hybrid render: a real render during hybrid applies no view state",
+      hvTables.length === hvTablesBefore &&
+      JSON.stringify(namesOf(hvTables[0])) ===
+        JSON.stringify(["beta", "alpha", "gamma", "delta", "epsilon"]) &&
+      vcTV.querySelectorAll(".nb-tv-hide-row,.nb-tv-hide-col,[aria-sort]").length === 0 &&
+      window.NB.tableView.sessions.size === 0,
+      "rows=" + JSON.stringify(namesOf(hvTables[0])) +
+      " sessions=" + window.NB.tableView.sessions.size);
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    const t0x = tvTables()[0];
+    check("table view seam: the stored state re-applies after exiting hybrid",
+      t0x.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&
+      t0x.tHead.rows[0].cells[1].classList.contains("nb-tv-hide-col") &&
+      t0x.tHead.rows[0].cells[1].getAttribute("aria-sort") === "ascending" &&
+      JSON.stringify(namesOf(t0x)) ===
+        JSON.stringify(["beta", "gamma", "epsilon", "alpha", "delta"]),
+      "rows=" + JSON.stringify(namesOf(t0x)));
+
+    // --- (11) export invariant: the cache, never the rendered DOM ------
+    check("table view export: the DOM still carries the view overlay",
+      t0x.tBodies[0].rows[0].classList.contains("nb-tv-hide-row") &&
+      !!t0x.querySelector(".nb-tv-hide-col"));
+    check("table view export: viewer.getContent() is the original source markdown",
+      window.NB.viewer.getContent() === TV_MD,
+      JSON.stringify(window.NB.viewer.getContent()).slice(0, 200));
+    check("table view export: export.js never reads the rendered DOM",
+      read("static/js/export.js").indexOf("viewer-content") === -1);
+
+    // --- (12) file lifecycle re-keys / prunes the stored entry ---------
+    // Drive the real NB.evt events on throwaway paths (seeded through the
+    // exposed _storage) so no open tab is renamed or closed.
+    const throwFrom = "notes/tv-event-src.md";
+    const throwTo = "notes/tv-event-dst.md";
+    window.NB.tableView._storage.store.files[throwFrom] = {
+      used: Date.now(),
+      tables: { "0": { sig: "Event\u0001Test", used: Date.now(),
+                       hiddenRows: [], hiddenCols: [] } },
+    };
+    window.NB.tableView._storage.persist();
+    window.NB.evt.emit("file:moved", { from: throwFrom, to: throwTo });
+    check("table view file events: file:moved re-keys the stored entry",
+      window.NB.tableView.getState(throwFrom, 0) === null &&
+      !!window.NB.tableView.getState(throwTo, 0),
+      JSON.stringify(window.NB.tableView._storage.store.files[throwTo]));
+    let evtBlob = JSON.parse(window.localStorage.getItem("nb:tableView"));
+    check("table view file events: the re-key is persisted",
+      !!evtBlob.files[throwTo] && !evtBlob.files[throwFrom]);
+    window.NB.evt.emit("file:deleted", throwTo);
+    check("table view file events: file:deleted prunes the stored entry",
+      window.NB.tableView.getState(throwTo, 0) === null);
+    evtBlob = JSON.parse(window.localStorage.getItem("nb:tableView"));
+    check("table view file events: the prune is persisted",
+      !evtBlob.files[throwTo]);
+    // Folder operations emit the DIRECTORY path; every nested record must
+    // travel with the folder move and disappear with the folder delete.
+    const dirFrom = "notes/tvfolder";
+    const dirTo = "notes/tvfolder-moved";
+    const mkRec = () => ({
+      used: Date.now(),
+      tables: { "0": { sig: "Event\u0001Test", used: Date.now(),
+                       hiddenRows: [], hiddenCols: [] } },
+    });
+    window.NB.tableView._storage.store.files[dirFrom + "/a.md"] = mkRec();
+    window.NB.tableView._storage.store.files[dirFrom + "/sub/b.md"] = mkRec();
+    window.NB.tableView._storage.persist();
+    window.NB.evt.emit("file:moved", { from: dirFrom, to: dirTo });
+    check("table view file events: a folder move re-keys every nested record",
+      !window.NB.tableView.getState(dirFrom + "/a.md", 0) &&
+      !window.NB.tableView.getState(dirFrom + "/sub/b.md", 0) &&
+      !!window.NB.tableView.getState(dirTo + "/a.md", 0) &&
+      !!window.NB.tableView.getState(dirTo + "/sub/b.md", 0),
+      JSON.stringify(Object.keys(window.NB.tableView._storage.store.files)));
+    window.NB.evt.emit("file:deleted", dirTo);
+    check("table view file events: a folder delete prunes every nested record",
+      window.NB.tableView.getState(dirTo + "/a.md", 0) === null &&
+      window.NB.tableView.getState(dirTo + "/sub/b.md", 0) === null);
+
+    // --- (12b) corrupt records are repaired, not crashed ----------------
+    // A non-object file record must not make prune()/serialize() throw
+    // (persist()'s catch would silently drop the whole write).
+    const corruptPath = "notes/tv-corrupt.md";
+    window.NB.tableView._storage.store.files[corruptPath] = null;
+    window.NB.tableView._storage.store.files[TV_PATH] = {
+      used: Date.now(),
+      tables: { "0": { sig: "Name\u0001Qty", used: Date.now(),
+                       hiddenRows: [], hiddenCols: [] } },
+    };
+    let corruptThrew = false;
+    try { window.NB.tableView._storage.persist(); }
+    catch (e) { corruptThrew = true; }
+    check("table view storage: a corrupt record does not throw on persist",
+      !corruptThrew);
+    check("table view storage: the corrupt record is dropped and the write lands",
+      !window.NB.tableView._storage.store.files[corruptPath] &&
+      !!JSON.parse(window.localStorage.getItem("nb:tableView")).files[TV_PATH],
+      JSON.stringify(Object.keys(window.NB.tableView._storage.store.files)));
+    delete window.NB.tableView._storage.store.files[TV_PATH];
+    window.NB.tableView._storage.persist();
+
+    // --- (13) wiring completeness -------------------------------------
+    check("table view completeness: table-view.js is in index.html",
+      read("templates/index.html").indexOf("/static/js/table-view.js") !== -1);
+    check("table view completeness: table-view.js is in sw.js PRECACHE",
+      read("static/sw.js").indexOf("/static/js/table-view.js") !== -1);
+
+    // --- (14) merged-cell (colspan) tables are ineligible --------------
+    window.localStorage.removeItem("nb:tableView");
+    window.NB.tableView._storage.load();
+    const merged = window.document.createElement("table");
+    merged.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+      "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>";
+    vcTV.appendChild(merged);
+    window.NB.tableView.onRendered({ path: TV_PATH, live: false });
+    await tick(10);
+    check("table view: a colspan table gets no session",
+      !window.NB.tableView.sessions.has(merged),
+      "sessions=" + window.NB.tableView.sessions.size);
+    check("table view: a colspan table has no header tabindex",
+      merged.querySelectorAll("th[tabindex],td[tabindex]").length === 0);
+    merged.remove();
+
+    // Cleanup: drop the fixture and restore the next block's precondition.
+    window.NB.tableView.hide();
+    window.localStorage.removeItem("nb:tableView");
+    window.NB.tableView._storage.load();
+    if (window.NB.tabs.isOpen(TV_PATH)) window.NB.tabs.close(TV_PATH, { force: true });
+    delete FILES[TV_PATH];
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
   }

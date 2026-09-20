@@ -664,6 +664,139 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 body.nb-table-drag { cursor: grabbing; }
 body.nb-table-drag #viewer-content { user-select: none; }
 
+/* ------------------------------------------------------------------ */
+/* Preview table view controls (table-view.js)                         */
+/* ------------------------------------------------------------------ */
+/* Hover/focus view state for GFM tables in PREVIEW mode: hide rows /  */
+/* columns and a single-column sort, persisted per file per table in   */
+/* localStorage. The overlay is a child of #viewer (outside the        */
+/* contentEditable subtree), hidden on scroll like the hybrid table    */
+/* overlay above, and torn down synchronously before hybrid editing so */
+/* the view-only classes and row order never reach serialization.      */
+.nb-tv-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;                 /* above the hybrid overlay (6), below menus */
+  pointer-events: none;       /* only the controls opt in */
+}
+.nb-tv-overlay:empty { display: none; }
+
+.nb-tv-toolbar {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);   /* matches .nb-drag-proxy */
+  pointer-events: auto;
+}
+.nb-tv-toolbar[hidden] { display: none; }
+.nb-tv-btn {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: .76rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.nb-tv-btn:hover { background: var(--accent-soft); color: var(--fg); }
+.nb-tv-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.nb-tv-pop {
+  position: absolute;
+  min-width: 180px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  pointer-events: auto;
+  z-index: 8;
+}
+.nb-tv-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: .8rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.nb-tv-item:hover { background: var(--accent-soft); }
+.nb-tv-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* A radio bullet reserves its slot whether checked or not, so the
+ * labels stay aligned; the check mark only shows on the active row. */
+.nb-tv-item[role="menuitemradio"]::before {
+  content: "\2713";
+  color: var(--accent);
+  visibility: hidden;
+}
+.nb-tv-item[role="menuitemradio"][aria-checked="true"]::before {
+  visibility: visible;
+}
+.nb-tv-item.is-check input { margin: 0; accent-color: var(--accent); }
+.nb-tv-empty {
+  padding: 4px 8px;
+  color: var(--fg-muted);
+  font-size: .8rem;
+}
+
+/* Merged-cell notice: same look as the hybrid overlay's .nb-table-note. */
+.nb-tv-note {
+  position: absolute;
+  padding: 2px 8px;
+  font-size: .74rem;
+  color: var(--fg-muted);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* View-only visibility. Class-based only -- nodes are never removed, so
+ * once teardown runs turndown and the undo snapshot see the full table. */
+#viewer-content tr.nb-tv-hide-row { display: none; }
+#viewer-content .nb-tv-hide-col { display: none; }
+
+/* Header cells are the keyboard path into the controls. The sort arrow
+ * is a pseudo-element (never a child node: turndown would serialize a
+ * real <span> into the cell text). */
+#viewer-content thead th[tabindex="0"] { cursor: pointer; }
+#viewer-content thead th[tabindex="0"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;   /* inside the cell: outlines must not overlap */
+}
+#viewer-content thead th[aria-sort="ascending"]::after {
+  content: " \25B2";
+  color: var(--fg-muted);
+}
+#viewer-content thead th[aria-sort="descending"]::after {
+  content: " \25BC";
+  color: var(--fg-muted);
+}
+
 /* Keyboard hints inside the hybrid context menu (Move row/column rows). */
 .context-menu button .context-menu-kbd,
 kbd.context-menu-kbd {

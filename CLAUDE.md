@@ -199,9 +199,10 @@ while auth is off, like every other admin route):
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → mermaid.js → wavedrom.js → katex.js → viz.js →
-htmlpreview.js → viewer.js → editbar.js → hybrid.js → watcher.js → outline.js →
-sidebar.js → search.js → graph.js → tabs.js → windows.js → settings.js →
-export.js → vimnav.js → ai.js → activity.js → shortcuts.js → app.js`.
+htmlpreview.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
+table-view.js → watcher.js → outline.js → sidebar.js → search.js → graph.js →
+tabs.js → windows.js → settings.js → export.js → vimnav.js → ai.js →
+activity.js → shortcuts.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`).
@@ -255,6 +256,16 @@ Module responsibilities:
 - `sidebar.js` — left file tree + right-click context menu (open, new file/folder,
   rename/move, copy, delete).
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
+- `table-view.js` — preview-only table view controls: hover/focus toolbar over a
+  GFM table with hide-rows, hide-columns, and a single-column sort, kept per file
+  per table in `localStorage` (`nb:tableView`, versioned; a stale header signature
+  is ignored, never deleted). Hiding is class-based only; sorting physically moves
+  `<tr>` nodes, so `hybrid:will-enter` is the last synchronous moment — the module
+  tears down view state there (restores source order, strips
+  `nb-tv-hide-row`/`nb-tv-hide-col`/`tabindex`/`aria-sort`) before contenteditable
+  and the undo snapshot. Live preview (`viewer:rendered` with `live:true`) drops
+  sessions and never rebuilds, so the textarea stays the source of truth. No view
+  state ever reaches the note, the server, or an export.
 - `search.js` — search UI; re-wraps `<<…>>` snippets into `<mark>` via textContent
   (never `innerHTML` on snippet text).
 - `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount

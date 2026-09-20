@@ -250,12 +250,17 @@
    * (it would flicker on every keystroke). */
   function render(content) {
     const src = content !== undefined ? content : (cur() ? cur().content : null);
-    if (src == null) { viewerContentEl.innerHTML = ""; return; }
+    if (src == null) {
+      viewerContentEl.innerHTML = "";
+      NB.evt.emit("viewer:rendered", { path: active, live: false });
+      return;
+    }
     seenIds = {}; // reset dedup per render
     if (window.marked) {
       viewerContentEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
     } else {
       viewerContentEl.innerHTML = "<p>marked.js failed to load.</p>";
+      NB.evt.emit("viewer:rendered", { path: active, live: false });
       return;
     }
 
@@ -303,6 +308,12 @@
       NB.outline.build(viewerContentEl);
       NB.outline.startWatching(viewerContentEl);
     }
+
+    // Render-complete signal. `live` is true for the editing live
+    // preview (content was passed in), which must show the original
+    // table: listeners drop any view state and never rebuild, because
+    // the textarea -- not the DOM -- is the source of truth there.
+    NB.evt.emit("viewer:rendered", { path: active, live: content !== undefined });
   }
 
   /* Debounced live preview: re-render the viewer from the textarea content.
