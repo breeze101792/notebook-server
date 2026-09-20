@@ -11,7 +11,8 @@ plain `.md` files on disk — no database, no build step.
 - Markdown rendering with syntax highlighting (vendored `marked.js` +
   `highlight.js`).
 - Multi-tab editor (CodeMirror) with per-file content cache so unsaved
-  edits survive tab switches, and an optional Vim/Emacs keybinding mode.
+  edits survive tab switches, an optional Vim keybinding mode, and a
+  WYSIWYG "hybrid" edit mode.
 - Heading outline (right-side minimap) with scroll-spy and click-to-jump.
 - In-page search across all `.md` files with safe snippet highlighting
   (server returns `<<…>>` markers; the client rewraps them as `<mark>`
@@ -44,8 +45,9 @@ tells you where to click to exercise the feature.
 ```
 
 Then open <http://127.0.0.1:5000> in your browser. On first launch the
-server copies `notebook.template/` into `notebook/` (a single
-`Welcome.md`) and creates an empty `config/config.json`.
+server copies `notebook.template/` into `notebook/` (the starter notes
+`Welcome.md`, `README.md`, and `Syntax.md`) and creates an empty
+`config/config.json`.
 
 The venv path is `.venv_<hostname>` so the same checkout is safe to use
 on multiple machines without one machine's pip cache stomping the other.

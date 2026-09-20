@@ -45,11 +45,11 @@ By default the server is open. To put a two-password gate in front of the
 API, open the Settings modal (⚙ button in the top bar) → **Passwords**:
 
 - **Admin password** (required to enable auth): set this first. The
-  next page load will require the password for *all* writes; if you also
-  enable the viewer password, reads are gated too.
+  next page load will require the password for *all* reads and writes.
 - **Require a password to read** (optional): set a separate viewer
-  password. When unset, reads are open. When set, anyone hitting the
-  site must sign in as a viewer (or admin) to read. The toggle clears
+  password. This is a second, read-only login identity; it does not gate
+  reads on its own (the admin password already does). When set, a
+  visitor can sign in as a viewer (or admin) to read. The toggle clears
   the viewer password; it can be re-set any time.
 
 Passwords are sent over the wire as plain text, hashed server-side with
@@ -70,7 +70,7 @@ or a full reset), write the file directly:
 ```bash
 # 1. hash your admin password
 HASH_ADMIN=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_ADMIN_PW', bcrypt.gensalt(12)).decode())")
-# 2. (optional) hash a viewer password; omit the key to keep reads open
+# 2. (optional) hash a viewer password; omit the key to leave it unset
 HASH_VIEWER=$(python -c "import bcrypt; print(bcrypt.hashpw(b'YOUR_VIEWER_PW', bcrypt.gensalt(12)).decode())")
 # 3. write the file (the server generates the session-signing secret on first start)
 python -c "
@@ -87,7 +87,7 @@ To fully remove the auth layer, delete `config/auth.json` and restart.
 
 ## Architecture
 
-**Backend — `app.py` (single file, ~700 lines).** All routes are under `/api/*` and
+**Backend — `app.py` (single file, ~2500 lines).** All routes are under `/api/*` and
 return JSON; `GET /` serves `index.html`. The module resolves `DATA_DIR` /
 `CONFIG_DIR` at import time from `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (defaulting to the project `notebook/` and `config/` folders) and calls `seed()`
@@ -128,23 +128,28 @@ and `order=path|mtime|count` (+ `desc=1`) to reorder result files.
 
 **Auth (optional two-password gate).** `config/auth.json` (separate from
 `config.json` so the UI-prefs blob can never include hashed credentials) holds
-`{"admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>"}`
-plus a generated `secret` used as Flask's session-signing key. Auth is "on"
-when the admin password is set; the viewer password is independent and only
-gates reads (admin set, viewer unset → reads open, writes gated). Three
-decorators compose the layer: `@login_required` (401 if no session) gates
-the mutating routes; `@admin_required` (403 if role != "admin") adds the
-write paths; `@read_login_required` (401 if no session AND a viewer
-password is configured) gates the read paths so an admin-only config
-leaves reads open. Sessions are Flask's signed/encrypted cookies; the
+`{"secret": "<hex>", "admin_password_hash": "<bcrypt>",
+"viewer_password_hash": "<bcrypt>", "tokens": [...]}`. The `secret` is
+generated on first start and used as Flask's session-signing key. Auth is "on"
+iff the admin password hash exists; **setting the admin password gates all
+reads and writes**, whether or not a viewer password is also set. The viewer
+password is a second, read-only login identity, not the read switch. Three
+decorators compose the layer: `@login_required` (401 if no valid role) gates
+`/api/logout`; `@admin_required` (403 if role != "admin") gates the mutating
+routes and all `/api/ai/*`; `@read_login_required` (401 if no valid role)
+gates the read paths (`/api/tree`, `/api/ls`, `GET /api/file`,
+`GET /api/config`, `/api/info`, `/api/search`, `/api/graph`). All three
+bypass when auth is off. Sessions are Flask's signed/encrypted cookies; the
 role is `session["role"]` ∈ `{"admin", "viewer"}`. A best-effort in-memory
 rate limiter (5 failures / 60s per client IP) trips 429 on the 6th attempt.
+Gated read responses carry `Cache-Control: no-store, private`.
 **Named API tokens** let agents/scripts skip the cookie dance: issued via
 admin-only `POST /api/auth/tokens` (`{name, role}`, full token shown once,
 only a bcrypt hash stored), revoked via `DELETE /api/auth/tokens/<name>`,
 and sent as `Authorization: Bearer nbtk_…`. A presented-but-invalid Bearer
 fails hard with 401 (no fallback to the session) and shares the login rate
-limiter; clearing the admin password clears all tokens.
+limiter; clearing the admin password also clears the viewer hash and all
+tokens, disabling auth.
 The Settings modal's **Passwords** section is the in-app setup path:
 admin password is set/rotated via a single input, and the optional viewer
 password is set/cleared via a "Require a password to read" toggle. The
