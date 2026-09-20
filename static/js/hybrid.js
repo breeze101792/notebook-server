@@ -85,40 +85,38 @@
         return "[[" + target + (content === target ? "" : "|" + content) + "]]";
       },
     });
-    // Preserve blank lines, but as plain Markdown. Turndown's default
-    // `blank` rule drops empty paragraphs entirely (it matches any
-    // element with no text content), so blank lines the user adds in
-    // hybrid mode would silently vanish on save. Two changes:
-    //   1. Exclude <p>, <div>, and every table-structure element from
-    //      the `blank` rule. <p>/<div> are handled by the paragraph rule
-    //      below; table cells must be left to the GFM table rule even
-    //      when empty, or an empty <td>/<th> would be dropped and the
-    //      row would lose a column. (<div> also matters because a real
-    //      browser's contentEditable inserts <div><br></div> when the
-    //      user presses Enter, even when the surrounding content is
+    // Preserve blank lines, but as plain Markdown. Turndown's built-in
+    // `blank` rule already leaves table structure and void children
+    // alone (isBlank exempts A/TABLE/... and hasVoid), and <p>/<div>
+    // are handled by the paragraph rule below, so the only rule hybrid
+    // needs is the paragraph override.
+    //   1. An empty block (only <br> or whitespace) emits a blank line
+    //      -- never an HTML tag. The notebook is Markdown; writing
+    //      <p><br></p> into it would leak presentation HTML into the
+    //      user's source. An empty block becomes "\n\n", which join()
+    //      collapses so a run of empty blocks saves as a single blank
+    //      line. That matches what Markdown and marked can represent:
+    //      marked collapses consecutive blank lines on render, so extra
+    //      ones carry no meaning anyway. (<div> matters too because a
+    //      real browser's contentEditable inserts <div><br></div> when
+    //      the user presses Enter, even when the surrounding content is
     //      <p>-based.)
-    //   2. Override the `paragraph` rule for both tags so an empty block
-    //      (only <br> or whitespace) emits a blank line -- never an HTML
-    //      tag. The notebook is Markdown; writing <p><br></p> into it
-    //      would leak presentation HTML into the user's source. An
-    //      empty block becomes "\n\n", which join() collapses so a run
-    //      of empty blocks saves as a single blank line. That matches
-    //      what Markdown and marked can represent: marked collapses
-    //      consecutive blank lines on render, so extra ones carry no
-    //      meaning anyway.
-    turndownSvc.addRule("blank", {
-      filter(node) {
-        if (BLANK_RULE_EXEMPT_TAGS.indexOf(node.nodeName) !== -1) return false;
-        return ["A", "IFRAME", "OBJECT", "EMBED", "IMG", "BR", "HR",
-                "INPUT", "TEXTAREA", "SELECT", "BUTTON"].indexOf(node.nodeName) === -1 &&
-               !node.textContent.trim();
-      },
-      replacement: () => "",
-    });
+    //   2. A block whose children are all VOID elements (an <img>, a
+    //      checkbox <input>, a rule) has empty textContent too but is
+    //      NOT blank: its content is real (turndown converts the void
+    //      children in `content`), so it must emit that content rather
+    //      than the blank-line replacement -- otherwise a standalone
+    //      image paragraph is silently dropped on save. <br> is
+    //      deliberately NOT in the set: it is how a real browser's
+    //      contentEditable marks an EMPTY block, and those must keep
+    //      saving as blank lines.
     turndownSvc.addRule("paragraph", {
       filter: ["p", "div"],
       replacement(content, node) {
-        if (!node.textContent.trim()) return "\n\n";
+        const hasVoid = node.querySelector ?
+          !!node.querySelector("img,hr,input,canvas,svg,iframe,embed,object") :
+          false;
+        if (!node.textContent.trim() && !hasVoid) return "\n\n";
         return "\n\n" + content + "\n\n";
       },
     });
@@ -139,6 +137,16 @@
     const clone = viewerContentEl.cloneNode(true);
     // Remove injected copy buttons so they don't appear in the output.
     clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
+    // Drop caret placeholder paragraphs the hr repair opened for the
+    // user (see placeCaretForRule) when they are still empty: a click
+    // beside a rule that never received text must not save as a blank
+    // line. The marker attribute is what identifies them; an empty one
+    // (only a <br>) is never user content, while one the user typed
+    // into fails the emptiness test and is kept. Normal blank lines the
+    // user creates are never marked, so they always survive.
+    clone.querySelectorAll("p[data-hybrid-caret]").forEach((p) => {
+      if (!p.textContent.trim() && !p.querySelector("img,hr,input")) p.remove();
+    });
     // Round-trip every registered plugin block (mermaid / wavedrom /
     // katex / graphviz / html-live) back to its fenced source. The
     // registry owns the container + error-box shapes, so a new renderer
@@ -214,10 +222,38 @@
     onContentChange();
   }
 
+  /* Tags wrapBlock must never claim as "the block". A table's structure
+   * belongs to the GFM table rules -- replacing a TD/TH with a heading
+   * would rip the cell's contents out of the table and replacing the
+   * TABLE/TR/TBODY would delete every other row. PRE carries a fenced
+   * code block's source; wrapping it in a heading destroys the fence
+   * and dumps the raw source into the note body. When the climb lands
+   * on any of these, the action is refused (null) rather than
+   * "repaired": there is no single sensible block to convert. */
+  const WRAP_BLOCK_REFUSED_TAGS = ["TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH", "PRE"];
+
+  /* The nearest ancestor of `node` (up to but not including the editor
+   * root) that a block transform must not touch, or null. Checks the
+   * refused tags AND containment: the app's own stylesheet makes
+   * `pre code { display:block }`, so wrapBlock's display-based climb can
+   * stop on the <code> INSIDE a fence (tag not in the refused list)
+   * long before it reaches the <PRE> -- replacing that <code> with a
+   * heading still destroys the fence, the copy button and the
+   * language-* class, so the check must look at ancestors too. */
+  function insideProtectedBlock(node) {
+    let el = node;
+    while (el && el !== viewerContentEl) {
+      if (WRAP_BLOCK_REFUSED_TAGS.indexOf(el.tagName) !== -1) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
   /* Wrap the selection in an element with the given tag. Used for
    * headings (h1-h6) and blockquote. Operates on the current selection
    * inside #viewer-content. Returns the element the block became
-   * (the new tag, or the <p> it toggled back to). */
+   * (the new tag, or the <p> it toggled back to), or null when the
+   * selection resolves to a block the transform must not touch. */
   function wrapBlock(tag) {
     const sel = window.getSelection();
     if (!sel.rangeCount) return null;
@@ -225,7 +261,11 @@
     // Expand to the whole block (the nearest block ancestor).
     let block = range.commonAncestorContainer;
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
+    // Never convert inside a table/fence: this covers the <code> inside
+    // a <pre> (see insideProtectedBlock) as well as the climb below.
+    if (insideProtectedBlock(block)) return null;
     while (block && block !== viewerContentEl) {
+      if (WRAP_BLOCK_REFUSED_TAGS.indexOf(block.tagName) !== -1) return null;
       const display = window.getComputedStyle(block).display;
       if (display === "block" || /^(H[1-6]|P|UL|OL|BLOCKQUOTE|PRE|LI)$/.test(block.tagName)) break;
       block = block.parentElement;
@@ -256,6 +296,9 @@
     if (!sel.rangeCount) return null;
     let block = sel.getRangeAt(0).commonAncestorContainer;
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
+    // Never wrap a table cell or a fenced code block's content into a
+    // list -- the same data-loss shape wrapBlock guards against.
+    if (insideProtectedBlock(block)) return null;
     while (block && block !== viewerContentEl) {
       if (/^(P|UL|OL|LI|DIV)$/.test(block.tagName)) break;
       block = block.parentElement;
@@ -485,8 +528,13 @@
     // When the caret sits directly in the root container (an empty note
     // has no <p> yet -- the browser types straight into #viewer-content),
     // wrap the content in a <p> first so the block transforms below have
-    // a real element to replace instead of the container itself.
+    // a real element to replace instead of the container itself. Only
+    // when the note is EMPTY: a caret on the root of a filled note (e.g.
+    // the offset Chromium reports beside a <hr>) holds no text of its
+    // own, and moving every existing block -- headings, lists, tables,
+    // mermaid containers -- into one <p> would flatten the whole note.
     if (blockEl === viewerContentEl) {
+      if (blockEl.firstChild) return false;
       const p = document.createElement("p");
       while (blockEl.firstChild) p.appendChild(blockEl.firstChild);
       blockEl.appendChild(p);
@@ -526,7 +574,15 @@
   function applyInlineRules() {
     const ctx = caretContext();
     if (!ctx) return false;
-    const { range, sel } = ctx;
+    const { range, sel, blockEl } = ctx;
+    // Never rewrite code as inline markdown. Keystrokes inside a
+    // click-to-edit plugin/code editor (pre.hybrid-plugin-editing) or a
+    // plain fence bubble up to the note's input listener; consuming a
+    // `**bold**` / backtick pair into <strong>/<code> would delete those
+    // delimiter characters from the saved source (turndown serializes a
+    // fence from textContent).
+    if (blockEl.tagName === "PRE" ||
+        (blockEl.closest && blockEl.closest("pre"))) return false;
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE) return false;
     const text = node.nodeValue.slice(0, range.startOffset);
@@ -650,13 +706,22 @@
   /* When the user clicks (mousedown) outside an actively-edited plugin
    * block, commit it back to preview mode.  This covers the case where
    * focus stays inside the same contentEditable tree (e.g. clicking a
-   * sibling paragraph) and focusout never fires on the <pre>. */
+   * sibling paragraph) and focusout never fires on the <pre>. Also
+   * repairs a click that lands on or next to a horizontal rule, which
+   * Chromium cannot turn into a caret (see "horizontal rule caret
+   * repair" above). */
   function onContentMouseDown(e) {
     if (!active) return;
     const editing = viewerContentEl.querySelector("pre.hybrid-plugin-editing");
-    if (!editing) return;
-    if (editing.contains(e.target)) return;          // click inside the block – let it handle itself
-    editing.dispatchEvent(new FocusEvent("focusout", { relatedTarget: e.target, bubbles: true }));
+    if (editing) {
+      if (editing.contains(e.target)) return;   // click inside the block – let it handle itself
+      editing.dispatchEvent(new FocusEvent("focusout", { relatedTarget: e.target, bubbles: true }));
+    }
+    const hr = hrUnderClick(e);
+    if (hr) {
+      e.preventDefault();
+      placeCaretForRule(hr, e.clientY);
+    }
   }
 
   /* Click-to-edit: in hybrid mode, a click on a rendered plugin block
@@ -728,6 +793,16 @@
     return node;
   }
 
+  /* Variant of insertEmptyBlock for a block the new line must go
+   * BEFORE as well as after (used beside a <hr>, whose caret cannot be
+   * placed inside it, and for a caret before the note's first block). */
+  function insertEmptyBlockAround(refEl, tag, afterSide) {
+    const node = document.createElement(tag);
+    if (afterSide) refEl.after(node);
+    else refEl.before(node);
+    return node;
+  }
+
   /* The DOM element holding the caret, or null. The SELECTION is the
    * source of truth: a keydown inside a contentEditable targets the
    * contentEditable root, so e.target tells us nothing about where the
@@ -742,6 +817,111 @@
         viewerContentEl.contains(node)) {
       return node;
     }
+    return null;
+  }
+
+  /* Put the caret at the start or end of `el`'s editable content. An
+   * empty block gets a <br> line box first (see caretToStart), so the
+   * caret has a line to sit on in every browser. */
+  function caretToEdge(el, atEnd) {
+    if (!el) return;
+    if (!el.textContent && !el.querySelector("img,br,canvas,svg,iframe")) {
+      el.appendChild(document.createElement("br"));
+    }
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    r.collapse(!atEnd);   // Range.collapse(toStart): true = start
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* --- horizontal rule caret repair --------------------------------- */
+  /* An <hr> is a void block: Chromium cannot place a text caret beside
+   * it. A click ON the rule -- or anywhere in the empty band around it
+   * (the rule's own margins, and the whole empty area below a rule that
+   * ends the note) -- resolves the selection to a ROOT child offset
+   * BEFORE the rule and paints no caret at all. From there the native
+   * edits corrupt the note: plain Enter wraps the surrounding blocks in
+   * a stray <p>, and typed text lands inside that wrapper. Repair such
+   * a click into a real caret in the nearest editable block on the
+   * clicked side. */
+
+  /* The top-level <hr> a mousedown belongs to, or null. */
+  function hrUnderClick(e) {
+    const target = e.target;
+    if (target && target.tagName === "HR" &&
+        viewerContentEl.contains(target)) return target;
+    if (target !== viewerContentEl) return null;
+    // Click on the editor surface (not inside a block). Claim it when a
+    // rule is the nearest caret target: the click sits in the empty band
+    // between the blocks around a rule -- which for a trailing rule
+    // extends to the end of the note.
+    for (let i = 0; i < viewerContentEl.children.length; i += 1) {
+      const el = viewerContentEl.children[i];
+      if (el.tagName !== "HR") continue;
+      const prev = el.previousElementSibling;
+      const next = el.nextElementSibling;
+      const bandTop = prev ? prev.getBoundingClientRect().bottom : -Infinity;
+      const bandBottom = next ? next.getBoundingClientRect().top : Infinity;
+      if (e.clientY >= bandTop && e.clientY <= bandBottom) return el;
+    }
+    return null;
+  }
+
+  /* The nearest top-level sibling of `hr` that can hold a text caret,
+   * skipping further rules. dir is +1 (after) or -1 (before). */
+  function adjacentHost(hr, dir) {
+    let node = dir > 0 ? hr.nextElementSibling : hr.previousElementSibling;
+    while (node) {
+      if (node.tagName !== "HR") return node;
+      node = dir > 0 ? node.nextElementSibling : node.previousElementSibling;
+    }
+    return null;
+  }
+
+  /* Put a real caret where a click on/near `hr` meant to land. Clicking
+   * on or below the rule continues after it; above it continues before.
+   * When there is no block on that side (a rule that starts or ends the
+   * note) open a fresh paragraph so the caret has somewhere to live --
+   * marked data-hybrid-caret so domToMarkdown drops it again when the
+   * user never types into it. */
+  function placeCaretForRule(hr, clientY) {
+    const rect = hr.getBoundingClientRect();
+    const below = clientY >= rect.top + rect.height / 2;
+    const host = adjacentHost(hr, below ? 1 : -1);
+    viewerContentEl.focus();
+    if (host) {
+      caretToEdge(host, !below);
+      return;
+    }
+    const p = document.createElement("p");
+    p.setAttribute("data-hybrid-caret", "1");
+    if (below) hr.after(p); else hr.before(p);
+    caretToStart(p);
+  }
+
+  /* The top-level <hr> a ROOT-level caret sits beside, with the side the
+   * caret is on: { hr, after } or null. Keyboard navigation (ArrowDown
+   * from the block above a rule) and the very end of a note that ends
+   * with a rule leave the caret here, where the browser's native Enter
+   * wraps the neighbouring blocks in a <p>. */
+  function strandedRuleAtRoot() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    if (r.startContainer !== viewerContentEl) return null;
+    const nodes = viewerContentEl.childNodes;
+    let before = null;
+    for (let i = r.startOffset - 1; i >= 0; i -= 1) {
+      if (nodes[i].nodeType === Node.ELEMENT_NODE) { before = nodes[i]; break; }
+    }
+    let after = null;
+    for (let i = r.startOffset; i < nodes.length; i += 1) {
+      if (nodes[i].nodeType === Node.ELEMENT_NODE) { after = nodes[i]; break; }
+    }
+    if (after && after.tagName === "HR") return { hr: after, after: false };
+    if (before && before.tagName === "HR") return { hr: before, after: true };
     return null;
   }
 
@@ -763,11 +943,24 @@
    *
    * When the caret sits directly on the root (between top-level
    * elements) the line is inserted at that position; if the caret
-   * cannot be resolved at all it is appended at the end of the note. */
+   * cannot be resolved at all it is appended at the end of the note.
+   * A root caret BESIDE a top-level <hr> (keyboard navigation near a
+   * rule) anchors on the rule itself: after it when the caret follows
+   * the rule, before it when it precedes -- the rule has no caret of
+   * its own to insert relative to. */
   function insertLineBelow(e) {
     if (e.key !== "Enter" || !e.shiftKey) return false;
     if (e.altKey || e.ctrlKey || e.metaKey) return false;
     e.preventDefault();
+
+    const stranded = strandedRuleAtRoot();
+    if (stranded) {
+      const p = insertEmptyBlockAround(stranded.hr, "p", stranded.after);
+      p.setAttribute("data-hybrid-caret", "1");
+      caretToStart(p);
+      onContentChange();
+      return true;
+    }
 
     const node = caretElement();
     // Climb to the top-level element the caret lives in.
@@ -783,16 +976,28 @@
       return true;
     }
     // Caret sits on the root between top-level blocks: honour the
-    // position instead of always appending at the very end.
+    // position instead of always appending at the very end. Insert
+    // after the block before the caret, or before the block after it
+    // when the caret sits before the first one (offset 0).
     let ref = null;
+    let before = false;
     const sel = window.getSelection();
     if (sel && sel.rangeCount && sel.getRangeAt(0).startContainer === viewerContentEl) {
       const offset = sel.getRangeAt(0).startOffset;
-      ref = viewerContentEl.childNodes[offset - 1] || null;
-      while (ref && ref.nodeType !== Node.ELEMENT_NODE) ref = ref.previousSibling;
+      const nodes = viewerContentEl.childNodes;
+      for (let i = offset - 1; i >= 0; i -= 1) {
+        if (nodes[i].nodeType === Node.ELEMENT_NODE) { ref = nodes[i]; break; }
+      }
+      if (!ref) {
+        for (let i = offset; i < nodes.length; i += 1) {
+          if (nodes[i].nodeType === Node.ELEMENT_NODE) {
+            ref = nodes[i]; before = true; break;
+          }
+        }
+      }
     }
     if (ref && ref.parentElement === viewerContentEl) {
-      const p = insertEmptyBlock(ref, "p");
+      const p = insertEmptyBlockAround(ref, "p", !before);
       caretToStart(p);
       onContentChange();
       return true;
@@ -809,6 +1014,24 @@
    * a key (``` + Enter, list outdent) plus the inline-format shortcuts. */
   function onEnterKey(e) {
     if (!active) return;
+    // The language pill and an in-place plugin/code editor are nested
+    // contenteditable islands: their keydowns bubble up to the note. The
+    // document-level shortcuts must not touch them -- Ctrl+Z would
+    // restore a whole-note history snapshot mid-edit, Ctrl+B/I/X would
+    // wrap code text in <strong>/<em>, and Ctrl+Y would resurrect a
+    // stale future. Mirrors the same two guards in onBlockClick.
+    if (e.target && e.target.closest) {
+      // The pill is a one-line label: it owns every key, full stop.
+      if (e.target.closest(".hybrid-lang-pill")) return;
+      // The in-place code editor owns the MODIFIER chords, but plain
+      // keys keep falling through -- Shift+Enter from inside the block
+      // must still open a fresh line after it (see insertLineBelow; the
+      // regression is pinned in the DOM test suite), and Enter inside
+      // the raw source is the browser's own newline.
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        if (e.target.closest("pre.hybrid-plugin-editing")) return;
+      }
+    }
     // Inline-format shortcuts. Only when the caret/selection is inside
     // the contentEditable (checked inside toggleInline too, but skip
     // earlier when it clearly isn't ours).
@@ -871,6 +1094,24 @@
       e.preventDefault();
       return;
     }
+    // A caret stranded at the ROOT next to a horizontal rule (keyboard
+    // navigation; mouse clicks are repaired on mousedown): the native
+    // Enter wraps the surrounding blocks in a <p>. Claim the Enter and
+    // continue on the caret's side of the rule -- the caret before the
+    // rule continues alpha's line, the caret after it continues the
+    // rule's line below.
+    const strandedRule = (e.key === "Enter" && !e.shiftKey &&
+                          !e.altKey && !e.ctrlKey && !e.metaKey)
+      ? strandedRuleAtRoot() : null;
+    if (strandedRule) {
+      e.preventDefault();
+      const p = insertEmptyBlockAround(
+        strandedRule.hr, "p", strandedRule.after);
+      p.setAttribute("data-hybrid-caret", "1");
+      caretToStart(p);
+      onContentChange();
+      return;
+    }
     // Tab / Shift+Tab: indent / outdent the current list item. Only when
     // the caret is inside a list item (never steal Tab elsewhere).
     if (e.key === "Tab") {
@@ -887,8 +1128,15 @@
     const ctx = caretContext();
     if (!ctx) return;
     const { blockEl, range } = ctx;
-    // ``` + Enter -> code block.
-    if ((blockEl.tagName === "P" || blockEl.tagName === "DIV") &&
+    // ``` + Enter -> code block. Only on Enter: the handler runs for
+    // every keydown, and a paragraph that merely contains the fence
+    // trigger must not eat arrow keys / Backspace (the list rule below
+    // guards the same way). Never when the caret resolved to the ROOT
+    // container -- that only happens beside a <hr>, and replaceWith
+    // would eat the whole note.
+    if (e.key === "Enter" && !e.shiftKey &&
+        blockEl !== viewerContentEl &&
+        (blockEl.tagName === "P" || blockEl.tagName === "DIV") &&
         /^```[^\n]*$/.test(blockEl.textContent.trim())) {
       e.preventDefault();
       const m = blockEl.textContent.trim().match(/^```(.*)$/);
@@ -934,13 +1182,38 @@
   }
 
   /* The edit bar click handler. We intercept clicks that would normally
-   * go to NB.cmEditor and redirect them to DOM operations. */
+   * go to NB.cmEditor and redirect them to DOM operations.
+   *
+   * Interception is keyed on the act, not on "any [data-act]": editbar.js
+   * owns its own bar-level listener and still needs the acts hybrid does
+   * NOT implement -- "more" opens the overflow menu, "task" applies its
+   * line prefix. Swallowing those (the old unconditional
+   * stopPropagation) meant the overflow menu never opened in WYSIWYG
+   * mode. The capture-phase listener below still runs FIRST for the
+   * handled acts, and only they are claimed; everything else falls
+   * through untouched. */
+  const EDIT_BAR_HYBRID_ACTS = [
+    "bold", "italic", "strike", "code",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "quote", "link", "image",
+    "codeblock", "hr", "table",
+    "table-menu", "table-row-up", "table-row-down",
+    "table-col-left-move", "table-col-right-move", "table-col-align",
+    "table-row-above", "table-row-below", "table-row-delete",
+    "table-col-left", "table-col-right", "table-col-delete",
+    "table-header", "table-delete",
+    "undo", "redo", "clear",
+  ];
+
   function onEditBarClick(e) {
     if (!active) return;
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
-    e.stopPropagation();
     const act = btn.dataset.act;
+    // Claim the event ONLY when the switch below will actually act on
+    // it, so editbar.js keeps the rest (task, more, ...).
+    if (EDIT_BAR_HYBRID_ACTS.indexOf(act) === -1) return;
+    e.stopPropagation();
     switch (act) {
       case "bold":   execCommand("bold"); break;
       case "italic": execCommand("italic"); break;
@@ -1064,6 +1337,15 @@
    * Clipboard API first (navigator.clipboard.writeText), falling back
    * to document.execCommand("copy"). Either way the user's selection
    * stays intact so a subsequent Paste re-inserts at the cursor. */
+
+  // How long doPastePlain's one-shot interceptor waits for the native
+  // paste event that execCommand("paste") should raise. If nothing
+  // arrives in this window (engine without execCommand, gesture check
+  // refused), the listener is dropped so it cannot fire on a later,
+  // unrelated native paste. Generous enough for a real browser's paste
+  // round-trip, short enough not to outlive the editing session.
+  const PASTE_PLAIN_TIMEOUT_MS = 1000;
+
   async function doCopy() {
     const sel = window.getSelection();
     const text = sel && sel.rangeCount ? sel.toString() : "";
@@ -1077,15 +1359,27 @@
     viewerContentEl.focus();
   }
 
-  /* Paste from the clipboard at the caret. Uses document.execCommand
-   * ("paste") synchronously so it runs inside the user-gesture (the
-   * menu click) and the browser pastes natively without a permission
-   * prompt. We deliberately do NOT fall back to the async Clipboard
-   * API here: navigator.clipboard.readText() loses the user-gesture
-   * context and triggers a browser permission prompt. */
-  function doPaste() {
+  /* Paste from the clipboard at the caret. The async Clipboard API is
+   * the primary path: document.execCommand("paste") is deprecated,
+   * unimplemented in engines like jsdom, and silently no-ops there --
+   * which left the context menu's Paste dead. The API keeps working
+   * from a click handler (its permission, if any, was already granted
+   * for the same origin by earlier Copy use); if it is missing or
+   * refuses (denied permission, insecure context), fall back to the
+   * native execCommand paste so a granted browser still pastes rich
+   * content exactly as before. */
+  async function doPaste() {
     restoreCaret();
-    try { document.execCommand("paste"); } catch (_) {}
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) insertTextAtCaret(text);
+      } catch (_) {
+        try { document.execCommand("paste"); } catch (__) {}
+      }
+    } else {
+      try { document.execCommand("paste"); } catch (_) {}
+    }
     onContentChange();
   }
 
@@ -1093,45 +1387,86 @@
    * Triggers a native paste via execCommand("paste") (runs in the user
    * gesture, no permission prompt) but intercepts the resulting paste
    * event and inserts only the plain-text representation, so rich HTML
-   * (bold, links, etc.) never survives. */
+   * (bold, links, etc.) never survives. The interceptor is a ONE-SHOT
+   * listener and is removed both when it fires AND on a short timer:
+   * execCommand("paste") can fail to raise a paste event at all
+   * (unsupported/ignored), and the old code removed the listener only
+   * inside the handler -- every failed paste leaked another one, so a
+   * later native Ctrl+V would have inserted the text once per leak. */
   function doPastePlain() {
     restoreCaret();
     const handler = (e) => {
+      clearTimeout(cleanup);
+      viewerContentEl.removeEventListener("paste", handler);
       e.preventDefault();
       const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
       if (text) insertTextAtCaret(text);
       onContentChange();
-      viewerContentEl.removeEventListener("paste", handler);
     };
-    viewerContentEl.addEventListener("paste", handler);
+    // Belt to the handler's braces: if no paste event ever arrives, drop
+    // the interceptor so it cannot fire on some later, unrelated paste.
+    const cleanup = setTimeout(() => {
+      viewerContentEl.removeEventListener("paste", handler);
+    }, PASTE_PLAIN_TIMEOUT_MS);
+    viewerContentEl.addEventListener("paste", handler, { once: true });
     try { document.execCommand("paste"); } catch (_) {}
   }
 
-  /* Insert `text` as a plain text node at the caret, then place the
-   * caret AFTER the inserted text. We can't use setStartAfter(node)
+  /* Insert `text` at the caret as PLAIN content, then place the caret
+   * AFTER the inserted content. We can't use setStartAfter(node)
    * directly because browsers merge an adjacent text node, detaching
    * `node` and breaking the range. Instead we locate the text node that
-   * now holds the end of the range and set the caret to its end. */
+   * now holds the end of the range and set the caret to its end.
+   *
+   * Multi-line text is inserted with <br> between the lines: a single
+   * text node with raw newlines renders as ONE run-together line in the
+   * DOM (HTML collapses the whitespace), so a multi-line plain paste
+   * would visibly lose its line structure. <br> is exactly what the
+   * contentEditable itself produces for a line break, and what turndown
+   * round-trips back to a Markdown hard break. */
   function insertTextAtCaret(text) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
     range.deleteContents();
-    const node = document.createTextNode(text);
-    range.insertNode(node);
-    // After insertNode the range's end sits at the end of the inserted
-    // text. If the browser merged adjacent text nodes, `node` is detached
-    // and the endContainer is the parent element; find the text node at
-    // endOffset - 1 and place the caret at its end.
-    const endContainer = range.endContainer;
-    const endOffset = range.endOffset;
-    let caretNode = endContainer;
-    let caretOffset = endOffset;
-    if (endContainer.nodeType === Node.ELEMENT_NODE) {
-      const child = endContainer.childNodes[endOffset - 1];
-      if (child && child.nodeType === Node.TEXT_NODE) {
-        caretNode = child;
-        caretOffset = child.textContent.length;
+    const lines = String(text).split(/\r\n?|\n/);
+    // One fragment, inserted once, so the nodes land in document order.
+    // (Repeated range.insertNode() at the same start pushes each new
+    // node BEFORE the previous one, interleaving the lines with the
+    // surrounding text.)
+    const frag = document.createDocumentFragment();
+    let last = null;
+    lines.forEach((line, i) => {
+      if (i) frag.appendChild(document.createElement("br"));
+      last = document.createTextNode(line);
+      frag.appendChild(last);
+    });
+    range.insertNode(frag);
+    // Place the caret after the pasted content. setStartAfter(last)
+    // would be it, but engines merge adjacent text nodes on insert and
+    // can detach `last`; instead re-find the node that now holds the
+    // caret position (the last pasted text node, merged or not) and put
+    // the caret at ITS end -- engine-independent.
+    let caretNode = last;
+    let caretOffset = (last.nodeValue || "").length;
+    if (!last.parentNode) {
+      // `last` was merged into a sibling; the merged node is the one
+      // right after the insert boundary. The caret goes to the end of
+      // that merged text node -- locate it from the range's end.
+      const endContainer = range.endContainer;
+      if (endContainer.nodeType === Node.ELEMENT_NODE) {
+        const child = endContainer.childNodes[range.endOffset - 1] ||
+          endContainer.lastChild;
+        if (child && child.nodeType === Node.TEXT_NODE) {
+          caretNode = child;
+          caretOffset = child.textContent.length;
+        } else {
+          caretNode = endContainer;
+          caretOffset = range.endOffset;
+        }
+      } else {
+        caretNode = endContainer;
+        caretOffset = range.endOffset;
       }
     }
     const newRange = document.createRange();
@@ -1282,6 +1617,16 @@
   const AUTOSAVE_MS = 2000;
   let autosaveTimer = null;
   let autosaveInFlight = null;
+  // Session generation for the autosave write race. Bumped on every
+  // enter() and exit(): a flush that was armed (or already mid-write)
+  // under an OLD session must not complete against the NEW state. The
+  // classic race: flushAutosave() fires, awaits doSave(), and the user
+  // exits hybrid mode (or switches tabs) while the write is in flight
+  // -- doSave's continuation then calls resetDirty()/noteSaved() on a
+  // session that no longer exists, resurrecting a save the user just
+  // discarded or clobbering the note that is now displayed. Each flush
+  // captures the generation at start and bails whenever it goes stale.
+  let autosaveGeneration = 0;
 
   function autosaveEnabled() {
     return !!(NB.app && NB.app.getCfg && NB.app.getCfg().autosave);
@@ -1297,6 +1642,7 @@
     autosaveTimer = null;
     if (!active || !dirty) return;
     if (autosaveInFlight) return;   // a save is already running; the next keystroke re-arms
+    const generation = autosaveGeneration;
     try {
       autosaveInFlight = doSave(domToMarkdown());
       await autosaveInFlight;
@@ -1306,14 +1652,33 @@
       console.warn("autosave failed:", err && err.message ? err.message : err);
     } finally {
       autosaveInFlight = null;
-      scheduleAutosave();   // re-arm in case more edits landed during the write
+      // Re-arm only while the session this flush belonged to is still
+      // current. exit()/cancelAutosave() bump the generation, so a
+      // flush that raced an exit leaves no timer behind -- the note it
+      // was about to save was discarded, not deferred.
+      if (generation === autosaveGeneration) scheduleAutosave();
     }
   }
 
-  /* Cancel a pending autosave (e.g. on exit / tab switch). */
+  /* Cancel a pending autosave (e.g. on exit / tab switch). Any flush
+   * that is already mid-write is allowed to finish its await, but its
+   * stale generation makes its re-arm a no-op. */
   function cancelAutosave() {
+    autosaveGeneration += 1;
     clearTimeout(autosaveTimer);
     autosaveTimer = null;
+  }
+
+  /* Settle an autosave that is already mid-write before an explicit
+   * save starts. Without this the two POSTs race and the OLDER autosave
+   * body can land last (over HTTP/2, or behind a slow first request),
+   * leaving the file with stale content while the viewer cache holds
+   * the newer markdown. Awaiting the flush here guarantees the explicit
+   * save is the LAST write. cancelAutosave()'s generation bump has
+   * already stopped the flush from re-arming, so this cannot loop. */
+  async function awaitPendingAutosave() {
+    if (!autosaveInFlight) return;
+    try { await autosaveInFlight; } catch (_) { /* logged by the flush */ }
   }
 
   /* --- input listener -------------------------------------------- */
@@ -1418,6 +1783,10 @@
     flattenTheads();
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
+    // A fresh session starts a fresh autosave generation: any timer left
+    // over from a previous session (or a flush of it still in flight)
+    // must not fire into this one.
+    autosaveGeneration += 1;
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
@@ -1438,6 +1807,13 @@
     cancelAutosave();
     clearTimeout(historyTimer);
     historyTimer = null;
+    // Write race: an autosave flush may already be awaiting doSave(). The
+    // generation bump above made its re-arm a no-op, but its doSave
+    // continuation (noteSaved/resetDirty/watcher bookkeeping) must not
+    // land on the torn-down session -- await it here so it finishes
+    // while the session is still intact (and its write -- of content
+    // snapshotted at flush time -- is what the user just had on screen).
+    await awaitPendingAutosave();
     let md = null;
     if (save) {
       md = domToMarkdown();
@@ -1532,6 +1908,9 @@
   async function save() {
     if (!active) return;
     try {
+      // Let an in-flight autosave finish first so this explicit save is
+      // the last write to reach the file (see awaitPendingAutosave).
+      await awaitPendingAutosave();
       const md = domToMarkdown();
       await doSave(md);
       if (NB.app && NB.app.notify) NB.app.notify("Saved");
@@ -1549,6 +1928,7 @@
         'Save them before exiting WYSIWYG mode?');
       if (ok) {
         try {
+          await awaitPendingAutosave();
           const md = domToMarkdown();
           await doSave(md);
         } catch (err) {
@@ -1564,6 +1944,7 @@
     if (e) { e.stopPropagation(); e.preventDefault(); }
     if (!active) return;
     try {
+      await awaitPendingAutosave();
       const md = domToMarkdown();
       await doSave(md);
       if (NB.app && NB.app.notify) NB.app.notify("Saved");
@@ -1593,6 +1974,7 @@
     const ok = confirm('Save changes to "' + activePath + '" before switching tabs?');
     if (ok) {
       try {
+        await awaitPendingAutosave();
         const md = domToMarkdown();
         await doSave(md);
       } catch (err) {
@@ -1716,10 +2098,15 @@
   }
 
   /* Insert a row above or below the given row. Copies the cell count
-   * from the row's own cells so the new row lines up. */
+   * from the row's own cells so the new row lines up. "Above" is refused
+   * on the header row: GFM tables must keep the header first, and a
+   * plain row inserted above it would silently demote the real header
+   * to a body row on save. */
   function insertRow(row, position) {
     if (!row) return;
     const table = row.closest("table");
+    if (!table) return;
+    if (position === "above" && row === table.rows[0]) return;
     const cells = Array.from(row.cells);
     const newRow = document.createElement("tr");
     cells.forEach((cell) => {
@@ -1734,12 +2121,22 @@
     onContentChange();
   }
 
-  /* Delete the given row. If it's the only row, remove the whole table. */
+  /* Delete the given row. The header row (rows[0]) is never deletable
+   * -- a GFM table without its heading row cannot be saved as a table.
+   * The last body row is protected too: header + one row is the minimum
+   * shape, and deleting the row would leave an orphaned header (the
+   * drag overlay aria-disables its "-" for the same reason). If the
+   * table has no header at all (a lone body row), deleting it removes
+   * the whole table. */
   function deleteRow(row) {
     if (!row) return;
     const table = row.closest("table");
+    if (!table) return;
     const rows = Array.from(table.rows);
+    if (row === rows[0]) return;
     if (rows.length <= 1) { deleteTable(table); return; }
+    // Header + this single body row: nothing left to show.
+    if (rows.length <= 2) return;
     row.remove();
     onContentChange();
   }
@@ -1767,10 +2164,16 @@
     onContentChange();
   }
 
-  /* Delete the current cell's column from every row. */
+  /* Delete the current cell's column from every row. The last remaining
+   * column is protected: GFM cannot represent a zero-column table, and
+   * the drag overlay aria-disables its column "-" for the same reason
+   * (a table needs at least one column). */
   function deleteCol(cell) {
     if (!cell) return;
     const table = cell.closest("table");
+    if (!table) return;
+    const first = table.rows[0];
+    if (first && first.cells.length <= 1) return;
     const idx = cell.cellIndex;
     Array.from(table.rows).forEach((row) => {
       const cells = Array.from(row.cells);
@@ -1786,15 +2189,20 @@
     onContentChange();
   }
 
-  /* Toggle the first row between header (th) and body (td) cells. */
+  /* Promote the first row to a header row (all TH cells). A table that
+   * already has a header is left as-is: GFM tables MUST have a heading
+   * row, so the old two-way toggle could remove the separator and leave
+   * a headerless table that turndown can only round-trip as raw HTML.
+   * The action therefore only ever adds the header. */
   function toggleHeaderRow(table) {
     if (!table) return;
     const first = table.rows[0];
     if (!first) return;
-    const isHeader = Array.from(first.cells).some((c) => c.tagName === "TH");
-    Array.from(first.cells).forEach((c) => {
-      const tag = isHeader ? "td" : "th";
-      const nc = document.createElement(tag);
+    const cells = Array.from(first.cells);
+    const isHeader = cells.some((c) => c.tagName === "TH");
+    if (isHeader) return;
+    cells.forEach((c) => {
+      const nc = document.createElement("th");
       while (c.firstChild) nc.appendChild(c.firstChild);
       c.replaceWith(nc);
     });

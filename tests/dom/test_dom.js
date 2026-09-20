@@ -4386,6 +4386,167 @@ function check(label, cond, extra) {
     await window.NB.hybrid.enter();
     await tick(20);
 
+    // --- horizontal rule: caret repair around a top-level <hr> --------
+    // A rule cannot hold a caret. Chromium resolves a click on the rule
+    // (or in the empty band around it) to a ROOT child offset BEFORE the
+    // <hr>, with no painted caret, and from there plain Enter wraps the
+    // surrounding blocks in a stray <p>. mousedown must repair the caret
+    // into a real block, and a keyboard-stranded root caret must be
+    // claimed on Enter instead of falling through to the browser.
+    {
+      const pressEnter = (node, mods) => node.dispatchEvent(
+        new window.KeyboardEvent("keydown",
+          Object.assign({ key: "Enter", bubbles: true, cancelable: true }, mods)));
+      const setRootCaret = (offset) => {
+        const r = window.document.createRange();
+        r.setStart(vc, offset);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      const caretAtEnd = (node) => {
+        const r = window.document.createRange();
+        r.selectNodeContents(node);
+        r.collapse(false);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+
+      // A mousedown ON the rule repairs into the following block.
+      FILES["notes/a.md"] = "alpha\n\n---\n\nomega\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const rule = vc.querySelector("hr");
+      const omegaP = Array.from(vc.querySelectorAll("p")).find((p) => p.textContent === "omega");
+      vc.querySelectorAll("p[data-hybrid-caret]").forEach((p) => p.remove());
+      rule.dispatchEvent(new window.MouseEvent("mousedown",
+        { bubbles: true, cancelable: true, button: 0, clientY: 10 }));
+      await tick(10);
+      const hostAfter = window.getSelection().anchorNode;
+      check("hybrid hr: mousedown on a rule repairs the caret into the block after it",
+        hostAfter && omegaP.contains(hostAfter),
+        "anchor=" + (hostAfter && hostAfter.parentNode && hostAfter.parentNode.outerHTML));
+      check("hybrid hr: rule mousedown is not left to the browser default",
+        // preventDefault is asserted implicitly: the click did not strand
+        // the caret on the root (checked above), so only DOM order matters.
+        vc.querySelectorAll("p[data-hybrid-caret]").length === 0,
+        "placeholders=" + vc.querySelectorAll("p[data-hybrid-caret]").length);
+
+      // Plain Enter with a caret stranded at the ROOT right after the
+      // rule (keyboard path): must open a paragraph after the rule, not
+      // wrap the note in a <p>.
+      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule) + 1);
+      const pCount0 = vc.querySelectorAll(":scope > p").length;
+      const evPlain = new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true });
+      vc.dispatchEvent(evPlain);
+      await tick(10);
+      const ruleIdx = Array.prototype.indexOf.call(vc.childNodes, rule);
+      const afterRule = vc.childNodes[ruleIdx + 1];
+      check("hybrid hr: plain Enter at a root caret after the rule opens a line below",
+        evPlain.defaultPrevented && afterRule && afterRule.tagName === "P" &&
+        afterRule.getAttribute("data-hybrid-caret") === "1",
+        "prevented=" + evPlain.defaultPrevented + " after=" +
+        (afterRule && afterRule.outerHTML));
+      check("hybrid hr: plain Enter does not nest the note's blocks in a <p>",
+        vc.querySelectorAll(":scope > p").length === pCount0 + 1 &&
+        !vc.querySelector(":scope > p > :scope > p") &&
+        !vc.querySelector("p > hr"),
+        "p count=" + vc.querySelectorAll(":scope > p").length);
+      check("hybrid hr: the opened caret line saves as a blank line",
+        // The placeholder paragraph is empty, so it must not leak into
+        // the saved markdown (the user never typed into it).
+        !window.NB.hybrid.domToMarkdown().includes("data-hybrid-caret") &&
+        /\* \* \*|\n\n/.test(window.NB.hybrid.domToMarkdown()),
+        JSON.stringify(window.NB.hybrid.domToMarkdown()).slice(-80));
+
+      // Same stranded caret right BEFORE the rule: the line opens above.
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const rule2 = vc.querySelector("hr");
+      const alphaP = Array.from(vc.querySelectorAll("p")).find((p) => p.textContent === "alpha");
+      vc.querySelectorAll("p[data-hybrid-caret]").forEach((p) => p.remove());
+      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule2));
+      const evBefore = new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true });
+      vc.dispatchEvent(evBefore);
+      await tick(10);
+      const beforeRule = vc.childNodes[Array.prototype.indexOf.call(vc.childNodes, rule2) - 1];
+      check("hybrid hr: plain Enter at a root caret before the rule opens a line above",
+        evBefore.defaultPrevented && beforeRule && beforeRule.tagName === "P",
+        "after=" + (beforeRule && beforeRule.outerHTML));
+      check("hybrid hr: Enter before the rule keeps alpha intact",
+        alphaP && alphaP.parentElement === vc && alphaP.textContent === "alpha",
+        "alpha=" + (alphaP && alphaP.outerHTML));
+
+      // Shift+Enter anchored on a stranded root caret BEFORE the rule:
+      // the line goes above the rule (the caret's own side).
+      const liHost = vc.querySelector("p[data-hybrid-caret]");
+      if (liHost) liHost.remove();
+      setRootCaret(Array.prototype.indexOf.call(vc.childNodes, rule2));
+      pressShiftEnter(vc);
+      await tick(10);
+      const shiftIdx = Array.prototype.indexOf.call(vc.childNodes, rule2);
+      const shiftBefore = vc.childNodes[shiftIdx - 1];
+      check("hybrid hr: Shift+Enter beside the rule anchors on the rule",
+        shiftBefore && shiftBefore.tagName === "P" &&
+        shiftBefore.getAttribute("data-hybrid-caret") === "1",
+        "before=" + (shiftBefore && shiftBefore.outerHTML));
+      window.NB.hybrid.exit(false);
+      await tick(20);
+
+      // A mousedown in the empty area below a TRAILING rule opens a
+      // fresh line after it (the reported flow), and typing there saves.
+      FILES["notes/a.md"] = "alpha\n\n---\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const tailRule = vc.querySelector("hr");
+      tailRule.dispatchEvent(new window.MouseEvent("mousedown",
+        { bubbles: true, cancelable: true, button: 0, clientY: 40 }));
+      await tick(10);
+      const opened = tailRule.nextElementSibling;
+      check("hybrid hr: clicking below a trailing rule opens a line after it",
+        opened && opened.tagName === "P" &&
+        window.getSelection().anchorNode && opened.contains(window.getSelection().anchorNode),
+        "after=" + (opened && opened.outerHTML));
+      // Typing into the opened line marks dirty and saves clean markdown.
+      opened.textContent = "typed";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(500);
+      check("hybrid hr: typing after a trailing rule marks the note dirty",
+        window.NB.hybrid.isDirty());
+      const hrSaveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(50);
+      const hrSaved = FILES["notes/a.md"] || "";
+      check("hybrid hr: save fires after the rule repair",
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - hrSaveBefore === 1,
+        "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - hrSaveBefore));
+      check("hybrid hr: typed line saves after the rule with no HTML leakage",
+        /(\* \* \*|---)/.test(hrSaved) && /typed/.test(hrSaved) &&
+        !/<\/?p>|<br\s*\/?>|data-hybrid/i.test(hrSaved),
+        JSON.stringify(hrSaved).slice(-80));
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+      FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+    }
+
     // Exit hybrid mode (discard changes).
     await window.NB.hybrid.exit(false);
     await tick(50);
@@ -5598,6 +5759,489 @@ function check(label, cond, extra) {
     check("autosave: Save button hidden after autosave (clean)",
       $("save-btn").hidden);
     await window.NB.hybrid.exit(false);
+  }
+
+  console.log("== hybrid: save/leave round-trip guards ==");
+  {
+    // Regression block for the data-loss findings fixed after the hr
+    // caret repair: void-only blocks (standalone images), table header
+    // guards, root-caret input rules, and the autosave write race.
+
+    // --- standalone image survives domToMarkdown ---------------------
+    // THE paragraph rule decides "empty" from textContent alone, so an
+    // image-only <p> used to be discarded before its converted content
+    // was emitted (probe: <p><img alt="a" src="x.png"></p> -> "").
+    FILES["notes/a.md"] = "# File A\n\n![a](x.png)\n\ntail\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const imgMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid void-blocks: a standalone image survives save",
+      /!\[a\]\(x\.png\)/.test(imgMd),
+      JSON.stringify(imgMd).slice(0, 120));
+    check("hybrid void-blocks: image save leaks no HTML",
+      !/<\/?(p|div|img)\b/i.test(imgMd),
+      JSON.stringify(imgMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A paragraph with ONLY a checkbox (task item) must not vanish
+    // either -- same rule, same failure mode.
+    FILES["notes/a.md"] = "- [x] done\n- [ ] todo\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const taskMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid void-blocks: task list keeps [x]/[ ]",
+      /\[x\]/.test(taskMd) && /\[ \]/.test(taskMd),
+      JSON.stringify(taskMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- empty table cell keeps its column ---------------------------
+    // BLANK_RULE_EXEMPT_TAGS exists because an empty <td> used to make
+    // the row lose a column on save. Pin it with a real empty cell.
+    FILES["notes/a.md"] = "| a | b |\n| --- | --- |\n| 1 |  |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const cellMd = window.NB.hybrid.domToMarkdown();
+    const cellRows = cellMd.split("\n").filter((l) => l.startsWith("|"));
+    check("hybrid void-blocks: empty table cell keeps its column",
+      cellRows.length >= 2 && cellRows.every((r) => r.split("|").length - 2 === 2),
+      JSON.stringify(cellRows));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- table header guards ------------------------------------------
+    // Deleting the header row (or toggling it off) used to leave a
+    // headerless table that turndown can only round-trip as raw
+    // <table> HTML. The guard must refuse those, and refusing must not
+    // mark the note dirty.
+    FILES["notes/a.md"] = "| h1 | h2 |\n| --- | --- |\n| a | b |\n| c | d |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    window.NB.hybrid.flattenTheads();
+    const hdrTable = $("viewer-content").querySelector("table");
+    const headerRow = hdrTable.rows[0];
+    check("hybrid table-guard: header cells are TH after flatten",
+      Array.from(headerRow.cells).every((c) => c.tagName === "TH"),
+      "row=" + headerRow.outerHTML);
+    window.NB.hybrid.deleteRow(headerRow);
+    check("hybrid table-guard: deleting the header row is refused",
+      hdrTable.rows[0] === headerRow && hdrTable.rows.length === 3,
+      "rows=" + hdrTable.rows.length);
+    // "Toggle header row" is reached through the right-click table
+    // submenu (the internal helper is not exported). The menu action on
+    // an already-headed table must be a no-op -- demoting the header
+    // would make turndown emit raw <table> HTML.
+    {
+      const r = window.document.createRange();
+      r.selectNodeContents(headerRow.cells[0]);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      headerRow.cells[0].dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+      await tick(10);
+      const menu = $("hybrid-context-menu");
+      const headerItem = Array.from(menu.querySelectorAll("button"))
+        .find((b) => /header/i.test(b.textContent));
+      check("hybrid table-guard: table submenu offers a header action",
+        !!headerItem, "menu=" + menu.textContent.slice(0, 80));
+      if (headerItem) headerItem.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      check("hybrid table-guard: toggling the header off is refused",
+        hdrTable.rows[0] === headerRow &&
+        Array.from(hdrTable.rows[0].cells).every((c) => c.tagName === "TH"),
+        "row=" + hdrTable.rows[0].outerHTML);
+    }
+    // Deleting the last remaining column is refused too.
+    const oneCol = window.document.createElement("table");
+    oneCol.innerHTML = "<tbody><tr><th>only</th></tr><tr><td>x</td></tr></tbody>";
+    $("viewer-content").appendChild(oneCol);
+    window.NB.hybrid.deleteCol(oneCol.rows[0].cells[0]);
+    check("hybrid table-guard: deleting the last column is refused",
+      oneCol.rows[0].cells.length === 1,
+      "cells=" + oneCol.rows[0].cells.length);
+    const hdrMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid table-guard: saved markdown is still a GFM table",
+      !/<table/i.test(hdrMd) && /\|\s*h1\s*\|/.test(hdrMd),
+      JSON.stringify(hdrMd).slice(-120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- block transforms must refuse a table cell / code block -------
+    // wrapBlock's climb stops on the nearest block-display element. The
+    // app styles `pre code { display:block }` and `.markdown-body table
+    // { display:block }`, so in a real browser the climb lands on the
+    // <code> inside a fence or on the <table> -- replacing either with
+    // an <h2> destroys the fence/table. jsdom has no stylesheet, so
+    // drive the guard through the DOM shape directly: H2 (via the edit
+    // bar) inside a table cell and inside a <pre><code> must be no-ops.
+    FILES["notes/a.md"] = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const tableCell = $("viewer-content").querySelector("td");
+    const tableBefore = $("viewer-content").querySelector("table").outerHTML;
+    const cellRange = window.document.createRange();
+    cellRange.selectNodeContents(tableCell);
+    const cellSel = window.getSelection();
+    cellSel.removeAllRanges();
+    cellSel.addRange(cellRange);
+    $("edit-bar").querySelector('[data-act="h2"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("hybrid block-guard: H2 inside a table cell is refused",
+      $("viewer-content").querySelector("table").outerHTML === tableBefore &&
+      !$("viewer-content").querySelector("h2"),
+      "table=" + $("viewer-content").querySelector("table").outerHTML.slice(0, 80));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    FILES["notes/a.md"] = "```js\nlet x = 1;\n```\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const codeEl = $("viewer-content").querySelector("pre code");
+    const codeRange = window.document.createRange();
+    codeRange.selectNodeContents(codeEl);
+    const codeSel = window.getSelection();
+    codeSel.removeAllRanges();
+    codeSel.addRange(codeRange);
+    $("edit-bar").querySelector('[data-act="h2"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("hybrid block-guard: H2 inside a code fence is refused",
+      $("viewer-content").querySelector("pre code") === codeEl &&
+      codeEl.textContent.trim() === "let x = 1;" &&
+      !$("viewer-content").querySelector("h2"),
+      "code=" + JSON.stringify(codeEl.textContent));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // Inline rules must not consume markdown delimiters inside a fence
+    // (they would be deleted from the saved source).
+    FILES["notes/a.md"] = "```js\nconst a = `x`;\n```\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const fenceCode = $("viewer-content").querySelector("pre code");
+    const fenceText = window.document.createElement("span");
+    fenceCode.appendChild(window.document.createTextNode(" **bold**"));
+    const btRange = window.document.createRange();
+    btRange.selectNodeContents(fenceCode);
+    btRange.collapse(false);
+    const btSel = window.getSelection();
+    btSel.removeAllRanges();
+    btSel.addRange(btRange);
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(20);
+    check("hybrid block-guard: inline rules leave code delimiters alone",
+      fenceCode.textContent.includes("**bold**") &&
+      !fenceCode.querySelector("strong"),
+      "code=" + JSON.stringify(fenceCode.textContent));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- root-caret input rules must not wrap the note ----------------
+    // With the caret on #viewer-content (the offset Chromium reports
+    // beside an <hr>), a block trigger used to move EVERY block into one
+    // <p>. A non-empty note must never be restructured this way.
+    FILES["notes/a.md"] = "# File A\n\none\n\ntwo\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const h1Before = $("viewer-content").querySelectorAll("h1").length;
+    const pBefore = $("viewer-content").querySelectorAll("p").length;
+    const rootRange = window.document.createRange();
+    rootRange.setStart($("viewer-content"), 0);
+    rootRange.collapse(true);
+    const rootSel = window.getSelection();
+    rootSel.removeAllRanges();
+    rootSel.addRange(rootRange);
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(20);
+    check("hybrid root-caret: a root caret does not flatten the note into one <p>",
+      $("viewer-content").querySelectorAll("h1").length === h1Before &&
+      $("viewer-content").querySelectorAll("p").length === pBefore,
+      "h1 " + h1Before + "->" + $("viewer-content").querySelectorAll("h1").length +
+      " p " + pBefore + "->" + $("viewer-content").querySelectorAll("p").length);
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- autosave races -------------------------------------------------
+    // Autosave OFF: a dirty session must not write on idle, but a manual
+    // Save still must. (Restore the default afterwards.)
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const cfg = window.NB.app.getCfg();
+    const autosaveWas = cfg.autosave;
+    cfg.autosave = false;
+    const offBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
+    $("viewer-content").innerHTML += "<p>no autosave here</p>";
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(3000);
+    check("hybrid autosave-off: idle writes nothing",
+      fetchLog.filter((l) => l.startsWith("POST /api/file")).length === offBefore,
+      "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offBefore));
+    const offSaveBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
+    $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("hybrid autosave-off: manual Save still writes",
+      fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offSaveBefore === 1,
+      "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offSaveBefore));
+    cfg.autosave = autosaveWas;
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // exit(false) must cancel a pending autosave: a dirty edit followed
+    // immediately by a discard must not write on idle afterwards.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const cancelBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
+    $("viewer-content").innerHTML += "<p>discard me</p>";
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(100);
+    await window.NB.hybrid.exit(false);
+    await tick(3000);
+    check("hybrid autosave-cancel: exit(discard) cancels the pending write",
+      fetchLog.filter((l) => l.startsWith("POST /api/file")).length === cancelBefore,
+      "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - cancelBefore));
+
+    // --- autosave write race ------------------------------------------
+    // An autosave POST that is still in flight when the user hits
+    // Save & Exit must not land AFTER the explicit save: over a slow
+    // link the older body would otherwise be the last write, leaving
+    // the file with stale content while the viewer cache holds the
+    // newer markdown. Gate the first POST so the autosave is stuck
+    // mid-flight, then click Save & Exit and assert the LAST write to
+    // the file holds the newest text.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const realSave = window.NB.api.saveFile;
+      let releaseFirst = null;
+      let call = 0;
+      window.NB.api.saveFile = async (path, content) => {
+        call += 1;
+        if (call === 1) {
+          // Stall the FIRST write (the autosave) until released.
+          await new Promise((res) => { releaseFirst = res; });
+        }
+        return realSave(path, content);
+      };
+      $("viewer-content").innerHTML += "<p>autosave body</p>";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      // Let the autosave timer fire; its POST is now stalled.
+      await tick(2200);
+      check("hybrid autosave-race: the autosave is in flight", typeof releaseFirst === "function",
+        "releaseFirst=" + typeof releaseFirst);
+      // Now edit more and click Save & Exit. The explicit save must wait
+      // for the stalled flush and be the LAST write.
+      $("viewer-content").innerHTML += "<p>explicit body</p>";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(50);
+      if (releaseFirst) releaseFirst();
+      window.NB.api.saveFile = realSave;
+      await tick(300);
+      const raced = FILES["notes/a.md"] || "";
+      // The explicit snapshot contains BOTH paragraphs (the autosave
+      // body is part of the newer DOM), so the discriminator is the
+      // newer text: if the stalled autosave landed last, FILES would
+      // hold only "autosave body" and "explicit body" would be gone.
+      check("hybrid autosave-race: the explicit save is the last write",
+        /explicit body/.test(raced),
+        JSON.stringify(raced).slice(-120));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+  }
+
+  console.log("== hybrid: edit bar fallthrough, leave-list, round-trips ==");
+  {
+    // --- edit bar: acts hybrid does NOT own must fall through ---------
+    // onEditBarClick used to e.stopPropagation() for EVERY [data-act]
+    // before its switch, so editbar.js's own listener never saw "more"
+    // (the overflow menu) or "task" -- both were dead in WYSIWYG mode.
+    // Only the acts hybrid actually handles may be claimed.
+    FILES["notes/a.md"] = "# File A\n\nhello\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const menuEl = $("edit-bar").querySelector(".eb-menu");
+    const menuHiddenBefore = menuEl.hidden;
+    $("edit-bar").querySelector('[data-act="more"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("hybrid edit bar: 'more' falls through and opens the overflow menu",
+      menuHiddenBefore && !menuEl.hidden,
+      "hiddenBefore=" + menuHiddenBefore + " hiddenAfter=" + menuEl.hidden);
+
+    // A handled act still works: H1 converts the paragraph.
+    const pForH1 = $("viewer-content").querySelector("p");
+    if (pForH1) {
+      const pr = window.document.createRange();
+      pr.selectNodeContents(pForH1);
+      const ps = window.getSelection();
+      ps.removeAllRanges();
+      ps.addRange(pr);
+      $("edit-bar").querySelector('[data-act="h1"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+    }
+    check("hybrid edit bar: a handled act (H1) still converts the block",
+      !!$("viewer-content").querySelector("h1") && window.NB.hybrid.isDirty(),
+      "h1=" + $("viewer-content").querySelectorAll("h1").length);
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- Enter on an empty list item leaves the list ------------------
+    // Trailing empty item: item removed, <p> added after the list.
+    FILES["notes/a.md"] = "# File A\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const vcEl = $("viewer-content");
+    const ulTail = window.document.createElement("ul");
+    const liTail1 = window.document.createElement("li");
+    liTail1.textContent = "first";
+    const liTail2 = window.document.createElement("li");
+    liTail2.textContent = "";
+    ulTail.appendChild(liTail1);
+    ulTail.appendChild(liTail2);
+    vcEl.appendChild(ulTail);
+    const tailRange = window.document.createRange();
+    tailRange.selectNodeContents(liTail2);
+    tailRange.collapse(false);
+    const tailSel = window.getSelection();
+    tailSel.removeAllRanges();
+    tailSel.addRange(tailRange);
+    vcEl.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true, cancelable: true }));
+    await tick(20);
+    check("hybrid leave-list: trailing empty item is removed and a <p> follows the list",
+      ulTail.children.length === 1 &&
+      ulTail.nextElementSibling && ulTail.nextElementSibling.tagName === "P",
+      "ul=" + ulTail.outerHTML + " next=" +
+      (ulTail.nextElementSibling && ulTail.nextElementSibling.outerHTML));
+    check("hybrid leave-list: the remaining item survives",
+      liTail1.textContent === "first" && ulTail.children[0] === liTail1,
+      "ul=" + ulTail.outerHTML);
+
+    // Middle empty item: the list splits with the <p> between.
+    const ulMid = window.document.createElement("ul");
+    const liA = window.document.createElement("li");
+    liA.textContent = "a";
+    const liEmpty = window.document.createElement("li");
+    liEmpty.textContent = "";
+    const liC = window.document.createElement("li");
+    liC.textContent = "c";
+    ulMid.appendChild(liA);
+    ulMid.appendChild(liEmpty);
+    ulMid.appendChild(liC);
+    vcEl.appendChild(ulMid);
+    const midRange = window.document.createRange();
+    midRange.selectNodeContents(liEmpty);
+    midRange.collapse(false);
+    const midSel = window.getSelection();
+    midSel.removeAllRanges();
+    midSel.addRange(midRange);
+    vcEl.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true, cancelable: true }));
+    await tick(20);
+    const splitP = ulMid.nextElementSibling;
+    const restList = splitP && splitP.nextElementSibling;
+    check("hybrid leave-list: middle empty item splits the list around a <p>",
+      ulMid.children.length === 1 && ulMid.children[0] === liA &&
+      splitP && splitP.tagName === "P" &&
+      restList && (restList.tagName === "UL" || restList.tagName === "OL") &&
+      restList.children.length === 1 && restList.children[0] === liC,
+      "ul=" + ulMid.outerHTML + " p=" + (splitP && splitP.outerHTML) +
+      " rest=" + (restList && restList.outerHTML));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- text round-trips that silently lose content if broken --------
+    // Escaped characters: a literal backslash-asterisk pair must survive
+    // as text (turndown would otherwise turn it into emphasis).
+    FILES["notes/a.md"] = "# File A\n\nliteral \\*not em\\* text\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const escMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid round-trip: escaped asterisks are not turned into emphasis",
+      !/<em>|<strong>/i.test(escMd) && /not em/.test(escMd),
+      JSON.stringify(escMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A fenced code block keeps its language on save.
+    FILES["notes/a.md"] = "# File A\n\n```python\nprint(1)\n```\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const fenceMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid round-trip: fenced code keeps its language",
+      /```python/.test(fenceMd) && /print\(1\)/.test(fenceMd),
+      JSON.stringify(fenceMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // Nested blockquote round-trips as nested quotes.
+    FILES["notes/a.md"] = "# File A\n\n> outer\n> > inner\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const bqMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid round-trip: nested blockquote keeps both levels",
+      /outer/.test(bqMd) && /inner/.test(bqMd) && (bqMd.match(/>/g) || []).length >= 3,
+      JSON.stringify(bqMd).slice(0, 120));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
   }
 
   console.log("== hybrid: close active tab exits hybrid (no mode leak) ==");
