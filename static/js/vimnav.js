@@ -528,6 +528,18 @@
       const cmHost = document.getElementById("cm-host");
       if (cmHost && !cmHost.hidden) {
         NB.cmEditor.focus();
+        // Race guard: the vendored vim plugin drops an Esc that arrives
+        // in the same input batch as fast typing, leaving the editor in
+        // insert mode (then the next j/k gets typed as text). Esc must
+        // always switch insert->normal, so re-assert it on keyup: the
+        // plugin already consumed the keydown if it worked, and this is
+        // a no-op in normal mode (Vim.handleKey only acts on insert).
+        const cm5 = window.CM6 && window.CM6.getCM &&
+          window.CM6.getCM(NB.cmEditor.view());
+        if (cm5 && cm5.state && cm5.state.vim && cm5.state.vim.insertMode) {
+          try { window.CM6.Vim.handleKey(cm5, "<Esc>", "user"); }
+          catch (_) { /* leave the plugin's own state alone on error */ }
+        }
       }
     }
   }

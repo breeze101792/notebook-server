@@ -91,7 +91,7 @@ implemented today.
 | --- | --- | --- | --- |
 | `api.js` | 202 | `NB.api`, `NB.lazyload`, `NB.evt` | Fetch wrappers for every `/api` route (`credentials: same-origin`), on-demand vendor loader, tiny pub/sub. Emits `auth:required` on 401. |
 | `auth.js` | 172 | `NB.auth` | Login modal. Boots immediately, dims the UI with `body.auth-locked`, reloads the page on login, wires logout. |
-| `cm-bridge.js` | 421 | `NB.cmEditor` | Thin CodeMirror 6 wrapper. Lazy view creation, stable API, `setVimMode`, `compileVimrc`. |
+| `cm-bridge.js` | 611 | `NB.cmEditor` | Thin CodeMirror 6 wrapper. Lazy view creation, stable API, `setVimMode`, `compileVimrc`. |
 | `lightbox.js` | 296 | `NB.lightbox` | Factory shared by mermaid/wavedrom/viz. Zoom/pan overlay, 0.25–5×, Esc and Ctrl+±. |
 | `blocks.js` | 203 | `NB.blocks` | The one authoritative code-block renderer registry: `renderAll`, `restoreForMarkdown`, `pluginTypes`, `forLang`, `forElement`, `selectorFor`, `sourceOf`. |
 | `mermaid.js` | 324 | `NB.mermaid` | ` ```mermaid ` renderer, `securityLevel: "strict"`. |
@@ -99,7 +99,7 @@ implemented today.
 | `katex.js` | 153 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |
 | `viz.js` | 212 | `NB.viz` | ` ```dot ` / ` ```graphviz ` renderer via WASM `Viz.renderString`. |
 | `htmlpreview.js` | 303 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
-| `viewer.js` | 1228 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
+| `viewer.js` | 1239 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 3330 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. |
 | `table-edit.js` | 802 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
@@ -113,7 +113,7 @@ implemented today.
 | `windows.js` | 179 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1483 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 926 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
-| `vimnav.js` | 552 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
+| `vimnav.js` | 564 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
 | `ai.js` | 1227 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; full in-memory transcript; `MAX_TOOL_ROUNDS = 5`. |
 | `activity.js` | 524 | `NB.activity` | Left activity bar and side-panel view switcher. Registers four views: Explorer, Recent (fuzzy quick-open), Search, AI. |
 | `shortcuts.js` | 392 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |

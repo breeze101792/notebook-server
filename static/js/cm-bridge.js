@@ -39,6 +39,13 @@
   // starts in the right state.
   let vimCompartment = null;
   let vimOn = false;
+  // True when the file currently loaded in the buffer ended with a
+  // newline. setValue strips that final "\n" (so the vim line model
+  // matches terminal vim) and getValue re-appends it. See setValue.
+  let trailingNewline = false;
+  // True when the loaded file was exactly "\n": the buffer strips to ""
+  // but the newline must survive a getValue. See getValue.
+  let newlineOnly = false;
 
   function getCm() {
     if (!window.CM6) {
@@ -169,7 +176,16 @@
     // Register ex-commands (vim's : line). Idempotent.
     try {
       cm.Vim.defineEx("write", "w", () => { if (NB.viewer) NB.viewer.save(); });
-      cm.Vim.defineEx("quit", "q", () => { if (NB.viewer) NB.viewer.closeEdit(); });
+      // :q exits edit mode, but a dirty buffer prompts first (the app's
+      // unsaved-changes guard). :q! is vim's force form: discard and exit
+      // without asking. The bang arrives as params.args[0] === "!"
+      // (parseCommandArgs_ stores the arg string verbatim).
+      cm.Vim.defineEx("quit", "q", (_cm, params) => {
+        if (!NB.viewer) return;
+        const bang = !!(params && params.args && params.args[0] === "!");
+        if (bang && NB.viewer.forceCloseEdit) NB.viewer.forceCloseEdit();
+        else NB.viewer.closeEdit();
+      });
       cm.Vim.defineEx("wq", "wq", async () => {
         if (NB.viewer) {
           await NB.viewer.save();
@@ -196,12 +212,165 @@
     return view;
   }
 
-  /* Patch the live CM5 adapter (if the vim plugin is active) with the
-   * visual-line cursor fix. Safe to call repeatedly. */
+   /* No-op scroll fix (@replit/codemirror-vim).
+    *
+    * Stock behavior: every vim command runs inside cm5.operation(), which
+    * stamps curOp.isVimOp and, when the operation ends with cursorActivity
+    * set, calls the adapter's no-arg scrollIntoView() to reveal the cursor.
+    * That is right for a motion that moved to another line, but vim also
+    * raises cursorActivity for commands that do not move the cursor at
+    * all: entering visual mode (v / V / Ctrl+V, which only re-renders the
+    * selection) and a no-op motion (j on the last line). Those calls
+    * scroll the cursor back into view, so a reader who scrolled away and
+    * pressed Ctrl+V sees the page jump to the cursor. Real vim only
+    * scrolls when the command genuinely moved the cursor.
+    *
+    * Fix, part 1: snapshot the cursor line when the outermost vim
+    * operation starts and skip the end-of-operation reveal when it did
+    * not change. With EditorView.lineWrapping on (see ensureView), long
+    * lines wrap instead of scrolling horizontally, so a vertical
+    * line-change is the only reveal that matters; within-line motions
+    * need no scroll. An explicit scrollIntoView(pos) (a genuine reveal,
+    * e.g. zz) always passes through.
+    *
+    * Part 2 guards the same leak at the view.dispatch level (the vim
+    * adapter posts {selection} and {scrollIntoView} in separate dispatch
+    * args, which part 1 never sees): exitVisualMode / exitInsertMode
+    * call setCursor from OUTSIDE any vim operation, so the adapter's
+    * {scrollIntoView: !curOp} flag was true even for same-line cursor
+    * sets. The dispatch wrapper below drops the flag when a transaction
+    * keeps the cursor on its current line. Line changes (real motions:
+    * j/k/G/gg) and explicit EditorView.scrollIntoView effects (zz)
+    * always pass through.
+    *
+    * Both parts are idempotent: part 1 lives on the CM5 adapter (a new
+    * adapter is created on every vim toggle), part 2 on the view. */
+  function patchVimNoopScroll(cm5) {
+    if (cm5.__noopScrollPatched) return;   // idempotent
+    cm5.__noopScrollPatched = true;
+    const origScrollIntoView = cm5.scrollIntoView.bind(cm5);
+    const origOperation = cm5.operation.bind(cm5);
+    let startLine = null;
+    let opDepth = 0;
+    cm5.operation = function () {
+      if (opDepth === 0) startLine = cm5.getCursor("head").line;
+      opDepth++;
+      try {
+        return origOperation.apply(null, arguments);
+      } finally {
+        opDepth--;
+        if (opDepth === 0) startLine = null;
+      }
+    };
+    cm5.scrollIntoView = function (pos) {
+      if (pos != null) return origScrollIntoView.apply(null, arguments);
+      if (startLine !== null && cm5.getCursor("head").line === startLine) {
+        return;   // command stayed on the same line -- leave the scroll alone
+      }
+      return origScrollIntoView.apply(null, arguments);
+    };
+    /* lineOf(sel) -> line number of the spec's selection head, or null
+     * when the spec carries no selection. Accepts both the plain
+     * {anchor, head} form (the {anchor}-only setCursor spec puts the
+     * cursor at the anchor) and an EditorSelection instance (the
+     * dispatch flag must match CM6's own scroll target, which reads
+     * selection.main). */
+    const view6 = view;
+    if (view6.__noopScrollDispatchPatched) return;   // view-level idempotence
+    view6.__noopScrollDispatchPatched = true;
+    const origDispatch = view6.dispatch.bind(view6);
+    const lineOf = (sel) => {
+      try {
+        if (!sel) return null;
+        const main = (sel.main !== undefined) ? sel.main : sel;
+        const head = (main && main.head !== undefined) ? main.head
+          : (main && main.anchor !== undefined) ? main.anchor : null;
+        if (head === null) return null;
+        return view6.state.doc.lineAt(head).number;
+      } catch (_) {
+        return null;
+      }
+    };
+    view6.dispatch = function () {
+      const args = Array.prototype.slice.call(arguments);
+      // A transaction spec may be split across several args (the vim
+      // adapter posts {selection} and {scrollIntoView} separately), so
+      // decide once for the whole call: strip the flag only when every
+      // selection-bearing arg keeps the cursor on its current line.
+      const curLine = view6.state.doc.lineAt(
+        view6.state.selection.main.head).number;
+      const lines = args.map((a) => a && a.selection
+        ? lineOf(a.selection) : null);
+      const hasSel = lines.some((l) => l !== null);
+      const allSameLine = hasSel && lines.every((l) => l === null || l === curLine);
+      const patched = args.map((a) => {
+        if (a && typeof a === "object" && a.scrollIntoView && !a.effects
+            && allSameLine) {
+          const copy = Object.assign({}, a);
+          delete copy.scrollIntoView;
+          return copy;
+        }
+        return a;
+      });
+      return origDispatch.apply(null, patched);
+    };
+  }
+
+  /* Escape ownership fix (@replit/codemirror-vim + basicSetup).
+   *
+   * basicSetup installs @codemirror/commands' defaultKeymap, which binds
+   * Escape -> simplifySelection. Keymap handlers run before the vim
+   * plugin's DOM keydown handler, so once a visual selection exists
+   * (v / V / Ctrl+V), the NEXT Escape is stolen by simplifySelection:
+   * it collapses the selection and dispatches with scrollIntoView:true,
+   * so the viewport jumps to the cursor -- and the vim state machine
+   * never sees the key, leaving it stuck in visual mode. Terminal vim
+   * owns Escape: visual -> normal, insert -> normal, always.
+   *
+    * Fix: intercept Escape at the DOM level (capture phase, before CM's
+    * keymap facet can run its handlers) whenever the vim plugin is live,
+    * and route it to Vim.handleKey. Any other key passes through
+    * untouched, and so do Escapes during an active IME composition
+    * (CM6's own event pipeline drops those; this must too). The
+    * listener is installed once per view and stays inert when vim is
+    * off (the getCM() null check) -- plain CM6 keeps its Escape
+    * behavior. */
+  function patchVimEscape(view6) {
+    if (view6.__vimEscapePatched) return;   // idempotent
+    view6.__vimEscapePatched = true;
+    view6.contentDOM.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      // IME composition owns the keyboard: CM6 drops keydowns during
+      // composition, and canceling one mid-composition would corrupt
+      // the insert. Let the composition path finish.
+      if (e.isComposing || view6.composing) return;
+      const cm5 = getCm().getCM(view6);
+      const vim = cm5 && cm5.state && cm5.state.vim;
+      if (!vim) return;
+      // Route the key to vim's own key dispatcher. handleKey returns
+      // true when vim consumed it (visual -> normal, insert -> normal);
+      // unhandled Escapes (e.g. normal mode with nothing to exit, or
+      // clearing search highlighting) fall through to CM6 and the
+      // plugin's regular keydown handler.
+      let handled = false;
+      try { handled = getCm().Vim.handleKey(cm5, "<Esc>", "user"); }
+      catch (_) { return; }
+      if (handled) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  /* Patch the live CM5 adapter + view (if the vim plugin is active) with
+   * the cursor + scroll + Escape fixes. Safe to call repeatedly. */
   function patchVimAdapter() {
     if (!view) return;
     const cm5 = getCm().getCM(view);
-    if (cm5) patchVisualLineCursor(cm5);
+    if (!cm5) return;
+    patchVisualLineCursor(cm5);
+    patchVimNoopScroll(cm5);
+    patchVimEscape(view);
   }
 
   /* --- custom VIM initial script (vimrc) --------------------------- */
@@ -314,16 +483,35 @@
     /** True once the bundle is in the page (the view may still be
      *  unmounted). Edit mode uses this to avoid awaiting a no-op. */
     isReady() { return !!window.CM6; },
-    /** Return the current document as a string. */
+    /** Return the current document as a string. Re-appends the final
+     *  newline stripped by setValue (see there), so a clean buffer reads
+     *  back with the exact bytes it was loaded from -- dirty-tracking
+     *  compares the two. A buffer the user emptied stays empty (vim
+     *  writes nothing for zero lines), and the "\n"-only file keeps its
+     *  newline. */
     getValue() {
       if (!view) return "";
-      return view.state.doc.toString();
+      const s = view.state.doc.toString();
+      if (!trailingNewline) return s;
+      if (s === "") return newlineOnly ? "\n" : "";
+      return s + "\n";
     },
-    /** Replace the entire document with `text`. */
+    /** Replace the entire document with `text`.
+     *
+     *  Terminal-vim line model: a file's final "\n" is a line terminator,
+     *  not the start of an empty line. CodeMirror (and its vim plugin)
+     *  count it as an empty final line, so `G` / `$` / `dd` at EOF land
+     *  one line past real vim. Keep the buffer vim-shaped (strip the one
+     *  trailing newline) and re-append it in getValue, so the bytes
+     *  written back to disk are unchanged. */
     setValue(text) {
       const v = ensureView();
+      const s = String(text || "");
+      trailingNewline = s.endsWith("\n");
+      newlineOnly = s === "\n";
+      const body = trailingNewline ? s.slice(0, -1) : s;
       v.dispatch({
-        changes: { from: 0, to: v.state.doc.length, insert: String(text || "") },
+        changes: { from: 0, to: v.state.doc.length, insert: body },
       });
     },
     /** Return the current primary selection: { from, to, text }. */
@@ -415,6 +603,8 @@
       const host = document.getElementById("cm-host");
       if (host) host.innerHTML = "";
       view = null;
+      trailingNewline = false;
+      newlineOnly = false;
       onChangeHandlers.length = 0;
     },
   };

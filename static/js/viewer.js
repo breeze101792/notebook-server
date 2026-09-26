@@ -660,6 +660,17 @@
     },
     toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
 
+    /* Vim's :q! -- exit edit mode discarding unsaved edits without the
+     * confirm prompt. Mirrors terminal vim's force-quit; the editor is
+     * reverted to the last saved content so the next session starts
+     * clean. Returns true if edit mode was left. */
+    forceCloseEdit() {
+      const t = cur(); if (!t) return false;
+      if (viewer.isDirty(active)) NB.cmEditor.setValue(t.savedContent);
+      this.endEdit();
+      return true;
+    },
+
     /* Manually re-fetch the active file from disk and re-render, so the
      * user can force a refresh without waiting for the watcher. Prompts
      * before discarding unsaved edits (same guard as the external-change

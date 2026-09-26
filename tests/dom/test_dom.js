@@ -13294,6 +13294,185 @@ function check(label, cond, extra) {
     window.NB.tabs.getActive() === beforePaste,
     "active=" + window.NB.tabs.getActive());
 
+  // --- terminal-vim fidelity regressions -----------------------------
+  // Fixes that make the editor behave like terminal vim:
+  // a. the vendored plugin scrolled the viewport on every command, even
+  //    ones that did not move the cursor (v / V / Ctrl+V / no-op j), and
+  //    two scroll leaks bypassed that patch entirely: basicSetup's
+  //    defaultKeymap stole Escape from vim (simplifySelection collapsed
+  //    the visual selection and scrolled), and exitVisualMode /
+  //    exitInsertMode posted setCursor dispatches with scrollIntoView
+  //    from outside any vim operation;
+  // b. a file's trailing newline was a phantom empty last line, so G and
+  //    friends landed one line past vim -- the buffer now keeps the
+  //    terminal-vim line model and getValue re-appends the newline;
+  // c. :q! must force-quit without the unsaved-changes confirm;
+  // d. Esc must always leave insert mode, even in the same input batch as
+  //    fast typing.
+  // jsdom has no layout engine, so scrollTop never moves; the honest
+  // observable for (a) is the transaction-level scrollIntoView flag --
+  // the thing that makes a real browser scroll -- plus the vim mode
+  // state after each key.
+  {
+    // Enter edit mode and focus CodeMirror.
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(30); }
+    const cmView = window.NB.cmEditor.view();
+    const cm5 = cmView && window.CM6.getCM(cmView);
+
+    // (a) The vim plugin is patched at mount; its no-op-scroll hook must
+    // be installed.
+    check("vim: cm-bridge installs the no-op-scroll patch", !!(cm5 && cm5.__noopScrollPatched));
+    check("vim: cm-bridge installs the Escape-ownership patch", !!cmView.__vimEscapePatched);
+    check("vim: the dispatch-level reveal guard is installed once per view",
+      !!cmView.__noopScrollDispatchPatched);
+
+    // Reveal counter: hook view.update and count transactions that ask
+    // the browser to scroll the cursor into view. In a real browser each
+    // of these moves the viewport; in jsdom the flag is still observable.
+    const revealTx = { count: 0 };
+    const origUpdate = cmView.update.bind(cmView);
+    cmView.update = function (trs) {
+      try {
+        for (const tr of trs) if (tr.scrollIntoView) revealTx.count++;
+      } catch (_) {}
+      return origUpdate(trs);
+    };
+    const reveals = () => { const n = revealTx.count; revealTx.count = 0; return n; };
+
+    const sendKey = (k, code, opts) => cmView.contentDOM.dispatchEvent(
+      new window.KeyboardEvent("keydown", Object.assign(
+        { key: k, code, bubbles: true, cancelable: true }, opts || {})));
+
+    cmSetValue("l0 alpha bravo\nl1 delta echo\nl2 golf hotel\nl3 juliet kilo\n");
+    cmSetSel(0, 0);
+    cmView.contentDOM.focus();
+    await tick(10);
+
+    // Ctrl+V enters visual block. The cursor did not move: no reveal.
+    reveals();
+    sendKey("v", "KeyV", { ctrlKey: true });
+    await tick(10);
+    check("vim: editor Ctrl+V enters visual block (not a paste/scroll)",
+      !!(cm5.state.vim.visualMode && cm5.state.vim.visualBlock),
+      "mode=" + cm5.state.vim.mode);
+    const nBlock = reveals();
+    check("vim: entering visual block requests no viewport reveal",
+      nBlock === 0, "revealTxs=" + nBlock);
+
+    // j in the block moves the head down a line: a genuine motion, the
+    // reveal is correct vim behavior (and must survive the patches).
+    // (How far j lands is pixel geometry -- jsdom's fake rects make
+    // findPosV overshoot -- so only the reveal is asserted here.)
+    sendKey("j", "KeyJ");
+    await tick(10);
+    check("vim: a real line motion still reveals the cursor",
+      reveals() > 0, "revealTxs=0 (real browser would not scroll)");
+
+    // Esc must leave visual block AND reach vim -- defaultKeymap's
+    // simplifySelection must not steal it (it used to collapse the
+    // selection, scroll, and leave vim stuck in visual mode).
+    reveals();
+    sendKey("Escape", "Escape");
+    await tick(10);
+    check("vim: Esc exits visual block (vim owns Escape, not simplifySelection)",
+      cm5.state.vim.visualMode === false,
+      "visualMode=" + cm5.state.vim.visualMode);
+    const nExitBlock = reveals();
+    check("vim: exiting visual block requests no viewport reveal",
+      nExitBlock === 0, "revealTxs=" + nExitBlock);
+
+    // Same leak, insert flavor: i .. type .. Esc. exitInsertMode's
+    // setCursor lands on the same line: no reveal.
+    cmSetSel(0, 0);
+    cmView.contentDOM.focus();
+    await tick(10);
+    reveals();
+    sendKey("i", "KeyI");
+    await tick(5);
+    sendKey("x", "KeyX");
+    await tick(5);
+    sendKey("Escape", "Escape");
+    await tick(20);
+    check("vim: Esc exits insert mode even right after typing",
+      cm5.state.vim.insertMode === false, "insertMode=" + cm5.state.vim.insertMode);
+    const nExitInsert = reveals();
+    check("vim: exiting insert mode requests no viewport reveal",
+      nExitInsert === 0, "revealTxs=" + nExitInsert);
+
+    // A genuine cross-line motion must still reveal: G to the last line.
+    reveals();
+    sendKey("G", "KeyG", { shiftKey: true });
+    await tick(10);
+    check("vim: G (real motion) still reveals the cursor",
+      reveals() > 0, "revealTxs=0 (G must scroll in a real browser)");
+    const gLine = cmView.state.doc.lineAt(cmView.state.selection.main.head);
+    check("vim: G lands on the last text line (terminal vim), not an empty line",
+      gLine.number === 4 && gLine.text === "l3 juliet kilo",
+      "line=" + gLine.number + " text=" + JSON.stringify(gLine.text));
+
+    // no-op j at the bottom: the cursor cannot move; no reveal.
+    reveals();
+    sendKey("j", "KeyJ");
+    await tick(10);
+    const nNoopJ = reveals();
+    check("vim: no-op j on the last line requests no viewport reveal",
+      nNoopJ === 0, "revealTxs=" + nNoopJ);
+
+    // (b) Trailing-newline line model: getValue is the exact inverse of
+    // setValue, and the buffer keeps the terminal-vim line count.
+    cmSetValue("one\ntwo\nthree\n");
+    check("vim: getValue re-appends the stripped trailing newline",
+      cmGetValue() === "one\ntwo\nthree\n", JSON.stringify(cmGetValue()));
+    check("vim: buffer drops the phantom trailing empty line",
+      cmView.state.doc.toString() === "one\ntwo\nthree",
+      JSON.stringify(cmView.state.doc.toString()));
+    cmSetSel(0, 0);
+    cmView.contentDOM.focus();
+    await tick(10);
+    reveals();
+    sendKey("G", "KeyG", { shiftKey: true });
+    await tick(10);
+    const sel = cmView.state.selection.main;
+    const lineAt = cmView.state.doc.lineAt(sel.from);
+    check("vim: G lands on the last text line (terminal vim), not an empty line",
+      lineAt.number === 3 && lineAt.text === "three",
+      "line=" + lineAt.number + " text=" + JSON.stringify(lineAt.text));
+    check("vim: G on a fresh buffer still reveals (patch keeps real motions)",
+      reveals() > 0, "revealTxs=0");
+
+    // Restore the un-hooked update for the rest of the suite.
+    cmView.update = origUpdate;
+
+    // Return to preview for the :q! test.
+    cmView.contentDOM.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", code: "Escape", bubbles: true, cancelable: true }));
+    await tick(20);
+  }
+  // (c) :q! force-quits a dirty buffer with no confirm prompt.
+  {
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(30); }
+    cmSetValue("# File A\n\nDIRTY EDIT\n");
+    await tick(10);
+    const dirty = window.NB.viewer.isDirty(window.NB.tabs.getActive());
+    let confirmCalls = 0;
+    const origConfirm = window.confirm;
+    window.confirm = () => { confirmCalls++; return true; };
+    try {
+      window.NB.cmEditor.applyVimrc("");   // keep the default :q mapping
+      // Drive the ex-command the way the plugin does: defineEx callback.
+      // Simplest reliable path is the public viewer method the mapping calls.
+      window.NB.viewer.forceCloseEdit();
+      await tick(20);
+    } finally {
+      window.confirm = origConfirm;
+    }
+    check("vim: :q! (forceCloseEdit) exits edit mode without prompting",
+      cmIsHidden() && confirmCalls === 0,
+      "hidden=" + cmIsHidden() + " confirmCalls=" + confirmCalls);
+    check("vim: :q! test started from a dirty buffer",
+      dirty === true, "dirty=" + dirty);
+  }
+
   // Disable VIM and close the settings modal.
   window.NB.vimnav.setEnabled(false);
   await tick(10);
