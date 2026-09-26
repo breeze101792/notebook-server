@@ -400,7 +400,11 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* Hide the native horizontal scrollbar (Firefox + old Edge/IE); the bar
+   * still scrolls via wheel/trackpad/drag/keyboard. Keeps the 34px row
+   * free of a 6px scrollbar that would eat into the tab labels. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 /* Outline toggle icon pinned to the right edge of the tab bar. Sticky to
@@ -892,7 +896,8 @@ kbd.context-menu-kbd {
   font-weight: 600;
 }
 .edit-bar .eb-primary:hover { background: var(--accent); color: white; }
-.tab-bar::-webkit-scrollbar { height: 6px; }
+/* Chromium/Safari: hide the tab-bar scrollbar (the bar still scrolls). */
+.tab-bar::-webkit-scrollbar { display: none; }
 .tab {
   display: flex;
   align-items: center;
