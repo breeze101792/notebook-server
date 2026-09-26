@@ -828,16 +828,26 @@ body.nb-table-drag #viewer-content { user-select: none; }
  * pseudo-element cannot receive a click -- hybrid's teardown removes it,
  * so it never reaches turndown. The slot is RESERVED at all times
  * (visibility, never display) so revealing the icon on hover does not
- * shift the title text. */
+ * shift the title text. Sorting ROTATES this one glyph rather than
+ * swapping in a different arrow character (see the rotation rules
+ * below), so the icon's size is identical in every state. */
 #viewer-content thead th .nb-tv-head-menu {
-  display: inline-block;
+  /* A FIXED box, centred. The glyph itself never changes (sorting only
+   * rotates it), so the box only needs to hold one chevron; a fixed size
+   * pins that down regardless of the font's metrics. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  vertical-align: middle;
   visibility: hidden;
   margin-left: 6px;
-  padding: 0 3px;
+  padding: 0;
   border-radius: 3px;
   color: var(--fg-muted);
   font-size: .7rem;
-  line-height: 1.4;
+  line-height: 1;
   cursor: pointer;
 }
 #viewer-content thead th:hover .nb-tv-head-menu,
@@ -850,8 +860,16 @@ body.nb-table-drag #viewer-content { user-select: none; }
   color: var(--fg);
 }
 /* The active sort keeps its icon visible and accent-coloured: the icon is
- * the only sort indicator, so it must read at a glance. */
+ * the only sort indicator, so it must read at a glance. Its ONE glyph is
+ * ROTATED into the direction -- rotating an identical shape cannot change
+ * the icon's size, unlike swapping in a different arrow character. */
 #viewer-content thead th.nb-tv-sorted .nb-tv-head-menu { color: var(--accent); }
+#viewer-content thead th[aria-sort="ascending"] .nb-tv-head-menu {
+  transform: rotate(180deg);   /* down chevron -> up chevron */
+}
+#viewer-content thead th[aria-sort="descending"] .nb-tv-head-menu {
+  transform: rotate(0deg);     /* stays the down chevron */
+}
 #viewer-content thead th .nb-tv-head-menu:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

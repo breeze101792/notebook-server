@@ -56,14 +56,14 @@
   const LABEL_MAX = 28;        // chars of a row/column label before the ellipsis
   const SIG_SEP = "\u0001";    // header signature separator
 
-  // Header menu icon. It doubles as the sort indicator: an idle column
-  // shows a down chevron (the menu affordance), the active column shows
-  // an up/down triangle matching its direction. It is a view-only child
-  // element, so hybrid's teardown removes it alongside every view-only
-  // class before contenteditable and the undo snapshot.
+  // Header menu icon: ONE down chevron. It doubles as the sort indicator,
+  // and the direction is shown by rotating the SAME glyph in CSS -- never
+  // by swapping in a different character, because the arrow characters
+  // have different visual weights and the icon would appear to resize on
+  // sort. It is a view-only child element, so hybrid's teardown removes it
+  // alongside every view-only class before contenteditable and the undo
+  // snapshot.
   const HEAD_MENU_GLYPH = "\u25BE";             // idle: menu chevron
-  const HEAD_MENU_GLYPH_ASC = "\u25B2";         // sorted ascending
-  const HEAD_MENU_GLYPH_DESC = "\u25BC";        // sorted descending
 
   const LS_KEY = "nb:tableView";       // localStorage namespace
   const SCHEMA_VERSION = 1;            // blob schema version
@@ -388,24 +388,15 @@
   }
 
   /* aria-sort belongs ONLY on the active sorted header; every other
-   * header cell has it removed. `.nb-tv-sorted` is the CSS hook that
-   * keeps that cell's menu icon visible, and the icon glyph itself shows
-   * the direction: it is the only sort indicator. */
+   * header cell has it removed. `.nb-tv-sorted` keeps that cell's menu
+   * icon visible and rotates it into the up/down sort indicator: the icon
+   * is the only sort indicator, and the glyph never changes, so its size
+   * cannot change either. */
   function refreshHeaderAttrs(session, sort) {
     Array.from(session.header.cells).forEach((cell, i) => {
-      const icon = cell.querySelector("." + HEAD_MENU_CLASS);
-      if (sort && sort.col === i) {
-        cell.setAttribute("aria-sort", sort.dir);
-        cell.classList.add(SORTED_CLASS);
-        if (icon) {
-          icon.textContent = sort.dir === SORT_DESC
-            ? HEAD_MENU_GLYPH_DESC : HEAD_MENU_GLYPH_ASC;
-        }
-      } else {
-        cell.removeAttribute("aria-sort");
-        cell.classList.remove(SORTED_CLASS);
-        if (icon) icon.textContent = HEAD_MENU_GLYPH;
-      }
+      if (sort && sort.col === i) cell.setAttribute("aria-sort", sort.dir);
+      else cell.removeAttribute("aria-sort");
+      cell.classList.toggle(SORTED_CLASS, !!(sort && sort.col === i));
     });
   }
 

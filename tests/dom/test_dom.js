@@ -7027,43 +7027,58 @@ function check(label, cond, extra) {
     window.NB.tableView.resetTable(t0);
 
     // --- (6c) the menu icon doubles as the sort indicator --------------
-    // There is exactly ONE icon per header, and its glyph tracks the
-    // direction (down chevron idle, up triangle asc, down triangle desc).
-    // The old ::after arrow is gone, so no second indicator is drawn.
+    // There is exactly ONE icon per header and its glyph NEVER changes:
+    // the direction is shown by rotating the same chevron in CSS, because
+    // the arrow characters have different visual weights and swapping
+    // them made the icon appear to resize on sort.
     const iconOf = (i) => hdrCells[i].querySelector(".nb-tv-head-menu");
     check("table view: each header has exactly one menu icon",
       hdrCells.every((c) => c.querySelectorAll(".nb-tv-head-menu").length === 1),
       hdrCells.map((c) => c.querySelectorAll(".nb-tv-head-menu").length).join(","));
-    check("table view: the idle icon glyph is the menu chevron",
-      iconOf(0).textContent === "\u25BE" && iconOf(1).textContent === "\u25BE",
+    check("table view: every icon uses the one fixed chevron glyph",
+      hdrCells.every((c) => iconOf(c.cellIndex).textContent === "\u25BE"),
       JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
     window.NB.tableView.cycleSort(t0, 1);   // Qty asc
-    check("table view: an ascending sort flips its icon to the up triangle",
-      iconOf(1).textContent === "\u25B2" &&
+    check("table view: an ascending sort marks its header .nb-tv-sorted",
       hdrCells[1].classList.contains("nb-tv-sorted") &&
-      !hdrCells[0].classList.contains("nb-tv-sorted"),
+      !hdrCells[0].classList.contains("nb-tv-sorted") &&
+      hdrCells[1].getAttribute("aria-sort") === "ascending");
+    check("table view: the glyph is unchanged by sorting (no resize)",
+      hdrCells.every((c) => iconOf(c.cellIndex).textContent === "\u25BE"),
       JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
     window.NB.tableView.cycleSort(t0, 1);   // Qty desc
-    check("table view: a descending sort flips its icon to the down triangle",
-      iconOf(1).textContent === "\u25BC",
-      JSON.stringify(iconOf(1).textContent));
+    check("table view: a descending sort keeps the same glyph too",
+      hdrCells[1].getAttribute("aria-sort") === "descending" &&
+      iconOf(1).textContent === "\u25BE");
     window.NB.tableView.cycleSort(t0, 0);   // switch to Name asc
-    check("table view: switching the sorted column resets the old icon",
-      iconOf(0).textContent === "\u25B2" && iconOf(1).textContent === "\u25BE" &&
+    check("table view: switching the sorted column moves .nb-tv-sorted",
+      iconOf(0).textContent === "\u25BE" && iconOf(1).textContent === "\u25BE" &&
       hdrCells[0].classList.contains("nb-tv-sorted") &&
       !hdrCells[1].classList.contains("nb-tv-sorted"),
       JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
     window.NB.tableView.cycleSort(t0, 0);   // Name asc -> desc
-    check("table view: the newly sorted column's icon tracks its direction",
-      iconOf(0).textContent === "\u25BC" && iconOf(1).textContent === "\u25BE");
     window.NB.tableView.cycleSort(t0, 0);   // Name desc -> clear
-    check("table view: clearing the sort resets the icon to the menu chevron",
-      iconOf(0).textContent === "\u25BE" && iconOf(1).textContent === "\u25BE" &&
-      hdrCells.every((c) => !c.classList.contains("nb-tv-sorted")),
+    check("table view: clearing the sort drops .nb-tv-sorted from every header",
+      hdrCells.every((c) => !c.classList.contains("nb-tv-sorted")) &&
+      hdrCells.every((c) => iconOf(c.cellIndex).textContent === "\u25BE"),
       JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
     check("table view: the old ::after sort arrow CSS is gone",
       read("static/css/style.css").indexOf('th[aria-sort="ascending"]::after') === -1,
       "style.css still has a sort-arrow pseudo-element");
+    check("table view: the sort indicator is a CSS rotation of the one glyph",
+      /aria-sort="ascending"\]\s*\.nb-tv-head-menu\s*\{[^}]*rotate\(180deg\)/
+        .test(read("static/css/style.css")), "no rotation rule for ascending");
+    // The three glyphs have different advance widths, so the icon box must
+    // be fixed (width + height) and must NOT size itself from the glyph:
+    // otherwise the icon visibly resizes when the sort direction changes.
+    const cssText = read("static/css/style.css");
+    const iconRule = cssText.slice(
+      cssText.indexOf("#viewer-content thead th .nb-tv-head-menu {"));
+    const iconBody = iconRule.slice(0, iconRule.indexOf("}"));
+    check("table view: the menu icon has a fixed width and height (no resize on sort)",
+      /width:\s*\d+px/.test(iconBody) && /height:\s*\d+px/.test(iconBody) &&
+      /justify-content:\s*center/.test(iconBody),
+      iconBody.replace(/\s+/g, " ").slice(0, 160));
     window.NB.tableView.resetTable(t0);
 
     // --- (6b) a body cell click must not sort or open a popover ---------
