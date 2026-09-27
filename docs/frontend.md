@@ -12,18 +12,18 @@ No script in the repository regenerates it; the esbuild invocation is
 undocumented. For every other module, the served file is the source file.
 
 Every app module is an IIFE that extends the shared `window.NB` namespace.
-`templates/index.html` is 971 lines; the 29 modules live under `static/js/`.
+`templates/index.html` is 981 lines; the 29 modules live under `static/js/`.
 
 ### Script load order
 
 `templates/index.html` loads scripts in three groups:
 
-1. **Eager, non-`defer`** (`index.html:314-315`): `api.js` then `auth.js`,
+1. **Eager, non-`defer`** (`index.html:323-324`): `api.js` then `auth.js`,
    so the login prompt can appear before the heavy assets load.
-2. **Deferred vendored libraries** (`index.html:935-938`): `marked.min.js`,
+2. **Deferred vendored libraries** (`index.html:944-947`): `marked.min.js`,
    `highlight.min.js`, `turndown.browser.js`,
    `turndown-plugin-gfm.browser.js`.
-3. **Deferred app modules in dependency order** (`index.html:939-965`).
+3. **Deferred app modules in dependency order** (`index.html:948-974`).
 
 Deferred scripts run in document order after parsing, so the dependency
 order is load-bearing: each module expects the ones before it to have
@@ -80,7 +80,7 @@ and opens any deep link before stripping it with `history.replaceState`
 ### Service worker
 
 `index.html` registers `/static/sw.js` at the end of the body
-(`index.html:966-970`).
+(`index.html:975-979`).
 
 ## 3. Module inventory
 
@@ -109,7 +109,7 @@ implemented today.
 | `sidebar.js` | 997 | `NB.sidebar` | File tree, bookmarks, and right-click menus (new, rename/move, copy, delete, Export…). |
 | `search.js` | 339 | `NB.search` | Search UI. Server `<<…>>` snippets rewrapped as `<mark>` via `textContent`. |
 | `graph.js` | 961 | `NB.graph` | Force-directed wikilink graph view on special tab `§graph`. Canvas physics, pan/zoom/filter, optional particles. |
-| `tabs.js` | 586 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. |
+| `tabs.js` | 905 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery. |
 | `windows.js` | 179 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1483 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 926 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
@@ -274,10 +274,33 @@ asset still updates, but the install-time copy stays stale.
 
 Mounts are lazy: a view's host stays empty until the first activation.
 
+### Tab bar
+
+`#tab-bar` holds three children in order (`index.html:128-142`):
+
+| Child | Role |
+| --- | --- |
+| `#tab-pinned` (`.tab-pinned`) | Pinned tabs. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`). |
+| `#tab-list` (`.tab-list`) | Unpinned tabs. The only part of the row that scrolls (`overflow-x: auto`). |
+| `#outline-toggle` | The outline button, a fixed sibling at the right edge. |
+
+`tabs.js` toggles the region's `hidden` attribute: `#tab-pinned` is hidden
+while nothing is pinned. There is no separator between the regions; the bar's
+own `2px` gap is the spacing.
+
+`NB.tabs` owns the width-freeze / release / ghost-close machinery described
+in [`design/tab-equalization.md`](design/tab-equalization.md) and
+[`design/tab-close-animation.md`](design/tab-close-animation.md). Two points
+matter for the bar's structure: `realTabs()` is **bar-scoped**
+(`tabs.js:106-108`), so every width measurement spans both regions; and the
+release class lives on `#tab-bar` (`.tab-bar.nb-tab-equalizing .tab`,
+`style.css:1055`), not on the scroller, so it reaches a `.tab` in either
+region.
+
 ### Special tabs
 
 Tabs whose id starts with `§` open a non-file view instead of a note
-(`tabs.js:30-38`). Each registers through `NB.tabs.registerSpecial`.
+(`tabs.js:35-44`). Each registers through `NB.tabs.registerSpecial`.
 Two exist:
 
 - `§search` (`search.js:18`) — search results.
@@ -285,7 +308,7 @@ Two exist:
 
 ### Settings modal tabs
 
-Six tabs (`index.html:339-344`): General, Appearance, Shortcuts, Security,
+Six tabs (`index.html:348-353`): General, Appearance, Shortcuts, Security,
 AI, About.
 
 - Appearance and General are live. Editing a field mutates an in-memory

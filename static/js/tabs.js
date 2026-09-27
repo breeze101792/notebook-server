@@ -15,15 +15,17 @@
   window.NB = window.NB || {};
 
   const barEl = document.getElementById("tab-bar");
-  // Tabs render into #tab-list, the inner scroller. Fall back to the bar
-  // itself so a stale cached index.html (pre-split) degrades instead of
-  // throwing at module load.
+  // Unpinned tabs render into #tab-list, the inner scroller. Pinned tabs
+  // render into #tab-pinned, its fixed sibling, so they stay visible while
+  // the rest scroll. Each falls back to the other (and to the bar) so a stale
+  // cached index.html (pre-split) degrades instead of throwing at module load.
   const listEl = document.getElementById("tab-list") || barEl;
+  const pinEl = document.getElementById("tab-pinned") || listEl;
   const menuEl = document.getElementById("tab-context-menu");
-  // Tabs render into #tab-list, the inner scroller of the row. The outline
-  // toggle button (#outline-toggle) is a sibling of that scroller, so an
-  // overflowing tab can never overlap it. Drag/click events bubble from
-  // #tab-list up to #tab-bar, where the delegated handlers live.
+  // The outline toggle (#outline-toggle) is a sibling of both regions, at the
+  // fixed right edge, so an overflowing tab can never overlap it. Drag/click
+  // events bubble from either region up to #tab-bar, where the delegated
+  // handlers live.
   const ordered = [];          // [path] in display order (pinned tabs first)
   const openSet = new Set();   // path membership
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)
@@ -96,10 +98,12 @@
     return n && n.closest ? n.closest(".tab") : null;
   }
 
-  /* The real tabs, excluding ghost close slots. Every width measurement, pin,
-   * or release over .tab must use this: a ghost's width is not a tab width. */
+  /* The real tabs across both regions, excluding ghost close slots. Every
+   * width measurement, pin, or release over .tab must use this: a ghost's
+   * width is not a tab width. Bar-scoped, so it returns tabs in `ordered`
+   * order (pinned region first). */
   function realTabs() {
-    return Array.from(listEl.querySelectorAll(".tab:not(." + GHOST_CLASS + ")"));
+    return Array.from(barEl.querySelectorAll(".tab:not(." + GHOST_CLASS + ")"));
   }
 
   /* Re-segment `ordered` so pinned paths form a contiguous prefix, preserving
@@ -172,7 +176,7 @@
    * timer, by animationend, and to cancel on re-entry or mid-flight render. */
   function stopRelease() {
     if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null; }
-    listEl.classList.remove(RELEASE_CLASS);
+    barEl.classList.remove(RELEASE_CLASS);
     realTabs().forEach(t => {
       t.style.removeProperty(TAB_FROM_VAR);
       t.style.removeProperty(TAB_TO_VAR);
@@ -207,7 +211,7 @@
       t.style.setProperty(TAB_FROM_VAR, start[i] + "px");
       t.style.setProperty(TAB_TO_VAR, end[i] + "px");
     });
-    listEl.classList.add(RELEASE_CLASS);
+    barEl.classList.add(RELEASE_CLASS);
     releaseTimer = setTimeout(stopRelease, TAB_RELEASE_FALLBACK_MS);
   }
 
@@ -238,16 +242,29 @@
    * BEFORE dropTab replaces the nodes; the entry is data, and render()
    * materializes the node on every strip rebuild so it survives. */
   function addGhost(path, idx) {
-    const node = listEl.querySelector('.tab[data-path="' + cssEscape(path) + '"]');
+    const node = barEl.querySelector('.tab[data-path="' + cssEscape(path) + '"]');
     const width = node ? node.getBoundingClientRect().width : 0;
     const label = isSpecial(path)
       ? ((specialTabs.get(path) || {}).label || path)
       : baseName(path);
-    ghosts.push({ path, label, width, index: idx, startedAt: 0, node: null, timer: null });
+    // Record the region while `pinned` still holds the path (dropTab runs
+    // next); a ghost belongs to the same region its tab came from.
+    ghosts.push({ path, label, width, index: idx, pinned: pinned.has(path),
+                  startedAt: 0, node: null, timer: null });
   }
 
   function nowMs() {
     return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
+  /* Show the pinned region only while it holds a pinned tab or a pinned ghost
+   * is still playing its close. Called after any change to `pinned` or
+   * `ghosts`. Skipped when the region fell back to the scroller (stale
+   * index.html): hiding it would hide every tab. */
+  function syncPinnedRegion() {
+    if (pinEl === listEl) return;
+    const hasPinnedGhost = ghosts.some(g => g.pinned);
+    pinEl.hidden = pinned.size === 0 && !hasPinnedGhost;
   }
 
   /* Drop one ghost entry + its node. Idempotent. */
@@ -257,6 +274,7 @@
     g.node = null;
     const i = ghosts.indexOf(g);
     if (i >= 0) ghosts.splice(i, 1);
+    if (g.pinned) syncPinnedRegion();   // the last pinned ghost may have held it open
   }
 
   /* Materialize one node per ghost entry, in its recorded slot among the real
@@ -284,7 +302,13 @@
       const elapsed = now - g.startedAt;
       if (elapsed > 0) node.style.animationDelay = "-" + elapsed + "ms";
       if (!g.timer) g.timer = setTimeout(function () { removeGhost(g); }, TAB_GHOST_FALLBACK_MS);
-      listEl.insertBefore(node, realNodes[g.index] || null);
+      // Insert into the ghost's own region. The recorded ordered-index anchor
+      // must be a child of that region; when it is not (a segment boundary, or
+      // a reorder since the close), fall back to the region's end.
+      const region = g.pinned ? pinEl : listEl;
+      let anchor = realNodes[g.index] || null;
+      if (anchor && anchor.parentElement !== region) anchor = null;
+      region.insertBefore(node, anchor);
       g.node = node;
     });
   }
@@ -298,6 +322,7 @@
   function render() {
     stopRelease();               // an in-flight settle belongs to the old nodes
     captureFrozenWidths();       // measure before the old tab nodes are dropped
+    pinEl.innerHTML = "";
     listEl.innerHTML = "";
     ordered.forEach(path => {
       const tab = document.createElement("div");
@@ -359,8 +384,12 @@
         if (e.button === 1 && !pinned.has(path)) { e.preventDefault(); close(path); }
       });
       tab.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(path, e); });
-      listEl.appendChild(tab);
+      (pinned.has(path) ? pinEl : listEl).appendChild(tab);
     });
+    // The pinned region takes no space while nothing is pinned. A pinned ghost
+    // still needs the region visible to play its close, so it counts as
+    // occupied.
+    syncPinnedRegion();
     materializeGhosts();         // ghost slots hold a closed tab's position
     applyFrozenWidths();
   }
@@ -634,7 +663,7 @@
    * the release keyframes; also accept an unnamed synthetic event, since a
    * real browser always sets animationName but the jsdom harness dispatches a
    * plain Event. Other named animations are ignored. */
-  listEl.addEventListener("animationend", (e) => {
+  barEl.addEventListener("animationend", (e) => {
     if (!e.animationName || e.animationName === RELEASE_ANIM) stopRelease();
   });
 
@@ -662,7 +691,7 @@
 
   /* True while the release re-equalization is playing. Exposed for the DOM
    * harness alongside isWidthFrozen. */
-  function isReleasing() { return listEl.classList.contains(RELEASE_CLASS); }
+  function isReleasing() { return barEl.classList.contains(RELEASE_CLASS); }
 
   /* Number of ghost close slots currently tracked. Exposed for the DOM
    * harness, which cannot see the fade in jsdom. */

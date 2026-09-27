@@ -126,6 +126,11 @@
 
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar">
+          <!-- Pinned tabs render into this fixed region (tabs.js). It is a
+               sibling of the scroller, capped at half the bar, so pinned tabs
+               stay visible however far the unpinned strip scrolls; tabs.js
+               hides it entirely while nothing is pinned. -->
+          <div id="tab-pinned" class="tab-pinned" hidden></div>
           <!-- File tabs render into this inner scroller (tabs.js). It is the
                only part of the row that scrolls, so the outline toggle
                beside it is never overlapped by an overflowing tab. -->

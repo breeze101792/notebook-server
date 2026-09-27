@@ -438,6 +438,37 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   -ms-overflow-style: none;
 }
 
+/* The pinned tab region: a fixed sibling at the left of the scroller, so
+ * pinned tabs never scroll away with the strip. tabs.js hides it entirely
+ * while nothing is pinned, which also removes its gap contribution so a
+ * pin-less bar lays out as before. It never shrinks (the scroller yields),
+ * but is capped at half the bar and scrolls internally beyond that (with the
+ * scrollbar hidden), so a long pinned set can neither squeeze the scroller
+ * out nor push the outline toggle off the edge. */
+.tab-pinned {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  max-width: 50%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-pinned::-webkit-scrollbar { display: none; }
+/* [hidden] must win over display:flex above (same reason .edit-bar[hidden]
+ * exists). */
+.tab-pinned[hidden] { display: none; }
+
+/* A pinned tab sits at its natural width rather than equalizing: the region
+ * is content-sized, so there is no free space to distribute and the tab
+ * renders at its flex-basis. It also has no close button (unpin to close),
+ * so it needs no room reserved for one, and it lifts the shared max-width
+ * rail so a long name shows in full. The region caps and scrolls instead. */
+.tab-pinned .tab { flex: 0 0 auto; max-width: none; }
+
 /* Outline toggle icon pinned to the right edge of the tab bar. A sibling of
  * the #tab-list scroller, so it stays visible and un-overlapped however many
  * tabs are open. Keeps the tab bar its only control for showing/hiding the
@@ -1010,10 +1041,10 @@ kbd.context-menu-kbd {
 .tab.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
 
 /* Release re-equalization. tabs.js clears each tab's frozen inline flex
- * synchronously and, when a visible width change is coming, tags the
- * scroller with .nb-tab-equalizing and feeds each tab its start/end width
- * through --nb-tab-from / --nb-tab-to. flex-grow is held at 0 for the
- * duration so the used width equals the animated flex-basis; when the
+ * synchronously and, when a visible width change is coming, tags the bar
+ * with .nb-tab-equalizing and feeds each tab its start/end width through
+ * --nb-tab-from / --nb-tab-to. flex-grow is held at 0 for the duration so
+ * the used width equals the animated flex-basis; when the
  * animation ends the tab reverts to the stylesheet's equal-width flex rule
  * at the same width, so there is no jump. The class is the only thing that
  * enables the animation -- an unrelated render never triggers it. */
@@ -1021,13 +1052,13 @@ kbd.context-menu-kbd {
   from { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-from); }
   to   { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-to); }
 }
-.tab-list.nb-tab-equalizing .tab {
+.tab-bar.nb-tab-equalizing .tab {
   animation: nb-tab-equalize var(--tab-release-duration) var(--tab-release-ease);
 }
 /* Respect reduced-motion: the released tabs sit at their equal width at
  * once, matching the current instant behavior. */
 @media (prefers-reduced-motion: reduce) {
-  .tab-list.nb-tab-equalizing .tab { animation: none; }
+  .tab-bar.nb-tab-equalizing .tab { animation: none; }
 }
 
 /* Ghost close slot. Closing a tab replaces it with an inert copy of its box
@@ -1066,7 +1097,7 @@ kbd.context-menu-kbd {
   to   { flex-basis: 0; opacity: 0; }
 }
 /* The release re-equalize keyframes must never drive the placeholder. */
-.tab-list.nb-tab-equalizing .tab.ghost { animation: none; }
+.tab-bar.nb-tab-equalizing .tab.ghost { animation: none; }
 /* Reduced motion: no collapse or fade; tabs.js does not create a ghost then,
  * and a stray one must vanish at once. */
 @media (prefers-reduced-motion: reduce) {
