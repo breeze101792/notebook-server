@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tab-bar width freeze, release &amp; immediate ghost close — reference mockup</title>
+<!--
+  Reference mockup for docs/design/tab-equalization.md and
+  docs/design/tab-close-animation.md.
+  This is a design artifact, not app code. It reproduces the real tab bar's
+  tokens and layout (static/css/style.css) and the freeze / release / ghost
+  close contract in static/js/tabs.js, so the motion can be seen and tuned.
+  Colors, sizes, and spacing are copied from static/css/style.css and are the
+  source of truth for the design; this file is the visual reference.
+
+  The close motion is the SHIPPED one: a tab closed while the pointer is in
+  the bar leaves a same-width GHOST at its slot whose box COLLAPSES AND FADES
+  IMMEDIATELY, like Firefox -- not on pointer leave. The survivors keep their
+  frozen widths and slide left as the ghost's flex-basis shrinks; they
+  re-equalize later, on mouseleave. The survivors' nb-tab-equalize reflow is
+  only the pointer-OUTSIDE close and the release-with-no-ghost. There is no
+  .closing node, no .faded/.leaving class, and no transitionend listener.
+
+  The bar has three children, matching templates/index.html: #tab-pinned (the
+  fixed, non-scrolling pinned region), #tab-list (the scroller), and the
+  outline toggle. realTabs() is bar-scoped and the release class lives on
+  #tab-bar, so the freeze/release covers both regions. A ghost records the
+  region its tab came from and inserts there.
+-->
+<style>
+/* ---- Theme tokens (copied from style.css:4-88) ---------------------- */
+:root, html[data-theme="dark"] {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --danger: #ff6b6b;
+}
+html[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --danger: #c0392b;
+}
+
+/* ---- Page chrome (mockup shell only, not part of the design) -------- */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 32px 24px 64px;
+}
+.shell { max-width: 860px; margin: 0 auto; }
+h1 { font-size: 1.15rem; margin: 0 0 4px; }
+.lede { color: var(--fg-muted); font-size: .86rem; margin: 0 0 22px; max-width: 68ch; }
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+.panel > h2 {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--fg-muted); margin: 0; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); font-weight: 600;
+}
+.stage { padding: 20px 12px 24px; }
+.controls {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 10px 12px; border-top: 1px solid var(--border);
+}
+.controls label { color: var(--fg-muted); font-size: .8rem; display: inline-flex; gap: 6px; align-items: center; }
+button {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 10px; font: inherit; font-size: .82rem;
+  cursor: pointer;
+}
+button:hover { background: var(--accent-soft); border-color: var(--accent); }
+button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.hint { color: var(--fg-muted); font-size: .78rem; margin: 0 0 10px; }
+.readout {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .76rem; color: var(--fg-muted); padding: 10px 12px;
+  border-top: 1px solid var(--border); white-space: pre-wrap; word-break: break-word;
+}
+.readout b { color: var(--fg); font-weight: 600; }
+.note { color: var(--fg-muted); font-size: .78rem; margin: 8px 0 0; }
+.note code { color: var(--fg); }
+
+/* ---- The tab bar (copied from style.css:392-1105) ------------------- */
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  /* Every tab is the same width, bounded by the rails below. */
+  --tab-min-width: 120px;
+  --tab-width: 170px;
+  --tab-max-width: 220px;
+  /* Release tokens (equalization doc §3). */
+  --tab-release-duration: 180ms;
+  --tab-release-ease: ease-out;
+  /* Close tokens: the ghost's collapse+fade runs on these (Firefox 100ms). */
+  --tab-close-duration: 100ms;
+  --tab-close-ease: ease-out;
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 6px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.tab-list {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-list::-webkit-scrollbar { display: none; }
+/* The pinned region: a fixed sibling at the left of the scroller, capped at
+   half the bar and scrolling internally. Mirrors style.css:441-469. tabs.js
+   hides it (hidden) while nothing is pinned. */
+.tab-pinned {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 0 0 auto;
+  max-width: 50%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tab-pinned::-webkit-scrollbar { display: none; }
+.tab-pinned[hidden] { display: none; }
+/* A pinned tab rests at its natural width instead of equalizing. */
+.tab-pinned .tab { flex: 0 0 auto; max-width: none; }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 var(--tab-width, 170px);
+  min-width: var(--tab-min-width, 120px);
+  max-width: var(--tab-max-width, 220px);
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: .89rem;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.tab:hover { background: var(--accent-soft); color: var(--fg); }
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.tab .tab-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
+.tab.dirty .tab-label::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+  border-radius: 50%; background: var(--accent); vertical-align: middle;
+}
+.tab .tab-close {
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 3px; border-radius: 4px;
+}
+.tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
+.tab.dragging { opacity: .4; }
+.outline-toggle {
+  align-self: center; flex: 0 0 auto; font-size: 1rem; padding: 2px 6px;
+  background: none; border: 1px solid transparent; color: var(--fg-muted);
+  cursor: pointer; border-radius: 4px;
+}
+.outline-toggle:hover { color: var(--fg); background: var(--accent-soft); }
+
+/* ---- DESIGN: the survivor reflow (release + pointer-outside close) --- */
+/* The freeze release (when no ghost is pending) and a close with the pointer
+   OUTSIDE the bar play this. A frozen (ghost) close does not: the ghost's own
+   collapse is the motion. */
+@keyframes nb-tab-equalize {
+  from { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-from); }
+  to   { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-to); }
+}
+.tab-bar.nb-tab-equalizing .tab {
+  animation: nb-tab-equalize var(--tab-release-duration) var(--tab-release-ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-bar.nb-tab-equalizing .tab { animation: none; }
+}
+
+/* ---- DESIGN: the ghost close slot (style.css:1071-1105) ------------- */
+/* A tab closed while the pointer is inside the bar is replaced by a same-width
+   placeholder whose box COLLAPSES AND FADES IMMEDIATELY -- the visible close
+   motion, playing the moment the tab is closed, like Firefox. The survivors
+   keep their frozen widths and slide left as its flex-basis shrinks. It is
+   inert (no pointer events; the script attaches no handlers). The padding /
+   border / background live on an inner span so the outer box can reach 0
+   (border-box padding would otherwise keep a stub open). */
+.tab.ghost {
+  pointer-events: none;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: hidden;
+  animation: nb-tab-ghost-close var(--tab-close-duration) var(--tab-close-ease) forwards;
+}
+.tab-ghost-fill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: .89rem;
+  color: var(--fg-muted);
+}
+@keyframes nb-tab-ghost-close {
+  from { flex-basis: var(--nb-tab-ghost-from); opacity: 1; }
+  to   { flex-basis: 0; opacity: 0; }
+}
+/* The release re-equalize keyframes must never drive the placeholder. */
+.tab-bar.nb-tab-equalizing .tab.ghost { animation: none; }
+/* Reduced motion: no collapse or fade; the script does not create a ghost then,
+   and a stray one must vanish at once. */
+@media (prefers-reduced-motion: reduce) {
+  .tab.ghost { animation: none; opacity: 0; }
+}
+
+/* A visible outline around the pointer-capture area, so the freeze zone is
+   unambiguous in the mockup. Not part of the app design. */
+.tab-bar.demo-target { outline: 1px dashed var(--border); outline-offset: -1px; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <h1>Tab-bar width freeze, release &amp; immediate ghost close</h1>
+  <p class="lede">
+    Reference mockup for <code>docs/design/tab-equalization.md</code> and
+    <code>docs/design/tab-close-animation.md</code>. Hover the tab bar to freeze
+    widths, then click an unpinned tab's <b>×</b> while the pointer is still in
+    the bar. The tab is replaced at once by a <b>ghost</b> whose box
+    <b>collapses and fades</b> over <code>--tab-close-duration</code>; the
+    survivors keep their frozen widths and slide left as its space shrinks. Move
+    the pointer out of the bar and the survivors re-equalize. A close with the
+    pointer <b>outside</b> the bar instead re-equalizes the survivors via
+    <code>nb-tab-equalize</code>. Two pinned tabs sit in the fixed
+    non-scrolling <code>#tab-pinned</code> region and stay put. Tokens and
+    layout are copied from <code>static/css/style.css</code>.
+  </p>
+
+  <div class="panel">
+    <h2>Live tab bar</h2>
+    <div class="stage">
+      <div class="tab-bar demo-target" id="tab-bar">
+        <div class="tab-pinned" id="tab-pinned" hidden></div>
+        <div class="tab-list" id="tab-list"></div>
+        <button class="outline-toggle" title="Outline toggle (sibling of the scroller)">≣</button>
+      </div>
+      <p class="note">
+        <b>Ghost close (the shipped motion):</b> with the pointer in the bar,
+        click an unpinned tab's <code>×</code>. The tab disappears and a
+        same-width ghost takes its slot and <b>collapses (shrink + fade)
+        immediately</b>, over <code>--tab-close-duration</code>
+        <code>--tab-close-ease</code>, while the frozen survivors hold their
+        widths and slide left. The ghost removes itself after
+        <code>TAB_GHOST_FALLBACK_MS</code>; there is no
+        <code>.faded</code>/<code>.leaving</code> class and no
+        <code>transitionend</code> listener. On <b>pointer leave</b> the
+        survivors re-equalize (no reflow plays while a ghost is still on
+        screen). Closing the <b>active</b> tab also ghosts it (the ghost is
+        data, so it survives the re-render; the mockup re-renders
+        synchronously). With the pointer <b>outside</b> the bar the close
+        instead reflows the survivors — the buttons below demonstrate both.
+        The two seeded <b>pinned</b> tabs sit in the fixed, non-scrolling
+        <code>#tab-pinned</code> region at their natural width; they never
+        scroll with the strip and never equalize.
+      </p>
+    </div>
+    <div class="controls">
+      <button id="add">Add tab</button>
+      <button id="freeze" aria-pressed="false">Freeze (pointer in bar)</button>
+      <button id="close-mid">Close non-active tab</button>
+      <button id="close-active">Close active tab</button>
+      <button id="release">Release / leave bar</button>
+      <button id="reset">Reset</button>
+    </div>
+    <div class="controls">
+      <label>Close duration <input type="range" id="close-dur" min="40" max="500" step="10" value="100"><span id="close-dur-v">100ms</span></label>
+      <label>Release duration <input type="range" id="release-dur" min="60" max="500" step="10" value="180"><span id="release-dur-v">180ms</span></label>
+      <label><input type="checkbox" id="rm"> Simulate reduced motion</label>
+      <button id="theme">Toggle light/dark</button>
+    </div>
+    <div class="readout" id="readout">state: rest</div>
+  </div>
+
+  <div class="panel">
+    <h2>Token reference</h2>
+    <div class="readout">
+--tab-min-width: 120px          (existing)
+--tab-width: 170px              (existing, flexible basis)
+--tab-max-width: 220px          (existing)
+<b>--tab-close-duration: 100ms    (new; ghost collapse + fade)</b>
+<b>--tab-close-ease: ease-out     (new; ghost collapse + fade)</b>
+--tab-release-duration: 180ms   (survivor reflow)
+--tab-release-ease: ease-out    (survivor reflow)
+
+ghost classes:   <b>.tab.ghost</b>, <b>.tab-ghost-fill</b> (inner label box)
+ghost keyframes: <b>nb-tab-ghost-close</b> (flex-basis var -> 0, opacity 1 -> 0, forwards)
+ghost CSS:       <b>style.css:1071-1105</b>
+ghost constants: <b>GHOST_CLASS</b>, <b>GHOST_FILL_CLASS</b>, <b>GHOST_FROM_VAR</b>,
+                 <b>TAB_GHOST_FALLBACK_MS</b>
+ghost sequence:  <b>addGhost -> dropTab -> render -> materializeGhosts</b>
+                 then the per-ghost timer: <b>removeGhost</b>
+ghost region:    <b>g.pinned ? pinEl : listEl</b> (insert into the tab's own region)
+ghost gates:     pointer in bar + reduced motion off (else no ghost)
+survivor reflow: <b>.tab-bar.nb-tab-equalizing .tab</b> (pointer-OUTSIDE close)
+                 + release on leave when no ghost is pending
+pinned region:   <b>.tab-pinned</b> (fixed, flex: 0 0 auto); hidden when empty;
+                 <b>.tab-pinned .tab { flex: 0 0 auto }</b> (natural width)
+reduced motion:  ghost <b>animation: none / opacity: 0</b>
+not present:     no <b>.faded</b>, no <b>.leaving</b>, no <b>collapseGhosts</b>,
+                 no <b>transitionend</b> listener
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Mirrors static/js/tabs.js: the frozenWidths freeze, the shared
+     nb-tab-equalize reflow, and the ghost close slot. A frozen close records
+     a ghost (data) that render() materializes; the ghost collapses and fades
+     AT ONCE on its keyframes and removes itself on a per-ghost timer. A
+     non-frozen close keeps the captureCloseReflow -> animateReflow path.
+     There is no .closing node, no .faded/.leaving state, and no transitionend
+     listener. */
+  const RELEASE_CLASS = "nb-tab-equalizing";
+  const RELEASE_ANIM = "nb-tab-equalize";
+  const TAB_FROM_VAR = "--nb-tab-from";
+  const TAB_TO_VAR = "--nb-tab-to";
+  const TAB_RELEASE_FALLBACK_MS = 280;   // >= CSS duration; timer backstop
+  const TAB_RELEASE_MAX_TABS = 24;
+  const WIDTH_EPSILON = 0.5;
+
+  // Ghost close slots (mirrors tabs.js:80-84).
+  const GHOST_CLASS = "ghost";
+  const GHOST_FILL_CLASS = "tab-ghost-fill";
+  const GHOST_FROM_VAR = "--nb-tab-ghost-from";
+  const TAB_GHOST_FALLBACK_MS = 280;     // >= close duration; per-ghost backstop
+  const ghosts = [];                     // { id, label, width, index, startedAt, node, timer }
+
+  const barEl = document.getElementById("tab-bar");
+  const listEl = document.getElementById("tab-list");
+  const pinEl = document.getElementById("tab-pinned") || listEl;
+  const readout = document.getElementById("readout");
+
+  const SEED = [
+    { id: "Welcome.md", name: "Welcome.md", active: true, pinned: true },
+    { id: "notes/design.md", name: "notes/design.md", pinned: true },
+    { id: "notes/tabs.md", name: "notes/tabs.md", dirty: true },
+    { id: "README.md", name: "README.md" },
+  ];
+  let tabs = SEED.map((t) => Object.assign({}, t));
+  let activeId = "Welcome.md";
+
+  // Map<stable id, px>, matching the app's Map<path, px>. Keyed by a stable
+  // id, not the array index: closing a tab renumbers the array.
+  let frozenWidths = null;
+  let releaseTimer = null;
+  let draggingId = null;   // set by the drag demo; gates animateReflow
+
+  function log(msg) { readout.innerHTML = msg; }
+  function nowMs() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
+  function prefersReducedMotion() {
+    return document.getElementById("rm").checked ||
+      (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  /* The real tabs across both regions, excluding ghost close slots.
+     Bar-scoped, mirroring tabs.js realTabs(). */
+  function realTabs() {
+    return Array.from(barEl.querySelectorAll(".tab:not(." + GHOST_CLASS + ")"));
+  }
+
+  function render() {
+    stopRelease();                       // an in-flight settle belongs to the old nodes
+    captureFrozenWidths();               // measure before the old nodes are dropped
+    pinEl.innerHTML = "";
+    listEl.innerHTML = "";
+    tabs.forEach((t) => {
+      const tab = document.createElement("div");
+      tab.className = "tab" + (t.id === activeId ? " active" : "") + (t.dirty ? " dirty" : "");
+      if (t.pinned) tab.classList.add("pinned");
+      tab.dataset.id = t.id;
+      tab.draggable = true;
+      const label = document.createElement("span");
+      label.className = "tab-label";
+      label.textContent = t.name;
+      tab.appendChild(label);
+      if (!t.pinned) {
+        const close = document.createElement("button");
+        close.className = "tab-close";
+        close.textContent = "×";
+        close.title = "Close (a frozen close collapses a ghost immediately)";
+        close.addEventListener("click", (e) => { e.stopPropagation(); closeTab(t.id); });
+        tab.appendChild(close);
+      }
+      tab.addEventListener("click", () => { activeId = t.id; render(); });
+      (t.pinned ? pinEl : listEl).appendChild(tab);
+    });
+    // The pinned region takes no space while nothing is pinned.
+    // Mirrors tabs.js syncPinnedRegion().
+    if (pinEl !== listEl) {
+      pinEl.hidden = !tabs.some((t) => t.pinned);
+    }
+    materializeGhosts();                 // ghost slots hold a closed tab's position
+    applyFrozenWidths();
+    status();
+  }
+
+  function captureFrozenWidths() {
+    if (!frozenWidths) return;
+    realTabs().forEach((tab) => {
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) frozenWidths.set(tab.dataset.id, w);
+    });
+  }
+
+  function applyFrozenWidths() {
+    if (!frozenWidths) return;
+    realTabs().forEach((tab) => {
+      const w = frozenWidths.get(tab.dataset.id);
+      if (w == null) return;
+      tab.style.flex = "0 0 " + w + "px";
+      tab.style.width = w + "px";
+    });
+  }
+
+  /* Pre-close reflow capture for the NON-ghost close. Null while frozen (the
+     ghost owns the strip) or when nothing measures > 0. `skipId` (the closing
+     tab) is not captured. Mirrors tabs.js:151-160. */
+  function captureCloseReflow(skipId) {
+    if (frozenWidths) return null;
+    const from = new Map();
+    realTabs().forEach((tab) => {
+      if (tab.dataset.id === skipId) return;
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) from.set(tab.dataset.id, w);
+    });
+    return from.size ? from : null;
+  }
+
+  function stopRelease() {
+    if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null; }
+    barEl.classList.remove(RELEASE_CLASS);
+    realTabs().forEach((t) => {
+      t.style.removeProperty(TAB_FROM_VAR);
+      t.style.removeProperty(TAB_TO_VAR);
+    });
+  }
+
+  /* The shared re-equalize driver. Fed a Map<id, px> captured before the DOM
+     change. Mirrors tabs.js:197-217. */
+  function animateReflow(fromWidths) {
+    stopRelease();
+    const nodes = realTabs();
+    if (!nodes.length || !fromWidths) return;
+    if (prefersReducedMotion() || draggingId || nodes.length > TAB_RELEASE_MAX_TABS) {
+      log("<b>instant settle</b> -- pins cleared, no animation (reduced motion, drag, or too many tabs)");
+      return;
+    }
+    const end = nodes.map((t) => t.getBoundingClientRect().width);
+    const start = nodes.map((t, i) => {
+      const w = fromWidths.get(t.dataset.id);
+      return typeof w === "number" ? w : end[i];
+    });
+    if (!nodes.some((_, i) => Math.abs(start[i] - end[i]) > WIDTH_EPSILON)) {
+      log("<b>instant settle</b> -- no visible width change");
+      return;
+    }
+    nodes.forEach((t, i) => {
+      t.style.setProperty(TAB_FROM_VAR, start[i] + "px");
+      t.style.setProperty(TAB_TO_VAR, end[i] + "px");
+    });
+    barEl.classList.add(RELEASE_CLASS);
+    releaseTimer = setTimeout(() => { stopRelease(); status(); }, TAB_RELEASE_FALLBACK_MS);
+    log("<b>equalizing</b> -- " +
+        start.map((s, i) => Math.round(s) + "->" + Math.round(end[i]) + "px").join(", "));
+  }
+
+  /* Release the freeze. Measure the pinned widths, drop the pins
+     synchronously. A ghost that is still on screen is already collapsing on
+     its own keyframes and freeing its own space, so there is nothing to
+     re-equalize; otherwise play the shared reflow. Mirrors tabs.js:223-239. */
+  function unfreezeWidths() {
+    if (!frozenWidths) return;
+    const from = new Map();
+    realTabs().forEach((tab) => {
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) from.set(tab.dataset.id, w);
+    });
+    frozenWidths = null;
+    realTabs().forEach((t) => { t.style.flex = ""; t.style.width = ""; });
+    if (ghosts.length) return;      // ghost slots are collapsing on their own
+    animateReflow(from.size ? from : null);
+  }
+
+  /* --- ghost close slots (mirrors tabs.js:245-310) ------------------ */
+  /* Record a ghost for a tab closed while frozen. Measured BEFORE the model
+     splice + render; the entry is data, and render() materializes the node.
+     `pinned` records the region while the tab is still in the model. */
+  function addGhost(id, idx) {
+    const node = barEl.querySelector('.tab[data-id="' + id + '"]');
+    const width = node ? node.getBoundingClientRect().width : 0;
+    const t = tabs.find((x) => x.id === id);
+    ghosts.push({ id, label: t ? t.name : id, width, index: idx, pinned: !!(t && t.pinned),
+                  startedAt: 0, node: null, timer: null });
+  }
+
+  /* Drop one ghost entry + its node. Idempotent. Mirrors tabs.js:262-268. */
+  function removeGhost(g) {
+    if (g.timer) { clearTimeout(g.timer); g.timer = null; }
+    if (g.node && g.node.parentNode) g.node.parentNode.removeChild(g.node);
+    g.node = null;
+    const i = ghosts.indexOf(g);
+    if (i >= 0) ghosts.splice(i, 1);
+    status();
+  }
+
+  /* One node per entry, each in its recorded slot among the real tabs of its
+     own region. render() calls this AFTER the tabs are appended. The keyframes
+     collapse the node at once; a rebuild mid-collapse resumes via a negative
+     animation-delay instead of restarting, and a per-ghost timer removes it.
+     Mirrors tabs.js materializeGhosts(), including the region guard. */
+  function materializeGhosts() {
+    if (!ghosts.length) return;
+    const now = nowMs();
+    const realNodes = realTabs();
+    ghosts.forEach((g) => {
+      const node = document.createElement("div");
+      node.className = "tab " + GHOST_CLASS;
+      node.style.flex = "0 0 " + g.width + "px";
+      node.style.width = g.width + "px";
+      node.style.setProperty(GHOST_FROM_VAR, g.width + "px");
+      const fill = document.createElement("span");
+      fill.className = GHOST_FILL_CLASS;
+      fill.textContent = g.label;
+      node.appendChild(fill);
+      if (!g.startedAt) g.startedAt = now;
+      const elapsed = now - g.startedAt;
+      if (elapsed > 0) node.style.animationDelay = "-" + elapsed + "ms";
+      if (!g.timer) g.timer = setTimeout(() => removeGhost(g), TAB_GHOST_FALLBACK_MS);
+      // Insert into the ghost's own region; fall back to its end when the
+      // recorded slot's anchor is not a child of that region.
+      const region = g.pinned ? pinEl : listEl;
+      let anchor = realNodes[g.index] || null;
+      if (anchor && anchor.parentElement !== region) anchor = null;
+      region.insertBefore(node, anchor);
+      g.node = node;
+    });
+  }
+
+  /* Drop all ghost entries + their nodes. Mirrors tabs.js:308-310. */
+  function finishGhosts() {
+    ghosts.slice().forEach(removeGhost);
+  }
+
+  function status() {
+    const n = realTabs().length;
+    const state = ghosts.length ? "closing"
+      : barEl.classList.contains(RELEASE_CLASS) ? "releasing"
+      : frozenWidths ? "frozen" : "rest";
+    log("state: <b>" + state + "</b>   real tabs: " + n +
+        "   ghosts: " + ghosts.length +
+        "   pinned: " + (frozenWidths ? frozenWidths.size : 0));
+  }
+
+  /* --- pointer freeze / release (mirrors tabs.js:669-679) ----------- */
+  function setFrozen(on) {
+    if (on) {
+      if (frozenWidths) return;
+      frozenWidths = new Map();
+      captureFrozenWidths();
+      stopRelease();
+      applyFrozenWidths();
+    } else {
+      unfreezeWidths();
+    }
+    document.getElementById("freeze").setAttribute("aria-pressed", frozenWidths ? "true" : "false");
+    status();
+  }
+  barEl.addEventListener("mouseenter", () => setFrozen(true));
+  barEl.addEventListener("mouseleave", () => setFrozen(false));
+
+  /* The release re-equalize is the only .tab animation; a ghost ends on its
+     own timer, not on an event. Mirrors tabs.js:659-661. */
+  barEl.addEventListener("animationend", (e) => {
+    if (!e.animationName || e.animationName === RELEASE_ANIM) { stopRelease(); status(); }
+  });
+
+  /* --- close (mirrors tabs.js:485-539) ------------------------------ */
+  function closeTab(id) {
+    const i = tabs.findIndex((t) => t.id === id);
+    if (i < 0) return;
+    const wasActive = (activeId === id);
+
+    // A frozen close (pointer in bar, motion allowed) ghosts; the ghost
+    // collapses at once and holds the slot, so there is nothing to reflow.
+    // Skipped under reduced motion. Mirrors tabs.js:521-524.
+    const ghostClose = frozenWidths !== null && !prefersReducedMotion();
+    const reflow = (wasActive || ghostClose) ? null : captureCloseReflow(id);
+    if (ghostClose) addGhost(id, i);    // measure the node before the splice
+
+    // Drop from the model + fix the active selection.
+    tabs.splice(i, 1);
+    if (wasActive) activeId = tabs.length ? tabs[Math.min(i, tabs.length - 1)].id : null;
+
+    render();                           // rebuild at the new equal widths
+    if (!wasActive && !ghostClose) animateReflow(reflow);   // pointer-outside close
+    if (ghostClose) log("<b>ghost close</b> " + id + " (pointer in bar -- slot collapses + fades at once)");
+    else if (wasActive) log("<b>instant close</b> " + id + " (active, pointer outside -- no ghost)");
+    else log("<b>close</b> " + id + " (pointer outside -- survivors reflow)");
+    status();
+  }
+
+  /* --- drag demo: a non-null draggingId gates animateReflow ---------- */
+  barEl.addEventListener("dragstart", (e) => {
+    const t = e.target.closest && e.target.closest(".tab");
+    if (t && !t.classList.contains(GHOST_CLASS)) { draggingId = t.dataset.id; t.classList.add("dragging"); }
+  });
+  barEl.addEventListener("dragend", () => {
+    draggingId = null;
+    barEl.querySelectorAll(".dragging").forEach((t) => t.classList.remove("dragging"));
+    status();
+  });
+
+  /* --- mockup controls (not part of the design) ---------------------- */
+  document.getElementById("add").addEventListener("click", () => {
+    tabs.push({ id: "note-" + (tabs.length + 1) + ".md", name: "note-" + (tabs.length + 1) + ".md" });
+    render();
+  });
+  document.getElementById("freeze").addEventListener("click", (e) => {
+    // Programmatic freeze for a button-driven ghost demo (hovering the bar
+    // does the same via mouseenter; moving to a control would release it).
+    setFrozen(!frozenWidths);
+    e.currentTarget.setAttribute("aria-pressed", frozenWidths ? "true" : "false");
+  });
+  document.getElementById("close-mid").addEventListener("click", () => {
+    // Prefer an unpinned non-active tab for the ×-driven demo; a pinned tab
+    // has no ×, so fall back to any non-active tab to show the region path.
+    const target = tabs.find((t) => t.id !== activeId && !t.pinned) ||
+                   tabs.find((t) => t.id !== activeId);
+    if (target) closeTab(target.id);
+  });
+  document.getElementById("close-active").addEventListener("click", () => {
+    if (activeId) closeTab(activeId);
+  });
+  document.getElementById("release").addEventListener("click", () => {
+    setFrozen(false);   // measures the pins, clears them, reflows if no ghost
+  });
+  document.getElementById("reset").addEventListener("click", () => {
+    tabs = SEED.map((t) => Object.assign({}, t));
+    activeId = "Welcome.md";
+    frozenWidths = null;
+    finishGhosts();
+    stopRelease();
+    render();
+  });
+  document.getElementById("close-dur").addEventListener("input", (e) => {
+    const v = e.target.value;
+    barEl.style.setProperty("--tab-close-duration", v + "ms");
+    document.getElementById("close-dur-v").textContent = v + "ms";
+  });
+  document.getElementById("release-dur").addEventListener("input", (e) => {
+    const v = e.target.value;
+    barEl.style.setProperty("--tab-release-duration", v + "ms");
+    document.getElementById("release-dur-v").textContent = v + "ms";
+  });
+  document.getElementById("rm").addEventListener("change", status);
+  document.getElementById("theme").addEventListener("click", () => {
+    const h = document.documentElement;
+    h.dataset.theme = h.dataset.theme === "light" ? "dark" : "light";
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
