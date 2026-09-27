@@ -6,21 +6,24 @@
  * (unsaved edits are preserved per file when switching tabs).
  *
  * Tabs are drag-reorderable. Pinned tabs live in a fixed left group: they
- * render narrower with a pin marker, have no close button, and are skipped
- * by the bulk-close actions (close others / right / left) in the tab
- * right-click menu.
+ * carry a pin marker, have no close button, and are skipped by the bulk-close
+ * actions (close others / right / left) in the tab right-click menu. Every
+ * tab renders at the same bounded width (see --tab-min/--tab-max-width).
  */
 (function () {
   "use strict";
   window.NB = window.NB || {};
 
   const barEl = document.getElementById("tab-bar");
+  // Tabs render into #tab-list, the inner scroller. Fall back to the bar
+  // itself so a stale cached index.html (pre-split) degrades instead of
+  // throwing at module load.
+  const listEl = document.getElementById("tab-list") || barEl;
   const menuEl = document.getElementById("tab-context-menu");
-  // The outline toggle icon lives in the same bar. render() clears the bar
-  // with innerHTML, which would destroy this node, so we hold a reference
-  // and re-append it after every render. It's styled to stick to the right
-  // edge (see .outline-toggle) so open file tabs scroll under it.
-  const outlineToggleEl = barEl && barEl.querySelector("#outline-toggle");
+  // Tabs render into #tab-list, the inner scroller of the row. The outline
+  // toggle button (#outline-toggle) is a sibling of that scroller, so an
+  // overflowing tab can never overlap it. Drag/click events bubble from
+  // #tab-list up to #tab-bar, where the delegated handlers live.
   const ordered = [];          // [path] in display order (pinned tabs first)
   const openSet = new Set();   // path membership
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)
@@ -42,6 +45,41 @@
   // in dataTransfer so the same code works in jsdom (which has no real DnD).
   let draggingPath = null;
 
+  // Tab width freeze: a Map<path, px> while the pointer is inside the tab
+  // bar, null otherwise. Closing a tab re-renders the strip, and the
+  // equal-width flex rule would immediately re-equalize every remaining
+  // tab, sliding the next close button out from under the cursor. Freezing
+  // the measured widths keeps the strip put until the pointer leaves.
+  let frozenWidths = null;
+
+  // Release re-equalization. RELEASE_CLASS scopes the keyframes; the two
+  // custom-property names carry each tab's start/end width; RELEASE_ANIM
+  // matches the keyframes name so the animationend handler ignores any other
+  // future .tab animation. Timing lives in CSS (--tab-release-duration); the
+  // fallback timer guards a dropped animationend.
+  const RELEASE_CLASS = "nb-tab-equalizing";
+  const RELEASE_ANIM = "nb-tab-equalize";
+  const TAB_FROM_VAR = "--nb-tab-from";
+  const TAB_TO_VAR = "--nb-tab-to";
+  const TAB_RELEASE_FALLBACK_MS = 280;   // >= CSS duration; timer backstop
+  const TAB_RELEASE_MAX_TABS = 24;       // above this, re-equalize instantly
+  const WIDTH_EPSILON = 0.5;             // px; smaller deltas are invisible
+  let releaseTimer = null;
+
+  // Ghost close slot. Closing a tab leaves an inert copy of its box that
+  // collapses (flex-basis -> 0) and fades at once -- the visible close motion,
+  // playing the moment the tab is closed, like Firefox. The surviving tabs
+  // keep their frozen widths and slide left as it shrinks; when the pointer
+  // leaves the bar they re-equalize. The entry is DATA because render()
+  // rebuilds every tab node; `startedAt` lets a rebuilt node resume
+  // mid-collapse via a negative animation-delay (the active-tab case, where
+  // activate() re-renders).
+  const GHOST_CLASS = "ghost";
+  const GHOST_FILL_CLASS = "tab-ghost-fill";
+  const GHOST_FROM_VAR = "--nb-tab-ghost-from";
+  const TAB_GHOST_FALLBACK_MS = 280;   // >= close duration; per-ghost backstop
+  const ghosts = [];                   // { path, label, width, index, startedAt, node, timer }
+
   function baseName(p) { const i = p.lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
   function isPinned(path) { return pinned.has(path); }
   function pinnedCount() { return pinned.size; }
@@ -58,6 +96,12 @@
     return n && n.closest ? n.closest(".tab") : null;
   }
 
+  /* The real tabs, excluding ghost close slots. Every width measurement, pin,
+   * or release over .tab must use this: a ghost's width is not a tab width. */
+  function realTabs() {
+    return Array.from(listEl.querySelectorAll(".tab:not(." + GHOST_CLASS + ")"));
+  }
+
   /* Re-segment `ordered` so pinned paths form a contiguous prefix, preserving
    * relative order within each group. */
   function segment() {
@@ -68,8 +112,193 @@
   }
 
   /* --- render the tab bar -------------------------------------------- */
+  /* Equal-width layout lives in CSS (flex: 1 1 var(--tab-width)). While the
+   * pointer is inside the bar, `frozenWidths` pins each tab to the width it
+   * had before the re-render, so closing a tab does not re-equalize and
+   * shift its neighbors out from under the cursor. A tab opened while frozen
+   * has no prior width; it captures its natural width on the next capture. */
+  function captureFrozenWidths() {
+    if (!frozenWidths) return;
+    realTabs().forEach(tab => {
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) frozenWidths.set(tab.dataset.path, w);
+    });
+  }
+
+  function applyFrozenWidths() {
+    if (!frozenWidths) return;
+    realTabs().forEach(tab => {
+      const w = frozenWidths.get(tab.dataset.path);
+      if (w == null) return;
+      tab.style.flex = "0 0 " + w + "px";
+      tab.style.width = w + "px";
+    });
+  }
+
+  /* Pre-close reflow capture: measure every tab's current width, keyed by
+   * path, BEFORE the strip rebuilds, so a close can replay the re-equalize
+   * from those widths. Keying by path is what survives the render() rebuild.
+   * Null when there is nothing to animate: while frozen the freeze owns the
+   * strip and mouseleave's release is the motion (animating here would slide
+   * close buttons under the cursor); no measurable tab means hidden/jsdom.
+   * `skipPath` (the closing tab) is not captured -- it is gone after the
+   * rebuild. Same w > 0 filter as captureFrozenWidths. */
+  function captureCloseReflow(skipPath) {
+    if (frozenWidths) return null;
+    const from = new Map();
+    realTabs().forEach(tab => {
+      if (tab.dataset.path === skipPath) return;
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) from.set(tab.dataset.path, w);
+    });
+    return from.size ? from : null;
+  }
+
+  /* True when the user has asked the OS for reduced motion. Mirrors the
+   * guard graph.js uses (graph.js:104-107). */
+  function prefersReducedMotion() {
+    try {
+      return !!(window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    } catch (_) { return false; }
+  }
+
+  /* Drop the inline freeze pins on the given tabs. */
+  function clearPins(tabs) {
+    tabs.forEach(t => { t.style.flex = ""; t.style.width = ""; });
+  }
+
+  /* End or cancel the release animation. Idempotent: called by the fallback
+   * timer, by animationend, and to cancel on re-entry or mid-flight render. */
+  function stopRelease() {
+    if (releaseTimer) { clearTimeout(releaseTimer); releaseTimer = null; }
+    listEl.classList.remove(RELEASE_CLASS);
+    realTabs().forEach(t => {
+      t.style.removeProperty(TAB_FROM_VAR);
+      t.style.removeProperty(TAB_TO_VAR);
+    });
+  }
+
+  /* Shared re-equalize animation -- the strip's one motion, driven by the
+   * nb-tab-equalize keyframes. Both the release path (unfreezeWidths) and the
+   * close path (close) feed it a Map<path, px> captured before the DOM
+   * change. The caller must have already put the strip in its final resting
+   * layout; the "to" widths are measured live here, and that read flushes the
+   * layout so no explicit reflow is needed. Skips without side effects on
+   * reduced motion, an active drag, an oversized strip, an empty/absent map,
+   * or when no tab's delta clears WIDTH_EPSILON. A map path with no node is
+   * ignored; a node with no entry holds still (its measured width is its own
+   * from), the same rule the freeze gives a tab opened mid-freeze. */
+  function animateReflow(fromWidths) {
+    stopRelease();
+    const tabs = realTabs();
+    if (!tabs.length || !fromWidths) return;
+    if (prefersReducedMotion() || draggingPath ||
+        tabs.length > TAB_RELEASE_MAX_TABS) return;
+
+    const end = tabs.map(t => t.getBoundingClientRect().width);
+    const start = tabs.map((t, i) => {
+      const w = fromWidths.get(t.dataset.path);
+      return typeof w === "number" ? w : end[i];
+    });
+    if (!tabs.some((_, i) => Math.abs(start[i] - end[i]) > WIDTH_EPSILON)) return;
+
+    tabs.forEach((t, i) => {
+      t.style.setProperty(TAB_FROM_VAR, start[i] + "px");
+      t.style.setProperty(TAB_TO_VAR, end[i] + "px");
+    });
+    listEl.classList.add(RELEASE_CLASS);
+    releaseTimer = setTimeout(stopRelease, TAB_RELEASE_FALLBACK_MS);
+  }
+
+  /* Release the freeze. Measure the pinned ("from") widths first, drop the
+   * pins synchronously so the strip rests at the equal-width layout at once,
+   * then play the shared reflow animation. Reduced motion and a no-delta
+   * strip fall out of animateReflow's gates (instant release). */
+  function unfreezeWidths() {
+    if (!frozenWidths) return;
+    const from = new Map();
+    realTabs().forEach(tab => {
+      const w = tab.getBoundingClientRect().width;
+      if (w > 0) from.set(tab.dataset.path, w);
+    });
+    frozenWidths = null;
+    clearPins(realTabs());
+    if (ghosts.length) {
+      // Ghost slots are collapsing on their own (they free their space as they
+      // shrink), so the survivors are already sliding into place. Nothing to
+      // re-equalize here.
+      return;
+    }
+    animateReflow(from.size ? from : null);
+  }
+
+  /* --- ghost close slot ---------------------------------------------- */
+  /* Record a ghost for a tab closed while the strip is frozen. Measured
+   * BEFORE dropTab replaces the nodes; the entry is data, and render()
+   * materializes the node on every strip rebuild so it survives. */
+  function addGhost(path, idx) {
+    const node = listEl.querySelector('.tab[data-path="' + cssEscape(path) + '"]');
+    const width = node ? node.getBoundingClientRect().width : 0;
+    const label = isSpecial(path)
+      ? ((specialTabs.get(path) || {}).label || path)
+      : baseName(path);
+    ghosts.push({ path, label, width, index: idx, startedAt: 0, node: null, timer: null });
+  }
+
+  function nowMs() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
+  /* Drop one ghost entry + its node. Idempotent. */
+  function removeGhost(g) {
+    if (g.timer) { clearTimeout(g.timer); g.timer = null; }
+    if (g.node && g.node.parentNode) g.node.parentNode.removeChild(g.node);
+    g.node = null;
+    const i = ghosts.indexOf(g);
+    if (i >= 0) ghosts.splice(i, 1);
+  }
+
+  /* Materialize one node per ghost entry, in its recorded slot among the real
+   * tabs, and start its collapse. render() calls this AFTER the real tabs are
+   * appended. The CSS keyframes shrink the node's flex-basis to 0 and fade it
+   * (see .tab.ghost), so the tab visibly closes the moment it is dropped, and
+   * the survivors slide left as its box gives up the space. A rebuild
+   * mid-collapse (the active-tab activate() render) resumes via a negative
+   * animation-delay instead of restarting. Inert: no handlers, not draggable. */
+  function materializeGhosts() {
+    if (!ghosts.length) return;
+    const now = nowMs();
+    const realNodes = realTabs();
+    ghosts.forEach(g => {
+      const node = document.createElement("div");
+      node.className = "tab " + GHOST_CLASS;
+      node.style.flex = "0 0 " + g.width + "px";
+      node.style.width = g.width + "px";
+      node.style.setProperty(GHOST_FROM_VAR, g.width + "px");
+      const fill = document.createElement("span");
+      fill.className = GHOST_FILL_CLASS;
+      fill.textContent = g.label;
+      node.appendChild(fill);
+      if (!g.startedAt) g.startedAt = now;
+      const elapsed = now - g.startedAt;
+      if (elapsed > 0) node.style.animationDelay = "-" + elapsed + "ms";
+      if (!g.timer) g.timer = setTimeout(function () { removeGhost(g); }, TAB_GHOST_FALLBACK_MS);
+      listEl.insertBefore(node, realNodes[g.index] || null);
+      g.node = node;
+    });
+  }
+
+  /* Drop all ghost entries + their nodes. Called by clearAll (auth lock, etc.)
+   * so no stale slot outlives a full clear; idempotent. */
+  function finishGhosts() {
+    ghosts.slice().forEach(removeGhost);
+  }
+
   function render() {
-    barEl.innerHTML = "";
+    stopRelease();               // an in-flight settle belongs to the old nodes
+    captureFrozenWidths();       // measure before the old tab nodes are dropped
+    listEl.innerHTML = "";
     ordered.forEach(path => {
       const tab = document.createElement("div");
       tab.className = "tab" + (path === activePath ? " active" : "");
@@ -130,10 +359,10 @@
         if (e.button === 1 && !pinned.has(path)) { e.preventDefault(); close(path); }
       });
       tab.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(path, e); });
-      barEl.appendChild(tab);
+      listEl.appendChild(tab);
     });
-    // Keep the pinned outline toggle on the right edge after the re-render.
-    if (outlineToggleEl) barEl.appendChild(outlineToggleEl);
+    materializeGhosts();         // ghost slots hold a closed tab's position
+    applyFrozenWidths();
   }
 
   function emitChanged() {
@@ -150,6 +379,7 @@
     if (idx >= 0) ordered.splice(idx, 1);
     openSet.delete(path);
     pinned.delete(path);
+    if (frozenWidths) frozenWidths.delete(path);   // drop the stale width pin
     if (isSpecial(path)) {
       const spec = specialTabs.get(path);
       if (spec && spec.onClose) { try { spec.onClose(path); } catch (e) { console.error(e); } }
@@ -259,17 +489,29 @@
     }
     const idx = ordered.indexOf(path);
     const wasActive = (activePath === path);
+    // Capture the survivors' pre-close widths for the reflow animation. After
+    // the confirms (a cancelled close arms nothing) and before dropTab (the
+    // old nodes are the "from" widths). Skipped for an active-tab close:
+    // activate(next) lands a second render() that would kill the animation, so
+    // that path stays instant. captureCloseReflow self-returns null when frozen.
+    // A ghost close (pointer inside the bar, motion allowed) also skips the
+    // reflow: the ghost holds the slot, so there is nothing to slide yet.
+    const ghostClose = frozenWidths !== null && !prefersReducedMotion();
+    const reflow = (wasActive || ghostClose) ? null : captureCloseReflow(path);
+    if (ghostClose) addGhost(path, idx);   // measure the node before dropTab
     dropTab(path);
 
     if (wasActive) {
       const next = pickNeighbor(idx);
       activePath = null;
+      // The ghost is DATA, so it survives the activate(next) render below.
       render();            // immediately drop the closed tab + clear active
       emitChanged();
       if (next) { activate(next); }   // async: load + re-render neighbor
       else { NB.viewer.clear(); }
     } else {
       render();
+      if (!ghostClose) animateReflow(reflow);
       emitChanged();
     }
   }
@@ -280,6 +522,12 @@
     ordered[idx] = to;
     openSet.delete(from); openSet.add(to);
     if (pinned.has(from)) { pinned.delete(from); pinned.add(to); }
+    // Carry the frozen width across the re-key so a rename while the pointer
+    // is in the bar does not re-equalize the renamed tab alone.
+    if (frozenWidths && frozenWidths.has(from)) {
+      frozenWidths.set(to, frozenWidths.get(from));
+      frozenWidths.delete(from);
+    }
     NB.viewer.rename(from, to);
     if (activePath === from) activePath = to;
     render();
@@ -382,6 +630,45 @@
   barEl.addEventListener("drop", onDrop);
   barEl.addEventListener("dragend", clearDragging);   // also covers Esc / window-leave
 
+  /* End the release as soon as the last tab finishes. Accept events that name
+   * the release keyframes; also accept an unnamed synthetic event, since a
+   * real browser always sets animationName but the jsdom harness dispatches a
+   * plain Event. Other named animations are ignored. */
+  listEl.addEventListener("animationend", (e) => {
+    if (!e.animationName || e.animationName === RELEASE_ANIM) stopRelease();
+  });
+
+  /* --- width freeze while the pointer is inside the bar -------------- */
+  /* While the pointer is anywhere in the tab bar, pin every tab to its
+   * current width so closing one does not re-equalize the strip and move the
+   * next close button out from under the cursor. Released when the pointer
+   * leaves the bar (mouseleave fires only on exit from the bar, unlike
+   * mouseout), so the tabs re-equalize once the user is done. */
+  barEl.addEventListener("mouseenter", () => {
+    if (frozenWidths) return;
+    // Measure before cancelling: if a release is mid-flight this captures the
+    // tabs' current animated widths, so re-entry freezes there instead of
+    // snapping to the final equal width.
+    frozenWidths = new Map();
+    captureFrozenWidths();
+    stopRelease();
+    applyFrozenWidths();
+  });
+  barEl.addEventListener("mouseleave", unfreezeWidths);
+
+  /* True while tab widths are pinned (pointer inside the bar). Exposed for
+   * the DOM harness, which drives pointer events without a real hit-test. */
+  function isWidthFrozen() { return frozenWidths !== null; }
+
+  /* True while the release re-equalization is playing. Exposed for the DOM
+   * harness alongside isWidthFrozen. */
+  function isReleasing() { return listEl.classList.contains(RELEASE_CLASS); }
+
+  /* Number of ghost close slots currently tracked. Exposed for the DOM
+   * harness, which cannot see the fade in jsdom. */
+  function ghostCount() { return ghosts.length; }
+  function isGhosting() { return ghosts.length > 0; }
+
   /* --- bulk close (close others / right / left) ---------------------- */
   /* `paths` is already filtered to exclude pinned tabs. Confirms once if any
    * of the targets is dirty, then force-closes them. */
@@ -409,6 +696,7 @@
     }
     ordered.slice().forEach(p => dropTab(p));
     activePath = null;
+    finishGhosts();   // no stale slots survive a full clear (auth lock, etc.)
     if (NB.viewer && NB.viewer.clear) NB.viewer.clear();
     render();
     emitChanged();
@@ -527,6 +815,15 @@
   NB.tabs = {
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
     togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next, clearAll,
+    /* True while the pointer is inside the tab bar and tab widths are pinned.
+     * Exposed so the DOM harness can assert the freeze/release behavior. */
+    isWidthFrozen,
+    isReleasing,
+    /* Ghost close slots (an inert placeholder holding a closed tab's space
+     * while the pointer is in the bar). Exposed so the DOM harness can assert
+     * the ghost lifecycle. */
+    isGhosting,
+    ghostCount,
     /* Register a special tab type. `def` = { id, icon, label, onActivate, onClose }.
      * id must start with "§". onActivate(id) is called when the tab becomes
      * active; onClose(id) when it's closed. Re-registering the same id

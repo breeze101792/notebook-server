@@ -126,9 +126,13 @@
 
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar">
-          <!-- Outline toggle icon: shows/hides the right-side pane. Pinned
-               to the right edge of the tab bar, independent of the open
-               file tabs (which render into the same bar on boot). -->
+          <!-- File tabs render into this inner scroller (tabs.js). It is the
+               only part of the row that scrolls, so the outline toggle
+               beside it is never overlapped by an overflowing tab. -->
+          <div id="tab-list" class="tab-list"></div>
+          <!-- Outline toggle icon: shows/hides the right-side pane. A
+               sibling of the scroller, pinned to the right edge of the row,
+               independent of the open file tabs. -->
           <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>

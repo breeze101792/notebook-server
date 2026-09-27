@@ -193,6 +193,7 @@ const html = `<!DOCTYPE html><html><head>
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar">
+          <div id="tab-list" class="tab-list"></div>
           <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
@@ -3135,13 +3136,24 @@ function check(label, cond, extra) {
 
   console.log("== file tabs ==");
   const barEl = window.document.getElementById("tab-bar");
-  const tabs = () => window.document.querySelectorAll("#tab-bar .tab");
+  // Real tabs only: the tab-close animation leaves inert `.tab.ghost` nodes in
+  // closed slots, and they are not open tabs (mirrors tabs.js realTabs()). A
+  // test that needs every node uses allTabs().
+  const tabs = () => window.document.querySelectorAll("#tab-bar .tab:not(.ghost)");
+  const allTabs = () => window.document.querySelectorAll("#tab-bar .tab");
   const activeTabPath = () => {
     const a = window.document.querySelector("#tab-bar .tab.active");
     return a ? a.dataset.path : null;
   };
   check("boot opened one tab (notes/a.md)", tabs().length === 1 && tabs()[0].dataset.path === "notes/a.md",
     tabs().length + " tab(s)");
+  // Tabs live in the inner #tab-list scroller; #outline-toggle is a sibling
+  // of that scroller, so an overflowing tab can never cover the toggle.
+  const tabListEl = window.document.getElementById("tab-list");
+  const outlineToggleEl = window.document.getElementById("outline-toggle");
+  check("tabs render inside #tab-list", tabListEl && tabs()[0].parentElement === tabListEl);
+  check("outline toggle is a sibling of #tab-list",
+    outlineToggleEl && outlineToggleEl.parentElement === barEl && !tabListEl.contains(outlineToggleEl));
   check("active tab is notes/a.md", activeTabPath() === "notes/a.md");
   // open a second file -> new tab, becomes active
   await window.NB.tabs.open("Welcome.md");
@@ -3180,6 +3192,641 @@ function check(label, cond, extra) {
   check("openFiles/activeFile persisted",
     /"openFiles":\["notes\/a\.md"\]/.test(tabCfgPost) && /"activeFile":"notes\/a\.md"/.test(tabCfgPost),
     tabCfgPost);
+
+  // --- tab width freeze while the pointer is in the bar ---
+  // Closing a tab must not re-equalize the strip under the cursor: while the
+  // pointer is inside #tab-bar every surviving tab keeps the width it had
+  // before the re-render, and on mouseleave the inline pins are released so
+  // the equal-width CSS rule takes over again.
+  await window.NB.tabs.open("Welcome.md");
+  await window.NB.tabs.open("notes/b.md");
+  await tick(20);
+  check("three tabs open for freeze test", tabs().length === 3, "got " + tabs().length);
+  const widthFor = (p) => ({ "notes/a.md": 140, "Welcome.md": 160, "notes/b.md": 180 }[p]);
+  tabs().forEach(t => {
+    t.getBoundingClientRect = () => ({ width: widthFor(t.dataset.path), height: 30,
+      left: 0, right: widthFor(t.dataset.path), top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  });
+  barEl.dispatchEvent(new window.Event("mouseenter", { bubbles: false }));
+  check("pointer in tab bar freezes widths", window.NB.tabs.isWidthFrozen());
+  window.NB.tabs.close("Welcome.md");
+  await tick(20);
+  const survivor = window.document.querySelector('.tab[data-path="notes/b.md"]');
+  check("frozen tab keeps its pre-close width",
+    survivor && survivor.style.width === "180px" && survivor.style.flex === "0 0 180px",
+    survivor ? survivor.style.width + " / " + survivor.style.flex : "n/a");
+  check("frozen close starts no release animation", !window.NB.tabs.isReleasing());
+  barEl.dispatchEvent(new window.Event("mouseleave", { bubbles: false }));
+  check("pointer leaving tab bar releases the freeze", !window.NB.tabs.isWidthFrozen());
+  check("release clears the inline width pins",
+    survivor && survivor.style.width === "" && survivor.style.flex === "");
+  await window.NB.tabs.close("notes/b.md");
+  await tick(20);
+  // The frozen close above left a ghost slot (the shipped animation); let its
+  // 280ms backstop retire it so the release block starts from the expected tab
+  // state (a live ghost would make unfreezeWidths() skip the re-equalize).
+  await tick(320);
+  check("freeze cleanup: the frozen close's ghost retired before the release block",
+    !window.NB.tabs.isGhosting() && window.NB.tabs.ghostCount() === 0,
+    "count=" + window.NB.tabs.ghostCount());
+
+  // --- tab-bar release re-equalization (docs/design/tab-equalization.md §10) ---
+  // On mouseleave the inline pins are cleared synchronously (asserted above)
+  // and, when a visible width delta is coming, tabs.js adds
+  // .nb-tab-equalizing to #tab-list and feeds each tab its start/end width
+  // through --nb-tab-from / --nb-tab-to. jsdom cannot interpolate the
+  // keyframes, so these tests assert only the class, the custom properties,
+  // and the completion/cancel paths. The stylesheet is read as text (the
+  // harness never links style.css as a sheet).
+  console.log("== tab release animation ==");
+  const relCss = read("static/css/style.css");
+  check("release css: .tab-bar declares --tab-release-duration: 180ms",
+    /\.tab-bar\s*\{[^}]*--tab-release-duration:\s*180ms/.test(relCss),
+    "no --tab-release-duration:180ms on .tab-bar");
+  check("release css: .tab-bar declares --tab-release-ease: ease-out",
+    /\.tab-bar\s*\{[^}]*--tab-release-ease:\s*ease-out/.test(relCss),
+    "no --tab-release-ease:ease-out on .tab-bar");
+  const relKfStart = relCss.indexOf("@keyframes nb-tab-equalize");
+  const relKfBody = relKfStart < 0 ? "" : relCss.slice(relKfStart, relCss.indexOf("\n}", relKfStart));
+  const relKfFrom = (/from\s*\{([^}]*)\}/.exec(relKfBody) || [])[1] || "";
+  const relKfTo = (/to\s*\{([^}]*)\}/.exec(relKfBody) || [])[1] || "";
+  check("release css: @keyframes nb-tab-equalize exists",
+    relKfStart !== -1 && relKfBody.indexOf("@keyframes") !== -1);
+  check("release css: keyframes 'from' sets flex-basis: var(--nb-tab-from) and flex-grow:0",
+    /flex-basis:\s*var\(--nb-tab-from\)/.test(relKfFrom) && /flex-grow:\s*0/.test(relKfFrom),
+    JSON.stringify(relKfFrom));
+  check("release css: keyframes 'to' sets flex-basis: var(--nb-tab-to) and flex-grow:0",
+    /flex-basis:\s*var\(--nb-tab-to\)/.test(relKfTo) && /flex-grow:\s*0/.test(relKfTo),
+    JSON.stringify(relKfTo));
+  check("release css: .tab-list.nb-tab-equalizing .tab sets the release animation",
+    /\.tab-list\.nb-tab-equalizing\s+\.tab\s*\{[^}]*animation:\s*nb-tab-equalize\s+var\(--tab-release-duration\)\s+var\(--tab-release-ease\)/.test(relCss),
+    "no scoped animation rule");
+  check("release css: reduced-motion block disables the release animation",
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\.tab-list\.nb-tab-equalizing\s+\.tab\s*\{\s*animation:\s*none/.test(relCss),
+    "no @media(prefers-reduced-motion:reduce){.tab-list.nb-tab-equalizing .tab{animation:none}}");
+
+  // Rect stub: the first read after a mouseenter reports the frozen width and
+  // every later read the equal width, so the measured delta is real and the
+  // release class is actually exercised. Counts reset after each mouseenter.
+  const relFrozenW = { "notes/a.md": 140, "Welcome.md": 160, "notes/b.md": 180 };
+  const relEqualW = { "notes/a.md": 200, "Welcome.md": 200, "notes/b.md": 200 };
+  const relCalls = new Map();
+  const relRect = (w) => ({ width: w, height: 30, left: 0, right: w, top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  const setRelRects = () => {
+    relCalls.clear();
+    tabs().forEach(t => {
+      t.getBoundingClientRect = () => {
+        const p = t.dataset.path;
+        const n = relCalls.get(p) || 0;
+        relCalls.set(p, n + 1);
+        return relRect(n === 0 ? relFrozenW[p] : relEqualW[p]);
+      };
+    });
+  };
+  const relFrom = (p) => window.document.querySelector('.tab[data-path="' + p + '"]').style.getPropertyValue("--nb-tab-from");
+  const relTo = (p) => window.document.querySelector('.tab[data-path="' + p + '"]').style.getPropertyValue("--nb-tab-to");
+  const relAllPinsCleared = () => Array.from(tabs()).every(t => t.style.width === "" && t.style.flex === "");
+  const relMouseLeave = () => barEl.dispatchEvent(new window.Event("mouseleave", { bubbles: false }));
+  const relMouseEnter = () => {
+    barEl.dispatchEvent(new window.Event("mouseenter", { bubbles: false }));
+    relCalls.clear();   // capture's reads are done; next read is the frozen one
+  };
+
+  // Fresh three-tab state (notes/a.md is the only tab at this point).
+  await window.NB.tabs.open("Welcome.md");
+  await window.NB.tabs.open("notes/b.md");
+  await tick(20);
+  check("release setup: three tabs open", tabs().length === 3, "got " + tabs().length);
+
+  // 1. Visible delta -> class added + isReleasing().
+  setRelRects();
+  relMouseEnter();
+  check("release setup: pointer enter freezes widths", window.NB.tabs.isWidthFrozen());
+  relMouseLeave();
+  check("release: a visible width delta adds nb-tab-equalizing and isReleasing()",
+    tabListEl.classList.contains("nb-tab-equalizing") && window.NB.tabs.isReleasing(),
+    "class=" + tabListEl.className);
+
+  // 2. from = frozen width, to = equal target width, per tab.
+  check("release: --nb-tab-from is each tab's frozen width",
+    relFrom("notes/a.md") === "140px" && relFrom("Welcome.md") === "160px" && relFrom("notes/b.md") === "180px",
+    [relFrom("notes/a.md"), relFrom("Welcome.md"), relFrom("notes/b.md")].join(","));
+  check("release: --nb-tab-to is the equal target width",
+    relTo("notes/a.md") === "200px" && relTo("Welcome.md") === "200px" && relTo("notes/b.md") === "200px",
+    [relTo("notes/a.md"), relTo("Welcome.md"), relTo("notes/b.md")].join(","));
+
+  // 3. animationend on a .tab ends the release and clears the custom props.
+  window.document.querySelector("#tab-bar .tab")
+    .dispatchEvent(new window.Event("animationend", { bubbles: true }));
+  check("release: animationend on a .tab ends the release",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+  check("release: animationend clears both inline custom properties",
+    relFrom("notes/a.md") === "" && relTo("notes/a.md") === "" &&
+    relFrom("notes/b.md") === "" && relTo("notes/b.md") === "",
+    "from=" + relFrom("notes/a.md") + " to=" + relTo("notes/a.md"));
+
+  // 4. The TAB_RELEASE_FALLBACK_MS (280ms) backstop also ends the release.
+  setRelRects();
+  relMouseEnter();
+  relMouseLeave();
+  check("release(2): release started for the fallback-timer test", window.NB.tabs.isReleasing());
+  await tick(320);   // past the 280ms backstop
+  check("release: fallback timer past TAB_RELEASE_FALLBACK_MS ends the release",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+
+  // 5. Reduced motion -> instant release, no class, pins cleared.
+  const relSavedMatchMedia = window.matchMedia;
+  window.matchMedia = (q) => ({
+    matches: /prefers-reduced-motion/.test(q), media: q, onchange: null,
+    addListener() {}, removeListener() {},
+    addEventListener() {}, removeEventListener() {},
+    dispatchEvent() { return false; },
+  });
+  setRelRects();
+  relMouseEnter();
+  relMouseLeave();
+  check("release: reduced motion does not add the release class",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+  check("release: reduced motion still clears the inline pins", relAllPinsCleared());
+  window.matchMedia = relSavedMatchMedia;
+
+  // 6. An active drag -> instant release, no class.
+  setRelRects();
+  relMouseEnter();
+  const relDragTab = window.document.querySelector('#tab-bar .tab[data-path="notes/a.md"]');
+  relDragTab.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+  relMouseLeave();
+  check("release: mouseleave during a drag does not add the release class",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+  relDragTab.dispatchEvent(new window.Event("dragend", { bubbles: true }));   // clear draggingPath
+  await tick(10);
+
+  // 7. A render() while releasing removes the class (no replay on unrelated renders).
+  setRelRects();
+  relMouseEnter();
+  relMouseLeave();
+  check("release(3): release started before render()", window.NB.tabs.isReleasing());
+  window.NB.tabs.render();
+  check("release: render() while releasing removes the class",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+
+  // 8. Re-entering cancels the settle and leaves the widths frozen.
+  setRelRects();
+  relMouseEnter();
+  relMouseLeave();
+  check("release(4): release started before re-entry", window.NB.tabs.isReleasing());
+  relMouseEnter();
+  check("release: mouseenter while releasing removes the class",
+    !window.NB.tabs.isReleasing() && !tabListEl.classList.contains("nb-tab-equalizing"),
+    "class=" + tabListEl.className);
+  check("release: mouseenter while releasing leaves widths frozen", window.NB.tabs.isWidthFrozen());
+
+  // Cleanup: drop the rect stubs (prototype returns 0 width -> no delta),
+  // release the freeze, and return to the single-tab state search expects.
+  tabs().forEach(t => { delete t.getBoundingClientRect; });
+  relMouseLeave();
+  check("release cleanup: freeze released with real (zero) rects", !window.NB.tabs.isWidthFrozen());
+  await window.NB.tabs.close("Welcome.md", { force: true });
+  await window.NB.tabs.close("notes/b.md", { force: true });
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+
+  // --- tab close reflow (reuses the nb-tab-equalize keyframes) ---
+  // close() captures each survivor's pre-close width (captureCloseReflow),
+  // then render() rebuilds the strip and animateReflow plays the settle from
+  // the captured widths. render() creates NEW nodes, and animateReflow's "to"
+  // measurement runs synchronously inside close(), so a per-element rect stub
+  // cannot survive the rebuild -- stub Element.prototype instead. A per-path
+  // read counter gives each close its own from/to: the Nth read of a path
+  // returns the Nth width in that path's sequence (the first is the "from"
+  // measured on the old node, the rest the "to" measured on the new node).
+  console.log("== tab close reflow ==");
+  const closeOrigRect = window.Element.prototype.getBoundingClientRect;
+  const closeRect = (w) => ({ width: w, height: 30, left: 0, right: w, top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  let closeWidths = null;        // path -> [w0, w1, ...] indexed by read ordinal
+  let closeRects = new Map();    // path -> reads so far
+  window.Element.prototype.getBoundingClientRect = function () {
+    const p = (this && this.classList && this.classList.contains("tab") && this.dataset)
+      ? this.dataset.path : null;
+    const seq = p && closeWidths ? closeWidths[p] : null;
+    if (!seq) return closeRect(0);
+    const n = closeRects.get(p) || 0;
+    closeRects.set(p, n + 1);
+    return closeRect(seq[Math.min(n, seq.length - 1)]);
+  };
+  const setCloseWidths = (map) => { closeWidths = map; closeRects = new Map(); };
+  const closeNode = (p) => window.document.querySelector('#tab-bar .tab[data-path="' + p + '"]');
+  const closeFrom = (p) => { const t = closeNode(p); return t ? t.style.getPropertyValue("--nb-tab-from") : "(no node)"; };
+  const closeTo = (p) => { const t = closeNode(p); return t ? t.style.getPropertyValue("--nb-tab-to") : "(no node)"; };
+  const closeClassOn = () => tabListEl.classList.contains("nb-tab-equalizing");
+  const closeSetup = async () => {
+    await window.NB.tabs.activate("notes/a.md");
+    await window.NB.tabs.open("Welcome.md", { activate: false });   // never steals active
+    await window.NB.tabs.open("notes/b.md", { activate: false });
+    await tick(20);
+  };
+  await closeSetup();
+  check("close-reflow setup: three tabs with notes/a.md active",
+    tabs().length === 3 && activeTabPath() === "notes/a.md",
+    tabs().length + " tab(s), active=" + activeTabPath());
+
+  // 1-3. A non-active close with the pointer outside the bar: the node is
+  // dropped synchronously, the class + isReleasing() arm, each survivor gets
+  // its captured from/to, and the closing path is never measured.
+  setCloseWidths({
+    "notes/a.md": [150, 200],
+    "Welcome.md": [999, 999],        // the closing path; must never be read
+    "notes/b.md": [170, 200],
+  });
+  window.NB.tabs.close("Welcome.md");
+  check("close-reflow: closed tab is removed synchronously (N-1)",
+    tabs().length === 2, "got " + tabs().length);
+  check("close-reflow: the strip is equalizing and isReleasing()",
+    closeClassOn() && window.NB.tabs.isReleasing(), "class=" + tabListEl.className);
+  check("close-reflow: closed path has no node and is no longer open",
+    closeNode("Welcome.md") === null && !window.NB.tabs.isOpen("Welcome.md"));
+  check("close-reflow: the capture skips the closing path (no read)",
+    !closeRects.has("Welcome.md"), "reads=" + closeRects.get("Welcome.md"));
+  check("close-reflow: survivor --nb-tab-from is its pre-close width",
+    closeFrom("notes/a.md") === "150px" && closeFrom("notes/b.md") === "170px",
+    [closeFrom("notes/a.md"), closeFrom("notes/b.md")].join(","));
+  check("close-reflow: survivor --nb-tab-to is its post-close width",
+    closeTo("notes/a.md") === "200px" && closeTo("notes/b.md") === "200px",
+    [closeTo("notes/a.md"), closeTo("notes/b.md")].join(","));
+
+  // 4a. animationend on a .tab ends the settle and clears both properties.
+  window.document.querySelector("#tab-bar .tab")
+    .dispatchEvent(new window.Event("animationend", { bubbles: true }));
+  check("close-reflow: animationend ends the settle",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  check("close-reflow: animationend clears both custom properties",
+    closeFrom("notes/a.md") === "" && closeTo("notes/a.md") === "" &&
+    closeFrom("notes/b.md") === "" && closeTo("notes/b.md") === "",
+    "a-from=" + closeFrom("notes/a.md") + " a-to=" + closeTo("notes/a.md"));
+
+  // 4b. The TAB_RELEASE_FALLBACK_MS (280ms) backstop does the same.
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  setCloseWidths({
+    "notes/a.md": [150, 200],
+    "Welcome.md": [160, 200],
+    "notes/b.md": [170, 200],
+  });
+  window.NB.tabs.close("Welcome.md");
+  check("close-reflow(timer): settle armed before the backstop", window.NB.tabs.isReleasing());
+  await tick(320);
+  check("close-reflow: the 280ms backstop ends the settle",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  check("close-reflow: the backstop clears both custom properties",
+    closeFrom("notes/a.md") === "" && closeTo("notes/a.md") === "",
+    "a-from=" + closeFrom("notes/a.md") + " a-to=" + closeTo("notes/a.md"));
+
+  // 5. Closing the ACTIVE tab stays instant (captureCloseReflow is skipped:
+  // activate(next) lands a second render() that would kill the animation).
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  await window.NB.tabs.activate("notes/b.md");
+  await tick(20);
+  setCloseWidths({
+    "notes/a.md": [150, 200],
+    "Welcome.md": [160, 200],
+    "notes/b.md": [170, 200],
+  });
+  window.NB.tabs.close("notes/b.md");
+  check("close-reflow: closing the active tab does not release (immediate)",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  await tick(40);
+  check("close-reflow: closing the active tab does not release (after tick)",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+
+  // 6. A cancelled close (dirty tab, confirm -> false) arms nothing.
+  await window.NB.tabs.open("notes/b.md", { activate: false });
+  await tick(20);
+  await window.NB.tabs.activate("notes/b.md");
+  await tick(10);
+  window.NB.viewer.startEdit();
+  await tick(10);
+  cmSetValue("# notes/b\n\nCANCEL CLOSE DIRTY\n");
+  cmFireInput();
+  window.NB.viewer.endEdit();
+  await tick(10);
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(10);
+  const closeCancelCount = tabs().length;
+  const closeConfirmOrig = window.confirm;
+  window.confirm = () => false;                 // user cancels the discard
+  window.NB.tabs.close("notes/b.md");
+  check("close-reflow: a cancelled close does not release",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  check("close-reflow: a cancelled close keeps the tab set",
+    tabs().length === closeCancelCount, "got " + tabs().length);
+  check("close-reflow: a cancelled close keeps the dirty tab",
+    !!closeNode("notes/b.md") && closeNode("notes/b.md").classList.contains("dirty"));
+  window.confirm = closeConfirmOrig;
+
+  // 7. Reduced motion -> no class on a non-active close.
+  const closeMatchOrig = window.matchMedia;
+  window.matchMedia = (q) => ({
+    matches: /prefers-reduced-motion/.test(q), media: q, onchange: null,
+    addListener() {}, removeListener() {},
+    addEventListener() {}, removeEventListener() {},
+    dispatchEvent() { return false; },
+  });
+  setCloseWidths({
+    "notes/a.md": [150, 200],
+    "Welcome.md": [160, 200],
+    "notes/b.md": [170, 200],
+  });
+  window.NB.tabs.close("Welcome.md");
+  check("close-reflow: reduced motion adds no class",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  window.matchMedia = closeMatchOrig;
+
+  // 8. An active drag -> no class on a non-active close.
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  setCloseWidths({
+    "notes/a.md": [150, 200],
+    "Welcome.md": [160, 200],
+    "notes/b.md": [170, 200],
+  });
+  closeNode("notes/a.md").dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+  window.NB.tabs.close("Welcome.md");
+  check("close-reflow: an active drag adds no class",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  closeNode("notes/a.md").dispatchEvent(new window.Event("dragend", { bubbles: true }));   // clear draggingPath
+
+  // 9. Two closes in one synchronous loop (3 -> 1): the first settle is
+  // replaced by the second, so isReleasing() reflects only the final settle
+  // and the class is present once. The path sequences carry two from/to pairs
+  // (close 1: 150->200, close 2: 200->300) so the final settle has a delta.
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  setCloseWidths({
+    "notes/a.md": [150, 200, 200, 300],
+    "Welcome.md": [160, 200, 200, 300],
+    "notes/b.md": [170, 200, 200, 300],
+  });
+  window.NB.tabs.close("Welcome.md");
+  const closeMidReleasing = window.NB.tabs.isReleasing();
+  window.NB.tabs.close("notes/b.md", { force: true });   // b is dirty; force skips the confirm
+  check("close-reflow: two synchronous closes leave one tab",
+    tabs().length === 1, "got " + tabs().length);
+  check("close-reflow: two synchronous closes settle once (final settle live)",
+    closeMidReleasing && window.NB.tabs.isReleasing(),
+    "mid=" + closeMidReleasing + " final=" + window.NB.tabs.isReleasing());
+  check("close-reflow: the equalizing class is present once on #tab-list",
+    closeClassOn() && tabListEl.className.split(/\s+/).filter((c) => c === "nb-tab-equalizing").length === 1,
+    "class=" + tabListEl.className);
+  check("close-reflow: the final settle animates a from/to delta",
+    closeFrom("notes/a.md") === "200px" && closeTo("notes/a.md") === "300px",
+    "from=" + closeFrom("notes/a.md") + " to=" + closeTo("notes/a.md"));
+
+  // 10. A sub-epsilon delta (< WIDTH_EPSILON, 0.5px) animates nothing.
+  closeNode("notes/a.md").dispatchEvent(new window.Event("animationend", { bubbles: true }));
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  setCloseWidths({
+    "notes/a.md": [150, 150.3],      // 0.3px delta: invisible
+    "Welcome.md": [160, 160],        // the closing path
+  });
+  window.NB.tabs.close("Welcome.md");
+  check("close-reflow: a sub-epsilon delta adds no class",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  check("close-reflow: a sub-epsilon delta leaves no stale custom properties",
+    closeFrom("notes/a.md") === "" && closeTo("notes/a.md") === "",
+    "from=" + closeFrom("notes/a.md") + " to=" + closeTo("notes/a.md"));
+
+  // 11. The TAB_RELEASE_MAX_TABS (24) cap: a strip with more than 24 survivors
+  // settles instantly. open({activate:false}) adds a tab without fetching, so
+  // placeholders cost no /api/file round trips.
+  const gatePaths = [];
+  for (let i = 0; i < 25; i++) {
+    const p = "tmp/gate-" + i + ".md";
+    gatePaths.push(p);
+    await window.NB.tabs.open(p, { activate: false });
+  }
+  await tick(20);
+  check("close-reflow cap: 26 tabs open", tabs().length === 26, "got " + tabs().length);
+  setCloseWidths({ "notes/a.md": [150, 200] });
+  window.NB.tabs.close(gatePaths[0], { force: true });     // 26 -> 25 survivors
+  check("close-reflow cap: >24 survivors adds no class",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  setCloseWidths({ "notes/a.md": [150, 200] });
+  window.NB.tabs.close(gatePaths[1], { force: true });     // 25 -> 24 survivors
+  check("close-reflow cap: 24 survivors still settles",
+    window.NB.tabs.isReleasing() && closeClassOn(), "class=" + tabListEl.className);
+  closeNode("notes/a.md").dispatchEvent(new window.Event("animationend", { bubbles: true }));
+  for (const p of gatePaths.slice(2)) await window.NB.tabs.close(p, { force: true });
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(20);
+  check("close-reflow cap cleanup: placeholder tabs dropped",
+    tabs().length === 1 && activeTabPath() === "notes/a.md",
+    tabs().length + " tab(s), active=" + activeTabPath());
+
+  // Cleanup: end the settle, drop the stub + counters, and confirm the suite
+  // is back in the single-tab state the == search == block expects.
+  closeNode("notes/a.md").dispatchEvent(new window.Event("animationend", { bubbles: true }));
+  check("close-reflow cleanup: settle ended", !window.NB.tabs.isReleasing() && !closeClassOn());
+  window.Element.prototype.getBoundingClientRect = closeOrigRect;
+  closeWidths = null;
+  closeRects = new Map();
+  check("close-reflow cleanup: back to one tab on notes/a.md",
+    tabs().length === 1 && activeTabPath() === "notes/a.md" && !window.NB.tabs.isWidthFrozen(),
+    tabs().length + " tab(s), active=" + activeTabPath());
+
+  // --- tab close ghost (a tab closed while the pointer is in the bar) ---
+  // While the pointer is inside #tab-bar, closing a tab must not re-equalize
+  // the strip under the cursor. tabs.js leaves a same-width ghost placeholder
+  // in the closed tab's slot, fades it in place, and holds the survivors until
+  // the pointer leaves -- then the ghost's box collapses on mouseleave and the
+  // survivors slide over. Ghosts are DATA (rebuilt by render()), so they
+  // survive a strip rebuild. jsdom has no layout engine and no
+  // AnimationEvent/TransitionEvent: widths are stubbed on the prototype
+  // (render() creates new nodes) and lifecycle events are dispatched as plain
+  // window.Event with animationName/propertyName set by hand.
+  console.log("== tab close ghost ==");
+  const ghostOrigRect = window.Element.prototype.getBoundingClientRect;
+  const ghostStubRect = (w) => ({ width: w, height: 30, left: 0, right: w, top: 0, bottom: 30, x: 0, y: 0, toJSON() {} });
+  // Fixed per-path width on every read: enough to give each ghost a real width
+  // and to read survivors' applied freeze pins back. (The reflow tests above
+  // cover the per-read from/to sequences that need a read counter.)
+  const ghostWidthFor = (p) => ({ "notes/a.md": 140, "Welcome.md": 160, "notes/b.md": 180 }[p]);
+  window.Element.prototype.getBoundingClientRect = function () {
+    const p = (this && this.classList && this.classList.contains("tab") && this.dataset) ? this.dataset.path : null;
+    return ghostStubRect(p ? (ghostWidthFor(p) || 0) : 0);
+  };
+  // A ghost node carries no data-path (materializeGhosts sets none), so select
+  // it by class and assert its slot/label instead. At most one ghost is live
+  // at a time in this block.
+  const ghostNode = () => tabListEl.querySelector(".tab.ghost");
+  const ghostRealTabs = () => Array.from(tabListEl.querySelectorAll(".tab:not(.ghost)"));
+  const ghostSetup = async () => {
+    await window.NB.tabs.activate("notes/a.md");
+    await window.NB.tabs.open("Welcome.md", { activate: false });
+    await window.NB.tabs.open("notes/b.md", { activate: false });
+    await tick(20);
+  };
+  await ghostSetup();
+  check("ghost setup: three tabs with notes/a.md active",
+    tabs().length === 3 && activeTabPath() === "notes/a.md",
+    tabs().length + " tab(s), active=" + activeTabPath());
+
+  // 1. Close a non-active tab while frozen: a ghost holds the closed slot.
+  barEl.dispatchEvent(new window.Event("mouseenter", { bubbles: false }));
+  check("ghost: pointer enter freezes widths", window.NB.tabs.isWidthFrozen());
+  window.NB.tabs.close("Welcome.md");
+  check("ghost: closing while frozen arms a ghost",
+    window.NB.tabs.isGhosting() && window.NB.tabs.ghostCount() === 1,
+    "count=" + window.NB.tabs.ghostCount());
+  check("ghost: a .tab.ghost node is materialized in #tab-list",
+    !!ghostNode() && ghostNode().parentElement === tabListEl && ghostNode().classList.contains("ghost"));
+  check("ghost: the ghost holds the closed tab's label in an inner .tab-ghost-fill",
+    ghostNode() && ghostNode().querySelector(".tab-ghost-fill") &&
+      ghostNode().querySelector(".tab-ghost-fill").textContent === "Welcome.md" &&
+      ghostNode().textContent === "Welcome.md",
+    ghostNode() ? JSON.stringify(ghostNode().textContent) : "no node");
+  check("ghost: the closed path is absent from the real tabs",
+    !ghostRealTabs().some(t => t.dataset.path === "Welcome.md") && ghostRealTabs().length === 2,
+    "real=" + ghostRealTabs().length);
+  check("ghost: the ghost is not counted among the real tabs",
+    ghostRealTabs().every(t => !t.classList.contains("ghost")) && ghostRealTabs().length === allTabs().length - 1,
+    "all=" + allTabs().length + " real=" + ghostRealTabs().length);
+
+  // 2. The ghost holds the slot; the survivors keep their freeze pins and the
+  // close runs no release animation (isReleasing() stays false).
+  check("ghost: the ghost holds the slot with an inline width/flex",
+    ghostNode().style.width === "160px" && ghostNode().style.flex === "0 0 160px",
+    ghostNode().style.width + " / " + ghostNode().style.flex);
+  check("ghost: the ghost carries --nb-tab-ghost-from for the keyframes",
+    ghostNode().style.getPropertyValue("--nb-tab-ghost-from") === "160px",
+    "from=" + ghostNode().style.getPropertyValue("--nb-tab-ghost-from"));
+  check("ghost: the ghost sits at the closed tab's slot among the survivors",
+    tabListEl.children[1] === ghostNode(),
+    "idx=" + Array.prototype.indexOf.call(tabListEl.children, ghostNode()));
+  check("ghost: a frozen close does not run the release reflow",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+  const ghostSurvivor = window.document.querySelector('.tab:not(.ghost)[data-path="notes/b.md"]');
+  check("ghost: the surviving tabs keep their freeze pins",
+    ghostSurvivor && ghostSurvivor.style.width === "180px" && ghostSurvivor.style.flex === "0 0 180px",
+    ghostSurvivor ? ghostSurvivor.style.width + " / " + ghostSurvivor.style.flex : "n/a");
+
+  // 3. The ghost is DATA: a render() rebuild re-materializes a fresh node.
+  const ghostNodeBefore = ghostNode();
+  window.NB.tabs.render();
+  check("ghost: render() keeps the ghost entry (still 1)",
+    window.NB.tabs.isGhosting() && window.NB.tabs.ghostCount() === 1,
+    "count=" + window.NB.tabs.ghostCount());
+  check("ghost: render() materializes a fresh node at the recorded slot",
+    !!ghostNode() && ghostNode() !== ghostNodeBefore && tabListEl.children[1] === ghostNode());
+  check("ghost: the rebuilt ghost still holds the closed width",
+    ghostNode().style.width === "160px" && ghostNode().style.flex === "0 0 160px",
+    ghostNode().style.width);
+
+  // 4. The ghost collapses and fades on its own keyframes the moment it is
+  // created; removal is owned by a per-ghost TAB_GHOST_FALLBACK_MS (280ms)
+  // timer. There is no mouseleave teardown, no .leaving/.faded class, and no
+  // transitionend listener. A mouseleave only releases the width freeze.
+  barEl.dispatchEvent(new window.Event("mouseleave", { bubbles: false }));
+  check("ghost: mouseleave releases the freeze", !window.NB.tabs.isWidthFrozen());
+  check("ghost: mouseleave does not tear the ghost down (the timer owns removal)",
+    window.NB.tabs.ghostCount() === 1 && !!ghostNode(),
+    "count=" + window.NB.tabs.ghostCount());
+  check("ghost: mouseleave with a live ghost runs no release reflow",
+    !window.NB.tabs.isReleasing() && !closeClassOn(), "class=" + tabListEl.className);
+
+  // 5. The ghost self-removes on its 280ms backstop (no synthetic event).
+  await tick(320);   // past the 280ms backstop
+  check("ghost: the 280ms fallback removes the ghost",
+    window.NB.tabs.ghostCount() === 0 && !window.NB.tabs.isGhosting() && !ghostNode(),
+    "count=" + window.NB.tabs.ghostCount());
+
+  // 7. Reduced motion: a close while frozen creates no ghost.
+  const ghostMatchOrig = window.matchMedia;
+  window.matchMedia = (q) => ({
+    matches: /prefers-reduced-motion/.test(q), media: q, onchange: null,
+    addListener() {}, removeListener() {},
+    addEventListener() {}, removeEventListener() {},
+    dispatchEvent() { return false; },
+  });
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  barEl.dispatchEvent(new window.Event("mouseenter", { bubbles: false }));
+  window.NB.tabs.close("Welcome.md");
+  check("ghost: reduced motion creates no ghost while frozen",
+    !window.NB.tabs.isGhosting() && window.NB.tabs.ghostCount() === 0, "count=" + window.NB.tabs.ghostCount());
+  barEl.dispatchEvent(new window.Event("mouseleave", { bubbles: false }));
+  window.matchMedia = ghostMatchOrig;
+
+  // 8. Pointer outside the bar (no freeze): no ghost -- the reflow path is
+  // used (the == tab close reflow == block covers its assertions).
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  check("ghost: the pointer outside the bar leaves the freeze released", !window.NB.tabs.isWidthFrozen());
+  window.NB.tabs.close("Welcome.md");
+  check("ghost: a close with the pointer outside creates no ghost",
+    !window.NB.tabs.isGhosting() && window.NB.tabs.ghostCount() === 0, "count=" + window.NB.tabs.ghostCount());
+
+  // 9. clearAll() drops any lingering ghost (auth lock, session loss).
+  await window.NB.tabs.open("Welcome.md", { activate: false });
+  await tick(20);
+  barEl.dispatchEvent(new window.Event("mouseenter", { bubbles: false }));
+  window.NB.tabs.close("Welcome.md");
+  check("ghost(clear): a ghost is armed before clearAll", window.NB.tabs.ghostCount() === 1);
+  window.NB.tabs.clearAll();
+  check("ghost: clearAll() removes any lingering ghost",
+    window.NB.tabs.ghostCount() === 0 && !window.NB.tabs.isGhosting() && !ghostNode(),
+    "count=" + window.NB.tabs.ghostCount());
+  barEl.dispatchEvent(new window.Event("mouseleave", { bubbles: false }));
+
+  // Structural CSS contract (read as text; the harness never links style.css).
+  // These pin the class names and animation the behavioral block above relies
+  // on, so a rename in one place fails here instead of silently. The close
+  // animation is one keyframes rule (nb-tab-ghost-close) that collapses the
+  // ghost's flex-basis and fades it, played forwards at once.
+  const ghostCss = read("static/css/style.css");
+  check("ghost css: .tab-bar declares --tab-close-duration: 100ms",
+    /\.tab-bar\s*\{[^}]*--tab-close-duration:\s*100ms/.test(ghostCss),
+    "no --tab-close-duration:100ms on .tab-bar");
+  check("ghost css: .tab-bar declares --tab-close-ease: ease-out",
+    /\.tab-bar\s*\{[^}]*--tab-close-ease:\s*ease-out/.test(ghostCss),
+    "no --tab-close-ease:ease-out on .tab-bar");
+  check("ghost css: .tab.ghost is inert (pointer-events: none)",
+    /\.tab\.ghost\s*\{[^}]*pointer-events:\s*none/.test(ghostCss), "no pointer-events:none on .tab.ghost");
+  check("ghost css: .tab.ghost runs the nb-tab-ghost-close animation forwards",
+    /\.tab\.ghost\s*\{[^}]*animation:\s*nb-tab-ghost-close\s+var\(--tab-close-duration\)\s+var\(--tab-close-ease\)\s+forwards/.test(ghostCss),
+    "no forwards nb-tab-ghost-close on .tab.ghost");
+  const ghostKfStart = ghostCss.indexOf("@keyframes nb-tab-ghost-close");
+  const ghostKfBody = ghostKfStart < 0 ? "" : ghostCss.slice(ghostKfStart, ghostCss.indexOf("\n}", ghostKfStart));
+  const ghostKfFrom = (/from\s*\{([^}]*)\}/.exec(ghostKfBody) || [])[1] || "";
+  const ghostKfTo = (/to\s*\{([^}]*)\}/.exec(ghostKfBody) || [])[1] || "";
+  check("ghost css: @keyframes nb-tab-ghost-close exists",
+    ghostKfStart !== -1 && ghostKfBody.indexOf("@keyframes") !== -1,
+    "no @keyframes nb-tab-ghost-close");
+  check("ghost css: the close keyframes 'from' is flex-basis: var(--nb-tab-ghost-from) + opacity 1",
+    /flex-basis:\s*var\(--nb-tab-ghost-from\)/.test(ghostKfFrom) && /opacity:\s*1/.test(ghostKfFrom),
+    JSON.stringify(ghostKfFrom));
+  check("ghost css: the close keyframes 'to' is flex-basis: 0 + opacity 0",
+    /flex-basis:\s*0/.test(ghostKfTo) && /opacity:\s*0/.test(ghostKfTo),
+    JSON.stringify(ghostKfTo));
+  check("ghost css: reduced motion disables the ghost animation",
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{\s*\.tab\.ghost\s*\{\s*animation:\s*none/.test(ghostCss),
+    "no reduced-motion ghost guard");
+
+  // Cleanup: restore the prototype rect stub and return to the single-tab
+  // state the == search == block expects.
+  await tick(320);   // let any pending ghostTimer fire before the stub is gone
+  window.Element.prototype.getBoundingClientRect = ghostOrigRect;
+  await window.NB.tabs.open("notes/a.md");
+  await tick(20);
+  check("ghost cleanup: back to one tab on notes/a.md",
+    tabs().length === 1 && activeTabPath() === "notes/a.md" && !window.NB.tabs.isWidthFrozen(),
+    tabs().length + " tab(s), active=" + activeTabPath());
 
   console.log("== search ==");
   const si = $("search-input");

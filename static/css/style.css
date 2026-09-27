@@ -393,29 +393,57 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   display: flex;
   align-items: flex-end;
   gap: 2px;
+  /* Every tab is the same width so labels line up and the row reads as a
+   * uniform set of tabs rather than a ragged strip. The width is bounded by
+   * the min/max below: tabs never collapse below --tab-min-width and never
+   * grow past --tab-max-width. */
+  --tab-min-width: 120px;
+  --tab-width: 170px;
+  --tab-max-width: 220px;
+  /* Release re-equalization: when the pointer leaves the bar the frozen
+   * inline widths are released and every tab animates to its new equal
+   * width. Duration/easing live here so the animation stays tunable in CSS. */
+  --tab-release-duration: 180ms;
+  --tab-release-ease: ease-out;
+  /* Close: the closing tab's placeholder collapses (shrink + fade) the moment
+   * it closes and the survivors slide to fill the gap, Firefox-style. */
+  --tab-close-duration: 100ms;
+  --tab-close-ease: ease-out;
   flex: 0 0 auto;
   height: 34px;
   padding: 0 6px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
+  /* The row itself never scrolls; the inner #tab-list does. That keeps the
+   * outline toggle a fixed sibling to the right of the scroller, so an
+   * overflowing tab can never slide under and cover it. */
+  overflow: hidden;
+}
+
+/* The scrolling part of the tab row: holds the tabs only. #outline-toggle
+ * sits outside it, at the fixed right edge. */
+.tab-list {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Hide the native horizontal scrollbar (Firefox + old Edge/IE); the bar
-   * still scrolls via wheel/trackpad/drag/keyboard. Keeps the 34px row
-   * free of a 6px scrollbar that would eat into the tab labels. */
+  /* Hide the native horizontal scrollbar (Firefox + old Edge/IE); the strip
+   * still scrolls via wheel/trackpad/drag/keyboard. Keeps the 34px row free
+   * of a 6px scrollbar that would eat into the tab labels. */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-/* Outline toggle icon pinned to the right edge of the tab bar. Sticky to
- * `right: 0` inside the scrollable bar, so it stays visible above the
- * open file tabs even when they overflow. Keeps the tab bar its only
- * control for showing/hiding the right outline pane. */
+/* Outline toggle icon pinned to the right edge of the tab bar. A sibling of
+ * the #tab-list scroller, so it stays visible and un-overlapped however many
+ * tabs are open. Keeps the tab bar its only control for showing/hiding the
+ * right outline pane. */
 .outline-toggle {
   align-self: center;
-  margin-left: auto;
-  position: sticky;
-  right: 0;
   flex: 0 0 auto;
   font-size: 1rem;
   padding: 2px 6px;
@@ -914,13 +942,19 @@ kbd.context-menu-kbd {
   font-weight: 600;
 }
 .edit-bar .eb-primary:hover { background: var(--accent); color: white; }
-/* Chromium/Safari: hide the tab-bar scrollbar (the bar still scrolls). */
-.tab-bar::-webkit-scrollbar { display: none; }
+/* Chromium/Safari: hide the tab strip scrollbar (it still scrolls). */
+.tab-list::-webkit-scrollbar { display: none; }
 .tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
+  /* Equal grow/shrink from an equal basis keeps every tab the same width;
+   * the min/max rail bounds that shared width so tabs neither collapse nor
+   * sprawl. Overflow is handled by #tab-list scrolling, not by a narrower
+   * tab. */
+  flex: 1 1 var(--tab-width, 170px);
+  min-width: var(--tab-min-width, 120px);
+  max-width: var(--tab-max-width, 220px);
   padding: 5px 6px 5px 12px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -935,9 +969,10 @@ kbd.context-menu-kbd {
 .tab:hover { background: var(--accent-soft); color: var(--fg); }
 .tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
 .tab .tab-label {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 170px;
 }
 .tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
 .tab.dirty .tab-label::before {
@@ -962,17 +997,81 @@ kbd.context-menu-kbd {
 }
 .tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
 
-/* Pinned tabs: narrower, marked with a pin glyph, no close button. They stay
- * grouped on the left and are skipped by the bulk-close actions. */
-.tab.pinned { max-width: 150px; padding-right: 10px; }
+/* Pinned tabs: marked with a pin glyph, no close button. They stay grouped
+ * on the left and are skipped by the bulk-close actions. Width follows the
+ * same equal, bounded rule as every other tab. */
+.tab.pinned { padding-right: 10px; }
 .tab.pinned .tab-pin { font-size: 11px; line-height: 1; }
-.tab.pinned .tab-label { max-width: 110px; }
 
 /* Drag-and-drop reorder: the dragged tab dims; the drop target gets an
  * accent stripe on the edge it will insert before/after. */
 .tab.dragging { opacity: .4; }
 .tab.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
 .tab.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+
+/* Release re-equalization. tabs.js clears each tab's frozen inline flex
+ * synchronously and, when a visible width change is coming, tags the
+ * scroller with .nb-tab-equalizing and feeds each tab its start/end width
+ * through --nb-tab-from / --nb-tab-to. flex-grow is held at 0 for the
+ * duration so the used width equals the animated flex-basis; when the
+ * animation ends the tab reverts to the stylesheet's equal-width flex rule
+ * at the same width, so there is no jump. The class is the only thing that
+ * enables the animation -- an unrelated render never triggers it. */
+@keyframes nb-tab-equalize {
+  from { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-from); }
+  to   { flex-grow: 0; flex-shrink: 0; flex-basis: var(--nb-tab-to); }
+}
+.tab-list.nb-tab-equalizing .tab {
+  animation: nb-tab-equalize var(--tab-release-duration) var(--tab-release-ease);
+}
+/* Respect reduced-motion: the released tabs sit at their equal width at
+ * once, matching the current instant behavior. */
+@media (prefers-reduced-motion: reduce) {
+  .tab-list.nb-tab-equalizing .tab { animation: none; }
+}
+
+/* Ghost close slot. Closing a tab replaces it with an inert copy of its box
+ * that collapses (flex-basis -> 0) and fades at once -- the visible close
+ * motion, playing the moment the tab is closed, like Firefox. The surviving
+ * tabs keep their frozen widths and slide left as it shrinks; on mouseleave
+ * they re-equalize. tabs.js attaches no handlers; the node is inert. The
+ * padding/border live on an inner span so the outer box can reach 0 (border-
+ * box padding would otherwise keep a stub open). */
+.tab.ghost {
+  pointer-events: none;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: hidden;
+  animation: nb-tab-ghost-close var(--tab-close-duration) var(--tab-close-ease) forwards;
+}
+.tab-ghost-fill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  font-size: .89rem;
+  color: var(--fg-muted);
+}
+@keyframes nb-tab-ghost-close {
+  from { flex-basis: var(--nb-tab-ghost-from); opacity: 1; }
+  to   { flex-basis: 0; opacity: 0; }
+}
+/* The release re-equalize keyframes must never drive the placeholder. */
+.tab-list.nb-tab-equalizing .tab.ghost { animation: none; }
+/* Reduced motion: no collapse or fade; tabs.js does not create a ghost then,
+ * and a stray one must vanish at once. */
+@media (prefers-reduced-motion: reduce) {
+  .tab.ghost { animation: none; opacity: 0; }
+}
 
 /* A disabled context-menu item (a bulk-close target with nothing to close). */
 .context-menu button:disabled { color: var(--fg-muted); cursor: default; }
