@@ -3182,6 +3182,16 @@ function check(label, cond, extra) {
   click("preview-btn");
   await tick(10);
   check("still dirty after toggling preview (unsaved content kept)", aTab.classList.contains("dirty"));
+  // Tab switches now commit (and would SAVE) a dirty edit session, so this
+  // scratch edit must be discarded explicitly before the width-freeze test
+  // switches tabs -- otherwise the save clobbers the notes/a.md fixture
+  // (FILE_A) that the search block below relies on.
+  window.confirm = () => true;   // discard the scratch edit
+  click("close-edit-btn");
+  await tick(20);
+  FILES["notes/a.md"] = FILE_A;
+  check("dirty-dot cleanup: scratch edit discarded, fixture restored",
+    !window.NB.viewer.isDirty("notes/a.md") && FILES["notes/a.md"] === FILE_A);
   // close the non-active Welcome tab
   window.NB.tabs.close("Welcome.md");
   await tick(20);
@@ -9435,22 +9445,127 @@ function check(label, cond, extra) {
     await tick(20);
   }
 
-  // Switching tabs while in edit mode preserves unsaved edits (regression).
-  await window.NB.tabs.activate("notes/a.md");
-  await tick(10);
-  window.NB.viewer.startEdit();
-  cmSetValue("# notes/a\n\nUNSAVED SWITCH EDITS\n");
-  cmFireInput();
-  await tick(10);
-  await window.NB.tabs.activate("Welcome.md");   // switch away mid-edit
+  // Switching tabs while in edit mode commits the session (regression).
+  // activate() routes every switch through NB.viewer.commitForTabSwitch():
+  // a CLEAN session exits silently; a DIRTY one prompts to save and, on OK,
+  // saves then exits; on Cancel it stays in edit mode with the edits intact
+  // and does NOT switch.
+  //
+  // Establish a clean baseline tied to the on-disk fixture. Reopen so the
+  // viewer cache's savedContent matches FILES["notes/a.md"] (earlier tests
+  // mutated both).
+  FILES["notes/a.md"] = FILE_A;
+  if (window.NB.tabs.isOpen("notes/a.md")) {
+    window.NB.tabs.close("notes/a.md", { force: true });
+    await tick(20);
+  }
+  await window.NB.tabs.open("notes/a.md");
   await tick(20);
-  await window.NB.tabs.activate("notes/a.md");   // switch back
-  await tick(20);
-  check("switch away+back preserves edits", /UNSAVED SWITCH EDITS/.test(cmGetValue()));
-  check("switched-back tab still dirty",
-    window.document.querySelector('.tab[data-path="notes/a.md"]').classList.contains("dirty"));
-  window.NB.viewer.endEdit();   // leave edit (keeps content -> still dirty)
-  await tick(10);
+
+  // (a) CLEAN CM6 edit session + tab switch: exits edit mode and switches,
+  // with NO confirm prompt.
+  {
+    window.NB.viewer.startEdit();
+    await tick(10);
+    let cleanConfirms = 0;
+    const cleanOrig = window.confirm;
+    window.confirm = () => { cleanConfirms++; return true; };
+    try {
+      await window.NB.tabs.activate("Welcome.md");
+      await tick(20);
+    } finally {
+      window.confirm = cleanOrig;
+    }
+    check("switch: clean edit session exits with no confirm",
+      cleanConfirms === 0, "confirms=" + cleanConfirms);
+    check("switch: clean edit session leaves edit mode",
+      cmIsHidden(), "cmHidden=" + cmIsHidden());
+    check("switch: clean edit session switches to Welcome.md",
+      window.NB.tabs.getActive() === "Welcome.md",
+      "active=" + window.NB.tabs.getActive());
+  }
+
+  // (b) DIRTY CM6 edit session + tab switch, confirm -> true: exactly one
+  // prompt, a POST /api/file save fires, edit mode exits, destination active.
+  {
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+    window.NB.viewer.startEdit();
+    await tick(10);
+    cmSetValue("# notes/a\n\nSWITCH SAVE EDITS\n");
+    cmFireInput();
+    await tick(10);
+    check("switch: dirty precondition before save-on-switch",
+      window.NB.viewer.isDirty("notes/a.md"));
+    const saveBeforeSwitch = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    let dirtyConfirms = 0;
+    const dirtyOrig = window.confirm;
+    window.confirm = () => { dirtyConfirms++; return true; };
+    try {
+      await window.NB.tabs.activate("Welcome.md");
+      await tick(40);
+    } finally {
+      window.confirm = dirtyOrig;
+    }
+    check("switch: dirty edit session prompts exactly once",
+      dirtyConfirms === 1, "confirms=" + dirtyConfirms);
+    check("switch: dirty edit session fires one save POST",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeSwitch === 1,
+      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeSwitch));
+    check("switch: dirty edit session leaves edit mode",
+      cmIsHidden(), "cmHidden=" + cmIsHidden());
+    check("switch: dirty edit session switches to Welcome.md",
+      window.NB.tabs.getActive() === "Welcome.md",
+      "active=" + window.NB.tabs.getActive());
+    // Restore the fixture and reopen notes/a.md so its cache's savedContent
+    // matches the on-disk FILE_A again for the Cancel case below.
+    FILES["notes/a.md"] = FILE_A;
+    window.NB.tabs.close("notes/a.md", { force: true });
+    await tick(20);
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+  }
+
+  // (c) DIRTY CM6 edit session + tab switch, confirm -> false (Cancel): the
+  // active tab does NOT change, edit mode stays active with the edits, and
+  // no save POST fires.
+  {
+    window.NB.viewer.startEdit();
+    await tick(10);
+    cmSetValue("# notes/a\n\nCANCEL SWITCH EDITS\n");
+    cmFireInput();
+    await tick(10);
+    check("switch: cancel precondition is dirty",
+      window.NB.viewer.isDirty("notes/a.md"));
+    const saveBeforeCancel = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    let cancelConfirms = 0;
+    const cancelOrig = window.confirm;
+    window.confirm = () => { cancelConfirms++; return false; };
+    try {
+      await window.NB.tabs.activate("Welcome.md");
+      await tick(30);
+    } finally {
+      window.confirm = cancelOrig;   // restore the true stub
+    }
+    check("switch: cancel prompts exactly once",
+      cancelConfirms === 1, "confirms=" + cancelConfirms);
+    check("switch: cancel keeps the source tab active",
+      window.NB.tabs.getActive() === "notes/a.md",
+      "active=" + window.NB.tabs.getActive());
+    check("switch: cancel stays in edit mode",
+      !cmIsHidden(), "cmHidden=" + cmIsHidden());
+    check("switch: cancel keeps the edits (still dirty)",
+      window.NB.viewer.isDirty("notes/a.md"));
+    check("switch: cancel fires no save POST",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length === saveBeforeCancel,
+      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeCancel));
+    // Leave edit mode keeping the dirty content, matching the state the
+    // rename test below expects (a dirty notes/a.md), and keep the on-disk
+    // fixture at FILE_A.
+    window.NB.viewer.endEdit();
+    await tick(10);
+    FILES["notes/a.md"] = FILE_A;
+  }
 
   // rename() re-keys the tab and carries dirty state.
   window.NB.tabs.rename("notes/a.md", "notes/renamed.md");

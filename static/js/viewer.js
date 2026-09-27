@@ -536,8 +536,9 @@
   const viewer = {
     /* Load `path` into the cache (fetch on miss) and show it. Emits
      * file:open so the sidebar highlight and recent list stay in sync.
-     * Flushes any in-flight textarea edits from the tab being left into its
-     * cache entry, so unsaved edits survive switching tabs mid-edit.
+     * Copies the editor value into the tab being left's cache entry as a
+     * safety net, though tabs.js already committed (or the user chose to
+     * stay) via commitForTabSwitch before reaching here.
      *
      * A monotonically increasing activation token guards the async
      * fetch: if the user clicks another tab while this activate's
@@ -706,10 +707,12 @@
     },
 
     /* Commit before navigating away (tab switch via Alt+H/L or the
-     * browser back button). If the current file is in edit mode:
-     *   - clean: just exit edit mode, no prompt.
-     *   - dirty: confirm; on OK save (failure aborts the nav), on
-     *     Cancel revert the editor to the last saved content.
+     * browser back button). A clean edit session just exits edit mode,
+     * no prompt. A dirty one prompts to save:
+     *   - clean: exit edit mode and proceed.
+     *   - dirty + OK: save, then exit edit mode and proceed (a failed
+     *     save stays in edit mode).
+     *   - dirty + Cancel: abort and stay in edit mode with the edits.
      * Also delegates to NB.hybrid.commitForTabSwitch when hybrid mode
      * is active (the hybrid module owns its own dirty + exit logic).
      * Returns true if the caller may proceed with the nav, false if
@@ -727,17 +730,12 @@
         this.endEdit();
         return true;
       }
-      const ok = confirm('Save changes to "' + active + '" before switching?');
-      if (ok) {
-        try { await this.save(); }
-        catch (e) {
-          alert("Save failed: " + (e && e.message ? e.message : e));
-          return false;
-        }
-      } else {
-        // Revert the editor to the last saved content so the next
-        // edit session starts clean.
-        NB.cmEditor.setValue(t.savedContent);
+      const ok = confirm('Save changes to "' + active + '" before switching tabs?');
+      if (!ok) return false;   // stay in edit mode with the edits
+      try { await this.save(); }
+      catch (e) {
+        alert("Save failed: " + (e && e.message ? e.message : e));
+        return false;
       }
       this.endEdit();
       return true;

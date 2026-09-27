@@ -2,8 +2,9 @@
  * active file; coordinates with viewer.js (per-file content cache) and
  * persists the open set + active file to config.
  *
- * Open/switch/close a tab -> viewer activates/renders the cached content
- * (unsaved edits are preserved per file when switching tabs).
+ * Open/switch/close a tab -> viewer activates/renders the cached content.
+ * A tab switch always exits edit mode: a clean file exits silently, a
+ * dirty one prompts to save first, and Cancel aborts the switch.
  *
  * Tabs are drag-reorderable. Pinned tabs live in a fixed left group: they
  * carry a pin marker, have no close button, and are skipped by the bulk-close
@@ -432,11 +433,11 @@
     if (!openSet.has(path)) return;
     const token = ++activateToken;
     const isStale = () => token !== activateToken;
-    // Block tab switching when hybrid mode has unsaved changes, so the
-    // user doesn't silently lose their WYSIWYG edits. Prompt to save;
-    // on Cancel, stay on the current tab. On OK, save then proceed.
-    if (path !== activePath && NB.hybrid && NB.hybrid.isActive) {
-      const ok = await NB.hybrid.commitForTabSwitch();
+    // A tab switch always exits edit mode (hybrid or plain editor). A
+    // dirty file prompts to save; on Cancel, stay on the current tab in
+    // edit mode. On OK, save then exit edit mode and proceed.
+    if (path !== activePath && NB.viewer && NB.viewer.commitForTabSwitch) {
+      const ok = await NB.viewer.commitForTabSwitch();
       if (!ok || isStale()) return;
     }
     // Special tabs don't go through viewer.activate; they own their
