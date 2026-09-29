@@ -96,7 +96,13 @@
           // render the raw [[...]] as plain text so there's no dead
           // link. resolveWikilink reads the current note + tree.
           const resolved = resolveWikilink(token.target);
-          if (!resolved) return token.raw;
+          if (!resolved) {
+            // Mark the literal so the hybrid serializer emits it verbatim:
+            // turndown's text escaper would otherwise turn it into
+            // "\[\[...\]\]" and change the note's bytes. The span carries
+            // no styling; it exists only for the round-trip.
+            return '<span data-wikilink-raw="1">' + token.raw + "</span>";
+          }
           // Escape the href so a target with quotes/spaces can't break
           // out of the attribute. The text is the note's own content
           // (rendered unsanitised anyway), so we pass it through.
@@ -611,6 +617,11 @@
 
     getPath() { return active; },
     getContent() { const t = cur(); return t ? (t.editMode ? NB.cmEditor.getValue() : t.content) : ""; },
+    /* Resolve a [[wikilink]] target the same way the renderer does.
+     * Exposed so hybrid's live [[ ]] input rule can produce the identical
+     * <a data-wikilink> shape (and a plain-text fallback for an
+     * unresolved target), keeping the round-trip in sync with render. */
+    resolveWikilink,
     isDirty(path) {
       const t = cache.get(path);
       if (!t) return false;

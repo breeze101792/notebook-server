@@ -226,6 +226,17 @@ is shared. Adding a renderer means: add the module, register it, add the
 test in `tests/dom/test_dom.js` checks index.html / sw.js / the ai.js prompt
 / agent.md all mention it.
 
+**Hybrid write-back contract.** A save that changes nothing writes nothing:
+`isNoOpMarkdown` compares the serialized DOM against the form captured at
+`enter()` and skips `POST /api/file` in every save caller (`save`, `onClose`,
+`onSaveExit`, `commitForTabSwitch`, `flushAutosave`, `exit`). Empty headings and
+empty list items keep their markers; whitespace-only inline code runs are
+carried through a clone with sentinels (a NUL-prefixed token for code spaces,
+because a private-use char occurs in real notes). Tables are always emitted as
+GFM: `normalizeTablesForGfm` rebuilds every table in the clone into the shape
+Turndown's GFM rule accepts (an all-`<th>` first row in a leading `<thead>`),
+never as raw `<table>`. See `docs/markdown.md` for the full contract.
+
 **Agent-facing docs are part of the renderer contract.** The fence
 languages are documented for two audiences that must stay in sync with the
 code: the built-in assistant's system prompt in `static/js/ai.js`, and the

@@ -55,16 +55,96 @@
   ];
 
   // The marker appended to the caret line-box <br> (see caretToStart /
-  // caretToEdge) and the sentinel given to an empty heading in the
-  // turndown clone. Both are stripped by domToMarkdown; they are named
-  // here so the create/strip sites cannot drift apart.
+  // caretToEdge) and the sentinels given to an empty heading and an
+  // empty list item in the turndown clone. All are stripped by
+  // domToMarkdown; they are named here so the create/strip sites cannot
+  // drift apart. A distinct sentinel per element is used because each
+  // needs its own rewrite (a heading drops the separating space, a list
+  // item also drops the padding after its marker).
   const CARET_BR_ATTR = "data-hybrid-caret-br";
   const EMPTY_HEADING_SENTINEL = "\u0000nbemptyh";
+  const EMPTY_LIST_ITEM_SENTINEL = "\u0000nbemptyli";
+  const EMPTY_QUOTE_SENTINEL = "\u0000nbemptybq";
+  // Turndown's collapseWhitespace deletes a whitespace-only text node
+  // BEFORE any rule runs (vendor turndown.browser.js, collapseWhitespace
+  // -> remove), so the spaces inside an inline <code>   </code> cannot
+  // survive a normal pass. A NUL-prefixed sentinel stands in for each
+  // space; domToMarkdown swaps it back after turndown. Only inline code
+  // gets it -- pre > code is left alone.
+  //
+  // The sentinel MUST be a NUL-prefixed token, not a single private-use
+  // character: a private-use char (E000-F8FF) occurs in real notes
+  // (Nerd Font / Powerline glyphs, pasted terminal output), and a global
+  // split on it would silently rewrite those characters to spaces -- the
+  // exact data-loss class this path exists to fix. Turndown strips NUL
+  // from text (postProcess), so a real note cannot carry this token.
+  const CODE_SPACE_SENTINEL = "\u0000nbcodespace";
+  // Turndown's bundled postProcess() trims trailing whitespace, so a
+  // non-whitespace sentinel is appended as the clone's LAST child and the
+  // output is cut at it (see wholeDomMarkdown / serializeEditedElement).
+  const SAVE_SENTINEL = "\u0000nbsave";
+  // The canonical separator placed between blocks that were re-serialized
+  // by the splice path. Untouched blocks keep their own source bytes and
+  // never need it; it only pads a freshly emitted block.
+  const SEGMENT_SEPARATOR = "\n\n";
+  // The zero-width-space placeholder addListPlaceholders injects into an
+  // empty list item. It is invisible and meaningless, so the content hash
+  // ignores it (and domToMarkdown strips it from the output).
+  const ZERO_WIDTH_SPACE = "\u200B";
+  // Attributes that hybrid/viewer inject for editing chrome and must not
+  // count as content in the change hash: contenteditable is set on the
+  // root and on atomic plugin blocks, and every data-hybrid-* attribute
+  // (the atomic marker, the caret <br> and caret-paragraph markers) is an
+  // editing artifact. Heading ids are injected by viewer.js and stripped
+  // separately (only on H1-H6 -- an id on other content is real).
+  const HASH_ATTR_PREFIX = "data-hybrid-";
+  const HEADING_TAG_RE = /^H[1-6]$/;
+  // Renderer container classes. Their rendered children change
+  // asynchronously (a lazy bundle swaps an error box for a real
+  // container, an SVG renders later), so the splice path hashes only the
+  // block's SOURCE, not its rendered subtree. Same list the atomic
+  // selector is built from, so a new renderer is covered by construction.
+  const PLUGIN_CONTAINER_CLASSES = [
+    "htmlpreview-card", "mermaid-container", "wavedrom-container",
+    "katex-container", "viz-container", "mermaid-error", "wavedrom-error",
+    "katex-error", "viz-error",
+  ];
+  const PLUGIN_CONTAINER_SELECTOR =
+    PLUGIN_CONTAINER_CLASSES.map((c) => "." + c).join(", ");
 
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
   let turndownSvc = null;   // lazily created TurndownService instance
   let savedRange = null;    // caret range captured when the context menu opens
+  // The on-disk markdown baseline captured when hybrid enter()ed and
+  // refreshed after each successful write. The save callers compare the
+  // serialized DOM against this to make a no-op a non-write. It is the
+  // baseline, NOT the current DOM: undo/redo change the DOM but must not
+  // move this until a write lands.
+  let sessionSource = "";
+  // The serialization of the DOM as it was at enter() time (and after
+  // each successful write). The no-op comparison targets this rather
+  // than sessionSource's raw bytes so a clean save on a file the
+  // serializer canonicalizes (trailing blank line, bullet marker) still
+  // skips: the DOM did not change, so nothing should be written.
+  let sessionSerialized = "";
+  // The ordered top-level blocks of sessionSource, from marked's Lexer:
+  // [{type, raw}]. `raw`s are the original source bytes and their
+  // concatenation is exactly sessionSource, including the `space` and
+  // `html` tokens that carry blank-line runs and comments. null when the
+  // source cannot be lexed or the raws do not reassemble it (fail closed).
+  let sourceBlocks = null;
+  // One entry per top-level ELEMENT child of #viewer-content, in order:
+  // {tokenIndex, hash}. Built after enter-time normalization. The splice
+  // path is valid only when the current element count matches this array
+  // exactly, so any structural edit (add/delete/reorder/undo/redo that
+  // changes the element count) fails closed to the whole-DOM serializer.
+  let blockHashes = null;
+  // Count of root-level non-element children (#text and comments) at
+  // baseline time. They have no top-level block of their own, so the
+  // splice cannot emit a newly added one; a changed count fails the
+  // splice closed to the whole-DOM serializer.
+  let rootAuxBaseline = 0;
 
   function ensureTurndown() {
     if (turndownSvc) return turndownSvc;
@@ -91,6 +171,16 @@
         const target = node.getAttribute("href") || "";
         return "[[" + target + (content === target ? "" : "|" + content) + "]]";
       },
+    });
+    // An UNRESOLVED [[wikilink]] is marked with data-wikilink-raw (the
+    // renderer emits a <span>, the live input rule an <a>) and holds the
+    // raw literal as its text. Turndown's text escaper would turn that
+    // into "\[\[...\]\]", so emit the literal verbatim here; the saved
+    // bytes match the source.
+    turndownSvc.addRule("wikilink-raw", {
+      filter: (node) => node.getAttribute &&
+        node.getAttribute("data-wikilink-raw") === "1",
+      replacement: (content, node) => node.textContent,
     });
     // Preserve blank lines, but as plain Markdown. Turndown's built-in
     // `blank` rule already leaves table structure and void children
@@ -137,14 +227,168 @@
 
   /* --- DOM <-> Markdown helpers ----------------------------------- */
 
-  /* Convert the current #viewer-content DOM back to a Markdown string.
-   * We clone the node so turndown's DOM mutation doesn't affect the
-   * live element. Strip copy buttons (they are injected by viewer.js
-   * and are not part of the content). */
-  function domToMarkdown() {
-    const td = ensureTurndown();
-    if (!td) return "";
-    const clone = viewerContentEl.cloneNode(true);
+  /* True for inline code -- a <code> that is not inside a <pre>. The
+   * fenced path owns its source through NB.blocks.restoreForMarkdown
+   * and turndown's fencedCodeBlock rule; only inline code needs the
+   * whitespace placeholder below. */
+  function isInlineCode(code) {
+    return !code.closest("pre");
+  }
+
+  /* Swap each space in a whitespace-only inline <code> for
+   * CODE_SPACE_SENTINEL before turndown runs. Turndown's
+   * collapseWhitespace deletes a whitespace-only text node before any
+   * rule runs (vendor turndown.browser.js, collapseWhitespace -> remove),
+   * so the spaces inside `   ` are otherwise unrecoverable. Code with
+   * real content is left untouched; pre > code is never touched. Tabs
+   * and other whitespace are left as-is: only the space run is the case
+   * turndown cannot represent. */
+  function placeholderInlineCodeSpaces(root) {
+    root.querySelectorAll("code").forEach((code) => {
+      if (!isInlineCode(code)) return;
+      if (code.textContent.trim()) return;
+      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        node.nodeValue = node.nodeValue.split(" ")
+          .join(CODE_SPACE_SENTINEL);
+      }
+    });
+  }
+
+  /* True when a list item has nothing beside its marker: no void child
+   * (image, checkbox, embedded frame) and only whitespace once the
+   * zero-width-space placeholder addListPlaceholders inserts is
+   * removed. <br> counts as empty (the browser's empty-line marker), so
+   * it is a void child for the purpose of "is there content"; only the
+   * truly empty item gets the sentinel. */
+  function isEmptyListItem(li) {
+    if (li.querySelector("img,hr,canvas,svg,iframe,input")) return false;
+    return li.textContent.replace(/\u200B/g, "").trim() === "";
+  }
+
+  /* Give an empty list item the EMPTY_LIST_ITEM_SENTINEL in the clone.
+   * Turndown's isBlank() drops an empty <li> (or one holding only the
+   * ZWS placeholder) before the listItem rule can emit its marker, so
+   * the "1." / "-" line silently vanished on save. LI is deliberately
+   * not in BLANK_RULE_EXEMPT_TAGS: an empty cell is content, an empty
+   * list item is a marker. domToMarkdown rewrites the emitted marker
+   * line back to just the marker.
+   *
+   * The browser marks an empty list item with a `<br>` line box (Chrome
+   * does this on Enter). Left in, turndown sees a non-blank item and
+   * emits "-     \n    \n" -- trailing spaces and a stray indented line,
+   * the garbage the owner sees after pressing Enter on a list. Strip the
+   * line box (and any whitespace-only text) first: an empty item is a
+   * marker, nothing else. */
+  function markEmptyListItems(root) {
+    root.querySelectorAll("li").forEach((li) => {
+      if (!isEmptyListItem(li)) return;
+      li.querySelectorAll("br").forEach((br) => br.remove());
+      li.appendChild(document.createTextNode(EMPTY_LIST_ITEM_SENTINEL));
+    });
+  }
+
+  /* Give an empty blockquote a sentinel in the clone so it survives as
+   * ">". Turndown drops an empty <blockquote> entirely (verified:
+   * conv("<blockquote></blockquote>") === ""), which loses the marker --
+   * unlike an empty heading ("##") or an empty list item ("-"), which
+   * keep theirs. By the owner's model a ">" line with zero words is a
+   * valid block and must round-trip. The sentinel sits inside a <p> so
+   * the quote's own paragraph rule produces "> <sentinel>"; postProcess
+   * rewrites that to ">".
+   *
+   * A blockquote is "empty" only when it has NO child ELEMENTS: a nested
+   * <blockquote> (""> >" -- the inner empty level), a list, or a fence is
+   * content, and wiping it to a bare sentinel would collapse the nesting.
+   * Only a truly bare quote (text or nothing inside) gets the sentinel. */
+  function markEmptyBlockquotes(root) {
+    root.querySelectorAll("blockquote").forEach((bq) => {
+      // A nested quote, list, or fence is content, not an empty marker:
+      // wiping it to a sentinel would collapse the nesting (""> >"" -> ">").
+      // A bare <p> (often the emptied quote's own paragraph, or the empty
+      // paragraph a browser leaves) is NOT structure -- it is the thing
+      // being emptied -- so it does not block the sentinel.
+      if (bq.querySelector("blockquote,ul,ol,pre,table,img,hr,canvas,svg,iframe")) return;
+      if (bq.textContent.replace(/\u200B/g, "").trim()) return;
+      const p = document.createElement("p");
+      p.appendChild(document.createTextNode(EMPTY_QUOTE_SENTINEL));
+      while (bq.firstChild) bq.removeChild(bq.firstChild);
+      bq.appendChild(p);
+    });
+  }
+
+  /* Normalize every table in the turndown clone so turndown-plugin-gfm
+   * serializes it as a GFM table instead of keeping it as raw HTML.
+   *
+   * The plugin's `table` rule fires only when `isHeadingRow(table.rows[0])`
+   * is true: the first row's parent must be a <thead>, or the row must be
+   * the first child of the table / first <tbody> AND every cell a <th>
+   * (vendor turndown-plugin-gfm.browser.js:100-110). Anything else is
+   * `keep`d as raw <table>, which would write HTML into the Markdown file.
+   * marked passes a raw <table> in a note straight through, and a table
+   * built in the DOM can lack a header, so the clone must be rebuilt into
+   * exactly the shape the rule accepts:
+   *
+   *   - a <caption> has no GFM representation; its words are kept as a
+   *     paragraph before the table rather than dropped,
+   *   - <colgroup>/<col> are width hints GFM cannot hold and are dropped,
+   *   - all rows are collected in document order (a <tfoot> is not emitted
+   *     before the body by the rebuild), the first becomes an all-<th>
+   *     header inside a leading <thead>, the rest a single <tbody>,
+   *   - a table with no rows is removed: GFM cannot represent it, and an
+   *     empty <table> makes the plugin dereference `rows[0].parentNode`
+   *     and throw (which would break every save, including the enter-time
+   *     baseline).
+   *
+   * Only the CLONE is touched, so the live editable DOM is unchanged, and
+   * NB.blocks.restoreForMarkdown runs afterwards to replace any table
+   * living inside a plugin container with its fence. */
+  function normalizeTablesForGfm(root) {
+    root.querySelectorAll("table").forEach((table) => {
+      const caption = table.querySelector("caption");
+      if (caption && caption.textContent.trim()) {
+        const p = document.createElement("p");
+        p.textContent = caption.textContent.trim();
+        table.parentNode.insertBefore(p, table);
+      }
+      table.querySelectorAll("caption,colgroup,col").forEach((el) => el.remove());
+      const rows = Array.from(table.rows);
+      if (!rows.length) {
+        // No cells to serialize; an empty table would throw inside the
+        // plugin. Removing it loses nothing.
+        table.remove();
+        return;
+      }
+      const header = rows[0];
+      Array.from(header.cells).forEach((c) => {
+        if (c.tagName === "TH") return;
+        const th = document.createElement("th");
+        while (c.firstChild) th.appendChild(c.firstChild);
+        c.replaceWith(th);
+      });
+      // Rebuild as <thead> + <tbody>. The header's parent is now thead,
+      // so isHeadingRow() takes its THEAD branch, and the body rows sit
+      // in a tbody whose previous sibling is a NON-empty thead so they
+      // are not mistaken for a header (isFirstTbody would reject it).
+      const thead = document.createElement("thead");
+      const tbody = document.createElement("tbody");
+      thead.appendChild(header);
+      rows.slice(1).forEach((row) => tbody.appendChild(row));
+      while (table.firstChild) table.removeChild(table.firstChild);
+      table.appendChild(thead);
+      table.appendChild(tbody);
+    });
+  }
+
+  /* Run every pre-turndown pass over a clone (or a one-element container):
+   * strip viewer chrome and editing artifacts, protect the whitespace
+   * that turndown would otherwise delete, mark empty headings and list
+   * items, force tables into GFM shape, and restore plugin fences. The
+   * whole-DOM fallback and the per-block splice serializer share this, so
+   * an edited block is emitted by exactly the same rules as a full
+   * serialization would have used. */
+  function prepareTurndownClone(clone) {
     // Remove injected copy buttons so they don't appear in the output.
     clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
     // Drop caret placeholder paragraphs the hr repair opened for the
@@ -166,6 +410,11 @@
     // ONLY by those two functions, so a <br> the user actually typed is
     // never marked and always survives.
     clone.querySelectorAll("[" + CARET_BR_ATTR + "]").forEach((br) => br.remove());
+    // Preserve a whitespace-only inline <code>   </code> by standing the
+    // NUL-prefixed sentinel in for each space before turndown's
+    // collapseWhitespace can delete the text node. Restored by
+    // postProcessMarkdown.
+    placeholderInlineCodeSpaces(clone);
     // An EMPTY heading ("##" with no text yet) must keep its marker.
     // Turndown's built-in isBlank() applies the blank rule to an
     // all-whitespace heading BEFORE any added rule runs, dropping the
@@ -181,6 +430,19 @@
         h.appendChild(document.createTextNode(EMPTY_HEADING_SENTINEL));
       }
     });
+    // An EMPTY list item ("-" with nothing after it, or one holding only
+    // the ZWS placeholder) needs the same treatment: isBlank() would drop
+    // the item and its marker. A distinct sentinel is used so the emitted
+    // marker line can be rewritten to just the marker.
+    markEmptyListItems(clone);
+    // An emptied blockquote must keep its ">" marker; turndown would
+    // otherwise drop the element. See markEmptyBlockquotes.
+    markEmptyBlockquotes(clone);
+    // Make every table serialize as a GFM table: turndown keeps a table
+    // with no <th> heading row (or a <caption>/<colgroup>/<tfoot> shape)
+    // as raw HTML, and a raw <table> in the source would otherwise leak
+    // HTML into the note. See normalizeTablesForGfm.
+    normalizeTablesForGfm(clone);
     // Round-trip every registered plugin block (mermaid / wavedrom /
     // katex / graphviz / html-live) back to its fenced source. The
     // registry owns the container + error-box shapes, so a new renderer
@@ -188,19 +450,31 @@
     if (NB.blocks && NB.blocks.restoreForMarkdown) {
       NB.blocks.restoreForMarkdown(clone);
     }
-    // Turndown's bundled postProcess() trims trailing whitespace from
-    // its final output, which would silently drop blank lines the user
-    // added at the end of a note (whether they live in <p>, <div>, or
-    // bare <br> elements -- a real browser's contentEditable produces
-    // all three). postProcess is a module-scoped closure that cannot be
-    // overridden on the instance, so instead append a non-whitespace
-    // sentinel text node as the clone's LAST child: the trim then can't
-    // eat anything before it. Run the conversion, cut the sentinel off.
-    const SENTINEL = "\u0000nbsave";
-    clone.appendChild(document.createTextNode(SENTINEL));
+  }
+
+  /* Turndown a prepared clone into a string. Turndown's bundled
+   * postProcess() trims trailing whitespace from its final output, which
+   * would silently drop blank lines the user added at the end of a note
+   * (whether they live in <p>, <div>, or bare <br> elements -- a real
+   * browser's contentEditable produces all three). postProcess is a
+   * module-scoped closure that cannot be overridden on the instance, so
+   * instead append a non-whitespace sentinel text node as the clone's
+   * LAST child: the trim then can't eat anything before it. Run the
+   * conversion, cut the sentinel off. */
+  function turndownPrepared(td, clone) {
+    clone.appendChild(document.createTextNode(SAVE_SENTINEL));
     let md = td.turndown(clone);
-    const cut = md.indexOf(SENTINEL);
+    const cut = md.indexOf(SAVE_SENTINEL);
     if (cut >= 0) md = md.slice(0, cut);
+    return md;
+  }
+
+  /* Undo the pre-turndown sentinels and strip the editing artifacts from
+   * a serialized block: the zero-width-space list placeholder, the empty
+   * heading sentinel, the empty list-item sentinel, and the inline-code
+   * space sentinel. Shared by the whole-DOM fallback and the splice path
+   * so both emit identical bytes for the same element. */
+  function postProcessMarkdown(md) {
     // Strip the zero-width-space placeholder we inject into empty list
     // items (see ensureListMarker) so it never leaks into the saved
     // markdown. A bare ZWS text node is invisible and meaningless.
@@ -209,7 +483,556 @@
     // would not drop it; the heading rule emits "## <sentinel>". Remove
     // the sentinel and the separating space, restoring exactly "##".
     md = md.split(" " + EMPTY_HEADING_SENTINEL).join("");
-    return md.split(EMPTY_HEADING_SENTINEL).join("");
+    md = md.split(EMPTY_HEADING_SENTINEL).join("");
+    // An empty list item was given EMPTY_LIST_ITEM_SENTINEL; the listItem
+    // rule emits "<padding><marker><padding><sentinel>". Match the whole
+    // line at any indent so flat, nested, and blockquoted items all
+    // rewrite to just their marker (the leading whitespace and marker are
+    // kept, the sentinel and the padding around it dropped). Ordered
+    // markers are "<n>.", which marked and turndown both use.
+    md = md.replace(
+      new RegExp("^(\\s*(?:>[ \\t]*)*)([-*+]|\\d+[.)])[ \\t]*" +
+        EMPTY_LIST_ITEM_SENTINEL + "[ \\t]*$", "gm"), "$1$2");
+    md = md.split(EMPTY_LIST_ITEM_SENTINEL).join("");
+    // An emptied blockquote was given EMPTY_QUOTE_SENTINEL inside a <p>;
+    // the blockquote rule emits "> <sentinel>". Collapse that to just ">"
+    // so the marker survives, then sweep any stray sentinel. The
+    // "> " form is matched (not a bare split) so a real ">" inside quote
+    // text is left alone.
+    md = md.split("> " + EMPTY_QUOTE_SENTINEL).join(">");
+    md = md.split(EMPTY_QUOTE_SENTINEL).join("");
+    // Restore the spaces preserved inside a whitespace-only inline code.
+    md = md.split(CODE_SPACE_SENTINEL).join(" ");
+    // Turndown's escape list only escapes a heading marker when a SPACE
+    // follows ("^#{1,6} "), so a paragraph whose text STARTS with "##x"
+    // or "#no-space" would be read back as an ATX heading. Escape a
+    // leading run of one-or-more "#" at the start of a line that is not
+    // already a heading (a space follows) and not inside a fence. Only
+    // the leading run is touched, so a "#" mid-line is left alone.
+    md = escapeLeadingHashes(md);
+    return md;
+  }
+
+  /* Escape a leading "#" run on a line that is not a valid ATX heading and
+   * not inside a fenced code block. A valid heading is one to six "#"
+   * followed by a space or the end of the line (`# Title`); anything else
+   * (`#no-space`, `##x`, seven or more "#") is a paragraph whose text
+   * begins with "#", so the run is escaped to read back as text. Only the
+   * leading run is touched, so a "#" mid-line is left alone. */
+  function escapeLeadingHashes(md) {
+    const lines = md.split("\n");
+    let fence = null;   // the opening delimiter, e.g. "```" or "~~~~"
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // A fence may sit inside a blockquote, so allow a "> " prefix. Track
+      // the WHOLE delimiter (char + length): a closing fence must be at
+      // least as long as the opener, so a 3-backtick line inside a
+      // 4-backtick fence does not close it early.
+      const fm = /^\s*(?:>[ \t]*)*(`{3,}|~{3,})/.exec(line);
+      if (fm) {
+        if (!fence) fence = fm[1];
+        else if (fm[1][0] === fence[0] && fm[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence) continue;
+      const m = /^(\s*(?:>[ \t]*)*)(#+)(.*)$/.exec(line);
+      if (!m) continue;
+      const run = m[2];
+      const rest = m[3];
+      const isHeading = run.length <= 6 && (rest === "" || /^[ \t]/.test(rest));
+      if (isHeading) continue;
+      lines[i] = m[1] + run.split("").map(() => "\\#").join("") + rest;
+    }
+    return lines.join("\n");
+  }
+
+  /* Serialize the whole #viewer-content DOM. This is the fallback path;
+   * the splice path (spliceSave) is the normal one. */
+  function wholeDomMarkdown() {
+    const td = ensureTurndown();
+    if (!td) return "";
+    const clone = viewerContentEl.cloneNode(true);
+    prepareTurndownClone(clone);
+    return postProcessMarkdown(turndownPrepared(td, clone));
+  }
+
+  /* Serialize ONE top-level element through the same rule set the
+   * whole-DOM fallback uses, so an edited block is emitted by its format
+   * rather than by a different path. The element is cloned into a bare
+   * <div> holder so turndown sees a fragment root, then only the blank
+   * lines turndown adds AROUND the block are removed: the splice path
+   * re-attaches the token's own trailing newline run. A plain .trim()
+   * would also strip a leading space or trailing hard-break that is real
+   * content of the edited block. */
+  const BLANK_LINE_TRIM_RE = /^\n+|\n+$/g;
+  function serializeEditedElement(el) {
+    if (!el) return "";
+    const td = ensureTurndown();
+    if (!td) return "";
+    const holder = document.createElement("div");
+    holder.appendChild(el.cloneNode(true));
+    prepareTurndownClone(holder);
+    return postProcessMarkdown(turndownPrepared(td, holder))
+      .replace(BLANK_LINE_TRIM_RE, "");
+  }
+
+  /* Convert the current #viewer-content DOM back to a Markdown string.
+   *
+   * The splice path is tried first: when the file's top-level structure
+   * still aligns with the lexed session source, only the blocks whose
+   * content hash changed are re-serialized and every untouched block
+   * keeps its original source bytes. When alignment is not certain
+   * (spliceSave returns null) the whole DOM is regenerated, preserving
+   * the pre-step-4 behavior exactly. */
+  function domToMarkdown() {
+    const spliced = spliceSave();
+    return spliced != null ? spliced : wholeDomMarkdown();
+  }
+
+  /* Lex `source` into ordered top-level blocks. Returns null -- never
+   * guesses -- when marked is unavailable, lexing throws, or the raws do
+   * not concatenate back to exactly `source`. That last check is what
+   * makes the splice safe: if the raws reassemble the file byte-for-byte,
+   * swapping one block's raw for a re-serialization and keeping the rest
+   * can never lose bytes that live outside a block. */
+  function topLevelBlocks(source) {
+    if (!window.marked || !window.marked.Lexer) return null;
+    let toks;
+    try {
+      toks = new window.marked.Lexer({ gfm: true, breaks: false }).lex(source);
+    } catch (_) {
+      return null;
+    }
+    const blocks = toks.map((t) => ({ type: t.type, raw: t.raw || "" }));
+    if (blocks.map((b) => b.raw).join("") !== source) return null;
+    return blocks;
+  }
+
+  /* How many top-level ELEMENT nodes a token owns. `space`/`def` own none;
+   * a normal block owns one; an `html` token owns as many as its raw
+   * renders (a comment renders none, `<div>` renders one, adjacent
+   * `<div></div><div></div>` renders two). */
+  function tokenElementCount(token) {
+    if (!token) return 0;
+    if (token.type === "space" || token.type === "def") return 0;
+    if (token.type === "html") return htmlTokenElementCount(token.raw);
+    return 1;
+  }
+
+  /* True for a token the gap-borrowing path may take a separating newline
+   * from: a token that owns no element of its own. Mirrors
+   * tokenElementCount === 0. */
+  function tokenProducesElement(token) {
+    return tokenElementCount(token) > 0;
+  }
+
+  /* How many elements an `html` token owns. A comment renders none; raw
+   * markup renders one or several. A raw `<table>` is the one exception:
+   * a table has a native GFM form and §4.12 requires that no `<table>`
+   * ever be emitted, so a raw-table token owns no element and the whole
+   * document falls back to the whole-DOM serializer, which converts it.
+   * Every other raw block (`<div>`, `<details>`, a comment) is passed
+   * through untouched (Q10). */
+  function htmlTokenElementCount(raw) {
+    if (!window.marked || !raw) return 0;
+    const holder = document.createElement("div");
+    try {
+      holder.innerHTML = window.marked.parse(raw, { gfm: true, breaks: false });
+    } catch (_) {
+      return 0;
+    }
+    let n = 0;
+    for (const c of holder.childNodes) {
+      if (c.nodeType !== Node.ELEMENT_NODE) continue;
+      if (c.tagName === "TABLE") return 0;
+      n += 1;
+    }
+    return n;
+  }
+
+
+  function topLevelElements() {
+    const els = [];
+    for (const n of viewerContentEl.childNodes) {
+      if (n.nodeType === Node.ELEMENT_NODE) els.push(n);
+    }
+    return els;
+  }
+
+  /* A canonical, serialization-free string of a subtree for hashing:
+   * element tags, non-chrome attributes, text and comment nodes. It must
+   * be stable across the app's own DOM churn and sensitive to real edits:
+   *
+   *   - `input.checked` is appended explicitly. Toggling a task checkbox
+   *     is a real edit, but it is a live property that innerHTML /
+   *     outerHTML / isEqualNode cannot see.
+   *   - Viewer/hybrid chrome is stripped before hashing: the
+   *     .code-copy-btn injected into every fence, every data-hybrid-*
+   *     attribute, and contenteditable. Heading ids (viewer slugs) are
+   *     stripped too; an id on any other element is treated as content.
+   *   - The zero-width-space placeholder addListPlaceholders injects into
+   *     empty list items is ignored: it is invisible and meaningless.
+   *
+   * This is a cheap deterministic walk, NOT a serialization comparison:
+   * comparing emitted markdown would see every `*` bullet and setext
+   * heading as "changed" (turndown canonicalizes them) and re-serialize
+   * the whole file. */
+  function isHashStrippedAttr(el, name) {
+    if (name === "contenteditable" || name === CARET_BR_ATTR) return true;
+    if (name.indexOf(HASH_ATTR_PREFIX) === 0) return true;
+    if (name === "id" && HEADING_TAG_RE.test(el.tagName)) return true;
+    return false;
+  }
+
+  function canonicalSubtree(root) {
+    let out = "";
+    (function walk(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += "\u0001t" + node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
+        return;
+      }
+      if (node.nodeType === Node.COMMENT_NODE) {
+        out += "\u0001c" + node.nodeValue;
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (node.classList && node.classList.contains("code-copy-btn")) return;
+      out += "\u0001<" + node.tagName;
+      for (const a of node.attributes) {
+        if (isHashStrippedAttr(node, a.name)) continue;
+        out += " " + a.name + "=" + a.value;
+      }
+      // A live checkbox property has no attribute to compare.
+      if (node.tagName === "INPUT") {
+        out += " checked=" + (node.checked ? "1" : "0");
+      }
+      for (const child of node.childNodes) walk(child);
+      out += ">";
+    })(root);
+    return out;
+  }
+
+  /* The fence language + original source of a plugin block, whichever
+   * form it is in: a rendered container / error box (source in its
+   * dataset or .sourceClass child) or a raw fence whose language is
+   * claimed by a registered renderer (source in the <code>). Returns null
+   * for an ordinary block. */
+  function pluginBlockInfo(el) {
+    if (!NB.blocks || !el) return null;
+    if (NB.blocks.forElement) {
+      const d = NB.blocks.forElement(el);
+      if (d) return { fence: d.fence, source: NB.blocks.sourceOf(d, el) };
+    }
+    if (el.tagName === "PRE") {
+      const code = el.querySelector("code");
+      if (code) {
+        const m = (code.className || "").match(/language-([\w-]+)/);
+        const d = m && NB.blocks.forLang && NB.blocks.forLang(m[1]);
+        if (d) return { fence: d.fence, source: code.textContent || "" };
+      }
+    }
+    return null;
+  }
+
+  /* The change key of a top-level element: a collision-free canonical
+   * string, not a hash. A 32-bit FNV-1a digest was used here originally,
+   * but two distinct short paragraphs can collide (`5ur85a` and `qnef9u`
+   * both digest to 1296670111), and a collision makes a real edit look
+   * unchanged -- `spliceSave` returns the baseline and the save is
+   * skipped, silently losing the user's text. The canonical string is
+   * the same walk the digest was built over, so this costs no more.
+   *
+   * A plugin block is keyed by its FENCE SOURCE, not its rendered subtree:
+   * the SVG or error box renders asynchronously (a lazy bundle swaps a
+   * <pre> for a container, then fills it), so a subtree key would report a
+   * spurious change and defeat the splice's locality. Both forms of the
+   * same fence key identically, so a block that renders between enter and
+   * save is not seen as edited. Every other block keys its normalized
+   * subtree (see canonicalSubtree). */
+  function changeKeyForElement(el) {
+    const info = pluginBlockInfo(el);
+    if (info) return "\u0001p" + info.fence + "\u0001" + info.source;
+    return canonicalSubtree(el);
+  }
+
+  /* Count root-level non-element nodes (bare #text and comments). They
+   * carry no top-level block of their own -- a `space`/`html` token's raw
+   * already covers them -- so the splice cannot emit a NEW one that the
+   * user added. The count is part of the structural guard: when it
+   * changes, spliceSave fails closed and the whole-DOM serializer picks
+   * the node up. */
+  function rootAuxCount() {
+    let n = 0;
+    for (const node of viewerContentEl.childNodes) {
+      if (node.nodeType !== Node.ELEMENT_NODE) n += 1;
+    }
+    return n;
+  }
+
+  /* Pair each element-producing top-level token with the next top-level
+   * ELEMENT node, in order (skipping the tokens that render no element
+   * and the #text/comment nodes). Returns [{tokenIndex, hash}] or null
+   * when the pairing is not confident:
+   *
+   *   - a token has no element left (or an element has no token): an
+   *     element-producing token that rendered no element, or a real
+   *     element that no token claims,
+   *   - marked is unavailable or the source cannot be lexed exactly.
+   *
+   * Also records the element NODE for each pair (blockEls) so the
+   * structural splice can match a preserved block by node identity even
+   * when two blocks have identical content (`* a` and `- a`), where a
+   * content hash alone cannot tell which twin survived.
+   *
+   * A null here disables the splice path and every save falls back to the
+   * whole-DOM serializer. Never guess an alignment. */
+  function buildAlignment(blocks) {
+    if (!blocks) return null;
+    const els = topLevelElements();
+    const pairs = [];
+    let ti = 0;
+    let ei = 0;
+    while (ei < els.length) {
+      // Skip tokens that own no top-level element (a blank-line run, a
+      // link-reference definition, or an HTML comment).
+      while (ti < blocks.length && tokenElementCount(blocks[ti]) === 0) ti++;
+      if (ti >= blocks.length) return null;
+      const count = tokenElementCount(blocks[ti]);
+      // A token that renders more than one element (adjacent raw tags in a
+      // single `html` token) has no per-element source span: refuse and let
+      // the caller fall back rather than guess which tag a subtree is.
+      if (count !== 1) return null;
+      pairs.push({ tokenIndex: ti, key: changeKeyForElement(els[ei]), el: els[ei] });
+      ti++;
+      ei++;
+    }
+    // Any element-owning token left over means a block rendered no element;
+    // refuse rather than drop it from the splice.
+    while (ti < blocks.length && tokenElementCount(blocks[ti]) === 0) ti++;
+    if (ti < blocks.length) return null;
+    return pairs;
+  }
+
+  /* Re-seat the splice baseline: the lexed source blocks and the per-
+   * element hashes of the CURRENT DOM. Must run after every enter-time
+   * normalization and after any re-render, so the hashes describe the
+   * exact DOM the user starts editing and can never be stale. When the
+   * source does not lex exactly, both baselines become null and the save
+   * path falls back for the whole session. */
+  function rebaseSegments(source) {
+    sourceBlocks = topLevelBlocks(source);
+    blockHashes = buildAlignment(sourceBlocks);
+    rootAuxBaseline = rootAuxCount();
+  }
+
+  /* The splice save. Returns the composed Markdown, or null when the
+   * structure cannot be confidently aligned and the caller must fall back
+   * to the whole-DOM serializer.
+   *
+   * Fast path: the element count matches the baseline and every hash is
+   * unchanged -- the file is sessionSource, byte-for-byte, with no
+   * serialization at all.
+   *
+   * Splice path: copy the lexed blocks and replace the raw of each
+   * changed element's token with a re-serialization of just that element.
+   * The block's own trailing newline run is kept; when its raw has none
+   * (a paragraph or list, whose separating blank line marked emits as a
+   * separate `space` token) the leading newline run is borrowed from the
+   * next gap token, which is consumed, so the separation is neither
+   * dropped nor doubled. Every other block and every `space`/`html` token
+   * is emitted byte-for-byte, so untouched regions cannot be
+   * canonicalized.
+   *
+   * Fail closed -- null -- only when the source did not lex exactly or a
+   * root-level text/comment node count changed. A block add/delete/reorder
+   * (Enter, Backspace/Delete merge, list outdent, rule delete) no longer
+   * falls back to the whole-DOM serializer: it goes through
+   * structuralSplice, which keeps every untouched block's bytes.
+   *
+   * A wrong splice is worse than a canonicalized file, so the structural
+   * path is limited to a contiguous insert/delete/replace region found by
+   * common-prefix/common-suffix hash matching; anything it cannot express
+   * returns null. */
+  function spliceSave() {
+    // Only a live hybrid session has a meaningful baseline. Outside one
+    // (preview mode, after exit), domToMarkdown is the whole-DOM
+    // serializer it has always been.
+    if (!active || !sourceBlocks || !blockHashes) return null;
+    if (rootAuxCount() !== rootAuxBaseline) return null;
+    const els = topLevelElements();
+    const baseKeys = blockHashes.map((p) => p.key);
+    const curKeys = els.map(changeKeyForElement);
+    // A structural change (element count differs) is handled by the
+    // prefix/suffix splice, which preserves untouched blocks' bytes.
+    if (els.length !== blockHashes.length) {
+      return structuralSplice(els, baseKeys, curKeys);
+    }
+    const changed = [];
+    let anyChanged = false;
+    for (let i = 0; i < els.length; i++) {
+      const diff = curKeys[i] !== blockHashes[i].key;
+      changed.push(diff);
+      if (diff) anyChanged = true;
+    }
+    if (!anyChanged) return sessionSource;
+    const pairByToken = new Map();
+    blockHashes.forEach((pair, i) => pairByToken.set(pair.tokenIndex, i));
+    const out = sourceBlocks.map((b) => b.raw);
+    for (const [ti, i] of pairByToken) {
+      if (!changed[i]) continue;
+      // Strip only the blank-line separators the serializer added, never
+      // trailing spaces: a two-space hard break (or a trailing NBSP) is
+      // real content of the edited block and a /\s+$/ strip would delete
+      // it. serializeEditedElement already trims newlines; this is the
+      // belt-and-braces guard for that contract.
+      const ser = serializeEditedElement(els[i]).replace(BLANK_LINE_TRIM_RE, "");
+      // A paragraph or list raw often ends WITHOUT the newline that
+      // follows it: marked makes the blank line a separate `space` token
+      // ("para" + "\n\n"). Re-attach the token's own trailing newline run
+      // when it has one. Otherwise borrow the leading newline run from
+      // the NEXT gap token and consume it there, so the gap is not also
+      // emitted and the separator is not doubled. At EOF fall back to the
+      // canonical separator.
+      const own = (sourceBlocks[ti].raw.match(/\n*$/) || [""])[0];
+      if (own) {
+        out[ti] = ser + own;
+        continue;
+      }
+      const next = sourceBlocks[ti + 1];
+      // Only a gap token's leading newlines may be borrowed: an element
+      // token's leading newlines are part of its own source bytes, and
+      // the next iteration would overwrite `out[ti+1]` anyway.
+      const borrowable = next && !tokenProducesElement(next);
+      const borrowed = borrowable ? (next.raw.match(/^\n+/) || [""])[0] : "";
+      if (borrowed) {
+        out[ti + 1] = next.raw.slice(borrowed.length);
+        out[ti] = ser + borrowed;
+      } else {
+        out[ti] = ser + SEGMENT_SEPARATOR;
+      }
+    }
+    return out.join("");
+  }
+
+  /* Splice a document whose top-level element COUNT changed -- a block was
+   * added, deleted, split, merged, or reordered by an edit (Enter,
+   * Backspace/Delete, list outdent, rule delete). The whole-DOM fallback
+   * would canonicalize every untouched block (`* a` -> `-   a`, a setext
+   * heading -> ATX, indented code -> a fence), which the owner's decision
+   * (Q1) forbids.
+   *
+   * Strategy: match the current DOM against the baseline by content hash
+   * from BOTH ends. The unchanged prefix and the unchanged suffix emit
+   * their original source bytes; only the contiguous middle -- the region
+   * the structural edit actually changed -- is re-serialized. This keeps
+   * every byte outside the edit.
+   *
+   * Matching is by change key, with identity as the tie-breaker when a key
+   * is ambiguous. Two blocks can have identical content but different
+   * source (`* a` and `- a`); a key-only match would keep the wrong twin's
+   * bytes when one is deleted. When a key occurs more than once on either
+   * side, the element NODE identity must also agree, so the surviving twin
+   * is the one actually kept.
+   *
+   * `blockHashes[i].tokenIndex` is the source token index of baseline
+   * element i. Because the lexer emits tokens in document order and the
+   * alignment pairs them in order, the element token indices are strictly
+   * increasing, so the region is a contiguous source span.
+   *
+   * Returns null only when the structure is empty. A pure insert of an
+   * EMPTY block (Shift+Enter, or a bare Enter that leaves an empty
+   * paragraph) has no region text but must still splice -- the inserted
+   * empty block contributes nothing, and the untouched prefix/suffix keep
+   * their bytes. Falling back here would canonicalize the whole file. */
+  function structuralSplice(els, baseKeys, curKeys) {
+    const n = baseKeys.length;
+    const m = curKeys.length;
+    if (!n || !m) return null;
+    // A key used by more than one block on either side is ambiguous: a
+    // key match alone cannot say which twin survived. These require the
+    // element node to be identical too.
+    const dupes = new Set();
+    const seen = new Set();
+    for (const k of baseKeys) {
+      if (seen.has(k)) dupes.add(k);
+      seen.add(k);
+    }
+    seen.clear();
+    for (const k of curKeys) {
+      if (seen.has(k)) dupes.add(k);
+      seen.add(k);
+    }
+    const sameAsBaseline = (i, j) =>
+      baseKeys[i] === curKeys[j] &&
+      (!dupes.has(baseKeys[i]) || blockHashes[i].el === els[j]);
+    // Unchanged prefix and suffix, by position.
+    let pre = 0;
+    while (pre < n && pre < m && sameAsBaseline(pre, pre)) pre++;
+    let suf = 0;
+    while (suf < n - pre && suf < m - pre &&
+           sameAsBaseline(n - 1 - suf, m - 1 - suf)) suf++;
+    const baseStart = pre;
+    const baseEnd = n - suf;      // exclusive
+    const curStart = pre;
+    const curEnd = m - suf;       // exclusive
+    const e = blockHashes.map((p) => p.tokenIndex);
+    // Baseline token span the region replaces. For a pure insert
+    // (baseStart === baseEnd) the region has no baseline token of its own;
+    // it is placed just before the next baseline element's token (or at
+    // EOF), so the separating gap is kept by the prefix.
+    const firstRegionTok = baseStart < baseEnd
+      ? e[baseStart] : (baseEnd < n ? e[baseEnd] : sourceBlocks.length);
+    const lastRegionTok = baseStart < baseEnd ? e[baseEnd - 1] : firstRegionTok - 1;
+    const prefixPart = sourceBlocks.slice(0, firstRegionTok)
+      .map((b) => b.raw).join("");
+    const suffixPart = sourceBlocks.slice(lastRegionTok + 1)
+      .map((b) => b.raw).join("");
+    // Serialize the current elements in the changed region. A current
+    // element that is the SAME NODE as a baseline element AND whose content
+    // key still matches survived unedited (it is in the region only because
+    // an adjacent block was added or removed) -> keep its original raw
+    // bytes. Without the key check an edit to that block would be silently
+    // discarded (the node is identical, but its text changed). Anything
+    // else -- new, edited, or a re-created node -- is re-serialized. An
+    // empty block serializes to "" and contributes nothing; that absence is
+    // what keeps a pure empty-line insert byte-identical.
+    const regionBaselineByNode = new Map();
+    for (let i = baseStart; i < baseEnd; i++) {
+      regionBaselineByNode.set(blockHashes[i].el, i);
+    }
+    const regionParts = [];
+    for (let i = curStart; i < curEnd; i++) {
+      const kept = regionBaselineByNode.get(els[i]);
+      if (kept != null && curKeys[i] === blockHashes[kept].key) {
+        regionParts.push(sourceBlocks[e[kept]].raw.replace(BLANK_LINE_TRIM_RE, ""));
+        continue;
+      }
+      const ser = serializeEditedElement(els[i]).replace(BLANK_LINE_TRIM_RE, "");
+      if (ser) regionParts.push(ser);
+    }
+    let md = prefixPart;
+    if (regionParts.length) {
+      // Exactly one blank line between the prefix's last block and the
+      // region's first. A blank-line run already ending the prefix is left
+      // alone (a run is preserved); only a missing separator is added.
+      if (md && !/\n\n$/.test(md)) md = md.replace(/\n+$/, "") + SEGMENT_SEPARATOR;
+      md += regionParts.join(SEGMENT_SEPARATOR);
+    }
+    if (suffixPart) {
+      if (md && !/\n\n$/.test(md)) md = md.replace(/\n+$/, "") + SEGMENT_SEPARATOR;
+      md += suffixPart.replace(/^\n+/, "");
+      if (!/\n$/.test(md)) md += "\n";
+    } else if (regionParts.length) {
+      // Append at EOF. Match the serializer's block convention (each block
+      // terminated by a blank line) so a structural add writes the same
+      // trailing bytes the whole-DOM path did.
+      md = md.replace(/\n+$/, "") + "\n\n";
+    } else {
+      // Pure delete (or pure empty insert) at EOF: keep exactly one
+      // trailing newline.
+      md = md.replace(/\n+$/, "\n");
+    }
+    return md;
   }
 
   /* Re-render Markdown into #viewer-content (same pipeline as
@@ -232,10 +1055,7 @@
    * editPluginSource) still fires -- click-to-edit reads the DOM, it
    * does not need the container to be editable -- and the source <pre>
    * it creates is given contenteditable="true" explicitly. */
-  const ATOMIC_BLOCK_SELECTOR =
-    ".htmlpreview-card, .mermaid-container, .wavedrom-container, " +
-    ".katex-container, .viz-container, .mermaid-error, .wavedrom-error, " +
-    ".katex-error, .viz-error";
+  const ATOMIC_BLOCK_SELECTOR = PLUGIN_CONTAINER_SELECTOR;
   const ATOMIC_BLOCK_MARKER = "data-hybrid-atomic";
 
   function markOneAtomic(el) {
@@ -320,6 +1140,10 @@
     // Empty list items get a zero-width-space placeholder so their
     // markers render (see ensureListMarker).
     addListPlaceholders();
+    // Give every empty block a caret line box so a text caret can sit in
+    // it (an empty heading has zero height and the caret is redirected
+    // into the next block -- see addEmptyLineBoxes).
+    addEmptyLineBoxes();
     // Unwrap <thead> so Firefox can arrow-walk through table rows (see
     // flattenTheads).
     flattenTheads();
@@ -560,6 +1384,34 @@
     viewerContentEl.querySelectorAll("li").forEach(ensureListMarker);
   }
 
+  /* Give every empty block a marked caret line box so the caret has a
+   * line to sit on.
+   *
+   * An empty heading has zero height in a real browser: a caret placed
+   * inside it is redirected by the editing engine, so text typed at an
+   * empty "###" lands in the NEXT block instead (reproduced in Chromium:
+   * "## Commands\n###\n..." + typing into the empty h3 produced
+   * "Hellobody" inside the following paragraph). The same is true of an
+   * empty paragraph or quote at enter time. Appending the marked <br>
+   * gives the block a line box (measured 21.9px) so the caret stays put.
+   *
+   * The <br> is an editing artifact, never content: prepareTurndownClone
+   * removes every CARET_BR_ATTR before serialization, so an untouched
+   * empty "###" still saves as exactly "###". Only blocks that can hold
+   * text get one; a void block (<hr>, an atomic plugin container, a
+   * table) has no text caret and keeps its own behavior. */
+  function addEmptyLineBoxes() {
+    const BLOCKS = "p,h1,h2,h3,h4,h5,h6,blockquote,li";
+    viewerContentEl.querySelectorAll(BLOCKS).forEach((el) => {
+      if (el.textContent.trim()) return;
+      if (el.querySelector("img,br,canvas,svg,iframe,input,hr")) return;
+      if (el.querySelector(PLUGIN_CONTAINER_SELECTOR)) return;
+      const br = document.createElement("br");
+      br.setAttribute(CARET_BR_ATTR, "1");
+      el.appendChild(br);
+    });
+  }
+
   /* Flatten every <thead> into its table's <tbody>.
    *
    * Firefox cannot traverse a real thead vertically: with the caret in a
@@ -607,7 +1459,30 @@
         }
       }
     } },
+    // `+ ` is a valid Markdown bullet (marked renders it). Without this
+    // rule the text stayed literal and saved as an escaped "\+ item".
+    { re: /^\+ $/, apply: () => {
+      const made = toggleList("ul");
+      if (made) {
+        const li = made.querySelector("li");
+        if (li) {
+          ensureListMarker(li);
+          caretToStart(li);
+        }
+      }
+    } },
     { re: /^\d+\. $/, apply: () => {
+      const made = toggleList("ol");
+      if (made) {
+        const li = made.querySelector("li");
+        if (li) {
+          ensureListMarker(li);
+          caretToStart(li);
+        }
+      }
+    } },
+    // `1) ` is a valid ordered marker (marked renders it as <ol>).
+    { re: /^\d+\) $/, apply: () => {
       const made = toggleList("ol");
       if (made) {
         const li = made.querySelector("li");
@@ -639,12 +1514,40 @@
   ];
 
   /* One inline rule set: the pattern must end exactly at the caret and
-   * live inside a single text node. `tag` is the element to produce. */
+   * live inside a single text node. `tag` is the element to produce.
+   * `build(inner, node)` may override how the element is filled; the
+   * default sets its text to the captured group. */
   const INLINE_RULES = [
     { re: /\*\*([^\s*][^*]*?)\*\*$/, tag: "strong" },
     { re: /(?<!\*)\*([^*\s][^*]*?)\*(?!\*)$/, tag: "em" },
+    // `_italic_` is the same <em> as `*italic*`; marked renders both.
+    // Left out, typing `_x_` saved as an escaped literal "\_x\_".
+    { re: /(?<![\w_])_([^_\s][^_]*?)_(?![\w_])$/, tag: "em" },
     { re: /~~([^~]+)~~$/, tag: "del" },
     { re: /`([^`]+)`$/, tag: "code" },
+    // [[Target]] / [[Target|label]], matching viewer's extension so the
+    // saved round-trip stays in sync. An unresolved target renders as
+    // plain text (no dead link), exactly like the renderer, and is marked
+    // on the element so the serializer can emit the literal [[...]] --
+    // turndown's text escaper would otherwise turn it into \[\[...\]\].
+    { re: /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/, tag: "a",
+      build: (inner, el, m) => {
+        const target = m[1].trim();
+        const label = (m[2] || "").trim() || target;
+        const resolved = NB.viewer && NB.viewer.resolveWikilink
+          ? NB.viewer.resolveWikilink(target) : null;
+        if (!resolved) {
+          // No link; carry the raw literal so the serializer emits
+          // [[Target|label]] verbatim instead of escaping the brackets.
+          el.removeAttribute("href");
+          el.setAttribute("data-wikilink-raw", "1");
+          el.textContent = m[0];
+          return;
+        }
+        el.setAttribute("href", target);
+        el.setAttribute("data-wikilink", "1");
+        el.textContent = label;
+      } },
   ];
 
   function applyBlockRules() {
@@ -722,7 +1625,8 @@
       const after = node.nodeValue.slice(range.startOffset);
       const before = node.nodeValue.slice(0, text.length - m[0].length);
       const el = document.createElement(rule.tag);
-      el.textContent = inner;
+      if (rule.build) rule.build(inner, el, m);
+      else el.textContent = inner;
       node.nodeValue = before;
       const parent = node.parentElement;
       if (!parent) return false;
@@ -2065,7 +2969,15 @@
     if (autosaveInFlight) return;   // a save is already running; the next keystroke re-arms
     const generation = autosaveGeneration;
     try {
-      autosaveInFlight = doSave(domToMarkdown());
+      const md = domToMarkdown();
+      if (isNoOpMarkdown(md)) {
+        // The DOM changed but the Markdown did not (a format toggle that
+        // netted out). Nothing to write; clearing dirty stops the timer
+        // re-arming on every idle tick for an unchanged note.
+        resetDirty();
+        return;
+      }
+      autosaveInFlight = doSave(md);
       await autosaveInFlight;
     } catch (err) {
       // Autosave errors surface on the next manual save / exit; don't
@@ -2236,6 +3148,10 @@
     // Empty list items get a zero-width-space placeholder so their
     // markers render (see ensureListMarker).
     addListPlaceholders();
+    // Give every empty block a caret line box so a text caret can sit in
+    // it (an empty heading has zero height and the caret is redirected
+    // into the next block -- see addEmptyLineBoxes).
+    addEmptyLineBoxes();
     // Unwrap <thead> so Firefox can arrow-walk through table rows (see
     // flattenTheads).
     flattenTheads();
@@ -2246,6 +3162,14 @@
     // (lazy bundles) are covered by the observer.
     markAtomicBlocks();
     watchAtomicBlocks();
+    // Capture the on-disk baseline and the serializer's output for the
+    // entered DOM. The save callers treat a serialization equal to
+    // either as a no-op. sessionSerialized must be taken AFTER the
+    // enter-time normalization above (list placeholders, flattened
+    // theads) so it is the canonical form the save path would produce
+    // for an untouched document.
+    rebaseSession((NB.viewer && NB.viewer.getContent)
+      ? (NB.viewer.getContent() || "") : "");
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
     // A fresh session starts a fresh autosave generation: any timer left
@@ -2283,7 +3207,10 @@
     let md = null;
     if (save) {
       md = domToMarkdown();
-      await doSave(md);
+      // Same no-op rule as every other save caller: an unchanged DOM
+      // writes nothing.
+      if (isNoOpMarkdown(md)) resetDirty();
+      else await doSave(md);
     }
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
@@ -2342,8 +3269,47 @@
     NB.evt.emit("hybrid:exited", path);
   }
 
+  /* True when the serialized DOM carries no change from the session
+   * baseline, so the save callers skip doSave and still clear dirty.
+   *
+   * Two equalities are accepted. `sessionSerialized` is the serializer's
+   * own output for the entered/just-saved DOM -- the ordinary no-op
+   * case, and the only one that is stable when the serializer
+   * canonicalizes the source (a trailing blank line, a "-" list marker).
+   * `sessionSource` is the raw on-disk source, so a note that already
+   * round-trips byte-for-byte also matches. Either way a real edit
+   * changes the output and writes. */
+  function isNoOpMarkdown(md) {
+    return md === sessionSerialized || md === sessionSource;
+  }
+
+  /* Re-seat the no-op baseline and the splice baseline on `source` and on
+   * the current DOM. Called when hybrid enters, after a successful write,
+   * and after an external change re-renders the note. The last case is
+   * why this is a function: a stale baseline would make the next clean
+   * save rewrite an externally changed file. Both `sessionSerialized` and
+   * `blockHashes` are taken from the CURRENT DOM, so this must run after
+   * any re-render. `rebaseSegments` must run BEFORE `domToMarkdown()`,
+   * because that call uses the new baseline to produce the spliced
+   * session bytes (a clean splice returns `source` exactly). */
+  function rebaseSession(source) {
+    sessionSource = source || "";
+    rebaseSegments(sessionSource);
+    sessionSerialized = domToMarkdown();
+  }
+
   async function doSave(md) {
     if (!activePath || md == null) return;
+    // Capture the splice baseline for the bytes being written NOW, before
+    // the first await. `md` was computed from the DOM in this same tick,
+    // so the DOM at this instant is the one `md` describes; the user can
+    // type while the POST is in flight. Re-deriving the baseline after
+    // the await (from `md`'s blocks against the advanced DOM) would pair
+    // the old text with the new hashes, making every later save see "no
+    // change" and silently drop the keystrokes typed during the write.
+    const writtenBlocks = topLevelBlocks(md);
+    const writtenAlignment = buildAlignment(writtenBlocks);
+    const writtenAux = rootAuxCount();
     await NB.api.saveFile(activePath, md);
     // Update the viewer's cache so the next activate shows the saved content.
     // We emit file:saved so the watcher etc. stay in sync.
@@ -2359,6 +3325,14 @@
         NB.watcher.noteOpened(activePath, data.mtime);
       }
     } catch (_) {}
+    // Move the baselines to the saved bytes and the alignment captured
+    // with them. Any edit made during the await therefore shows up as a
+    // changed block on the next save and is written, not swallowed.
+    sessionSource = md;
+    sessionSerialized = md;
+    sourceBlocks = writtenBlocks;
+    blockHashes = writtenAlignment;
+    rootAuxBaseline = writtenAux;
     resetDirty();
   }
 
@@ -2383,7 +3357,13 @@
       // the last write to reach the file (see awaitPendingAutosave).
       await awaitPendingAutosave();
       const md = domToMarkdown();
-      await doSave(md);
+      if (isNoOpMarkdown(md)) {
+        // No edits: clear dirty and report success without a POST. The
+        // user's words are already on disk byte-for-byte.
+        resetDirty();
+      } else {
+        await doSave(md);
+      }
       if (NB.app && NB.app.notify) NB.app.notify("Saved");
     } catch (err) {
       alert("Save failed: " + (err && err.message ? err.message : err));
@@ -2401,7 +3381,8 @@
         try {
           await awaitPendingAutosave();
           const md = domToMarkdown();
-          await doSave(md);
+          if (isNoOpMarkdown(md)) resetDirty();
+          else await doSave(md);
         } catch (err) {
           alert("Save failed: " + (err && err.message ? err.message : err));
           return;
@@ -2417,7 +3398,8 @@
     try {
       await awaitPendingAutosave();
       const md = domToMarkdown();
-      await doSave(md);
+      if (isNoOpMarkdown(md)) resetDirty();
+      else await doSave(md);
       if (NB.app && NB.app.notify) NB.app.notify("Saved");
       await exit(false);
     } catch (err) {
@@ -2447,7 +3429,8 @@
       try {
         await awaitPendingAutosave();
         const md = domToMarkdown();
-        await doSave(md);
+        if (isNoOpMarkdown(md)) resetDirty();
+        else await doSave(md);
       } catch (err) {
         alert("Save failed: " + (err && err.message ? err.message : err));
         return false;
@@ -3293,6 +4276,11 @@
         const data = await NB.api.getFile(path);
         if (data && data.content != null) {
           renderMarkdown(data.content);
+          // Rebase the no-op baseline on the externally written bytes.
+          // Without this the next clean save compares against the stale
+          // pre-change baseline, sees a difference, and rewrites the file
+          // -- canonicalizing an external edit the user never made.
+          rebaseSession(data.content);
         }
       } catch (_) {}
     }

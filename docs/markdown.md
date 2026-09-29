@@ -211,6 +211,36 @@ The registry also owns the hybrid click-to-edit type table
 (`static/js/blocks.js:182`), so a registered renderer is automatically
 click-to-editable and round-trippable.
 
+### A no-op save writes nothing
+
+The write-back must not rewrite what the user did not edit. Entering hybrid
+mode and saving without typing issues no `POST /api/file` at all: the saved
+form of the entered DOM is captured at `enter()` and compared before every
+write, in `save`, `onClose`, `onSaveExit`, `commitForTabSwitch`, `flushAutosave`,
+and `exit(true)` (`hybrid.js` `isNoOpMarkdown`). This matters because a whole-DOM
+serialization canonicalizes some constructs (a trailing blank line, a `*`
+bullet to `-`); regenerating them on an untouched note would silently rewrite
+the file.
+
+Two constructs cannot survive a plain Turndown pass and are carried through on
+a clone instead, then restored:
+
+- An **empty heading** (`###` with no text) keeps its marker.
+- An **empty list item** (`-` or `1.` with nothing after it) keeps its marker;
+  a distinct sentinel is rewritten back to the bare marker.
+- A **whitespace-only inline code run** (`` ### `   ` ``) is preserved by
+  swapping each space for a NUL-prefixed sentinel before Turndown runs (its
+  `collapseWhitespace` deletes whitespace-only text nodes before any rule) and
+  restoring it after. A NUL-prefixed token is used rather than a private-use
+  character because private-use characters occur in real notes.
+
+Tables are always emitted as GFM, never as raw `<table>`: `normalizeTablesForGfm`
+rebuilds every table in the clone into the exact shape Turndown's GFM rule
+accepts (an all-`<th>` first row inside a leading `<thead>`), keeping inline
+markup intact, folding a `<caption>` into a paragraph, dropping `<colgroup>`,
+and removing a row-less table. Without it, a raw `<table>` from the source whose
+first row is not a heading row is kept verbatim as HTML.
+
 ## Adding or changing a renderer
 
 A renderer module registers a descriptor with `NB.blocks.register()` at load

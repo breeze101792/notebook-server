@@ -3,7 +3,8 @@
   "private": true,
   "description": "DOM-level tests for the Markdown notebook server frontend (jsdom).",
   "scripts": {
-    "test": "node tests/dom/test_dom.js"
+    "test": "node tests/dom/test_dom.js",
+    "test:browser": "node tests/browser/test_hybrid_browser.js"
   },
   "devDependencies": {
     "@codemirror/buildhelper": "^1.0.2",
@@ -16,7 +17,8 @@
     "@replit/codemirror-vim": "^6.3.0",
     "codemirror": "^6.0.2",
     "esbuild": "^0.28.1",
-    "jsdom": "^24.1.3"
+    "jsdom": "^24.1.3",
+    "playwright": "^1.63.0"
   },
   "dependencies": {
     "mermaid": "^11.16.0"

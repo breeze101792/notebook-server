@@ -18,6 +18,7 @@ database and no runtime build step.
 | [`api.md`](api.md) | The full HTTP endpoint reference: every route, parameter, status code, the `/api/edit` op schema, and worked `curl` examples. |
 | [`configuration.md`](configuration.md) | `start.sh` flags, environment variables, first-run seeding, and every key in `config/config.json`, `config/auth.json`, and `config/ai.json`. |
 | [`markdown.md`](markdown.md) | The Markdown pipeline, supported GFM syntax, the five special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
+| [`hybrid-editing-behavior.md`](hybrid-editing-behavior.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
 | [`ai-assistant.md`](ai-assistant.md) | The built-in assistant: provider setup, the six tools, the tool loop, reviewing edits, and the `config/ai.json` shape. |
 | [`development.md`](development.md) | Repo layout, both test suites, how to run them, vendoring, and the checklists for adding a renderer or a config key. |
 

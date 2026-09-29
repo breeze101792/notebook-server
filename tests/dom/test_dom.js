@@ -483,9 +483,10 @@ const html = `<!DOCTYPE html><html><head>
             <h3 class="settings-subheading">Live markdown syntax</h3>
             <p class="settings-help">
               In hybrid mode, typing these at the start of a line renders
-              immediately: # –###### headings, - / * bullets, 1. ordered
-              list, &gt; quote, [ ] / [x] task item, and **bold** /
-              *italic* / ~~strike~~ / \`code\` inline pairs.
+              immediately: # –###### headings, - / * / + bullets, 1. / 1)
+              ordered list, &gt; quote, [ ] / [x] task item, and **bold** /
+              *italic* / _italic_ / ~~strike~~ / \`code\` / [[wikilink]]
+              inline pairs.
             </p>
           </section>
           <section class="settings-section" data-section="security" id="settings-section-security" hidden>
@@ -6404,13 +6405,22 @@ function check(label, cond, extra) {
         // FILES["notes/mermaid.md"]. Then verify the saved content
         // contains the ```mermaid blocks (not the stripped SVG text).
         const saveBtnEl = $("save-btn");
-        // Make the content dirty so Save is visible.
+        // Make a REAL change so the no-op guard does not skip the write
+        // (a bare `input` event with no DOM mutation now writes nothing,
+        // which would make these assertions pass vacuously). Mutating the
+        // heading keeps the mermaid fences untouched, so the round-trip
+        // through doSave is still what is under test.
+        const headEl = $("viewer-content").querySelector("h1");
+        headEl.textContent = "Mermaid Test edited";
         $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
         await tick(60);
         saveBtnEl.dispatchEvent(new window.Event("click", { bubbles: true }));
         await tick(50);
 
         const savedContent = FILES["notes/mermaid.md"] || "";
+        check("hybrid mermaid: the edit reached the saved file",
+          savedContent.includes("# Mermaid Test edited"),
+          "saved=" + JSON.stringify(savedContent.slice(0, 200)));
         check("hybrid mermaid: saved file contains ```mermaid (not SVG text)",
           savedContent.includes("```mermaid"),
           "saved=" + JSON.stringify(savedContent.slice(0, 200)));
@@ -7136,6 +7146,967 @@ function check(label, cond, extra) {
     await tick(20);
   }
 
+  console.log("== hybrid: format-driven serialization + no-op non-write ==");
+  {
+    // Regression block for PLAN steps 1-3. An empty heading, a
+    // whitespace-only inline code run, and an empty list item must all
+    // survive the DOM -> Markdown round-trip (Step 1), and a clean Save
+    // must not POST at all (Step 2).
+
+    // --- format-driven serialization ---------------------------------
+    // The motivating note: an empty `###` and an h3 containing only a
+    // code-formatted run of spaces were both flattened/lost on save.
+    FILES["notes/a.md"] = "## Commands\n\n###\n\n### `   `\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const fmtMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid fmt: empty heading round-trips to ###",
+      fmtMd.split("\n").indexOf("###") !== -1,
+      JSON.stringify(fmtMd));
+    check("hybrid fmt: whitespace-only inline code heading round-trips",
+      fmtMd.split("\n").indexOf("### `   `") !== -1,
+      JSON.stringify(fmtMd));
+    check("hybrid fmt: normal heading is unchanged",
+      fmtMd.split("\n").indexOf("## Commands") !== -1,
+      JSON.stringify(fmtMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // Inline code with real text plus trailing text is untouched.
+    FILES["notes/a.md"] = "### `x` y\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const codeTextMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid fmt: inline code with text round-trips",
+      codeTextMd.split("\n").indexOf("### `x` y") !== -1,
+      JSON.stringify(codeTextMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // An empty list item must keep its marker, not vanish.
+    FILES["notes/a.md"] = "-\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const liMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid fmt: empty list item round-trips to -",
+      liMd.split("\n")[0] === "-",
+      JSON.stringify(liMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // The exact clone shapes from the PLAN: a bare <ul><li></li></ul>
+    // and an h3 holding a whitespace-only inline <code>.
+    FILES["notes/a.md"] = "# File A\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vc2 = $("viewer-content");
+      const bareUl = window.document.createElement("ul");
+      bareUl.appendChild(window.document.createElement("li"));
+      vc2.appendChild(bareUl);
+      const codeH3 = window.document.createElement("h3");
+      const codeEl = window.document.createElement("code");
+      codeEl.appendChild(window.document.createTextNode("   "));
+      codeH3.appendChild(codeEl);
+      vc2.appendChild(codeH3);
+      const domMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid fmt: bare <ul><li></li></ul> emits -",
+        domMd.split("\n").indexOf("-") !== -1,
+        JSON.stringify(domMd));
+      check("hybrid fmt: bare h3 > code(   ) emits ### `   `",
+        domMd.split("\n").indexOf("### `   `") !== -1,
+        JSON.stringify(domMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- no-op is a non-write ----------------------------------------
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      // A clean Save (no edit) must issue zero POST /api/file.
+      const cleanSaveBefore =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      await window.NB.hybrid.save();
+      await tick(50);
+      const cleanSaveAfter =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      check("hybrid no-op: clean Save issues zero POST /api/file",
+        cleanSaveAfter - cleanSaveBefore === 0,
+        "delta=" + (cleanSaveAfter - cleanSaveBefore));
+      check("hybrid no-op: clean Save still reports clean",
+        !window.NB.hybrid.isDirty());
+
+      // A real edit must still write.
+      $("viewer-content").innerHTML += "<p>real edit</p>";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      const editBefore =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      await window.NB.hybrid.save();
+      await tick(50);
+      const editAfter =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      check("hybrid no-op: a real edit still writes",
+        editAfter - editBefore === 1,
+        "delta=" + (editAfter - editBefore));
+      check("hybrid no-op: saved content holds the edit",
+        /real edit/.test(FILES["notes/a.md"] || ""),
+        JSON.stringify(FILES["notes/a.md"] || "").slice(-60));
+      check("hybrid no-op: dirty cleared after the write",
+        !window.NB.hybrid.isDirty());
+
+      // A clean Save & Exit must also write nothing (and still exit).
+      const cleanExitBefore =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+      const cleanExitAfter =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      check("hybrid no-op: clean Save&Exit issues zero POST /api/file",
+        cleanExitAfter - cleanExitBefore === 0,
+        "delta=" + (cleanExitAfter - cleanExitBefore));
+      check("hybrid no-op: clean Save&Exit still exits",
+        !window.NB.hybrid.isActive());
+    }
+
+    // --- no raw HTML boundary ----------------------------------------
+    // Every table must serialize through the GFM table rule. A
+    // headerless table built in the DOM (the one path turndown-plugin-gfm
+    // `keep`s as raw HTML) must become GFM, never <table>.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const hless = window.document.createElement("table");
+      hless.innerHTML =
+        "<tbody><tr><td>a</td><td>b</td></tr><tr><td>1</td><td>2</td></tr></tbody>";
+      $("viewer-content").appendChild(hless);
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(60);
+      const noHtmlMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid no-html: a headerless table never serializes as <table>",
+        !/<table/i.test(noHtmlMd),
+        JSON.stringify(noHtmlMd).slice(-120));
+      check("hybrid no-html: the headerless table becomes GFM",
+        /\|\s*a\s*\|\s*b\s*\|/.test(noHtmlMd) && /^[^|]*\| --- \|/m.test(noHtmlMd),
+        JSON.stringify(noHtmlMd).slice(-160));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A raw <table> in the source is converted too, not passed through as
+    // HTML: the note is Markdown, so no tag may be written. Inline markup
+    // inside the cells is preserved by the GFM header rule.
+    FILES["notes/a.md"] =
+      "# File A\n\n<table><tbody><tr><td><b>bold</b></td><td>b</td></tr></tbody></table>\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const passthroughMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid no-html: a source raw table is converted, never emitted as HTML",
+      !/<table/i.test(passthroughMd) && /\|\s*\*\*bold\*\*\s*\|\s*b\s*\|/.test(passthroughMd),
+      JSON.stringify(passthroughMd).slice(0, 160));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A table whose header already exists is unchanged.
+    FILES["notes/a.md"] = "| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const headedMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid no-html: a headed GFM table round-trips",
+      /^\| a \| b \|$/m.test(headedMd) && /^\| --- \| --- \|$/m.test(headedMd),
+      JSON.stringify(headedMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A real private-use character (U+E000) is note text, not a
+    // placeholder: it must survive a save untouched, including inside a
+    // code fence.
+    FILES["notes/a.md"] = "x\uE000y\n\n```\na\uE000b\n```\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const puaMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid fmt: a real U+E000 character survives serialization",
+      puaMd.indexOf("x\uE000y") !== -1 && puaMd.indexOf("a\uE000b") !== -1,
+      JSON.stringify(puaMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // Marked passes a raw <table> from the source straight through. Its
+    // shapes that the GFM rule would keep as HTML -- <caption>,
+    // <colgroup>, <tfoot>, a mixed th/td first row, and an empty table
+    // that would make the plugin throw -- must all still serialize as
+    // GFM (or be dropped), never as HTML and never an exception.
+    const rawTableCases = [
+      ["caption", "<table><caption>Cap</caption><tbody><tr><td>a</td><td>b</td></tr></tbody></table>"],
+      ["colgroup", "<table><colgroup><col></colgroup><tbody><tr><td>a</td><td>b</td></tr></tbody></table>"],
+      ["tfoot", "<table><tfoot><tr><td>f</td></tr></tfoot><tbody><tr><td>a</td><td>b</td></tr></tbody></table>"],
+      ["mixed th/td", "<table><tbody><tr><th>a</th><td>b</td></tr><tr><td>1</td><td>2</td></tr></tbody></table>"],
+      ["empty", "<table></table>"],
+    ];
+    for (const [label, html] of rawTableCases) {
+      FILES["notes/a.md"] = "# File A\n\n" + html + "\n\nbody\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      let rawMd = "";
+      try { rawMd = window.NB.hybrid.domToMarkdown(); }
+      catch (e) { rawMd = "THROW:" + (e && e.message); }
+      check("hybrid no-html: raw table shape (" + label + ") never emits HTML",
+        rawMd.indexOf("<table") === -1 && rawMd.indexOf("THROW") === -1,
+        JSON.stringify(rawMd).slice(0, 120));
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
+
+    // An empty table must not break entering hybrid mode: enter() takes a
+    // serialization baseline, and the plugin used to throw on rows[0].
+    FILES["notes/a.md"] = "<table></table>\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    let enteredEmptyTable = true;
+    try { await window.NB.hybrid.enter(); }
+    catch (_) { enteredEmptyTable = false; }
+    await tick(20);
+    check("hybrid no-html: entering hybrid on an empty table does not throw",
+      enteredEmptyTable && window.NB.hybrid.isActive(),
+      "active=" + window.NB.hybrid.isActive());
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // An empty item in an ordered list keeps its ordered marker.
+    FILES["notes/a.md"] = "1.\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const oliMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid fmt: an empty ordered item round-trips to 1.",
+      oliMd.split("\n")[0] === "1.",
+      JSON.stringify(oliMd));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- behavior catalog: empty blockquote (Q7) ---------------------
+    // An emptied blockquote must keep its ">" marker; turndown drops an
+    // empty <blockquote> otherwise. The owner's model: a ">" line with
+    // zero words is a valid block, like an empty "###".
+    FILES["notes/a.md"] = "> quote\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const q = $("viewer-content").querySelector("blockquote p");
+      q.textContent = "";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(60);
+      const qMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid fmt: an emptied blockquote survives as >",
+        /^>/m.test(qMd) && qMd.indexOf("body") !== -1,
+        JSON.stringify(qMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- behavior catalog: empty-block caret line box (Q12) ----------
+    // An empty heading has zero height in a real browser, so a text
+    // caret is redirected into the next block. Enter must give every
+    // empty block a marked caret line box; that line box is an editing
+    // artifact and is stripped on save, so an untouched empty "###"
+    // still serializes to exactly "###".
+    FILES["notes/a.md"] = "## Commands\n###\n### `   `\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const emptyH = $("viewer-content").querySelectorAll("h3")[0];
+      check("hybrid caret: an empty block gets a caret line box on enter",
+        !!emptyH.querySelector('[data-hybrid-caret-br="1"]'),
+        emptyH.innerHTML);
+      const caretMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid caret: the caret line box never reaches the saved markdown",
+        caretMd.indexOf("<br") === -1 &&
+        caretMd.split("\n").indexOf("###") !== -1,
+        JSON.stringify(caretMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- behavior catalog: no empty-list-item junk (Q18) -------------
+    // A real browser marks an empty list item with a <br> line box.
+    // Left in, turndown emits "-     \n    \n" (trailing spaces and a
+    // stray indented line). The item must save as a bare marker.
+    FILES["notes/a.md"] = "- item\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const ul = $("viewer-content").querySelector("ul");
+      const li = window.document.createElement("li");
+      const br = window.document.createElement("br");
+      li.appendChild(br);
+      ul.appendChild(li);
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(60);
+      const junkMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid fmt: an empty list item holding a <br> saves as a bare marker",
+        /^-   item\n-$/m.test(junkMd.trim()) &&
+        junkMd.indexOf("    \n") === -1 &&
+        !/[ \t]+\n/.test(junkMd.replace(/\n+$/g, "\n")),
+        JSON.stringify(junkMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // --- behavior catalog: missing live input rules (Q5) -------------
+    // `_italic_`, `+ ` bullets, `1) ` ordered items, and [[wikilinks]]
+    // previously saved as escaped literal text. Each rule must fire.
+    // The rule application is deferred (setTimeout 0), so typeIn awaits a
+    // tick after firing 'input' (same idiom as the input-rule block above).
+    const typeIn2 = async (text, tag) => {
+      const p = window.document.createElement(tag || "p");
+      const tn = window.document.createTextNode(text);
+      p.appendChild(tn);
+      $("viewer-content").appendChild(p);
+      const range = window.document.createRange();
+      range.setStart(tn, tn.nodeValue.length);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      p.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(20);
+      return p;
+    };
+
+    FILES["notes/a.md"] = "seed\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      await typeIn2("+ ");
+      check("hybrid rule: '+ ' makes a bullet list",
+        $("viewer-content").querySelector("ul li") !== null,
+        $("viewer-content").innerHTML.slice(-120));
+      const plusMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid rule: a '+ ' bullet does not save as an escaped literal",
+        plusMd.indexOf("\\+") === -1,
+        JSON.stringify(plusMd));
+
+      await typeIn2("1) ");
+      check("hybrid rule: '1) ' makes an ordered list",
+        $("viewer-content").querySelector("ol li") !== null,
+        $("viewer-content").innerHTML.slice(-120));
+
+      const before = $("viewer-content").innerHTML.length;
+      const emP = await typeIn2("_italic_");
+      check("hybrid rule: '_italic_' makes an <em>",
+        emP.querySelector("em") !== null,
+        emP.innerHTML);
+      check("hybrid rule: '_italic_' saves as *italic*, not escaped underscores",
+        window.NB.hybrid.domToMarkdown().indexOf("\\_") === -1,
+        JSON.stringify(window.NB.hybrid.domToMarkdown()));
+      void before;
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A [[wikilink]] resolving to a known note produces an <a
+    // data-wikilink> and round-trips as [[...]].
+    FILES["notes/a.md"] = "seed\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const p = window.document.createElement("p");
+      const tn = window.document.createTextNode("[[b]]");
+      p.appendChild(tn);
+      $("viewer-content").appendChild(p);
+      const r = window.document.createRange();
+      r.setStart(tn, tn.nodeValue.length);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      p.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(20);
+      const a = $("viewer-content").querySelector('a[data-wikilink="1"]');
+      check("hybrid rule: a resolvable [[wikilink]] becomes an <a data-wikilink>",
+        !!a,
+        $("viewer-content").innerHTML.slice(-140));
+      check("hybrid rule: the wikilink round-trips as [[b]]",
+        window.NB.hybrid.domToMarkdown().indexOf("[[b]]") !== -1,
+        JSON.stringify(window.NB.hybrid.domToMarkdown()));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // An external change while clean must rebase the no-op baseline, so a
+    // following clean save does not rewrite (and canonicalize) the
+    // externally written file.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    // Simulate the file changing on disk to a non-canonical form (a `*`
+    // bullet that a whole-DOM serialize would rewrite to `-`).
+    FILES["notes/a.md"] = "# File A\n\n* external\n";
+    window.NB.evt.emit("file:external-change", { path: "notes/a.md" });
+    await tick(80);
+    const extBefore =
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    await window.NB.hybrid.save();
+    await tick(60);
+    const extAfter =
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid no-op: clean save after an external change writes nothing",
+      extAfter - extBefore === 0, "delta=" + (extAfter - extBefore));
+    check("hybrid no-op: the external bytes are preserved",
+      (FILES["notes/a.md"] || "").indexOf("* external") !== -1,
+      JSON.stringify(FILES["notes/a.md"] || ""));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A keystroke typed while a save POST is in flight must not be
+    // swallowed by the baseline move. Regression: rebasing the splice
+    // from the written markdown against the ADVANCED DOM made every later
+    // save see "no change" and drop the post-POST keystroke.
+    FILES["notes/a.md"] = "hello\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const plainFetch2 = window.fetch;
+      let sawPost = 0;
+      // Stall the POST so we can type during the await.
+      window.fetch = async (url, opts) => {
+        if (opts && opts.method === "POST" && String(url).includes("/api/file")) {
+          sawPost += 1;
+          await tick(80);
+        }
+        return plainFetch2(url, opts);
+      };
+      const vc3 = $("viewer-content");
+      const p3 = vc3.querySelector("p") || vc3;
+      // First edit -> a real write is issued and stalled.
+      p3.textContent = "hello A";
+      vc3.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(60);
+      const p = window.NB.hybrid.save();
+      await tick(10);              // POST is in flight
+      // Second edit lands in the DOM while that write is pending.
+      p3.textContent = "hello AB";
+      vc3.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await p;
+      await tick(100);
+      window.fetch = plainFetch2;
+      // The in-flight save wrote "hello A"; the later save must write "hello AB".
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("hybrid splice: a save was actually in flight",
+        sawPost >= 1, "sawPost=" + sawPost);
+      check("hybrid splice: an edit during an in-flight save is not lost",
+        (FILES["notes/a.md"] || "").trim() === "hello AB",
+        JSON.stringify(FILES["notes/a.md"] || ""));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // A trailing two-space hard break in an EDITED block must survive the
+    // splice: the serializer's blank-line trim must not eat real trailing
+    // spaces.
+    FILES["notes/a.md"] = "first\n\nsecond  \n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vc4 = $("viewer-content");
+      const ps = vc4.querySelectorAll("p");
+      const last = ps[ps.length - 1];
+      // Rebuild the last paragraph with a trailing <br> (a hard break).
+      while (last.firstChild) last.removeChild(last.firstChild);
+      last.appendChild(window.document.createTextNode("second"));
+      last.appendChild(window.document.createElement("br"));
+      vc4.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(40);
+      const hbMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid splice: an edited trailing hard break is preserved",
+        hbMd.indexOf("second  ") !== -1,
+        JSON.stringify(hbMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+  }
+
+  console.log("== hybrid: segment splice keeps untouched source bytes ==");
+  {
+    // PLAN step 4. When the user edits ONE block, every UNTOUCHED block
+    // must keep its original source bytes; only the edited block is
+    // re-serialized. The old whole-DOM path canonicalized the whole file
+    // (a `*` bullet became `-`, a blank run collapsed, a comment and a
+    // setext heading were dropped). Each case below opens a note in a
+    // non-canonical form, edits ONE block, saves, and asserts the
+    // untouched bytes survive on disk verbatim.
+
+    // (1) Bullet markers are bytes, not formatting: an untouched `* a`
+    // line must not become `-   a`.
+    FILES["notes/a.md"] = "para one\n\n* a\n* b\n\npara two\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      // Edit only the LAST paragraph (para two -> para TWO edited).
+      const ps = $("viewer-content").querySelectorAll("p");
+      ps[ps.length - 1].textContent = "para TWO edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: the untouched bullet list keeps its source bytes",
+        saved.indexOf("* a\n* b") !== -1,
+        JSON.stringify(saved));
+      check("hybrid splice: only the edited paragraph changed",
+        saved === "para one\n\n* a\n* b\n\npara TWO edited\n",
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (2) A blank-line run is source, not whitespace to collapse: four
+    // newlines between two paragraphs must survive an edit to one of them.
+    FILES["notes/a.md"] = "a\n\n\n\nb\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const ps = $("viewer-content").querySelectorAll("p");
+      ps[ps.length - 1].textContent = "B edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("hybrid splice: a blank-line run survives an edit to a neighbouring block",
+        (FILES["notes/a.md"] || "") === "a\n\n\n\nB edited\n",
+        JSON.stringify(FILES["notes/a.md"] || ""));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (3) An HTML comment is source, not a node to drop: editing a
+    // different block must not delete it.
+    FILES["notes/a.md"] = "a\n\n<!-- keep -->\n\nb\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const ps = $("viewer-content").querySelectorAll("p");
+      ps[ps.length - 1].textContent = "B edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: an HTML comment survives an edit to another block",
+        saved.indexOf("<!-- keep -->") !== -1 &&
+        saved === "a\n\n<!-- keep -->\n\nB edited\n",
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (4a) A setext heading must not be rewritten to an ATX heading.
+    FILES["notes/a.md"] = "Title\n=====\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      $("viewer-content").querySelector("p").textContent = "BODY edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: a setext heading survives an edit to a later block",
+        saved.indexOf("Title\n=====") !== -1 &&
+        saved === "Title\n=====\n\nBODY edited\n",
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (4b) Indented code must not be rewritten to a fence.
+    FILES["notes/a.md"] = "    code\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      $("viewer-content").querySelector("p").textContent = "BODY edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: indented code survives an edit to a later block",
+        saved.indexOf("    code") !== -1 &&
+        saved === "    code\n\nBODY edited\n",
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (5) A clean enter + save still issues zero POST /api/file, and the
+    // splice path returns the source exactly (not a canonicalization).
+    FILES["notes/a.md"] = "para one\n\n* a\n* b\n\npara two\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      check("hybrid splice: the clean session serializes to the source exactly",
+        window.NB.hybrid.domToMarkdown() === FILES["notes/a.md"],
+        JSON.stringify(window.NB.hybrid.domToMarkdown()));
+      const spliceBefore =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      await window.NB.hybrid.save();
+      await tick(60);
+      const spliceAfter =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      check("hybrid splice: a clean enter+save writes nothing",
+        spliceAfter - spliceBefore === 0,
+        "delta=" + (spliceAfter - spliceBefore));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (5b) Byte-identity corpus: on a clean enter, the splice path must
+    // return the source exactly for every shape that the whole-DOM path
+    // would canonicalize (the PLAN's corpus). No POST is involved; the
+    // assertion is on domToMarkdown() itself.
+    const spliceCorpus = [
+      "## Commands\n\n###\n\n### `   `\n",
+      "a\n\n\n\nb\n",
+      "<!-- c -->\n\nbody\n",
+      "Title\n=====\n\nbody\n",
+      "    code\n\nbody\n",
+      "* a\n* b\n",
+      "no trailing newline",
+      "- x\n\n1. y\n\n> quote\n",
+      "---\n\ntext\n",
+      "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+    ];
+    for (const src of spliceCorpus) {
+      FILES["notes/a.md"] = src;
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      check("hybrid splice corpus: clean round-trip is byte-identical " +
+        JSON.stringify(src),
+        window.NB.hybrid.domToMarkdown() === src,
+        JSON.stringify(window.NB.hybrid.domToMarkdown()));
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
+
+    // (5c) An untouched GFM table beside an edited paragraph keeps its
+    // exact table source bytes, and editing the table itself still emits
+    // a clean GFM table (never raw HTML).
+    FILES["notes/a.md"] = "para\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      $("viewer-content").querySelector("p").textContent = "PARA edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: an untouched table keeps its source bytes",
+        saved.indexOf("| a | b |\n| --- | --- |\n| 1 | 2 |") !== -1 &&
+        !/<table/i.test(saved),
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    FILES["notes/a.md"] = "para\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const cell = $("viewer-content").querySelector("table td");
+      cell.textContent = "9";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: editing a table cell emits clean GFM, never HTML",
+        !/<table/i.test(saved) && /\|\s*9\s*\|/.test(saved),
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (6) A structural edit changes the element count, so the splice
+    // cannot align: it must fail closed to the whole-DOM serializer
+    // rather than guess, and the edited/new block still writes.
+    FILES["notes/a.md"] = "a\n\nb\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vc3 = $("viewer-content");
+      const added = window.document.createElement("p");
+      added.textContent = "c added";
+      vc3.appendChild(added);
+      vc3.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("hybrid splice: a structural add still writes the new block",
+        /c added/.test(FILES["notes/a.md"] || ""),
+        JSON.stringify(FILES["notes/a.md"] || ""));
+      check("hybrid splice: the structural add does not lose the existing blocks",
+        /a/.test(FILES["notes/a.md"] || "") && /b/.test(FILES["notes/a.md"] || ""),
+        JSON.stringify(FILES["notes/a.md"] || ""));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (6b) A structural edit must preserve EVERY untouched block's bytes,
+    // not canonicalize them. `* a` bullets, a setext heading, and
+    // indented code are all rewritten by the whole-DOM serializer, so
+    // this is the discriminating case for the prefix/suffix splice.
+    FILES["notes/a.md"] = "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vcL = $("viewer-content");
+      const added = window.document.createElement("p");
+      added.textContent = "newpara";
+      vcL.appendChild(added);
+      vcL.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const savedL = FILES["notes/a.md"] || "";
+      check("hybrid splice Q1: a structural add keeps star-bullet bytes",
+        savedL.indexOf("* star a\n* star b") !== -1, JSON.stringify(savedL));
+      check("hybrid splice Q1: a structural add keeps the setext heading",
+        savedL.indexOf("Title\n=====") !== -1, JSON.stringify(savedL));
+      check("hybrid splice Q1: a structural add keeps indented code",
+        savedL.indexOf("    indented") !== -1, JSON.stringify(savedL));
+      check("hybrid splice Q1: a structural add writes the new block",
+        savedL.indexOf("newpara") !== -1, JSON.stringify(savedL));
+      check("hybrid splice Q1: no canonicalized artifact sneaks in",
+        savedL.indexOf("```undefined") === -1 &&
+        savedL.indexOf("-   star") === -1,
+        JSON.stringify(savedL));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (6c) Deleting a middle block must keep the blocks around it.
+    FILES["notes/a.md"] = "* x\n\nTitle\n=====\n\n    code\n\nlast\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vcD = $("viewer-content");
+      // Remove the middle paragraph ("Title" heading is an H1/H2; the
+      // setext heading renders as one element, so delete the last <p>).
+      const ps = vcD.querySelectorAll("p");
+      if (ps.length) ps[ps.length - 1].remove();
+      vcD.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const savedD = FILES["notes/a.md"] || "";
+      check("hybrid splice Q1: a structural delete keeps the star bullet",
+        savedD.indexOf("* x") !== -1, JSON.stringify(savedD));
+      check("hybrid splice Q1: a structural delete keeps the setext heading",
+        savedD.indexOf("Title\n=====") !== -1, JSON.stringify(savedD));
+      check("hybrid splice Q1: a structural delete keeps indented code",
+        savedD.indexOf("    code") !== -1, JSON.stringify(savedD));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (7) Toggling a task checkbox is a real edit: input.checked has no
+    // attribute, so the hash must include it. A toggle with no text edit
+    // must write and flip [ ] -> [x].
+    FILES["notes/a.md"] = "- [ ] task\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const cb = $("viewer-content").querySelector('input[type="checkbox"]');
+      check("hybrid splice: a task checkbox rendered for the toggle test",
+        !!cb, "checkbox=" + (cb && cb.outerHTML));
+      if (cb) {
+        cb.checked = true;
+        cb.dispatchEvent(new window.Event("change", { bubbles: true }));
+        await tick(80);
+        await window.NB.hybrid.save();
+        await tick(60);
+        // The list is the edited block, so it is re-serialized (the
+        // marker padding may change); what matters is that the toggle was
+        // detected as a change and [x] reached the file -- input.checked
+        // has no attribute for a serialization comparison to see.
+        check("hybrid splice: toggling a checkbox writes [x]",
+          /\[x\]/.test(FILES["notes/a.md"] || ""),
+          JSON.stringify(FILES["notes/a.md"] || ""));
+      }
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (8) Undo replaces innerHTML wholesale. Alignment must survive it
+    // via the content hash, so undoing an edit restores the source bytes
+    // and a following clean save writes nothing. A stale/false alignment
+    // here would canonicalize the list on the undo path.
+    FILES["notes/a.md"] = "para one\n\n* a\n* b\n\npara two\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const ps = $("viewer-content").querySelectorAll("p");
+      ps[ps.length - 1].textContent = "para two edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(500);
+      // Undo restores the entered DOM.
+      $("viewer-content").dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+      await tick(80);
+      check("hybrid splice: undo restores the original paragraph",
+        $("viewer-content").querySelectorAll("p")[
+          $("viewer-content").querySelectorAll("p").length - 1].textContent === "para two",
+        JSON.stringify(ps[ps.length - 1].textContent));
+      const undoSaveBefore =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      await window.NB.hybrid.save();
+      await tick(60);
+      const undoSaveAfter =
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      check("hybrid splice: saving after an undo writes nothing",
+        undoSaveAfter - undoSaveBefore === 0,
+        "delta=" + (undoSaveAfter - undoSaveBefore));
+      check("hybrid splice: the bullet bytes are still intact after undo",
+        (FILES["notes/a.md"] || "").indexOf("* a\n* b") !== -1,
+        JSON.stringify(FILES["notes/a.md"] || ""));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // (9) An external change while clean rebases the splice baseline on
+    // the new bytes; a following edit must splice against THOSE bytes, so
+    // the externally written bullet form survives.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      FILES["notes/a.md"] = "# File A\n\n* external\n\nbody\n";
+      window.NB.evt.emit("file:external-change", { path: "notes/a.md" });
+      // Both hybrid's and the viewer's external-change handlers re-render;
+      // let them settle before editing, or the render would wipe the edit.
+      await tick(200);
+      const ps = $("viewer-content").querySelectorAll("p");
+      ps[ps.length - 1].textContent = "body edited";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid splice: an edit after an external change keeps the external bytes",
+        saved === "# File A\n\n* external\n\nbody edited\n",
+        JSON.stringify(saved));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+  }
+
   console.log("== hybrid: edit bar fallthrough, leave-list, round-trips ==");
   {
     // --- edit bar: acts hybrid does NOT own must fall through ---------
@@ -7408,6 +8379,472 @@ function check(label, cond, extra) {
     }
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
+  }
+
+  // ==========================================================================
+  // Hybrid editing behavior contract (spec: docs/hybrid-editing-behavior.md)
+  //
+  // Coverage map — doc section/row -> test name in this section.
+  // A `[defect]` tag names a known code defect the test pins (spec-correct
+  // expectation; the test is expected to fail until the fix lands).
+  //
+  //   §1.3 I9 / Q16 / AC7 one Enter, one break, never <br>
+  //        -> "para: Enter adds no <br>"
+  //        -> "para: Shift+Enter no <br>, no double break"
+  //        -> "list: Enter adds no <br>" / "list: Shift+Enter ..."
+  //        -> "heading: Enter adds no <br>" / "heading: Shift+Enter ..."
+  //        -> "quote: Enter adds no <br>" / "quote: Shift+Enter ..."
+  //        -> "corpus: owner example byte-identical (Q16/AC7)"
+  //        (native break itself: Chromium "real browser Enter/Shift+Enter ...")
+  //   §1.3 I8 / G4 / AC8 no presentation HTML
+  //        -> every case with an expectedSaved runs the no-HTML regex
+  //           over the file outside fences; raw-HTML cases are exempt.
+  //   §4.2 empty heading / code-space heading -> "empty: heading ### survives",
+  //        "empty: code-space heading survives"
+  //   §4.4/4.5 empty list item -> "empty: bullet item - survives",
+  //        "empty: ordered item 1. survives"
+  //   §4.8 Q7 emptied blockquote -> "empty: emptied blockquote survives as >"
+  //   Q1 / §5.5 structural-edit locality
+  //        -> "Q1 C1: Shift+Enter keeps untouched bytes" [C1]
+  //        -> "Q1: a block delete keeps star bullets / setext / indented bytes"
+  //        -> "Q1: a list outdent keeps setext / indented bytes"
+  //        -> "Q1: a structural add keeps a comment and a blank-line run"
+  //        -> "Q1 C2: deleting the first duplicate block keeps the right twin" [C2]
+  //   I3 / AC5 no-op writes nothing
+  //        -> "contract no-op I3: clean <enter+save|enter+exit|save+exit> ..."
+  //   Q5 live rules -> "Q5: _italic_ live rule", "Q5: + bullet live rule",
+  //        "Q5: 1) ordered live rule", "Q5: wikilink resolved",
+  //        "M3: unresolved wikilink stays literal" [M3]
+  //   §4.16 inline + escaping -> "inline: **bold**", "inline: *italic*",
+  //        "inline: ~~strike~~", "inline: `code`",
+  //        "escape: literal # [escape-#]", "escape: literal * / _ / [",
+  //        "escape: leading digit 1. x", "escape: escaped asterisks survive"
+  //   §4.9/4.15 plugin fences -> "plugin <mermaid|wavedrom|katex|dot|html-live>
+  //        fence byte-identical"
+  //   §4.12 tables -> "table: edited cell emits clean GFM",
+  //        "table: headerless table rebuilt as GFM"
+  //   §4.14 Q10 raw HTML -> "corpus: raw HTML <div> byte-identical (Q10)" [Q10]
+  //   §8.3 corpus additions -> "corpus: ..." cases (~~~ / nested quote /
+  //        task / nested list / + bullet / 1) item / empty quote /
+  //        hard-break / raw HTML / owner example)
+  //   M1 32-bit hash collision -> "M1: a hash-colliding edit still writes" [M1]
+  //   M2 nested empty blockquote -> "M2: nested empty blockquote survives" [M2]
+  //
+  // Native-engine rows (🌐) live in tests/browser/test_hybrid_browser.js:
+  //   Enter/Shift+Enter splits, structural locality after a real keypress
+  //   (Q1/C1), and byte-identity after enter+exit on the §8.3 corpus.
+  // ==========================================================================
+  console.log("== hybrid: behavior contract (spec-driven) ==");
+  {
+    const CONTRACT_PATH = "notes/contract.md";
+    const vcEl = () => $("viewer-content");
+
+    const caretAtEnd = (node) => {
+      const r = window.document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+    const pressShiftEnter = (node) => node.dispatchEvent(
+      new window.KeyboardEvent("keydown",
+        { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }));
+    const pressEnter = (node) => node.dispatchEvent(
+      new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+    const dirty = (vc) => vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const typeIn = async (vc, text, tag) => {
+      const p = window.document.createElement(tag || "p");
+      const tn = window.document.createTextNode(text);
+      p.appendChild(tn);
+      vc.appendChild(p);
+      const r = window.document.createRange();
+      r.setStart(tn, tn.nodeValue.length);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      p.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(25);
+      return p;
+    };
+    // Remove the blockquote/table/list `>`/pipe content from the saved
+    // markdown so a tag check does not flag a fence's own HTML.
+    const outsideFences = (md) => {
+      const out = [];
+      let fence = null;
+      for (const line of md.split("\n")) {
+        const m = line.match(/^\s*(`{3,}|~{3,})/);
+        if (m) {
+          if (!fence) fence = m[1][0];
+          else if (m[1][0] === fence) fence = null;
+          continue;
+        }
+        if (!fence) out.push(line);
+      }
+      return out.join("\n");
+    };
+    const hasPresentationHtml = (md) =>
+      /<\/?(br|div|span|table)\b/i.test(outsideFences(md));
+
+    const contractEnter = async (source) => {
+      FILES[CONTRACT_PATH] = source;
+      if (window.NB.tabs.isOpen(CONTRACT_PATH)) {
+        window.NB.viewer.close(CONTRACT_PATH);
+      }
+      await window.NB.tabs.open(CONTRACT_PATH);
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      return vcEl();
+    };
+    const contractLeave = async () => {
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    };
+    const matchesExpected = (exp, md) =>
+      typeof exp === "function" ? !!exp(md) : md === exp;
+    // The I9/AC7 invariant jsdom CAN assert: the text survives, one
+    // press never produces several newlines, and no <br> reaches the
+    // file. (The native break itself is asserted in Chromium.) Shift+
+    // Enter's exact break style is Q15-open, so no exact byte target.
+    const oneBreak = (text) => (md) =>
+      md.indexOf(text) !== -1 && md.indexOf("<br") === -1 &&
+      md.indexOf("\n\n\n") === -1;
+
+    // Each row: {name, source, action, expectedSaved|expectedDom, defect?}.
+    // expectedSaved is an exact string (preferred, per the doc) or a
+    // predicate for touched-block cases where only a substring is known.
+    const HYBRID_CONTRACT_CASES = [
+      // --- §4.1/4.2/4.4/4.8 one Enter, one break, never <br> (I9) -------
+      // jsdom has no editing engine, so the native break is produced in the
+      // Chromium harness; here we assert the app never injects HTML and an
+      // idle structural key adds no bytes.
+      // The jsdom engine does not perform the native break, so these
+      // rows assert the I9 invariant jsdom can see: the existing text
+      // survives, one press never yields several newlines, and no <br>
+      // reaches the file. The native break itself is asserted in the
+      // Chromium harness; Shift+Enter's exact style is Q15-open.
+      { name: "para: Enter adds no <br>", source: "alpha\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("p")); pressEnter(vc.querySelector("p")); },
+        expectedSaved: oneBreak("alpha") },
+      { name: "para: Shift+Enter no <br>, no double break", source: "alpha\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("p")); pressShiftEnter(vc.querySelector("p")); },
+        expectedSaved: oneBreak("alpha") },
+      { name: "list: Enter adds no <br>", source: "- a\n- b\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("li")); pressEnter(vc.querySelector("li")); },
+        expectedSaved: oneBreak("a") },
+      { name: "list: Shift+Enter no <br>, no double break", source: "- a\n- b\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("li")); pressShiftEnter(vc.querySelector("li")); },
+        expectedSaved: oneBreak("a") },
+      { name: "heading: Enter adds no <br>", source: "## Title\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("h2")); pressEnter(vc.querySelector("h2")); },
+        expectedSaved: oneBreak("Title") },
+      { name: "heading: Shift+Enter no <br>, no double break", source: "## Title\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("h2")); pressShiftEnter(vc.querySelector("h2")); },
+        expectedSaved: oneBreak("Title") },
+      { name: "quote: Enter adds no <br>", source: "> quoted\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("blockquote p")); pressEnter(vc.querySelector("blockquote p")); },
+        expectedSaved: oneBreak("quoted") },
+      { name: "quote: Shift+Enter no <br>, no double break", source: "> quoted\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("blockquote p")); pressShiftEnter(vc.querySelector("blockquote p")); },
+        expectedSaved: oneBreak("quoted") },
+
+      // --- Q1 structural-edit locality (exact bytes) --------------------
+      { name: "Q1 C1: Shift+Enter keeps untouched bytes", defect: "C1",
+        source: "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n",
+        action: async (vc) => { caretAtEnd(vc.querySelector("p")); pressShiftEnter(vc.querySelector("p")); },
+        expectedSaved: "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n" },
+      { name: "Q1 C2: deleting the first duplicate block keeps the right twin", defect: "C2",
+        source: "* a\n\n- a\n\nb\n",
+        action: async (vc) => { vc.querySelectorAll("ul")[0].remove(); dirty(vc); },
+        expectedSaved: "- a\n\nb\n" },
+      { name: "Q1: a block delete keeps star bullets / setext / indented bytes",
+        source: "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n",
+        action: async (vc) => { vc.querySelector("h1").remove(); dirty(vc); },
+        expectedSaved: "first\n\n* star a\n* star b\n\n    indented\n" },
+      // The touched list is canonicalized (allowed for a touched block);
+      // the untouched setext heading and indented code must keep exact
+      // bytes and no ```undefined artifact may appear.
+      { name: "Q1: a list outdent keeps setext / indented bytes",
+        source: "* a\n    * b\n\nTitle\n=====\n\n    indented\n",
+        action: async (vc) => {
+          const nestedLi = vc.querySelector("li li");
+          caretAtEnd(nestedLi);
+          nestedLi.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+        },
+        expectedSaved: "-   a\n-   b\n\nTitle\n=====\n\n    indented\n" },
+      { name: "Q1: a structural add keeps a comment and a blank-line run",
+        source: "first\n\n* star a\n\n<!-- keep -->\n\na\n\n\n\nb\n",
+        // (no defect tag: the C1 fallback is specific to empty-line inserts)
+        action: async (vc) => {
+          const added = window.document.createElement("p");
+          added.textContent = "newpara";
+          vc.appendChild(added);
+          dirty(vc);
+        },
+        expectedSaved:
+          "first\n\n* star a\n\n<!-- keep -->\n\na\n\n\n\nb\n\nnewpara\n\n" },
+
+      // --- C4: an edit must not be lost when it shares a save with a
+      // structural edit. The region's unchanged-node fast path must still
+      // compare the content key, or an edited block in the region is
+      // reverted to its stale raw and the save is skipped as a no-op.
+      { name: "Q1 C4: a text edit survives alongside a structural add", defect: "C4",
+        source: "intro\n\nbody\n\nend\n",
+        action: async (vc) => {
+          vc.querySelectorAll("p")[1].textContent = "body edited";
+          const added = window.document.createElement("p");
+          added.textContent = "next";
+          vc.appendChild(added);
+          dirty(vc);
+        },
+        expectedSaved: "intro\n\nbody edited\n\nend\n\nnext\n\n" },
+
+      // --- fence safety: escapeLeadingHashes must not touch code inside a
+      // fence, including a fence nested in a blockquote, and must not close
+      // a longer fence on a shorter delimiter line.
+      { name: "fence: a blockquoted fence keeps its # literal", defect: "fence",
+        source: "> ```sh\n> #!/bin/sh\n> echo hi\n> ```\n\nbody\n",
+        action: async (vc) => {
+          const added = window.document.createElement("p");
+          added.textContent = "touched";
+          vc.appendChild(added);
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("#!/bin/sh") !== -1 &&
+          md.indexOf("\\#!") === -1 },
+      { name: "fence: a long fence is not closed by a shorter line",
+        source: "````\n```\n#no-space\n````\n",
+        expectedSaved: (md) => md.indexOf("\\#no-space") === -1 },
+      { name: "M3 from source: an existing unresolved wikilink stays literal",
+        source: "see [[NoSuchNote]] here\n\nx\n",
+        action: async (vc) => {
+          // Append to the rendered paragraph instead of replacing its
+          // content, so the renderer's data-wikilink-raw marker survives
+          // (a wholesale textContent assignment would destroy it -- the
+          // real edit path appends a character).
+          const p = vc.querySelector("p");
+          p.appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf("[[NoSuchNote]]") !== -1 && md.indexOf("\\[\\[") === -1 },
+
+      // --- M1 hash collision --------------------------------------------
+      { name: "M1: a hash-colliding edit still writes", defect: "M1",
+        source: "5ur85a\n\nqnef9u\n",
+        action: async (vc) => { vc.querySelectorAll("p")[0].textContent = "qnef9u"; dirty(vc); },
+        expectedSaved: "qnef9u\n\nqnef9u\n" },
+
+      // --- M2 nested empty blockquote -----------------------------------
+      { name: "M2: nested empty blockquote survives", defect: "M2",
+        source: "before\n\n> >\n\nafter\n",
+        action: async (vc) => {
+          // Force the whole-DOM fallback (a changed root-level aux node
+          // count fails the splice closed) so the quote is re-serialized
+          // rather than carried raw -- the M2 collapse only happens there.
+          vc.appendChild(window.document.createComment("force-whole-dom"));
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("> >") !== -1 },
+
+      // --- M3 unresolved wikilink ---------------------------------------
+      { name: "M3: unresolved wikilink stays literal", defect: "M3",
+        source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "[[NoSuchNote]]"); },
+        expectedSaved: (md) =>
+          md.indexOf("[[NoSuchNote]]") !== -1 && md.indexOf("\\[\\[") === -1 },
+
+      // --- empty constructs survive -------------------------------------
+      { name: "empty: heading ### survives", source: "###\n", expectedSaved: "###\n" },
+      { name: "empty: code-space heading survives", source: "### `   `\n",
+        expectedSaved: "### `   `\n" },
+      { name: "empty: bullet item - survives", source: "-\n", expectedSaved: "-\n" },
+      { name: "empty: ordered item 1. survives", source: "1.\n", expectedSaved: "1.\n" },
+      { name: "empty: emptied blockquote survives as >", source: "> quote\n\nbody\n",
+        action: async (vc) => { vc.querySelector("blockquote p").textContent = ""; dirty(vc); },
+        expectedSaved: (md) => /^>/m.test(md) && md.indexOf("body") !== -1 },
+
+      // --- Q5 live rules ------------------------------------------------
+      { name: "Q5: _italic_ live rule", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "_italic_"); },
+        expectedDom: (vc) => !!vc.querySelector("em"),
+        expectedSaved: (md) => md.indexOf("*italic*") !== -1 && md.indexOf("\\_") === -1 },
+      { name: "Q5: + bullet live rule", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "+ "); },
+        expectedDom: (vc) => !!vc.querySelector("ul li"),
+        // The rule converts `+ ` into a list; the serializer canonicalizes
+        // the marker to `-` (Appendix A), so the saved line is `-`.
+        expectedSaved: (md) => md.indexOf("\\+") === -1 &&
+          /^-\s*$/m.test(outsideFences(md)) },
+      { name: "Q5: 1) ordered live rule", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "1) "); },
+        expectedDom: (vc) => !!vc.querySelector("ol li") },
+      { name: "Q5: wikilink resolved", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "[[b]]"); },
+        expectedDom: (vc) => !!vc.querySelector('a[data-wikilink="1"]'),
+        expectedSaved: (md) => md.indexOf("[[b]]") !== -1 },
+
+      // --- §4.16 inline constructs + escaping ---------------------------
+      { name: "inline: **bold**", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "**bold**"); },
+        expectedDom: (vc) => !!vc.querySelector("strong"),
+        expectedSaved: (md) => md.indexOf("**bold**") !== -1 },
+      { name: "inline: *italic*", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "*italic*"); },
+        expectedDom: (vc) => !!vc.querySelector("em"),
+        expectedSaved: (md) => md.indexOf("*italic*") !== -1 },
+      { name: "inline: ~~strike~~", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "~~strike~~"); },
+        expectedDom: (vc) => !!vc.querySelector("del"),
+        expectedSaved: (md) => md.indexOf("~strike~") !== -1 },
+      { name: "inline: `code`", source: "seed\n",
+        action: async (vc) => { await typeIn(vc, "`code`"); },
+        expectedDom: (vc) => !!vc.querySelector("code"),
+        expectedSaved: (md) => md.indexOf("`code`") !== -1 },
+      // §4.2 S|C: a literal `#` with no following space must save as
+      // `\#no-space`. Turndown's escape rule only matches `^#{1,6} `
+      // (with a space), so this is a genuine gap, not a bad test.
+      { name: "escape: literal #", defect: "escape-#", source: "alpha\n",
+        action: async (vc) => { vc.querySelector("p").textContent = "#no-space"; dirty(vc); },
+        expectedSaved: (md) => md.indexOf("\\#no-space") !== -1 },
+      { name: "escape: literal *", source: "alpha\n",
+        action: async (vc) => { vc.querySelector("p").textContent = "a*"; dirty(vc); },
+        expectedSaved: (md) => md.indexOf("a\\*") !== -1 },
+      { name: "escape: literal _", source: "alpha\n",
+        action: async (vc) => { vc.querySelector("p").textContent = "a_"; dirty(vc); },
+        expectedSaved: (md) => md.indexOf("a\\_") !== -1 },
+      { name: "escape: literal [", source: "alpha\n",
+        action: async (vc) => { vc.querySelector("p").textContent = "a["; dirty(vc); },
+        expectedSaved: (md) => md.indexOf("a\\[") !== -1 },
+      { name: "escape: leading digit 1. x", source: "alpha\n",
+        action: async (vc) => { vc.querySelector("p").textContent = "1. x"; dirty(vc); },
+        expectedSaved: (md) => md.indexOf("1\\. x") !== -1 },
+      { name: "escape: escaped asterisks survive", source: "literal \\*not em\\* text\n",
+        expectedSaved: "literal \\*not em\\* text\n" },
+
+      // --- plugin fences keep source bytes ------------------------------
+      { name: "plugin mermaid fence byte-identical", source: "```mermaid\ngraph TD\n```\n",
+        expectedSaved: "```mermaid\ngraph TD\n```\n" },
+      { name: "plugin wavedrom fence byte-identical", source: "```wavedrom\n{ signal: [] }\n```\n",
+        expectedSaved: "```wavedrom\n{ signal: [] }\n```\n" },
+      { name: "plugin katex fence byte-identical", source: "```katex\nx^2\n```\n",
+        expectedSaved: "```katex\nx^2\n```\n" },
+      { name: "plugin dot fence byte-identical", source: "```dot\ndigraph { a -> b }\n```\n",
+        expectedSaved: "```dot\ndigraph { a -> b }\n```\n" },
+      { name: "plugin html-live fence byte-identical", source: "```html-live\n<div>demo</div>\n```\n",
+        expectedSaved: "```html-live\n<div>demo</div>\n```\n" },
+
+      // --- tables --------------------------------------------------------
+      { name: "table: edited cell emits clean GFM", source: "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+        action: async (vc) => { vc.querySelector("table td").textContent = "9"; dirty(vc); },
+        expectedSaved: (md) => !/<table/i.test(md) && /\|\s*9\s*\|/.test(md) },
+      { name: "table: headerless table rebuilt as GFM", source: "seed\n",
+        action: async (vc) => {
+          const t = window.document.createElement("table");
+          t.innerHTML = "<tbody><tr><td>a</td><td>b</td></tr>" +
+            "<tr><td>1</td><td>2</td></tr></tbody>";
+          vc.appendChild(t);
+          dirty(vc);
+        },
+        expectedSaved: (md) => !/<table/i.test(md) && /\|\s*a\s*\|\s*b\s*\|/.test(md) },
+
+      // --- §8.3 byte-identity corpus (clean enter, no edit) -------------
+      { name: "corpus: ~~~ fence byte-identical", source: "~~~\ntext\n~~~\n",
+        expectedSaved: "~~~\ntext\n~~~\n" },
+      { name: "corpus: nested blockquote byte-identical", source: "> outer\n> > inner\n",
+        expectedSaved: "> outer\n> > inner\n" },
+      { name: "corpus: task list byte-identical", source: "- [ ] task\n- [x] task\n",
+        expectedSaved: "- [ ] task\n- [x] task\n" },
+      { name: "corpus: nested list byte-identical", source: "- a\n    - b\n",
+        expectedSaved: "- a\n    - b\n" },
+      { name: "corpus: + bullet byte-identical", source: "+ a\n", expectedSaved: "+ a\n" },
+      { name: "corpus: 1) ordered byte-identical", source: "1) a\n", expectedSaved: "1) a\n" },
+      { name: "corpus: empty blockquote byte-identical", source: ">\n", expectedSaved: ">\n" },
+      { name: "corpus: hard-break paragraph byte-identical", source: "a  \nb\n",
+        expectedSaved: "a  \nb\n" },
+      // Q10 decided: untouched raw HTML keeps its source bytes. The doc's
+      // open *fork* is only what an EDITED raw block writes back, so an
+      // untouched block losing its tags is a defect either way.
+      { name: "corpus: raw HTML <div> byte-identical (Q10)", defect: "Q10",
+        source: "<div>x</div>\n", expectedSaved: "<div>x</div>\n",
+        skipHtmlCheck: true },
+      { name: "corpus: owner example byte-identical (Q16/AC7)",
+        source: "## Commands\n###\n### `   `\n",
+        expectedSaved: "## Commands\n###\n### `   `\n" },
+    ];
+
+    for (const c of HYBRID_CONTRACT_CASES) {
+      const label = "contract: " + c.name +
+        (c.defect ? " [" + c.defect + "]" : "");
+      let env = null;
+      let actionErr = null;
+      try { env = await contractEnter(c.source); }
+      catch (e) { actionErr = e; }
+      if (env && c.action) {
+        try { await c.action(env); }
+        catch (e) { actionErr = e; }
+      }
+      await tick(40);
+      let md = "";
+      try { md = window.NB.hybrid.domToMarkdown(); }
+      catch (e) { md = "THROW:" + (e && e.message); }
+      let domOk = true;
+      try { if (c.expectedDom) domOk = !!c.expectedDom(env); }
+      catch (e) { domOk = false; }
+      check(label + " — action/DOM", !actionErr && domOk,
+        actionErr ? String(actionErr) : "");
+      if (c.expectedSaved !== undefined) {
+        check(label + " — saved bytes",
+          matchesExpected(c.expectedSaved, md), JSON.stringify(md));
+      }
+      if (!c.skipHtmlCheck && md.indexOf("THROW:") !== 0) {
+        check(label + " — no presentation HTML (I8)",
+          !hasPresentationHtml(md), JSON.stringify(md));
+      }
+      await contractLeave();
+    }
+
+    // --- I3 / AC5: a clean no-op writes nothing -----------------------
+    {
+      const noOpCases = [
+        { verb: "enter+save", run: async () => { await window.NB.hybrid.save(); } },
+        { verb: "enter+exit", run: async () => { await window.NB.hybrid.exit(false); } },
+        { verb: "save+exit", run: async () => {
+          $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(80);
+        } },
+      ];
+      const src = "# File A\n\nbody\n";
+      for (const nc of noOpCases) {
+        await contractEnter(src);
+        const before = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+        await nc.run();
+        await tick(60);
+        const after = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+        check("contract no-op I3: clean " + nc.verb + " issues zero POST /api/file",
+          after - before === 0, "delta=" + (after - before));
+        check("contract no-op I3: clean " + nc.verb + " leaves the file bytes",
+          FILES[CONTRACT_PATH] === src, JSON.stringify(FILES[CONTRACT_PATH]));
+        await contractLeave();
+      }
+    }
+
+    // Restore the shared fixture state for the sections that follow.
+    if (window.NB.tabs.isOpen(CONTRACT_PATH)) {
+      window.NB.tabs.close(CONTRACT_PATH, { force: true });
+    }
+    delete FILES[CONTRACT_PATH];
+    delete MTIMES[CONTRACT_PATH];
+    FILES["notes/a.md"] = FILE_A;
+    MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+    if (window.NB.tabs.isOpen("notes/a.md")) {
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(20);
+    }
   }
 
   console.log("== table view ==");
