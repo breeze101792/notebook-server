@@ -1,7 +1,9 @@
 /* table-view.js -- hover/focus view controls for GFM tables in PREVIEW.
  *
- * Preview mode shows a small icon over the table under the pointer or
- * containing focus. Clicking the icon opens a toolbar with hide rows,
+ * Preview mode shows a small icon in the table's left gutter when the
+ * pointer is over the table or focus is inside it. Left placement keeps
+ * the icon clear of a heading directly above the table. Clicking the
+ * icon opens a toolbar with hide rows,
  * hide columns, and reset. Clicking a column TITLE toggles the sort
  * (ascending <-> descending, first click ascending) and shows a small
  * menu icon at the right edge of that header cell; clicking that icon
@@ -49,7 +51,8 @@
   const EDGE_SAFE = 4;         // min gap a control keeps from a #viewer edge
   const TOOLBAR_H = 28;        // fallback toolbar height before first measure
   const TOGGLE_H = 24;         // icon hit target (must match its CSS size)
-  const TOGGLE_GAP = 6;        // table top -> icon bottom
+  const TOGGLE_W = 24;         // icon hit target width (must match its CSS size)
+  const TOGGLE_GAP = 6;        // table left -> icon right
   const TOOLBAR_GAP = 6;       // icon/toolbar gap inside the .nb-tv-controls
   const POP_GAP = 4;           // anchor cell bottom -> popover top
   const POP_MIN_W = 180;       // fallback popover width before first measure
@@ -511,34 +514,47 @@
 
   /* --- overlay geometry ------------------------------------------- */
 
-  /* Position the controls above the table's CONTENT, anchored to cell
-   * rects (the <table> box is display:block and full width, so its rect
-   * would strand the controls at the pane edge). Top-clipping falls back
-   * to the pane's top edge rather than off-screen. The whole row is
-   * measured, so growing the toolbar on click keeps it inside the pane. */
+  /* Position the controls in the table's LEFT gutter, vertically centred
+   * on the header row. Anchored to cell rects, not the <table> box (the
+   * box is display:block and full width, so its rect would strand the
+   * controls at the pane edge). Left placement keeps the icon off any
+   * heading directly above the table; the header row is the top of the
+   * table, so the title sits above the icon's band. When the pane is too
+   * narrow for a left gutter the box is clamped inside the pane. The whole
+   * row is measured, so growing the toolbar on click keeps it on screen. */
   function placeControls(table) {
     if (!controls) return;
     const session = sessions.get(table);
     const header = (session && session.header) ||
       (table.tHead && table.tHead.rows[0]) || table.rows[0];
-    let contentLeft = Infinity, contentTop = Infinity;
+    let contentLeft = Infinity, headerTop = Infinity, headerBottom = -Infinity;
     if (header) {
       Array.from(header.cells).forEach((cell) => {
         const r = toOverlay(cell.getBoundingClientRect());
         contentLeft = Math.min(contentLeft, r.left);
-        contentTop = Math.min(contentTop, r.top);
+        headerTop = Math.min(headerTop, r.top);
+        headerBottom = Math.max(headerBottom, r.bottom);
       });
     }
     if (!isFinite(contentLeft)) {
       const r = toOverlay((header || table).getBoundingClientRect());
       contentLeft = r.left;
-      contentTop = r.top;
+      headerTop = r.top;
+      headerBottom = r.top + TOGGLE_H;
+    }
+    if (!isFinite(headerBottom) || headerBottom <= headerTop) {
+      headerBottom = headerTop + TOGGLE_H;   // unmeasured header (jsdom)
     }
     const V = paneSize();
-    const w = controls.offsetWidth || TOGGLE_H;
+    const w = controls.offsetWidth || TOGGLE_W;
     const h = controls.offsetHeight || TOGGLE_H;
-    let left = clamp(contentLeft, EDGE_SAFE, V.w - w - EDGE_SAFE);
-    let top = contentTop - h - TOGGLE_GAP;
+    // Left gutter: the box's right edge lands TOGGLE_GAP short of the
+    // table's left edge. Clamped so a flush/narrow table stays on screen.
+    const left = clamp(contentLeft - w - TOGGLE_GAP, EDGE_SAFE,
+      V.w - w - EDGE_SAFE);
+    // Centre the icon on the header row; never allow a title above the
+    // table to be covered, which left placement guarantees.
+    let top = headerTop + (headerBottom - headerTop - h) / 2;
     if (top < EDGE_SAFE) top = EDGE_SAFE;   // top-clipping fallback
     controls.style.left = Math.round(left) + "px";
     controls.style.top = Math.round(top) + "px";
@@ -1112,9 +1128,10 @@
     viewerContentEl = document.getElementById("viewer-content");
     if (!viewerEl || !viewerContentEl) return;
     overlay = el("div", "nb-tv-overlay");
-    // One control row above the table: the always-on icon plus the
-    // toolbar it opens. Keeping both in one absolutely-positioned box
-    // means the icon never moves when the toolbar appears.
+    // One control row in the table's LEFT gutter: the always-on icon plus
+    // the toolbar it opens. Keeping both in one absolutely-positioned box
+    // means the icon never moves when the toolbar appears, and a left
+    // gutter keeps the icon off any heading directly above the table.
     controls = el("div", "nb-tv-controls");
     controls.hidden = true;
     toggle = el("button", "nb-tv-toggle");

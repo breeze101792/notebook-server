@@ -9111,8 +9111,7 @@ function check(label, cond, extra) {
 
     // --- (2) hover reveals only the icon; a click opens the toolbar ----
     window.NB.tableView.resetTable(t0);
-    window.NB.tableView.reveal(t0);
-    check("table view: reveal shows the control row and its icon",
+    window.NB.tableView.reveal(t0);    check("table view: reveal shows the control row and its icon",
       !!controlsEl() && !controlsEl().hidden && !!toggleEl(),
       "controls=" + (controlsEl() ? controlsEl().outerHTML.slice(0, 80) : "none"));
     check("table view: the toolbar stays closed until the icon is clicked",
@@ -9146,6 +9145,55 @@ function check(label, cond, extra) {
       toolbarEl().hidden === true && window.NB.tableView.toolbarOpen === false &&
       window.NB.tableView.activeTable === null);
     window.NB.tableView.reveal(t0);
+
+    // --- (2b) the controls sit in the table's LEFT gutter --------------
+    // jsdom reports zero-size rects, so the left-gutter and header-centred
+    // vertical math is invisible to the other checks. Stub real rects: the
+    // header cells start at x=120..320, y=200..228; the pane is 800x600.
+    // The icon (24px) plus TOGGLE_GAP (6px) must end 6px left of x=120,
+    // i.e. left = 120 - 24 - 6 = 90, and be vertically centred on the
+    // header row (200 + (28 - 24)/2 = 202).
+    {
+      const rectFor = (el) => {
+        if (el.tagName === "TH" || el.tagName === "TD") {
+          const cell = Array.from(el.parentNode.cells).indexOf(el);
+          return { left: 120 + cell * 100, right: 220 + cell * 100,
+            top: 200, bottom: 228, width: 100, height: 28,
+            x: 120 + cell * 100, y: 200, toJSON() {} };
+        }
+        return { left: 0, right: 800, top: 0, bottom: 600, width: 800,
+          height: 600, x: 0, y: 0, toJSON() {} };
+      };
+      const origRect = window.Element.prototype.getBoundingClientRect;
+      const paneEl = $("viewer");
+      const origPaneW = Object.getOwnPropertyDescriptor(
+        window.Element.prototype, "clientWidth");
+      window.Element.prototype.getBoundingClientRect = function () {
+        return rectFor(this);
+      };
+      Object.defineProperty(paneEl, "clientWidth",
+        { configurable: true, get: () => 800 });
+      try {
+        window.NB.tableView.reveal(t0);
+        const ctl = controlsEl();
+        const left = Math.round(parseFloat(ctl.style.left));
+        const top = Math.round(parseFloat(ctl.style.top));
+        check("table view: the controls sit left of the table's first cell",
+          ctl.style.left !== "" && left < 120,
+          "left=" + ctl.style.left);
+        check("table view: the controls clear the table's left edge by the gap",
+          left === 120 - 24 - 6, "left=" + left);
+        check("table view: the controls are centred on the header row",
+          top === 202, "top=" + top);
+        check("table view: the controls are NOT above the table (title stays clear)",
+          top >= 200, "top=" + top);
+      } finally {
+        window.Element.prototype.getBoundingClientRect = origRect;
+        if (origPaneW) {
+          Object.defineProperty(window.Element.prototype, "clientWidth", origPaneW);
+        }
+      }
+    }
 
     // --- (3) column hide is class-based and restorable -----------------
     let pop = openChooser("Columns");
