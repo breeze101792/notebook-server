@@ -5096,14 +5096,22 @@ function check(label, cond, extra) {
         s.removeAllRanges();
         s.addRange(r);
       };
-      // mousedown ON the rule. jsdom reports a zero-size rect, so the
-      // side is chosen by clientY relative to the rect top: a clientY
-      // BELOW the (zero-height) rect's top+height/2 selects "below".
+      // A full plain click ON the rule: mousedown THEN mouseup at the
+      // SAME point. The caret repair moved from mousedown to mouseup
+      // (a mousedown is left native so a drag-selection can start), so a
+      // helper that only dispatched mousedown would leave the pending
+      // press unrepaired. Identical coordinates keep the gesture under
+      // RULE_CLICK_DRAG_PX, so it is treated as a click, not a drag.
+      // jsdom reports a zero-size rect, so the side is chosen by clientY
+      // relative to the rect top: a clientY BELOW the (zero-height) rect's
+      // top+height/2 selects "below".
       const clickRule = async (below) => {
         const hr = vc.querySelector("hr");
-        hr.dispatchEvent(new window.MouseEvent("mousedown",
-          { bubbles: true, cancelable: true, button: 0,
-            clientY: hr.getBoundingClientRect().top + (below ? 20 : -20) }));
+        const opts = { bubbles: true, cancelable: true, button: 0,
+          clientX: 5,
+          clientY: hr.getBoundingClientRect().top + (below ? 20 : -20) };
+        hr.dispatchEvent(new window.MouseEvent("mousedown", opts));
+        hr.dispatchEvent(new window.MouseEvent("mouseup", opts));
         await tick(10);
       };
       const press = (key) => {
@@ -5583,6 +5591,159 @@ function check(label, cond, extra) {
           !/<br\s*\/?>|data-hybrid/i.test(md) && !/\* \* \*/.test(md) &&
           md.includes("alpha") && md.includes("omega"),
           JSON.stringify(md).slice(0, 70));
+      }
+
+      // --- selection uses the browser's own engine -------------------
+      // Selection and copy behave the same in hybrid and preview mode:
+      // the app paints no selection chrome of its own. A press on a rule
+      // is left native so a drag can select across it; only a plain click
+      // is repaired to a caret (the void rule has no caret of its own).
+      const byText = (text) => Array.from(vc.querySelectorAll(":scope > p"))
+        .find((p) => p.textContent === text);
+      const selectRange = (from, fromOff, to, toOff) => {
+        const r = window.document.createRange();
+        r.setStart(from, fromOff);
+        r.setEnd(to, toOff);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      const fireMouse = (node, type, x, y) => node.dispatchEvent(
+        new window.MouseEvent(type, { bubbles: true, cancelable: true,
+          button: 0, clientX: x, clientY: y }));
+      // innerHTML with the selection-highlight chrome class stripped. The
+      // class is applied by onSelectionChange (both modes) and is not a
+      // structural edit, so a "DOM unchanged" assertion must ignore it.
+      const structHtml = () => vc.innerHTML
+        .split(' class="nb-hr-selected"').join("")
+        .split("nb-hr-selected ").join("");
+
+      // A drag that starts on the rule must not be "repaired" into a
+      // collapsed caret: the native selection stands. jsdom has no drag
+      // engine, so the range is built directly; the mouseup carries
+      // movement past RULE_CLICK_DRAG_PX, which is the signal the handler
+      // reads to tell a drag from a click.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const hr = vc.querySelector("hr");
+        const alphaP = byText("alpha");
+        const omegaP = byText("omega");
+        selectRange(alphaP.firstChild, 0,
+          omegaP.firstChild, omegaP.firstChild.length);
+        const before = window.getSelection().toString();
+        fireMouse(hr, "mousedown", 5, 40);
+        fireMouse(hr, "mouseup", 80, 120);
+        const sel = window.getSelection();
+        check("hybrid hr select: a drag leaves the native selection intact",
+          !sel.isCollapsed && sel.toString() === before,
+          "collapsed=" + sel.isCollapsed + " text=" + JSON.stringify(sel.toString()));
+        check("hybrid hr select: a drag across the rule keeps the rule in the DOM",
+          !!vc.querySelector("hr"), "html=" + vc.innerHTML.slice(0, 60));
+      }
+
+      // The selected rule must be VISIBLY marked. The native highlight is
+      // painted under the border-only, zero-height <hr> box, so the app
+      // adds the class itself -- in preview mode too, where selection and
+      // copy are equally the browser's own.
+      await exitRuleNote();
+      {
+        const hr = vc.querySelector("hr");
+        const aP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "alpha");
+        const oP = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "omega");
+        selectRange(aP.firstChild, 0, oP.firstChild, oP.firstChild.length);
+        // jsdom fires selectionchange asynchronously; dispatch it so the
+        // assertion does not depend on microtask timing.
+        window.document.dispatchEvent(new window.Event("selectionchange"));
+        check("hybrid hr select: preview mode marks a selected rule",
+          hr.classList.contains("nb-hr-selected"), "class=" + hr.className);
+        // Collapsing clears it again.
+        const r = window.document.createRange();
+        r.setStart(aP.firstChild, 0);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        window.document.dispatchEvent(new window.Event("selectionchange"));
+        check("hybrid hr select: preview mode clears the mark on collapse",
+          !hr.classList.contains("nb-hr-selected"), "class=" + hr.className);
+      }
+
+      // A live selection must be invisible to the save path: zero write
+      // and byte-for-byte `---`, not the turndown canonical `* * *`.
+      // Start from a CLEAN session (exit first): enter() early-returns
+      // while hybrid is already active, so reusing loadRuleNote without
+      // exiting would compare against the previous note's baseline (a
+      // test artifact, not production).
+      await exitRuleNote();
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const alphaP = byText("alpha");
+        const omegaP = byText("omega");
+        const source = FILES["notes/a.md"];
+        selectRange(alphaP.firstChild, 0,
+          omegaP.firstChild, omegaP.firstChild.length);
+        const postBefore =
+          fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+        await window.NB.hybrid.save();
+        await tick(50);
+        const postAfter =
+          fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+        check("hybrid hr select: a live selection does not make Save write",
+          postAfter - postBefore === 0, "delta=" + (postAfter - postBefore));
+        check("hybrid hr select: the source bytes are unchanged",
+          FILES["notes/a.md"] === source,
+          JSON.stringify(FILES["notes/a.md"]));
+        check("hybrid hr select: the rule was not canonicalized to '* * *'",
+          !/\* \* \*/.test(FILES["notes/a.md"]) &&
+          FILES["notes/a.md"].indexOf("---") !== -1,
+          JSON.stringify(FILES["notes/a.md"]));
+      }
+
+      // --- cross-block Ctrl+B is refused (Q11) ------------------------
+      // A selection that starts in one top-level block and ends in another
+      // (here, across the rule) must NOT be wrapped in <strong>: the old
+      // extractContents fallback pulled the block content into the inline
+      // element and destroyed the structure. Single-block inline format is
+      // covered by the existing Ctrl+B tests.
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        const alphaP = byText("alpha");
+        const omegaP = byText("omega");
+        selectRange(alphaP.firstChild, 0,
+          omegaP.firstChild, omegaP.firstChild.length);
+        const snapshot = structHtml();
+        const ev = new window.KeyboardEvent("keydown",
+          { key: "b", ctrlKey: true, bubbles: true, cancelable: true });
+        vc.dispatchEvent(ev);
+        await tick(20);
+        check("hybrid hr inline: Ctrl+B across a block boundary inserts no <strong>",
+          vc.querySelector("strong") === null,
+          "strong=" + (vc.querySelector("strong") &&
+            vc.querySelector("strong").outerHTML));
+        check("hybrid hr inline: Ctrl+B across a block boundary leaves the DOM unchanged",
+          structHtml() === snapshot, "html=" + structHtml().slice(0, 90));
+        check("hybrid hr inline: the rule survives the refused format",
+          !!vc.querySelector("hr") && alphaP.parentElement === vc &&
+          omegaP.parentElement === vc,
+          "html=" + vc.innerHTML.slice(0, 90));
+      }
+
+      // A selection whose endpoints BOTH sit on the editor root (a drag in
+      // the empty margin around a rule) resolves to null on both sides.
+      // The guard must still refuse: null === null is not "same block".
+      await loadRuleNote("alpha\n\n---\n\nomega\n");
+      {
+        selectRange(vc, 0, vc, vc.childNodes.length);
+        const snapshot = structHtml();
+        const ev2 = new window.KeyboardEvent("keydown",
+          { key: "b", ctrlKey: true, bubbles: true, cancelable: true });
+        vc.dispatchEvent(ev2);
+        await tick(20);
+        check("hybrid hr inline: a root-to-root selection is refused",
+          vc.querySelector("strong") === null && structHtml() === snapshot,
+          "html=" + structHtml().slice(0, 90));
       }
 
       FILES["notes/a.md"] = "# File A\n\nTODO fix this bug.\n\n## Sub A\n\nbody\n";

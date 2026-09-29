@@ -141,7 +141,7 @@ The goal **G1–G4** governs every open question: where a recommendation below w
 make hybrid less Word-like, less clean in the raw file, or would add HTML, the goal
 wins.
 
-Open questions are Q2, Q3, Q8, Q10 (fork), Q11, Q13, Q14, Q15.
+Open questions are Q2, Q3, Q8, Q10 (fork), Q13, Q14, Q15.
 Their recommendations are recorded but not yet accepted.
 
 ---
@@ -504,27 +504,46 @@ Rendered `<pre><code>`; canonical output when **touched** is a **fence**
 
 ### 4.11 Horizontal rules `---` / `***` / `___`
 
-Rendered `<hr>` — a void top-level block with a full custom editing model
-(`hybrid.js:1525-1871`). Canonical output is `* * *` (`hr` option default
+Rendered `<hr>` — a void top-level block with a custom caret-editing model
+(`hybrid.js:1773-1818`). Canonical output is `* * *` (`hr` option default
 `vendor:754`; hybrid does not override it in `ensureTurndown` `:151-158`).
+
+**Selection and copy use the browser's own engine**, identically in hybrid and
+preview mode. A rule is selectable like an ordinary character: a selection may
+start, end, or span it. Copy is whatever the selection is — a void rule
+contributes no text, and no app code intercepts `copy`/`cut`. Because the
+`<hr>` box is zero-height with only a painted border, the browser's native
+selection highlight is invisible on it, so the app adds one visual cue in
+**both** modes: `onSelectionChange` marks every top-level rule inside the
+selection with `nb-hr-selected`, styled with `border-top-color` + a ring
+(`style.css`). The class is editing chrome, never content: the hybrid
+serializer strips it from the change hash and the turndown clone, so a live
+selection cannot make a save write or canonicalize `---` to `* * *`. The only
+hybrid-specific behavior is that a **plain click** on a rule still repairs the
+caret to the clicked side, because a void rule has no caret of its own: the
+mousedown is left native (so a drag can select) and the repair is decided on
+`mouseup` (`onContentMouseUp` `:1801-1814`), skipped when the gesture became a
+selection.
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
-| — | click on/beside rule | `alpha\n\n* * *\n\nomega` | note **unchanged**, caret parked at root beside `<hr>` | ✅ `hrUnderClick` `:1553-1573`, `placeCaretForRule` `:1596-1601`, tests `5142-5193` |
-| S(block after) | ⌫ | `alpha\n\n---\n\ntext` | rule removed; `alpha`, `text` kept | ✅ `ruleForDeleteKey` `:1729-1753`, test `5200-5214` |
+| — | click on/beside rule | `alpha\n\n* * *\n\nomega` | note **unchanged**, caret parked at root beside `<hr>` | ✅ `hrUnderClick`, `onContentMouseUp`/`placeCaretForRule`, tests `5142-5193` |
+| — | drag across rule | `alpha\n\n* * *\n\nomega` | native selection spans the rule; marked `nb-hr-selected` | ✅ `onSelectionChange`, tests `5596-5630`, browser harness `rule selection` |
+| S(block after) | ⌫ | `alpha\n\n---\n\ntext` | rule removed; `alpha`, `text` kept | ✅ `ruleForDeleteKey`, test `5200-5214` |
 | S(block after) | ⌦ | same | rule **kept** (forward edit) | ✅ test `5219-5229` |
 | E(block before) | ⌦ | `alpha\n\n---\n\ntext` | rule removed | ✅ test `5233-5244` |
 | E(block before) | ⌫ | same | rule kept | ✅ test `5246-5256` |
 | root after rule | ⌫ | `---\n\ntext` | removed | ✅ test `5260-5269` |
 | root before rule | ⌦ | `alpha\n\n---` | removed | ✅ test `5284-5293` |
-| on rule element | ⌫ **and** ⌦ | — | both remove | ✅ `ruleUnderCaret` `:1711-1718`, test `5307-5317` |
-| S(block after) | C | `---\n\n## Title` | new `<p>` inserted, heading intact | ✅ `openLineAtCaretRule` `:1852-1871`, tests `5331-5357` |
+| on rule element | ⌫ **and** ⌦ | — | both remove | ✅ `ruleUnderCaret`, test `5307-5317` |
+| S(block after) | C | `---\n\n## Title` | new `<p>` inserted, heading intact | ✅ `openLineAtCaretRule`, tests `5331-5357` |
 | S(block after) | ↵ | same | caret line `<p>` opened | ✅ tests `5362-5380`, `5480-5502` |
 | root before rule | ⇧↵ | same | caret line on the rule's own side | ✅ test `5523-5534` |
 | — | D (rule is only block) | `---` | note empty | ✅ test `5538-5549` |
 | — | remove, keep user blank line | `alpha\n\n---\n\n\n\nomega` | blank line survives | ✅ test `5555-5570` |
+| — | cross-block inline format over a rule | selection spanning blocks | **refused**, DOM unchanged | ✅ `toggleInline` guard, tests `5700-5740` |
 | — | touched hr serialized | `---` | `* * *` | ⛔ canonicalizes dash style; §6 Q4 |
-| — | nested rule `> ---` | `> ---` | native editing (not claimed) | ✅ `:1548-1552` |
+| — | nested rule `> ---` | `> ---` | native editing (not claimed) | ✅ `hrUnderClick` |
 
 ### 4.12 GFM tables
 
@@ -652,7 +671,7 @@ delimiter at the caret in a single text node** (`INLINE_RULES` `:1197-1202`,
 | literal `[` | M | type `[` | `a` | `a\[` | ✅ escape `vendor:741` |
 | leading digit | S | type `1. x` | `` | `1\. x` | ✅ escape `vendor:745` |
 | escaped asterisk | — | no edit | `literal \*not em\* text` | survives as text | ✅ test `7999-8001` |
-| inline over 2 blocks | F | Ctrl+B spanning blocks | `p1…p2…` | `toggleInline` `surroundContents` throws → `extractContents` path | ⛔ §6 Q11 |
+| inline over 2 blocks | F | Ctrl+B spanning blocks | `p1…p2…` | refused, unchanged (toast) | ✅ §6 Q11 |
 
 #### 4.16.1 Inline rule boundary conditions
 
@@ -858,11 +877,12 @@ its source bytes. **Fork:** an *edited* raw HTML block — Turndown has no rule 
 without loss, the save path must re-emit the element's own HTML
 (`<div>block edited</div>`). Alternative: accept the unwrap. Owner to decide.
 
-**Q11 — inline format across blocks.** `toggleInline` catches the
-`surroundContents` throw and falls back to `extractContents` + `insertNode`
-(`:1372-1381`), which can wrap block elements in `<strong>`/`<em>`; Turndown then
-emits `**…**` spanning block boundaries, which is invalid Markdown. Proposed:
-apply the format per block (one span per affected block) or refuse with a toast.
+**Q11 — inline format across blocks. DECIDED and implemented: refuse.** A
+selection whose endpoints do not resolve to one top-level block is refused
+unchanged (a toast, no DOM edit), so the `extractContents` fallback can no
+longer pull block content into `<strong>`/`<em>`. Both-null endpoints (a drag
+that anchors on the editor root) are refused too. Same-block selections still
+wrap/unwrap as before.
 
 **Q12 — DECIDED and implemented. An empty block must accept typed text.** A caret
 in an empty `###` is redirected in Chromium because the heading has zero height;
@@ -875,9 +895,11 @@ serializes to exactly `###`. Verified in Chromium: text now lands in the heading
 **Q13 — `~~~` fences.** marked renders them; no corpus or test covers editing a
 `~~~` fence, and canonical output uses backticks. Proposed: add to the corpus.
 
-**Q14 — cut/copy across blocks.** Context-menu `Copy` uses `sel.toString()`
-(`:2324-2335`), which loses markers and joins lines; native `Ctrl+C` is unhandled.
-Proposed: copy plain text as today; document that markers are not carried.
+**Q14 — cut/copy across blocks.** Context-menu `Copy` uses `sel.toString()`,
+which loses markers and joins lines; native `Ctrl+C` is unhandled. Decision for
+rules: selection and copy stay the browser's own, identical in hybrid and
+preview mode, and no app copy path is added (§4.11). A rule selected this way
+carries no text, which is accepted; the highlight class makes it visible.
 
 **Q15 — what `Shift+Enter` should insert (raised by the Word goal).** Today
 `Shift+Enter` inserts a new empty top-level `<p>` after the block
@@ -1100,17 +1122,19 @@ Verified against the vendored bundles at this revision with the exact
   `Enter` is one break. See "The goal".
 - **MVP line.** All §4 constructs at positions S/T/M/E/B/∅ for the operations C,
   Enter, Shift+Enter, Backspace, Delete, delete-all, save. Paste, cross-block
-  cut/copy, cross-block inline format, and merge are specified but gated behind
-  Q2, Q9, Q11.
+  cut/copy, and merge are specified but gated behind Q2, Q9.
 - **Decided and implemented.** Q1 (`structuralSplice` preserves untouched blocks
   on structural edits), Q5 (added the missing live rules `_italic_`, `+ `, `1) `,
-  `[[wikilinks]]`), Q7 (an emptied blockquote survives as `>`), Q12 (empty blocks
+  `[[wikilinks]]`), Q7 (an emptied blockquote survives as `>`), Q11 (cross-block
+  inline format is refused), Q12 (empty blocks
   get a caret line box so typed text lands in them), Q18 (an empty list item saves
   as a bare marker, no junk). G4/I8 (no HTML in the file), G4b/I9/Q16 (one `Enter`
-  adds one break), G2b, G3b, Q10 (raw HTML stays editable).
+  adds one break), G2b, G3b, Q10 (raw HTML stays editable). Selection and copy
+  use the browser's own engine in hybrid and preview alike; a horizontal rule is
+  selectable like a character (§4.11).
 - **Withdrawn.** Q17 (a renderer `breaks:true` change) — it misread Q16 as a
   file-format rule. No renderer change.
 - **Biggest remaining questions.** Q15 (what `Shift+Enter` inserts), then Q2 (block
   merge), then Q3 (block-edge typing).
 - **Next decisions, in order.** Q15 (`Shift+Enter`), Q2 (merge), Q3 (block-edge
-  typing), Q8 (table cells), Q11 (cross-block inline), Q10 fork, Q13/Q14.
+  typing), Q8 (table cells), Q10 fork, Q13/Q14.

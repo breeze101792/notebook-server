@@ -215,3 +215,106 @@ bytes. No HTML is ever generated; the passthrough keeps what is already there.
 | Duplicate plugin class lists | `PLUGIN_CONTAINER_SELECTOR` is the single source |
 | Vacuous mermaid save test | Test now mutates the DOM so the write is real |
 
+---
+
+# PLAN — Selectable horizontal rule
+
+Status: approved 2026-09-29. Owner: `build`.
+
+## Goal
+
+In hybrid mode a horizontal rule (`* * *` / `---`, rendered `<hr>`) must be
+selectable like an ordinary character: a selection can start, end, or span the
+rule, and a selected rule is visibly marked. Copy is out of scope — there is no
+separate copy path. What the user selects is what they copy; a void element
+contributes no text, and that is accepted.
+
+Selection logic must be the **same in hybrid and preview mode**. Both use the
+browser's own selection/copy engine. The one thing the app adds is a highlight
+class on a selected rule, in **both** modes: the `<hr>` box is zero-height with
+only a painted border, so the browser's native selection highlight is invisible
+on it. The only hybrid-specific behavior is the caret repair for a plain click,
+because a void rule has no caret of its own.
+
+## Root cause
+
+Selection already includes the `<hr>` natively. Hybrid cancels the gesture that
+creates it: `onContentMouseDown` (`static/js/hybrid.js:1777`) called
+`e.preventDefault()` and then `placeCaretForRule()` whenever `hrUnderClick()`
+claimed a rule. `preventDefault()` on `mousedown` cancels the browser's
+drag-selection start, and the programmatic collapsed caret replaced it. That
+repair was added to stop Chromium collapsing the caret to a hidden root offset
+before the rule; it is now over-broad and kills selection too.
+
+## Decision
+
+Let the native selection stand in hybrid exactly as in preview. Move the caret
+repair from `mousedown` to `mouseup`, and apply it only when the press did not
+become a selection. Add a `selectionchange` listener (module level, active in
+both modes) that marks a selected top-level rule with `nb-hr-selected`; keep the
+class out of the change hash and the turndown clone. Refuse a cross-block inline
+format over the new selection state (the open Q11).
+
+## Implementation
+
+| Step | Work | Owner | Risk |
+|------|------|-------|------|
+| 1 | Stop cancelling `mousedown` on a rule; record the pending press. Repair the click in a new `mouseup` handler only when the press did not become a selection. | `web-engineer` | Medium |
+| 2 | `selectionchange` marks a selected top-level rule with `nb-hr-selected`, in both modes; CSS paints the border + ring. Strip the class from the change hash and the turndown clone. | `web-engineer` | High |
+| 3 | Refuse a cross-block inline format in `toggleInline` (Q11), including a root-to-root selection. | `web-engineer` | Low |
+| 4 | Update DOM tests + Chromium harness for native selection, the highlight in both modes, and preview parity; correct §4.11. | `tester` | Medium |
+
+### Details
+
+**Step 1.** In `onContentMouseDown`, when `hrUnderClick(e)` returns a rule,
+record `{hr, x, y, shiftKey}` in a module-scoped `pendingRuleClick` and return
+without `preventDefault()`. Add a `mouseup` listener on `viewerContentEl` while
+active. On mouseup, if a press is pending: clear it; if the selection is
+non-collapsed with non-empty text, or the pointer moved beyond
+`RULE_CLICK_DRAG_PX` (4), or Shift was held, it was a selection — do nothing.
+Otherwise it was a plain click: call `placeCaretForRule(hr, y)`. A
+non-collapsed *empty* selection (double-click on the void rule) counts as a
+click and is repaired. A `mouseup` that lands outside the editor never reaches
+this listener; a later `mousedown` always supersedes a stale press, so it
+cannot repair the wrong gesture.
+
+**Step 2.** A module-level `selectionchange` listener (`onSelectionChange`)
+runs in both modes: when the selection is non-collapsed, non-empty, and inside
+`viewerContentEl`, it marks every top-level `<hr>` the range intersects or
+contains with `nb-hr-selected` (`range.intersectsNode(hr) ||
+sel.containsNode(hr, true)` — the union covers a selection anchored on the
+rule), and clears the class on collapse or when the selection leaves the
+editor. `canonicalSubtree` strips the token from the change hash and
+`prepareTurndownClone` removes it, so a live selection never changes
+`domToMarkdown()` and can never canonicalize `---` to `* * *`.
+
+**Step 3.** `toggleInline` falls back to `extractContents` when a selection
+crosses a block boundary, wrapping block content — including an `<hr>` — in
+`<strong>`/`<em>`. Refuse instead: resolve both selection endpoints to
+top-level blocks with the existing `topLevelBlock` and return without editing
+unless **both** resolve to the same non-null block. A `null === null` pair (a
+drag in the empty margin around a rule anchors on the editor root) must also be
+refused.
+
+## Verification
+
+Browser/JS change; nothing runs on target. Verify on the host.
+
+- jsdom: a drag (movement past the threshold) leaves the native selection
+  intact; a selected rule is marked in hybrid and in preview; collapsing clears
+  the mark; a live selection plus Save writes nothing and leaves `---`
+  untouched; cross-block Ctrl+B is a no-op; a root-to-root Ctrl+B is refused; a
+  plain click still repairs the caret.
+- Chromium (`npm run test:browser`): a real drag that starts on the rule
+  selects it, the selected range covers it, and the rule is marked and painted
+  in both modes; a plain click in hybrid still parks the caret on the rule; the
+  file stays byte-identical.
+- `node tests/dom/test_dom.js` and
+  `.venv_$(hostname)/bin/python -m unittest discover -s tests -v`.
+
+## Known limitation
+
+The browser harness is Chromium-only by default; `BROWSER=firefox` selects the
+Firefox runner. Firefox selection normalization is not verified until it is
+run.
+

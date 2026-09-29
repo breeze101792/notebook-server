@@ -2863,6 +2863,17 @@ body[data-theme="light"] #viewer-content {
 .markdown-body tbody tr:nth-child(odd) { background: var(--bg-panel); }
 .markdown-body tbody tr:nth-child(even) { background: var(--bg); }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+/* A horizontal rule inside the current selection, in BOTH preview and
+ * hybrid mode. The <hr> box is zero height with only border-top painted,
+ * so the browser's native selection highlight is invisible on it; a
+ * background paints nothing either. Recolour the painted border and add a
+ * ring (box-shadow renders on a zero-height box) so a selected rule looks
+ * selected like an ordinary character. The class is applied by
+ * onSelectionChange in hybrid.js and is editing chrome, never content. */
+#viewer-content hr.nb-hr-selected {
+  border-top-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
 .markdown-body img { max-width: 100%; }
 .markdown-body mark.search-highlight {
   background: var(--accent); color: #fff; border-radius: 2px; padding: 0 2px;

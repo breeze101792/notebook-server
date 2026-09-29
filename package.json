@@ -4,7 +4,8 @@
   "description": "DOM-level tests for the Markdown notebook server frontend (jsdom).",
   "scripts": {
     "test": "node tests/dom/test_dom.js",
-    "test:browser": "node tests/browser/test_hybrid_browser.js"
+    "test:browser": "node tests/browser/test_hybrid_browser.js",
+    "test:browser:firefox": "BROWSER=firefox node tests/browser/test_hybrid_browser.js"
   },
   "devDependencies": {
     "@codemirror/buildhelper": "^1.0.2",

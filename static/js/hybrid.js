@@ -99,6 +99,17 @@
   // separately (only on H1-H6 -- an id on other content is real).
   const HASH_ATTR_PREFIX = "data-hybrid-";
   const HEADING_TAG_RE = /^H[1-6]$/;
+  // The class painted on a top-level <hr> that lies inside the current
+  // selection (styled in style.css) and the pointer travel, in pixels,
+  // that turns a rule press into a drag-selection instead of a plain
+  // click. Selection and copy use the browser's own engine in hybrid and
+  // preview mode alike; the <hr> box has only a painted border (zero
+  // height), so the browser's native selection highlight is invisible on
+  // it -- this class is the one visual cue, and it applies in both modes.
+  // Named here so the create/toggle/strip sites (the selection listener,
+  // the change hash, the turndown clone) cannot drift apart.
+  const HR_SELECTED_CLASS = "nb-hr-selected";
+  const RULE_CLICK_DRAG_PX = 4;
   // Renderer container classes. Their rendered children change
   // asynchronously (a lazy bundle swaps an error box for a real
   // container, an SVG renders later), so the splice path hashes only the
@@ -145,6 +156,16 @@
   // splice cannot emit a newly added one; a changed count fails the
   // splice closed to the whole-DOM serializer.
   let rootAuxBaseline = 0;
+  // The rule press awaiting its mouseup decision: {hr, x, y, shiftKey}
+  // or null. A press on a rule must not preventDefault (that
+  // would cancel the browser's drag-selection); it is repaired with
+  // placeCaretForRule on mouseup only when the gesture did not become a
+  // selection. See onContentMouseDown / onContentMouseUp.
+  let pendingRuleClick = null;
+  // The rules carrying HR_SELECTED_CLASS as of the last selectionchange,
+  // so the class is touched only when the selected set actually changes
+  // (selectionchange fires many times during one drag).
+  let selectedRuleSet = null;
 
   function ensureTurndown() {
     if (turndownSvc) return turndownSvc;
@@ -391,6 +412,12 @@
   function prepareTurndownClone(clone) {
     // Remove injected copy buttons so they don't appear in the output.
     clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
+    // Drop the selection-highlight class: it is editing chrome toggled by
+    // the selectionchange listener, never content, so a save with a rule
+    // still selected must serialize byte-for-byte as before.
+    clone.querySelectorAll("." + HR_SELECTED_CLASS).forEach((el) => {
+      el.classList.remove(HR_SELECTED_CLASS);
+    });
     // Drop caret placeholder paragraphs the hr repair opened for the
     // user (see placeCaretForRule) when they are still empty: a click
     // beside a rule that never received text must not save as a blank
@@ -700,6 +727,18 @@
       out += "\u0001<" + node.tagName;
       for (const a of node.attributes) {
         if (isHashStrippedAttr(node, a.name)) continue;
+        // The selection-highlight class is chrome, not content, but a
+        // class attribute can also carry real significance. Strip only
+        // the HR_SELECTED_CLASS token; every other value is emitted
+        // byte-for-byte, so a class the user or a renderer set keeps its
+        // exact significance and no non-selected element's hash moves.
+        if (a.name === "class" && a.value.split(/\s+/)
+              .indexOf(HR_SELECTED_CLASS) !== -1) {
+          const rest = a.value.split(/\s+/)
+            .filter((c) => c && c !== HR_SELECTED_CLASS).join(" ");
+          if (rest) out += " class=" + rest;
+          continue;
+        }
         out += " " + a.name + "=" + a.value;
       }
       // A live checkbox property has no attribute to compare.
@@ -1718,6 +1757,28 @@
       return;
     }
     if (range.collapsed) return;
+    // Refuse a selection that is not contained in ONE top-level block.
+    // surroundContents cannot wrap a range whose endpoints live in
+    // different blocks (it throws), and the extractContents fallback below
+    // would instead PULL block content -- an <hr>, a heading, a list --
+    // into a <strong>/<em>, destroying the structure. Inline formatting is
+    // a property of text within one block, so a cross-block selection is
+    // left untouched. An endpoint on the editor root itself (a drag in the
+    // empty margin around a rule anchors there) resolves to null, so a
+    // null on either side is also refused -- `null === null` must not pass
+    // as "same block".
+    const anchorTop = topLevelBlock(
+      sel.anchorNode.nodeType === Node.TEXT_NODE
+        ? sel.anchorNode.parentElement : sel.anchorNode);
+    const focusTop = topLevelBlock(
+      sel.focusNode.nodeType === Node.TEXT_NODE
+        ? sel.focusNode.parentElement : sel.focusNode);
+    if (!anchorTop || !focusTop || anchorTop !== focusTop) {
+      if (NB.app && NB.app.notify) {
+        NB.app.notify("Inline formatting needs a selection inside one block");
+      }
+      return;
+    }
     // Toggle ON: wrap the selection contents.
     const el = document.createElement(tag);
     try {
@@ -1739,10 +1800,10 @@
   /* When the user clicks (mousedown) outside an actively-edited plugin
    * block, commit it back to preview mode.  This covers the case where
    * focus stays inside the same contentEditable tree (e.g. clicking a
-   * sibling paragraph) and focusout never fires on the <pre>. Also
-   * repairs a click that lands on or next to a horizontal rule, which
-   * Chromium cannot turn into a caret (see "horizontal rule caret
-   * repair" above). */
+   * sibling paragraph) and focusout never fires on the <pre>. A press on
+   * or next to a horizontal rule is recorded for onContentMouseUp to
+   * decide; the mousedown itself is left native so a drag-selection can
+   * start (see "horizontal rule caret repair" above). */
   function onContentMouseDown(e) {
     if (!active) return;
     const editing = viewerContentEl.querySelector("pre.hybrid-plugin-editing");
@@ -1752,9 +1813,89 @@
     }
     const hr = hrUnderClick(e);
     if (hr) {
-      e.preventDefault();
-      placeCaretForRule(hr, e.clientY);
+      // Do NOT preventDefault: cancelling the mousedown also cancels the
+      // browser's drag-selection, so a rule could never be selected. Note
+      // the press instead and decide on mouseup -- the caret is repaired
+      // only when the gesture stayed a plain click (onContentMouseUp).
+      pendingRuleClick = { hr, x: e.clientX, y: e.clientY,
+        shiftKey: e.shiftKey };
+    } else {
+      // Any other press supersedes an earlier rule press. This also clears
+      // one whose mouseup landed outside the editor, where the viewer
+      // mouseup listener never fired (a mousedown always precedes its own
+      // mouseup, so the stale press cannot repair that mouseup).
+      pendingRuleClick = null;
     }
+  }
+
+  /* Decide a rule press on mouseup. The native gesture runs untouched;
+   * if it became a selection -- non-collapsed with non-empty text, Shift
+   * held, or the pointer travelled past RULE_CLICK_DRAG_PX -- the rule
+   * stays selected and nothing is repaired. Otherwise it was a plain
+   * click, so park the caret on the rule with placeCaretForRule. A
+   * non-collapsed but EMPTY selection (a double-click on the void rule)
+   * counts as a plain click and is repaired. */
+  function onContentMouseUp(e) {
+    if (!active || !pendingRuleClick) return;
+    const press = pendingRuleClick;
+    pendingRuleClick = null;
+    const sel = window.getSelection();
+    const selected = sel && !sel.isCollapsed && sel.toString().length > 0;
+    const moved = Math.abs(e.clientX - press.x) > RULE_CLICK_DRAG_PX ||
+                  Math.abs(e.clientY - press.y) > RULE_CLICK_DRAG_PX;
+    if (selected || press.shiftKey || moved) return;
+    placeCaretForRule(press.hr, press.y);
+  }
+
+  /* The top-level <hr> children of the editor. Only direct children are
+   * tracked: a rule nested in a blockquote or list item has its own
+   * native editing and no root offset (see hrUnderClick). */
+  function topLevelRules() {
+    return Array.prototype.filter.call(viewerContentEl.children,
+      (el) => el.tagName === "HR");
+  }
+
+  /* Drop HR_SELECTED_CLASS from every top-level rule and forget the
+   * selected set, so no highlight survives a collapsed selection or a
+   * selection that left the editor. */
+  function clearSelectedRules() {
+    topLevelRules().forEach((hr) => hr.classList.remove(HR_SELECTED_CLASS));
+    selectedRuleSet = null;
+  }
+
+  /* Paint HR_SELECTED_CLASS on every top-level rule inside the current
+   * non-collapsed selection. A rule is selected when the range intersects
+   * it OR the selection contains it: intersectsNode alone misses a range
+   * that STARTS on the void rule (the anchor sits on the HR itself), so
+   * the union is required. classList is touched only when the selected
+   * set changed -- selectionchange fires many times per drag and an
+   * unconditional toggle would churn the DOM (and the hybrid undo hash).
+   *
+   * This runs in BOTH preview and hybrid mode: selection and copy are the
+   * browser's own in both, and this class only makes the selection
+   * visible on a zero-height <hr> (the native highlight is painted under
+   * the border-only box). It is editing chrome, never content: the hybrid
+   * serializer strips it from the change hash and the turndown clone. */
+  function onSelectionChange() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.toString().length === 0 ||
+        !viewerContentEl.contains(sel.anchorNode) ||
+        !viewerContentEl.contains(sel.focusNode)) {
+      if (selectedRuleSet) clearSelectedRules();
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const rules = topLevelRules();
+    const next = new Set();
+    rules.forEach((hr) => {
+      if (range.intersectsNode(hr) || sel.containsNode(hr, true)) next.add(hr);
+    });
+    if (selectedRuleSet && next.size === selectedRuleSet.size &&
+        [...next].every((hr) => selectedRuleSet.has(hr))) {
+      return;
+    }
+    rules.forEach((hr) => hr.classList.toggle(HR_SELECTED_CLASS, next.has(hr)));
+    selectedRuleSet = next;
   }
 
   /* Click-to-edit: in hybrid mode, a click on a rendered plugin block
@@ -3184,6 +3325,7 @@
     viewerContentEl.addEventListener("keydown", onEnterKey);
     viewerContentEl.addEventListener("click", onBlockClick);
     viewerContentEl.addEventListener("mousedown", onContentMouseDown);
+    viewerContentEl.addEventListener("mouseup", onContentMouseUp);
     editBar.addEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
@@ -3219,6 +3361,8 @@
     viewerContentEl.removeEventListener("keydown", onEnterKey);
     viewerContentEl.removeEventListener("click", onBlockClick);
     viewerContentEl.removeEventListener("mousedown", onContentMouseDown);
+    viewerContentEl.removeEventListener("mouseup", onContentMouseUp);
+    pendingRuleClick = null;
     editBar.removeEventListener("click", onEditBarClick, true);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
@@ -4183,6 +4327,11 @@
   // hybrid mode is active (openMenu guards on `active`).
   if (viewerContentEl) {
     viewerContentEl.addEventListener("contextmenu", (e) => openMenu(e));
+    // Selection highlight for a horizontal rule, in BOTH preview and hybrid
+    // mode (selection and copy are the browser's own in both; the class only
+    // makes a selected rule visible). Wired once at module load; the handler
+    // is a no-op outside the editor.
+    document.addEventListener("selectionchange", onSelectionChange);
   }
   // Close the menu on any click outside it, or on Esc.
   document.addEventListener("click", (e) => {

@@ -3,7 +3,7 @@
  * jsdom cannot exercise contentEditable: it has no editing engine, no
  * selection, and no native markup insertion, so the DOM a real browser
  * produces (a <div>/<p> on Enter, an atomic caret walk, IME) never
- * appears there. This harness drives the REAL app in REAL Chromium via
+ * appears there. This harness drives the REAL app in a REAL browser via
  * Playwright and asserts the write-back contract against the file on
  * disk.
  *
@@ -12,18 +12,28 @@
  * editing engine, and reads the file back from disk.
  *
  * Run:  node tests/browser/test_hybrid_browser.js
- * Env:  CHROMIUM_PATH overrides the browser binary.
+ * Env:  BROWSER=chromium|firefox   (default chromium)
+ *       CHROMIUM_PATH / FIREFOX_PATH  override the browser binary.
+ *       With no override Playwright's bundled browser is used; on
+ *       NixOS that bundled build cannot start (its dynamic loader is a
+ *       stub), so point the path at a nix-provided browser instead.
  */
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
-const { chromium } = require("playwright");
+const playwright = require("playwright");
 
 const PROJ = path.resolve(__dirname, "..", "..");
 const PY = path.join(PROJ, ".venv_" + os.hostname(), "bin", "python");
-const CHROMIUM = process.env.CHROMIUM_PATH ||
-  "/nix/store/a5aqmb7j9hrv3jhs6qknbdgzj4p1hr3m-chromium-152.0.7977.64/bin/chromium";
+const BROWSER = (process.env.BROWSER || "chromium").toLowerCase();
+if (BROWSER !== "chromium" && BROWSER !== "firefox") {
+  throw new Error("BROWSER must be chromium or firefox, got " + BROWSER);
+}
+const BROWSER_TYPE = playwright[BROWSER];
+const BROWSER_PATH = process.env[
+  BROWSER === "firefox" ? "FIREFOX_PATH" : "CHROMIUM_PATH"
+] || undefined;
 const PORT = Number(process.env.PORT || 5099);
 const BASE = "http://127.0.0.1:" + PORT;
 
@@ -97,11 +107,24 @@ async function main() {
   child.stdout.on("data", (d) => { serverLog += d; });
   child.stderr.on("data", (d) => { serverLog += d; });
 
-  const browser = await chromium.launch({
-    headless: true,
-    executablePath: CHROMIUM,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
+  let browser;
+  try {
+    browser = await BROWSER_TYPE.launch({
+      headless: true,
+      executablePath: BROWSER_PATH,
+      args: BROWSER === "chromium"
+        ? ["--no-sandbox", "--disable-dev-shm-usage"] : [],
+    });
+  } catch (err) {
+    // A missing or unlaunchable browser is an environment problem, not a
+    // product failure: say so plainly instead of dumping the Playwright
+    // stack, and make the exit code distinct from a failed assertion.
+    console.error("cannot launch " + BROWSER + ": " + String(err).split("\n")[0]);
+    console.error("Set " + (BROWSER === "firefox" ? "FIREFOX_PATH" : "CHROMIUM_PATH") +
+      " to a working binary, or install the browser for this platform.");
+    child.kill("SIGTERM");
+    process.exit(2);
+  }
   try {
     await waitForServer(child);
     const ctx = await browser.newContext();
@@ -456,6 +479,152 @@ async function main() {
     }
 
     check("real browser: no uncaught page errors after spec contract",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
+    // --- selectable horizontal rule (PLAN — Selectable horizontal rule) -
+    // A rule is selectable like a character, using the browser's own
+    // selection engine -- the same engine in hybrid and preview mode. A
+    // real drag that starts on the <hr> must leave it inside the native
+    // selection and mark it with nb-hr-selected (its only painted pixel is
+    // the border, so the native highlight is invisible on it); a plain
+    // click on the rule must still repair the caret to the clicked side.
+    // The selection chrome must never reach the file.
+    writeNote("notes/rule.md", "first paragraph\n\n---\n\nsecond paragraph\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/rule.md"));
+    // state: attached -- an <hr>'s content box is zero-height, which
+    // Playwright's "visible" heuristic treats as hidden.
+    await page.waitForSelector("#viewer-content hr",
+      { state: "attached", timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    {
+      const ruleBox = await page.evaluate(() => {
+        const hr = document.querySelector("#viewer-content > hr");
+        const b = hr.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2,
+          top: b.top, height: b.height, width: b.width };
+      });
+      const paraBox = await page.evaluate(() => {
+        const ps = document.querySelectorAll("#viewer-content > p");
+        const b = ps[ps.length - 1].getBoundingClientRect();
+        return { x: b.x + 40, y: b.y + b.height / 2 };
+      });
+      const clip = {
+        x: Math.max(0, Math.round(ruleBox.x - ruleBox.width / 2 - 4)),
+        y: Math.max(0, Math.round(ruleBox.top - 6)),
+        width: Math.round(ruleBox.width + 8),
+        height: Math.max(12, Math.round(ruleBox.height + 12)),
+      };
+      const beforePixels = await page.screenshot({ clip });
+
+      // Real drag: press on the rule, move into the paragraph below. The
+      // native selection must stand -- a rule press is no longer cancelled.
+      await page.mouse.move(ruleBox.x, ruleBox.y);
+      await page.mouse.down();
+      await page.mouse.move(paraBox.x, paraBox.y, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(120);
+
+      const selected = await page.evaluate(() => {
+        const sel = window.getSelection();
+        // Does the selected range actually cover the void rule? This is
+        // the reported behaviour: "if you select it, it is selected".
+        const hr = document.querySelector("#viewer-content > hr");
+        const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+        return {
+          collapsed: sel.isCollapsed,
+          text: sel.toString(),
+          coversRule: !!(r && (r.intersectsNode(hr) ||
+            sel.containsNode(hr, true))),
+          classes: hr.className,
+        };
+      });
+      check("real browser hr: a real drag from the rule creates a selection",
+        selected.collapsed === false && selected.text.length > 0,
+        JSON.stringify(selected));
+      check("real browser hr: the selected range covers the rule",
+        selected.coversRule === true, JSON.stringify(selected));
+      check("real browser hr: a selected rule in hybrid mode is marked",
+        selected.classes.split(/\s+/).indexOf("nb-hr-selected") !== -1,
+        "class=" + selected.classes);
+      // Pixel proof: the rule region must paint differently when selected.
+      const afterPixels = await page.screenshot({ clip });
+      check("real browser hr: the selected rule is actually painted",
+        !afterPixels.equals(beforePixels),
+        "bytes=" + beforePixels.length + "->" + afterPixels.length);
+
+      // Preview parity: the same drag in preview mode (no hybrid) must
+      // produce the same selection shape AND the same highlight class --
+      // selection logic is identical in both modes.
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      await page.mouse.move(ruleBox.x, ruleBox.y);
+      await page.mouse.down();
+      await page.mouse.move(paraBox.x, paraBox.y, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(120);
+      const preview = await page.evaluate(() => {
+        const sel = window.getSelection();
+        const hr = document.querySelector("#viewer-content > hr");
+        const r = sel.rangeCount ? sel.getRangeAt(0) : null;
+        return {
+          collapsed: sel.isCollapsed,
+          text: sel.toString(),
+          coversRule: !!(r && (r.intersectsNode(hr) ||
+            sel.containsNode(hr, true))),
+          classes: hr.className,
+        };
+      });
+      check("real browser hr: preview mode selects the rule the same way",
+        preview.collapsed === false && preview.coversRule === true,
+        JSON.stringify(preview));
+      check("real browser hr: preview mode marks the selected rule too",
+        preview.classes.split(/\s+/).indexOf("nb-hr-selected") !== -1,
+        "class=" + preview.classes);
+
+      // Collapse the selection with a plain click in a paragraph: the
+      // mark must come off in preview mode.
+      await page.mouse.click(paraBox.x, paraBox.y);
+      await page.waitForTimeout(120);
+      const collapsedCls = await page.evaluate(
+        () => document.querySelector("#viewer-content > hr").className);
+      check("real browser hr: collapsing the selection clears the mark",
+        collapsedCls.split(/\s+/).indexOf("nb-hr-selected") === -1,
+        "class=" + collapsedCls);
+
+      // Back to hybrid for the click-repair check: a plain click on the
+      // rule must still park the caret at the rule (the original fix).
+      await page.evaluate(() => window.getSelection().removeAllRanges());
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.mouse.click(ruleBox.x, ruleBox.y);
+      await page.waitForTimeout(120);
+      const clickState = await page.evaluate(() => {
+        const sel = window.getSelection();
+        const vc = document.getElementById("viewer-content");
+        return { collapsed: sel.isCollapsed,
+          host: sel.anchorNode === vc ? "#viewer-content" :
+            (sel.anchorNode && sel.anchorNode.nodeName) };
+      });
+      check("real browser hr: a plain click still parks the caret on the rule",
+        clickState.collapsed === true && clickState.host === "#viewer-content",
+        JSON.stringify(clickState));
+
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const savedRuleFile = readNote("notes/rule.md");
+      check("real browser hr: the file is byte-identical after selecting a rule",
+        savedRuleFile === "first paragraph\n\n---\n\nsecond paragraph\n",
+        JSON.stringify(savedRuleFile));
+    }
+
+    check("real browser: no uncaught page errors after rule selection",
       pageErrors.length === 0, pageErrors.join(" | "));
 
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
