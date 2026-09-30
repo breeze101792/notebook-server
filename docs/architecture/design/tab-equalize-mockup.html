@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tab-bar width freeze, release &amp; immediate ghost close — reference mockup</title>
 <!--
-  Reference mockup for docs/design/tab-equalization.md and
-  docs/design/tab-close-animation.md.
+  Reference mockup for docs/architecture/design/tab-equalization.md and
+  docs/architecture/design/tab-close-animation.md.
   This is a design artifact, not app code. It reproduces the real tab bar's
   tokens and layout (static/css/style.css) and the freeze / release / ghost
   close contract in static/js/tabs.js, so the motion can be seen and tuned.
@@ -260,8 +260,8 @@ button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent);
 <div class="shell">
   <h1>Tab-bar width freeze, release &amp; immediate ghost close</h1>
   <p class="lede">
-    Reference mockup for <code>docs/design/tab-equalization.md</code> and
-    <code>docs/design/tab-close-animation.md</code>. Hover the tab bar to freeze
+    Reference mockup for <code>docs/architecture/design/tab-equalization.md</code> and
+    <code>docs/architecture/design/tab-close-animation.md</code>. Hover the tab bar to freeze
     widths, then click an unpinned tab's <b>×</b> while the pointer is still in
     the bar. The tab is replaced at once by a <b>ghost</b> whose box
     <b>collapses and fades</b> over <code>--tab-close-duration</code>; the

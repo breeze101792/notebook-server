@@ -1,4 +1,4 @@
-# Frontend
+# Frontend architecture
 
 ## 1. Overview
 
@@ -12,7 +12,13 @@ No script in the repository regenerates it; the esbuild invocation is
 undocumented. For every other module, the served file is the source file.
 
 Every app module is an IIFE that extends the shared `window.NB` namespace.
-`templates/index.html` is 981 lines; the 29 modules live under `static/js/`.
+`templates/index.html` is 982 lines; the 29 modules live under `static/js/`.
+Siblings: [backend.md](backend.md) for the server side,
+[markdown.md](markdown.md) for the render pipeline, and
+[hybrid-editing.md](hybrid-editing.md) for the WYSIWYG write-back
+contract. How to run the test suites is in
+[`../testing/README.md`](../testing/README.md); the repo-level layout and
+checklists are in [`../operations/development.md`](../operations/development.md).
 
 ### Script load order
 
@@ -20,10 +26,10 @@ Every app module is an IIFE that extends the shared `window.NB` namespace.
 
 1. **Eager, non-`defer`** (`index.html:323-324`): `api.js` then `auth.js`,
    so the login prompt can appear before the heavy assets load.
-2. **Deferred vendored libraries** (`index.html:944-947`): `marked.min.js`,
+2. **Deferred vendored libraries** (`index.html:946-949`): `marked.min.js`,
    `highlight.min.js`, `turndown.browser.js`,
    `turndown-plugin-gfm.browser.js`.
-3. **Deferred app modules in dependency order** (`index.html:948-974`).
+3. **Deferred app modules in dependency order** (`index.html:950-976`).
 
 Deferred scripts run in document order after parsing, so the dependency
 order is load-bearing: each module expects the ones before it to have
@@ -44,11 +50,12 @@ renderers, and every renderer before `viewer.js`.
 
 ### `auth.js` — eager boot
 
-`auth.js` runs at script parse time (`auth.js:164`). It calls
-`GET /api/auth`. If auth is enabled and no role is present, it shows the
-login modal and dims the UI with `body.auth-locked`. A successful login
-calls `window.location.reload()` so every other module boots with a
-known-good session. It wires the top-bar logout button.
+`auth.js` runs at script parse time (comment at `auth.js:164`, the boot
+call at `auth.js:171`). It calls `GET /api/auth`. If auth is enabled and
+no role is present, it shows the login modal and dims the UI with
+`body.auth-locked`. A successful login calls `window.location.reload()`
+so every other module boots with a known-good session. It wires the
+top-bar logout button.
 
 `api.js` emits `NB.evt("auth:required")` on any 401 (`api.js:38`,
 `api.js:110`) so a session that expires mid-use re-shows the modal.
@@ -63,7 +70,7 @@ async `GET /api/config` lands. The values become an inline style on
 Only chrome values are embedded: theme, site title, font scale, pane
 widths, collapse state, and wallpaper classes. Notebook content
 (`recentFiles`, `openFiles`, `bookmarks`) is never embedded, because the
-page is served before auth (`app.py:712-713`). When auth is on and no
+page is served before auth (`app.py:711-713`). When auth is on and no
 session exists, only the theme is embedded and everything else falls back
 to defaults (`app.py:818-825`). The embedded defaults must stay in sync
 with `DEFAULTS` in `app.js:7-87`.
@@ -80,7 +87,7 @@ and opens any deep link before stripping it with `history.replaceState`
 ### Service worker
 
 `index.html` registers `/static/sw.js` at the end of the body
-(`index.html:975-979`).
+(`index.html:977-981`).
 
 ## 3. Module inventory
 
@@ -99,22 +106,22 @@ implemented today.
 | `katex.js` | 153 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |
 | `viz.js` | 212 | `NB.viz` | ` ```dot ` / ` ```graphviz ` renderer via WASM `Viz.renderString`. |
 | `htmlpreview.js` | 303 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
-| `viewer.js` | 1239 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
+| `viewer.js` | 1248 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
-| `hybrid.js` | 3330 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. |
+| `hybrid.js` | 4467 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |
 | `table-edit.js` | 802 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
-| `table-view.js` | 1181 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
+| `table-view.js` | 1211 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
 | `watcher.js` | 299 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s conditional-GET poll of `/api/file?ifModifiedSince=`. Pauses when the tab is hidden. |
 | `outline.js` | 167 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 997 | `NB.sidebar` | File tree, bookmarks, and right-click menus (new, rename/move, copy, delete, Export…). |
 | `search.js` | 339 | `NB.search` | Search UI. Server `<<…>>` snippets rewrapped as `<mark>` via `textContent`. |
 | `graph.js` | 961 | `NB.graph` | Force-directed wikilink graph view on special tab `§graph`. Canvas physics, pan/zoom/filter, optional particles. |
-| `tabs.js` | 905 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery. |
+| `tabs.js` | 913 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
 | `windows.js` | 179 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1483 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 926 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
 | `vimnav.js` | 564 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
-| `ai.js` | 1227 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; full in-memory transcript; `MAX_TOOL_ROUNDS = 5`. |
+| `ai.js` | 1227 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; full in-memory transcript; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
 | `activity.js` | 524 | `NB.activity` | Left activity bar and side-panel view switcher. Registers four views: Explorer, Recent (fuzzy quick-open), Search, AI. |
 | `shortcuts.js` | 392 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
 | `app.js` | 821 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
@@ -124,13 +131,15 @@ implemented today.
 ### The registry
 
 `blocks.js` owns the one authoritative renderer list. Each renderer module
-calls `NB.blocks.register(desc)` at load (`blocks.js:63`). Registration
-order is script order, which is also render order.
+calls `NB.blocks.register(desc)` at load (`register()` at `blocks.js:63`,
+exported at `blocks.js:193`). Registration order is script order, which is
+also render order.
 
 A registered descriptor carries the module name, container class, fence
 name, the language aliases, a selector, and the module's `renderAll`
-function (`blocks.js:44-63`). The registry is the single source for three
-consumers:
+function (fields documented at `blocks.js:44-63`). The registry
+(`const registry` at `blocks.js:42`, exported at `blocks.js:192-202`) is
+the single source for three consumers:
 
 - `renderAll(container)` (`blocks.js:167`) runs every registered
   renderer's `renderAll` concurrently.
@@ -166,9 +175,10 @@ top-level navigation are all blocked. External fetch is subject to CORS.
 
 The fence languages, library versions, and constraints are documented for
 two audiences that must stay in sync: the assistant's system prompt
-(`ai.js:769-774`) and `/agent.md`. Tests assert the versions appear in
+(`ai.js:768-774`) and `/agent.md`. Tests assert the versions appear in
 both, so changing a fence name, a vendored version, or a constraint means
-updating both files in the same change.
+updating both files in the same change. See
+[markdown.md](markdown.md) for the full renderer contract.
 
 ## 5. Persistence
 
@@ -183,7 +193,7 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | --- | --- | --- |
 | `theme` | `"auto"` | `auto` / `light` / `dark` |
 | `fontSize` | `"medium"` | `small` / `medium` / `large` / `xlarge` |
-| `wallpaper` | `"none"` | `none` / `lines` / `grid` |
+| `wallpaper` | `"none"` | none / lines / grid |
 | `wallpaperColor` | `"neutral"` | neutral / blue / green / purple / amber |
 | `wallpaperIntensity` | `"subtle"` | subtle / medium / bold |
 | `wallpaperScroll` | `"scroll"` | scroll / fixed |
@@ -218,7 +228,7 @@ Two keys, both namespaced:
 | Key | Owner | Contents |
 | --- | --- | --- |
 | `nb:windowGeometry` | `windows.js:20` | Per-modal position and size for the floating settings windows. |
-| `nb:tableView` | `table-view.js:55` | Per-file, per-table view state, schema v1. Caps: `MAX_FILES = 50`, `MAX_TABLES = 20`, `MAX_BYTES = 100000`. |
+| `nb:tableView` | `table-view.js:71` | Per-file, per-table view state, schema v1. Caps: `MAX_FILES = 50`, `MAX_TABLES = 20`, `MAX_BYTES = 100000` (`table-view.js:73-75`). |
 
 `nb:tableView` data never reaches the note, the server, or an export.
 
@@ -237,16 +247,17 @@ strategies:
 
 - **Pages and static assets**: network-first. A successful response is
   mirrored into the cache; the cache is used only when offline
-  (`sw.js:106-118`). This trades a cheap LAN request per asset for
-  always-fresh code.
+  (`networkFirst`, `sw.js:106-118`). This trades a cheap LAN request per
+  asset for always-fresh code.
 - **`/api/*`**: network-only. Data is never cached. Offline returns an
-  explicit 503 JSON error (`sw.js:92-101`).
+  explicit 503 JSON error (`networkOnly`, `sw.js:92-101`).
 - **Non-GET requests**: passed through untouched (`sw.js:82`).
 
 `install` precaches the list and calls `skipWaiting`; `activate` deletes
 every cache whose name differs from the current one (`sw.js:73-78`). The
 precache list is 41 entries (`sw.js:23-65`): the shell, manifest, icons,
-both stylesheets, the four vendored base libraries, and every app module.
+both stylesheets, the four vendored base libraries, and every app module
+(12 boot assets + all 29 `static/js/` modules).
 
 The heavy renderer bundles (mermaid, graphviz, CodeMirror, KaTeX,
 WaveDrom, Paged.js) are deliberately **not** precached. Precaching them
@@ -263,7 +274,7 @@ asset still updates, but the install-time copy stays stale.
 
 ### Activity bar views
 
-`NB.activity` registers four side-panel views (`activity.js:491-515`):
+`NB.activity` registers four side-panel views (`activity.js:491-520`):
 
 | View | What it shows |
 | --- | --- |
@@ -280,28 +291,29 @@ Mounts are lazy: a view's host stays empty until the first activation.
 
 | Child | Role |
 | --- | --- |
-| `#tab-pinned` (`.tab-pinned`) | Pinned tabs. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`). |
+| `#tab-pinned` (`.tab-pinned`) | Pinned tabs. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`, `style.css:470`). |
 | `#tab-list` (`.tab-list`) | Unpinned tabs. The only part of the row that scrolls (`overflow-x: auto`). |
 | `#outline-toggle` | The outline button, a fixed sibling at the right edge. |
 
-`tabs.js` toggles the region's `hidden` attribute: `#tab-pinned` is hidden
-while nothing is pinned. There is no separator between the regions; the bar's
-own `2px` gap is the spacing.
+`tabs.js` toggles the region's `hidden` attribute through
+`syncPinnedRegion()` (`tabs.js:265-268`): `#tab-pinned` is hidden while
+nothing is pinned and no pinned ghost is in flight. There is no separator
+between the regions; the bar's own `2px` gap is the spacing.
 
 `NB.tabs` owns the width-freeze / release / ghost-close machinery described
 in [`design/tab-equalization.md`](design/tab-equalization.md) and
 [`design/tab-close-animation.md`](design/tab-close-animation.md). Two points
 matter for the bar's structure: `realTabs()` is **bar-scoped**
-(`tabs.js:106-108`), so every width measurement spans both regions; and the
-release class lives on `#tab-bar` (`.tab-bar.nb-tab-equalizing .tab`,
+(`tabs.js:106-108`), so every width measurement spans both regions; and
+the release class lives on `#tab-bar` (`.tab-bar.nb-tab-equalizing .tab`,
 `style.css:1055`), not on the scroller, so it reaches a `.tab` in either
 region.
 
 ### Special tabs
 
 Tabs whose id starts with `§` open a non-file view instead of a note
-(`tabs.js:35-44`). Each registers through `NB.tabs.registerSpecial`.
-Two exist:
+(`tabs.js:43-45`). Each registers through `NB.tabs.registerSpecial`
+(`tabs.js:861-864`). Two exist:
 
 - `§search` (`search.js:18`) — search results.
 - `§graph` (`graph.js:36`) — the wikilink graph.
@@ -315,26 +327,28 @@ AI, About.
   draft; an Apply / Save / Cancel footer commits or reverts it.
 - Security holds the admin/viewer passwords and the API tokens list, with
   its own per-section Save/Remove buttons and a page reload on success.
-- AI edits provider profiles against `GET/POST /api/ai/config`. Editing an
-  existing profile never re-sends its key; a blank `apiKey` with
+- AI edits provider profiles against `GET/POST /api/ai/config`. Editing
+  an existing profile never re-sends its key; a blank `apiKey` with
   `replaceSecret: true` carries the stored key over server-side. The Web
   search field sets the SearXNG URL and has its own Save button.
 - About shows version and project information.
 
 ### Hybrid mode
 
-Hybrid mode makes `#viewer-content` `contentEditable` (`hybrid.js:5`).
-Saving runs the Turndown round-trip: `restoreForMarkdown` swaps every
-rendered block back to its fenced source so the diagram survives.
-`table-view.js` tears down its view state at `hybrid:will-enter`, the
-last synchronous moment before the snapshot.
+Hybrid mode makes `#viewer-content` `contentEditable` (`enter()` at
+`hybrid.js:3237` sets the attribute at `hybrid.js:3255`). Saving runs the
+Turndown round-trip: `restoreForMarkdown` swaps every rendered block back
+to its fenced source so the diagram survives. `table-view.js` tears down
+its view state at `hybrid:will-enter`, the last synchronous moment before
+the snapshot. The full contract is
+[hybrid-editing.md](hybrid-editing.md).
 
 ### Table view and table edit
 
 Table view adds hover/focus controls over a GFM table in preview: hide
 rows, hide columns, single-column sort. Clicking a column title toggles
-the sort (none/descending -> ascending, ascending -> descending); the
-one icon at the right of the title opens the column menu (sort
+the sort (none/descending -> ascending, ascending -> descending); the one
+icon at the right of the title opens the column menu (sort
 ascending/descending, clear sort, hide column) and doubles as the sort
 indicator (up/down glyph, accent-coloured). Hiding is class-based;
 sorting moves `<tr>` nodes. Table edit (`table-edit.js`) overlays drag
@@ -371,5 +385,5 @@ persists per modal under `nb:windowGeometry`.
    `ai.js`'s `systemPrompt()` and `agent.md`.
 6. Bump the service-worker cache version.
 
-The registry-completeness test (`tests/dom/test_dom.js:3108-3124`)
-enforces steps 3, 4, and 5.
+The registry-completeness test (`tests/dom/test_dom.js:3111-3130`, inside
+the `== blocks registry ==` block) enforces steps 3, 4, and 5.

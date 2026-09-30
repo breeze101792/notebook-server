@@ -1,15 +1,30 @@
 # Notebook Server API Reference
 
+## Overview
+
 The notebook server is a single-user Markdown notebook. The backend is one Flask
 file, `app.py`; the frontend is a vanilla-JS single-page app. Every application
 route lives under `/api/*` and returns JSON, except `GET /` and the SPA catch-all
 (HTML), `GET /agent.md` (Markdown), and `POST /api/ai/chat` (an SSE byte relay).
 
-A machine-readable companion guide is served at `GET /agent.md`. It is written
-for AI agents and scripts: it documents the endpoint contract and substitutes the
-current auth state into a placeholder so it never goes stale. This file is the
-fuller human-facing reference. Read the code at `app.py` when the two disagree;
-this file can lag a change.
+A machine-readable companion guide is served at `GET /agent.md`, maintained as
+[`agent.md`](../../agent.md) at the project root. It is written for AI agents and
+scripts: it documents the endpoint contract and substitutes the current auth
+state into a placeholder so it never goes stale. This file is the fuller
+human-facing reference. Read the code at `app.py` when the two disagree; this
+file can lag a change.
+
+Related docs:
+
+- [`configuration.md`](configuration.md) — config files, environment variables,
+  CLI flags, and browser storage.
+- [`../architecture/backend.md`](../architecture/backend.md) — backend
+  structure, `safe_path`, atomic writes, and the auth layer.
+- [`../architecture/frontend.md`](../architecture/frontend.md) — the frontend
+  modules that call these routes.
+- [`../testing/README.md`](../testing/README.md) — how the backend and frontend
+  suites exercise the API.
+- [`../../README.md`](../../README.md) — the user-facing overview.
 
 ## Conventions
 
@@ -34,7 +49,13 @@ this file can lag a change.
 - **Cache headers.** The gated read endpoints (`/api/tree`, `/api/ls`,
   `/api/file`, `/api/search`, `/api/config`, `/api/info`) carry
   `Cache-Control: no-store, private` (`_GATED_READ_PATHS`, `app.py:72`). The
-  `/agent.md` response carries `Cache-Control: no-store`.
+  `/agent.md` response carries `Cache-Control: no-store`. `/api/graph` is also
+  a gated read but is absent from `_GATED_READ_PATHS`, so its response is
+  browser-cacheable.
+- **No transport security.** The server serves plain HTTP (`app.run()` sets
+  no `ssl_context`). Passwords and bearer tokens cross the wire in cleartext;
+  bcrypt protects only the stored hash. See
+  [Security posture](#security-posture).
 - **Errors.** `err()` (`app.py:192`) returns `{"error": "<message>"}` with a
   status code. See [Error reference](#error-reference).
 
@@ -60,7 +81,30 @@ State lives in `config/auth.json`, separate from `config/config.json`:
 ```
 
 Passwords are hashed with bcrypt at cost 12. The server never stores or returns
-a plaintext password.
+a plaintext password. It does, however, receive the password in cleartext over
+plain HTTP.
+
+### Security posture
+
+These properties follow from the single-user design; an operator must know
+them.
+
+- **Auth is off by default.** Until an admin password is set, every route is
+  unauthenticated, including all `/api/ai/*` and every mutating file route
+  (`admin_required` and `read_login_required` return the view unguarded when
+  `auth_enabled()` is false, `app.py:645-646`, `app.py:680-681`).
+- **Plain HTTP.** No TLS, so passwords and tokens can be sniffed on the LAN.
+- **Open by default on `0.0.0.0`.** The default bind is all interfaces
+  (`app.py:2426-2444`).
+- **Provider keys in cleartext.** `config/ai.json` stores upstream API keys
+  unhashed; file permissions and backups matter.
+- **The stored key follows `base_url`.** While auth is off, any LAN client can
+  POST a profile and have the server attach the stored key to a request to an
+  arbitrary host.
+- **`/api/ai/fetch` can reach internal hosts.** It checks scheme and length
+  only; loopback, private ranges, and metadata addresses are reachable.
+- **No body-size cap.** No `MAX_CONTENT_LENGTH` is set; routes read the whole
+  body into memory.
 
 ### Decorators
 
@@ -209,7 +253,9 @@ files are dropped, and self-links are skipped. Edges are unique and undirected;
 
 These routes read and write `config/ai.json` (`app.py:1163`), which holds
 provider profiles, the optional global custom prompt, and the optional SearXNG
-URL. The API key never leaves the server.
+URL. The stored key is never returned in a response to the browser, but the
+server attaches it to the upstream request sent to whatever `base_url` the
+profile names. All routes below are admin-gated **only while auth is on**.
 
 | Method | Path | Auth | Body / params | Notes |
 | --- | --- | --- | --- | --- |
@@ -222,7 +268,10 @@ URL. The API key never leaves the server.
 
 On `POST /api/ai/config`, a profile with `apiKey: ""` plus `replaceSecret: true`
 carries over the previously stored key server-side, so the browser never echoes
-secrets. A profile is `{name, baseUrl, apiKey?, model, replaceSecret?}`. Base
+secrets. `replaceSecretFor` names a different profile to carry the key from
+(the settings Edit flow uses it when a profile is renamed); with neither, the
+key of the same-named stored profile is used. A profile is
+`{name, baseUrl, apiKey?, model, replaceSecret?, replaceSecretFor?}`. Base
 URLs are normalized: a trailing `/` and a trailing `/v1` are stripped. Names are
 limited to 60 characters, base URLs to 300, keys to 500, and `customPrompt` to
 8000; `searxngUrl` must be an http(s) URL. Duplicate server names and a
@@ -243,12 +292,15 @@ On `POST /api/ai/fetch`, only `http(s)` URLs are allowed. The URL is capped at
 2000 characters. The body is capped at `AI_FETCH_MAX_BYTES` = 512 KiB and the
 request times out after `AI_FETCH_TIMEOUT` = 15 seconds. The response is
 `{url, contentType, truncated, content}`; `content` is decoded as UTF-8 with
-replacement. Upstream failures are 502.
+replacement. Upstream failures are 502. Only the scheme and length are checked;
+loopback, private, and cloud-metadata addresses are reachable and redirects are
+followed, so scheme filtering is not SSRF protection.
 
 On `POST /api/ai/search`, `q` is capped at 500 characters. A `searxng_url` must
 be configured, otherwise the route returns 400. It queries the instance's JSON
 output and returns the top `AI_SEARXNG_MAX_RESULTS` = 10 results as
-`{query, results: [{title, url, snippet}]}`. Upstream failures are 502.
+`{query, results: [{title, url, snippet}]}`. The request times out after
+`AI_SEARXNG_TIMEOUT` = 15 seconds. Upstream failures are 502.
 
 ## Partial edits: POST /api/edit
 

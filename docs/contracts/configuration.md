@@ -1,5 +1,7 @@
 # Configuration
 
+## Overview
+
 This server keeps notes and settings in two separate folders. `notebook/`
 holds the Markdown notes. `config/` holds three settings files:
 `config.json` (UI state), `auth.json` (passwords, session secret, API
@@ -10,6 +12,20 @@ be able to carry credentials.
 The server stores `config.json` verbatim with no validation. The
 authoritative schema lives in the frontend. `boot_state()` in `app.py:737`
 sanitizes a small subset for the first page paint.
+
+Related docs:
+
+- [`http-api.md`](http-api.md) — the HTTP endpoint reference for the routes
+  that read and write these files.
+- [`../architecture/backend.md`](../architecture/backend.md) — import-time
+  path resolution, seeding, and the auth layer.
+- [`../architecture/frontend.md`](../architecture/frontend.md) — the modules
+  that own the `config.json` schema and `localStorage` keys.
+- [`../architecture/ai-assistant.md`](../architecture/ai-assistant.md) — the
+  assistant that consumes `config/ai.json`.
+- [`../../README.md`](../../README.md) — the user-facing overview.
+- [`../../agent.md`](../../agent.md) — the machine-readable API guide served
+  at `GET /agent.md`.
 
 ## Running the server
 
@@ -64,7 +80,8 @@ things in order:
    `NOTEBOOK_DATA_DIR` is never touched (`app.py:122-132`).
 3. Copies `notebook.template/` into `notebook/` on a fresh install. The
    template holds three files: `Welcome.md`, `README.md`, and `Syntax.md`
-   (`app.py:134-141`).
+   (`app.py:134-141`). If the template folder is absent, the notebook is
+   created empty instead.
 
 The template is copied, not symlinked, so editing notes never touches it.
 
@@ -164,8 +181,8 @@ Auth is ON if and only if `admin_password_hash` exists (`app.py:475-483`).
 
 Setting the admin password gates **all** reads and writes, not just writes.
 The viewer password is a second login identity; it does not gate reads by
-itself. This corrects older documentation that described the viewer
-password as the read switch (`app.py:657-674`).
+itself. The read gate (`read_login_required`, `app.py:657`) is satisfied by
+either role or by a bearer token.
 
 You can disable auth from inside the app. Open Settings, go to the Security
 tab, select Passwords, enter the current admin password, and submit an
@@ -204,9 +221,20 @@ falls back to the session (`app.py:567-586`).
 
 ### Rate limit
 
-Failed logins are rate-limited per client IP: 5 failures in 60 seconds
+Failed logins and invalid bearer tokens are rate-limited per client IP, keyed
+on the TCP peer address (`request.remote_addr`): 5 failures in 60 seconds
 trips 429 on the next attempt (`app.py:596-615`). A successful login clears
-the counter (`app.py:933`).
+the counter (`app.py:933`). The store is in-process, so it resets on restart;
+it is defeated by rotating source IPs or by clients behind one NAT sharing a
+bucket.
+
+### Transport
+
+The server serves plain HTTP and sets no `ssl_context` (`app.py:2538`).
+Passwords and bearer tokens are transmitted in cleartext, so the login gate
+protects against unauthorized use of the app, not against an observer on the
+network. Bind to loopback (`./start.sh --host 127.0.0.1`) when the machine is
+not on a trusted network.
 
 ## `config/ai.json` — assistant providers
 
@@ -235,8 +263,11 @@ camelCase.
 Secret handling: the stored `api_key` is never echoed to any client.
 `GET /api/ai/config` returns `hasKey` (a boolean) instead (`app.py:1263-1286`).
 To save a profile without re-typing its key, POST a blank `apiKey` with
-`replaceSecret: true`; the server carries the stored key over
-(`app.py:1240-1251`).
+`replaceSecret: true`; the server carries the stored key over, and
+`replaceSecretFor` names which stored profile to take it from
+(`app.py:1240-1251`). The key is stored in cleartext (it is not hashed like a
+password), and it is attached to the upstream request sent to whatever
+`base_url` the profile names, so protect the file's permissions and backups.
 
 Base URLs are normalized on save: a trailing slash and a trailing `/v1`
 are stripped. The chat endpoint appends `/v1/chat/completions`
@@ -250,7 +281,7 @@ IndexedDB.
 | Key | Owner | Contents |
 | --- | --- | --- |
 | `nb:windowGeometry` | `static/js/windows.js:20` | Per-modal position and size for the floating windows |
-| `nb:tableView` | `static/js/table-view.js:55` | Versioned per-file, per-table view state (hidden rows/columns, sort) |
+| `nb:tableView` | `static/js/table-view.js:71` | Versioned per-file, per-table view state (hidden rows/columns, sort) |
 
 ### PWA cache
 

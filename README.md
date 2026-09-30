@@ -4,12 +4,15 @@ A small, single-user Markdown notebook server. A Flask backend with a JSON
 API, and a vanilla-JS frontend that renders Markdown client-side. Notebooks
 are plain `.md` files on disk — no database, no build step.
 
-> **Documentation.** [`docs/`](docs/README.md) holds the deep guides:
-> [architecture](docs/architecture.md), [frontend](docs/frontend.md),
-> [API reference](docs/api.md), [configuration](docs/configuration.md),
-> [Markdown rendering](docs/markdown.md), the
-> [AI assistant](docs/ai-assistant.md), and
-> [development](docs/development.md).
+> **Documentation.** [`docs/README.md`](docs/README.md) is the index. The
+> guides are grouped into five folders: **requirements**, **architecture**
+> ([backend](docs/architecture/backend.md),
+> [frontend](docs/architecture/frontend.md),
+> [Markdown rendering](docs/architecture/markdown.md), the
+> [AI assistant](docs/architecture/ai-assistant.md)), **contracts**
+> ([HTTP API](docs/contracts/http-api.md),
+> [configuration](docs/contracts/configuration.md)), **testing**, and
+> **operations** ([development](docs/operations/development.md)).
 
 ## Features
 
@@ -106,7 +109,7 @@ single newline does **not** start a new paragraph: use a blank line.
 Markdown is rendered **un-sanitized** (see *Security note*), so HTML
 inside a note is emitted as-is.
 
-See [`docs/markdown.md`](docs/markdown.md) for the full rendering pipeline
+See [`docs/architecture/markdown.md`](docs/architecture/markdown.md) for the full rendering pipeline
 and the exact `html-live` sandbox limits.
 
 ## AI assistant
@@ -146,7 +149,7 @@ API key), pick a default, and Test connectivity. The **Custom prompt**
 applied to whichever provider is active sits below the provider list, and
 the **Web search** field sets the SearXNG instance for the `search` tool.
 
-See [`docs/ai-assistant.md`](docs/ai-assistant.md) for the tool loop and
+See [`docs/architecture/ai-assistant.md`](docs/architecture/ai-assistant.md) for the tool loop and
 review flow.
 
 ## Export
@@ -243,12 +246,12 @@ redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 
 `static/js/` holds 29 modules, all extending the shared `window.NB`
 namespace. The list is documented in
-[`docs/frontend.md`](docs/frontend.md), which also covers the code-block
+[`docs/architecture/frontend.md`](docs/architecture/frontend.md), which also covers the code-block
 renderer registry, persistence, and the service worker.
 
 The one asset that is built rather than copied: `static/vendor/codemirror.bundle.js`
 is an esbuild IIFE generated offline from `static/vendor/codemirror.entry.js`.
-See [`docs/development.md`](docs/development.md) for details.
+See [`docs/operations/development.md`](docs/operations/development.md) for details.
 
 ## API
 
@@ -302,7 +305,7 @@ single O_APPEND syscall (concurrent appends never clobber each other), and
 failed op rejects the whole batch untouched.
 
 The full reference, with every parameter and status code, is in
-[`docs/api.md`](docs/api.md).
+[`docs/contracts/http-api.md`](docs/contracts/http-api.md).
 
 ## Optional: password protection
 
@@ -353,7 +356,7 @@ open('config/auth.json', 'w').write(json.dumps({
 # 4. restart the server -- the login modal will appear on next page load
 ```
 
-See [`docs/configuration.md`](docs/configuration.md) for the full auth
+See [`docs/contracts/configuration.md`](docs/contracts/configuration.md) for the full auth
 model.
 
 ## Tests

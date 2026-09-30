@@ -24,13 +24,13 @@ whenever the tab count changes.
 To stop tabs from shifting out from under the cursor while closing,
 `static/js/tabs.js` pins widths while the pointer is inside the bar:
 
-- `mouseenter` on `#tab-bar` (`tabs.js:669`) snapshots each tab's measured
+- `mouseenter` on `#tab-bar` (`tabs.js:677`) snapshots each tab's measured
   pixel width into `frozenWidths` (`tabs.js:56`, `captureFrozenWidths`
   `tabs.js:125`) and writes inline `flex: 0 0 <w>px; width: <w>px`
   (`applyFrozenWidths` `tabs.js:133`).
-- While frozen, `render()` (`tabs.js:312`) re-applies those pins after a
+- While frozen, `render()` (`tabs.js:323`) re-applies those pins after a
   close, so the strip stays put.
-- `mouseleave` (`tabs.js:679`) calls `unfreezeWidths()` (`tabs.js:223`),
+- `mouseleave` (`tabs.js:687`) calls `unfreezeWidths()` (`tabs.js:223`),
   which clears the inline pins. The stylesheet rule takes over and every tab
   **snaps** to its new equal width.
 
@@ -110,7 +110,7 @@ state (requirement 3, exactly the failure to avoid).
 
 **Chosen mechanism:** on release, clear the inline pins **synchronously**
 (so the strip's resting state is immediately the equal layout, and the
-existing test contract at `tests/dom/test_dom.js:3216-3217` still holds),
+existing test contract at `tests/dom/test_dom.js:3216-3230` still holds),
 measure both the frozen ("from") and equal ("to") widths, then play a scoped
 CSS **keyframe animation** whose `from`/`to` widths arrive per tab through
 two inline custom properties. The animation holds `flex-grow: 0` while it
@@ -149,24 +149,25 @@ in order (`templates/index.html:128-142`):
 3. `#outline-toggle` — the outline button, a fixed sibling at the right edge
    (`templates/index.html:141`).
 
-The pinned region is `flex: 0 0 auto` (`style.css:450-457`), so it never
+The pinned region is `flex: 0 0 auto` (`style.css:448-459`), so it never
 shrinks; the scroller (`flex: 1 1 auto`, `min-width: 0`, `overflow-x: auto`,
-`style.css:429-432`) yields the space instead. The region is capped at
+`style.css:425-439`) yields the space instead. The region is capped at
 `max-width: 50%` and scrolls internally beyond that (with the scrollbar
 hidden), so a long pinned set can neither squeeze the scroller out nor push
 the outline toggle off the edge. `tabs.js` hides the region entirely while
-nothing is pinned — `pinEl.hidden = pinned.size === 0` (`tabs.js:382`) — and
+nothing is pinned — `syncPinnedRegion()` sets `pinEl.hidden = pinned.size === 0`
+(`tabs.js:265-268`) — and
 the CSS `[hidden]` rule wins over its `display: flex` (`style.css:463`). There
 is no separator between the regions; the bar's own `2px` gap is the only
 spacing.
 
 Pinned tabs **rest at their natural width** rather than equalizing:
-`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }` (`style.css:469`). The
+`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }` (`style.css:470`). The
 region is content-sized, so there is no free space for the
 `flex: 1 1 var(--tab-width)` rule to distribute; a pinned tab renders at its
 content width and lifts the shared `max-width` rail so a long name shows in
 full (the region caps and scrolls instead). A pinned tab also has no close
-button (`tabs.js:363-370`), so no room is reserved for one. The equal-width
+button (`tabs.js:374-381`), so no room is reserved for one. The equal-width
 rule still applies to every unpinned tab. In the real-browser run (§11.1) a
 long pinned name measured `331px` untruncated, and the region capped at `50%`
 of the bar when many tabs were pinned.
@@ -196,7 +197,7 @@ Declare the two new tunables on `.tab-bar`, beside `--tab-min-width` etc.
 Rationale for the values:
 
 - **180 ms** is a step above the existing micro-transitions (`.12s`/`.15s`
-  at `style.css:212, 332, 2520, 2891, 3513`) because it moves several
+  at `style.css:212, 332, 2520, 2902, 3524`) because it moves several
   elements at once and benefits from a touch more time; it is well under the
   ~300 ms ceiling for interface motion.
 - **`ease-out`** matches the intent (elements relaxing into their resting
@@ -256,7 +257,7 @@ together.
 }
 ```
 
-### 4.3 Reduced motion (same idiom as `style.css:3171`)
+### 4.3 Reduced motion (same idiom as `style.css:3182`)
 
 Add to the existing `@media (prefers-reduced-motion: reduce)` block at
 `style.css:1060` (or as its own block next to the keyframes):
@@ -287,7 +288,7 @@ Keep `captureFrozenWidths` (`tabs.js:125`) and `applyFrozenWidths`
 
 `unfreezeWidths` (`tabs.js:223-239`) is the shipped orchestrator below; the
 constants sit beside `frozenWidths` (`tabs.js:56`, `tabs.js:63-70`). The
-`mouseleave` binding (`tabs.js:679`) is unchanged — it still calls
+`mouseleave` binding (`tabs.js:687`) is unchanged — it still calls
 `unfreezeWidths`.
 
 ### 5.1 Constants (module state, `tabs.js:63-70`)
@@ -390,10 +391,10 @@ event.
 
 ### 5.5 Two cancel hooks
 
-**A. `render()` cancels first** (`tabs.js:312`). New node sets would otherwise
+**A. `render()` cancels first** (`tabs.js:323`). New node sets would otherwise
 inherit the class's animation with no `--nb-tab-from` / `--nb-tab-to` set,
 which resolves to an invalid `flex-basis`. It also clears both regions, since
-pinned and unpinned tabs render into different parents (`tabs.js:315-316`).
+pinned and unpinned tabs render into different parents (`tabs.js:325-326`).
 
 ```js
   function render() {
@@ -405,7 +406,7 @@ pinned and unpinned tabs render into different parents (`tabs.js:315-316`).
   }
 ```
 
-**B. `mouseenter` cancels before freezing** (`tabs.js:669-678`). A quick
+**B. `mouseenter` cancels before freezing** (`tabs.js:677-686`). A quick
 leave-and-re-enter must not fight the animation: it cancels at the current
 mid-animation width and freezes there.
 
@@ -420,7 +421,8 @@ mid-animation width and freezes there.
 
 ### 5.6 Test hook
 
-Expose the release state next to `isWidthFrozen` (`tabs.js:683`, `tabs.js:687`):
+Expose the release state next to `isWidthFrozen` (`tabs.js:691`,
+`tabs.js:695`):
 
 ```js
   function isReleasing() { return barEl.classList.contains(RELEASE_CLASS); }
@@ -449,7 +451,7 @@ pixel-identical.
 ## 7. Reduced motion
 
 - CSS: `animation: none` inside `@media (prefers-reduced-motion: reduce)`
-  (§4.3), matching the existing `style.css:3171` idiom.
+  (§4.3), matching the existing `style.css:3182` idiom.
 - JS: `unfreezeWidths` returns before adding the class when
   `prefersReducedMotion()` is true (§5.3). The pins are already cleared, so
   the fallback is exactly today's instant re-equalization.
@@ -461,8 +463,8 @@ pixel-identical.
 ## 8. Interaction with drag and with the freeze
 
 - **Drag:** `draggingPath` is non-null from `dragstart` (`onDragStart`,
-  `tabs.js:578`, set at `582`) until `dragend` (`clearDragging`,
-  `tabs.js:644`). `unfreezeWidths` returns before animating while
+  `tabs.js:586`, set at `590`) until `dragend` (`clearDragging`,
+  `tabs.js:652`). `unfreezeWidths` returns before animating while
   it is set, so a drop settles instantly and the animation never fights the
   browser's drag image or a re-render. `draggingPath` is cleared on `dragend`
   before any later `mouseleave`.
@@ -491,7 +493,7 @@ pixel-identical.
 | Very narrow list (container < `--tab-min-width`) | Tabs clamp to `min-width` and overflow into the scroller; frozen and target widths match, so no animation. |
 | Pinned tabs in the release | `realTabs()` is bar-scoped, so a pinned tab is measured and pinned like any other. Its "from" and "to" are the same natural width (the `.tab-pinned .tab { flex: 0 0 auto; }` rule does not change with tab count), so its delta is ~0 and it holds still while unpinned tabs equalize around it. |
 | Pin / unpin mid-animation | `togglePin` calls `render()`, which calls `stopRelease()` first; the rebuilt two-region strip renders at rest. |
-| Last pinned tab unpinned | `render()` sets `pinEl.hidden = true`; the region takes no space (`style.css:455`) and the bar lays out as it did before the split. |
+| Last pinned tab unpinned | `render()` calls `syncPinnedRegion()` which sets `pinEl.hidden = true`; the region takes no space (`style.css:463`) and the bar lays out as it did before the split. |
 
 The `#outline-toggle` sits outside `#tab-list` as a sibling, to the right of
 the scroller (`templates/index.html:128-142`), and is never matched by the
@@ -504,7 +506,7 @@ than on `#tab-list`) is what reaches a pinned tab.
 ## 10. Acceptance checklist (for `tester`)
 
 String/static checks against `static/css/style.css` (the harness already
-reads the file as text, e.g. `tests/dom/test_dom.js:1575`):
+reads the file as text, e.g. `tests/dom/test_dom.js:1576`):
 
 - [ ] `.tab-bar` declares `--tab-release-duration: 180ms`.
 - [ ] `.tab-bar` declares `--tab-release-ease: ease-out`.
@@ -522,15 +524,15 @@ reads the file as text, e.g. `tests/dom/test_dom.js:1575`):
       `flex: 0 0 auto; max-width: none` (natural width, no truncation).
 
 Behavior checks in `tests/dom/test_dom.js` (the freeze block starts at
-`3197`; the harness runs it with `pretendToBeVisual: true`
-(`test_dom.js:744`), so `requestAnimationFrame` exists):
+`3208` inside `== file tabs ==`; the harness runs it with `pretendToBeVisual: true`
+(`test_dom.js:745`), so `requestAnimationFrame` exists):
 
 - [ ] Existing, unchanged: after `mouseenter` + `close()`, the survivor keeps
       `style.width === "<w>px"` and `style.flex === "0 0 <w>px"`
-      (`test_dom.js:3216-3218`).
+      (`test_dom.js:3226-3230`).
 - [ ] Existing, unchanged: immediately after `mouseleave`,
       `isWidthFrozen()` is false and the survivor's `style.width`/`style.flex`
-      are `""` (synchronous clear, `test_dom.js:3222-3224`).
+      are `""` (synchronous clear, `test_dom.js:3231-3234`).
 - [ ] With stubbed non-zero rects whose released widths differ by more than
       `WIDTH_EPSILON`, `mouseleave` adds `nb-tab-equalizing` to `#tab-bar`
       and `NB.tabs.isReleasing()` is true.
@@ -606,10 +608,10 @@ The equalization work above shipped together with the pinned-region split
 
 | File | Change |
 | --- | --- |
-| `static/css/style.css` | Add the two release tokens to `.tab-bar`; add the keyframes + release rule + reduced-motion rule. Add the `.tab-pinned`, `.tab-pinned[hidden]`, and `.tab-pinned .tab` rules (`style.css:441-469`); move the release selector from `.tab-list.nb-tab-equalizing` to `.tab-bar.nb-tab-equalizing` (`style.css:1055`, `1061`, `1100`). |
-| `static/js/tabs.js` | Add constants and helpers; `unfreezeWidths`; the `animationend` listener; `stopRelease()` at the top of `render()` and in the `mouseenter` handler; expose `isReleasing`. Add the `pinEl` accessor (`tabs.js:24`); bar-scope `realTabs()` (`106-108`); split `render()` output by region and hide the region via `syncPinnedRegion()` (`tabs.js:260-268`, `377`); move the release class to `barEl` (`180`, `215`, `687`); carry `pinned` in the ghost entry (`253`) and region-guard the ghost insert (`tabs.js:298-301`). |
+| `static/css/style.css` | Add the two release tokens to `.tab-bar`; add the keyframes + release rule + reduced-motion rule. Add the `.tab-pinned`, `.tab-pinned[hidden]`, and `.tab-pinned .tab` rules (`style.css:448-470`); move the release selector from `.tab-list.nb-tab-equalizing` to `.tab-bar.nb-tab-equalizing` (`style.css:1055`, `1061`, `1100`). |
+| `static/js/tabs.js` | Add constants and helpers; `unfreezeWidths`; the `animationend` listener; `stopRelease()` at the top of `render()` and in the `mouseenter` handler; expose `isReleasing`. Add the `pinEl` accessor (`tabs.js:24`); bar-scope `realTabs()` (`106-108`); split `render()` output by region and hide the region via `syncPinnedRegion()` (`tabs.js:265-269`, `393`); move the release class to `barEl` (`180`, `215`, `695`); carry `pinned` in the ghost entry (`253-254`) and region-guard the ghost insert (`tabs.js:309-311`). |
 | `templates/index.html` | The tab bar now holds `#tab-pinned`, `#tab-list`, and `#outline-toggle` (`index.html:128-142`). |
-| `tests/dom/test_dom.js` | Extend the freeze block per §10; the pin-region assertions live in the `== tab pin + context menu ==` block (`9528-9596`). |
+| `tests/dom/test_dom.js` | Extend the freeze block per §10; the pin-region assertions live in the `== tab pin + region ==` (`11289-11398`) and `== tab pinned region ==` (`11495-11700`) blocks. |
 
 This document and the mockup live under `docs/`; the `ui-designer` role does
 not edit `static/`, `templates/`, or `tests/`.

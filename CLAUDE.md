@@ -235,7 +235,7 @@ carried through a clone with sentinels (a NUL-prefixed token for code spaces,
 because a private-use char occurs in real notes). Tables are always emitted as
 GFM: `normalizeTablesForGfm` rebuilds every table in the clone into the shape
 Turndown's GFM rule accepts (an all-`<th>` first row in a leading `<thead>`),
-never as raw `<table>`. See `docs/markdown.md` for the full contract.
+never as raw `<table>`. See `docs/architecture/markdown.md` for the full contract.
 
 **Agent-facing docs are part of the renderer contract.** The fence
 languages are documented for two audiences that must stay in sync with the
