@@ -627,6 +627,179 @@ async function main() {
     check("real browser: no uncaught page errors after rule selection",
       pageErrors.length === 0, pageErrors.join(" | "));
 
+    // --- arrow-key caret navigation inside a table ------------------
+    // The reported defect: a contentEditable caret engine traverses a
+    // table's cells in DOM order for VERTICAL movement, so ArrowDown from
+    // a body cell lands in the next cell to the RIGHT (same as
+    // ArrowRight) and ArrowUp in the previous cell. hybrid.js moves the
+    // caret to the spatially adjacent cell instead. Horizontal movement
+    // is claimed only at the cell's text edge, so moving within the
+    // cell's own text stays native. jsdom has no layout or selection
+    // engine, so this is real-browser only.
+    writeNote("notes/table-nav.md",
+      "before\n\n| A | B | C |\n| --- | --- | --- |\n" +
+      "| a1 | b1 | c1 |\n| a2 | b2 | c2 |\n\nafter\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/table-nav.md"));
+    await page.waitForSelector("#viewer-content table", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    {
+      // Caret location as {row, col} relative to the table, or null when
+      // the caret left the table.
+      const where = () => page.evaluate(() => {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return null;
+        let n = sel.getRangeAt(0).startContainer;
+        if (n.nodeType === 3) n = n.parentElement;
+        const cell = n && n.closest ? n.closest("td,th") : null;
+        if (!cell) return null;
+        const table = cell.closest("table");
+        const row = cell.parentElement;
+        return { row: Array.from(table.rows).indexOf(row), col: cell.cellIndex };
+      });
+      // Place the caret at the START of a cell, or at its END when
+      // `atEnd` is set (needed to cross a cell boundary horizontally).
+      const put = (ri, ci, atEnd) => page.evaluate(({ ri, ci, atEnd }) => {
+        const cell = document.querySelector("#viewer-content table")
+          .rows[ri].cells[ci];
+        cell.focus();
+        const r = document.createRange();
+        r.selectNodeContents(cell);
+        r.collapse(!atEnd);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }, { ri, ci, atEnd });
+
+      // ArrowRight at the cell's end: next cell in the SAME row.
+      await put(1, 0, true);
+      await page.keyboard.press("ArrowRight");
+      const afterRight = await where();
+      check("real browser table-nav: ArrowRight at cell end -> next cell, same row",
+        afterRight && afterRight.row === 1 && afterRight.col === 1,
+        JSON.stringify(afterRight));
+
+      // ArrowDown: the NEXT ROW, same column -- the reported defect was
+      // that this moved right instead. Start mid-cell to prove the claim
+      // does not depend on the caret being at an edge.
+      await put(1, 1, false);
+      await page.keyboard.press("ArrowDown");
+      const afterDown = await where();
+      check("real browser table-nav: ArrowDown -> next row, SAME column",
+        afterDown && afterDown.row === 2 && afterDown.col === 1,
+        JSON.stringify(afterDown));
+
+      // ArrowUp: the previous row, same column.
+      await put(2, 1, false);
+      await page.keyboard.press("ArrowUp");
+      const afterUp = await where();
+      check("real browser table-nav: ArrowUp -> previous row, SAME column",
+        afterUp && afterUp.row === 1 && afterUp.col === 1,
+        JSON.stringify(afterUp));
+
+      // ArrowLeft at the cell's start: previous cell in the SAME row.
+      await put(1, 2, false);
+      await page.keyboard.press("ArrowLeft");
+      const afterLeft = await where();
+      check("real browser table-nav: ArrowLeft at cell start -> previous cell, same row",
+        afterLeft && afterLeft.row === 1 && afterLeft.col === 1,
+        JSON.stringify(afterLeft));
+
+      // In-cell text movement is NOT stolen: with the caret in the middle
+      // of a cell's text, ArrowLeft/ArrowRight move one character inside
+      // the cell (same cell, different offset), not to the neighbour.
+      const offset = () => page.evaluate(() => {
+        const sel = window.getSelection();
+        return sel && sel.rangeCount ? sel.getRangeAt(0).startOffset : -1;
+      });
+      await put(1, 1, false);              // start of "b1"
+      await page.keyboard.press("ArrowRight");
+      const inCell = await where();
+      check("real browser table-nav: ArrowRight inside cell text stays in the cell",
+        inCell && inCell.row === 1 && inCell.col === 1 && (await offset()) === 1,
+        JSON.stringify(inCell) + " off=" + (await offset()));
+
+      // ArrowRight at the table's last column is not claimed (there is no
+      // cell to the right); the native engine takes over and the caret
+      // leaves the table rather than being trapped in the cell.
+      await put(1, 2, true);
+      await page.keyboard.press("ArrowRight");
+      const atRightEdge = await where();
+      check("real browser table-nav: ArrowRight at the last column is left to the browser",
+        atRightEdge === null ||
+          (atRightEdge.row === 1 && atRightEdge.col === 2),
+        JSON.stringify(atRightEdge));
+
+      // ArrowUp at the top row leaves the table (the header is the top
+      // row; above it is a caret-holding paragraph).
+      await put(0, 1, false);
+      await page.keyboard.press("ArrowUp");
+      const above = await where();
+      check("real browser table-nav: ArrowUp from the header leaves the table",
+        above === null, JSON.stringify(above));
+
+      // Preview parity first: navigation alone never writes the note (the
+      // DOM mutation in the multi-line check below must not be pending
+      // when this is asserted).
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const untouched = readNote("notes/table-nav.md");
+      check("real browser table-nav: navigation alone never writes the note",
+        untouched ===
+          "before\n\n| A | B | C |\n| --- | --- | --- |\n" +
+          "| a1 | b1 | c1 |\n| a2 | b2 | c2 |\n\nafter\n",
+        JSON.stringify(untouched));
+
+      // A MULTI-LINE cell must still move line-by-line: from the first
+      // line ArrowDown goes to the cell's second line (same cell), not to
+      // the next row. Only from the cell's LAST line does it cross. The
+      // mutation below is deliberate and local to this fresh hybrid session.
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      const lineTop = () => page.evaluate(() => {
+        const sel = window.getSelection();
+        return sel && sel.rangeCount
+          ? Math.round(sel.getRangeAt(0).getBoundingClientRect().top) : -1;
+      });
+      const putLineFirst = () => page.evaluate(() => {
+        const cell = document.querySelector("#viewer-content table").rows[1].cells[1];
+        cell.focus();
+        const r = document.createRange();
+        r.setStart(cell.firstChild, 0);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      });
+
+      // The seeded note's cells are single-line; inject a <br> to make
+      // cell (1,1) multi-line, matching what Shift+Enter produces.
+      await page.evaluate(() => {
+        const cell = document.querySelector("#viewer-content table").rows[1].cells[1];
+        cell.appendChild(document.createElement("br"));
+        cell.appendChild(document.createTextNode("b1b"));
+      });
+      await putLineFirst();
+      const lineA = await lineTop();
+      await page.keyboard.press("ArrowDown");
+      const lineB = await lineTop();
+      const stillCell = await where();
+      check("real browser table-nav: ArrowDown inside a multi-line cell moves a line",
+        lineB > lineA && stillCell && stillCell.row === 1 && stillCell.col === 1,
+        JSON.stringify(stillCell) + " lines " + lineA + "->" + lineB);
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    }
+
+    check("real browser: no uncaught page errors after table navigation",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

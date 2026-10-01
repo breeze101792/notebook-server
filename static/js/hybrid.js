@@ -2524,6 +2524,45 @@
         return;
       }
     }
+    // Plain arrows inside a table cell: move the caret to the ADJACENT
+    // cell instead of letting the engine fall back to DOM order, which
+    // sends ArrowDown to the next cell to the right (same as ArrowRight).
+    // Only the cell's edge line is claimed, so movement inside the cell's
+    // own text or wrapped lines stays native -- and never when a modifier
+    // is held (Alt+arrows reorder rows/columns).
+    if (!e.altKey && !e.ctrlKey && !e.metaKey &&
+        (e.key === "ArrowUp" || e.key === "ArrowDown" ||
+         e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      const cell = getCellFromSelection();
+      if (cell) {
+        const dir = { ArrowUp: "up", ArrowDown: "down",
+                      ArrowLeft: "left", ArrowRight: "right" }[e.key];
+        // Cross a cell boundary only from the edge the arrow points away
+        // from: ArrowLeft/ArrowUp leave at the cell's first line,
+        // ArrowRight/ArrowDown at its last line. Horizontal arrows also
+        // require the text edge (start/end of the line's text). Anywhere
+        // else the movement belongs to the cell's own text or wrapped
+        // lines and must stay native.
+        const atEnd = (dir === "down" || dir === "right");
+        const horizontal = (dir === "left" || dir === "right");
+        const onEdgeLine = caretOnCellEdgeLine(cell, atEnd);
+        const atTextEdge = !horizontal || caretAtCellEdge(cell, atEnd);
+        if (onEdgeLine && atTextEdge) {
+          const target = adjacentCell(cell, dir);
+          let moved = false;
+          if (target) {
+            focusCell(target);
+            moved = true;
+          } else {
+            moved = moveCaretOutOfTable(cell, dir);
+          }
+          if (moved) {
+            e.preventDefault();
+            return;
+          }
+        }
+      }
+    }
     // Shift+Enter: insert an empty line just below this one (a new
     // Markdown block) instead of the browser's same-paragraph <br>.
     if (insertLineBelow(e)) {
@@ -4001,6 +4040,113 @@
     r.collapse(true);
     sel.removeAllRanges();
     sel.addRange(r);
+  }
+
+  /* --- spatial caret navigation inside a table ---------------------- */
+  /* A contentEditable caret engine (verified in Chromium) traverses a
+   * table's cells in DOM order for vertical movement: ArrowDown from a
+   * body cell lands in the NEXT CELL to the right, exactly like
+   * ArrowRight, and ArrowUp in the previous cell. That is not what a user
+   * expects inside a grid. We restore the spatial meaning by moving the
+   * caret to the adjacent cell ourselves (see onEnterKey); the boundary
+   * is claimed only at the cell's edge line (and, for horizontal arrows,
+   * its text edge), so movement inside the cell's own text or wrapped
+   * lines stays native. These helpers only move the caret -- they never
+   * mutate the note. */
+
+  /* True when the collapsed caret sits at the first (atEnd false) or last
+   * (atEnd true) text position of `cell`'s content. Used to cross a cell
+   * boundary on ArrowLeft/ArrowRight without stealing in-cell movement. */
+  function caretAtCellEdge(cell, atEnd) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    if (!cell.contains(range.startContainer)) return false;
+    const probe = document.createRange();
+    probe.selectNodeContents(cell);
+    if (atEnd) probe.setStart(range.startContainer, range.startOffset);
+    else probe.setEnd(range.startContainer, range.startOffset);
+    return probe.toString().replace(/\u200B/g, "") === "";
+  }
+
+  /* The fraction of a line's height within which two caret rects count as
+   * the same visual line. */
+  const LINE_TOLERANCE = 0.5;
+
+  /* The client rect of the first (atEnd false) or last (atEnd true) text
+   * position in `cell`, or null when it has no text. A range collapsed on
+   * the cell's own boundary has no line box in Chromium (a zero rect), so
+   * the position is taken from an actual TEXT node. */
+  function cellEdgeRect(cell, atEnd) {
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, null);
+    let first = null, last = null;
+    while (walker.nextNode()) {
+      if (!first) first = walker.currentNode;
+      last = walker.currentNode;
+    }
+    const tn = atEnd ? last : first;
+    if (!tn) return null;
+    const r = document.createRange();
+    r.setStart(tn, atEnd ? tn.length : 0);
+    r.collapse(true);
+    return r.getBoundingClientRect();
+  }
+
+  /* True when the collapsed caret is on the first (atEnd false) or last
+   * (atEnd true) VISUAL LINE of `cell`'s content. A cell's text can wrap
+   * over several lines (a soft break, a long wrapped line) and the engine
+   * DOES move between them, so claiming every ArrowDown would skip those
+   * lines. When there is no layout (jsdom, an empty cell, a zero-height
+   * rect) the caret is treated as being on the edge line -- still correct
+   * for a single-line cell, and the safe choice otherwise. */
+  function caretOnCellEdgeLine(cell, atEnd) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    const edgeRect = cellEdgeRect(cell, atEnd);
+    if (!caretRect.height || !edgeRect || !edgeRect.height) return true;
+    return Math.abs(caretRect.top - edgeRect.top) <
+      caretRect.height * LINE_TOLERANCE;
+  }
+
+  /* The cell adjacent to `cell` in `dir`, or null at the table's edge or
+   * when the neighbouring row is ragged and has no cell in that column. */
+  function adjacentCell(cell, dir) {
+    const table = cell.closest("table");
+    if (!table) return null;
+    const row = cell.closest("tr");
+    const rowIdx = Array.from(table.rows).indexOf(row);
+    const colIdx = cell.cellIndex;
+    if (dir === "left") return cell.previousElementSibling || null;
+    if (dir === "right") return cell.nextElementSibling || null;
+    const neighbour = table.rows[dir === "up" ? rowIdx - 1 : rowIdx + 1];
+    return (neighbour && neighbour.cells[colIdx]) || null;
+  }
+
+  /* Top-level tags that can hold a text caret (the targets for leaving a
+   * table at its edge). A table, list, rule or atomic block is not a
+   * target -- the native engine keeps those. */
+  const CARET_HOST_TAGS = [
+    "P", "H1", "H2", "H3", "H4", "H5", "H6",
+    "LI", "BLOCKQUOTE", "DIV", "PRE",
+  ];
+
+  /* Move the caret out of the table on `dir`'s side, to the caret-holding
+   * top-level block directly beside it. Returns false when there is none
+   * (or when the neighbour is an atomic plugin container, where a caret
+   * must not land), so the caller can fall through to the browser. */
+  function moveCaretOutOfTable(cell, dir) {
+    const top = topLevelBlock(cell.closest("table"));
+    if (!top) return false;
+    const back = (dir === "up" || dir === "left");
+    const sibling = back ? top.previousElementSibling : top.nextElementSibling;
+    if (!sibling || CARET_HOST_TAGS.indexOf(sibling.tagName) === -1) return false;
+    if (sibling.matches(PLUGIN_CONTAINER_SELECTOR)) return false;
+    if (sibling.getAttribute(ATOMIC_BLOCK_MARKER) === "1") return false;
+    if (sibling.getAttribute("contenteditable") === "false") return false;
+    viewerContentEl.focus();
+    caretToEdge(sibling, back);
+    return true;
   }
 
   /* --- code & plugin blocks: edit source / change language ---------- */

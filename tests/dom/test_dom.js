@@ -6948,6 +6948,154 @@ function check(label, cond, extra) {
         tPlus.rows[0].cells.length === colsBefore);
       window.NB.tableEdit.hide();
       tPlus.remove();
+
+      // --- spatial arrow navigation inside a table -------------------
+      // A contentEditable caret engine traverses table cells in DOM
+      // order for vertical movement (verified in Chromium), so ArrowDown
+      // lands in the next cell to the right. hybrid.js claims the arrow
+      // keys at a cell boundary and moves the caret to the spatially
+      // adjacent cell. jsdom has no native caret engine, so we simulate
+      // the engine's fallback (move the caret into the next cell) and
+      // assert the handler overrides it. The real end-to-end behavior is
+      // covered by the browser harness's `table-nav` checks.
+      const navTbl = window.document.createElement("table");
+      navTbl.innerHTML = "<tbody><tr><td>A</td><td>B</td><td>C</td></tr>" +
+        "<tr><td>a1</td><td>b1</td><td>c1</td></tr>" +
+        "<tr><td>a2</td><td>b2</td><td>c2</td></tr></tbody>";
+      // A caret-holding paragraph before the table, so ArrowUp from the
+      // header has a deterministic target to leave into.
+      const leadP = window.document.createElement("p");
+      leadP.textContent = "lead";
+      vc.appendChild(leadP);
+      vc.appendChild(navTbl);
+      const navCell = (ri, ci) => navTbl.rows[ri].cells[ci];
+      const putCaretInCell = (ri, ci, atEnd) => {
+        const r = window.document.createRange();
+        r.selectNodeContents(navCell(ri, ci));
+        r.collapse(!atEnd);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      // Where the caret currently sits, as {row, col} or null.
+      const caretCell = () => {
+        const s = window.getSelection();
+        if (!s || !s.rangeCount) return null;
+        let n = s.getRangeAt(0).startContainer;
+        if (n.nodeType === window.Node.TEXT_NODE) n = n.parentElement;
+        const c = n.closest && n.closest("td,th");
+        if (!c) return null;
+        return { row: Array.from(navTbl.rows).indexOf(c.parentElement),
+                 col: c.cellIndex };
+      };
+      // ArrowDown: next ROW, same column.
+      putCaretInCell(1, 1, true);
+      const downEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowDown", bubbles: true, cancelable: true });
+      navCell(1, 1).dispatchEvent(downEv);
+      const afterDown = caretCell();
+      check("hybrid table-nav: ArrowDown moves to the next row, same column",
+        afterDown && afterDown.row === 2 && afterDown.col === 1 &&
+        downEv.defaultPrevented,
+        JSON.stringify(afterDown));
+
+      // ArrowUp: previous row, same column.
+      putCaretInCell(2, 1, false);
+      const upEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowUp", bubbles: true, cancelable: true });
+      navCell(2, 1).dispatchEvent(upEv);
+      const afterUp = caretCell();
+      check("hybrid table-nav: ArrowUp moves to the previous row, same column",
+        afterUp && afterUp.row === 1 && afterUp.col === 1 &&
+        upEv.defaultPrevented,
+        JSON.stringify(afterUp));
+
+      // ArrowRight at the cell END crosses to the next cell.
+      putCaretInCell(1, 0, true);
+      const rightEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", bubbles: true, cancelable: true });
+      navCell(1, 0).dispatchEvent(rightEv);
+      const afterRight = caretCell();
+      check("hybrid table-nav: ArrowRight at the cell end crosses to the next cell",
+        afterRight && afterRight.row === 1 && afterRight.col === 1 &&
+        rightEv.defaultPrevented,
+        JSON.stringify(afterRight));
+
+      // ArrowLeft at the cell START crosses to the previous cell.
+      putCaretInCell(1, 2, false);
+      const leftEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowLeft", bubbles: true, cancelable: true });
+      navCell(1, 2).dispatchEvent(leftEv);
+      const afterLeft = caretCell();
+      check("hybrid table-nav: ArrowLeft at the cell start crosses to the previous cell",
+        afterLeft && afterLeft.row === 1 && afterLeft.col === 1 &&
+        leftEv.defaultPrevented,
+        JSON.stringify(afterLeft));
+
+      // In-cell text movement is NOT claimed: with the caret in the middle
+      // of a cell's text, ArrowRight is left to the engine (not prevented),
+      // so the browser moves one character inside the same cell.
+      putCaretInCell(1, 1, false);   // start of "b1"
+      const inCellEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", bubbles: true, cancelable: true });
+      navCell(1, 1).dispatchEvent(inCellEv);
+      check("hybrid table-nav: ArrowRight inside cell text is left to the browser",
+        !inCellEv.defaultPrevented, "prevented=" + inCellEv.defaultPrevented);
+
+      // Modifier chords are never claimed as caret navigation: Alt+Right
+      // is a column move (Alt+Shift+Right), left for that chord handler.
+      putCaretInCell(1, 1, true);
+      const altEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", altKey: true, shiftKey: true,
+          bubbles: true, cancelable: true });
+      const colText = () =>
+        Array.from(navTbl.rows[0].cells).map((c) => c.textContent).join(",");
+      const colBefore = colText();
+      navCell(1, 1).dispatchEvent(altEv);
+      const colAfter = colText();
+      check("hybrid table-nav: a modifier chord is not treated as caret navigation",
+        colBefore !== colAfter, "before=" + colBefore + " after=" + colAfter);
+
+      // At the last column, ArrowRight is not claimed and the caret stays.
+      putCaretInCell(1, 2, true);
+      const edgeEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", bubbles: true, cancelable: true });
+      navCell(1, 2).dispatchEvent(edgeEv);
+      check("hybrid table-nav: ArrowRight at the last column stays in the cell",
+        !edgeEv.defaultPrevented && (caretCell() || {}).col === 2,
+        JSON.stringify(caretCell()));
+
+      // ArrowUp from the header (top row) leaves the table.
+      putCaretInCell(0, 1, false);
+      const leaveEv = new window.KeyboardEvent("keydown",
+        { key: "ArrowUp", bubbles: true, cancelable: true });
+      navCell(0, 1).dispatchEvent(leaveEv);
+      check("hybrid table-nav: ArrowUp from the top row leaves the table",
+        leaveEv.defaultPrevented && caretCell() === null,
+        JSON.stringify(caretCell()));
+
+      // Leaving the table must NOT land the caret in an atomic plugin
+      // container (a .mermaid-container is a DIV and would otherwise be a
+      // caret host): the handler declines, so the caret never moves into
+      // it. (The event's own defaultPrevented is not asserted here -- the
+      // viewer's scroll handler also claims ArrowUp/Down under jsdom,
+      // where the cell is not really focused.)
+      const atomic = window.document.createElement("div");
+      atomic.className = "mermaid-container";
+      atomic.setAttribute("data-hybrid-atomic", "1");
+      atomic.setAttribute("contenteditable", "false");
+      vc.insertBefore(atomic, navTbl);
+      putCaretInCell(0, 1, false);
+      navCell(0, 1).dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "ArrowUp", bubbles: true, cancelable: true }));
+      const sel = window.getSelection();
+      check("hybrid table-nav: leaving into an atomic plugin block is refused",
+        !(sel.anchorNode &&
+          (atomic === sel.anchorNode || atomic.contains(sel.anchorNode))),
+        "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName));
+      atomic.remove();
+
+      navTbl.remove();
     }
   }
 

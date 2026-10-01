@@ -605,6 +605,25 @@ A caret inside a table cell is a *nested structure*, not a rule edge
 | cell E | ⌦ | `\| 1 \|` | native forward edit; may merge with next cell | ⛔ unspecified; §6 Q8 |
 | cell S | ⌫ | first cell | native; may merge into previous cell | ⛔ unspecified; §6 Q8 |
 | cell | Tab | — | native focus move to next cell | 🌐 not claimed by `Tab` handler (only list items, `:2583`) |
+| cell end | → | `\| a1 \| b1 \|` | caret to the next cell in the same row | ✅ hybrid handler |
+| cell start | ← | `\| a1 \| b1 \|` | caret to the previous cell in the same row | ✅ hybrid handler |
+| cell mid | ← / → | `\| b1 \|` | one character inside the cell | ✅ native (not claimed) |
+| cell | ↑ / ↓ | `\| a1 \| b1 \|` row 1 | caret to the previous / next ROW, same column | ✅ hybrid handler |
+| top row | ↑ | header row | caret leaves the table to the block above | ✅ hybrid handler |
+
+**Arrow navigation within a table.** A contentEditable caret engine traverses a
+table's cells in DOM order for *vertical* movement: `↑`/`↓` move to the
+previous/next *cell* exactly like `←`/`→` instead of changing row (verified in
+Chromium, independent of the table's `display` -- the app's
+`.markdown-body table { display: block }` is not the cause and changing it does not
+help). Hybrid mode claims the plain arrow keys (`onEnterKey`, `static/js/hybrid.js`)
+and moves the caret to the spatially adjacent cell itself: `↑`/`↓` always cross a
+row, `←`/`→` cross only at the cell's text edge so movement within the cell's own
+text stays native, and no modifier chord is claimed (`Alt+←/→` reorder columns).
+At a table edge the caret leaves to the nearest caret-holding block, or falls
+through to the browser when there is none. These handlers move the caret only and
+never touch the note. Pinned by the jsdom `hybrid table-nav` checks and the
+real-browser `table-nav` checks in `tests/browser/test_hybrid_browser.js`.
 
 ### 4.13 Blank-line runs and gaps
 
