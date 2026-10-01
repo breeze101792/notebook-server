@@ -160,12 +160,12 @@ const html = `<!DOCTYPE html><html><head>
 </head><body data-theme="dark">
   <div id="app">
     <header id="topbar">
-      <div class="brand">📓 Notebook</div>
+      <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">📓 Notebook</button>
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="back-btn" class="icon-btn" disabled>←</button>
-      <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG" hidden>✎</button>
-      <button id="edit-toggle">Edit</button>
+      <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG edit mode" hidden>✎</button>
+      <button id="edit-toggle" class="icon-btn" title="Edit Markdown source (Ctrl/Cmd+E)" aria-label="Edit Markdown source">📝</button>
     </header>
     <main id="layout">
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
@@ -3948,18 +3948,22 @@ function check(label, cond, extra) {
     await tick(10);
   }
   check("baseline: active file is clean", !window.NB.viewer.isDirty(activeTabPath()));
-  check("Edit button label is 'Edit' in view mode", $("edit-toggle").textContent === "Edit",
+  check("Edit button shows the memo glyph in view mode", $("edit-toggle").textContent === "📝",
     "got: " + JSON.stringify($("edit-toggle").textContent));
 
   click("edit-toggle");
   await tick(10);
   check("edit mode entered (cm-host shown)", !cmIsHidden());
-  // The Edit button stays visible in edit mode but its label flips to
-  // 'View' to reflect that clicking it will exit edit mode. The
-  // [Preview] [Save] [Close] group in the edit bar takes over the
-  // affordance. Save starts hidden because the file is clean.
+  // The WYSIWYG toggle is persistent: it stays visible in source-edit
+  // mode so switching between the two edit surfaces never makes a button
+  // appear or vanish (and the top-bar order stays stable).
+  check("Edit mode: hybrid toggle stays visible", !$("hybrid-toggle").hidden);
+  // The Edit button stays visible in edit mode and keeps the same memo
+  // glyph; the .editing accent fill shows state. The [Preview] [Save]
+  // [Close] group in the edit bar takes over the affordance. Save starts
+  // hidden because the file is clean.
   check("edit button gets .editing class while editing", $("edit-toggle").classList.contains("editing"));
-  check("Edit button label flips to 'View' in edit mode", $("edit-toggle").textContent === "View",
+  check("Edit button keeps the memo glyph in edit mode", $("edit-toggle").textContent === "📝",
     "got: " + JSON.stringify($("edit-toggle").textContent));
   check("edit bar shown while editing", !$("edit-bar").hidden);
   check("Preview button visible in edit mode", !$("preview-btn").hidden);
@@ -4021,8 +4025,8 @@ function check(label, cond, extra) {
   check("Close on clean file: back to viewer", cmIsHidden());
   check("Close on clean file: topbar editing class removed",
     !$("topbar").classList.contains("editing"));
-  check("Edit button label restored to 'Edit' after exiting edit mode",
-    $("edit-toggle").textContent === "Edit",
+  check("Edit button keeps the memo glyph after exiting edit mode",
+    $("edit-toggle").textContent === "📝",
     "got: " + JSON.stringify($("edit-toggle").textContent));
   check("re-rendered new heading id", !!$("new-heading"));
   // Close on a dirty file should prompt; Cancel keeps the user in edit.
@@ -5771,6 +5775,25 @@ function check(label, cond, extra) {
     // After exit, the file should re-render as normal preview.
     check("hybrid: viewer-content has rendered content after exit",
       vc.innerHTML.length > 0 && vc.querySelector("h1") !== null);
+
+    // --- cross-mode toggle: hybrid <-> source edit ---
+    // Clicking the WYSIWYG toggle while in CM6 source-edit mode must end
+    // source edit and enter WYSIWYG (not stack the two surfaces); the
+    // source-edit button must then start CM6 with hybrid torn down.
+    click("edit-toggle");
+    await tick(20);
+    check("toggle: source edit entered", !cmIsHidden());
+    click("hybrid-toggle");
+    await tick(20);
+    check("toggle: hybrid from source edit -> CM6 host hidden", cmIsHidden());
+    check("toggle: hybrid from source edit -> hybrid active", window.NB.hybrid.isActive());
+    check("toggle: hybrid button .active after cross-mode enter", hb.classList.contains("active"));
+    click("edit-toggle");
+    await tick(20);
+    check("toggle: source edit from hybrid -> hybrid inactive", !window.NB.hybrid.isActive());
+    check("toggle: source edit from hybrid -> CM6 host shown", !cmIsHidden());
+    window.NB.viewer.closeEdit();
+    await tick(20);
 
     // --- hybrid wikilink round-trip ---
     // A [[Target]] rendered as <a data-wikilink> must come back out of
@@ -11630,6 +11653,7 @@ function check(label, cond, extra) {
   check("close last tab -> editor hidden", cmIsHidden());
   check("close last tab -> edit button loses .editing class", !$("edit-toggle").classList.contains("editing"));
   check("close last tab -> edit bar hidden", $("edit-bar").hidden);
+  check("close last tab -> WYSIWYG toggle hidden (empty state)", $("hybrid-toggle").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
 
   // restore() reads openFiles/activeFile back from config (round-trip).
@@ -17924,7 +17948,7 @@ function check(label, cond, extra) {
     check("boot: <title> is rendered from boot state",
       /<title>\{\{\s*boot\.site_title\s*\}\}<\/title>/.test(tpl));
     check("boot: brand text is rendered from boot state",
-      /class="brand">\s*<img class="brand-icon" src="\/static\/favicon\.svg"[^>]*>\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
+      /id="brand" class="brand"[^>]*>\s*<img class="brand-icon" src="\/static\/favicon\.svg"[^>]*>\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
     check("boot: side panel collapse state is rendered server-side",
       /id="side-panel"\{%.*sidebar_collapsed.*%\}\s*class="collapsed"/.test(tpl));
     check("boot: outline collapse state is rendered server-side",

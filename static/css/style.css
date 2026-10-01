@@ -144,6 +144,11 @@ body.topbar-hidden { --topbar-h: 0px; }
 #topbar button:hover { background: var(--accent-soft); border-color: var(--accent); }
 #topbar button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 #topbar button.primary:hover { filter: brightness(1.08); }
+/* The brand is a button (click = reload from disk), so it needs the
+   shared #topbar button chrome stripped back to plain text. No hover
+   box either -- the title stays visually identical to a static label. */
+#topbar button.brand { background: transparent; border: none; padding: 4px 6px; }
+#topbar button.brand:hover { background: transparent; border: none; }
 #topbar select { padding: 4px 6px; }
 
 .search-wrap { display: flex; align-items: center; gap: 6px; }
@@ -2080,6 +2085,15 @@ body[data-theme="light"] #viewer-content {
 /* ------------------------------------------------------------------ */
 /* Hybrid / WYSIWYG edit mode                                          */
 /* ------------------------------------------------------------------ */
+/* Source-edit toggle (top bar): the memo glyph, constant in both states.
+ * The shared #topbar button rules are overridden by the .icon-btn chrome,
+ * and #edit-toggle.editing still applies the accent fill while CM6 edit
+ * mode is active. */
+#edit-toggle {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 8px;
+}
 /* The ✎ button in the top bar toggles hybrid mode. It's only visible
  * when a file is open in preview mode (hidden during CM6 edit mode).
  * When active, it gets the accent fill like the Edit button does. */

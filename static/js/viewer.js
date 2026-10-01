@@ -357,14 +357,17 @@
     }
   }
 
-  /* The top-bar Edit button toggles a state, so its label should describe
-   * the *next* action the click will take, not the current state. Stash
-   * the original text on first use so the helper is idempotent. */
+  /* The top-bar source-edit toggle is an icon. It keeps the memo glyph in
+   * both states; the .editing accent fill (see style.css) and the
+   * tooltip carry the state. The WYSIWYG toggle beside it keeps the
+   * pencil, so the two modes read apart at a glance. The label always
+   * names the action the click will take. */
   function setEditModeLabel(inEdit) {
-    if (editBtn.dataset.originalLabel == null) {
-      editBtn.dataset.originalLabel = editBtn.textContent;
-    }
-    editBtn.textContent = inEdit ? "View" : editBtn.dataset.originalLabel;
+    editBtn.textContent = "📝";
+    editBtn.title = inEdit
+      ? "Back to rendered view (Ctrl/Cmd+E)"
+      : "Edit Markdown source (Ctrl/Cmd+E)";
+    editBtn.setAttribute("aria-label", inEdit ? "Back to rendered view" : "Edit Markdown source");
   }
 
   /* --- scroll sync -------------------------------------------------- */
@@ -505,7 +508,6 @@
   }
   function showWelcome() {
     active = null;
-    setHasActiveFile(false);
     cache.clear();
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
@@ -580,7 +582,6 @@
       active = path;
       if (t.editMode) { NB.cmEditor.setValue(t.content); showEditor(); }
       else { showViewer(); render(); }
-      setHasActiveFile(true);
       NB.evt.emit("file:open", path);
       return t.content;
     },
@@ -589,7 +590,7 @@
     close(path) {
       cache.delete(path);
       if (NB.watcher) NB.watcher.forget(path);
-      if (active === path) { active = null; setHasActiveFile(false); }
+      if (active === path) { active = null; }
     },
 
     /* Re-key a tab when its file is moved/renamed; unsaved edits travel. */
@@ -670,7 +671,19 @@
       this.endEdit();
       return true;
     },
-    toggleEdit() { const t = cur(); if (!t) return; t.editMode ? this.closeEdit() : this.startEdit(); },
+    /* Source-edit toggle. When WYSIWYG (hybrid) mode is active, end that
+     * session first: its contenteditable surface and listeners sit on top
+     * of the viewer, so starting CM6 underneath would leave both active.
+     * exiting hybrid re-renders the note from the cache, which is the
+     * content CM6 then loads. */
+    async toggleEdit() {
+      const t = cur(); if (!t) return;
+      if (t.editMode) { this.closeEdit(); return; }
+      if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
+        await NB.hybrid.exit(false);
+      }
+      return this.startEdit();
+    },
 
     /* Vim's :q! -- exit edit mode discarding unsaved edits without the
      * confirm prompt. Mirrors terminal vim's force-quit; the editor is
@@ -1126,12 +1139,8 @@
    * is false until the first push. */
   const navStack = [];
   const backBtn = document.getElementById("back-btn");
-  const reloadBtn = document.getElementById("reload-btn");
   function setHasNavHistory(has) {
     if (backBtn) backBtn.disabled = !has;
-  }
-  function setHasActiveFile(has) {
-    if (reloadBtn) reloadBtn.disabled = !has;
   }
   function pushNav(entry) {
     navStack.push(entry);
@@ -1175,8 +1184,12 @@
   if (backBtn) {
     backBtn.addEventListener("click", () => goBack());
   }
-  if (reloadBtn) {
-    reloadBtn.addEventListener("click", () => NB.viewer.reload());
+
+  // The brand doubles as the manual reload control (the reload button was
+  // removed to declutter the top bar).
+  const brandBtn = document.getElementById("brand");
+  if (brandBtn) {
+    brandBtn.addEventListener("click", () => NB.viewer.reload());
   }
 
   // A redo stack: H/L in vim navigate in-app history back/forward.

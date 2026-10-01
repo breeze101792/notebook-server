@@ -3600,9 +3600,21 @@
     }
   }
 
-  function toggle() {
-    if (active) exit(false);
-    else enter();
+  async function toggle() {
+    if (active) { await exit(false); return; }
+    // Switching in from CM6 source-edit mode: leave it first so the
+    // contenteditable session starts from the rendered preview. endEdit
+    // (not closeEdit) folds the CM6 buffer into the viewer cache and
+    // renders it, so unsaved source edits carry into WYSIWYG instead of
+    // being discarded. It also clears the edit-toggle's .editing class,
+    // so the reverse guard below does not immediately exit the session
+    // we are about to start.
+    const editToggle = document.getElementById("edit-toggle");
+    if (editToggle && editToggle.classList.contains("editing")) {
+      if (!NB.viewer.endEdit) return;
+      NB.viewer.endEdit();
+    }
+    await enter();
   }
 
   /* Commit before navigating away (tab switch). If hybrid mode is
@@ -4538,24 +4550,31 @@
     toggle();
   });
 
-  /* Show/hide the hybrid button based on whether a file is open.
-   * The button should only be visible when in preview mode (not in
-   * CM6 edit mode) and a file is active. We listen to file:open and
-   * the viewer's mode-change events. */
+  /* Keep the hybrid button visible whenever a file is open, in preview
+   * or CM6 edit mode. It behaves as a toggle: the .active accent fill
+   * shows WYSIWYG mode is on, so it must not disappear at the moment it
+   * is toggled (and its position in the top bar stays stable when the
+   * user switches between source edit and WYSIWYG). Only the empty state
+   * (no active file) hides it. */
   function updateButtonVisibility() {
     if (!hybridBtn) return;
     const path = NB.viewer && NB.viewer.getPath ? NB.viewer.getPath() : null;
-    // Don't show the button if we're in CM6 edit mode (the viewer's
-    // editMode is true). We check the edit-toggle button's class.
-    const inEditMode = document.getElementById("edit-toggle").classList.contains("editing");
-    hybridBtn.hidden = !path || inEditMode || active;
+    hybridBtn.hidden = !path;
   }
 
   NB.evt.on("file:open", updateButtonVisibility);
   NB.evt.on("viewer:dirty-changed", updateButtonVisibility);
+  // tabs:changed covers the close-last-tab path (viewer.clear() does not
+  // emit file:open), so the button disappears with the empty state.
+  NB.evt.on("tabs:changed", updateButtonVisibility);
+  // Seed the initial state: a restored tab may already be active before
+  // this module wired its listeners.
+  updateButtonVisibility();
 
-  /* If the user enters CM6 edit mode while hybrid is on (shouldn't
-   * happen since the button is hidden, but guard anyway), exit hybrid. */
+  /* Safety net: if CM6 source-edit mode starts while hybrid is active
+   * (the viewer's toggleEdit tears hybrid down first, so this should not
+   * fire), exit hybrid. Two contenteditable/edit surfaces on the same
+   * node would fight over the DOM. */
   NB.evt.on("viewer:dirty-changed", () => {
     // The edit-toggle gets .editing when CM6 edit mode starts.
     if (active && document.getElementById("edit-toggle").classList.contains("editing")) {
