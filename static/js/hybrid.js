@@ -1605,13 +1605,27 @@
     // When the caret sits directly in the root container (an empty note
     // has no <p> yet -- the browser types straight into #viewer-content),
     // wrap the content in a <p> first so the block transforms below have
-    // a real element to replace instead of the container itself. Only
-    // when the note is EMPTY: a caret on the root of a filled note (e.g.
-    // the offset Chromium reports beside a <hr>) holds no text of its
-    // own, and moving every existing block -- headings, lists, tables,
-    // mermaid containers -- into one <p> would flatten the whole note.
+    // a real element to replace instead of the container itself. Refuse
+    // when the root holds real block content: a caret on the root of a
+    // filled note (e.g. the offset Chromium reports beside a <hr>) holds
+    // no text of its own, and moving every existing block -- headings,
+    // lists, tables, mermaid containers -- into one <p> would flatten
+    // the whole note. A brand-new note has no block content; the browser
+    // types its first characters straight into the root as a bare text
+    // node (plus, in some engines, a placeholder <br> line box). Wrapping
+    // those lets the block rules fire, or the first "# " of a new note
+    // would stay literal and save as an escaped "\# ".
     if (blockEl === viewerContentEl) {
-      if (blockEl.firstChild) return false;
+      const hasBlockContent = Array.from(blockEl.children)
+        .some((c) => c.tagName !== "BR");
+      if (hasBlockContent) return false;
+      // A root-level <br> is an editing placeholder, never note content
+      // (the editor represents content in <p> blocks), so drop it before
+      // wrapping -- otherwise it would ride into the converted heading or
+      // paragraph and serialize as a stray hard break.
+      Array.from(blockEl.children).forEach((c) => {
+        if (c.tagName === "BR") c.remove();
+      });
       const p = document.createElement("p");
       while (blockEl.firstChild) p.appendChild(blockEl.firstChild);
       blockEl.appendChild(p);

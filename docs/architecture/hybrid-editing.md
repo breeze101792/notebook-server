@@ -122,9 +122,11 @@ The spec is enforced by a data-driven contract table in `tests/dom/test_dom.js`
 a code defect the test pins; all are now fixed. The coverage map is a comment at the
 top of the jsdom section.
 
-Results at this revision: jsdom **2244 ok, 0 failed** (80 `== section ==`
-blocks); the Chromium harness has 51 `check(...)` calls (5 corpus entries expand
-one of them at runtime) and was last green; backend `unittest` **209 OK**.
+Results at this revision: jsdom **2337 ok, 0 failed** (83 `== section ==`
+blocks); the Chromium harness **69 ok, 0 failed** (the last two were the
+horizontal-rule preview-selection case, fixed by re-measuring the rule box after
+leaving hybrid mode -- the format bar's removal shifts the rule). Backend
+`unittest` **209 OK**.
 
 ### Defects found by the suite and fixed
 
@@ -136,6 +138,7 @@ one of them at runtime) and was last green; backend `unittest` **209 OK**.
 | M2 | A nested empty blockquote `> >` collapsed to `>`. | `markEmptyBlockquotes` (`hybrid.js:326`) treats a nested quote/list/fence as content; only a bare quote gets the sentinel. |
 | M3 | An unresolved `[[NoSuchNote]]` saved as an escaped `\[\[NoSuchNote\]\]`. | The unresolved wikilink carries a raw marker and a serializer rule emits the literal `[[...]]`. |
 | escape-# | A leading `#` with no following space (`#no-space`) saved unescaped and re-read as a heading. | `escapeLeadingHashes` (`hybrid.js:549`) escapes a leading `#` run that is not a valid ATX heading, outside fences. |
+| new-note-# | The first block trigger typed into a **brand-new empty note** stayed literal: a bare text node under the empty root failed the root-caret guard's `firstChild` test, so `# ` never converted and saved as the escaped `\# `. | `applyBlockRules` (`hybrid.js:1618`) refuses only real **block** content (`hasBlockContent` ignores the placeholder `<br>`), so an empty root is wrapped in a `<p>` and the block rules fire; a root `<br>` line box is dropped first. Verified in jsdom and Chromium. |
 | Q10 | An untouched raw HTML block (`<div>x</div>`) lost its tags on a clean save. | `html` tokens are aligned by the element count they render, so an untouched raw block keeps its bytes. A raw `<table>` is the exception and still falls back so it converts to GFM. |
 
 ### Defects found by adversarial review of the fixes
@@ -307,7 +310,9 @@ Status legend:
 | ⛔ | Specified here conflicts with current code or tests. |
 | 🌐 | Depends on the native editing engine; verify in the Chromium harness. |
 
-All `file:line` cites are to the revision of 2026-09-28.
+All `file:line` cites were taken at the revision of 2026-09-28 and have drifted as
+the code moved; treat the function or constant **name** as the anchor of record and
+the line number as a hint. This document owns behavior, not line numbers.
 
 ---
 
@@ -358,6 +363,7 @@ restored at `hybrid.js:512-513`).
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
 | ∅ | G (`### `) | `` | `### ` (h3, caret after marker) | ✅ `INPUT_RULES[0]` `hybrid.js:1487`; test `4318-4325` |
+| ∅ (root) | G (`# `) | `` (brand-new note: the browser types a bare text node under `#viewer-content`, no `<p>`) | `# ` (h1, caret in the heading) | ✅ root branch wraps empty root (`hybrid.js:1618`), `hasBlockContent` ignores the placeholder `<br>`; tests jsdom `7410`, Chromium `827` |
 | S | C (no space) | `#no-space` typed | `\#no-space` on save | ✅ no conversion (`applyBlockRules` `:1621`); test `4414-4417`; escape `vendor:738` |
 | S | ⌫ | `x\n\n## Title` | `x Title` or merged `## xTitle` | ⛔ unspecified; browser-native merge, §6 Q2 |
 | T | C | `## Title` | `## TitXle` | ✅ native |
@@ -1001,6 +1007,20 @@ belongs to Q15/Q16.** Real Chromium, this revision:
   asked for, plus the standard block separator. Whether that separator count is the
   "one break" the owner means is part of the same open question.
 
+**Q19 — DECIDED and implemented. The first block trigger in a brand-new note must
+convert.** The root-caret branch of `applyBlockRules` (`hybrid.js:1618`) runs for a
+caret sitting directly on `#viewer-content`. Its guard refused whenever the root had
+**any** child (`blockEl.firstChild`), to keep a mid-note root caret (beside an `<hr>`)
+from flattening every block into one `<p>`. But a brand-new empty note has no `<p>`:
+the browser types the first characters straight into the root as a bare text node, so
+that text node tripped the guard and `# ` stayed literal — saving as an escaped
+`\# `. The guard now refuses only real **block** content: `hasBlockContent`
+(`hybrid.js:1619`) treats any root child that is not the editing placeholder `<br>`
+as content, so an empty root is wrapped in a `<p>`, the placeholder `<br>` is dropped
+first, and the block rules fire. Verified in jsdom (`test_dom.js:7382`) and Chromium
+(`test_hybrid_browser.js:803`). The mid-note no-flatten guard is unchanged and still
+covered by the root-caret test.
+
 ---
 
 ## 7. Non-goals
@@ -1174,10 +1194,11 @@ Verified against the vendored bundles at this revision with the exact
   `[[wikilinks]]`), Q7 (an emptied blockquote survives as `>`), Q11 (cross-block
   inline format is refused), Q12 (empty blocks
   get a caret line box so typed text lands in them), Q18 (an empty list item saves
-  as a bare marker, no junk). G4/I8 (no HTML in the file), G4b/I9/Q16 (one `Enter`
-  adds one break), G2b, G3b, Q10 (raw HTML stays editable). Selection and copy
-  use the browser's own engine in hybrid and preview alike; a horizontal rule is
-  selectable like a character (§4.11).
+  as a bare marker, no junk), Q19 (the first `# ` typed into a brand-new empty note
+  becomes a heading, not an escaped `\# `). G4/I8 (no HTML in the file), G4b/I9/Q16
+  (one `Enter` adds one break), G2b, G3b, Q10 (raw HTML stays editable). Selection
+  and copy use the browser's own engine in hybrid and preview alike; a horizontal
+  rule is selectable like a character (§4.11).
 - **Withdrawn.** Q17 (a renderer `breaks:true` change) — it misread Q16 as a
   file-format rule. No renderer change.
 - **Biggest remaining questions.** Q15 (what `Shift+Enter` inserts), then Q2 (block

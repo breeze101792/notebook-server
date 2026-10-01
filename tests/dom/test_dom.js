@@ -7379,6 +7379,44 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(20);
 
+    // --- brand-new empty note: a block trigger must still convert ------
+    // Regression: the first thing typed into a brand-new (empty) note
+    // lives as a bare text node directly under #viewer-content, because
+    // there is no <p> for the browser to type into. The root-caret guard
+    // refused ANY root caret whose container had a firstChild, so "# "
+    // stayed literal and serialized as an escaped "\# " instead of
+    // becoming an <h1>. An empty root must still run the block rules.
+    FILES["notes/a.md"] = "";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const root = $("viewer-content");
+      root.innerHTML = "";
+      // The browser types straight into the editor root when the note is
+      // empty: a bare text node, caret right after "# ".
+      const tn = window.document.createTextNode("# ");
+      root.appendChild(tn);
+      const r = window.document.createRange();
+      r.setStart(tn, 2);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      root.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(20);
+      check("hybrid empty note: '# ' typed into the root becomes an <h1>",
+        root.querySelector("h1") !== null,
+        "html=" + root.innerHTML.slice(0, 80));
+      check("hybrid empty note: saved markdown is '#', not an escaped '\\#'",
+        window.NB.hybrid.domToMarkdown().trim() === "#",
+        JSON.stringify(window.NB.hybrid.domToMarkdown()));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
     // --- autosave races -------------------------------------------------
     // Autosave OFF: a dirty session must not write on idle, but a manual
     // Save still must. (Restore the default afterwards.)
@@ -8718,7 +8756,7 @@ function check(label, cond, extra) {
   }
 
   // ==========================================================================
-  // Hybrid editing behavior contract (spec: docs/hybrid-editing-behavior.md)
+  // Hybrid editing behavior contract (spec: docs/architecture/hybrid-editing.md)
   //
   // Coverage map — doc section/row -> test name in this section.
   // A `[defect]` tag names a known code defect the test pins (spec-correct
@@ -8737,6 +8775,9 @@ function check(label, cond, extra) {
   //           over the file outside fences; raw-HTML cases are exempt.
   //   §4.2 empty heading / code-space heading -> "empty: heading ### survives",
   //        "empty: code-space heading survives"
+  //   §4.2 Q19 first trigger in a brand-new empty note ->
+  //        "hybrid empty note: '# ' typed into the root becomes an <h1>"
+  //        (Chromium: "real browser new note: ...")
   //   §4.4/4.5 empty list item -> "empty: bullet item - survives",
   //        "empty: ordered item 1. survives"
   //   §4.8 Q7 emptied blockquote -> "empty: emptied blockquote survives as >"

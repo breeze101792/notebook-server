@@ -360,7 +360,7 @@ async function main() {
     // --- spec contract: native editing engine rows (🌐) ---------------
     // The rows jsdom cannot produce: Enter/Shift+Enter splits, and the
     // exact file bytes after a real keypress. Spec:
-    // docs/hybrid-editing-behavior.md §5.1, I9/Q16 (one Enter, one
+    // docs/architecture/hybrid-editing.md §5.1, I9/Q16 (one Enter, one
     // break), Q1 (structural edits preserve untouched bytes).
 
     // (a) A single Enter at the end of a paragraph is one block break:
@@ -557,13 +557,26 @@ async function main() {
 
       // Preview parity: the same drag in preview mode (no hybrid) must
       // produce the same selection shape AND the same highlight class --
-      // selection logic is identical in both modes.
+      // selection logic is identical in both modes. Exiting hybrid changes
+      // the editor chrome above the note (the format bar is removed), so
+      // the rule shifts vertically; the boxes captured in hybrid mode are
+      // stale and the drag would miss it. Re-measure in preview first.
       await page.click("#close-edit-btn");
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
-      await page.mouse.move(ruleBox.x, ruleBox.y);
+      const previewRuleBox = await page.evaluate(() => {
+        const hr = document.querySelector("#viewer-content > hr");
+        const b = hr.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+      });
+      const previewParaBox = await page.evaluate(() => {
+        const ps = document.querySelectorAll("#viewer-content > p");
+        const b = ps[ps.length - 1].getBoundingClientRect();
+        return { x: b.x + 40, y: b.y + b.height / 2 };
+      });
+      await page.mouse.move(previewRuleBox.x, previewRuleBox.y);
       await page.mouse.down();
-      await page.mouse.move(paraBox.x, paraBox.y, { steps: 8 });
+      await page.mouse.move(previewParaBox.x, previewParaBox.y, { steps: 8 });
       await page.mouse.up();
       await page.waitForTimeout(120);
       const preview = await page.evaluate(() => {
@@ -586,8 +599,9 @@ async function main() {
         "class=" + preview.classes);
 
       // Collapse the selection with a plain click in a paragraph: the
-      // mark must come off in preview mode.
-      await page.mouse.click(paraBox.x, paraBox.y);
+      // mark must come off in preview mode. Use the preview box -- the
+      // hybrid box is stale.
+      await page.mouse.click(previewParaBox.x, previewParaBox.y);
       await page.waitForTimeout(120);
       const collapsedCls = await page.evaluate(
         () => document.querySelector("#viewer-content > hr").className);
@@ -798,6 +812,49 @@ async function main() {
     }
 
     check("real browser: no uncaught page errors after table navigation",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
+    // --- brand-new empty note: the first "# " becomes an <h1> ---------
+    // Reported defect: in a brand-new (empty) note the first characters
+    // live as a bare text node directly under #viewer-content (there is
+    // no <p> to type into). The block-rule guard refused any root caret
+    // whose container had a firstChild, so "# " stayed literal and saved
+    // as an escaped "\# " instead of becoming a heading. This is the real
+    // editing engine writing native markup, so it cannot run in jsdom.
+    writeNote("notes/newnote.md", "");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/newnote.md"));
+    await page.waitForFunction(
+      () => { const b = document.getElementById("hybrid-toggle"); return b && !b.hidden; },
+      null, { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    // The app focuses #viewer-content on enter; type straight into it the
+    // way a user starting a new note would.
+    await page.keyboard.type("#");
+    await page.keyboard.type(" ");
+    await page.waitForTimeout(200);
+    {
+      const madeHeading = await page.evaluate(
+        () => !!document.querySelector("#viewer-content h1"));
+      check("real browser new note: '# ' typed into the empty note becomes an <h1>",
+        madeHeading,
+        "html=" + (await page.evaluate(
+          () => document.getElementById("viewer-content").innerHTML)));
+      await page.keyboard.type("Title");
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const nn = readNote("notes/newnote.md");
+      check("real browser new note: the saved note is '# Title'",
+        nn.indexOf("# Title") !== -1 && nn.indexOf("\\#") === -1,
+        JSON.stringify(nn));
+      check("real browser new note: no HTML tag reached the file",
+        !/<\/?[a-zA-Z][^>]*>/.test(nn), JSON.stringify(nn));
+    }
+
+    check("real browser: no uncaught page errors after new-note case",
       pageErrors.length === 0, pageErrors.join(" | "));
 
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
