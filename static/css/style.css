@@ -934,6 +934,23 @@ body.nb-table-drag #viewer-content { user-select: none; }
   outline-offset: 1px;
 }
 
+/* ------------------------------------------------------------------ */
+/* Rectangular table cell selection (table-select.js)                  */
+/* ------------------------------------------------------------------ */
+/* Painted on cells, so it moves with the content: no overlay, no
+ * scroll-hiding. Background + inset shadow only -- no layout property is
+ * touched, so painting can never reflow the table. Colors come from the
+ * existing theme custom properties, so both themes render correctly. */
+#viewer-content .nb-ts-range {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* Cursor cue during the drag: the only job of this class. No user-select
+ * here -- the arm-time preventDefault already owns the gesture (1.2). */
+#viewer-content table.nb-ts-drag {
+  cursor: crosshair;
+}
+
 /* Keyboard hints inside the hybrid context menu (Move row/column rows). */
 .context-menu button .context-menu-kbd,
 kbd.context-menu-kbd {

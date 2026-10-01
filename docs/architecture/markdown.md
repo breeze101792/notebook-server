@@ -39,8 +39,8 @@ There is no emoji shortcode plugin, so `:smile:` stays literal text.
 
 marked's GFM mode covers standard Markdown plus:
 
-- Tables (with the preview-only table view described in
-  `static/js/table-view.js`).
+- Tables (with the preview-only table view in `static/js/table-view.js` and
+  rectangular cell copy in `static/js/table-select.js`).
 - Task lists (`- [ ]` / `- [x]`); Turndown emits them back as task items.
 - Fenced and indented code blocks.
 - Autolinks and raw HTML.

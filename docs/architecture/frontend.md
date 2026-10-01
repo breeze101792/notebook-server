@@ -12,7 +12,7 @@ No script in the repository regenerates it; the esbuild invocation is
 undocumented. For every other module, the served file is the source file.
 
 Every app module is an IIFE that extends the shared `window.NB` namespace.
-`templates/index.html` is 982 lines; the 29 modules live under `static/js/`.
+`templates/index.html` is 983 lines; the 30 modules live under `static/js/`.
 Siblings: [backend.md](backend.md) for the server side,
 [markdown.md](markdown.md) for the render pipeline, and
 [hybrid-editing.md](hybrid-editing.md) for the WYSIWYG write-back
@@ -38,7 +38,7 @@ registered already.
 ```
 cm-bridge → lightbox → blocks → mermaid → wavedrom → katex → viz →
 htmlpreview → viewer → editbar → hybrid → table-edit → table-view →
-watcher → outline → sidebar → search → graph → tabs → windows →
+table-select → watcher → outline → sidebar → search → graph → tabs → windows →
 settings → export → vimnav → ai → activity → shortcuts → app
 ```
 
@@ -91,7 +91,7 @@ and opens any deep link before stripping it with `history.replaceState`
 
 ## 3. Module inventory
 
-All 29 modules, in script load order. Namespace and purpose are as
+All 30 modules, in script load order. Namespace and purpose are as
 implemented today.
 
 | File | Lines | Namespace | Purpose |
@@ -111,6 +111,7 @@ implemented today.
 | `hybrid.js` | 4467 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |
 | `table-edit.js` | 802 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
 | `table-view.js` | 1211 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
+| `table-select.js` | 427 | `NB.tableSelect` | Ctrl+drag (Cmd on macOS) over table cells paints a rectangle; Ctrl+C copies it as TSV (`text/plain`) plus an HTML `<table>` (`text/html`). One engine for preview and hybrid edit. The selection classes are transient chrome, stripped before serialization and undo snapshots. |
 | `watcher.js` | 299 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s conditional-GET poll of `/api/file?ifModifiedSince=`. Pauses when the tab is hidden. |
 | `outline.js` | 167 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 997 | `NB.sidebar` | File tree, bookmarks, and right-click menus (new, rename/move, copy, delete, Export…). |
@@ -242,7 +243,7 @@ The AI transcript is in-memory only (`ai.js`) and is lost on reload. The
 `static/manifest.json` declares `display: "standalone"`, name
 `"Notebook"`, `start_url` `/`, and three PNG icons (180, 192, 512).
 
-`static/sw.js` uses cache version `notebook-v5` (`sw.js:16`) with three
+`static/sw.js` uses cache version `notebook-v6` (`sw.js:16`) with three
 strategies:
 
 - **Pages and static assets**: network-first. A successful response is
@@ -353,6 +354,11 @@ ascending/descending, clear sort, hide column) and doubles as the sort
 indicator (up/down glyph, accent-coloured). Hiding is class-based;
 sorting moves `<tr>` nodes. Table edit (`table-edit.js`) overlays drag
 handles outside the `contentEditable` subtree for row/column reorder.
+Table select (`table-select.js`) adds rectangular cell selection in both
+preview and hybrid edit: a platform modifier + drag over an eligible table
+paints an inclusive rectangle, and Ctrl+C copies it as TSV plus an HTML
+table. It never touches the note — the classes are gesture chrome and are
+stripped before any save or undo snapshot.
 
 ### Bookmarks, wallpaper, floating modals
 

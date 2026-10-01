@@ -59,7 +59,7 @@ implement:
 `evalIn(src)` is `vm.runInContext(src, ctx)` (`test_dom.js:1415`). The
 harness evaluates the real vendor bundles (`marked.min.js`,
 `highlight.min.js`, `codemirror.bundle.js`, `turndown.browser.js`,
-`turndown-plugin-gfm.browser.js`) and all 29 app modules in the dependency
+`turndown-plugin-gfm.browser.js`) and all 30 app modules in the dependency
 order `index.html` uses (`test_dom.js:1417-1453`). Each module is an IIFE
 extending `window.NB`, so the load order is load-bearing. `window.onerror`
 is captured into an `errors` array and asserted in the first section.

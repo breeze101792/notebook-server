@@ -27,7 +27,7 @@ changes. Test-suite detail lives in [`../testing/README.md`](../testing/README.m
 | `TODO.md` | Task-list stub (contains only `# TODO`) |
 
 `static/` holds four folders: `css/` (`style.css`, `vimnav.css`),
-`js/` (29 app modules), `vendor/` (upstream bundles and the CodeMirror
+`js/` (30 app modules), `vendor/` (upstream bundles and the CodeMirror
 bundle), and `icons/` (PWA icons). It also holds three top-level files:
 `manifest.json`, `sw.js` (the service worker), and `favicon.svg`. Each JS
 module is an IIFE that extends the shared `window.NB` namespace.

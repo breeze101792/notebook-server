@@ -254,7 +254,7 @@ network; `app.py:2534-2538` prints a warning.
 The frontend has no build step at runtime. `templates/index.html` loads
 vendored libraries and app modules as plain `<script>` tags; the
 CodeMirror bundle is the one offline-built exception. It is one page plus
-29 modules under `static/js/`, all sharing the `window.NB` namespace. See
+30 modules under `static/js/`, all sharing the `window.NB` namespace. See
 [frontend.md](frontend.md) for the module inventory, boot sequence,
 renderer pipeline, and persistence.
 
@@ -313,12 +313,12 @@ notebook-server/
   notebook/               notes (symlink to /mnt/projects/notebook)
   notebook.template/      starter notebook copied on first run
   config/                 config.json, auth.json, ai.json
-  templates/index.html    the single SPA shell (982 lines)
+  templates/index.html    the single SPA shell (983 lines)
   static/
     manifest.json         PWA manifest
-    sw.js                 service worker, cache notebook-v5 (119 lines)
+    sw.js                 service worker, cache notebook-v6 (120 lines)
     css/ icons/ vendor/   styles, PWA icons, vendored libraries
-    js/                   29 app modules sharing window.NB
+    js/                   30 app modules sharing window.NB
   tests/
     test_app.py           209 test methods, 24 TestCase classes (2764 lines)
     dom/test_dom.js       jsdom frontend harness (17327 lines, 80 sections)

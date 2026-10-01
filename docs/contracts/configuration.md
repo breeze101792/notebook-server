@@ -287,7 +287,7 @@ IndexedDB.
 
 `static/manifest.json` declares the app name "Notebook" and
 `display: standalone`. `static/sw.js` caches the app shell under the cache
-version `notebook-v5` (`sw.js:16`). Bump that version whenever a precached
+version `notebook-v6` (`sw.js:16`). Bump that version whenever a precached
 asset changes. The service worker strategy: non-GET requests pass through,
 `/api/*` is network-only and returns a 503 JSON error when offline, and
 everything else is network-first with a cache fallback (`sw.js:81-118`).

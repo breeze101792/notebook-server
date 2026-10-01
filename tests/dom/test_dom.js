@@ -1437,6 +1437,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/hybrid.js"));
   evalIn(read("static/js/table-edit.js"));
   evalIn(read("static/js/table-view.js"));
+  evalIn(read("static/js/table-select.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -9846,6 +9847,449 @@ function check(label, cond, extra) {
     window.NB.tableView._storage.load();
     if (window.NB.tabs.isOpen(TV_PATH)) window.NB.tabs.close(TV_PATH, { force: true });
     delete FILES[TV_PATH];
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+  }
+
+  console.log("== table select ==");
+  // Rectangular table cell selection (static/js/table-select.js): a
+  // platform modifier + drag over rendered GFM cells paints a rectangle
+  // that Ctrl+C copies as TSV + HTML. The engine is geometry-free, so the
+  // whole feature is driven with synthetic mouse/copy events; no layout
+  // stubs are needed. Blueprint: docs/architecture/table-select.md §12.
+  {
+    const TS_PATH = "notes/tableselect.md";
+    const TS_MD =
+      "# Table select\n\n" +
+      "| A | B | C |\n" +
+      "| --- | --- | --- |\n" +
+      "| a1 | b1 | c1 |\n" +
+      "| a2 | b2 | c2 |\n" +
+      "| a3 | b3 | c3 |\n";
+    FILES[TS_PATH] = TS_MD;
+
+    const vc = $("viewer-content");
+    const ts = () => window.NB.tableSelect;
+    const tsTables = () => Array.from(vc.querySelectorAll("table"));
+    const rangeCells = () => Array.from(vc.querySelectorAll(".nb-ts-range"));
+    const dragTables = () => Array.from(vc.querySelectorAll("table.nb-ts-drag"));
+    const cellAt = (t, r, c) => t.rows[r].cells[c];
+    const mouse = (node, type, x, y, extra) => {
+      const e = new window.MouseEvent(type, Object.assign({
+        bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y,
+      }, extra || {}));
+      node.dispatchEvent(e);
+      return e;
+    };
+    // Ctrl+press on (r0,c0), jitter-free move to (r1,c1). Returns both
+    // events so the test can assert the arm-time preventDefault (case 2).
+    const ctrlDrag = (t, r0, c0, r1, c1) => {
+      const md = mouse(cellAt(t, r0, c0), "mousedown", 10, 10, { ctrlKey: true });
+      const mm = mouse(cellAt(t, r1, c1), "mousemove", 60, 40, { ctrlKey: true });
+      return { md, mm };
+    };
+    const ctrlUp = () => mouse(window.document, "mouseup", 60, 40, { ctrlKey: true });
+    const copyEvent = () => {
+      const ev = new window.Event("copy", { bubbles: true, cancelable: true });
+      const data = {};
+      Object.defineProperty(ev, "clipboardData", {
+        value: {
+          setData: (fmt, val) => { data[fmt] = val; },
+          getData: (fmt) => data[fmt] || "",
+        },
+      });
+      window.document.dispatchEvent(ev);
+      return { ev, data };
+    };
+
+    check("table select: NB.tableSelect is loaded", !!ts());
+    check("table select: exposes the documented API",
+      typeof ts().clear === "function" && typeof ts().isActive === "function" &&
+      typeof ts().getRectangle === "function" && typeof ts().getPayload === "function" &&
+      typeof ts().onRendered === "function" && typeof ts().tearDownForEdit === "function" &&
+      typeof ts()._onMouseDown === "function" && typeof ts()._onMouseMove === "function" &&
+      typeof ts()._onMouseUp === "function" && typeof ts()._onCopy === "function" &&
+      typeof ts()._onKey === "function" && typeof ts()._onClick === "function" &&
+      typeof ts()._onDragStart === "function");
+
+    if (window.NB.tabs.isOpen(TS_PATH)) window.NB.tabs.close(TS_PATH, { force: true });
+    await window.NB.tabs.open(TS_PATH);
+    await tick(20);
+    let t0 = tsTables()[0];
+    check("table select: the fixture rendered one 3x4 table",
+      !!t0 && t0.rows.length === 4 && t0.rows[0].cells.length === 3,
+      t0 ? "rows=" + t0.rows.length + " cols=" + t0.rows[0].cells.length : "none");
+
+    // --- (1) cross-cell drag paints the inclusive rectangle ----------
+    const drag1 = ctrlDrag(t0, 0, 0, 2, 1);
+    check("table select (1): cross-cell drag paints the rectangle",
+      rangeCells().length === 6, "painted=" + rangeCells().length);
+    const rect1 = ts().getRectangle();
+    check("table select (1): getRectangle matches the inclusive bounds",
+      !!rect1 && rect1.r0 === 0 && rect1.r1 === 2 && rect1.c0 === 0 && rect1.c1 === 1,
+      JSON.stringify(rect1 && { r0: rect1.r0, r1: rect1.r1, c0: rect1.c0, c1: rect1.c1 }));
+    check("table select (1): the table carries .nb-ts-drag during the drag",
+      dragTables().length === 1 && dragTables()[0] === t0);
+    check("table select (1): exactly the in-bounds cells are painted",
+      cellAt(t0, 0, 0).classList.contains("nb-ts-range") &&
+      cellAt(t0, 0, 1).classList.contains("nb-ts-range") &&
+      cellAt(t0, 2, 1).classList.contains("nb-ts-range") &&
+      !cellAt(t0, 2, 2).classList.contains("nb-ts-range") &&
+      !cellAt(t0, 3, 0).classList.contains("nb-ts-range"));
+    ctrlUp();
+    check("table select (1): mouseup drops .nb-ts-drag but holds the rectangle",
+      dragTables().length === 0 && rangeCells().length === 6 && ts().isActive());
+
+    // --- (2) the arming mousedown is defaultPrevented ----------------
+    check("table select (2): the arming mousedown is defaultPrevented",
+      drag1.md.defaultPrevented);
+    check("table select (2): the follow-up mousemove is not prevented",
+      !drag1.mm.defaultPrevented);
+
+    // --- (3) copy yields TSV + HTML and prevents the default ---------
+    {
+      const { ev, data } = copyEvent();
+      check("table select (3): text/plain is the expected TSV",
+        data["text/plain"] === "A\tB\na1\tb1\na2\tb2",
+        JSON.stringify(data["text/plain"]));
+      check("table select (3): text/html is the expected <table>",
+        typeof data["text/html"] === "string" &&
+        data["text/html"].indexOf("<table") === 0 &&
+        data["text/html"].indexOf("<td>A</td>") !== -1 &&
+        data["text/html"].indexOf("<td>b2</td>") !== -1,
+        JSON.stringify(data["text/html"]));
+      check("table select (3): the copy event is defaultPrevented",
+        ev.defaultPrevented);
+    }
+
+    // --- (4) a single-cell drag paints nothing -----------------------
+    ts().clear();
+    mouse(cellAt(t0, 0, 0), "mousedown", 10, 10, { ctrlKey: true });
+    mouse(cellAt(t0, 0, 0), "mousemove", 40, 40, { ctrlKey: true });
+    ctrlUp();
+    check("table select (4): a single-cell drag paints nothing",
+      rangeCells().length === 0 && dragTables().length === 0 && !ts().isActive());
+    {
+      const c4 = copyEvent();
+      check("table select (4): a following copy is NOT prevented (native path intact)",
+        !c4.ev.defaultPrevented && Object.keys(c4.data).length === 0);
+    }
+
+    // --- (5) Esc clears a held rectangle -----------------------------
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    {
+      const esc = new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true });
+      window.document.dispatchEvent(esc);
+      check("table select (5): Esc clears the rectangle",
+        rangeCells().length === 0 && !ts().isActive());
+      check("table select (5): Esc preventDefaults", esc.defaultPrevented);
+    }
+
+    // --- (6) any mousedown elsewhere clears --------------------------
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    mouse(vc.querySelector("h1"), "mousedown", 5, 5);
+    check("table select (6): a mousedown elsewhere clears the held rectangle",
+      rangeCells().length === 0 && !ts().isActive());
+
+    // --- (7) viewer:rendered clears (live and real) ------------------
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    window.NB.evt.emit("viewer:rendered", { path: TS_PATH, live: false });
+    check("table select (7): a real render clears the rectangle",
+      rangeCells().length === 0 && !ts().isActive());
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    window.NB.evt.emit("viewer:rendered", { path: TS_PATH, live: true });
+    check("table select (7): a live-preview render clears the rectangle",
+      rangeCells().length === 0 && !ts().isActive());
+    // Restore the eligibility gate (the live flag is read from table-view).
+    window.NB.evt.emit("viewer:rendered", { path: TS_PATH, live: false });
+    await tick(10);
+    t0 = tsTables()[0];
+
+    // --- (8) hybrid teardown is synchronous at will-enter ------------
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    check("table select (8): rectangle painted before hybrid teardown",
+      ts().isActive());
+    window.NB.evt.emit("hybrid:will-enter", TS_PATH);
+    check("table select (8): hybrid:will-enter clears it synchronously",
+      rangeCells().length === 0 && !ts().isActive());
+
+    // --- (9) no leakage into a save ----------------------------------
+    await window.NB.hybrid.enter();
+    await tick(20);
+    check("table select (9): hybrid is active", window.NB.hybrid.isActive());
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    check("table select (9): rectangle painted in hybrid", ts().isActive());
+    check("table select (9): painting alone does not dirty the note",
+      !window.NB.hybrid.isDirty());
+    const md9 = window.NB.hybrid.domToMarkdown();
+    check("table select (9): the serializer emits no selection chrome",
+      md9.indexOf("nb-ts") === -1);
+    check("table select (9): painting does not change the serialized markdown",
+      md9.trim() === TS_MD.trim(), JSON.stringify(md9).slice(0, 200));
+    {
+      const postsA = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
+      await window.NB.hybrid.save();
+      await tick(30);
+      const postsB = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
+      check("table select (9): a save during a paint writes nothing",
+        postsB === postsA, "delta=" + (postsB - postsA));
+      check("table select (9): disk content is unchanged", FILES[TS_PATH] === TS_MD);
+    }
+    {
+      // A real edit fires input, which clears the rectangle; reverting and
+      // saving must round-trip byte-for-byte (no snapshot leaked a class).
+      const edCell = cellAt(t0, 1, 0);
+      edCell.textContent = "a1x";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check("table select (9): input clears the rectangle",
+        rangeCells().length === 0 && !ts().isActive());
+      edCell.textContent = "a1";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(60);
+      await window.NB.hybrid.save();
+      await tick(30);
+      check("table select (9): an edited-then-reverted note round-trips to the source",
+        window.NB.hybrid.domToMarkdown().trim() === TS_MD.trim(),
+        JSON.stringify(window.NB.hybrid.domToMarkdown()).slice(0, 200));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(30);
+    t0 = tsTables()[0];
+
+    // --- (10) merged (colspan) tables never arm ----------------------
+    {
+      const merged = window.document.createElement("table");
+      merged.innerHTML = "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>";
+      vc.appendChild(merged);
+      const m10 = mouse(merged.querySelector("td"), "mousedown", 10, 10, { ctrlKey: true });
+      mouse(merged.querySelector("td"), "mousemove", 60, 40, { ctrlKey: true });
+      check("table select (10): a colspan table never arms",
+        !ts().isActive() && merged.querySelectorAll(".nb-ts-range").length === 0);
+      check("table select (10): the ineligible mousedown is not prevented",
+        !m10.defaultPrevented);
+      ctrlUp();
+      merged.remove();
+    }
+
+    // --- (11) hidden rows/columns are skipped ------------------------
+    {
+      const hid = window.document.createElement("table");
+      hid.innerHTML =
+        "<thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>" +
+        "<tbody>" +
+        "<tr><td>1</td><td>2</td><td>3</td></tr>" +
+        "<tr><td>4</td><td>5</td><td>6</td></tr>" +
+        "<tr><td>7</td><td>8</td><td>9</td></tr>" +
+        "</tbody>";
+      vc.appendChild(hid);
+      Array.from(hid.rows).forEach((r) => r.cells[1].classList.add("nb-tv-hide-col"));
+      hid.rows[2].classList.add("nb-tv-hide-row");
+      ctrlDrag(hid, 0, 0, 3, 2); ctrlUp();
+      const rect11 = ts().getRectangle();
+      const pay11 = ts().getPayload();
+      check("table select (11): hidden row/col are skipped by the rectangle",
+        !!rect11 && rect11.r0 === 0 && rect11.r1 === 2 && rect11.c0 === 0 && rect11.c1 === 1,
+        JSON.stringify(rect11 && { r0: rect11.r0, r1: rect11.r1, c0: rect11.c0, c1: rect11.c1 }));
+      check("table select (11): the TSV is a rectangle of visible cells only",
+        !!pay11 && pay11.tsv === "A\tC\n1\t3\n7\t9",
+        JSON.stringify(pay11 && pay11.tsv));
+      check("table select (11): the hidden column is never painted",
+        !Array.from(hid.rows).some((r) => r.cells[1].classList.contains("nb-ts-range")));
+      ts().clear();
+      hid.remove();
+    }
+
+    // --- (12) stale-state guard after a wholesale DOM replacement ----
+    ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+    check("table select (12): painted before the replacement", ts().isActive());
+    vc.innerHTML = "<p>replaced wholesale</p>";
+    check("table select (12): a detached anchor makes isActive() false and self-clear",
+      !ts().isActive());
+    {
+      const c12 = copyEvent();
+      check("table select (12): the stale rectangle does not override copy",
+        !c12.ev.defaultPrevented && Object.keys(c12.data).length === 0);
+    }
+    {
+      // A class that reaches the DOM via another path must still be
+      // stripped: clear() is DOM-driven.
+      const stray = window.document.createElement("table");
+      stray.className = "nb-ts-drag";
+      stray.innerHTML = "<tr><td class=\"nb-ts-range\">x</td></tr>";
+      vc.appendChild(stray);
+      ts().clear();
+      check("table select (12): clear() strips classes that arrived by another path",
+        vc.querySelectorAll(".nb-ts-range,.nb-ts-drag").length === 0);
+      stray.remove();
+    }
+    window.NB.viewer.close(TS_PATH);
+    await window.NB.tabs.activate(TS_PATH);
+    await tick(30);
+    t0 = tsTables()[0];
+
+    // --- (13) export invariant: no selection class in export.js ------
+    check("table select (13): export.js never references the selection classes",
+      read("static/js/export.js").indexOf("nb-ts-") === -1);
+
+    // --- (14) wiring completeness ------------------------------------
+    check("table select completeness: table-select.js is in index.html",
+      read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
+    check("table select completeness: table-select.js is in sw.js PRECACHE",
+      read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
+    check("table select completeness: sw.js CACHE is notebook-v6",
+      /const CACHE = "notebook-v6"/.test(read("static/sw.js")),
+      JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
+
+    // --- (15) B2: a structural edit cannot snapshot the classes ------
+    // A snapshot only funnels through pushSnapshot when a coalescing timer
+    // is pending, so the structural-edit scenario is emulated by arming
+    // that timer with onContentChange() (which, unlike typing, does NOT
+    // clear the rectangle).
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const t15 = tsTables()[0];
+      ctrlDrag(t15, 0, 0, 2, 1); ctrlUp();
+      check("table select (15): rectangle painted before the snapshot",
+        ts().isActive());
+      check("table select (15): the serializer carries no selection class",
+        window.NB.hybrid.domToMarkdown().indexOf("nb-ts") === -1);
+      window.NB.hybrid.onContentChange();   // arm the coalescing snapshot
+      check("table select (15): the rectangle survives while a snapshot is pending",
+        ts().isActive());
+      window.NB.hybrid.flushPendingSnapshot();
+      check("table select (15): flushPendingSnapshot clears before the snapshot",
+        !ts().isActive() && vc.querySelectorAll(".nb-ts-range").length === 0);
+      ctrlDrag(t15, 0, 0, 2, 1); ctrlUp();
+      window.NB.hybrid.onContentChange();
+      check("table select (15): repainted before the structural move", ts().isActive());
+      const moved = window.NB.hybrid.moveRow(t15.tBodies[0].rows[1], null);
+      check("table select (15): moveRow pushed a class-free snapshot",
+        moved === true && !ts().isActive() &&
+        vc.querySelectorAll(".nb-ts-range,.nb-ts-drag").length === 0,
+        "moved=" + moved);
+      window.NB.hybrid.flushPendingSnapshot();
+      check("table select (15): the DOM stays class-free after the flush",
+        !ts().isActive() && vc.querySelectorAll(".nb-ts-range").length === 0);
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(30);
+
+    // --- (16) M1: DnD + click defaults are suppressed while armed ----
+    {
+      const linkT = window.document.createElement("table");
+      linkT.innerHTML = "<thead><tr><th>H</th></tr></thead>" +
+        "<tbody><tr><td><a href=\"https://example.com\">link</a></td></tr></tbody>";
+      vc.appendChild(linkT);
+      const link = linkT.querySelector("a");
+      const m16 = mouse(link, "mousedown", 10, 10, { ctrlKey: true });
+      check("table select (16): Ctrl+mousedown on a link arms and is prevented",
+        m16.defaultPrevented);
+      const ds16 = new window.Event("dragstart", { bubbles: true, cancelable: true });
+      link.dispatchEvent(ds16);
+      check("table select (16): dragstart is cancelled while armed",
+        ds16.defaultPrevented);
+      const click16 = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+      link.dispatchEvent(click16);
+      check("table select (16): the link click default is swallowed while armed",
+        click16.defaultPrevented);
+      ctrlUp();
+      linkT.remove();
+    }
+
+    // --- (17) M3: the injected header chevron is stripped ------------
+    {
+      window.NB.evt.emit("viewer:rendered", { path: TS_PATH, live: false });
+      await tick(10);
+      const t17 = tsTables()[0];
+      const head17 = t17.rows[0].cells[0];
+      check("table select (17): the header carries the view menu chevron",
+        !!head17.querySelector(".nb-tv-head-menu") &&
+        head17.textContent.indexOf("\u25BE") !== -1,
+        JSON.stringify(head17.textContent));
+      ctrlDrag(t17, 0, 0, 2, 1); ctrlUp();
+      const pay17 = ts().getPayload();
+      check("table select (17): the chevron is stripped from the payload",
+        !!pay17 && pay17.tsv.indexOf("\u25BE") === -1 &&
+        pay17.tsv.indexOf("A\tB") === 0,
+        JSON.stringify(pay17 && pay17.tsv));
+      ts().clear();
+    }
+
+    // --- (18) M4: file:external-change tears the rectangle down ------
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      let t18 = tsTables()[0];
+      ctrlDrag(t18, 0, 0, 2, 1); ctrlUp();
+      check("table select (18): painted before the external change", ts().isActive());
+      // (a) an unrelated path can only be cleared by the direct listener.
+      window.NB.evt.emit("file:external-change", { path: "notes/somewhere-else.md" });
+      check("table select (18): the direct listener clears on any external change",
+        !ts().isActive() && vc.querySelectorAll(".nb-ts-range").length === 0);
+      // (b) the documented active path (hybrid's renderMarkdown path).
+      ctrlDrag(t18, 0, 0, 2, 1); ctrlUp();
+      check("table select (18): repainted before the active-path change",
+        ts().isActive());
+      window.NB.evt.emit("file:external-change", { path: TS_PATH });
+      check("table select (18): the active path also clears",
+        !ts().isActive() && vc.querySelectorAll(".nb-ts-range").length === 0);
+      await tick(40);
+      t18 = tsTables()[0];
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(30);
+    // The active-path external change re-rendered #viewer-content, so the
+    // earlier t0 node is detached; re-resolve it for the modal case.
+    t0 = tsTables()[0];
+
+    // --- (19) M5: <br> and <img> cell extraction ---------------------
+    {
+      const misc = window.document.createElement("table");
+      misc.innerHTML = "<thead><tr><th>H</th><th>I</th></tr></thead>" +
+        "<tbody><tr><td>foo<br>bar</td><td><img alt=\"pic\"></td></tr></tbody>";
+      vc.appendChild(misc);
+      ctrlDrag(misc, 0, 0, 1, 1); ctrlUp();
+      const pay19 = ts().getPayload();
+      check("table select (19): <br> becomes a space",
+        !!pay19 && pay19.tsv.indexOf("foo bar") !== -1,
+        JSON.stringify(pay19 && pay19.tsv));
+      check("table select (19): <img> contributes its alt text",
+        !!pay19 && pay19.tsv.indexOf("pic") !== -1,
+        JSON.stringify(pay19 && pay19.tsv));
+      check("table select (19): a <br> run is never collapsed",
+        !!pay19 && pay19.tsv.indexOf("foobar") === -1);
+      ts().clear();
+      misc.remove();
+    }
+
+    // --- (20) M2: an open modal owns Esc and Ctrl+C ------------------
+    {
+      ctrlDrag(t0, 0, 0, 2, 1); ctrlUp();
+      check("table select (20): painted before opening the modal", ts().isActive());
+      const overlay = $("settings-overlay");
+      overlay.hidden = false;
+      const esc20 = new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true });
+      window.document.dispatchEvent(esc20);
+      check("table select (20): Esc is not claimed while a modal is open",
+        !esc20.defaultPrevented);
+      check("table select (20): the rectangle survives an Esc yielded to the modal",
+        ts().isActive());
+      overlay.hidden = false;   // settings' own Esc closed it; reopen for copy
+      const c20 = copyEvent();
+      check("table select (20): copy is not overridden while a modal is open",
+        !c20.ev.defaultPrevented && Object.keys(c20.data).length === 0);
+      overlay.hidden = true;
+      ts().clear();
+    }
+
+    // Cleanup: drop the fixture and restore the next block's precondition.
+    ts().clear();
+    if (window.NB.tabs.isOpen(TS_PATH)) window.NB.tabs.close(TS_PATH, { force: true });
+    delete FILES[TS_PATH];
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
   }

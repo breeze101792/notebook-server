@@ -222,7 +222,7 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
   request up to hard ceilings (2000 / 200).
 - **Named limits are not hard-coded in this spec.** Concrete values live with
   their source (`AI_FETCH_MAX_BYTES` 512 KiB / 15 s, `AI_SEARXNG_MAX_RESULTS`
-  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v5`).
+  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v6`).
 
 ## 6. Acceptance criteria
 

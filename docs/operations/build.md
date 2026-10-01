@@ -106,7 +106,7 @@ reproducibly enough to review the diff. `esbuild` is pinned as a devDependency
 
 `static/sw.js` is hand-maintained. It is not generated and has no build step.
 
-**`CACHE` version.** `const CACHE = "notebook-v5"`. Bumping this string makes
+**`CACHE` version.** `const CACHE = "notebook-v6"`. Bumping this string makes
 every installed worker re-run `install` (re-precache the current assets) and
 `activate` (delete every cache whose name is not the current `CACHE`). Bump it
 whenever a precached asset changes or a file is added to `PRECACHE`. Without a

@@ -225,11 +225,11 @@ notebook.template/    starter notebook (copied into notebook/ on first run)
 templates/
   index.html          single page, loads vendored libs + app modules
 static/
-  js/                 29 app modules sharing window.NB (loaded in dependency order)
+  js/                 30 app modules sharing window.NB (loaded in dependency order)
   vendor/             marked, highlight.js, CodeMirror, Mermaid, WaveDrom, KaTeX,
                       Viz.js, Turndown, Paged.js (vendored, no CDN)
   css/                style.css, vimnav.css
-  sw.js               service worker (cache notebook-v5)
+  sw.js               service worker (cache notebook-v6)
   manifest.json       PWA manifest
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
@@ -244,7 +244,7 @@ docs/                 project documentation (see docs/README.md)
 redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (the test suite uses this so it never touches your real files).
 
-`static/js/` holds 29 modules, all extending the shared `window.NB`
+`static/js/` holds 30 modules, all extending the shared `window.NB`
 namespace. The list is documented in
 [`docs/architecture/frontend.md`](docs/architecture/frontend.md), which also covers the code-block
 renderer registry, persistence, and the service worker.

@@ -205,9 +205,9 @@ while auth is off, like every other admin route):
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
-table-view.js → watcher.js → outline.js → sidebar.js → search.js → graph.js →
-tabs.js → windows.js → settings.js → export.js → vimnav.js → ai.js →
-activity.js → shortcuts.js → app.js`.
+table-view.js → table-select.js → watcher.js → outline.js → sidebar.js →
+search.js → graph.js → tabs.js → windows.js → settings.js → export.js →
+vimnav.js → ai.js → activity.js → shortcuts.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`).
@@ -282,6 +282,14 @@ Module responsibilities:
   and the undo snapshot. Live preview (`viewer:rendered` with `live:true`) drops
   sessions and never rebuilds, so the textarea stays the source of truth. No view
   state ever reaches the note, the server, or an export.
+- `table-select.js` — rectangular cell selection for rendered tables, in preview
+  and hybrid edit through one engine. Ctrl+drag (Cmd on macOS) over a table paints
+  an inclusive cell rectangle (`nb-ts-range`); Ctrl+C copies it as TSV
+  (`text/plain`) plus an HTML `<table>` (`text/html`). The arming mousedown is
+  `preventDefault`ed so no native selection/DnD starts; the classes are transient
+  gesture chrome, stripped by `hybrid.js` in `prepareTurndownClone`, before every
+  undo snapshot, and from the change hash, so they never reach the note or an
+  export. Merged-cell tables and the live preview never arm.
 - `search.js` — search UI; re-wraps `<<…>>` snippets into `<mark>` via textContent
   (never `innerHTML` on snippet text).
 - `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount

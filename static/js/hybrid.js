@@ -110,6 +110,10 @@
   // the change hash, the turndown clone) cannot drift apart.
   const HR_SELECTED_CLASS = "nb-hr-selected";
   const RULE_CLICK_DRAG_PX = 4;
+  // Transient gesture-chrome class tokens, never content: the <hr> selection
+  // highlight and the table-select rectangle classes (table-select.js). One
+  // list, so every change-hash strip site cannot drift from the others.
+  const CHROME_CLASS_TOKENS = [HR_SELECTED_CLASS, "nb-ts-range", "nb-ts-drag"];
   // Renderer container classes. Their rendered children change
   // asynchronously (a lazy bundle swaps an error box for a real
   // container, an SVG renders later), so the splice path hashes only the
@@ -412,12 +416,13 @@
   function prepareTurndownClone(clone) {
     // Remove injected copy buttons so they don't appear in the output.
     clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
-    // Drop the selection-highlight class: it is editing chrome toggled by
-    // the selectionchange listener, never content, so a save with a rule
-    // still selected must serialize byte-for-byte as before.
-    clone.querySelectorAll("." + HR_SELECTED_CLASS).forEach((el) => {
-      el.classList.remove(HR_SELECTED_CLASS);
-    });
+    // Drop the transient gesture-chrome classes: the <hr> selection
+    // highlight (toggled by the selectionchange listener, so a save with a
+    // rule still selected must serialize byte-for-byte as before) and the
+    // table-select rectangle (table-select.js). Built from CHROME_CLASS_TOKENS
+    // so this strip cannot drift from the change-hash strip.
+    clone.querySelectorAll(CHROME_CLASS_TOKENS.map((c) => "." + c).join(","))
+      .forEach((el) => CHROME_CLASS_TOKENS.forEach((c) => el.classList.remove(c)));
     // Drop caret placeholder paragraphs the hr repair opened for the
     // user (see placeCaretForRule) when they are still empty: a click
     // beside a rule that never received text must not save as a blank
@@ -729,13 +734,14 @@
         if (isHashStrippedAttr(node, a.name)) continue;
         // The selection-highlight class is chrome, not content, but a
         // class attribute can also carry real significance. Strip only
-        // the HR_SELECTED_CLASS token; every other value is emitted
+        // the transient gesture tokens -- HR_SELECTED_CLASS and the
+        // table-select rectangle classes; every other value is emitted
         // byte-for-byte, so a class the user or a renderer set keeps its
         // exact significance and no non-selected element's hash moves.
         if (a.name === "class" && a.value.split(/\s+/)
-              .indexOf(HR_SELECTED_CLASS) !== -1) {
+              .some((c) => CHROME_CLASS_TOKENS.indexOf(c) !== -1)) {
           const rest = a.value.split(/\s+/)
-            .filter((c) => c && c !== HR_SELECTED_CLASS).join(" ");
+            .filter((c) => c && CHROME_CLASS_TOKENS.indexOf(c) === -1).join(" ");
           if (rest) out += " class=" + rest;
           continue;
         }
@@ -3046,6 +3052,10 @@
 
   function pushSnapshot() {
     if (!active) return;
+    // Every snapshot funnels through here, so clearing the transient
+    // table-select rectangle first guarantees no snapshot can capture a
+    // .nb-ts-* class and no restore can resurrect one.
+    if (NB.tableSelect && NB.tableSelect.clear) NB.tableSelect.clear();
     if (historyIndex < history.length - 1) {
       history = history.slice(0, historyIndex + 1);
     }
