@@ -177,7 +177,10 @@ const html = `<!DOCTYPE html><html><head>
       <aside id="side-panel">
         <div id="sidebar" class="side-panel-view" data-view="explorer">
           <div class="panel-header"><span class="panel-title">Files</span>
-            <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button></div>
+            <div class="panel-header-actions">
+              <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
+              <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button>
+            </div></div>
           <div id="bookmarks" class="bookmarks">
             <div class="bookmarks-header">
               <span class="bookmarks-title">Bookmarks</span>
@@ -12588,6 +12591,62 @@ function check(label, cond, extra) {
   await tick(20);
   check("watcher tree: externally-deleted file disappears from sidebar",
     rowCount() === rowsBefore, "rows=" + rowCount());
+
+  console.log("== sidebar manual reload (↻ button) ==");
+  // The Explorer header carries a ↻ button that re-fetches /api/tree on
+  // demand. It must work even when the watcher's cheap JSON compare would
+  // short-circuit (the whole point of a manual button), so we assert on
+  // the fetch count rather than on a rendered diff.
+  {
+    const refreshBtn = window.document.getElementById("sidebar-refresh");
+    check("sidebar reload: ↻ button is in the Explorer header", !!refreshBtn);
+    const treeFetchesBefore =
+      fetchLog.filter(x => x === "GET /api/tree").length;
+    // Add a file that the sidebar has never seen, without touching the
+    // watcher. Clicking ↻ alone must surface it.
+    TREE.push({ name: "manual.md", type: "file", path: "manual.md" });
+    refreshBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(30);
+    check("sidebar reload: ↻ fetches the tree",
+      fetchLog.filter(x => x === "GET /api/tree").length > treeFetchesBefore,
+      "fetches before=" + treeFetchesBefore +
+      " after=" + fetchLog.filter(x => x === "GET /api/tree").length);
+    check("sidebar reload: externally-added file appears",
+      !!window.document.querySelector('#file-tree .tree-row[data-path="manual.md"]'),
+      "manual.md row missing");
+    // A second click with an unchanged tree still re-fetches (no cheap
+    // compare short-circuit on a user action).
+    const treeFetchesAfterFirst =
+      fetchLog.filter(x => x === "GET /api/tree").length;
+    refreshBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(30);
+    check("sidebar reload: ↻ re-fetches even when the tree is unchanged",
+      fetchLog.filter(x => x === "GET /api/tree").length > treeFetchesAfterFirst,
+      "fetches stayed at " + treeFetchesAfterFirst);
+    check("sidebar reload: ↻ spins while reloading",
+      refreshBtn.classList.contains("spinning"));
+    TREE.pop();   // restore fixture for the sections that follow
+    await window.NB.sidebar.refresh();
+  }
+
+  console.log("== watcher: window focus refreshes the tree ==");
+  // Clicking back into the browser after editing a note elsewhere should
+  // show the change immediately, not on the next 5s tick. The focus
+  // listener runs the same cheap refreshTree() the poller uses.
+  {
+    const before = treeFetches();
+    TREE.push({ name: "focused.md", type: "file", path: "focused.md" });
+    window.dispatchEvent(new window.Event("focus"));
+    await tick(20);
+    await tick(20);
+    check("focus: regaining focus fetches the tree",
+      treeFetches() > before, "fetches before=" + before + " after=" + treeFetches());
+    check("focus: externally-added file appears",
+      !!window.document.querySelector('#file-tree .tree-row[data-path="focused.md"]'),
+      "focused.md row missing");
+    TREE.pop();
+    await window.NB.sidebar.refresh();
+  }
 
   console.log("== settings nav ==");
   // Left sidebar nav: General / Appearance / Security / About. Clicking

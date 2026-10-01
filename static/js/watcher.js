@@ -168,8 +168,13 @@
     pollTimer = setInterval(pollOnce, POLL_MS);
     watching = false;
     watchedRoot = null;
-    // first tick immediately so the UI feels alive
-    pollOnce();
+    // First tick immediately so the UI feels alive, but on a macrotask.
+    // watcher.js is deferred and loads *before* sidebar.js (which creates
+    // NB.sidebar), so a synchronous pollOnce() here has refreshTree()
+    // bail on the missing NB.sidebar and drops the first tree check. A
+    // setTimeout(0) runs after every deferred script has evaluated, so
+    // the sidebar exists by the time this first tick fires.
+    setTimeout(pollOnce, 0);
   }
 
   async function pollOnce() {
@@ -250,6 +255,19 @@
     if (Date.now() > until) { selfSaveUntil.delete(path); return false; }
     return true;
   }
+
+  /* --- refresh when the window regains focus -------------------------
+   * The common case for an external change is the user editing a note in
+   * another app, then clicking back into the browser. The 5s poll would
+   * otherwise make the sidebar feel stale for up to a tick; an immediate
+   * tree check on focus (the same cheap JSON compare) makes a file
+   * created or renamed on disk show up the moment the user looks. No
+   * listener while native observing -- the observer is already push-based
+   * and refreshTreeSoon() fires on its records. */
+  window.addEventListener("focus", () => {
+    if (watching) return;
+    refreshTree();
+  });
 
   /* --- pause while hidden, resume when visible -----------------------
    * When the tab is hidden there's nothing on screen to repaint, so

@@ -298,6 +298,42 @@ body.topbar-hidden { --topbar-h: 0px; }
   z-index: 20;               /* above the resize handle so header buttons win */
 }
 .panel-title { overflow: hidden; text-overflow: ellipsis; }
+/* Group a header's right-side icon buttons so they sit together at the
+ * end of the space-between header (Explorer's ↻ + ‹; AI's Clear + ‹). */
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+/* The Explorer ↻ button's click feedback: one rotation per press. The
+ * hover fill is dropped for this button -- a rotating background box
+ * reads as a glitch, so only the glyph turns. The glyph sits in a square,
+ * flex-centred box: the arrow's glyph box is asymmetric, so rotating the
+ * bare character (or a content-sized inline box) makes it orbit the
+ * button's padding box instead of spinning in place. A square box makes
+ * the pivot the glyph's own centre. */
+#sidebar-refresh:hover { background: none; }
+#sidebar-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.refresh-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+}
+@keyframes sidebar-refresh-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+#sidebar-refresh.spinning .refresh-glyph {
+  animation: sidebar-refresh-spin .5s ease;
+}
 
 /* Inner content is the scroll container, inset from the handle edge so the
  * 8px grab strip never overlaps the scrollbar (the scrollbar stays fully

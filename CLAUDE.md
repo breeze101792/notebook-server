@@ -270,7 +270,9 @@ Module responsibilities:
   with `viewer.js` (per-file content cache so unsaved edits survive tab switches), and
   persists `openFiles`/`activeFile` to config.
 - `sidebar.js` — left file tree + right-click context menu (open, new file/folder,
-  rename/move, copy, delete).
+  rename/move, copy, delete). The Explorer header's ↻ button re-fetches
+  `/api/tree` on demand, bypassing the watcher's JSON-diff short-circuit, with a
+  one-shot spin animation.
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
 - `table-view.js` — preview-only table view controls: hover/focus toolbar over a
   GFM table with hide-rows, hide-columns, and a single-column sort, kept per file

@@ -88,7 +88,10 @@
         <div id="sidebar" class="side-panel-view" data-view="explorer">
           <div class="panel-header">
             <span class="panel-title">Files</span>
-            <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
+            <div class="panel-header-actions">
+              <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
+              <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
+            </div>
           </div>
           <div id="bookmarks" class="bookmarks">
             <div class="bookmarks-header">

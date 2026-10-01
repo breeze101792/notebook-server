@@ -18,6 +18,9 @@
   const STAR_OFF = "☆";
 
   const collapsed = new Set();      // collapsed dir paths (relative)
+  // Top-header manual reload button. A user-driven refresh bypasses the
+  // watcher's cheap JSON compare so the button always re-fetches.
+  const refreshBtn = document.getElementById("sidebar-refresh");
   let selectedPath = null;
   let menuCtx = null;               // { node } the menu was opened for
   let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
@@ -947,6 +950,24 @@
     draggingNode = null;
     treeEl.querySelectorAll(".dragging").forEach(r => r.classList.remove("dragging"));
     clearDropMarks();
+  }
+
+  /* --- manual reload -------------------------------------------------- */
+  /* The header's ↻ button. A direct user action, so it refreshes
+   * unconditionally (no cheap JSON compare -- the user asked for a
+   * fetch). Animated spin gives feedback that the click registered. */
+  async function manualReload() {
+    if (refreshBtn) {
+      refreshBtn.classList.remove("spinning");
+      void refreshBtn.offsetWidth;   // restart the animation on repeated clicks
+      refreshBtn.classList.add("spinning");
+      refreshBtn.addEventListener("animationend",
+        () => refreshBtn.classList.remove("spinning"), { once: true });
+    }
+    await refresh();
+  }
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", manualReload);
   }
 
   NB.sidebar = {
