@@ -820,6 +820,15 @@ not specified or tested. The intended spec, proposed here:
    guards already do (`:3729`, `:3769`).
 5. Byte preservation of the neighbour applies as a Q1 consequence — see §5.5.
 
+One browser artifact is normalized: Chromium wraps the text it carries across a
+merge in a presentational `<span style="font-size: …">` copied from the source
+block, so joining a second heading into a title rendered the moved words a size
+bigger inside it (and repeated splits/joins compounded it). Hybrid has no span
+formatting, so `normalizeEngineSpans` (`hybrid.js:1847`) clears an inline
+font-size/font-weight on a class-less, id-less span in the caret's block. The
+saved bytes are unchanged (Turndown discards the span either way); this fixes the
+live view. Verified in Chromium.
+
 Status: ⛔ none of 1–4 is implemented; `⌫`/`⌦` on paragraphs/lists/quotes is
 unasserted.
 

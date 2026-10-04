@@ -1826,8 +1826,46 @@
     return false;
   }
 
+  /* Chromium's editing engine wraps the text it CARRIES across a
+   * Backspace/Delete block merge in a presentational <span> copied from
+   * the block it came out of. Joining an <h3> into an <h2>, for example,
+   * leaves <h2>Title<span style="font-size: 1.5em">Sub</span></h2>, so
+   * the moved words render a size bigger inside the title -- and each
+   * split/join compounds it (a second join nests another 1.5em span,
+   * rendering ever larger). Hybrid has no span formatting, so a span that
+   * carries an inline font-size/font-weight and no class or id is engine
+   * chrome, never user content: clear its presentational style so the
+   * text inherits the block's own size. The span element itself is left
+   * in place (only its style is cleared), so the caret and the engine's
+   * own markup stay intact and a following Backspace/Delete merges
+   * exactly as it would without this pass. Turndown discards the span
+   * either way, so the saved Markdown is untouched; this fixes the live
+   * view only. A span with a class or id is real markup (a renderer's or
+   * a hljs token) and is left alone. */
+  const ENGINE_SPAN_STYLE_RE = /(?:^|;)\s*(?:font-size|font-weight)\s*:/i;
+
+  function normalizeEngineSpans(root) {
+    // The engine span is inside the block that received the merged text --
+    // the caret's own block -- so scope the scan there; an ordinary
+    // keystroke never walks a long note's whole span set.
+    const block = caretContext();
+    const scope = root || (block && block.blockEl) || viewerContentEl;
+    scope.querySelectorAll("span").forEach((span) => {
+      if (span.className || span.id) return;
+      const style = span.getAttribute("style") || "";
+      if (!ENGINE_SPAN_STYLE_RE.test(style)) return;
+      const kept = style.split(";")
+        .map((d) => d.trim())
+        .filter((d) => d && !/^(?:font-size|font-weight)\s*:/i.test(d))
+        .join("; ");
+      if (kept) span.setAttribute("style", kept);
+      else span.removeAttribute("style");
+    });
+  }
+
   function applyInputRules() {
     if (!active) return;
+    normalizeEngineSpans();
     if (applyBlockRules()) return;
     applyInlineRules();
   }

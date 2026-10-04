@@ -363,6 +363,57 @@ async function main() {
     // docs/architecture/hybrid-editing.md §5.1, I9/Q16 (one Enter, one
     // break), Q1 (structural edits preserve untouched bytes).
 
+    // (🌐) Merging a block into a heading must not inflate the heading's
+    // text. The real editing engine wraps text carried across a
+    // Backspace/Delete merge in a presentational <span style="font-size:
+    // …"> copied from the source block, so joining a second heading into
+    // the title rendered the moved words a size bigger inside it (and
+    // each split/join compounded it). hybrid.js clears that engine style;
+    // the file bytes were always correct, so this asserts the live DOM.
+    writeNote("notes/headmerge.md", "## Title Middle End\n\nbody\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/headmerge.md"));
+    await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    {
+      // Caret mid-title, after "Title".
+      await page.evaluate(() => {
+        const h = document.querySelector("#viewer-content h2");
+        const r = document.createRange();
+        r.setStart(h.firstChild, 5);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      });
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(120);
+      await page.keyboard.press("Backspace");
+      await page.waitForTimeout(120);
+      const maxFs = await page.evaluate(() => {
+        const h = document.querySelector("#viewer-content h2");
+        let max = parseFloat(getComputedStyle(h).fontSize);
+        h.querySelectorAll("*").forEach((d) => {
+          max = Math.max(max, parseFloat(getComputedStyle(d).fontSize));
+        });
+        return max;
+      });
+      const baseFs = await page.evaluate(
+        () => parseFloat(getComputedStyle(
+          document.querySelector("#viewer-content h2")).fontSize));
+      check("real browser heading merge: rejoined title text keeps the heading size",
+        Math.abs(maxFs - baseFs) < 0.5,
+        "heading=" + baseFs + " maxDescendant=" + maxFs);
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser heading merge: the join still preserves the file bytes",
+        readNote("notes/headmerge.md") === "## Title Middle End\n\nbody\n",
+        JSON.stringify(readNote("notes/headmerge.md")));
+    }
+
     // (a) A single Enter at the end of a paragraph is one block break:
     // never several newlines, never a <br>.
     writeNote("notes/entersplit.md", "alpha beta\n");
