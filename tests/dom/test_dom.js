@@ -8521,6 +8521,352 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(20);
 
+    // --- Task button (edit-bar) in hybrid mode ------------------------
+    // "task" used to fall through to editbar.js, which drives the hidden
+    // CodeMirror document, so the button was dead in WYSIWYG mode. hybrid
+    // now claims it: a press makes the caret's <li>/<p> a task item, a
+    // second press removes the checkbox and the class (a toggle, like the
+    // other toolbar acts). jsdom has no editing engine, so the block
+    // transforms are driven by setting the range and dispatching a click.
+    FILES["notes/a.md"] = "# File A\n\nhello\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const vcT = $("viewer-content");
+      const caretIn = (node, offset) => {
+        const r = window.document.createRange();
+        if (offset === undefined) { r.selectNodeContents(node); r.collapse(false); }
+        else { r.setStart(node, offset); r.collapse(true); }
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      const clickAct = (act) => $("edit-bar")
+        .querySelector('[data-act="' + act + '"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+
+      // Paragraph -> task item, then back to a plain bullet item.
+      vcT.innerHTML = "";
+      const pT = window.document.createElement("p");
+      pT.textContent = "hello";
+      vcT.appendChild(pT);
+      caretIn(pT.firstChild, 2);
+      clickAct("task");
+      await tick(20);
+      const taskLi = vcT.querySelector("li.task-list-item");
+      const taskCb = taskLi && taskLi.querySelector('input[type="checkbox"]');
+      check("hybrid edit bar: Task button makes a paragraph a task item",
+        taskLi !== null && taskCb !== null && taskCb.parentElement === taskLi &&
+        taskLi.textContent === "hello",
+        "li=" + (taskLi && taskLi.outerHTML));
+      clickAct("task");
+      await tick(20);
+      const backLi = vcT.querySelector("ul li");
+      check("hybrid edit bar: a second Task press removes the checkbox and class",
+        backLi !== null && !backLi.classList.contains("task-list-item") &&
+        !backLi.querySelector('input[type="checkbox"]') && backLi.textContent === "hello",
+        "li=" + (backLi && backLi.outerHTML));
+
+      // Ordered list: only the item under the caret becomes a task.
+      vcT.innerHTML = "";
+      const olT = window.document.createElement("ol");
+      const oli1 = window.document.createElement("li");
+      oli1.textContent = "one";
+      const oli2 = window.document.createElement("li");
+      oli2.textContent = "two";
+      olT.appendChild(oli1);
+      olT.appendChild(oli2);
+      vcT.appendChild(olT);
+      caretIn(oli2.firstChild, 1);
+      clickAct("task");
+      await tick(20);
+      const olNow = vcT.querySelector("ol");
+      check("hybrid edit bar: Task on an <ol> marks the caret's item only",
+        olNow !== null && olNow.children.length === 2 &&
+        !olNow.children[0].classList.contains("task-list-item") &&
+        olNow.children[1].classList.contains("task-list-item") &&
+        olNow.children[1].querySelector('input[type="checkbox"]') !== null,
+        "ol=" + (olNow && olNow.outerHTML));
+
+      // The reported regression: after the UL button, the Task button must
+      // still work. The UL transform re-anchors the selection to the
+      // produced <ul> (reselectBlock), so the Task press resolves to a
+      // list item instead of falling through to the CM6 editor.
+      vcT.innerHTML = "";
+      const pU = window.document.createElement("p");
+      pU.textContent = "hello";
+      vcT.appendChild(pU);
+      caretIn(pU);
+      clickAct("ul");
+      await tick(20);
+      clickAct("task");
+      await tick(20);
+      const afterUlTask = vcT.querySelector("li.task-list-item");
+      check("hybrid edit bar: Task works after the UL button",
+        afterUlTask !== null &&
+        afterUlTask.querySelector('input[type="checkbox"]') !== null,
+        "vc=" + vcT.innerHTML);
+
+      // Refused inside a table cell and inside a code fence
+      // (insideProtectedBlock), like the H2 block guard above.
+      vcT.innerHTML = "";
+      const tblT = window.document.createElement("table");
+      tblT.innerHTML = "<thead><tr><th>a</th><th>b</th></tr></thead>" +
+        "<tbody><tr><td>1</td><td>2</td></tr></tbody>";
+      vcT.appendChild(tblT);
+      const tdT = tblT.tBodies[0].rows[0].cells[0];
+      const tblBefore = tblT.outerHTML;
+      caretIn(tdT.firstChild, 0);
+      clickAct("task");
+      await tick(20);
+      check("hybrid edit bar: Task inside a table cell is refused",
+        vcT.querySelector("table") !== null &&
+        vcT.querySelector("table").outerHTML === tblBefore &&
+        !vcT.querySelector("li.task-list-item"),
+        "table=" + vcT.querySelector("table").outerHTML.slice(0, 80));
+
+      vcT.innerHTML = "";
+      const preT = window.document.createElement("pre");
+      const codeT = window.document.createElement("code");
+      codeT.textContent = "let x = 1;";
+      preT.appendChild(codeT);
+      vcT.appendChild(preT);
+      caretIn(codeT.firstChild, 3);
+      clickAct("task");
+      await tick(20);
+      check("hybrid edit bar: Task inside a code fence is refused",
+        vcT.querySelector("pre code") === codeT &&
+        codeT.textContent === "let x = 1;" &&
+        !vcT.querySelector("li.task-list-item"),
+        "code=" + JSON.stringify(codeT.textContent));
+
+      // reselectBlock: the caret survives an h1 / ul transform, so a
+      // second press of the SAME button toggles the block back. A
+      // collapsed caret is restored as a collapsed caret inside the new
+      // block (not a whole-block selection).
+      vcT.innerHTML = "";
+      const pH = window.document.createElement("p");
+      pH.textContent = "heading";
+      vcT.appendChild(pH);
+      caretIn(pH);
+      clickAct("h1");
+      await tick(20);
+      const sH = window.getSelection();
+      const madeH1 = vcT.querySelector("h1");
+      check("hybrid edit bar: caret is preserved inside the new h1",
+        sH.rangeCount > 0 && sH.isCollapsed &&
+        madeH1 !== null && madeH1.contains(sH.anchorNode),
+        "collapsed=" + sH.isCollapsed + " anchor=" +
+          (sH.anchorNode && sH.anchorNode.parentNode &&
+           sH.anchorNode.parentNode.tagName));
+      clickAct("h1");
+      await tick(20);
+      check("hybrid edit bar: a second H1 press toggles back to a paragraph",
+        vcT.querySelector("h1") === null && vcT.querySelector("p") !== null,
+        "html=" + vcT.innerHTML);
+
+      // A text selection is restored as a selection over the new block, so
+      // the user's highlight is not lost.
+      vcT.innerHTML = "";
+      const pS = window.document.createElement("p");
+      pS.textContent = "selected words";
+      vcT.appendChild(pS);
+      const selR = window.document.createRange();
+      selR.setStart(pS.firstChild, 0);
+      selR.setEnd(pS.firstChild, 8);
+      const selS = window.getSelection();
+      selS.removeAllRanges();
+      selS.addRange(selR);
+      clickAct("h1");
+      await tick(20);
+      const sS = window.getSelection();
+      const madeSelH1 = vcT.querySelector("h1");
+      check("hybrid edit bar: a text selection is kept over the new h1",
+        sS.rangeCount > 0 && !sS.isCollapsed &&
+        madeSelH1 !== null && madeSelH1.contains(sS.anchorNode),
+        "collapsed=" + sS.isCollapsed);
+
+      vcT.innerHTML = "";
+      const pL = window.document.createElement("p");
+      pL.textContent = "item";
+      vcT.appendChild(pL);
+      caretIn(pL);
+      clickAct("ul");
+      await tick(20);
+      const sL = window.getSelection();
+      const madeUl = vcT.querySelector("ul");
+      check("hybrid edit bar: caret is preserved inside the new ul",
+        sL.rangeCount > 0 && sL.isCollapsed &&
+        madeUl !== null && madeUl.contains(sL.anchorNode),
+        "collapsed=" + sL.isCollapsed + " anchor=" +
+          (sL.anchorNode && sL.anchorNode.parentNode &&
+           sL.anchorNode.parentNode.tagName));
+      clickAct("ul");
+      await tick(20);
+      check("hybrid edit bar: a second UL press toggles back to a paragraph",
+        vcT.querySelector("ul") === null && vcT.querySelector("p") !== null,
+        "html=" + vcT.innerHTML);
+
+      // Typing rule: "- [ ] " (or the bare "[ ] ") typed after a bullet
+      // makes a task item with the checkbox a DIRECT <li> child and the
+      // caret just after it, so continued typing fills the item.
+      vcT.innerHTML = "";
+      const ulI = window.document.createElement("ul");
+      const liI = window.document.createElement("li");
+      liI.textContent = "- [ ] ";
+      ulI.appendChild(liI);
+      vcT.appendChild(ulI);
+      const ir = window.document.createRange();
+      ir.setStart(liI.firstChild, liI.firstChild.nodeValue.length);
+      ir.collapse(true);
+      const isel = window.getSelection();
+      isel.removeAllRanges();
+      isel.addRange(ir);
+      liI.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(20);
+      const madeTask = vcT.querySelector("li.task-list-item");
+      const cbI = madeTask && madeTask.querySelector('input[type="checkbox"]');
+      const sI = window.getSelection();
+      check("hybrid input rule: '- [ ] ' after a bullet makes a task item",
+        madeTask !== null && cbI !== null && cbI.parentElement === madeTask &&
+        !/\[/.test(madeTask.textContent),
+        "li=" + (madeTask && madeTask.outerHTML));
+      check("hybrid input rule: the caret lands after the task checkbox",
+        sI.rangeCount > 0 && sI.isCollapsed &&
+        sI.anchorNode === madeTask && sI.anchorOffset === 1,
+        "node=" + (sI.anchorNode && sI.anchorNode.nodeName) +
+        " off=" + sI.anchorOffset);
+
+      // The bare "[ ] " form runs inside an existing bullet too.
+      vcT.innerHTML = "";
+      const ulB = window.document.createElement("ul");
+      const liB = window.document.createElement("li");
+      liB.textContent = "[ ] ";
+      ulB.appendChild(liB);
+      vcT.appendChild(ulB);
+      const br = window.document.createRange();
+      br.setStart(liB.firstChild, liB.firstChild.nodeValue.length);
+      br.collapse(true);
+      const bs = window.getSelection();
+      bs.removeAllRanges();
+      bs.addRange(br);
+      liB.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(20);
+      check("hybrid input rule: bare '[ ] ' inside a bullet also makes a task item",
+        vcT.querySelector("li.task-list-item input[type=checkbox]") !== null,
+        "html=" + vcT.innerHTML);
+
+      // Enter in a non-empty task item starts another task item.
+      vcT.innerHTML = "";
+      const ulE = window.document.createElement("ul");
+      const liE = window.document.createElement("li");
+      liE.className = "task-list-item";
+      const cbE = window.document.createElement("input");
+      cbE.type = "checkbox";
+      liE.appendChild(cbE);
+      liE.appendChild(window.document.createTextNode("task"));
+      ulE.appendChild(liE);
+      vcT.appendChild(ulE);
+      const er = window.document.createRange();
+      er.selectNodeContents(liE);
+      er.collapse(false);
+      const es = window.getSelection();
+      es.removeAllRanges();
+      es.addRange(er);
+      vcT.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(20);
+      const liNext = ulE.children[1];
+      const cbNext = liNext && liNext.querySelector('input[type="checkbox"]');
+      const eSel = window.getSelection();
+      check("hybrid Enter: a task item starts a new task item with a checkbox",
+        ulE.children.length === 2 && liNext !== null &&
+        liNext.classList.contains("task-list-item") &&
+        cbNext !== null && cbNext.parentElement === liNext &&
+        liE.textContent.includes("task"),
+        "ul=" + ulE.outerHTML);
+      check("hybrid Enter: the caret lands after the new task checkbox",
+        eSel.rangeCount > 0 && eSel.isCollapsed &&
+        eSel.anchorNode === liNext && eSel.anchorOffset === 1,
+        "node=" + (eSel.anchorNode && eSel.anchorNode.nodeName) +
+        " off=" + eSel.anchorOffset);
+
+      // Regression: a selection whose common ancestor is the whole <ul>
+      // (a drag across the list) must NOT be passed to toggleList -- its
+      // ul->ul branch unwraps the list into dot paragraphs. Task targets
+      // the first item and leaves the list structure alone.
+      vcT.innerHTML = "";
+      const ulW = window.document.createElement("ul");
+      ["one", "two"].forEach((t) => {
+        const li = window.document.createElement("li");
+        li.textContent = t;
+        ulW.appendChild(li);
+      });
+      vcT.appendChild(ulW);
+      const wR = window.document.createRange();
+      wR.selectNodeContents(ulW);
+      const wSel = window.getSelection();
+      wSel.removeAllRanges();
+      wSel.addRange(wR);
+      clickAct("task");
+      await tick(20);
+      check("hybrid edit bar: Task on a whole-list selection keeps the list",
+        vcT.querySelector("ul") !== null &&
+        vcT.querySelectorAll("li").length === 2 &&
+        vcT.querySelector('li input[type="checkbox"]') !== null &&
+        vcT.querySelector("li.task-list-item") !== null,
+        "html=" + vcT.innerHTML);
+
+      // Regression: a checkbox in a NESTED task list belongs to the nested
+      // item. Task on the parent must add a parent checkbox, not delete the
+      // nested item's checkbox (the descendant query bug).
+      vcT.innerHTML = "";
+      const ulN = window.document.createElement("ul");
+      const liN = window.document.createElement("li");
+      liN.appendChild(window.document.createTextNode("parent"));
+      const ulNested = window.document.createElement("ul");
+      const liNested = window.document.createElement("li");
+      const cbNested = window.document.createElement("input");
+      cbNested.type = "checkbox";
+      liNested.appendChild(cbNested);
+      liNested.appendChild(window.document.createTextNode(" child"));
+      ulNested.appendChild(liNested);
+      liN.appendChild(ulNested);
+      ulN.appendChild(liN);
+      vcT.appendChild(ulN);
+      caretIn(liN.firstChild, "parent".length);
+      clickAct("task");
+      await tick(20);
+      check("hybrid edit bar: Task on a parent list item leaves the nested task alone",
+        liN.querySelector(':scope > input[type="checkbox"]') !== null &&
+        liNested.querySelector(':scope > input[type="checkbox"]') === cbNested,
+        "parent=" + liN.outerHTML + " nested=" + liNested.outerHTML);
+
+      // A loose task item (checkbox inside the item's <p>, as marked emits
+      // for a list with blank lines) must still serialize its [ ] marker;
+      // turndown only sees a checkbox whose parent is the <li>.
+      vcT.innerHTML = "";
+      const ulLoose = window.document.createElement("ul");
+      const liLoose = window.document.createElement("li");
+      const pLoose = window.document.createElement("p");
+      const cbLoose = window.document.createElement("input");
+      cbLoose.type = "checkbox";
+      pLoose.appendChild(cbLoose);
+      pLoose.appendChild(window.document.createTextNode(" loose task"));
+      liLoose.appendChild(pLoose);
+      ulLoose.appendChild(liLoose);
+      vcT.appendChild(ulLoose);
+      const looseMd = window.NB.hybrid.domToMarkdown();
+      check("hybrid save: a loose task item keeps its [ ] marker",
+        /\[ \]/.test(looseMd) && !/<input/i.test(looseMd),
+        "md=" + JSON.stringify(looseMd));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
     // --- Enter on an empty list item leaves the list ------------------
     // Trailing empty item: item removed, <p> added after the list.
     FILES["notes/a.md"] = "# File A\n";
@@ -14481,6 +14827,13 @@ function check(label, cond, extra) {
     check("export: HTML blob embeds the markdown styles",
       /\.markdown-body/.test(htmlText) && /\.hljs/.test(htmlText),
       "has css=" + /\.markdown-body/.test(htmlText));
+    // Task lists: the embedded CSS mirrors style.css so an exported note
+    // suppresses the bullet and spaces the checkbox the same way the app
+    // does. Drift between the two would render both marker and checkbox.
+    check("export: HTML blob mirrors the task-list CSS",
+      /\.markdown-body li:has\(> input\[type="checkbox"\], > p > input\[type="checkbox"\]\)\{list-style:none\}/.test(htmlText) &&
+      /\.markdown-body li>input\[type="checkbox"\],\.markdown-body li>p>input\[type="checkbox"\]\{width:1em;height:1em;margin:0 \.53em 0 -1\.53em;vertical-align:middle\}/.test(htmlText),
+      "task css=" + /li:has\(/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just
     // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).

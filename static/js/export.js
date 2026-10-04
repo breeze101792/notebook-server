@@ -754,6 +754,8 @@
       ".markdown-body a:hover{text-decoration:underline}",
       ".markdown-body ul,.markdown-body ol{padding-left:1.6em}",
       ".markdown-body li{margin:.15em 0}",
+      ".markdown-body li:has(> input[type=\"checkbox\"], > p > input[type=\"checkbox\"]){list-style:none}",
+      ".markdown-body li>input[type=\"checkbox\"],.markdown-body li>p>input[type=\"checkbox\"]{width:1em;height:1em;margin:0 .53em 0 -1.53em;vertical-align:middle}",
       ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.8em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
       ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:" + base.codeBg + ";padding:.12em .4em;border-radius:4px;font-size:.9em}",
       ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre}",

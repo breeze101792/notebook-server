@@ -64,6 +64,7 @@
   const CARET_BR_ATTR = "data-hybrid-caret-br";
   const EMPTY_HEADING_SENTINEL = "\u0000nbemptyh";
   const EMPTY_LIST_ITEM_SENTINEL = "\u0000nbemptyli";
+  const EMPTY_TASK_SENTINEL = "\u0000nbemptytask";
   const EMPTY_QUOTE_SENTINEL = "\u0000nbemptybq";
   // Turndown's collapseWhitespace deletes a whitespace-only text node
   // BEFORE any rule runs (vendor turndown.browser.js, collapseWhitespace
@@ -308,9 +309,35 @@
    * marker, nothing else. */
   function markEmptyListItems(root) {
     root.querySelectorAll("li").forEach((li) => {
+      // A checkbox-only task item is not "empty" (isEmptyListItem sees the
+      // input), but it needs a trailing space: "-   [ ]" without one is
+      // literal text to marked, while "-   [ ] " re-renders a checkbox.
+      // The placeholder is invisible and removed before the text-node
+      // write, so it never reaches the note.
+      const cb = taskCheckboxOf(li);
+      if (cb && li.textContent.replace(/\u200B/g, "").trim() === "") {
+        li.querySelectorAll("br").forEach((br) => br.remove());
+        cb.after(document.createTextNode(EMPTY_TASK_SENTINEL));
+        return;
+      }
       if (!isEmptyListItem(li)) return;
       li.querySelectorAll("br").forEach((br) => br.remove());
       li.appendChild(document.createTextNode(EMPTY_LIST_ITEM_SENTINEL));
+    });
+  }
+
+  /* Unwrap the <p> around a loose list item's task checkbox in the clone,
+   * so turndown's gfm taskListItems rule (checkbox's parent must be the
+   * <li>) sees it. A loose item is <li><p><input> text</p></li>; the
+   * rewrite produces the tight <li><input> text</li> that serializes as
+   * "- [x] text". Only items that actually own a checkbox are touched. */
+  function normalizeLooseTaskItems(root) {
+    root.querySelectorAll("li > p").forEach((p) => {
+      const cb = p.querySelector(':scope > input[type="checkbox"]');
+      if (!cb) return;
+      const li = p.parentElement;
+      while (p.firstChild) li.insertBefore(p.firstChild, p);
+      p.remove();
     });
   }
 
@@ -467,6 +494,12 @@
     // the item and its marker. A distinct sentinel is used so the emitted
     // marker line can be rewritten to just the marker.
     markEmptyListItems(clone);
+    // Turndown's gfm taskListItems rule only fires when the checkbox is a
+    // DIRECT child of the <li>. A loose list (blank lines between items)
+    // makes marked wrap the item content in a <p>, so a task item there
+    // would serialize without its [ ]/ [x] marker. Unwrap that <p> in the
+    // clone so the task marker survives; the visible DOM is untouched.
+    normalizeLooseTaskItems(clone);
     // An emptied blockquote must keep its ">" marker; turndown would
     // otherwise drop the element. See markEmptyBlockquotes.
     markEmptyBlockquotes(clone);
@@ -526,6 +559,9 @@
       new RegExp("^(\\s*(?:>[ \\t]*)*)([-*+]|\\d+[.)])[ \\t]*" +
         EMPTY_LIST_ITEM_SENTINEL + "[ \\t]*$", "gm"), "$1$2");
     md = md.split(EMPTY_LIST_ITEM_SENTINEL).join("");
+    // A checkbox-only task item needed a trailing space to re-render as a
+    // checkbox; the sentinel stood in for it (see markEmptyListItems).
+    md = md.split(EMPTY_TASK_SENTINEL).join(" ");
     // An emptied blockquote was given EMPTY_QUOTE_SENTINEL inside a <p>;
     // the blockquote rule emits "> <sentinel>". Collapse that to just ">"
     // so the marker survives, then sweep any stray sentinel. The
@@ -1241,6 +1277,28 @@
     return null;
   }
 
+  /* Re-anchor the selection into the element a block transform
+   * produced. replaceWith/remove detaches the node the live range
+   * pointed into, so the browser collapses the range to the editor root
+   * and a second toggle resolves to nothing.
+   *
+   * The user's gesture decides the restored shape: a text selection is
+   * kept as a selection over the produced block (so a range the user
+   * picked stays highlighted), while a plain caret stays a collapsed
+   * caret at the block's end -- selecting the whole block on a click
+   * would make a following keystroke replace it. Callers pass
+   * `wasCollapsed` captured before the DOM surgery. */
+  function reselectBlock(el, wasCollapsed) {
+    if (!el) return;
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    if (wasCollapsed) range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    viewerContentEl.focus({ preventScroll: true });
+  }
+
   /* Wrap the selection in an element with the given tag. Used for
    * headings (h1-h6) and blockquote. Operates on the current selection
    * inside #viewer-content. Returns the element the block became
@@ -1250,6 +1308,7 @@
     const sel = window.getSelection();
     if (!sel.rangeCount) return null;
     let range = sel.getRangeAt(0);
+    const wasCollapsed = range.collapsed;
     // Expand to the whole block (the nearest block ancestor).
     let block = range.commonAncestorContainer;
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
@@ -1270,11 +1329,13 @@
       while (block.firstChild) p.appendChild(block.firstChild);
       block.replaceWith(p);
       made = p;
+      reselectBlock(made, wasCollapsed);
     } else {
       const el = document.createElement(tag);
       while (block.firstChild) el.appendChild(block.firstChild);
       block.replaceWith(el);
       made = el;
+      reselectBlock(made, wasCollapsed);
     }
     onContentChange();
     return made;
@@ -1296,6 +1357,7 @@
       block = block.parentElement;
     }
     if (!block || block === viewerContentEl) return null;
+    const wasCollapsed = sel.getRangeAt(0).collapsed;
     let made = null;
     // Find the nearest list ancestor.
     let listAncestor = block.closest("ul,ol");
@@ -1308,6 +1370,7 @@
           while (li.firstChild) p.appendChild(li.firstChild);
           li.replaceWith(p);
         });
+        made = listAncestor.querySelector("p");
         // Unwrap the list.
         while (listAncestor.firstChild) listAncestor.parentNode.insertBefore(listAncestor.firstChild, listAncestor);
         listAncestor.remove();
@@ -1327,6 +1390,7 @@
       block.replaceWith(list);
       made = list;
     }
+    reselectBlock(made, wasCollapsed);
     onContentChange();
     return made;
   }
@@ -1489,6 +1553,63 @@
     });
   }
 
+  /* The task checkbox directly owned by `li`: a tight item holds the
+   * input as a child, a loose item (marked wraps its content in a <p>)
+   * inside that <p>. A checkbox in a NESTED list belongs to the nested
+   * item, so a descendant query would corrupt it. */
+  function taskCheckboxOf(li) {
+    if (!li) return null;
+    const p = Array.from(li.children).find((c) => c.tagName === "P");
+    if (p) return p.querySelector(':scope > input[type="checkbox"]');
+    return Array.from(li.children).find(
+      (c) => c.tagName === "INPUT" && c.type === "checkbox") || null;
+  }
+
+  /* Where a new checkbox for `li` belongs. A loose item wraps its content
+   * in a <p>; the checkbox must be a DIRECT <li> child or turndown's gfm
+   * taskListItems rule does not see it and the marker degrades to plain
+   * text. Unwrap the item's <p> so the item becomes the tight shape marked
+   * produces for a task list, then host the checkbox on the <li>. Only an
+   * item the user acts on is normalized; untouched loose items keep their
+   * bytes (a no-op save must not rewrite them). */
+  function taskCheckboxHost(li) {
+    const p = Array.from(li.children).find((c) => c.tagName === "P");
+    if (p) {
+      while (p.firstChild) li.insertBefore(p.firstChild, p);
+      p.remove();
+    }
+    return li;
+  }
+
+  /* Build a task-list item from a plain paragraph, or mark the list item
+   * the caret is already in, shared by the "- [ ] " and "[ ] " typing
+   * rules. The caret lands right after the checkbox, before the item's
+   * text, so continued typing fills the item. */
+  function taskItemRule(m, blockEl) {
+    let li = blockEl && blockEl.closest ? blockEl.closest("li") : null;
+    if (!li) {
+      const made = toggleList("ul");
+      li = made && made.querySelector("li");
+    }
+    if (!li) return;
+    li.classList.add("task-list-item");
+    if (!taskCheckboxOf(li)) {
+      const host = taskCheckboxHost(li);
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = m[1] !== " ";
+      host.insertBefore(cb, host.firstChild);
+    }
+    ensureListMarker(li);
+    const cb = taskCheckboxOf(li);
+    const sel = window.getSelection();
+    const r = document.createRange();
+    if (cb) { r.setStartAfter(cb); r.collapse(true); }
+    else { r.selectNodeContents(li); r.collapse(false); }
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
   const INPUT_RULES = [
     { re: /^(#{1,6}) $/, apply: (m) => {
       const made = wrapBlock("h" + m[1].length);
@@ -1541,21 +1662,15 @@
       const made = wrapBlock("blockquote");
       if (made) caretToStart(made);
     } },
-    { re: /^\[([ xX])\] $/, apply: (m) => {
-      // Task item: same DOM shape marked produces so turndown's gfm
-      // taskListItems rule round-trips it ([x]/[ ]).
-      const made = toggleList("ul");
-      const li = made && made.querySelector("li");
-      if (li) {
-        li.classList.add("task-list-item");
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = m[1] !== " ";
-        li.insertBefore(cb, li.firstChild);
-        ensureListMarker(li);
-        caretToStart(li);
-      }
-    } },
+    // "- [ ] " / "* [x] " / "+ [ ] " (and the bare "[ ] " form below):
+    // the bullet the user already typed is consumed so the item does not
+    // end up with both a marker and a checkbox. Same DOM shape marked
+    // produces, so turndown's gfm taskListItems rule round-trips it.
+    // `task` lets these run inside an existing <li> as well as a <p>.
+    { re: /^\u200B?[-*+] \[([ xX])\] $/, task: true,
+      apply: (m, blockEl) => taskItemRule(m, blockEl) },
+    { re: /^\u200B?\[([ xX])\] $/, task: true,
+      apply: (m, blockEl) => taskItemRule(m, blockEl) },
   ];
 
   /* One inline rule set: the pattern must end exactly at the caret and
@@ -1599,9 +1714,11 @@
     const ctx = caretContext();
     if (!ctx) return false;
     const { blockEl, range, sel } = ctx;
-    // Only plain paragraphs convert (never inside lists, headings,
-    // blockquotes, code blocks -- those are already formatted).
-    if (blockEl.tagName !== "P" && blockEl.tagName !== "DIV") return false;
+    // Plain paragraphs convert; a list item only when the typed trigger
+    // is a task marker (the "- " already made the item, so `[ ] ` is
+    // typed inside it). Headings/blockquotes/code are already formatted.
+    const inLi = blockEl.tagName === "LI";
+    if (blockEl.tagName !== "P" && blockEl.tagName !== "DIV" && !inLi) return false;
     // When the caret sits directly in the root container (an empty note
     // has no <p> yet -- the browser types straight into #viewer-content),
     // wrap the content in a <p> first so the block transforms below have
@@ -1642,6 +1759,9 @@
     // becomes the content of the new element.
     const before = textBeforeCaret(blockEl, range);
     for (const rule of INPUT_RULES) {
+      // Inside a list item only the task rules run; every other trigger
+      // is real content there, not formatting.
+      if (inLi && !rule.task) continue;
       const m = before.match(rule.re);
       if (!m) continue;
       deleteBlockPrefix(blockEl, m[0].length);
@@ -1655,7 +1775,7 @@
       r.collapse(false);   // end of the (now trigger-less) block
       sel.removeAllRanges();
       sel.addRange(r);
-      rule.apply(m);
+      rule.apply(m, blockEl);
       onContentChange();
       return true;
     }
@@ -2675,6 +2795,37 @@
       onContentChange();
       return;
     }
+    // Enter in a task item starts another task item (checkbox), not the
+    // browser's plain <li> bullet. Detection is the checkbox child, not
+    // the class: a note loaded from disk renders a bare <li> with a
+    // checkbox and no class. An EMPTY task item sheds its checkbox and
+    // class first, so the outdent below ends the list as a paragraph
+    // instead of carrying the checkbox into a plain item.
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const li = blockEl.closest("li");
+      const cb = taskCheckboxOf(li);
+      if (li && cb) {
+        if (li.textContent.replace(/\u200B/g, "").trim() === "") {
+          cb.remove();
+          li.classList.remove("task-list-item");
+        } else {
+          e.preventDefault();
+          const next = document.createElement("li");
+          next.className = "task-list-item";
+          const nextCb = document.createElement("input");
+          nextCb.type = "checkbox";
+          next.appendChild(nextCb);
+          li.after(next);
+          const r = document.createRange();
+          r.setStartAfter(nextCb);
+          r.collapse(true);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(r);
+          onContentChange();
+          return;
+        }
+      }
+    }
     // Empty list item -> outdent to a paragraph. Only on Enter (the
     // handler also runs for other keys, and outdenting on a plain
     // character would eat the first keystroke into an empty item).
@@ -2711,17 +2862,16 @@
    *
    * Interception is keyed on the act, not on "any [data-act]": editbar.js
    * owns its own bar-level listener and still needs the acts hybrid does
-   * NOT implement -- "more" opens the overflow menu, "task" applies its
-   * line prefix. Swallowing those (the old unconditional
-   * stopPropagation) meant the overflow menu never opened in WYSIWYG
-   * mode. The capture-phase listener below still runs FIRST for the
-   * handled acts, and only they are claimed; everything else falls
-   * through untouched. */
+   * NOT implement -- "more" opens the overflow menu. Swallowing those
+   * (the old unconditional stopPropagation) meant the overflow menu never
+   * opened in WYSIWYG mode. The capture-phase listener below still runs
+   * FIRST for the handled acts, and only they are claimed; everything
+   * else falls through untouched. */
   const EDIT_BAR_HYBRID_ACTS = [
     "bold", "italic", "strike", "code",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "quote", "link", "image",
-    "codeblock", "hr", "table",
+    "codeblock", "hr", "table", "task",
     "table-menu", "table-row-up", "table-row-down",
     "table-col-left-move", "table-col-right-move", "table-col-align",
     "table-row-above", "table-row-below", "table-row-delete",
@@ -2736,7 +2886,7 @@
     if (!btn) return;
     const act = btn.dataset.act;
     // Claim the event ONLY when the switch below will actually act on
-    // it, so editbar.js keeps the rest (task, more, ...).
+    // it, so editbar.js keeps the rest (more, ...).
     if (EDIT_BAR_HYBRID_ACTS.indexOf(act) === -1) return;
     e.stopPropagation();
     switch (act) {
@@ -2752,6 +2902,50 @@
       case "h6":     wrapBlock("h6"); break;
       case "ul":     toggleList("ul"); break;
       case "ol":     toggleList("ol"); break;
+      case "task": {
+        const sel = window.getSelection();
+        const taskSelCollapsed = !sel || !sel.rangeCount || sel.getRangeAt(0).collapsed;
+        let node = sel && sel.rangeCount
+          ? sel.getRangeAt(0).commonAncestorContainer : null;
+        if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+        if (node && insideProtectedBlock(node)) break;
+        let li = node && node.closest ? node.closest("li") : null;
+        if (!li) {
+          // No list item under the caret: a plain paragraph becomes one,
+          // and a whole-list selection targets its first item. Resolve
+          // both from the DOM, never through toggleList -- its ul->ul
+          // branch UNWRAPS the list (it is the toggle-off path), which
+          // turned a whole-list selection into dot paragraphs.
+          const list = node && node.closest && viewerContentEl.contains(node)
+            ? node.closest("ul,ol") : null;
+          if (list && viewerContentEl.contains(list)) {
+            li = list.querySelector("li");
+          } else {
+            const built = toggleList("ul");
+            // null: no block or a protected structure -- leave it.
+            if (!built) break;
+            li = built.querySelector("li");
+          }
+        }
+        if (!li || !viewerContentEl.contains(li)) break;
+        // Toggle: a task item toggles back to a plain bullet item, so a
+        // second press matches the toolbar's other toggles.
+        const owned = taskCheckboxOf(li);
+        if (owned) {
+          owned.remove();
+          li.classList.remove("task-list-item");
+        } else {
+          li.classList.add("task-list-item");
+          const host = taskCheckboxHost(li);
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          host.insertBefore(cb, host.firstChild);
+        }
+        ensureListMarker(li);
+        reselectBlock(li, taskSelCollapsed);
+        onContentChange();
+        break;
+      }
       case "quote":  wrapBlock("blockquote"); break;
       case "link": {
         const url = prompt("Link URL:", "https://");

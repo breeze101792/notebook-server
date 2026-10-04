@@ -463,17 +463,43 @@ AFTER   -   a\n    -   b\n
 
 ### 4.7 Task lists `- [ ]` / `- [x]`
 
-Rendered `<li class="task-list-item"><input type="checkbox">`; canonical output
-`-   [x]  done` (`turndown-plugin-gfm.browser.js:139-148`).
+marked v12 emits a bare `<li>` with no `task-list-item` class (a tight list
+puts the checkbox directly in the `<li>`; a loose list wraps it in a `<p>`).
+Turndown's gfm `taskListItems` rule detects the checkbox by `parentNode`
+being an `LI` (`turndown-plugin-gfm.browser.js`), so the DOM the editor
+builds must keep the checkbox a direct `<li>` child. Canonical output is
+`-   [x]  done`.
+
+The bullet is suppressed by CSS, not by the DOM. The selector is
+child-scoped, `li:has(> input[type="checkbox"], > p > input[type="checkbox"])`,
+so a plain item that merely contains a nested task list keeps its own
+bullet. The checkbox is sized to and centred on the bullet glyph's
+centre (`width: 1em; height: 1em; margin: 0 .53em 0 -1.53em`). The two
+margins sum to -1em, so the task text lines up with a plain item's text,
+and the -1.53em left pull centres the checkbox where `list-style: disc`
+draws the bullet, so toggling between a bullet and a checkbox does not
+move the leading glyph. A missing rule rendered both the marker and the
+checkbox and pushed the text one marker-width right
+(`static/css/style.css` markdown block; mirrored in the HTML export's
+embedded CSS in `static/js/export.js`).
+
+Task-item detection is the checkbox child, never the `task-list-item`
+class: a note loaded from disk renders a bare `<li>`. A checkbox-only
+item serializes as `-   [ ]` and is given a trailing space through
+`EMPTY_TASK_SENTINEL`, because `-   [ ]` without one is literal text to
+marked while `-   [ ] ` re-renders a checkbox.
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
-| ∅ | G (`[ ] `) | `` | task item, unchecked | ✅ `:1538`, tests `4390-4401` |
-| ∅ | G (`[x] `) | `` | task item, checked | ✅ |
+| ∅ | G (`- [ ] ` / `[ ] `) | `` | task item, unchecked | ✅ `taskItemRule`; tests `4390-4401` |
+| ∅ | G (`- [x] ` / `[x] `) | `` | task item, checked | ✅ |
 | — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md:79`; tests `5733-5742`, `7784-7806` |
+| — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds or removes the checkbox on the caret item | ✅ `case "task"` in `onEditBarClick`; a second press removes it; a whole-list selection targets the first item, never unwraps the list |
 | M | ⇧↵ | task item | `<p>` after whole list | ✅ test `4693-4708` |
+| — | ↵ | task item | new task item with a checkbox | ✅ `onEnterKey` task branch; also on a task loaded from disk |
+| — | ↵ on an empty task | empty checkbox item | `-` (checkbox and item dropped) | ✅ the checkbox is stripped, then the item outdents to a `<p>` |
 | — | D (empty the item) | `- [ ] task` | `-` (checkbox gone) | ✳ sentinel path: `isEmptyListItem` ignores `input` (`:286-289`), so an item holding a checkbox is **not** "empty" — deleting text leaves the checkbox and `[ ]`; verify |
-| — | save | — | `[x]`/`[ ]` preserved | ✅ test `6846-6855` |
+| — | save | — | `[x]`/`[ ]` preserved, empty task keeps a trailing space | ✅ tests `6846-6855` |
 
 ### 4.8 Blockquotes `>`
 

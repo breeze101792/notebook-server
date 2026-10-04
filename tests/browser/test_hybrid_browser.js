@@ -857,6 +857,338 @@ async function main() {
     check("real browser: no uncaught page errors after new-note case",
       pageErrors.length === 0, pageErrors.join(" | "));
 
+    // --- task lists: checkbox toggle + edit-bar Task button -----------
+    // The rendered checkbox must be interactive in hybrid mode (marked
+    // emits it disabled), and the edit-bar Task button must build and
+    // remove the task shape. The click and the CSS below only exist with
+    // a real editing engine and a real stylesheet, so this is real-browser
+    // only. The checkbox round-trip is asserted against the file bytes.
+    {
+      const TASK_SRC = "- [ ] task\n";
+      writeNote("notes/tasktoggle.md", TASK_SRC);
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/tasktoggle.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+
+      // Rendered (preview) state: marked emits a bare <li> with the
+      // checkbox as a direct child; style.css suppresses the bullet.
+      const renderState = await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content li");
+        const cb = li && li.querySelector('input[type="checkbox"]');
+        return {
+          cbDirect: !!(cb && cb.parentElement === li),
+          disabled: cb ? cb.disabled : null,
+          listStyle: li ? getComputedStyle(li).listStyleType : null,
+        };
+      });
+      check("real browser task: the rendered checkbox is a direct <li> child",
+        renderState.cbDirect, JSON.stringify(renderState));
+      check("real browser task: the rendered bullet is suppressed (list-style none)",
+        renderState.listStyle === "none", JSON.stringify(renderState));
+
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      const startChecked = await page.evaluate(
+        () => document.querySelector('#viewer-content input[type="checkbox"]').checked);
+      check("real browser task: checkbox starts unchecked", startChecked === false,
+        "checked=" + startChecked);
+
+      // Two real clicks flip the native `checked` both ways; jsdom cannot
+      // run the checkbox's own toggle.
+      await page.click('#viewer-content input[type="checkbox"]');
+      await page.waitForTimeout(80);
+      const afterFirst = await page.evaluate(
+        () => document.querySelector('#viewer-content input[type="checkbox"]').checked);
+      check("real browser task: first checkbox click checks it",
+        afterFirst === true, "checked=" + afterFirst);
+      await page.click('#viewer-content input[type="checkbox"]');
+      await page.waitForTimeout(80);
+      const afterSecond = await page.evaluate(
+        () => document.querySelector('#viewer-content input[type="checkbox"]').checked);
+      check("real browser task: a second checkbox click unchecks it",
+        afterSecond === false, "checked=" + afterSecond);
+
+      // One more click leaves it checked, then Save+Exit must write [x].
+      await page.click('#viewer-content input[type="checkbox"]');
+      await page.waitForTimeout(80);
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const savedChecked = readNote("notes/tasktoggle.md");
+      check("real browser task: a checked checkbox saves as '[x]'",
+        savedChecked.indexOf("[x]") !== -1 &&
+        savedChecked.indexOf("[ ]") === -1 && savedChecked.indexOf("task") !== -1,
+        JSON.stringify(savedChecked));
+      check("real browser task: no HTML tag reached the file",
+        !/<\/?[a-zA-Z][^>]*>/.test(savedChecked), JSON.stringify(savedChecked));
+
+      // Re-enter: the checkbox renders checked from the saved [x]; one
+      // click unchecks it and one Save+Exit must write [ ] back.
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      const rechecked = await page.evaluate(
+        () => document.querySelector('#viewer-content input[type="checkbox"]').checked);
+      check("real browser task: the re-rendered checkbox is checked",
+        rechecked === true, "checked=" + rechecked);
+      await page.click('#viewer-content input[type="checkbox"]');
+      await page.waitForTimeout(80);
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const savedUnchecked = readNote("notes/tasktoggle.md");
+      check("real browser task: an unchecked checkbox saves as '[ ]'",
+        savedUnchecked.indexOf("[ ]") !== -1 &&
+        savedUnchecked.indexOf("[x]") === -1,
+        JSON.stringify(savedUnchecked));
+    }
+
+    // The edit-bar Task button: first press builds the task item, a
+    // second press removes it (the toolbar toggle contract).
+    writeNote("notes/taskbutton.md", "hello\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskbutton.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await caretInBlock(page, "#viewer-content p", 0);
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(80);
+    {
+      const made = await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content li.task-list-item");
+        const cb = li && li.querySelector('input[type="checkbox"]');
+        return { li: !!li, cbDirect: !!(cb && cb.parentElement === li) };
+      });
+      check("real browser task button: a press builds a task item",
+        made.li && made.cbDirect, JSON.stringify(made));
+    }
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(80);
+    {
+      const gone = await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content ul li");
+        return {
+          li: !!li,
+          task: document.querySelectorAll("#viewer-content li.task-list-item").length,
+          cb: document.querySelectorAll('#viewer-content input[type="checkbox"]').length,
+        };
+      });
+      check("real browser task button: a second press removes the checkbox and class",
+        gone.li && gone.task === 0 && gone.cb === 0, JSON.stringify(gone));
+    }
+    await page.click("#close-edit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser task button: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
+    // --- reselectBlock: the selection survives a block transform ------
+    // wrapBlock/toggleList replace the selected node; without re-anchoring,
+    // the live range collapses to the editor root and a second toggle
+    // resolves to nothing. A real browser selection is the only way to
+    // observe this.
+    writeNote("notes/reselect.md", "alpha\n\nbeta\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/reselect.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+
+    const selectParagraph = (index) => page.evaluate((i) => {
+      const p = document.querySelectorAll("#viewer-content p")[i];
+      const r = document.createRange();
+      r.selectNodeContents(p);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    }, index);
+
+    await selectParagraph(0);
+    await page.click('#edit-bar [data-act="h1"]');
+    await page.waitForTimeout(80);
+    {
+      const s = await page.evaluate(() => {
+        const sel = window.getSelection();
+        const made = document.querySelector("#viewer-content h1");
+        return {
+          collapsed: sel.isCollapsed,
+          inside: !!(made && sel.rangeCount && made.contains(sel.anchorNode)),
+          h1: !!made,
+        };
+      });
+      check("real browser reselect: selection stays inside the new h1",
+        s.h1 && s.collapsed === false && s.inside === true, JSON.stringify(s));
+    }
+    await selectParagraph(0);
+    await page.click('#edit-bar [data-act="ul"]');
+    await page.waitForTimeout(80);
+    {
+      const s = await page.evaluate(() => {
+        const sel = window.getSelection();
+        const made = document.querySelector("#viewer-content ul");
+        return {
+          collapsed: sel.isCollapsed,
+          inside: !!(made && sel.rangeCount && made.contains(sel.anchorNode)),
+          ul: !!made,
+        };
+      });
+      check("real browser reselect: selection stays inside the new ul",
+        s.ul && s.collapsed === false && s.inside === true, JSON.stringify(s));
+    }
+    await page.click("#close-edit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser reselect: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
+    // --- task <-> bullet toggle: the leading text must stay "- " -------
+    // The user's report: toggling a list item between a checkbox and a
+    // plain bullet must not shift the item's text. The rendered marker
+    // (bullet) and the checkbox must occupy the same column, so the text
+    // after it stays at the same x. The fixture mixes a plain bullet, a
+    // task, and an ordered item, then toggles the task on/off and compares
+    // the text's left edge against the plain bullet's.
+    writeNote("notes/togglegeom.md",
+      "- plain a\n- [ ] task b\n- plain c\n\n1. one\n2. two\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/togglegeom.md"));
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.waitForTimeout(80);
+
+    // The text left edge of a list item's first rendered text node.
+    const textLeftX = (pageRef, contains) => pageRef.evaluate((needle) => {
+      const li = Array.from(document.querySelectorAll("#viewer-content li"))
+        .find((l) => l.textContent.replace(/\u200B/g, "").includes(needle));
+      if (!li) return null;
+      const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        if (n.nodeValue.replace(/\u200B/g, "").trim()) {
+          const r = document.createRange();
+          r.selectNodeContents(n);
+          return r.getBoundingClientRect().x;
+        }
+      }
+      return null;
+    }, contains);
+
+    const plainX = await textLeftX(page, "plain a");
+    const taskX = await textLeftX(page, "task b");
+    check("real browser task geom: plain bullet and task text align",
+      plainX !== null && taskX !== null && Math.abs(plainX - taskX) < 1.5,
+      "plain=" + plainX + " task=" + taskX);
+
+    // The leading glyph (bullet vs checkbox) must occupy the same column.
+    // A bullet is drawn centred ~0.8em left of the text; the checkbox
+    // must be centred on the same point, or the marker jumps sideways on
+    // every toggle. Measure the checkbox's box centre and compare it to a
+    // plain item's marker centre, which is the text left edge minus the
+    // bullet's offset from it.
+    const centerDelta = await page.evaluate(() => {
+      const lis = Array.from(document.querySelectorAll("#viewer-content li"));
+      const plain = lis.find((l) => l.textContent.replace(/\u200B/g, "").includes("plain a"));
+      const task = lis.find((l) => l.textContent.replace(/\u200B/g, "").includes("task b"));
+      const cb = task.querySelector(':scope > input, :scope > p > input');
+      if (!plain || !cb) return null;
+      const textX = (el) => {
+        const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = w.nextNode())) {
+          if (n.nodeValue.replace(/\u200B/g, "").trim()) {
+            const r = document.createRange();
+            r.selectNodeContents(n);
+            return r.getBoundingClientRect().x;
+          }
+        }
+        return null;
+      };
+      const cbBox = cb.getBoundingClientRect();
+      return {
+        cbCenter: (cbBox.x + cbBox.right) / 2,
+        plainTextX: textX(plain),
+        fontPx: parseFloat(getComputedStyle(plain).fontSize),
+      };
+    });
+    // A `disc` bullet is drawn with its centre ~0.86em left of the text
+    // edge. The checkbox must be centred on that same point, or the
+    // leading glyph jumps when toggling. Measured in em so the assertion
+    // survives the app's font-size scale.
+    const bulletOffsetEm = centerDelta
+      ? (centerDelta.plainTextX - centerDelta.cbCenter) / centerDelta.fontPx
+      : null;
+    check("real browser task geom: the checkbox is centred on the bullet column",
+      bulletOffsetEm !== null && bulletOffsetEm > 0.7 && bulletOffsetEm < 1.0,
+      "offsetEm=" + bulletOffsetEm);
+
+    // Toggle the task off, then on, asserting the text never moves.
+    const caretOnTask = () => page.evaluate(() => {
+      const li = Array.from(document.querySelectorAll("#viewer-content li"))
+        .find((l) => l.textContent.replace(/\u200B/g, "").includes("task b"));
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+    const textAfter = async () => page.evaluate((needle) => {
+      const li = Array.from(document.querySelectorAll("#viewer-content li"))
+        .find((l) => l.textContent.replace(/\u200B/g, "").includes(needle));
+      if (!li) return null;
+      const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        if (n.nodeValue.replace(/\u200B/g, "").trim()) {
+          const r = document.createRange();
+          r.selectNodeContents(n);
+          return r.getBoundingClientRect().x;
+        }
+      }
+      return null;
+    }, "task b");
+
+    await caretOnTask();
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(80);
+    const offX = await textAfter();
+    check("real browser task geom: toggling to a bullet keeps the text x",
+      offX !== null && Math.abs(offX - taskX) < 1.5,
+      "task=" + taskX + " off=" + offX);
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(80);
+    const onX = await textAfter();
+    check("real browser task geom: toggling back to a checkbox keeps the text x",
+      onX !== null && Math.abs(onX - taskX) < 1.5,
+      "task=" + taskX + " on=" + onX);
+
+    // The persisted bytes: the leading text is still the list marker form,
+    // never a bare checkbox with no marker or a doubled "- -".
+    await page.click("#save-exit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    await page.waitForTimeout(300);
+    const geomBytes = readNote("notes/togglegeom.md");
+    check("real browser task geom: saved task keeps its '- ' list marker",
+      /- +\[ \] +task b/.test(geomBytes) && !/\n\[ \]/.test(geomBytes),
+      JSON.stringify(geomBytes));
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.click("#close-edit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser task geom: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

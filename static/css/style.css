@@ -2542,6 +2542,28 @@ body[data-theme="light"] #viewer-content {
  * underline so they read as clickable, distinct from plain text. */
 .markdown-body a[data-wikilink] { text-decoration: underline; text-underline-offset: 2px; }
 .markdown-body ul, .markdown-body ol { padding-left: 1.6em; }
+/* Task-list items: the checkbox replaces the bullet. marked emits a bare
+ * <li> (no task-list-item class), so match on the checkbox child. A tight
+ * list puts the checkbox directly in the <li>; a loose one wraps it in a
+ * <p>. The selector is child-scoped so a plain item that merely CONTAINS
+ * a nested task list keeps its own bullet. The negative margin hangs the
+ * checkbox in the marker column, so the task text lines up with a plain
+ * list item's text instead of sitting one marker-width to the right. */
+.markdown-body li:has(> input[type="checkbox"], > p > input[type="checkbox"]) {
+  list-style: none;
+}
+.markdown-body li > input[type="checkbox"],
+.markdown-body li > p > input[type="checkbox"] {
+  width: 1em;
+  height: 1em;
+  /* Centre the 1em checkbox on the bullet glyph's centre (measured
+   * ~0.8em left of the text), matching `list-style: disc`. Without this
+   * the checkbox sits ~0.4em right of the bullet and the leading glyph
+   * jumps sideways when a task toggles to/from a plain bullet. The
+   * margins sum to -1em, so the text left edge does not move. */
+  margin: 0 .53em 0 -1.53em;
+  vertical-align: middle;
+}
 .markdown-body blockquote {
   border-left: 3px solid var(--accent);
   margin: .8em 0;
