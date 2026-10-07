@@ -4140,12 +4140,33 @@ function check(label, cond, extra) {
   }
   check("edit bar: every source list-type transition is defined",
     srcBad.length === 0, srcBad.join(", "));
-  // Quote.
+  // Quote: prefixes the line, toggles off, and composes with a list (a
+  // quoted list stays one quote + one list, matching hybrid).
   cmSetValue("said"); cmSetSel(0, 4);
-  window.document.querySelector('#edit-bar .eb[data-act="quote"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  clickSourceAct("quote");
   await tick(10);
   check("edit bar: quote prefixes line", cmGetValue() === "> said",
     "got: " + cmGetValue());
+  const quoteTransitions = [
+    ["> said", "quote", "said"],
+    ["- x",    "quote", "> - x"],
+    ["> - x",  "quote", "- x"],
+    // A quoted list pressed with UL drops the list and keeps the quote,
+    // matching hybrid (a list inside a blockquote).
+    ["> - x",  "ul",    "> x"],
+  ];
+  let qSrcBad = [];
+  for (const [src, act, expect] of quoteTransitions) {
+    cmSetValue(src); cmSetSel(0, src.length);
+    clickSourceAct(act);
+    await tick(10);
+    if (cmGetValue() !== expect) {
+      qSrcBad.push(src + "+" + act + "=" + JSON.stringify(cmGetValue()) +
+        "(want " + JSON.stringify(expect) + ")");
+    }
+  }
+  check("edit bar: every source quote transition is defined",
+    qSrcBad.length === 0, qSrcBad.join(", "));
   // Code block: with selection wraps in ```.
   cmSetValue("print(1)"); cmSetSel(0, 8);
   window.document.querySelector('#edit-bar .eb[data-act="codeblock"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -8702,6 +8723,37 @@ function check(label, cond, extra) {
       }
       check("hybrid edit bar: every list-type transition is defined",
         matrixBad.length === 0, matrixBad.join(", "));
+
+      // Quote composes with the list model: the Quote button wraps the
+      // caret's whole top-level block, so a list under the caret is quoted
+      // whole ("- a" -> "> - a", never a <blockquote> nested inside a
+      // <ul>), and pressing Quote again lifts it back out.
+      const topTag = () => (vcT.firstElementChild || {}).tagName;
+      const qCases = [
+        // [html, expect: "blockquote" or the inner tag, inner first tag]
+        ["<p>x</p>", "BLOCKQUOTE", "P"],
+        ["<ul><li>x</li></ul>", "BLOCKQUOTE", "UL"],
+        ["<ol><li>x</li></ol>", "BLOCKQUOTE", "OL"],
+        ["<blockquote><p>x</p></blockquote>", "P", null],
+      ];
+      let qBad = [];
+      for (const [html, expectTop, expectInner] of qCases) {
+        vcT.innerHTML = html;
+        const caretEl = vcT.querySelector("p,li");
+        caretIn(caretEl.firstChild, 1);
+        clickAct("quote");
+        await tick(20);
+        const got = topTag();
+        const inner = vcT.firstElementChild &&
+          vcT.firstElementChild.firstElementChild &&
+          vcT.firstElementChild.firstElementChild.tagName;
+        if (got !== expectTop || (expectInner && inner !== expectInner)) {
+          qBad.push(html + "=>" + got + "/" + inner +
+            "(want " + expectTop + "/" + expectInner + ")");
+        }
+      }
+      check("hybrid edit bar: Quote wraps the top-level block and toggles off",
+        qBad.length === 0, qBad.join(", "));
 
       // Refused inside a table cell and inside a code fence
       // (insideProtectedBlock), like the H2 block guard above.

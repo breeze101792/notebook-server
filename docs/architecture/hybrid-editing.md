@@ -532,6 +532,19 @@ button on a bullet produced `- [ ] - item`). The matrix is pinned by the
 "every list-type transition is defined" checks in `tests/dom/test_dom.js`
 (hybrid and source) and the "list model" browser block.
 
+**Quote composes with the list model.** The Quote button follows the same
+toggle contract on the caret's whole **top-level block**: `toggleQuote`
+(`hybrid.js`) wraps it in a `<blockquote>` (a list under the caret quotes
+whole, `- a` → `> - a`, matching a `> ` prefix in source mode) and pressing
+Quote again lifts it back out. A `<blockquote>` is therefore never nested
+inside a `<ul>`, and a `<p>` is never nested in a `<p>` — the old
+`wrapBlock("blockquote")` produced both (`<ul><blockquote>…` and the
+`<p><p>` on a second press). Source mode's `quoteAction` mirrors it by
+prefixing/stripping `> ` on the touched block, and its list model preserves
+that prefix, so the two modes agree on `> - item`. Pinned by the "Quote wraps
+the top-level block" check (`tests/dom/test_dom.js`) and the `quote(...)`
+cases in the browser list-model block.
+
 ### 4.8 Blockquotes `>`
 
 Rendered `<blockquote>` (often containing `<p>`); canonical output `> q`

@@ -98,9 +98,14 @@
    * every list line is set to the pressed type. Blank lines are left
    * alone.
    *
+   * A leading "> " quote prefix is preserved, so a quoted list keeps its
+   * quote (in hybrid a quoted list is a list inside a blockquote; the
+   * two modes agree).
+   *
    *   kind: "bullet" | "number" | "task" */
-  const LIST_LINE_RE = /^(\s*)([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/;
+  const LIST_LINE_RE = /^(\s*)(?:>\s+)?([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/;
   const BLANK_LINE_RE = /^\s*$/;
+  const QUOTE_PREFIX_RE = /^(\s*>\s+)/;
 
   function parseListLine(line) {
     const m = LIST_LINE_RE.exec(line);
@@ -111,6 +116,7 @@
       number: /^\d/.test(m[2]),
       checkbox: m[3] !== undefined,
       text: m[4],
+      quote: QUOTE_PREFIX_RE.test(line),
     };
   }
 
@@ -125,21 +131,38 @@
   }
 
   /* Give a line the pressed type. The caller has already handled the
-   * toggle-off case, so a line that already matches is left alone. */
+   * toggle-off case, so a line that already matches is left alone. A
+   * leading quote prefix is preserved. */
   function setListLine(line, kind) {
     if (BLANK_LINE_RE.test(line)) return line;
+    const q = QUOTE_PREFIX_RE.test(line) ? "> " : "";
     const p = parseListLine(line);
     if (!p) {
       // Not a list line: give it the pressed type.
-      if (kind === "task") return line.replace(/^(\s*)/, "$1- [ ] ");
-      return (kind === "number" ? "1. " : "- ") + line;
+      if (kind === "task") return line.replace(/^(\s*>?\s*)/, "$1- [ ] ");
+      return q + (kind === "number" ? "1. " : "- ") + line;
     }
     if (kind === "task") {
       const marker = p.number ? p.marker : "-";
-      return p.indent + marker + " [ ] " + p.text;
+      return q + marker + " [ ] " + p.text;
     }
-    if (kind === "number") return p.indent + "1. " + p.text;
-    return p.indent + "- " + p.text;
+    if (kind === "number") return q + "1. " + p.text;
+    return q + "- " + p.text;
+  }
+
+  /* The source-mode Quote button: "> " prefix on every touched line, or
+   * strip it when the whole touched block is already quoted. This keeps a
+   * quoted list as "> - item" (one quote, one list) and un-quotes it back
+   * to "- item", matching hybrid's blockquote toggle. */
+  function quoteAction() {
+    replaceLines(lines => {
+      const touched = lines.filter(l => !BLANK_LINE_RE.test(l));
+      const allQuoted = touched.length > 0 &&
+        touched.every(l => QUOTE_PREFIX_RE.test(l));
+      if (allQuoted) return lines.map(l => l.replace(QUOTE_PREFIX_RE, ""));
+      return lines.map(l =>
+        BLANK_LINE_RE.test(l) || QUOTE_PREFIX_RE.test(l) ? l : "> " + l);
+    });
   }
 
   function listAction(kind) {
@@ -151,7 +174,7 @@
         touched.every(l => isListKind(parseListLine(l), kind));
       return lines.map(l => {
         const p = parseListLine(l);
-        if (allMatch) return p ? p.text : l;
+        if (allMatch) return p ? (p.quote ? "> " : "") + p.text : l;
         // In a mixed block, a line that already has the type keeps it;
         // only the others are set.
         if (isListKind(p, kind)) return l;
@@ -183,7 +206,7 @@
     ul:    () => listAction("bullet"),
     ol:    () => listAction("number"),
     task:  () => listAction("task"),
-    quote: () => lineAction("> ",     /^>\s/),
+    quote: () => quoteAction(),
 
     /* Inline link: ask the user for the URL, then wrap. */
     link() {

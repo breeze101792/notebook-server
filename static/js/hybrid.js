@@ -1432,15 +1432,74 @@
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
     if (insideProtectedBlock(block)) return null;
     while (block && block !== viewerContentEl) {
-      if (/^(P|UL|OL|LI|DIV)$/.test(block.tagName)) break;
+      if (/^(P|UL|OL|LI|BLOCKQUOTE|DIV)$/.test(block.tagName)) break;
       block = block.parentElement;
     }
     if (!block || block === viewerContentEl) return null;
+    // A blockquote is a container, not editable content: when the
+    // selection's common ancestor is the quote itself (a whole-quote
+    // drag), act on its first content block so the list buttons wrap that
+    // rather than nesting a list around the quote.
+    if (block.tagName === "BLOCKQUOTE") {
+      const inner = block.querySelector("p,ul,ol,h1,h2,h3,h4,h5,h6,pre,table");
+      if (inner) block = inner;
+    }
     // A whole-list selection has no <li> ancestor, so it targets the
     // list's first item rather than unwrapping the list on a mere drag.
     let li = block.closest("li");
     if (!li && /^(UL|OL)$/.test(block.tagName)) li = block.querySelector("li");
     return { li, block, wasCollapsed: sel.getRangeAt(0).collapsed };
+  }
+
+  /* The top-level block that contains `block` -- a direct child of
+   * #viewer-content (a paragraph, heading, list, table, ...). Returns
+   * null when `block` is not inside one. Quote is a block-level
+   * container, so it wraps this, never a sub-block. */
+  function topLevelBlock(block) {
+    let el = block;
+    while (el && el.parentElement && el.parentElement !== viewerContentEl) {
+      el = el.parentElement;
+    }
+    return el && el.parentElement === viewerContentEl ? el : null;
+  }
+
+  /* The Quote toolbar button: wrap the caret's top-level block in a
+   * <blockquote>, or -- when it already sits in one -- lift it back out.
+   * This is the same toggle contract as the list buttons (press the act
+   * the block already has to remove it), applied to the whole block: a
+   * list under the caret is quoted whole, matching a "> " prefix in
+   * source mode, and a <blockquote> is never nested inside another (which
+   * is what produced the old "<ul><blockquote>" and "<p><p>" shapes). */
+  function toggleQuote() {
+    const ctx = caretListItem();
+    if (!ctx) return null;
+    let bq = ctx.block.closest ? ctx.block.closest("blockquote") : null;
+    if (bq) {
+      // Use the outermost quote, so a nested one is lifted as a unit.
+      while (bq.parentElement && bq.parentElement.tagName === "BLOCKQUOTE") {
+        bq = bq.parentElement;
+      }
+      const parent = bq.parentNode;
+      const moved = [];
+      while (bq.firstChild) {
+        moved.push(bq.firstChild);
+        parent.insertBefore(bq.firstChild, bq);
+      }
+      bq.remove();
+      const made = moved.find((n) => n.nodeType === 1 && n.contains(ctx.block)) ||
+        moved.find((n) => n.nodeType === 1) || parent;
+      reselectBlock(made, ctx.wasCollapsed);
+      onContentChange();
+      return made;
+    }
+    const top = topLevelBlock(ctx.block);
+    if (!top) return null;
+    const wrapper = document.createElement("blockquote");
+    top.parentNode.insertBefore(wrapper, top);
+    wrapper.appendChild(top);
+    reselectBlock(wrapper, ctx.wasCollapsed);
+    onContentChange();
+    return wrapper;
   }
 
   /* The UL / OL toolbar buttons and context-menu items: set the caret
@@ -3059,7 +3118,7 @@
       case "ul":     toggleList("ul"); break;
       case "ol":     toggleList("ol"); break;
       case "task":   toggleTask(); break;
-      case "quote":  wrapBlock("blockquote"); break;
+      case "quote":  toggleQuote(); break;
       case "link": {
         const url = prompt("Link URL:", "https://");
         if (url) execCommand("createLink", url);
@@ -4722,7 +4781,7 @@
       addSubItem(fly, "Bulleted list", () => toggleList("ul"));
       addSubItem(fly, "Numbered list", () => toggleList("ol"));
       addSubItem(fly, "Task list", () => toggleTask());
-      addSubItem(fly, "Quote", () => wrapBlock("blockquote"));
+      addSubItem(fly, "Quote", () => toggleQuote());
     });
 
     // Table submenu -- only shown when the click is inside a table.

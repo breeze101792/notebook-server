@@ -1266,15 +1266,21 @@ async function main() {
     // removes it from the list; a different type converts it and drops any
     // checkbox. Verified in the DOM and after a save+re-render round
     // trip, so the persisted bytes match the live shape.
-    const listShape = () => page.evaluate(() =>
-      Array.from(document.querySelectorAll("#viewer-content > *"))
+    const listShape = () => page.evaluate(() => {
+      const shape = (el) => {
+        if (el.tagName === "P") return "p";
+        if (el.tagName === "BLOCKQUOTE") {
+          return "quote(" + Array.from(el.children).map(shape).join(",") + ")";
+        }
+        const cb = el.querySelector('input[type="checkbox"]');
+        return el.tagName.toLowerCase() + (cb ? "+task" : "");
+      };
+      return Array.from(document.querySelectorAll("#viewer-content > *"))
         .filter((el) => el.tagName === "UL" || el.tagName === "OL" ||
+          el.tagName === "BLOCKQUOTE" ||
           (el.tagName === "P" && el.textContent.trim()))
-        .map((el) => {
-          if (el.tagName === "P") return "p";
-          const cb = el.querySelector('input[type="checkbox"]');
-          return el.tagName.toLowerCase() + (cb ? "+task" : "");
-        }).join(","));
+        .map(shape).join(",");
+    });
     const caretFirstItem = () => page.evaluate(() => {
       const el = document.querySelector("#viewer-content li, #viewer-content p");
       const r = document.createRange();
@@ -1307,6 +1313,13 @@ async function main() {
       ["notes/lm10.md", "- [ ] a\n",     "ul",   "ul"],
       ["notes/lm11.md", "- [ ] a\n",     "ol",   "ol"],
       ["notes/lm12.md", "- [ ] a\n",     "task", "p"],
+      // Quote wraps the top-level block: a paragraph or a whole list,
+      // never a blockquote nested inside a list.
+      ["notes/q1.md", "a\n",             "quote", "quote(p)"],
+      ["notes/q2.md", "- a\n",           "quote", "quote(ul)"],
+      ["notes/q3.md", "1. a\n",          "quote", "quote(ol)"],
+      ["notes/q4.md", "- [ ] a\n",       "quote", "quote(ul+task)"],
+      ["notes/q5.md", "> a\n",           "quote", "p"],
     ];
     let modelBad = [];
     for (const [file, src, act, expect] of LIST_MODEL) {
@@ -1324,7 +1337,7 @@ async function main() {
       const again = await listShape();
       if (again !== expect) modelBad.push("bytes " + src + "+" + act + "=" + again);
     }
-    check("real browser list model: every dot/number/checkbox transition is defined",
+    check("real browser list model: every dot/number/checkbox/quote transition is defined",
       modelBad.length === 0, modelBad.join(" | "));
 
     // A mid-list item splits the list and the neighbours keep their bytes.
