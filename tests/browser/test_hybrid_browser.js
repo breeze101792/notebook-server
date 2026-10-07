@@ -1020,16 +1020,23 @@ async function main() {
     await page.click('#edit-bar [data-act="task"]');
     await page.waitForTimeout(80);
     {
+      // The second press returns the item to a plain PARAGRAPH, not a
+      // bullet: source mode's Task button strips the whole "- [ ] "
+      // marker, so the WYSIWYG toggle must end outside the list too.
       const gone = await page.evaluate(() => {
-        const li = document.querySelector("#viewer-content ul li");
+        const vc = document.getElementById("viewer-content");
+        const p = vc.querySelector("p");
         return {
-          li: !!li,
-          task: document.querySelectorAll("#viewer-content li.task-list-item").length,
-          cb: document.querySelectorAll('#viewer-content input[type="checkbox"]').length,
+          ul: vc.querySelectorAll("ul").length,
+          p: !!p && !p.closest("li"),
+          text: p && p.textContent,
+          task: vc.querySelectorAll("li.task-list-item").length,
+          cb: vc.querySelectorAll('input[type="checkbox"]').length,
         };
       });
-      check("real browser task button: a second press removes the checkbox and class",
-        gone.li && gone.task === 0 && gone.cb === 0, JSON.stringify(gone));
+      check("real browser task button: a second press returns the item to a paragraph",
+        gone.ul === 0 && gone.p && gone.text === "hello" &&
+        gone.task === 0 && gone.cb === 0, JSON.stringify(gone));
     }
     await page.click("#close-edit-btn");
     await page.waitForFunction(
@@ -1179,7 +1186,9 @@ async function main() {
       bulletOffsetEm !== null && bulletOffsetEm > 0.7 && bulletOffsetEm < 1.0,
       "offsetEm=" + bulletOffsetEm);
 
-    // Toggle the task off, then on, asserting the text never moves.
+    // Toggle the task off, then on. The off state is a plain paragraph
+    // (the list is ended), matching source mode; toggling back on
+    // restores the task item with its text at the same x.
     const caretOnTask = () => page.evaluate(() => {
       const li = Array.from(document.querySelectorAll("#viewer-content li"))
         .find((l) => l.textContent.replace(/\u200B/g, "").includes("task b"));
@@ -1209,10 +1218,22 @@ async function main() {
     await caretOnTask();
     await page.click('#edit-bar [data-act="task"]');
     await page.waitForTimeout(80);
-    const offX = await textAfter();
-    check("real browser task geom: toggling to a bullet keeps the text x",
-      offX !== null && Math.abs(offX - taskX) < 1.5,
-      "task=" + taskX + " off=" + offX);
+    {
+      // The item leaves the list as a plain paragraph. It sits mid-list,
+      // so the list splits around it and the neighbours keep their text.
+      const offShape = await page.evaluate(() => {
+        const vc = document.getElementById("viewer-content");
+        const p = Array.from(vc.querySelectorAll("p"))
+          .find((el) => el.textContent.includes("task b"));
+        const inLi = Array.from(vc.querySelectorAll("li"))
+          .some((li) => li.textContent.includes("task b"));
+        const kept = ["plain a", "plain c"].every((t) =>
+          Array.from(vc.querySelectorAll("li")).some((li) => li.textContent.includes(t)));
+        return { p: !!p, inLi: inLi, kept: kept };
+      });
+      check("real browser task geom: toggling off makes the item a paragraph",
+        offShape.p && !offShape.inLi && offShape.kept, JSON.stringify(offShape));
+    }
     await page.click('#edit-bar [data-act="task"]');
     await page.waitForTimeout(80);
     const onX = await textAfter();
@@ -1239,6 +1260,96 @@ async function main() {
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     check("real browser task geom: no uncaught page errors",
       pageErrors.length === 0, pageErrors.join(" | "));
+
+    // --- list-type model: dot / number / checkbox transitions ---------
+    // Each list button sets the caret ITEM's type; pressing its own type
+    // removes it from the list; a different type converts it and drops any
+    // checkbox. Verified in the DOM and after a save+re-render round
+    // trip, so the persisted bytes match the live shape.
+    const listShape = () => page.evaluate(() =>
+      Array.from(document.querySelectorAll("#viewer-content > *"))
+        .filter((el) => el.tagName === "UL" || el.tagName === "OL" ||
+          (el.tagName === "P" && el.textContent.trim()))
+        .map((el) => {
+          if (el.tagName === "P") return "p";
+          const cb = el.querySelector('input[type="checkbox"]');
+          return el.tagName.toLowerCase() + (cb ? "+task" : "");
+        }).join(","));
+    const caretFirstItem = () => page.evaluate(() => {
+      const el = document.querySelector("#viewer-content li, #viewer-content p");
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+    const openNote = async (file, src) => {
+      writeNote(file, src);
+      await page.goto(BASE + "/?file=" + encodeURIComponent(file));
+      await page.waitForSelector("#viewer-content li, #viewer-content p", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.waitForTimeout(80);
+    };
+    const LIST_MODEL = [
+      ["notes/lm1.md", "a\n",            "ul",   "ul"],
+      ["notes/lm2.md", "a\n",            "ol",   "ol"],
+      ["notes/lm3.md", "a\n",            "task", "ul+task"],
+      ["notes/lm4.md", "- a\n",          "ul",   "p"],
+      ["notes/lm5.md", "- a\n",          "ol",   "ol"],
+      ["notes/lm6.md", "- a\n",          "task", "ul+task"],
+      ["notes/lm7.md", "1. a\n",         "ul",   "ul"],
+      ["notes/lm8.md", "1. a\n",         "ol",   "p"],
+      ["notes/lm9.md", "1. a\n",         "task", "ol+task"],
+      ["notes/lm10.md", "- [ ] a\n",     "ul",   "ul"],
+      ["notes/lm11.md", "- [ ] a\n",     "ol",   "ol"],
+      ["notes/lm12.md", "- [ ] a\n",     "task", "p"],
+    ];
+    let modelBad = [];
+    for (const [file, src, act, expect] of LIST_MODEL) {
+      await openNote(file, src);
+      await caretFirstItem();
+      await page.click('#edit-bar [data-act="' + act + '"]');
+      await page.waitForTimeout(100);
+      const dom = await listShape();
+      if (dom !== expect) modelBad.push(src + "+" + act + "=" + dom);
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      // Re-render the saved bytes and confirm the shape round-trips.
+      await page.waitForSelector("#viewer-content li, #viewer-content p", { timeout: 15000 });
+      const again = await listShape();
+      if (again !== expect) modelBad.push("bytes " + src + "+" + act + "=" + again);
+    }
+    check("real browser list model: every dot/number/checkbox transition is defined",
+      modelBad.length === 0, modelBad.join(" | "));
+
+    // A mid-list item splits the list and the neighbours keep their bytes.
+    await openNote("notes/lmsplit.md", "- a\n- b\n- c\n");
+    await page.evaluate(() => {
+      const li = Array.from(document.querySelectorAll("#viewer-content li"))
+        .find((n) => n.textContent.includes("b"));
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    });
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(100);
+    check("real browser list model: a mid-list item becomes a task in place",
+      (await listShape()) === "ul+task", "got=" + (await listShape()));
+    await page.click("#save-exit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    check("real browser list model: the neighbours survive the save",
+      readNote("notes/lmsplit.md") === "-   a\n-   [ ] b\n-   c\n",
+      JSON.stringify(readNote("notes/lmsplit.md")));
 
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {

@@ -4110,6 +4110,36 @@ function check(label, cond, extra) {
   await tick(10);
   check("edit bar: task prefixes line", cmGetValue() === "- [ ] todo",
     "got: " + cmGetValue());
+  // The defined list-type model, mirroring hybrid: the button sets the
+  // caret line's type; pressing its own type removes the marker; a
+  // different type converts it and drops any checkbox.
+  const clickSourceAct = (act) => window.document
+    .querySelector('#edit-bar .eb[data-act="' + act + '"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  const sourceTransitions = [
+    ["- x",  "ul",   "x"],
+    ["- x",  "ol",   "1. x"],
+    ["- x",  "task", "- [ ] x"],
+    ["1. x", "ul",   "- x"],
+    ["1. x", "ol",   "x"],
+    ["1. x", "task", "1. [ ] x"],
+    ["- [ ] x", "ul",   "- x"],
+    ["- [ ] x", "ol",   "1. x"],
+    ["- [ ] x", "task", "x"],
+    ["x",    "task", "- [ ] x"],
+  ];
+  let srcBad = [];
+  for (const [src, act, expect] of sourceTransitions) {
+    cmSetValue(src); cmSetSel(0, src.length);
+    clickSourceAct(act);
+    await tick(10);
+    if (cmGetValue() !== expect) {
+      srcBad.push(src + "+" + act + "=" + JSON.stringify(cmGetValue()) +
+        "(want " + JSON.stringify(expect) + ")");
+    }
+  }
+  check("edit bar: every source list-type transition is defined",
+    srcBad.length === 0, srcBad.join(", "));
   // Quote.
   cmSetValue("said"); cmSetSel(0, 4);
   window.document.querySelector('#edit-bar .eb[data-act="quote"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -8564,11 +8594,14 @@ function check(label, cond, extra) {
         "li=" + (taskLi && taskLi.outerHTML));
       clickAct("task");
       await tick(20);
-      const backLi = vcT.querySelector("ul li");
-      check("hybrid edit bar: a second Task press removes the checkbox and class",
-        backLi !== null && !backLi.classList.contains("task-list-item") &&
-        !backLi.querySelector('input[type="checkbox"]') && backLi.textContent === "hello",
-        "li=" + (backLi && backLi.outerHTML));
+      // A second press ends the list: the item becomes a plain paragraph,
+      // matching source mode's "- [ ] " strip, not a bare-bullet <li>.
+      const backP = vcT.querySelector("p");
+      check("hybrid edit bar: a second Task press returns the item to a paragraph",
+        backP !== null && !backP.closest("li") && backP.textContent === "hello" &&
+        vcT.querySelectorAll("ul").length === 0 &&
+        vcT.querySelectorAll('input[type="checkbox"]').length === 0,
+        "p=" + (backP && backP.outerHTML));
 
       // Ordered list: only the item under the caret becomes a task.
       vcT.innerHTML = "";
@@ -8609,6 +8642,66 @@ function check(label, cond, extra) {
         afterUlTask !== null &&
         afterUlTask.querySelector('input[type="checkbox"]') !== null,
         "vc=" + vcT.innerHTML);
+
+      // The defined list-type model (Word / Google Docs convention): each
+      // list button sets the caret ITEM's type; pressing the item's own
+      // type removes it from the list; a different type converts it (a
+      // checkbox only survives on a task item). Pin every transition.
+      const shapeOf = () => {
+        const li = vcT.querySelector("li");
+        const p = vcT.querySelector("p");
+        if (li) {
+          const cb = li.querySelector('input[type="checkbox"]');
+          const listTag = li.closest("ul,ol").tagName.toLowerCase();
+          return (cb ? "task:" : listTag + ":") +
+            (cb && cb.checked ? "checked" : "unchecked");
+        }
+        return p ? "p" : "none";
+      };
+      const TRANSITIONS = [
+        ["p",        "ul",   "ul:unchecked"],
+        ["p",        "ol",   "ol:unchecked"],
+        ["p",        "task", "task:unchecked"],
+        ["ul:x",     "ul",   "p"],
+        ["ul:x",     "ol",   "ol:unchecked"],
+        ["ul:x",     "task", "task:unchecked"],
+        ["ol:x",     "ul",   "ul:unchecked"],
+        ["ol:x",     "ol",   "p"],
+        ["ol:x",     "task", "task:unchecked"],
+        ["task:x",   "ul",   "ul:unchecked"],
+        ["task:x",   "ol",   "ol:unchecked"],
+        ["task:x",   "task", "p"],
+      ];
+      let matrixBad = [];
+      for (const [src, act, expect] of TRANSITIONS) {
+        vcT.innerHTML = "";
+        if (src === "p") {
+          const p = window.document.createElement("p");
+          p.textContent = "x";
+          vcT.appendChild(p);
+          caretIn(p.firstChild, 1);
+        } else {
+          const listTag = src.startsWith("ol") ? "ol" : "ul";
+          const list = window.document.createElement(listTag);
+          const li = window.document.createElement("li");
+          if (src.startsWith("task")) {
+            const cb = window.document.createElement("input");
+            cb.type = "checkbox";
+            li.appendChild(cb);
+          }
+          const textNode = window.document.createTextNode("x");
+          li.appendChild(textNode);
+          list.appendChild(li);
+          vcT.appendChild(list);
+          caretIn(textNode, 1);
+        }
+        clickAct(act);
+        await tick(20);
+        const got = shapeOf();
+        if (got !== expect) matrixBad.push(src + "+" + act + "=" + got + "(want " + expect + ")");
+      }
+      check("hybrid edit bar: every list-type transition is defined",
+        matrixBad.length === 0, matrixBad.join(", "));
 
       // Refused inside a table cell and inside a code fence
       // (insideProtectedBlock), like the H2 block guard above.

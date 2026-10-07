@@ -1341,58 +1341,191 @@
     return made;
   }
 
-  /* Toggle a list type on the current block. Creates a <ul>/<ol> if
-   * the block isn't already a list, or converts between ul/ol. Returns
-   * the list element created/toggled (null when nothing changed). */
-  function toggleList(tag) {
+  /* Split the item `li` out of its list into a new list of `tag`,
+   * keeping the other items in order on either side. The item node is
+   * reused, so the caret keeps pointing into it. Returns the new list. */
+  function retagListItem(li, tag) {
+    const list = li.parentNode;
+    const items = Array.from(list.children);
+    const at = items.indexOf(li);
+    const before = items.slice(0, at);
+    const after = items.slice(at + 1);
+    const parent = list.parentNode;
+    const newList = document.createElement(tag);
+    newList.appendChild(li);
+    const seq = [];
+    if (before.length) {
+      const b = document.createElement(list.tagName);
+      before.forEach((x) => b.appendChild(x));
+      seq.push(b);
+    }
+    seq.push(newList);
+    if (after.length) {
+      const a = document.createElement(list.tagName);
+      after.forEach((x) => a.appendChild(x));
+      seq.push(a);
+    }
+    seq.forEach((n) => parent.insertBefore(n, list));
+    list.remove();
+    return newList;
+  }
+
+  /* Set the type of ONE list item, the shared model behind the UL / OL /
+   * Task buttons and the context menu. This matches Word and Google Docs,
+   * where a list button acts on the paragraph the caret is in:
+   *
+   *   - kind "bullet"/"number": give the item that list type. If it
+   *     already has exactly that type (no checkbox), take the item OUT of
+   *     the list as a plain paragraph instead -- the toolbar toggle.
+   *   - kind "task": give the item a checkbox. If it already has one,
+   *     take the item OUT of the list as a plain paragraph.
+   *
+   * A bullet/number item never keeps a checkbox once its type is set
+   * (a checkbox is meaningful only on a task item), and an item that
+   * switches between ul and ol is split into its own list so its
+   * neighbours keep their bytes. Returns the node the caret should land
+   * on (the <li>, or the <p> after a toggle-off), or null. */
+  function setListItemType(li, kind) {
+    if (!li) return null;
+    const list = li.parentNode;
+    if (!list || !/^(UL|OL)$/.test(list.tagName)) return null;
+    const cb = taskCheckboxOf(li);
+    if (kind === "task") {
+      if (cb) {
+        cb.remove();
+        li.classList.remove("task-list-item");
+        return listItemToParagraph(li);
+      }
+      li.classList.add("task-list-item");
+      const host = taskCheckboxHost(li);
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      host.insertBefore(box, host.firstChild);
+      ensureListMarker(li);
+      return li;
+    }
+    const wantTag = kind === "number" ? "OL" : "UL";
+    if (list.tagName === wantTag && !cb) {
+      // Already exactly this type: toggle the item off the list.
+      return listItemToParagraph(li);
+    }
+    if (cb) {
+      cb.remove();
+      li.classList.remove("task-list-item");
+    }
+    if (list.tagName !== wantTag) return retagListItem(li, wantTag);
+    ensureListMarker(li);
+    return li;
+  }
+
+  /* Resolve the list item the caret (or selection) sits in, plus the
+   * block it resolved through and whether the selection was collapsed.
+   * A whole-list selection has no <li> ancestor, so it targets the
+   * list's first item -- the same rule the Task button has always used,
+   * never unwrapping the list on a mere drag. Returns null when the
+   * selection is outside #viewer-content, in a protected block, or too
+   * shallow to act on. */
+  function caretListItem() {
     const sel = window.getSelection();
     if (!sel.rangeCount) return null;
     let block = sel.getRangeAt(0).commonAncestorContainer;
     if (block.nodeType === Node.TEXT_NODE) block = block.parentElement;
-    // Never wrap a table cell or a fenced code block's content into a
-    // list -- the same data-loss shape wrapBlock guards against.
     if (insideProtectedBlock(block)) return null;
     while (block && block !== viewerContentEl) {
       if (/^(P|UL|OL|LI|DIV)$/.test(block.tagName)) break;
       block = block.parentElement;
     }
     if (!block || block === viewerContentEl) return null;
-    const wasCollapsed = sel.getRangeAt(0).collapsed;
+    // A whole-list selection has no <li> ancestor, so it targets the
+    // list's first item rather than unwrapping the list on a mere drag.
+    let li = block.closest("li");
+    if (!li && /^(UL|OL)$/.test(block.tagName)) li = block.querySelector("li");
+    return { li, block, wasCollapsed: sel.getRangeAt(0).collapsed };
+  }
+
+  /* The UL / OL toolbar buttons and context-menu items: set the caret
+   * item's list type, or wrap a paragraph in a fresh list. */
+  function toggleList(tag) {
+    const ctx = caretListItem();
+    if (!ctx) return null;
     let made = null;
-    // Find the nearest list ancestor.
-    let listAncestor = block.closest("ul,ol");
-    if (listAncestor && listAncestor !== viewerContentEl) {
-      if (listAncestor.tagName === tag.toUpperCase()) {
-        // Convert list to paragraphs.
-        const items = Array.from(listAncestor.querySelectorAll("li"));
-        items.forEach((li) => {
-          const p = document.createElement("p");
-          while (li.firstChild) p.appendChild(li.firstChild);
-          li.replaceWith(p);
-        });
-        made = listAncestor.querySelector("p");
-        // Unwrap the list.
-        while (listAncestor.firstChild) listAncestor.parentNode.insertBefore(listAncestor.firstChild, listAncestor);
-        listAncestor.remove();
-      } else {
-        // Convert ul <-> ol.
-        const newList = document.createElement(tag);
-        while (listAncestor.firstChild) newList.appendChild(listAncestor.firstChild);
-        listAncestor.replaceWith(newList);
-        made = newList;
-      }
+    if (ctx.li) {
+      made = setListItemType(ctx.li, tag === "ol" ? "number" : "bullet");
     } else {
-      // Create a new list from the current paragraph.
       const li = document.createElement("li");
-      const list = document.createElement(tag);
-      while (block.firstChild) li.appendChild(block.firstChild);
-      list.appendChild(li);
-      block.replaceWith(list);
-      made = list;
+      const newList = document.createElement(tag);
+      while (ctx.block.firstChild) li.appendChild(ctx.block.firstChild);
+      newList.appendChild(li);
+      ctx.block.replaceWith(newList);
+      ensureListMarker(li);
+      made = newList;
     }
-    reselectBlock(made, wasCollapsed);
+    if (!made) return null;
+    reselectBlock(made, ctx.wasCollapsed);
     onContentChange();
     return made;
+  }
+
+  /* The Task toolbar button: give the caret item a checkbox, or -- when
+   * it already has one -- take the item out of the list as a plain
+   * paragraph, so the button toggles task <-> plain text rather than
+   * task <-> bullet. */
+  function toggleTask() {
+    const ctx = caretListItem();
+    if (!ctx) return null;
+    let made = null;
+    if (ctx.li) {
+      made = setListItemType(ctx.li, "task");
+    } else {
+      const li = document.createElement("li");
+      const newList = document.createElement("ul");
+      while (ctx.block.firstChild) li.appendChild(ctx.block.firstChild);
+      newList.appendChild(li);
+      ctx.block.replaceWith(newList);
+      li.classList.add("task-list-item");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      li.insertBefore(box, li.firstChild);
+      ensureListMarker(li);
+      made = newList;
+    }
+    if (!made) return null;
+    reselectBlock(made, ctx.wasCollapsed);
+    onContentChange();
+    return made;
+  }
+
+  /* Lift a list item out of its list as a plain paragraph, keeping the
+   * remaining items in order (the list splits around the paragraph). The
+   * same shape the Enter key uses to end a list from an empty item.
+   * Nested lists are hoisted to the paragraph's level. Returns the <p>,
+   * or null when the item has no list. */
+  function listItemToParagraph(li) {
+    if (!li) return null;
+    const list = li.closest("ul,ol");
+    if (!list) return null;
+    // The items after the caret's item move to a second list, so the
+    // paragraph can sit between the two halves.
+    let after = null;
+    if (list.lastElementChild !== li) {
+      after = document.createElement(list.tagName);
+      let cur = li.nextElementSibling;
+      while (cur) { const nx = cur.nextElementSibling; after.appendChild(cur); cur = nx; }
+    }
+    // Build the paragraph from the item's own (non-list) content.
+    const p = document.createElement("p");
+    const nested = [];
+    Array.from(li.childNodes).forEach((node) => {
+      if (node.nodeType === 1 && /^(UL|OL)$/.test(node.tagName)) nested.push(node);
+      else p.appendChild(node);
+    });
+    li.remove();
+    list.after(p);
+    if (after) p.after(after);
+    if (!list.firstElementChild) list.remove();
+    // Hoist nested lists: they follow the paragraph (with its split).
+    nested.forEach((n) => p.after(n));
+    return p;
   }
 
   /* --- live markdown input rules ------------------------------------ */
@@ -2871,23 +3004,8 @@
       const li = blockEl.closest("li");
       if (li && li.textContent.replace(/\u200B/g, "").trim() === "") {
         e.preventDefault();
-        const list = li.closest("ul,ol");
-        if (list) {
-          const p = document.createElement("p");
-          const atEnd = list.lastElementChild === li;
-          if (atEnd) {
-            list.after(p);
-            li.remove();
-            if (!list.firstElementChild) list.remove();
-          } else {
-            // Split the list and drop the empty item between.
-            const rest = document.createElement(list.tagName);
-            let cur = li.nextElementSibling;
-            while (cur) { const nx = cur.nextElementSibling; rest.appendChild(cur); cur = nx; }
-            list.after(p, rest);
-            li.remove();
-            if (!list.firstElementChild) list.remove();
-          }
+        const p = listItemToParagraph(li);
+        if (p) {
           caretToStart(p);
           onContentChange();
         }
@@ -2940,50 +3058,7 @@
       case "h6":     wrapBlock("h6"); break;
       case "ul":     toggleList("ul"); break;
       case "ol":     toggleList("ol"); break;
-      case "task": {
-        const sel = window.getSelection();
-        const taskSelCollapsed = !sel || !sel.rangeCount || sel.getRangeAt(0).collapsed;
-        let node = sel && sel.rangeCount
-          ? sel.getRangeAt(0).commonAncestorContainer : null;
-        if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
-        if (node && insideProtectedBlock(node)) break;
-        let li = node && node.closest ? node.closest("li") : null;
-        if (!li) {
-          // No list item under the caret: a plain paragraph becomes one,
-          // and a whole-list selection targets its first item. Resolve
-          // both from the DOM, never through toggleList -- its ul->ul
-          // branch UNWRAPS the list (it is the toggle-off path), which
-          // turned a whole-list selection into dot paragraphs.
-          const list = node && node.closest && viewerContentEl.contains(node)
-            ? node.closest("ul,ol") : null;
-          if (list && viewerContentEl.contains(list)) {
-            li = list.querySelector("li");
-          } else {
-            const built = toggleList("ul");
-            // null: no block or a protected structure -- leave it.
-            if (!built) break;
-            li = built.querySelector("li");
-          }
-        }
-        if (!li || !viewerContentEl.contains(li)) break;
-        // Toggle: a task item toggles back to a plain bullet item, so a
-        // second press matches the toolbar's other toggles.
-        const owned = taskCheckboxOf(li);
-        if (owned) {
-          owned.remove();
-          li.classList.remove("task-list-item");
-        } else {
-          li.classList.add("task-list-item");
-          const host = taskCheckboxHost(li);
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          host.insertBefore(cb, host.firstChild);
-        }
-        ensureListMarker(li);
-        reselectBlock(li, taskSelCollapsed);
-        onContentChange();
-        break;
-      }
+      case "task":   toggleTask(); break;
       case "quote":  wrapBlock("blockquote"); break;
       case "link": {
         const url = prompt("Link URL:", "https://");
@@ -4646,6 +4721,7 @@
     addSubmenu("List", (fly) => {
       addSubItem(fly, "Bulleted list", () => toggleList("ul"));
       addSubItem(fly, "Numbered list", () => toggleList("ol"));
+      addSubItem(fly, "Task list", () => toggleTask());
       addSubItem(fly, "Quote", () => wrapBlock("blockquote"));
     });
 

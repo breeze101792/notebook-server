@@ -57,30 +57,107 @@
     NB.cmEditor.replaceSelection(insert, "select");
   }
 
-  /* Line-prefix action: operates on every line touched by the
-   * selection, or the current line if no selection. Idempotent:
-   * clicking the same heading twice removes the prefix. */
-  function lineAction(prefix, detectRegex) {
+  /* Replace the whole-line block the selection covers. Returns the
+   * range the new block occupies so the caller can re-select it. */
+  function replaceLines(newLines) {
     const { start, end, value } = sel();
-    // Expand to whole lines.
     const lineStart = value.lastIndexOf("\n", start - 1) + 1;
     const lineEndIdx = value.indexOf("\n", end);
     const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
     const block = value.slice(lineStart, lineEnd);
-    const lines = block.split("\n");
-    const allHave = lines.every(l => detectRegex.test(l));
-    const newLines = allHave
-      ? lines.map(l => l.replace(detectRegex, ""))
-      : lines.map(l => prefix + l);
-    const newBlock = newLines.join("\n");
-    // CM6 doesn't have a direct "replace range" helper; we go
-    // through setValue (which dispatches a full doc change) and
-    // then re-set the selection. For a large doc this is wasteful
-    // (replaces the whole text), but the editbar's actions are
-    // user-initiated (one click at a time) so the cost is fine.
+    const newBlock = newLines(block.split("\n")).join("\n");
+    // CM6 has no direct "replace range" helper; setValue dispatches a
+    // full doc change. The editbar acts one click at a time, so the
+    // cost is fine.
     const newDoc = value.slice(0, lineStart) + newBlock + value.slice(lineEnd);
     NB.cmEditor.setValue(newDoc);
     NB.cmEditor.setSelection(lineStart, lineStart + newBlock.length);
+  }
+
+  /* Line-prefix action: operates on every line touched by the
+   * selection, or the current line if no selection. Idempotent:
+   * clicking the same heading twice removes the prefix. */
+  function lineAction(prefix, detectRegex) {
+    replaceLines(lines =>
+      lines.every(l => detectRegex.test(l))
+        ? lines.map(l => l.replace(detectRegex, ""))
+        : lines.map(l => prefix + l));
+  }
+
+  /* The source-mode mirror of hybrid's per-item list model (see
+   * setListItemType in hybrid.js). Each list button acts on the line the
+   * caret is in, matching Word and Google Docs:
+   *
+   *   - pressing the line's own type (no checkbox) removes the marker;
+   *   - pressing Task on a task line removes the marker;
+   *   - otherwise the line is given the pressed type, converting between
+   *     bullet/number and dropping any checkbox.
+   *
+   * Over a multi-line selection, if EVERY touched line is already
+   * exactly the pressed type the whole block is unlisted; otherwise
+   * every list line is set to the pressed type. Blank lines are left
+   * alone.
+   *
+   *   kind: "bullet" | "number" | "task" */
+  const LIST_LINE_RE = /^(\s*)([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?(.*)$/;
+  const BLANK_LINE_RE = /^\s*$/;
+
+  function parseListLine(line) {
+    const m = LIST_LINE_RE.exec(line);
+    if (!m) return null;
+    return {
+      indent: m[1],
+      marker: m[2],
+      number: /^\d/.test(m[2]),
+      checkbox: m[3] !== undefined,
+      text: m[4],
+    };
+  }
+
+  function isListKind(parsed, kind) {
+    if (!parsed) return false;
+    if (kind === "task") return parsed.checkbox;
+    // A bullet/number line with a checkbox is a TASK, not that list
+    // type, so pressing the plain type strips the checkbox instead of
+    // toggling the line out of the list.
+    if (kind === "number") return parsed.number && !parsed.checkbox;
+    return !parsed.number && !parsed.checkbox;
+  }
+
+  /* Give a line the pressed type. The caller has already handled the
+   * toggle-off case, so a line that already matches is left alone. */
+  function setListLine(line, kind) {
+    if (BLANK_LINE_RE.test(line)) return line;
+    const p = parseListLine(line);
+    if (!p) {
+      // Not a list line: give it the pressed type.
+      if (kind === "task") return line.replace(/^(\s*)/, "$1- [ ] ");
+      return (kind === "number" ? "1. " : "- ") + line;
+    }
+    if (kind === "task") {
+      const marker = p.number ? p.marker : "-";
+      return p.indent + marker + " [ ] " + p.text;
+    }
+    if (kind === "number") return p.indent + "1. " + p.text;
+    return p.indent + "- " + p.text;
+  }
+
+  function listAction(kind) {
+    replaceLines(lines => {
+      const touched = lines.filter(l => !BLANK_LINE_RE.test(l));
+      // Toggle the block out of the list only when every non-blank line
+      // is already exactly the pressed type.
+      const allMatch = touched.length > 0 &&
+        touched.every(l => isListKind(parseListLine(l), kind));
+      return lines.map(l => {
+        const p = parseListLine(l);
+        if (allMatch) return p ? p.text : l;
+        // In a mixed block, a line that already has the type keeps it;
+        // only the others are set.
+        if (isListKind(p, kind)) return l;
+        return setListLine(l, kind);
+      });
+    });
   }
 
   /* --- actions ------------------------------------------------------ */
@@ -103,9 +180,9 @@
     h5: () => lineAction("##### ",   /^#+\s/),
     h6: () => lineAction("###### ",  /^#+\s/),
 
-    ul:    () => lineAction("- ",     /^[-*]\s/),
-    ol:    () => lineAction("1. ",    /^\d+\.\s/),
-    task:  () => lineAction("- [ ] ", /^[-*]\s+\[[ x]\]\s/i),
+    ul:    () => listAction("bullet"),
+    ol:    () => listAction("number"),
+    task:  () => listAction("task"),
     quote: () => lineAction("> ",     /^>\s/),
 
     /* Inline link: ask the user for the URL, then wrap. */

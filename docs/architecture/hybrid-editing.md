@@ -494,12 +494,43 @@ marked while `-   [ ] ` re-renders a checkbox.
 | ∅ | G (`- [ ] ` / `[ ] `) | `` | task item, unchecked | ✅ `taskItemRule`; tests `4390-4401` |
 | ∅ | G (`- [x] ` / `[x] `) | `` | task item, checked | ✅ |
 | — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md:79`; tests `5733-5742`, `7784-7806` |
-| — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds or removes the checkbox on the caret item | ✅ `case "task"` in `onEditBarClick`; a second press removes it; a whole-list selection targets the first item, never unwraps the list |
+| — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds the checkbox on the caret item; a second press returns the item to a plain **paragraph** | ✅ `toggleTask`/`setListItemType`; tests `8561-8574`, browser list-model block |
 | M | ⇧↵ | task item | `<p>` after whole list | ✅ test `4693-4708` |
 | — | ↵ | task item | new task item with a checkbox | ✅ `onEnterKey` task branch; also on a task loaded from disk |
 | — | ↵ on an empty task | empty checkbox item | `-` (checkbox and item dropped) | ✅ the checkbox is stripped, then the item outdents to a `<p>` |
 | — | D (empty the item) | `- [ ] task` | `-` (checkbox gone) | ✳ sentinel path: `isEmptyListItem` ignores `input` (`:286-289`), so an item holding a checkbox is **not** "empty" — deleting text leaves the checkbox and `[ ]`; verify |
 | — | save | — | `[x]`/`[ ]` preserved, empty task keeps a trailing space | ✅ tests `6846-6855` |
+
+### 4.7.1 List-type model (dot / number / checkbox)
+
+The UL / OL / Task toolbar buttons and the right-click **List** submenu share
+one model, matching Word and Google Docs: a list button acts on the **paragraph
+the caret is in**, not the whole list. In hybrid this is `toggleList` /
+`toggleTask` over `setListItemType` (`hybrid.js`); source mode mirrors it in
+`editbar.js`'s `listAction`.
+
+- Pressing the item's **own** type (no checkbox) removes the item from the
+  list as a plain paragraph — the toolbar toggle.
+- Pressing a **different** type converts that one item; in hybrid it is split
+  into its own `<ul>`/`<ol>` so its neighbours keep their bytes.
+- A checkbox survives only on a task item: setting bullet/number strips it,
+  and Task on a bullet/number keeps that list type (`- [ ] ` / `1. [ ] `).
+- Task on an item that already has a checkbox removes the item from the list.
+
+Press → result matrix (caret on the item):
+
+| item before | UL | OL | Task |
+|---|---|---|---|
+| paragraph | bullet | number | task |
+| bullet | paragraph | number | task |
+| number | bullet | paragraph | number + checkbox |
+| task | bullet (checkbox dropped) | number (checkbox dropped) | paragraph |
+
+Before this model the transitions were undefined (`hybrid.js`'s `toggleList`
+unwrapped the WHOLE list whenever the tag matched, and source mode's Task
+button on a bullet produced `- [ ] - item`). The matrix is pinned by the
+"every list-type transition is defined" checks in `tests/dom/test_dom.js`
+(hybrid and source) and the "list model" browser block.
 
 ### 4.8 Blockquotes `>`
 
