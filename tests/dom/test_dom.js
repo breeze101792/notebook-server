@@ -15215,6 +15215,14 @@ function check(label, cond, extra) {
       /\.markdown-body li:has\(> input\[type="checkbox"\], > p > input\[type="checkbox"\]\)\{list-style:none\}/.test(htmlText) &&
       /\.markdown-body li>input\[type="checkbox"\],\.markdown-body li>p>input\[type="checkbox"\]\{width:1em;height:1em;margin:0 \.53em 0 -1\.53em;vertical-align:middle\}/.test(htmlText),
       "task css=" + /li:has\(/.test(htmlText));
+    // List spacing: the embedded CSS mirrors style.css so a toggled line
+    // keeps the same vertical rhythm and tight/loose items match. Drift
+    // between the two would put the exported note on a different grid.
+    check("export: HTML blob mirrors the list-spacing CSS",
+      /\.markdown-body ul,\.markdown-body ol\{padding-left:1\.6em;margin:\.7em 0\}/.test(htmlText) &&
+      /\.markdown-body li>p:first-child\{margin-top:0\}/.test(htmlText) &&
+      /\.markdown-body li>p:last-child\{margin-bottom:0\}/.test(htmlText),
+      "list css=" + /li>p:first-child/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just
     // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).

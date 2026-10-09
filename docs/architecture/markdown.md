@@ -50,6 +50,59 @@ Atx headings (`#` through `######`) become the outline and get anchor ids.
 Setext headings (`===` / `---` underlines) also render, but the outline is
 built from `<h1>`–`<h6>` elements, so they are anchored the same way.
 
+## List spacing
+
+List spacing is unified so that toggling a line between a paragraph and a
+list, or between tight and loose, never changes the vertical rhythm. Two
+separate mismatches caused visibly different spacing.
+
+### Block margins: paragraph vs list
+
+A paragraph carries `.7em` top/bottom (`.markdown-body p`, `style.css:2619`).
+A `<ul>`/`<ol>` had no margin rule, so it fell back to the browser default
+`1em`. The gap around a line therefore changed from 9.8px to 14px the
+moment the line was toggled into a list — the neighbours moved even though
+the line itself did not grow. Giving lists `margin: .7em 0`
+(`style.css:2624`) puts a list and a paragraph on the same vertical grid.
+
+### Item shape: tight vs loose
+
+A list item is one of two DOM shapes, and marked picks the shape from the
+source alone:
+
+- **Tight** — `<li>text</li>`. The text sits directly in the `<li>`.
+- **Loose** — `<li><p>text</p></li>`. The content is wrapped in a `<p>`.
+
+marked makes the list loose when any item in it is separated by a blank
+line, and then every item in that list becomes loose. Without a rule, the
+generic `p` margin gives each loose item 9.8px top and bottom while tight
+items get none, so items in two otherwise-identical lists are spaced 30.8px
+vs 21px apart.
+
+The item rules collapse the `p` margin only at the item's own edges
+(`style.css:2644-2648`):
+
+```css
+.markdown-body li > p:first-child { margin-top: 0; }
+.markdown-body li > p:last-child { margin-bottom: 0; }
+.markdown-body li > ul, .markdown-body li > ol { margin-top: .15em; margin-bottom: 0; }
+```
+
+Both shapes then occupy the same height, and a nested list tucks under its
+parent with a small gap rather than a paragraph-sized one.
+
+Collapsing the edge margins rather than the whole `p` margin matters: a
+**multi-paragraph item** (`<li><p>one</p><p>two</p></li>`) must keep the
+break between its paragraphs. A blanket `.markdown-body li > p { margin: 0 }`
+erased that break, collapsing the two paragraphs into one block. Because
+`:first-child` / `:last-child` skip a middle paragraph, the internal break
+survives.
+
+The export stylesheet in `export.js` mirrors all of these rules
+(`export.js:755-765`) so a downloaded HTML or PDF note has the same
+spacing as the on-screen render. Any change to the list or list-item rules
+must be made in both places.
+
 ## Special fenced blocks
 
 Five fence languages render specially rather than as highlighted source.

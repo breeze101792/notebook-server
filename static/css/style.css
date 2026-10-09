@@ -2621,7 +2621,31 @@ body[data-theme="light"] #viewer-content {
 /* Wikilinks ([[Target]]) are internal note links. Give them a subtle
  * underline so they read as clickable, distinct from plain text. */
 .markdown-body a[data-wikilink] { text-decoration: underline; text-underline-offset: 2px; }
-.markdown-body ul, .markdown-body ol { padding-left: 1.6em; }
+.markdown-body ul, .markdown-body ol { padding-left: 1.6em; margin: .7em 0; }
+/* List spacing is unified so a toggle never changes it.
+ *
+ * Two separate mismatches caused visibly different spacing:
+ *
+ * 1. Block margins. A paragraph has `.7em` top/bottom, but <ul>/<ol> kept
+ *    the browser default `1em`. Toggling one line between a paragraph and
+ *    a list therefore moved its neighbours (9.8px -> 14px -> 9.8px). The
+ *    `margin: .7em 0` above makes a list occupy the same vertical rhythm
+ *    as a paragraph.
+ *
+ * 2. Item shape. marked emits a tight item as `<li>text</li>` (the text is
+ *    a direct child) and a loose item as `<li><p>text</p></li>` (a blank
+ *    line ANYWHERE in the list makes EVERY item loose). The generic
+ *    `.markdown-body p { margin: .7em 0 }` would give loose items 9.8px
+ *    top/bottom while tight items get none, so the same source rendered
+ *    with different item spacing depending only on its blank lines.
+ *    Collapsing the margins at the item's own edges makes both shapes the
+ *    same height. Only the FIRST and LAST paragraph are collapsed, so a
+ *    multi-paragraph item keeps the break between its paragraphs. */
+.markdown-body li > p:first-child { margin-top: 0; }
+.markdown-body li > p:last-child { margin-bottom: 0; }
+/* A nested list tucks under its parent item with a small gap rather than a
+ * paragraph-sized one, and adds no trailing gap. */
+.markdown-body li > ul, .markdown-body li > ol { margin-top: .15em; margin-bottom: 0; }
 /* Task-list items: the checkbox replaces the bullet. marked emits a bare
  * <li> (no task-list-item class), so match on the checkbox child. A tight
  * list puts the checkbox directly in the <li>; a loose one wraps it in a
