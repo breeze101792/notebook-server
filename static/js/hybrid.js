@@ -43,6 +43,10 @@
   const closeEditBtn   = document.getElementById("close-edit-btn");
   const topbar         = document.getElementById("topbar");
   const menuEl         = document.getElementById("hybrid-context-menu");
+  // The emoji picker panel, owned by editbar.js; hybrid only listens for
+  // the click that chooses an emoji (that panel lives outside the editable
+  // region, so the insertion is done here, not by editbar.js).
+  const emojiPanelEl   = editBar ? editBar.querySelector(".eb-emoji-panel") : null;
 
   // Elements the turndown `blank` rule must never match. <p>/<div> are
   // handled by the paragraph rule; table structure belongs to the GFM
@@ -132,6 +136,11 @@
   let activePath = null;    // path of the file being hybrid-edited
   let turndownSvc = null;   // lazily created TurndownService instance
   let savedRange = null;    // caret range captured when the context menu opens
+  // The caret range captured when the emoji picker opens. The picker lives
+  // in the edit bar (outside the editable region) and its search box takes
+  // focus, which clears the contentEditable selection; a chosen emoji is
+  // inserted back into this saved range.
+  let savedEmojiRange = null;
   // The on-disk markdown baseline captured when hybrid enter()ed and
   // refreshed after each successful write. The save callers compare the
   // serialized DOM against this to make a no-op a non-write. It is the
@@ -2195,6 +2204,7 @@
       // mouseup listener never fired (a mousedown always precedes its own
       // mouseup, so the stale press cannot repair that mouseup).
       pendingRuleClick = null;
+      savedEmojiRange = null;
     }
   }
 
@@ -3097,9 +3107,29 @@
 
   function onEditBarClick(e) {
     if (!active) return;
+    // The emoji picker's grid is not a button this listener routes by act
+    // (a click on the toggle IS, and is left for editbar.js to open the
+    // panel). So the click must be captured BEFORE the data-act lookup:
+    // a grid tile carries data-emoji, not data-act, and would be ignored
+    // by the check below. Saving the caret range and inserting is done
+    // here because the panel is outside the editable region.
+    if (emojiPanelEl && e.target.closest(".eb-emoji-panel")) {
+      onEmojiPanelClick(e);
+      return;
+    }
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
+    // The emoji toggle is NOT claimed: editbar.js owns opening the panel.
+    // We only record the caret first, because the panel's search box takes
+    // focus and drops the contentEditable selection before an emoji is
+    // chosen. No stopPropagation -- the toggle must still reach editbar.js.
+    if (act === "emoji") {
+      const s = window.getSelection();
+      savedEmojiRange = (s && s.rangeCount && viewerContentEl.contains(s.anchorNode))
+        ? s.getRangeAt(0).cloneRange() : null;
+      return;
+    }
     // Claim the event ONLY when the switch below will actually act on
     // it, so editbar.js keeps the rest (more, ...).
     if (EDIT_BAR_HYBRID_ACTS.indexOf(act) === -1) return;
@@ -3365,6 +3395,49 @@
     newRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(newRange);
+  }
+
+  /* Insert `emoji` at the saved caret as a plain text node. The emoji
+   * picker is a toolbar dropdown, so its search box has already moved
+   * focus out of the editable region; `savedEmojiRange` (captured in
+   * onEditBarClick) is the only record of where the caret was. */
+  function insertEmojiAtSavedRange(emoji) {
+    if (savedEmojiRange) {
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(savedEmojiRange);
+    }
+    const s = window.getSelection();
+    if (!s || !s.rangeCount) return;
+    const range = s.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(emoji);
+    range.insertNode(node);
+    // Leave the caret AFTER the emoji so the user can keep typing.
+    const after = document.createRange();
+    after.setStartAfter(node);
+    after.collapse(true);
+    s.removeAllRanges();
+    s.addRange(after);
+    savedEmojiRange = null;
+    onContentChange();
+  }
+
+  /* The emoji grid is rebuilt on every picker render, so its clicks are
+   * delegated here. The panel sits in the edit bar, which hybrid already
+   * listens to in the capture phase -- but the grid buttons are not
+   * [data-act], so onEditBarClick ignores them; this is the handler that
+   * turns one into an insertion. */
+  function onEmojiPanelClick(e) {
+    if (!active) return;
+    const btn = e.target.closest("button[data-emoji]");
+    if (!btn) return;
+    // Stop here so editbar.js's own panel listener does not also insert via
+    // CodeMirror; hybrid owns the insertion. The panel is closed explicitly
+    // because that listener is the one that normally closes it.
+    e.stopPropagation();
+    insertEmojiAtSavedRange(btn.dataset.emoji);
+    if (NB.editbar && NB.editbar.closeEmoji) NB.editbar.closeEmoji();
   }
 
   /* Restore focus + the caret captured when the context menu opened,
@@ -3756,6 +3829,7 @@
     viewerContentEl.addEventListener("mousedown", onContentMouseDown);
     viewerContentEl.addEventListener("mouseup", onContentMouseUp);
     editBar.addEventListener("click", onEditBarClick, true);
+    if (emojiPanelEl) emojiPanelEl.addEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.addEventListener("click", onClose, true);
@@ -3793,6 +3867,7 @@
     viewerContentEl.removeEventListener("mouseup", onContentMouseUp);
     pendingRuleClick = null;
     editBar.removeEventListener("click", onEditBarClick, true);
+    if (emojiPanelEl) emojiPanelEl.removeEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.removeEventListener("click", onClose, true);

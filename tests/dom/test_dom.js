@@ -215,6 +215,14 @@ const html = `<!DOCTYPE html><html><head>
           <button class="eb" data-act="quote">Q</button>
           <button class="eb" data-act="link">Link</button>
           <button class="eb" data-act="image">Img</button>
+          <span class="eb-emoji-wrap">
+            <button class="eb eb-emoji-toggle" data-act="emoji">Emoji</button>
+            <div class="eb-emoji-panel" hidden>
+              <input type="search" class="eb-emoji-search" placeholder="Search emoji">
+              <div class="eb-emoji-tabs"></div>
+              <div class="eb-emoji-grid"></div>
+            </div>
+          </span>
           <button class="eb" data-act="codeblock">CB</button>
           <button class="eb" data-act="undo">Undo</button>
           <button class="eb" data-act="redo">Redo</button>
@@ -4183,6 +4191,42 @@ function check(label, cond, extra) {
   check("edit bar: link wraps selection with URL",
     cmGetValue() === "[click](https://example.com) here",
     "got: " + cmGetValue());
+  // Emoji picker: toggle opens the panel, a tile inserts at the caret.
+  cmSetValue("hi "); cmSetSel(3, 3);
+  const emojiPanel = window.document.querySelector("#edit-bar .eb-emoji-panel");
+  check("edit bar: emoji panel hidden by default", emojiPanel.hidden);
+  window.document.querySelector('#edit-bar .eb[data-act="emoji"]')
+    .dispatchEvent(new window.Event("mousedown", { bubbles: true }));
+  window.document.querySelector('#edit-bar .eb[data-act="emoji"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: emoji toggle opens the panel", !emojiPanel.hidden);
+  const emojiTiles = window.document.querySelectorAll("#edit-bar .eb-emoji-grid button[data-emoji]");
+  check("edit bar: emoji grid is populated", emojiTiles.length >= 20,
+    "got " + emojiTiles.length);
+  emojiTiles[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: choosing an emoji inserts it at the caret",
+    cmGetValue() === "hi " + emojiTiles[0].dataset.emoji,
+    "got: " + JSON.stringify(cmGetValue()));
+  check("edit bar: emoji panel closes after choosing", emojiPanel.hidden);
+  // Search filters the grid across categories.
+  window.document.querySelector('#edit-bar .eb[data-act="emoji"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  const emojiSearch = window.document.querySelector("#edit-bar .eb-emoji-search");
+  emojiSearch.value = "rocket";
+  emojiSearch.dispatchEvent(new window.Event("input", { bubbles: true }));
+  await tick(10);
+  const filtered = window.document.querySelectorAll("#edit-bar .eb-emoji-grid button[data-emoji]");
+  check("edit bar: emoji search narrows the grid",
+    filtered.length >= 1 &&
+    Array.from(filtered).some(b => b.dataset.emoji === "🚀"),
+    "got " + filtered.length);
+  // Outside click closes the panel.
+  window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: outside click closes the emoji panel", emojiPanel.hidden);
   // Horizontal rule: insert at line start.
   cmSetValue("before\nafter"); cmSetSel(0, 0);
   window.document.querySelector('#edit-bar .eb[data-act="hr"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -8663,6 +8707,31 @@ function check(label, cond, extra) {
         afterUlTask !== null &&
         afterUlTask.querySelector('input[type="checkbox"]') !== null,
         "vc=" + vcT.innerHTML);
+
+      // --- Emoji button (edit-bar) in hybrid mode ------------------------
+      // The emoji toggle is not claimed by hybrid, so editbar.js still
+      // opens the panel; hybrid only saves the caret range (the panel's
+      // search box would otherwise drop the contentEditable selection).
+      // Choosing a tile inserts the emoji into the DOM and marks dirty.
+      vcT.innerHTML = "";
+      const pE = window.document.createElement("p");
+      pE.textContent = "hi ";
+      vcT.appendChild(pE);
+      caretIn(pE.firstChild, 3);
+      const hybEmojiPanel = $("edit-bar").querySelector(".eb-emoji-panel");
+      clickAct("emoji");
+      await tick(20);
+      check("hybrid emoji: toggle opens the picker panel", !hybEmojiPanel.hidden);
+      const hybTile = hybEmojiPanel.querySelector("button[data-emoji]");
+      hybTile.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid emoji: choosing a tile inserts it at the caret",
+        vcT.querySelector("p").textContent === "hi " + hybTile.dataset.emoji,
+        "p=" + vcT.querySelector("p").outerHTML);
+      check("hybrid emoji: insertion marks the note dirty",
+        window.NB.hybrid.isDirty(), "dirty=false");
+      check("hybrid emoji: panel closes after choosing", hybEmojiPanel.hidden);
+      hybEmojiPanel.hidden = true;
 
       // The defined list-type model (Word / Google Docs convention): each
       // list button sets the caret ITEM's type; pressing the item's own

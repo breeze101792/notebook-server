@@ -34,6 +34,260 @@
   const overflowMenu = bar.querySelector(".eb-menu");
   const tableMenu   = bar.querySelector(".eb-table-menu");
 
+  /* --- emoji picker -------------------------------------------------
+   * A curated set (not a full Unicode table): enough to cover everyday
+   * notes without vendoring a dataset. `keywords` holds lowercase
+   * synonyms so the search box matches "happy" for 😀, not just the
+   * category name. */
+  const EMOJI_CATEGORIES = [
+    { id: "project", icon: "📋", items: [
+      // Status / traffic lights: the standard colored circles. No square
+      // or diamond substitutes -- only the real, standard color markers.
+      ["🟢", "green light go on track ok"], ["🟡", "amber yellow hold caution risk"],
+      ["🔴", "red light stop blocked off track"], ["⚪", "grey not started"],
+      ["🔵", "blue info note"], ["🟠", "orange at risk"],
+      ["🟣", "purple"], ["⚫", "black done archived"],
+      // Progress / state
+      ["✅", "done complete finished approved shipped"],
+      ["☑️", "checked done"], ["✔️", "approved pass tick"],
+      ["❌", "failed cancelled rejected no"],
+      ["⏳", "in progress waiting pending"], ["⌛", "waiting blocked time"],
+      ["⏸️", "paused on hold hold"], ["▶️", "start begin go"],
+      ["🔄", "in review rework iterate"],
+      ["🚧", "blocked wip work in progress"],
+      ["⛔", "blocked forbidden stop"],
+      ["🧊", "frozen parked deferred"],
+      ["💤", "idle dormant stalled"],
+      ["🚩", "flagged risk issue"],
+      // Schedule / milestones
+      ["📅", "schedule date calendar"], ["🗓️", "calendar plan sprint"],
+      ["⏰", "deadline alarm due"], ["⏱️", "timebox estimate timed"],
+      ["🎯", "milestone goal target"], ["🏁", "finish line milestone complete"],
+      ["🏆", "win success delivered"], ["🚀", "launch release ship"],
+      ["🔜", "upcoming next soon"], ["🔚", "end close"],
+      // Ownership / collaboration
+      ["🙋", "owner assignee action"], ["👥", "team people"],
+      ["🤝", "agreed handshake sign-off"], ["📣", "announce communication"],
+      ["💬", "comment discussion"], ["📌", "pinned priority"],
+      ["🏷️", "label tag backlog"], ["🗂️", "categories backlog"],
+      ["🔗", "dependency link"], ["📎", "attachment reference"],
+      // Work items
+      ["📋", "checklist plan backlog"], ["📝", "draft memo notes"],
+      ["🐛", "bug defect issue"], ["🔧", "fix repair"],
+      ["🧪", "test qa verify"], ["👀", "review attention watch"],
+      ["🔍", "inspect audit"], ["🛠️", "tools maintenance"],
+      ["📦", "release package deliverable"], ["📈", "increase burnup progress"],
+      ["📉", "decrease burndown"], ["⚠️", "warning risk blocker"],
+      ["❗", "important critical"], ["❓", "question open issue"],
+      ["💡", "idea proposal rfc"], ["🔒", "locked frozen no change"],
+    ] },
+    { id: "smileys", icon: "😀", items: [
+      ["😀", "grin happy smile"], ["😄", "smile happy"], ["😂", "laugh cry joy"],
+      ["🤣", "rofl laugh"], ["🙂", "slight smile"], ["😉", "wink"],
+      ["😊", "blush smile"], ["😍", "love heart eyes"], ["😘", "kiss"],
+      ["😎", "cool sunglasses"], ["🤔", "think hmm"], ["😐", "neutral"],
+      ["🙁", "sad frown"], ["😢", "cry sad"], ["😭", "sob cry"],
+      ["😡", "angry mad"], ["🤯", "mind blown wow"], ["😴", "sleep tired"],
+      ["🤗", "hug"], ["😅", "sweat smile"], ["🙄", "roll eyes"], ["😬", "grimace"],
+    ] },
+    { id: "gestures", icon: "👍", items: [
+      ["👍", "thumbs up yes"], ["👎", "thumbs down no"], ["👏", "clap applause"],
+      ["🙌", "raise hands hooray"], ["🙏", "please thanks pray"],
+      ["👋", "wave hello bye"], ["🤝", "handshake deal"], ["✌️", "victory peace"],
+      ["🤞", "fingers crossed luck"], ["👌", "ok perfect"], ["💪", "strong muscle"],
+      ["👀", "eyes look"], ["🫡", "salute"], ["🖐️", "hand stop"],
+      ["✋", "hand stop high five"], ["☝️", "point up"],
+    ] },
+    { id: "hearts", icon: "❤️", items: [
+      ["❤️", "heart love red"], ["🧡", "heart orange"], ["💛", "heart yellow"],
+      ["💚", "heart green"], ["💙", "heart blue"], ["💜", "heart purple"],
+      ["🖤", "heart black"], ["🤍", "heart white"], ["💔", "broken heart"],
+      ["❣️", "heart exclamation"], ["💕", "two hearts"], ["💯", "hundred perfect score"],
+    ] },
+    { id: "objects", icon: "💡", items: [
+      ["✅", "check done yes"], ["❌", "cross no x"], ["❗", "exclamation"],
+      ["❓", "question"], ["⚠️", "warning"], ["🔥", "fire hot"],
+      ["⭐", "star"], ["✨", "sparkles"], ["🎉", "party tada"],
+      ["💡", "idea bulb"], ["📌", "pin"], ["📎", "paperclip"],
+      ["🔗", "link"], ["📅", "calendar date"], ["⏰", "alarm clock time"],
+      ["🔒", "lock secure"], ["🔑", "key"], ["📝", "note memo"],
+      ["📄", "page document"], ["📊", "chart bar"], ["📈", "chart up trend"],
+      ["📉", "chart down"], ["🐛", "bug"], ["🚀", "rocket launch"],
+      ["⚙️", "gear settings"], ["🛠️", "tools"], ["💻", "laptop code"],
+      ["🧪", "test lab"], ["🔍", "search magnify"],
+      ["📁", "folder directory"], ["📂", "open folder"], ["🗂️", "dividers categories"],
+      ["🗒️", "note pad"], ["📋", "clipboard copy"], ["✂️", "scissors cut"],
+      ["🖇️", "paperclips attach"], ["🏷️", "label tag"], ["🔖", "bookmark"],
+      ["📢", "announce loud"], ["📣", "megaphone"], ["💬", "speech comment"],
+      ["💭", "thought bubble"], ["🤖", "robot ai"], ["🧠", "brain think"],
+      ["🧑💻", "developer coder"], ["🧑🔬", "scientist lab"], ["👷", "worker build"],
+      ["🚧", "construction wip"], ["🚨", "alert alarm"], ["🆘", "sos help"],
+      ["💰", "money cost"], ["💳", "card payment"], ["🛒", "cart buy"],
+    ] },
+    { id: "tech", icon: "⚡", items: [
+      ["⚡", "lightning power fast voltage"], ["🔌", "plug power connector"],
+      ["🔋", "battery charge"], ["🪫", "battery low"], ["📟", "pager device"],
+      ["🖥️", "desktop computer monitor"], ["⌨️", "keyboard"],
+      ["🖱️", "mouse click"], ["💾", "floppy save disk"],
+      ["💿", "cd disk"], ["📀", "dvd disk"], ["🖨️", "printer"],
+      ["📱", "phone mobile"], ["📡", "satellite antenna signal"],
+      ["🛰️", "satellite"], ["🧲", "magnet"], ["🔬", "microscope lab"],
+      ["🔭", "telescope"], ["🕹️", "joystick game"], ["🎛️", "control knobs"],
+      ["🎚️", "slider level"], ["⏱️", "stopwatch timing"], ["⏲️", "timer clock"],
+      ["⌛", "hourglass wait"], ["🛑", "stop sign halt"], ["▶️", "play start"],
+      ["⏸️", "pause"], ["⏹️", "stop"], ["⏺️", "record"],
+      ["🔇", "mute silent"], ["🔊", "sound volume"], ["🔈", "speaker"],
+      ["📶", "signal bars wifi"], ["🛜", "wifi wireless"],
+      ["🔩", "bolt nut screw"], ["🔧", "wrench"], ["🔨", "hammer"],
+      ["🪛", "screwdriver"], ["🪚", "saw"], ["🧰", "toolbox"],
+      ["📐", "triangle ruler"], ["📏", "ruler"], ["🧮", "abacus calculate"],
+      ["🔦", "flashlight"], ["🔎", "search zoom"],
+    ] },
+    { id: "symbols", icon: "✔️", items: [
+      ["✅", "check done yes tick"], ["☑️", "checkbox checked"],
+      ["✔️", "check mark tick"], ["❌", "cross no x"], ["✖️", "multiply cross x"],
+      ["❎", "cross mark no"], ["🔲", "button black"], ["🔳", "button white"],
+      ["◼️", "square black"], ["◻️", "square white"],
+      ["▪️", "small square black"], ["▫️", "small square white"],
+      ["⬆️", "arrow up"], ["⬇️", "arrow down"], ["⬅️", "arrow left"],
+      ["➡️", "arrow right"], ["↗️", "arrow up right"], ["↘️", "arrow down right"],
+      ["↙️", "arrow down left"], ["↖️", "arrow up left"],
+      ["🔄", "refresh sync"], ["🔃", "reload"], ["↩️", "return"],
+      ["↪️", "forward"], ["⤴️", "arrow curving up"], ["⤵️", "arrow curving down"],
+      ["🔀", "shuffle"], ["🔁", "repeat loop"], ["🔂", "repeat once"],
+      ["♻️", "recycle"], ["➕", "plus add"], ["➖", "minus subtract"],
+      ["➗", "divide"], ["✳️", "asterisk"], ["❇️", "sparkle"],
+      ["™️", "trademark"], ["©️", "copyright"], ["®️", "registered"],
+      ["‼️", "double exclamation"], ["⁉️", "exclamation question"],
+      ["❕", "white exclamation"], ["❔", "white question"],
+      ["🔴", "circle red record"], ["🟠", "circle orange"],
+      ["🟡", "circle yellow"], ["🟢", "circle green ok"],
+      ["🔵", "circle blue"], ["🟣", "circle purple"],
+      ["⚫", "circle black"], ["⚪", "circle white"],
+      ["1️⃣", "one 1"], ["2️⃣", "two 2"], ["3️⃣", "three 3"],
+      ["4️⃣", "four 4"], ["5️⃣", "five 5"], ["6️⃣", "six 6"],
+      ["7️⃣", "seven 7"], ["8️⃣", "eight 8"], ["9️⃣", "nine 9"],
+      ["🔟", "ten 10"], ["🆗", "ok"], ["🆕", "new"],
+      ["🆙", "up"], ["🔝", "top"], ["🔙", "back"], ["🔚", "end"],
+      ["🔛", "on"], ["🔜", "soon"],
+    ] },
+    { id: "nature", icon: "🌿", items: [
+      ["🔥", "fire hot flame"], ["💧", "water drop"], ["❄️", "snow cold ice"],
+      ["☀️", "sun sunny"], ["🌤️", "sun cloud"], ["⛅", "partly cloudy"],
+      ["☁️", "cloud"], ["🌧️", "rain"], ["⛈️", "storm thunder"],
+      ["🌩️", "lightning storm"], ["🌨️", "snow"], ["🌈", "rainbow"],
+      ["🌙", "moon night"], ["🌟", "star glow"], ["🌱", "seedling sprout"],
+      ["🌿", "herb plant"], ["☘️", "shamrock"], ["🍀", "clover luck"],
+      ["🌳", "tree"], ["🌲", "evergreen tree"], ["🌵", "cactus"],
+      ["🍄", "mushroom"], ["🐜", "ant"], ["🐝", "bee"],
+      ["🦋", "butterfly"], ["🐢", "turtle"], ["🐍", "snake"],
+      ["🐙", "octopus"], ["🦅", "eagle"], ["🌊", "wave water"],
+      ["🌍", "globe earth"], ["🌡️", "thermometer temperature"],
+    ] },
+    { id: "flags", icon: "🏁", items: [
+      ["✅", "green check"], ["🚩", "flag red"], ["🏁", "flag checkered finish"],
+      ["🏆", "trophy win"], ["🥇", "medal gold first"], ["🎯", "target bullseye"],
+    ] },
+  ];
+
+  const emojiToggle = bar.querySelector(".eb-emoji-toggle");
+  const emojiPanel  = bar.querySelector(".eb-emoji-panel");
+  const emojiSearch = bar.querySelector(".eb-emoji-search");
+  const emojiTabs   = bar.querySelector(".eb-emoji-tabs");
+  const emojiGrid   = bar.querySelector(".eb-emoji-grid");
+
+  let emojiCategory = EMOJI_CATEGORIES[0].id;
+
+  function buildEmojiTabs() {
+    if (!emojiTabs) return;
+    EMOJI_CATEGORIES.forEach(cat => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = cat.icon;
+      b.title = cat.id;
+      b.dataset.cat = cat.id;
+      if (cat.id === emojiCategory) b.classList.add("active");
+      emojiTabs.appendChild(b);
+    });
+  }
+
+  function emojiMatches(entry, q) {
+    if (!q) return true;
+    const [emoji, keywords] = entry;
+    return keywords.indexOf(q) !== -1 || emoji.indexOf(q) !== -1;
+  }
+
+  function renderEmojiGrid() {
+    if (!emojiGrid) return;
+    const q = (emojiSearch ? emojiSearch.value : "").trim().toLowerCase();
+    let items;
+    let label;
+    if (q) {
+      items = EMOJI_CATEGORIES.flatMap(c => c.items).filter(e => emojiMatches(e, q));
+      label = "Search results";
+    } else {
+      const cat = EMOJI_CATEGORIES.find(c => c.id === emojiCategory);
+      items = cat ? cat.items : [];
+      label = cat ? cat.id : "";
+    }
+    emojiGrid.replaceChildren();
+    emojiGrid.dataset.label = label;
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "eb-emoji-empty";
+      empty.textContent = "No emoji";
+      emojiGrid.appendChild(empty);
+      return;
+    }
+    // Dedupe: a few emoji appear in two categories; one tile is enough.
+    const seen = new Set();
+    items.forEach(([emoji]) => {
+      if (seen.has(emoji)) return;
+      seen.add(emoji);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.emoji = emoji;
+      b.textContent = emoji;
+      emojiGrid.appendChild(b);
+    });
+  }
+
+  function openEmojiPanel() {
+    emojiPanel.hidden = false;
+    renderEmojiGrid();
+    if (emojiSearch) emojiSearch.focus();
+  }
+
+  function closeEmojiPanel() {
+    if (!emojiPanel || emojiPanel.hidden) return;
+    emojiPanel.hidden = true;
+    if (emojiSearch) emojiSearch.value = "";
+    emojiCategory = EMOJI_CATEGORIES[0].id;
+    if (emojiTabs) {
+      emojiTabs.querySelectorAll("button").forEach(b =>
+        b.classList.toggle("active", b.dataset.cat === emojiCategory));
+    }
+  }
+
+  /* Insert `emoji` at the caret in SOURCE mode. The toolbar lives OUTSIDE
+   * the editor, and the search box steals focus as the panel opens, so by
+   * click time the CodeMirror selection is gone; we capture it on the
+   * toggle's mousedown and restore it here, exactly as the link/image
+   * actions pin their selection before replaceSelection. In WYSIWYG mode
+   * CodeMirror is not the editor: hybrid.js listens on the same panel and
+   * inserts into the DOM instead, so this path is source-only. */
+  let savedEmojiSel = null;
+  function insertEmoji(emoji) {
+    if (savedEmojiSel) {
+      NB.cmEditor.setSelection(savedEmojiSel.start, savedEmojiSel.end);
+    }
+    NB.cmEditor.replaceSelection(emoji, "caret");
+    savedEmojiSel = null;
+  }
+  if (emojiToggle) emojiToggle.addEventListener("mousedown", () => {
+    savedEmojiSel = sel();
+  });
+
   /* Get the current selection as { start, end, text, value }. The
    * `start`/`end` fields are char offsets into the document
    * (matches the old textarea's `selectionStart`/`End` shape so the
@@ -226,6 +480,12 @@
       const insert = "![" + alt + "](" + url + ")";
       NB.cmEditor.setSelection(start, end);
       NB.cmEditor.replaceSelection(insert, "select");
+    },
+
+    /* Toggle the emoji picker panel (populated by the wiring below). */
+    emoji() {
+      if (emojiPanel.hidden) openEmojiPanel();
+      else closeEmojiPanel();
     },
 
     /* Fenced code block: act on the current line / selection. */
@@ -474,7 +734,34 @@
   /* --- visibility / wiring ---------------------------------------- */
 
   function show() { bar.hidden = false; }
-  function hide() { bar.hidden = true; overflowMenu.hidden = true; if (tableMenu) tableMenu.hidden = true; }
+  function hide() {
+    bar.hidden = true;
+    overflowMenu.hidden = true;
+    if (tableMenu) tableMenu.hidden = true;
+    closeEmojiPanel();
+  }
+
+  /* Emoji panel wiring: tabs switch category, the grid emits the chosen
+   * emoji, and the search box filters across every category. Buttons are
+   * created per render, so the grid is delegated. */
+  buildEmojiTabs();
+  if (emojiTabs) emojiTabs.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-cat]");
+    if (!b) return;
+    emojiCategory = b.dataset.cat;
+    if (emojiSearch) emojiSearch.value = "";
+    emojiTabs.querySelectorAll("button").forEach(x =>
+      x.classList.toggle("active", x.dataset.cat === emojiCategory));
+    renderEmojiGrid();
+    if (emojiSearch) emojiSearch.focus();
+  });
+  if (emojiSearch) emojiSearch.addEventListener("input", renderEmojiGrid);
+  if (emojiGrid) emojiGrid.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-emoji]");
+    if (!b) return;
+    insertEmoji(b.dataset.emoji);
+    closeEmojiPanel();
+  });
 
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-act]");
@@ -487,9 +774,12 @@
   });
 
   document.addEventListener("click", (e) => {
-    if (overflowMenu.hidden) return;
-    if (e.target.closest(".eb-overflow")) return;
-    overflowMenu.hidden = true;
+    if (!overflowMenu.hidden) {
+      if (!e.target.closest(".eb-overflow")) overflowMenu.hidden = true;
+    }
+    if (emojiPanel && !emojiPanel.hidden && !e.target.closest(".eb-emoji-wrap")) {
+      closeEmojiPanel();
+    }
   });
 
   /* The Ctrl/Cmd+B and Ctrl/Cmd+I keyboard shortcuts are bound
@@ -497,5 +787,5 @@
    * work even when the vim keymap is active). We don't need a
    * keydown listener here anymore. */
 
-  NB.editbar = { show, hide, actions };
+  NB.editbar = { show, hide, actions, closeEmoji: closeEmojiPanel };
 })();

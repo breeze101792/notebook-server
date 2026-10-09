@@ -601,6 +601,86 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   min-width: 170px;
 }
 
+/* Emoji picker: a dropdown panel anchored to the 😀 button. The grid is
+ * populated by editbar.js from a curated dataset; emoji are rendered as
+ * text nodes (never innerHTML) so label text cannot become markup. */
+.edit-bar .eb-emoji-wrap { position: relative; }
+.edit-bar .eb-emoji-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  margin-top: 2px;
+  width: 268px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.edit-bar .eb-emoji-panel[hidden] { display: none; }
+.edit-bar .eb-emoji-search {
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: .85rem;
+}
+.edit-bar .eb-emoji-tabs {
+  display: flex;
+  gap: 2px;
+}
+.edit-bar .eb-emoji-tabs button {
+  flex: 1;
+  height: 24px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: .95rem;
+  line-height: 1;
+}
+.edit-bar .eb-emoji-tabs button:hover { background: var(--accent-soft); color: var(--fg); }
+.edit-bar .eb-emoji-tabs button.active {
+  background: var(--accent-soft);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.edit-bar .eb-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  max-height: 208px;
+  overflow-y: auto;
+}
+.edit-bar .eb-emoji-grid button {
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+  padding: 0;
+}
+.edit-bar .eb-emoji-grid button:hover { background: var(--accent-soft); }
+.edit-bar .eb-emoji-empty {
+  grid-column: 1 / -1;
+  padding: 12px 4px;
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: .85rem;
+}
+
 /* ------------------------------------------------------------------ */
 /* Hybrid table drag overlay (table-edit.js)                           */
 /* ------------------------------------------------------------------ */
