@@ -56,14 +56,17 @@ List spacing is unified so that toggling a line between a paragraph and a
 list, or between tight and loose, never changes the vertical rhythm. Two
 separate mismatches caused visibly different spacing.
 
-### Block margins: paragraph vs list
+### Block margins: paragraph vs list, quote, code
 
 A paragraph carries `.7em` top/bottom (`.markdown-body p`, `style.css:2619`).
-A `<ul>`/`<ol>` had no margin rule, so it fell back to the browser default
-`1em`. The gap around a line therefore changed from 9.8px to 14px the
-moment the line was toggled into a list — the neighbours moved even though
-the line itself did not grow. Giving lists `margin: .7em 0`
-(`style.css:2624`) puts a list and a paragraph on the same vertical grid.
+`<ul>`/`<ol>` had no margin rule, so they fell back to the browser default
+`1em`; `blockquote` used `.8em`; `<pre>` also fell back to `1em`. The gap
+around a line therefore changed the moment the line was toggled into any of
+those blocks — the neighbours moved even though the line itself did not
+grow. Giving lists, quotes, and code blocks `margin: .7em 0`
+(`style.css:2624`, `2671`, `2689`) puts every block-level construct on the
+same vertical grid, so a toolbar toggle (paragraph ↔ list / quote /
+codeblock) never shifts the surrounding blocks.
 
 ### Item shape: tight vs loose
 
@@ -99,9 +102,17 @@ erased that break, collapsing the two paragraphs into one block. Because
 survives.
 
 The export stylesheet in `export.js` mirrors all of these rules
-(`export.js:755-765`) so a downloaded HTML or PDF note has the same
+(`export.js:755-771`) so a downloaded HTML or PDF note has the same
 spacing as the on-screen render. Any change to the list or list-item rules
-must be made in both places.
+must be made in both places. The screen adds no per-item margin, and the
+export deliberately does not either: an early version of the export gave
+every `li` a `.15em` margin, which spaced exported items 23px apart on
+screen's 21px grid.
+
+The same tight/loose mismatch existed in a second place: the AI assistant
+panel renders its replies through the same marked pipeline under
+`.ai-prose-span` (`style.css:3480-3488`). Its paragraph margin made loose
+items taller than tight ones. It now uses the same edge-collapse rule.
 
 ## Special fenced blocks
 

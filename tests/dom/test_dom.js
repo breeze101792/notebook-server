@@ -15218,11 +15218,20 @@ function check(label, cond, extra) {
     // List spacing: the embedded CSS mirrors style.css so a toggled line
     // keeps the same vertical rhythm and tight/loose items match. Drift
     // between the two would put the exported note on a different grid.
+    // The screen adds no per-item margin, so a stray `.markdown-body li
+    // {margin}` in the export would space exported items wider.
     check("export: HTML blob mirrors the list-spacing CSS",
       /\.markdown-body ul,\.markdown-body ol\{padding-left:1\.6em;margin:\.7em 0\}/.test(htmlText) &&
       /\.markdown-body li>p:first-child\{margin-top:0\}/.test(htmlText) &&
-      /\.markdown-body li>p:last-child\{margin-bottom:0\}/.test(htmlText),
+      /\.markdown-body li>p:last-child\{margin-bottom:0\}/.test(htmlText) &&
+      !/\.markdown-body li\{margin/.test(htmlText),
       "list css=" + /li>p:first-child/.test(htmlText));
+    // Quote and code blocks share the paragraph's .7em vertical margin so
+    // a toolbar toggle does not move the surrounding blocks.
+    check("export: HTML blob mirrors the quote/code block margins",
+      /\.markdown-body blockquote\{[^}]*margin:\.7em 0/.test(htmlText) &&
+      /\.markdown-body pre\{[^}]*margin:\.7em 0/.test(htmlText),
+      "quote/pre margin=" + /blockquote\{[^}]*margin:\.7em 0/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just
     // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).

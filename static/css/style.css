@@ -2670,7 +2670,10 @@ body[data-theme="light"] #viewer-content {
 }
 .markdown-body blockquote {
   border-left: 3px solid var(--accent);
-  margin: .8em 0;
+  /* Same vertical rhythm as a paragraph and a list, so toggling a line
+   * into/out of a quote does not move its neighbours (see the list-spacing
+   * note above). */
+  margin: .7em 0;
   padding: .2em 1em;
   color: var(--fg-muted);
   background: var(--accent-soft);
@@ -2688,6 +2691,10 @@ body[data-theme="light"] #viewer-content {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px 16px;
+  /* Match the paragraph/list/quote vertical rhythm so a codeblock toggle
+   * keeps the same neighbour gap. Without this, <pre> fell back to the
+   * browser's default 1em and shifted the blocks around it. */
+  margin: .7em 0;
   overflow-x: auto;
 }
 .markdown-body pre code { background: none; padding: 0; font-size: .88em; }
@@ -3479,6 +3486,13 @@ body[data-theme="light"] #viewer-content {
 .ai-prose-span h3, .ai-prose-span h4, .ai-prose-span h5, .ai-prose-span h6 { font-size: .93rem; }
 .ai-prose-span ul, .ai-prose-span ol { margin: .45em 0; padding-left: 1.5em; }
 .ai-prose-span li { margin: .18em 0; }
+/* Same tight/loose unification as the viewer: a loose list wraps each
+ * item's content in a <p>, and the .45em paragraph margin would make those
+ * items taller than tight items in the same list. Collapse the margin at
+ * the item's own edges only, so a multi-paragraph item keeps its break. */
+.ai-prose-span li > p:first-child { margin-top: 0; }
+.ai-prose-span li > p:last-child { margin-bottom: 0; }
+.ai-prose-span li > ul, .ai-prose-span li > ol { margin-top: .18em; margin-bottom: 0; }
 .ai-prose-span code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .82em;

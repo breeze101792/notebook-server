@@ -753,21 +753,22 @@
       ".markdown-body a{color:" + base.link + ";text-decoration:none}",
       ".markdown-body a:hover{text-decoration:underline}",
       ".markdown-body ul,.markdown-body ol{padding-left:1.6em;margin:.7em 0}",
-      ".markdown-body li{margin:.15em 0}",
       // List spacing mirrors style.css: list blocks use the same .7em
       // vertical margin as paragraphs (so a paragraph<->list toggle does
       // not move neighbours), and a loose item's edge paragraphs lose
       // their margins so tight and loose items are the same height. Only
       // the first/last paragraph are collapsed, so a multi-paragraph item
-      // keeps its internal break.
+      // keeps its internal break. The screen adds no per-item margin, so
+      // neither does the export: an extra `li{margin}` here spaced
+      // exported items 23px apart vs 21px on screen.
       ".markdown-body li>p:first-child{margin-top:0}",
       ".markdown-body li>p:last-child{margin-bottom:0}",
       ".markdown-body li>ul,.markdown-body li>ol{margin-top:.15em;margin-bottom:0}",
       ".markdown-body li:has(> input[type=\"checkbox\"], > p > input[type=\"checkbox\"]){list-style:none}",
       ".markdown-body li>input[type=\"checkbox\"],.markdown-body li>p>input[type=\"checkbox\"]{width:1em;height:1em;margin:0 .53em 0 -1.53em;vertical-align:middle}",
-      ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.8em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
+      ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.7em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
       ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:" + base.codeBg + ";padding:.12em .4em;border-radius:4px;font-size:.9em}",
-      ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;overflow-x:auto;white-space:pre}",
+      ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;margin:.7em 0;overflow-x:auto;white-space:pre}",
       ".markdown-body pre code{background:none;padding:0;font-size:.88em}",
       ".markdown-body table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto}",
       ".markdown-body th,.markdown-body td{border:1px solid " + base.border + ";padding:6px 10px;text-align:left;vertical-align:top}",
