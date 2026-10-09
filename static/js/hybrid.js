@@ -66,10 +66,27 @@
   // needs its own rewrite (a heading drops the separating space, a list
   // item also drops the padding after its marker).
   const CARET_BR_ATTR = "data-hybrid-caret-br";
-  const EMPTY_HEADING_SENTINEL = "\u0000nbemptyh";
-  const EMPTY_LIST_ITEM_SENTINEL = "\u0000nbemptyli";
-  const EMPTY_TASK_SENTINEL = "\u0000nbemptytask";
-  const EMPTY_QUOTE_SENTINEL = "\u0000nbemptybq";
+  // Every serialization sentinel carries a per-session random nonce. The
+  // sentinels are restored with global string replacements after turndown,
+  // so a real note whose text happens to contain a literal sentinel (pasted
+  // via the Clipboard API, set through a plugin edit, or an older note that
+  // already carried one) would be silently rewritten. A fresh nonce per
+  // session makes that collision impossible: the token cannot exist in any
+  // file written before this session. Hex-only so the token stays safe to
+  // embed in the RegExp built below.
+  const SENTINEL_NONCE = Math.random().toString(16).slice(2) +
+    Date.now().toString(16);
+  const EMPTY_HEADING_SENTINEL = "\u0000nbemptyh" + SENTINEL_NONCE;
+  const EMPTY_LIST_ITEM_SENTINEL = "\u0000nbemptyli" + SENTINEL_NONCE;
+  const EMPTY_TASK_SENTINEL = "\u0000nbemptytask" + SENTINEL_NONCE;
+  const EMPTY_QUOTE_SENTINEL = "\u0000nbemptybq" + SENTINEL_NONCE;
+  // A surviving inline HTML comment (or top-level comment) is stashed and
+  // stood in for by this placeholder before turndown (which drops comment
+  // nodes), then restored by postProcessMarkdown. The digits between the
+  // prefix and the end marker pick the entry from the per-serialization
+  // commentStash.
+  const COMMENT_SENTINEL = "\u0000nbcomment" + SENTINEL_NONCE;
+  const COMMENT_SENTINEL_END = "\u0000c";
   // Turndown's collapseWhitespace deletes a whitespace-only text node
   // BEFORE any rule runs (vendor turndown.browser.js, collapseWhitespace
   // -> remove), so the spaces inside an inline <code>   </code> cannot
@@ -81,13 +98,14 @@
   // character: a private-use char (E000-F8FF) occurs in real notes
   // (Nerd Font / Powerline glyphs, pasted terminal output), and a global
   // split on it would silently rewrite those characters to spaces -- the
-  // exact data-loss class this path exists to fix. Turndown strips NUL
-  // from text (postProcess), so a real note cannot carry this token.
-  const CODE_SPACE_SENTINEL = "\u0000nbcodespace";
+  // exact data-loss class this path exists to fix. Turndown does NOT strip
+  // NUL from text, so the per-session SENTINEL_NONCE above is what makes a
+  // collision with real note text impossible.
+  const CODE_SPACE_SENTINEL = "\u0000nbcodespace" + SENTINEL_NONCE;
   // Turndown's bundled postProcess() trims trailing whitespace, so a
   // non-whitespace sentinel is appended as the clone's LAST child and the
   // output is cut at it (see wholeDomMarkdown / serializeEditedElement).
-  const SAVE_SENTINEL = "\u0000nbsave";
+  const SAVE_SENTINEL = "\u0000nbsave" + SENTINEL_NONCE;
   // The canonical separator placed between blocks that were re-serialized
   // by the splice path. Untouched blocks keep their own source bytes and
   // never need it; it only pads a freshly emitted block.
@@ -180,6 +198,11 @@
   // so the class is touched only when the selected set actually changes
   // (selectionchange fires many times during one drag).
   let selectedRuleSet = null;
+  // HTML comment nodes encountered while preparing the current clone,
+  // indexed by the COMMENT_SENTINEL placeholder that stands in for each.
+  // Reset at the start of every clone preparation; read back by
+  // postProcessMarkdown in the same synchronous serialization call.
+  let commentStash = [];
 
   function ensureTurndown() {
     if (turndownSvc) return turndownSvc;
@@ -524,6 +547,10 @@
     if (NB.blocks && NB.blocks.restoreForMarkdown) {
       NB.blocks.restoreForMarkdown(clone);
     }
+    // Replace surviving HTML comment nodes (which turndown's process()
+    // ignores, dropping them) with restorable placeholders. Runs late so
+    // only comments the note still carries are stashed. See stashComments.
+    stashComments(clone);
   }
 
   /* Turndown a prepared clone into a string. Turndown's bundled
@@ -580,6 +607,17 @@
     md = md.split(EMPTY_QUOTE_SENTINEL).join("");
     // Restore the spaces preserved inside a whitespace-only inline code.
     md = md.split(CODE_SPACE_SENTINEL).join(" ");
+    // Escape literal "<tag>" / "&entity;" text that turndown leaves
+    // unescaped (its escape table has no rule for "<" or "&"), so an edited
+    // paragraph that displays those characters does not write raw HTML or a
+    // decoded entity back into the note. Fenced code and inline code spans
+    // are left untouched. Runs before the comment restore so a restored
+    // comment is not itself escaped.
+    md = escapeRawHtmlEntities(md);
+    // Restore each surviving HTML comment that was replaced by a
+    // COMMENT_SENTINEL placeholder (turndown drops comment nodes).
+    md = md.replace(commentSentinelRe(),
+      (_, i) => commentStash[Number(i)] || "");
     // Turndown's escape list only escapes a heading marker when a SPACE
     // follows ("^#{1,6} "), so a paragraph whose text STARTS with "##x"
     // or "#no-space" would be read back as an ATX heading. Escape a
@@ -588,6 +626,35 @@
     // the leading run is touched, so a "#" mid-line is left alone.
     md = escapeLeadingHashes(md);
     return md;
+  }
+
+  function commentSentinelRe() {
+    return new RegExp(COMMENT_SENTINEL + "(\\d+)" + COMMENT_SENTINEL_END, "g");
+  }
+
+  /* Replace every HTML comment node under `root` with a text placeholder
+   * that turndown will emit, and record the original comment text so
+   * postProcessMarkdown can restore it. Turndown's process() ignores
+   * comment nodes (nodeType 8 has no branch), so without this an edited
+   * block containing an inline comment lost it on save. Only comments are
+   * touched; a comment inside a fence/plugin lives in the source text and
+   * is not a DOM comment node. Returns the number stashed. */
+  function stashComments(root) {
+    commentStash = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+    const comments = [];
+    let n;
+    while ((n = walker.nextNode())) comments.push(n);
+    comments.forEach((c) => {
+      const idx = commentStash.length;
+      // nodeValue is the comment's inner text only; rebuild the delimiters
+      // so the restored bytes are the original `<!-- ... -->` comment.
+      commentStash.push("<!--" + c.nodeValue + "-->");
+      const placeholder = document.createTextNode(
+        COMMENT_SENTINEL + idx + COMMENT_SENTINEL_END);
+      c.parentNode.replaceChild(placeholder, c);
+    });
+    return commentStash.length;
   }
 
   /* Escape a leading "#" run on a line that is not a valid ATX heading and
@@ -621,6 +688,127 @@
       lines[i] = m[1] + run.split("").map(() => "\\#").join("") + rest;
     }
     return lines.join("\n");
+  }
+
+  /* True when `s` looks like text that Markdown will reparse as raw HTML
+   * or a character entity: a tag-shaped "<...>" run or a "&name;"/"&#...;"
+   * entity. Used to decide when escaping is needed at all, so ordinary
+   * text (a lone "&", a "<" followed by a space, "a < b") is left exactly
+   * as turndown emitted it and untouched blocks stay byte-identical. */
+  const HTML_TAG_LIKE_RE = /<\/?[a-zA-Z][^>]*>/;
+  const HTML_ENTITY_LIKE_RE =
+    /&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});/;
+
+  /* Escape "<" and "&" on the non-code parts of every line when a literal
+   * tag or entity would otherwise be reparsed as raw HTML. Turndown's
+   * escape table (vendor turndown.browser.js) has no rule for either
+   * character, so a paragraph showing `use <b> for bold` saved as the real
+   * tag, and `write &copy; here` saved as a decoded "©" -- silently
+   * changing the visible text and injecting HTML into a note that was
+   * plain Markdown (goal G4 / invariant I6). Fenced code and inline code
+   * spans are left byte-for-byte: their content is literal by definition.
+   * Existing entity references are re-escaped only at the ampersand, so
+   * "&amp;" becomes "&amp;amp;" and reads back as the literal "&amp;". */
+  function escapeRawHtmlEntities(md) {
+    const lines = md.split("\n");
+    let fence = null;   // the opening delimiter, e.g. "```" or "~~~~"
+    for (let i = 0; i < lines.length; i++) {
+      // Track the WHOLE delimiter (char + length) as escapeLeadingHashes
+      // does: turndown widens a fence when its body contains a backtick
+      // run, and a shorter inner line must not close it early.
+      const fm = /^\s*(?:>[ \t]*)*(`{3,}|~{3,})/.exec(lines[i]);
+      if (fm) {
+        if (!fence) fence = fm[1];
+        else if (fm[1][0] === fence[0] && fm[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence) continue;
+      lines[i] = escapeRawHtmlOnLine(lines[i]);
+    }
+    return lines.join("\n");
+  }
+
+  /* Escape the non-code segments of one line. This is a small Markdown
+   * scanner, because several spans must be copied verbatim:
+   *   - a backslash-escaped character (`\``) is literal, never a delimiter;
+   *   - an inline code span (a backtick run through its matching run);
+   *   - a link/image destination, `](...)`;
+   *   - an autolink, `<scheme:...>`.
+   * Everything else accumulates as text and is escaped by
+   * escapeRawHtmlSegment. Walking with escapes in mind keeps a literal
+   * `\`` from opening a phantom code span that would leave a following
+   * tag/entity unescaped. */
+  function escapeRawHtmlOnLine(line) {
+    let out = "";
+    let text = "";
+    let i = 0;
+    const n = line.length;
+    const flush = () => { out += escapeRawHtmlSegment(text); text = ""; };
+    const tickRunAt = (k) => {
+      const m = /^`+/.exec(line.slice(k));
+      return m ? m[0] : null;
+    };
+    while (i < n) {
+      const ch = line[i];
+      if (ch === "\\" && i + 1 < n) {
+        // An escaped character is literal text; its delimiter meaning is
+        // suppressed. Copy both characters and continue.
+        text += line.slice(i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (ch === "`") {
+        const run = tickRunAt(i);
+        let j = i + run.length;
+        let close = -1;
+        while (j < n) {
+          if (line[j] === "\\") { j += 2; continue; }
+          if (line[j] === "`") {
+            const cr = tickRunAt(j);
+            if (cr.length === run.length) { close = j; break; }
+            j += cr.length;
+            continue;
+          }
+          j += 1;
+        }
+        if (close < 0) { text += line.slice(i); i = n; break; }
+        flush();
+        out += line.slice(i, close + run.length);
+        i = close + run.length;
+        continue;
+      }
+      if (ch === "]" && line[i + 1] === "(") {
+        const close = line.indexOf(")", i + 2);
+        if (close >= 0) {
+          flush();
+          out += line.slice(i, close + 1);
+          i = close + 1;
+          continue;
+        }
+      }
+      if (ch === "<") {
+        const auto = /^<[a-zA-Z][a-zA-Z0-9+.-]*:[^>\s]*>/.exec(line.slice(i));
+        if (auto) { flush(); out += auto[0]; i += auto[0].length; continue; }
+      }
+      text += ch;
+      i += 1;
+    }
+    flush();
+    return out;
+  }
+
+  const HTML_TAG_AT_RE = /<\/?[a-zA-Z][^>]*>/g;
+
+  function escapeRawHtmlSegment(seg) {
+    if (!HTML_TAG_LIKE_RE.test(seg) && !HTML_ENTITY_LIKE_RE.test(seg)) return seg;
+    // Escape "&" only where it forms an entity, and "<"/">" only inside a
+    // tag-shaped run. Escaping every ">" would rewrite a blockquote's "> "
+    // marker in a re-serialized quote to "&gt; " and break the quote, so a
+    // bare ">" outside a tag is always left alone.
+    seg = seg.replace(/&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[a-zA-Z][a-zA-Z0-9]{1,31};)/g, "&amp;");
+    seg = seg.replace(HTML_TAG_AT_RE,
+      (m) => m.split("<").join("&lt;").split(">").join("&gt;"));
+    return seg;
   }
 
   /* Serialize the whole #viewer-content DOM. This is the fallback path;
@@ -667,11 +855,32 @@
   }
 
   /* Lex `source` into ordered top-level blocks. Returns null -- never
-   * guesses -- when marked is unavailable, lexing throws, or the raws do
-   * not concatenate back to exactly `source`. That last check is what
-   * makes the splice safe: if the raws reassemble the file byte-for-byte,
-   * swapping one block's raw for a re-serialization and keeping the rest
-   * can never lose bytes that live outside a block. */
+   * guesses -- when marked is unavailable, lexing throws, or a byte of the
+   * source cannot be accounted for. That last check is what makes the
+   * splice safe: if the blocks reassemble the file byte-for-byte, swapping
+   * one block's raw for a re-serialization and keeping the rest can never
+   * lose bytes that live outside a block.
+   *
+   * marked's Lexer does NOT keep a link-reference definition (`[id]: url`)
+   * as a token raw: it consumes the line, stores it in `tokens.links`, and
+   * renders a later `[id]` reference as an ordinary link. Its raw is simply
+   * absent from the token stream, so the naive reassembly check failed and
+   * disabled the whole splice for any note with a reference definition --
+   * the next edit then canonicalized the file and DELETED the definition
+   * line. Repair that here: walk the token stream in order, consume a run
+   * of definition lines at the cursor before each raw, and require the raw
+   * to start exactly there. The consumed definitions are emitted as
+   * synthetic `def` blocks carried verbatim (they own no DOM element, so
+   * tokenElementCount skips them). Any byte that is neither a definition
+   * line nor the next token's raw fails closed to null.
+   *
+   * The cursor must be used, not `indexOf`: a token raw can also occur
+   * inside an earlier definition line (`[docs]: url` followed by the
+   * paragraph `docs`), and searching forward would land on that occurrence
+   * and reject a legitimate note. Only definitions (not blank lines) are
+   * consumed between tokens: a blank-line run is its own `space` token raw
+   * and must still line up.
+   */
   function topLevelBlocks(source) {
     if (!window.marked || !window.marked.Lexer) return null;
     let toks;
@@ -680,9 +889,45 @@
     } catch (_) {
       return null;
     }
-    const blocks = toks.map((t) => ({ type: t.type, raw: t.raw || "" }));
-    if (blocks.map((b) => b.raw).join("") !== source) return null;
+    const defRule = defLineRegex();
+    if (!defRule) return null;
+    let pos = 0;
+    const blocks = [];
+    // Consume a run of definition lines at the cursor and record it as one
+    // synthetic `def` block so the reassembly still accounts for its bytes.
+    const takeDefs = () => {
+      const start = pos;
+      for (;;) {
+        defRule.lastIndex = 0;
+        const m = defRule.exec(source.slice(pos));
+        if (m && m.index === 0 && m[0].length) { pos += m[0].length; continue; }
+        break;
+      }
+      if (pos > start) blocks.push({ type: "def", raw: source.slice(start, pos) });
+    };
+    for (const t of toks) {
+      const raw = t.raw || "";
+      if (!raw) continue;
+      takeDefs();
+      if (!source.startsWith(raw, pos)) return null;
+      blocks.push({ type: t.type, raw });
+      pos += raw.length;
+    }
+    takeDefs();
+    if (pos !== source.length) return null;
     return blocks;
+  }
+
+  /* A fresh non-global RegExp for marked's own link-reference-definition
+   * rule, or null when the minified API does not expose it (fail closed).
+   * Rebuilt per call so a failed match never leaves a stale `lastIndex`. */
+  function defLineRegex() {
+    const rules = window.marked && window.marked.Lexer &&
+      window.marked.Lexer.rules;
+    const defRule = rules && rules.block && rules.block.gfm &&
+      rules.block.gfm.def;
+    if (!defRule) return null;
+    return new RegExp(defRule.source, defRule.flags.replace("g", ""));
   }
 
   /* How many top-level ELEMENT nodes a token owns. `space`/`def` own none;
@@ -989,16 +1234,31 @@
         continue;
       }
       const next = sourceBlocks[ti + 1];
-      // Only a gap token's leading newlines may be borrowed: an element
-      // token's leading newlines are part of its own source bytes, and
-      // the next iteration would overwrite `out[ti+1]` anyway.
+      // Only a gap token's leading whitespace may be borrowed: an element
+      // token's leading whitespace is part of its own source bytes, and
+      // the next iteration would overwrite `out[ti+1]` anyway. Take the
+      // gap as the separator, but drop its leading spaces/tabs: marked
+      // pulls a list's trailing space into the gap token (raw " \n" for
+      // "- [ ] \n"), and the list serializer already re-emits that marker
+      // space, so keeping it produced the doubled separator "\n\n \n" (the
+      // junk a task item gained when a sibling was edited). The newline
+      // run is kept whole, so a user's blank-line run survives.
       const borrowable = next && !tokenProducesElement(next);
-      const borrowed = borrowable ? (next.raw.match(/^\n+/) || [""])[0] : "";
-      if (borrowed) {
-        out[ti + 1] = next.raw.slice(borrowed.length);
-        out[ti] = ser + borrowed;
-      } else {
+      const gapSep = borrowable ? next.raw.replace(/^[ \t]+/, "") : "";
+      if (borrowable && gapSep) {
+        out[ti + 1] = "";
+        out[ti] = ser + gapSep;
+      } else if (next) {
+        // A following element token (not a gap): the blocks must stay
+        // separated, so use the canonical separator.
         out[ti] = ser + SEGMENT_SEPARATOR;
+      } else {
+        // The block is last in the file and its raw carried no trailing
+        // newline (source ended without one). Append nothing so the saved
+        // bytes keep the file's original end-of-file shape; adding the
+        // canonical separator here grew a trailing blank line the file
+        // never had.
+        out[ti] = ser;
       }
     }
     return out.join("");
@@ -1091,14 +1351,51 @@
       regionBaselineByNode.set(blockHashes[i].el, i);
     }
     const regionParts = [];
+    // The baseline token index each region part maps to (null for a block
+    // created by the edit). Used to seat a region definition accurately.
+    const regionTokens = [];
     for (let i = curStart; i < curEnd; i++) {
       const kept = regionBaselineByNode.get(els[i]);
       if (kept != null && curKeys[i] === blockHashes[kept].key) {
         regionParts.push(sourceBlocks[e[kept]].raw.replace(BLANK_LINE_TRIM_RE, ""));
+        regionTokens.push(e[kept]);
         continue;
       }
       const ser = serializeEditedElement(els[i]).replace(BLANK_LINE_TRIM_RE, "");
-      if (ser) regionParts.push(ser);
+      if (ser) {
+        regionParts.push(ser);
+        regionTokens.push(kept != null ? e[kept] : null);
+      }
+    }
+    // A link-reference definition token has no DOM element, so it is in
+    // neither the prefix nor the suffix and the region loop above never
+    // emits it: a delete that straddles a definition would drop the line.
+    // Re-insert each definition that sits strictly inside the region span,
+    // in source order, after the region element it follows. The anchor is
+    // the count of SURVIVING region parts whose baseline token precedes the
+    // definition, so a definition stays next to the block it preceded even
+    // when other blocks in the region were deleted.
+    const regionDefs = [];
+    for (let t = firstRegionTok + 1; t < lastRegionTok; t++) {
+      const blk = sourceBlocks[t];
+      if (!blk || blk.type !== "def") continue;
+      let anchor = 0;
+      for (const tok of regionTokens) {
+        if (tok != null && tok < t) anchor++;
+      }
+      regionDefs.push({
+        at: anchor,
+        // Drop the definition's own trailing blank line: the region join
+        // re-adds the separator, and keeping both would double it when the
+        // definition is not the last region part.
+        raw: blk.raw.replace(/\s+$/, ""),
+      });
+    }
+    for (let k = regionDefs.length - 1; k >= 0; k--) {
+      const d = regionDefs[k];
+      if (!d.raw) continue;
+      const at = Math.min(d.at, regionParts.length);
+      regionParts.splice(at, 0, d.raw);
     }
     let md = prefixPart;
     if (regionParts.length) {
@@ -1117,9 +1414,16 @@
       // terminated by a blank line) so a structural add writes the same
       // trailing bytes the whole-DOM path did.
       md = md.replace(/\n+$/, "") + "\n\n";
+    } else if (baseEnd > baseStart) {
+      // Pure delete at EOF. The prefix already carries the gap bytes that
+      // preceded the deleted block -- the user's blank-line run -- so keep
+      // them exactly (the previous code trimmed to a single newline and
+      // silently collapsed that run). Only ensure a file with content ends
+      // with a newline; a fully emptied file stays empty.
+      md = prefixPart;
+      if (md && !/\n$/.test(md)) md += "\n";
     } else {
-      // Pure delete (or pure empty insert) at EOF: keep exactly one
-      // trailing newline.
+      // Pure empty insert at EOF: keep exactly one trailing newline.
       md = md.replace(/\n+$/, "\n");
     }
     return md;

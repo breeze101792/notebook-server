@@ -9366,6 +9366,26 @@ function check(label, cond, extra) {
   //        hard-break / raw HTML / owner example)
   //   M1 32-bit hash collision -> "M1: a hash-colliding edit still writes" [M1]
   //   M2 nested empty blockquote -> "M2: nested empty blockquote survives" [M2]
+  //   Second-round edge cases (each reproduces through real hybrid.js +
+  //   vendored marked/Turndown):
+  //        -> "refdef: editing a block keeps the definition ..." [refdef]
+  //        -> "refdef: definition adjacent to a paragraph ..." [refdef-adjacent]
+  //        -> "refdef: a straddling delete keeps the definition line"
+  //           [refdef-straddle]
+  //        -> "escape: literal entity text stays encoded" [escape-amp]
+  //        -> "escape: literal <tag> text stays encoded" [escape-lt]
+  //        -> "escape: a widened fence body is not escaped" [escape-fence-width]
+  //        -> "escape: a link destination is left verbatim" [escape-link-dest]
+  //        -> "comment: inline comment survives an edited paragraph"
+  //           [inline-comment]
+  //        -> "task: editing one item leaves an empty task sibling clean"
+  //           [task-gap]
+  //        -> "blankrun: deleting the last block keeps the preceding run"
+  //           [blankrun-eof]
+  //        -> "blankrun: a middle delete keeps the preceding run,
+  //           consumes the separator"
+  //        -> "eof: editing the last block adds no trailing newline"
+  //           [eof-newline]
   //
   // Native-engine rows (🌐) live in tests/browser/test_hybrid_browser.js:
   //   Enter/Shift+Enter splits, structural locality after a real keypress
@@ -9712,6 +9732,153 @@ function check(label, cond, extra) {
       { name: "corpus: owner example byte-identical (Q16/AC7)",
         source: "## Commands\n###\n### `   `\n",
         expectedSaved: "## Commands\n###\n### `   `\n" },
+
+      // --- edge-case regressions found by adversarial review ------------
+      // A link-reference definition line is dropped from marked's token
+      // stream; before the fix its absence disabled the whole splice, so
+      // the next edit canonicalized the file and DELETED the definition.
+      { name: "refdef: editing a block keeps the definition and untouched bytes",
+        defect: "refdef",
+        source: "Title\n=====\n\nSee [docs].\n\n[docs]: https://example.com\n\n* star a\n",
+        action: async (vc) => {
+          const p = Array.from(vc.querySelectorAll("p"))
+            .find((el) => /See/.test(el.textContent));
+          p.appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved:
+          "Title\n=====\n\nSee [docs](https://example.com).!\n\n" +
+          "[docs]: https://example.com\n\n* star a\n" },
+      // Turndown does not escape "<" or "&"; a paragraph showing an encoded
+      // tag/entity was written back as raw HTML / a decoded character.
+      { name: "escape: literal entity text stays encoded", defect: "escape-amp",
+        source: "write &amp;copy; here\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.firstChild.nodeValue = p.firstChild.nodeValue + "!";
+          dirty(vc);
+        },
+        expectedSaved: "write &amp;copy; here!\n" },
+      { name: "escape: literal <tag> text stays encoded", defect: "escape-lt",
+        source: "use &lt;b&gt; for bold\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.firstChild.nodeValue = p.firstChild.nodeValue + "!";
+          dirty(vc);
+        },
+        expectedSaved: "use &lt;b&gt; for bold!\n" },
+      // An inline HTML comment is a comment node turndown drops; an edit to
+      // the paragraph around it lost the comment.
+      { name: "comment: inline comment survives an edited paragraph",
+        defect: "inline-comment",
+        source: "alpha <!-- keep --> beta\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.lastChild.nodeValue = p.lastChild.nodeValue + "2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<!-- keep -->") !== -1 &&
+          md.indexOf("beta2") !== -1 },
+      // Marked trims a list's trailing space into a separate gap token;
+      // the splice borrowed only its newlines, doubling the separator into
+      // junk when a sibling task item was edited.
+      { name: "task: editing one item leaves an empty task sibling clean",
+        defect: "task-gap",
+        source: "- [x] done\n- [ ] \n",
+        action: async (vc) => {
+          const li = vc.querySelector("li");
+          const tn = Array.from(li.childNodes)
+            .find((n) => n.nodeType === 3 && n.nodeValue.trim());
+          tn.nodeValue = tn.nodeValue + "!";
+          dirty(vc);
+        },
+        expectedSaved: "-   [x]  done!\n-   [ ]  \n" },
+      // A structural delete at EOF collapsed a user's blank-line run and
+      // dropped the file's end-of-file shape.
+      { name: "blankrun: deleting the last block keeps the preceding run",
+        defect: "blankrun-eof",
+        source: "a\n\n\n\nb\n",
+        action: async (vc) => { vc.querySelectorAll("p")[1].remove(); dirty(vc); },
+        expectedSaved: "a\n\n\n\n" },
+      // A middle delete keeps the blank run that PRECEDES the deleted block
+      // (the same rule the Q1 "block delete keeps ..." cases rely on) and
+      // does not collapse it. The run that followed the deleted block is its
+      // separator and is consumed, so the file does not accumulate newlines.
+      { name: "blankrun: a middle delete keeps the preceding run, consumes the separator",
+        source: "x\n\na\n\n\n\nb\n\ny\n",
+        action: async (vc) => { vc.querySelectorAll("p")[1].remove(); dirty(vc); },
+        expectedSaved: "x\n\nb\n\ny\n" },
+      // A file with no trailing newline gained a blank line on edit.
+      { name: "eof: editing the last block adds no trailing newline",
+        defect: "eof-newline",
+        source: "a\n\nb",
+        action: async (vc) => {
+          const ps = vc.querySelectorAll("p");
+          ps[ps.length - 1].firstChild.nodeValue = "B2";
+          dirty(vc);
+        },
+        expectedSaved: "a\n\nB2" },
+      // A definition line immediately followed by a paragraph whose text
+      // also occurs inside it: the old indexOf cursor matched the paragraph
+      // inside the definition and rejected a legitimate note.
+      { name: "refdef: definition adjacent to a paragraph keeps the splice",
+        defect: "refdef-adjacent",
+        source: "[docs]: https://example.com\ndocs\n",
+        action: async (vc) => {
+          vc.querySelector("p").firstChild.nodeValue = "docs!";
+          dirty(vc);
+        },
+        expectedSaved: "[docs]: https://example.com\ndocs!\n" },
+      // A delete that spans a definition line must carry the definition
+      // through, not drop it (the def token owns no element).
+      { name: "refdef: a straddling delete keeps the definition line",
+        defect: "refdef-straddle",
+        source: "x\n\na\n\n[d]: u\n\nb\n\ny\n",
+        action: async (vc) => {
+          const ps = vc.querySelectorAll("p");
+          ps[1].remove();
+          ps[2].remove();
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("[d]: u") !== -1 &&
+          md.indexOf("\na\n") === -1 && md.indexOf("\nb\n") === -1 },
+      // A fence whose body contains a backtick run is widened by turndown;
+      // the escape pass must track the whole delimiter or it closes early.
+      { name: "escape: a widened fence body is not escaped",
+        defect: "escape-fence-width",
+        source: "````\n```\nA & B and <b>\n```\n````\n",
+        action: async (vc) => {
+          const c = vc.querySelector("pre code");
+          c.textContent = c.textContent + "x";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<b>") !== -1 &&
+          md.indexOf("&lt;") === -1 && md.indexOf("&amp;") === -1 },
+      // A link destination is not text: turndown emits a destination that
+      // can contain "<...>" (a URL with an encoded tag), and the escape
+      // pass must leave it verbatim so the link still resolves.
+      { name: "escape: a link destination is left verbatim",
+        defect: "escape-link-dest",
+        source: "see [x](http://e.com/?a=1&lt;b&gt;) here\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("(http://e.com/?a=1<b>)") !== -1 &&
+          md.indexOf("&lt;b&gt;)") === -1 },
+      // A backslash-escaped backtick is literal, not a delimiter. Treating
+      // it as an opening code span swallowed a following literal tag and
+      // left it unescaped.
+      { name: "escape: an escaped backtick does not open a code span",
+        defect: "escape-backtick",
+        source: "a \\` b &lt;b&gt; c\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: "a \\` b &lt;b&gt; c!\n" },
     ];
 
     for (const c of HYBRID_CONTRACT_CASES) {

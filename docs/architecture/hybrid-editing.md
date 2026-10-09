@@ -116,17 +116,15 @@ These are settled by the owner and override any conflicting recommendation below
 ## Test suite
 
 The spec is enforced by a data-driven contract table in `tests/dom/test_dom.js`
-(`HYBRID_CONTRACT_CASES` at `test_dom.js:8680`, 56 cases, consumed by the loop at
-`test_dom.js:8941`) plus native-engine cases in
-`tests/browser/test_hybrid_browser.js` (Chromium). A `[defect]` tag on a case names
-a code defect the test pins; all are now fixed. The coverage map is a comment at the
-top of the jsdom section.
+(`HYBRID_CONTRACT_CASES`, 69 cases, consumed by the loop that follows it) plus
+native-engine cases in `tests/browser/test_hybrid_browser.js` (Chromium). A
+`[defect]` tag on a case names a code defect the test pins; all are now fixed.
+The coverage map is a comment at the top of the jsdom section.
 
-Results at this revision: jsdom **2337 ok, 0 failed** (83 `== section ==`
-blocks); the Chromium harness **69 ok, 0 failed** (the last two were the
-horizontal-rule preview-selection case, fixed by re-measuring the rule box after
-leaving hybrid mode -- the format bar's removal shifts the rule). Backend
-`unittest` **209 OK**.
+Results at this revision: jsdom **2411 ok, 0 failed**; the Chromium harness
+**69 ok, 0 failed** (the last two were the horizontal-rule preview-selection
+case, fixed by re-measuring the rule box after leaving hybrid mode -- the
+format bar's removal shifts the rule). Backend `unittest` **209 OK**.
 
 ### Defects found by the suite and fixed
 
@@ -135,11 +133,31 @@ leaving hybrid mode -- the format bar's removal shifts the rule). Backend
 | C1 | An empty-line insert (Shift+Enter, a bare Enter leaving an empty block) fell back to the whole-DOM serializer, canonicalizing untouched blocks. | `structuralSplice` splices a pure empty-block insert instead of returning null; the inserted empty block contributes no text, so the file stays byte-identical. |
 | C2 | Deleting one of two byte-different blocks with equal content (`* a` / `- a`) kept the wrong twin's bytes. | Prefix/suffix matching now uses the element node as a tie-breaker when a change key is ambiguous. |
 | M1 | A 32-bit FNV-1a collision (`5ur85a` / `qnef9u`) made a real edit look unchanged, silently writing nothing. | Change detection compares the collision-free canonical string, not a 32-bit digest. |
-| M2 | A nested empty blockquote `> >` collapsed to `>`. | `markEmptyBlockquotes` (`hybrid.js:326`) treats a nested quote/list/fence as content; only a bare quote gets the sentinel. |
+| M2 | A nested empty blockquote `> >` collapsed to `>`. | `markEmptyBlockquotes` treats a nested quote/list/fence as content; only a bare quote gets the sentinel. |
 | M3 | An unresolved `[[NoSuchNote]]` saved as an escaped `\[\[NoSuchNote\]\]`. | The unresolved wikilink carries a raw marker and a serializer rule emits the literal `[[...]]`. |
-| escape-# | A leading `#` with no following space (`#no-space`) saved unescaped and re-read as a heading. | `escapeLeadingHashes` (`hybrid.js:549`) escapes a leading `#` run that is not a valid ATX heading, outside fences. |
-| new-note-# | The first block trigger typed into a **brand-new empty note** stayed literal: a bare text node under the empty root failed the root-caret guard's `firstChild` test, so `# ` never converted and saved as the escaped `\# `. | `applyBlockRules` (`hybrid.js:1618`) refuses only real **block** content (`hasBlockContent` ignores the placeholder `<br>`), so an empty root is wrapped in a `<p>` and the block rules fire; a root `<br>` line box is dropped first. Verified in jsdom and Chromium. |
+| escape-# | A leading `#` with no following space (`#no-space`) saved unescaped and re-read as a heading. | `escapeLeadingHashes` escapes a leading `#` run that is not a valid ATX heading, outside fences. |
+| new-note-# | The first block trigger typed into a **brand-new empty note** stayed literal: a bare text node under the empty root failed the root-caret guard's `firstChild` test, so `# ` never converted and saved as the escaped `\# `. | `applyBlockRules` refuses only real **block** content (`hasBlockContent` ignores the placeholder `<br>`), so an empty root is wrapped in a `<p>` and the block rules fire; a root `<br>` line box is dropped first. Verified in jsdom and Chromium. |
 | Q10 | An untouched raw HTML block (`<div>x</div>`) lost its tags on a clean save. | `html` tokens are aligned by the element count they render, so an untouched raw block keeps its bytes. A raw `<table>` is the exception and still falls back so it converts to GFM. |
+
+### Defects found by the second-round adversarial review and fixed
+
+Each of these has a `[defect]`-tagged case in `HYBRID_CONTRACT_CASES` and was
+reproduced through the real `hybrid.js` + vendored marked/Turndown in jsdom.
+
+| # | Defect | Fix |
+|---|--------|-----|
+| refdef | A note containing a link-reference definition (`[id]: url`) disabled the whole splice: marked's Lexer consumes the definition line into `tokens.links` and omits its raw, so `topLevelBlocks`' reassembly check failed. The next edit then canonicalized the file and **deleted the definition**. | `topLevelBlocks` walks the token stream in order, consumes runs of definition lines at the cursor with marked's own def rule (`defLineRegex`), and requires each raw to start exactly there; any other byte fails closed. The definitions become synthetic `def` blocks carried verbatim (they own no element, so `tokenElementCount` skips them). |
+| refdef-adjacent | The first version matched token raws with `indexOf`, so a definition line followed by a paragraph whose text also occurs inside it (`[docs]: url` then `docs`) matched the paragraph inside the definition and rejected a legitimate note. | The cursor walks forward only; a token raw must start where the cursor stands, so an earlier occurrence inside a definition is never mistaken for the token. |
+| refdef-straddle | A delete that spanned a definition line dropped it: the `def` token owns no element, so it was in neither the prefix nor the suffix of `structuralSplice`. | Definitions inside the replaced region are re-inserted, anchored to the count of SURVIVING region blocks whose baseline token precedes the definition, so the definition stays beside the block it followed even when other region blocks were deleted. |
+| escape-lt / escape-amp | Turndown's escape table has no rule for `<` or `&`, so a paragraph displaying `use <b> for bold` or `write &copy; here` saved as real HTML / a decoded `©` -- injecting HTML and changing the visible text (I4/I6/G4). | `escapeRawHtmlEntities` escapes `<`/`>` inside tag-shaped runs and `&` only where it forms an entity, on non-code parts of every line. Fenced code, inline code spans, link/image destinations, and autolinks are skipped byte-for-byte; a bare `>` (a quote marker) is never touched. |
+| escape-fence-width | The escape pass tracked only the fence character, so a fence widened by turndown (because its body contains a backtick run) was closed early and its later lines were escaped, corrupting code. | The fence tracker keeps the whole delimiter (char + length, closing run >= opener), as `escapeLeadingHashes` already did. |
+| escape-backtick | The escape scanner tested for a backtick without first honoring a backslash escape, so a literal `` \` `` opened a phantom code span and a following literal tag/entity was copied verbatim and saved as live HTML. | The scanner consumes `\` + the next character as literal text before any delimiter test. |
+| escape-link-dest | A link destination is not text, but the escape pass rewrote a URL that contained a tag-shaped run (`?q=<tag>`). | `](...)` destinations and `<scheme:...>` autolinks are copied verbatim. |
+| inline-comment | An inline HTML comment (`<!-- keep -->`) is a comment node that Turndown's `process()` ignores, so editing the surrounding paragraph dropped it. | `stashComments` replaces every comment node in the clone with a restorable placeholder before the conversion; `postProcessMarkdown` puts the original `<!-- ... -->` back. |
+| task-gap | Marked trims a list's trailing space into a separate gap token (raw `" \n"` for `- [ ] \n`); the splice borrowed only the gap's newlines, doubling the separator into junk (`- [ ]  \n\n \n`) when a sibling task item was edited. | The gap borrow takes the whole gap but drops its leading spaces/tabs, since the list serializer re-emits the marker space; the newline run is kept whole. |
+| blankrun-eof | A structural delete at EOF trimmed to one trailing newline, collapsing the user's blank-line run (`a\n\n\n\nb\n` minus `b` became `a\n`, not `a\n\n\n\n`). | The pure-delete-at-EOF branch keeps the prefix bytes (the gap run) exactly and only ensures a non-empty file ends with a newline. |
+| eof-newline | A block edited when the file had no trailing newline gained a blank line (`a\n\nb` -> `a\n\nB2\n\n`). | The splice appends no separator after a last block whose raw carried no trailing newline. |
+| sentinel-nonce | The comment claiming Turndown strips NUL is false; real note text containing a literal sentinel token (Clipboard paste, plugin edit) would be silently rewritten by the global post-serialization replacements. | Every sentinel carries a per-session random `SENTINEL_NONCE`, so a token cannot exist in any file written before the session. |
 
 ### Defects found by adversarial review of the fixes
 
