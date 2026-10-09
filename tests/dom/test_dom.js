@@ -15232,6 +15232,14 @@ function check(label, cond, extra) {
       /\.markdown-body blockquote\{[^}]*margin:\.7em 0/.test(htmlText) &&
       /\.markdown-body pre\{[^}]*margin:\.7em 0/.test(htmlText),
       "quote/pre margin=" + /blockquote\{[^}]*margin:\.7em 0/.test(htmlText));
+    // Every remaining block-level construct (table, figure, dl, details)
+    // and a quote's edge paragraphs follow the same rhythm.
+    check("export: HTML blob mirrors the unified block rhythm",
+      /\.markdown-body table\{[^}]*margin:\.7em 0/.test(htmlText) &&
+      /\.markdown-body figure,\.markdown-body dl,\.markdown-body details\{margin:\.7em 0\}/.test(htmlText) &&
+      /\.markdown-body blockquote>:first-child\{margin-top:0\}/.test(htmlText) &&
+      /\.markdown-body blockquote>:last-child\{margin-bottom:0\}/.test(htmlText),
+      "block rhythm=" + /figure,\.markdown-body dl/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just
     // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).

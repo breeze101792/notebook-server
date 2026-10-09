@@ -2646,6 +2646,10 @@ body[data-theme="light"] #viewer-content {
 /* A nested list tucks under its parent item with a small gap rather than a
  * paragraph-sized one, and adds no trailing gap. */
 .markdown-body li > ul, .markdown-body li > ol { margin-top: .15em; margin-bottom: 0; }
+/* Raw-HTML blocks marked passes through: give the common ones the same
+ * vertical rhythm as a paragraph so they do not fall back to the browser
+ * default (`figure`/`dl` are 1em, `details` has none). */
+.markdown-body figure, .markdown-body dl, .markdown-body details { margin: .7em 0; }
 /* Task-list items: the checkbox replaces the bullet. marked emits a bare
  * <li> (no task-list-item class), so match on the checkbox child. A tight
  * list puts the checkbox directly in the <li>; a loose one wraps it in a
@@ -2679,6 +2683,12 @@ body[data-theme="light"] #viewer-content {
   background: var(--accent-soft);
   border-radius: 0 6px 6px 0;
 }
+/* A quote's content is wrapped in paragraphs, whose .7em margins would
+ * otherwise leak out and make a one-line quote ~2.2x the height of a
+ * paragraph. Collapse only the edge paragraphs, so a multi-paragraph
+ * quote keeps the break between them (same pattern as list items). */
+.markdown-body blockquote > :first-child { margin-top: 0; }
+.markdown-body blockquote > :last-child { margin-bottom: 0; }
 .markdown-body code {
   font-family: "SFMono-Regular", Menlo, Consolas, monospace;
   background: var(--code-bg);
@@ -2777,7 +2787,7 @@ body[data-theme="light"] #viewer-content {
  * blocks (which use --code-bg) and align it with the panel
  * surface so the diagram "lives" inside the notebook. */
 .mermaid-container {
-  margin: 12px 0;
+  margin: .7em 0;
   padding: 14px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -2819,7 +2829,7 @@ body[data-theme="light"] #viewer-content {
 .wavedrom-error,
 .katex-error,
 .viz-error {
-  margin: 12px 0;
+  margin: .7em 0;
   border: 1px solid var(--warn);
   border-radius: 8px;
   overflow: hidden;
@@ -2858,7 +2868,7 @@ body[data-theme="light"] #viewer-content {
  * both diagram types share the same look and the "click to inspect"
  * affordance. */
 .wavedrom-container {
-  margin: 12px 0;
+  margin: .7em 0;
   padding: 14px 16px;
   background: #fff;
   border: 1px solid var(--border);
@@ -2886,7 +2896,7 @@ body[data-theme="light"] #viewer-content {
  * matching the diagram containers. Math is black-on-transparent, so it
  * reads on both light and dark surfaces. */
 .katex-container {
-  margin: 12px 0;
+  margin: .7em 0;
   padding: 14px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -2901,7 +2911,7 @@ body[data-theme="light"] #viewer-content {
  * mirrors the mermaid/wavedrom containers so all diagram types share
  * the same card look and the "click to inspect" affordance. */
 .viz-container {
-  margin: 12px 0;
+  margin: .7em 0;
   padding: 14px 16px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -2929,7 +2939,7 @@ body[data-theme="light"] #viewer-content {
  * is resizable so a demo taller than the default can be enlarged without
  * editing the note. */
 .htmlpreview-card {
-  margin: 12px 0;
+  margin: .7em 0;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -3058,7 +3068,7 @@ body[data-theme="light"] #viewer-content {
 .mermaid-lightbox-body svg.dragging {
   cursor: grabbing;
 }
-.markdown-body table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; }
+.markdown-body table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; margin: .7em 0; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 10px; }
 .markdown-body tbody tr:nth-child(odd) { background: var(--bg-panel); }
 .markdown-body tbody tr:nth-child(even) { background: var(--bg); }
@@ -3519,11 +3529,15 @@ body[data-theme="light"] #viewer-content {
   font-size: inherit;
 }
 .ai-prose-span blockquote {
-  margin: .55em 0;
+  /* Same rhythm as the panel's paragraphs/lists (.45em), so a quote does
+   * not sit in its own spacing band. Edge paragraphs are collapsed below. */
+  margin: .45em 0;
   padding: 2px 12px;
   border-left: 3px solid var(--border);
   color: var(--fg-muted);
 }
+.ai-prose-span blockquote > :first-child { margin-top: 0; }
+.ai-prose-span blockquote > :last-child { margin-bottom: 0; }
 .ai-prose-span table {
   border-collapse: collapse;
   font-size: .82rem;

@@ -68,6 +68,29 @@ grow. Giving lists, quotes, and code blocks `margin: .7em 0`
 same vertical grid, so a toolbar toggle (paragraph ↔ list / quote /
 codeblock) never shifts the surrounding blocks.
 
+The same audit covered every other block-level construct marked or raw
+HTML can emit. They now all carry `.7em`:
+
+- The five plugin cards (`.mermaid-container`, `.wavedrom-container`,
+  `.katex-container`, `.viz-container`, `.htmlpreview-card`) and their
+  four error boxes used `12px`, which sat off the rhythm.
+- `figure`, `dl`, and `details` had no rule and fell back to the `1em`
+  browser default.
+- `table` had no margin at all.
+- A `blockquote`'s content is wrapped in paragraphs, whose `.7em` margins
+  leaked out and made a one-line quote ~2.2x the height of a paragraph.
+  Collapsing the edge paragraphs (`.markdown-body blockquote > :first-child`
+  / `:last-child`, `style.css:2691-2692`) fixes it and keeps a
+  multi-paragraph quote's internal breaks, the same edge-collapse pattern
+  used for list items.
+
+The only block margins intentionally off `.7em` are the separator `hr`
+(`1.5em`) and the headings (`1.4em` top, `.5em` bottom).
+
+The AI assistant panel uses its own tighter scale (paragraph/list `.45em`).
+Its `blockquote` used `.55em` and leaked its inner-paragraph margin the
+same way; both are now `.45em` with edge-collapse (`style.css:3532-3541`).
+
 ### Item shape: tight vs loose
 
 A list item is one of two DOM shapes, and marked picks the shape from the
@@ -102,7 +125,7 @@ erased that break, collapsing the two paragraphs into one block. Because
 survives.
 
 The export stylesheet in `export.js` mirrors all of these rules
-(`export.js:755-771`) so a downloaded HTML or PDF note has the same
+(`export.js:755-784`) so a downloaded HTML or PDF note has the same
 spacing as the on-screen render. Any change to the list or list-item rules
 must be made in both places. The screen adds no per-item margin, and the
 export deliberately does not either: an early version of the export gave

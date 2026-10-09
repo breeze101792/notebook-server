@@ -767,15 +767,21 @@
       ".markdown-body li:has(> input[type=\"checkbox\"], > p > input[type=\"checkbox\"]){list-style:none}",
       ".markdown-body li>input[type=\"checkbox\"],.markdown-body li>p>input[type=\"checkbox\"]{width:1em;height:1em;margin:0 .53em 0 -1.53em;vertical-align:middle}",
       ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.7em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
+      // A quote's edge paragraphs lose their margin so a one-line quote is
+      // not ~2.2x the height of a paragraph (mirrors style.css).
+      ".markdown-body blockquote>:first-child{margin-top:0}",
+      ".markdown-body blockquote>:last-child{margin-bottom:0}",
       ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:" + base.codeBg + ";padding:.12em .4em;border-radius:4px;font-size:.9em}",
       ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;margin:.7em 0;overflow-x:auto;white-space:pre}",
       ".markdown-body pre code{background:none;padding:0;font-size:.88em}",
-      ".markdown-body table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto}",
+      ".markdown-body table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto;margin:.7em 0}",
       ".markdown-body th,.markdown-body td{border:1px solid " + base.border + ";padding:6px 10px;text-align:left;vertical-align:top}",
       ".markdown-body tbody tr:nth-child(odd){background:" + base.rowOdd + "}",
       ".markdown-body hr{border:none;border-top:1px solid " + base.border + ";margin:1.5em 0}",
       ".markdown-body img{max-width:100%;height:auto}",
       ".markdown-body svg{max-width:100%;height:auto}",
+      // Raw-HTML blocks marked passes through share the paragraph rhythm.
+      ".markdown-body figure,.markdown-body dl,.markdown-body details{margin:.7em 0}",
       // Diagram hosts — keep each diagram on one page.
       ".markdown-body .mermaid,.markdown-body .katex-display,.markdown-body figure,.markdown-body pre,.markdown-body table,.markdown-body blockquote,.markdown-body img,.markdown-body svg{break-inside:avoid;page-break-inside:avoid}",
       // Headings: each h1 starts a new page in print (except the first
