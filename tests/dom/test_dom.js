@@ -15240,6 +15240,13 @@ function check(label, cond, extra) {
       /\.markdown-body blockquote>:first-child\{margin-top:0\}/.test(htmlText) &&
       /\.markdown-body blockquote>:last-child\{margin-bottom:0\}/.test(htmlText),
       "block rhythm=" + /figure,\.markdown-body dl/.test(htmlText));
+    // Plugin cards: the export renders the same container elements the
+    // viewer does, so it must style them too or a diagram exports bare.
+    check("export: HTML blob styles the plugin cards",
+      /\.markdown-body \.mermaid-container,[^{]*\{[^}]*border:1px solid/.test(htmlText) &&
+      /\.htmlpreview-card\{[^}]*border:1px solid/.test(htmlText) &&
+      /\.mermaid-error,[^{]*\{[^}]*border:1px solid/.test(htmlText),
+      "cards=" + /mermaid-container/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just
     // the selected section. FILE_A has "# File A" (h1) and "## Sub A" (h2).

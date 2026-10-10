@@ -672,11 +672,13 @@
       link: "#58a6ff", codeBg: "#161b22", preBg: "#161b22",
       quoteBg: "rgba(88,166,255,.12)", quoteColor: "#8b949e",
       rowOdd: "#161b22", accent: "#58a6ff",
+      panelBg: "#22232a", warn: "#f3b454",
     } : {
       bg: "#fff", fg: "#1f2330", border: "#d8dde4", muted: "#5d6470",
       link: "#2f5fd0", codeBg: "#f0f2f5", preBg: "#f0f2f5",
       quoteBg: "rgba(47,95,208,.12)", quoteColor: "#5d6470",
       rowOdd: "#f6f7f9", accent: "#2f5fd0",
+      panelBg: "#f6f7f9", warn: "#c9831d",
     };
     const hljs = dark ? DARK_HLJS : LIGHT_HLJS;
     return [
@@ -782,6 +784,19 @@
       ".markdown-body svg{max-width:100%;height:auto}",
       // Raw-HTML blocks marked passes through share the paragraph rhythm.
       ".markdown-body figure,.markdown-body dl,.markdown-body details{margin:.7em 0}",
+      // Plugin cards (mermaid / wavedrom / katex / viz / html-live) and
+      // their error boxes. The export renders the same container elements
+      // the viewer does, so it must style them too or a diagram exports as
+      // bare content. Mirrors style.css's container rules.
+      ".markdown-body .mermaid-container,.markdown-body .wavedrom-container,.markdown-body .katex-container,.markdown-body .viz-container{margin:.7em 0;padding:14px 16px;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;text-align:center;overflow:auto}",
+      ".markdown-body .katex-container{text-align:left}",
+      ".markdown-body .wavedrom-container{background:#fff}",
+      ".markdown-body .htmlpreview-card{margin:.7em 0;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;overflow:hidden}",
+      ".markdown-body .htmlpreview-frame{display:block;width:100%;border:0;background:#fff}",
+      ".markdown-body .mermaid-container svg,.markdown-body .wavedrom-container svg,.markdown-body .viz-container svg{display:inline-block;max-width:100%;height:auto;width:auto}",
+      ".markdown-body .mermaid-error,.markdown-body .wavedrom-error,.markdown-body .katex-error,.markdown-body .viz-error{margin:.7em 0;border:1px solid " + base.warn + ";border-radius:8px;overflow:hidden}",
+      ".markdown-body .mermaid-error-head,.markdown-body .wavedrom-error-head,.markdown-body .katex-error-head,.markdown-body .viz-error-head{background:" + base.warn + ";color:" + base.bg + ";font-size:.86rem;padding:6px 12px;font-weight:600}",
+      ".markdown-body .mermaid-source,.markdown-body .wavedrom-source,.markdown-body .katex-source,.markdown-body .viz-source{margin:0;background:" + base.codeBg + ";color:" + base.fg + ";border:0;border-radius:0;padding:10px 12px;font-size:.85rem;line-height:1.4;white-space:pre;overflow-x:auto}",
       // Diagram hosts — keep each diagram on one page.
       ".markdown-body .mermaid,.markdown-body .katex-display,.markdown-body figure,.markdown-body pre,.markdown-body table,.markdown-body blockquote,.markdown-body img,.markdown-body svg{break-inside:avoid;page-break-inside:avoid}",
       // Headings: each h1 starts a new page in print (except the first

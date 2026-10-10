@@ -125,12 +125,21 @@ erased that break, collapsing the two paragraphs into one block. Because
 survives.
 
 The export stylesheet in `export.js` mirrors all of these rules
-(`export.js:755-784`) so a downloaded HTML or PDF note has the same
+(`export.js:755-799`) so a downloaded HTML or PDF note has the same
 spacing as the on-screen render. Any change to the list or list-item rules
 must be made in both places. The screen adds no per-item margin, and the
 export deliberately does not either: an early version of the export gave
 every `li` a `.15em` margin, which spaced exported items 23px apart on
 screen's 21px grid.
+
+The export also styles the **plugin cards**. The export renders the same
+`.mermaid-container` / `.wavedrom-container` / `.katex-container` /
+`.viz-container` / `.htmlpreview-card` elements and their error boxes the
+viewer does, but `exportCss` originally carried no rules for them, so a
+diagram exported as bare content with no card. The export now mirrors the
+container chrome (border, panel background, padding, and the `.7em` rhythm),
+using `panelBg` / `warn` entries in its light/dark palette. A test asserts
+the card rules are present in the exported blob.
 
 The same tight/loose mismatch existed in a second place: the AI assistant
 panel renders its replies through the same marked pipeline under
