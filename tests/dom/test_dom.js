@@ -15218,6 +15218,261 @@ function check(label, cond, extra) {
   window.localStorage.removeItem("nb:windowGeometry");
   await tick(10);
 
+  console.log("== windows maximize ==");
+  // Maximize/restore is a shared window feature owned by windows.js, not a
+  // designer one. wire() injects a .win-max control into every
+  // .settings-modal header: it groups the trailing header control(s) with the
+  // max button into one .settings-header-actions box (else appends the max
+  // directly when the header has no button). Clicking it or double-clicking
+  // the header toggles the transient .settings-modal--max class; drag/resize
+  // refuse while maximized so a gesture cannot overwrite the saved geometry;
+  // an overlay closing resets the state.
+  {
+    const idxHtml = read("templates/index.html");
+    const cssTxt = read("static/css/style.css");
+    const winSrc = read("static/js/windows.js");
+    const allModals = Array.from(window.document.querySelectorAll(".settings-modal"));
+    const settingsModal = window.document.querySelector("#settings-overlay .settings-modal");
+    const exportModal   = window.document.querySelector("#export-overlay .settings-modal");
+    const authModal     = window.document.querySelector("#auth-overlay .settings-modal");
+    const designerModal = window.document.querySelector("#designer-overlay .settings-modal");
+    const maxOf = (m) => (m ? m.querySelector(".win-max") : null);
+    const isMax = (m) => !!m && m.classList.contains("settings-modal--max");
+    const clickEv = (el) => el.dispatchEvent(new window.Event("click", { bubbles: true }));
+    const dblEv = (el) => el.dispatchEvent(new window.MouseEvent("dblclick",
+      { bubbles: true, cancelable: true }));
+
+    // (a) source guards: the designer-specific maximize is gone from the
+    // template, and the stylesheet now targets the shared class.
+    check("windows maximize: #designer-max is gone from index.html",
+      idxHtml.indexOf('id="designer-max"') === -1);
+    check("windows maximize: index.html no longer names the designer-max glyphs",
+      idxHtml.indexOf("designer-max-icon") === -1 &&
+      idxHtml.indexOf("designer-max-restore") === -1);
+    check("windows maximize: .designer-header-actions is gone from index.html",
+      idxHtml.indexOf("designer-header-actions") === -1);
+    check("windows maximize: .designer-header-actions is gone from style.css",
+      cssTxt.indexOf("designer-header-actions") === -1);
+    check("windows maximize: windows.js groups header controls into .settings-header-actions",
+      winSrc.indexOf('"settings-header-actions"') !== -1);
+    check("windows maximize: style.css targets .settings-modal--max, not .designer-modal--max",
+      cssTxt.indexOf(".settings-modal--max") !== -1 &&
+      cssTxt.indexOf(".designer-modal--max") === -1);
+    check("windows maximize: style.css no longer defines a .designer-max rule",
+      cssTxt.indexOf(".designer-max") === -1);
+
+    // (b) every fixture modal acquired exactly one injected .win-max.
+    check("windows maximize: every fixture .settings-modal has exactly one .win-max",
+      allModals.length >= 4 &&
+      allModals.every((m) => m.querySelectorAll(".win-max").length === 1),
+      "modals=" + allModals.length + " counts=" +
+        allModals.map((m) => m.querySelectorAll(".win-max").length).join(","));
+
+    // (c) injection placement. The max button is never a bare sibling next to
+    // the title: windows.js groups the trailing control(s) with the max into
+    // one right-aligned .settings-header-actions box, so every header keeps
+    // the two-child [title, actions] shape (a bare third sibling spread the
+    // title and landed the icon mid-title -- the Settings/Export bug).
+    const designerMax = maxOf(designerModal);
+    check("windows maximize: designer .win-max carries both glyph classes",
+      !!designerMax &&
+      !!designerMax.querySelector("svg.win-max-icon") &&
+      !!designerMax.querySelector("svg.win-max-restore"));
+
+    // (c1) For Settings, Export and Designer: the close button and its
+    // previous sibling .win-max are both inside one .settings-header-actions,
+    // in order [.win-max, close].
+    // (c2) The header's direct children are exactly [title/heading, actions] --
+    // the max button must NOT be a direct child beside the title.
+    const groupCases = [
+      { name: "settings", modal: settingsModal,
+        title: window.document.getElementById("settings-title"),
+        close: window.document.getElementById("settings-close") },
+      { name: "export", modal: exportModal,
+        title: window.document.getElementById("export-title"),
+        close: window.document.getElementById("export-close") },
+      { name: "designer", modal: designerModal,
+        title: designerModal && designerModal.querySelector(".designer-heading"),
+        close: window.document.getElementById("designer-close") },
+    ];
+    groupCases.forEach((c) => {
+      const header = c.modal && c.modal.querySelector(".settings-header");
+      const kids = header ? Array.from(header.children) : [];
+      const actions = kids.find((el) => el.classList.contains("settings-header-actions"));
+      const max = maxOf(c.modal);
+      check("windows maximize: " + c.name + " header groups its close + .win-max inside " +
+        ".settings-header-actions, in order [.win-max, close]",
+        !!header && !!actions && !!max && !!c.close &&
+        max.parentNode === actions && c.close.parentNode === actions &&
+        actions.firstElementChild === max && actions.lastElementChild === c.close &&
+        max.nextElementSibling === c.close,
+        "actions=" + (actions ? actions.children.length : "(none)"));
+      check("windows maximize: " + c.name + " header direct children are exactly " +
+        "[title/heading, .settings-header-actions]",
+        kids.length === 2 && kids[0] === c.title && kids[1] === actions &&
+        !!max && max.parentNode !== header,
+        "kids=" + kids.map((k) => k.className || k.tagName).join("|"));
+    });
+
+    // (c3) Login: a header with no button gets .win-max appended directly,
+    // with no .settings-header-actions wrapper.
+    const authMax = maxOf(authModal);
+    const authHeader = authModal && authModal.querySelector(".settings-header");
+    check("windows maximize: a header with no button gets .win-max appended last",
+      !!authMax && !!authHeader && authHeader.lastElementChild === authMax);
+    check("windows maximize: the no-button header gets no .settings-header-actions wrapper",
+      !!authHeader && !!authMax && authMax.parentNode === authHeader &&
+      !authHeader.querySelector(".settings-header-actions"));
+    // Every injected control starts un-maximized with the right label.
+    check("windows maximize: injected controls start aria-pressed=false and titled 'Maximize'",
+      allModals.every((m) => {
+        const b = m.querySelector(".win-max");
+        return b && b.getAttribute("aria-pressed") === "false" &&
+          b.getAttribute("title") === "Maximize" &&
+          b.getAttribute("aria-label") === "Maximize";
+      }));
+
+    // (d) click toggles the class + the accessible state (Export modal).
+    const eMax = maxOf(exportModal);
+    const eHeader = exportModal.querySelector(".settings-header");
+    check("windows maximize: export modal is not maximized before any click", !isMax(exportModal));
+    clickEv(eMax);
+    check("windows maximize: click adds settings-modal--max", isMax(exportModal));
+    check("windows maximize: click sets aria-pressed=true",
+      eMax.getAttribute("aria-pressed") === "true");
+    check("windows maximize: click relabels title/aria-label to 'Restore'",
+      eMax.getAttribute("title") === "Restore" && eMax.getAttribute("aria-label") === "Restore",
+      "title=" + eMax.getAttribute("title"));
+    clickEv(eMax);
+    check("windows maximize: second click removes settings-modal--max", !isMax(exportModal));
+    check("windows maximize: second click reverts aria-pressed=false + 'Maximize'",
+      eMax.getAttribute("aria-pressed") === "false" &&
+      eMax.getAttribute("title") === "Maximize" &&
+      eMax.getAttribute("aria-label") === "Maximize");
+
+    // (e) header dblclick toggles; a dblclick on a button is exempt.
+    dblEv(eHeader);
+    check("windows maximize: dblclick on the header toggles maximize", isMax(exportModal));
+    dblEv(eHeader);
+    check("windows maximize: a second header dblclick restores", !isMax(exportModal));
+    dblEv(eMax);
+    check("windows maximize: dblclick whose target is .win-max does not toggle", !isMax(exportModal));
+
+    // (f) drag/resize guard: while maximized a gesture must not overwrite the
+    // saved geometry with the full-viewport rect.
+    {
+      const S = settingsModal;
+      const sHeader = S.querySelector(".settings-header");
+      const sGrip = S.querySelector(".resize-grip");
+      const sMax = maxOf(S);
+      const stubRect = { width: 400, height: 260, left: 300, top: 120,
+        right: 700, bottom: 380, x: 300, y: 120, toJSON() {} };
+      const realRect = S.getBoundingClientRect.bind(S);
+      S.getBoundingClientRect = () => stubRect;
+      window.localStorage.removeItem("nb:windowGeometry");
+      try {
+        // Establish a known saved geometry with a normal drag.
+        sHeader.dispatchEvent(new window.MouseEvent("pointerdown",
+          { bubbles: true, cancelable: true, button: 0, clientX: 320, clientY: 130 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointermove",
+          { bubbles: true, clientX: 380, clientY: 180 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+        const geoBefore = window.localStorage.getItem("nb:windowGeometry");
+        const styleBefore = [S.style.left, S.style.top, S.style.width, S.style.height].join("|");
+        check("windows maximize: precondition, a normal drag persists geometry",
+          !!geoBefore && geoBefore.indexOf('"settings-overlay"') !== -1, geoBefore || "(none)");
+
+        clickEv(sMax);
+        check("windows maximize: modal is maximized before the drag attempt (precondition)", isMax(S));
+
+        // A drag attempt while maximized must be ignored.
+        sHeader.dispatchEvent(new window.MouseEvent("pointerdown",
+          { bubbles: true, cancelable: true, button: 0, clientX: 320, clientY: 130 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointermove",
+          { bubbles: true, clientX: 520, clientY: 330 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+        // Same for a resize attempt on the grip.
+        sGrip.dispatchEvent(new window.MouseEvent("pointerdown",
+          { bubbles: true, cancelable: true, button: 0, clientX: 700, clientY: 380 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointermove",
+          { bubbles: true, clientX: 900, clientY: 600 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+        await tick(10);
+
+        check("windows maximize: a drag while maximized does not change the saved geometry",
+          window.localStorage.getItem("nb:windowGeometry") === geoBefore,
+          "before=" + geoBefore + " after=" + window.localStorage.getItem("nb:windowGeometry"));
+        check("windows maximize: a resize while maximized does not change the inline geometry",
+          [S.style.left, S.style.top, S.style.width, S.style.height].join("|") === styleBefore,
+          "before=" + styleBefore + " after=" +
+            [S.style.left, S.style.top, S.style.width, S.style.height].join("|"));
+
+        // Restore, then a normal drag persists the geometry again.
+        clickEv(sMax);
+        check("windows maximize: modal is restored after the second click", !isMax(S));
+        sHeader.dispatchEvent(new window.MouseEvent("pointerdown",
+          { bubbles: true, cancelable: true, button: 0, clientX: 320, clientY: 130 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointermove",
+          { bubbles: true, clientX: 380, clientY: 180 }));
+        window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+        const geoAfter = JSON.parse(window.localStorage.getItem("nb:windowGeometry") || "{}")["settings-overlay"];
+        check("windows maximize: a normal drag after restore persists geometry again",
+          !!geoAfter && geoAfter.left === 300 && geoAfter.top === 120 &&
+          geoAfter.w === 400 && geoAfter.h === 260, JSON.stringify(geoAfter));
+        check("windows maximize: the normal drag moved the modal to left:300+60",
+          Math.round(parseFloat(S.style.left)) === 360, "left=" + S.style.left);
+      } finally {
+        S.getBoundingClientRect = realRect;
+        window.localStorage.removeItem("nb:windowGeometry");
+      }
+      await tick(10);
+    }
+
+    // (g) closing the overlay (hidden toggles) resets the transient state.
+    {
+      const expOverlay = window.document.getElementById("export-overlay");
+      expOverlay.hidden = false;
+      await tick(10);
+      clickEv(eMax);
+      check("windows maximize: export modal maximized before close (precondition)", isMax(exportModal));
+      expOverlay.hidden = true;
+      await tick(20);
+      check("windows maximize: closing the overlay removes settings-modal--max", !isMax(exportModal));
+      check("windows maximize: closing resets aria-pressed=false + 'Maximize'",
+        eMax.getAttribute("aria-pressed") === "false" && eMax.getAttribute("title") === "Maximize");
+      expOverlay.hidden = false;
+      await tick(20);
+      check("windows maximize: reopening is not maximized", !isMax(exportModal));
+      expOverlay.hidden = true;
+      await tick(10);
+    }
+
+    // (h) a modal added later (the VIM :help overlay is created on demand by
+    // vimnav.js, with a close button in its header) is wired by the
+    // MutationObserver, so it too gets a grip and .win-max.
+    {
+      const dyn = window.document.createElement("div");
+      dyn.id = "dyn-help-overlay";
+      dyn.className = "settings-overlay";
+      dyn.hidden = true;
+      dyn.innerHTML = '<div class="settings-modal dyn-modal">' +
+        '<div class="settings-header"><h2>Help</h2>' +
+        '<button class="icon-btn" data-dyn-close>×</button></div>' +
+        '<div class="settings-body"></div></div>';
+      window.document.body.appendChild(dyn);
+      await tick(20);
+      const dm = dyn.querySelector(".settings-modal");
+      const dmMax = dm && dm.querySelector(".win-max");
+      const dmClose = dm && dm.querySelector('[data-dyn-close]');
+      check("windows maximize: a dynamically added modal is wired with a grip and .win-max",
+        !!dm && !!dm.querySelector(".resize-grip") && !!dmMax);
+      check("windows maximize: the dynamic modal's .win-max sits right before its header close button",
+        !!dmMax && !!dmClose && dmMax.nextElementSibling === dmClose);
+      dyn.remove();
+      await tick(10);
+    }
+  }
+
   console.log("== export ==");
   // Export lives in the file-tree, bookmark, and tab right-click menus
   // (there is no top-bar button). Scope is the active file. We stub

@@ -1403,6 +1403,26 @@ kbd.context-menu-kbd {
   opacity: .55;
   border-bottom-right-radius: 2px;
 }
+/* Maximize / restore, injected into every modal header by NB.windows. The
+ * modal is a free-floating window (NB.windows sets inline left/top/width/
+ * height/transform); the max class overrides that geometry with !important
+ * so it wins regardless of drag/resize state. */
+.win-max { display: inline-flex; align-items: center; padding: 4px 6px; }
+.win-max svg { display: block; }
+.win-max .win-max-restore { display: none; }
+.win-max[aria-pressed="true"] .win-max-icon { display: none; }
+.win-max[aria-pressed="true"] .win-max-restore { display: block; }
+.settings-modal--max {
+  left: 0 !important;
+  top: 0 !important;
+  transform: none !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0;
+}
+.settings-modal--max .resize-grip { display: none; }
 /* During a drag/resize, suppress text selection. */
 .modal-dragging,
 .modal-resizing {
@@ -1426,6 +1446,9 @@ kbd.context-menu-kbd {
   font-weight: 600;
   letter-spacing: .3px;
 }
+/* Right-aligned control cluster in a modal header (close + maximize). Injected
+ * by NB.windows so every header keeps the same [title, actions] flex shape. */
+.settings-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 /* Body: flex row with a sidebar nav on the left and the section pane on
  * the right. `min-height: 0` is the load-bearing piece that lets the
  * inner .settings-sections pane scroll instead of pushing the modal
@@ -3994,6 +4017,7 @@ body[data-theme="light"] #viewer-content {
 /* ------------------------------------------------------------------ */
 .designer-modal { width: min(var(--designer-modal-w), 96vw); height: min(var(--designer-modal-h), 92vh); }
 .designer-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+
 .designer-type {
   font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
   color: var(--fg-muted); background: var(--bg-elev);
