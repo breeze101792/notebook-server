@@ -31,7 +31,10 @@
 
   const bar         = document.getElementById("edit-bar");
   const overflowBtn = bar.querySelector(".eb-overflow-btn");
-  const overflowMenu = bar.querySelector(".eb-menu");
+  // Both the ⋯ overflow wrapper and the ▦ table wrapper carry .eb-menu, and
+  // the table one comes first in the DOM. Scope the selectors so the ⋯ menu
+  // is not aliased to the table menu.
+  const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
   const tableMenu   = bar.querySelector(".eb-table-menu");
 
   /* --- emoji picker -------------------------------------------------
@@ -733,13 +736,27 @@
 
   /* --- visibility / wiring ---------------------------------------- */
 
-  function show() { bar.hidden = false; }
-  function hide() {
-    bar.hidden = true;
-    overflowMenu.hidden = true;
-    if (tableMenu) tableMenu.hidden = true;
-    closeEmojiPanel();
+  /* VIM mode hides the toolbar in the VIM (CodeMirror) source editor only:
+   * vim users drive that editor from the keyboard and save/quit with
+   * :w / :q (see vimnav). Hybrid WYSIWYG mode always keeps the bar. The
+   * editing context is recorded from show("<source"|"hybrid">) so an
+   * in-place vim toggle (Settings) can refresh without the caller
+   * re-showing. */
+  let wantsVisible = false;
+  let context = "source";   // "source" (CM6) | "hybrid" (WYSIWYG)
+  function vimOn() {
+    return !!(NB.app && NB.app.getVimMode && NB.app.getVimMode());
   }
+  function refresh() {
+    bar.hidden = !wantsVisible || (context === "source" && vimOn());
+    if (bar.hidden) {
+      overflowMenu.hidden = true;
+      if (tableMenu) tableMenu.hidden = true;
+      closeEmojiPanel();
+    }
+  }
+  function show(ctx) { if (ctx) context = ctx; wantsVisible = true; refresh(); }
+  function hide() { wantsVisible = false; refresh(); }
 
   /* Emoji panel wiring: tabs switch category, the grid emits the chosen
    * emoji, and the search box filters across every category. Buttons are
@@ -787,5 +804,5 @@
    * work even when the vim keymap is active). We don't need a
    * keydown listener here anymore. */
 
-  NB.editbar = { show, hide, actions, closeEmoji: closeEmojiPanel };
+  NB.editbar = { show, hide, refresh, actions, closeEmoji: closeEmojiPanel };
 })();

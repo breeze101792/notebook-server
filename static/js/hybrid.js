@@ -4071,8 +4071,10 @@
     topbar.classList.add("editing");
     hybridBtn.classList.add("active");
 
-    // Show the edit bar (without entering CM6 edit mode).
-    if (NB.editbar) NB.editbar.show();
+    // Show the edit bar (without entering CM6 edit mode). The "hybrid"
+    // context keeps the bar visible even when VIM mode is on (vim governs
+    // the CM6 source editor, not WYSIWYG).
+    if (NB.editbar) NB.editbar.show("hybrid");
     // Hide the Preview button (it's for CM6 split mode) and the
     // Close button text should say "Exit WYSIWYG".
     const previewBtn = document.getElementById("preview-btn");

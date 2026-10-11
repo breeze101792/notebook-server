@@ -224,13 +224,31 @@ const html = `<!DOCTYPE html><html><head>
             </div>
           </span>
           <button class="eb" data-act="codeblock">CB</button>
+          <span class="eb-overflow eb-table">
+            <button class="eb eb-table-btn" data-act="table-menu">▦</button>
+            <div class="eb-menu eb-table-menu" hidden>
+              <button class="eb" data-act="table">Insert table</button>
+              <button class="eb" data-act="table-row-up">Move row up</button>
+              <button class="eb" data-act="table-row-down">Move row down</button>
+              <button class="eb" data-act="table-col-left-move">Move column left</button>
+              <button class="eb" data-act="table-col-right-move">Move column right</button>
+              <button class="eb" data-act="table-col-align">Align column (cycle)</button>
+              <button class="eb" data-act="table-row-above">Insert row above</button>
+              <button class="eb" data-act="table-row-below">Insert row below</button>
+              <button class="eb" data-act="table-row-delete">Delete row</button>
+              <button class="eb" data-act="table-col-left">Insert column left</button>
+              <button class="eb" data-act="table-col-right">Insert column right</button>
+              <button class="eb" data-act="table-col-delete">Delete column</button>
+              <button class="eb" data-act="table-header">Toggle header row</button>
+              <button class="eb" data-act="table-delete">Delete table</button>
+            </div>
+          </span>
           <button class="eb" data-act="undo">Undo</button>
           <button class="eb" data-act="redo">Redo</button>
           <span class="eb-overflow">
             <button class="eb eb-overflow-btn" data-act="more">More</button>
             <div class="eb-menu" hidden>
               <button class="eb" data-act="hr">HR</button>
-              <button class="eb" data-act="table">Table</button>
               <button class="eb" data-act="h5">H5</button>
               <button class="eb" data-act="h6">H6</button>
               <button class="eb" data-act="clear">Clear</button>
@@ -4189,7 +4207,7 @@ function check(label, cond, extra) {
   // buttons. We don't assert every label here -- just the structural ones.
   const barButtons = window.document.querySelectorAll("#edit-bar .eb[data-act]");
   check("edit bar: at least 14 buttons present", barButtons.length >= 14, "got " + barButtons.length);
-  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   // Selection-wrap: select "hello", click Bold -> **hello**.
   cmSetValue("hello world"); cmSetSel(0, 5);
   window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -4359,26 +4377,56 @@ function check(label, cond, extra) {
     /\| Column 1 \| Column 2 \|/.test(cmGetValue()) &&
     /\| --- \| --- \|/.test(cmGetValue()),
     "got: " + cmGetValue());
+  // Change 1: "Insert table" moved out of the ⋯ overflow menu into the
+  // ▦ table-actions menu as its first item. The button still routes by
+  // data-act, so a click inserts a table regardless of which menu holds
+  // it (and regardless of whether that menu is open).
+  {
+    const bar = $("edit-bar");
+    const tableMenu = bar.querySelector(".eb-table-menu");
+    // The ⋯ overflow menu is the .eb-menu inside the plain .eb-overflow
+    // span (the table menu lives in .eb-overflow.eb-table).
+    const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
+    check("edit bar: .eb-table-menu's first item is data-act=table",
+      !!tableMenu && !!tableMenu.firstElementChild &&
+      tableMenu.firstElementChild.getAttribute("data-act") === "table",
+      tableMenu ? (tableMenu.firstElementChild
+        ? tableMenu.firstElementChild.getAttribute("data-act") : "empty") : "no table menu");
+    check("edit bar: ⋯ overflow menu no longer carries data-act=table",
+      !!overflowMenu && !overflowMenu.querySelector('[data-act="table"]'),
+      overflowMenu ? overflowMenu.innerHTML.slice(0, 80) : "no overflow menu");
+    // index.html must carry the same layout the fixture mirrors.
+    const idxHtml = read("templates/index.html");
+    const tmHtml = idxHtml.match(/<div class="eb-menu eb-table-menu"[^>]*>([\s\S]*?)<\/div>/);
+    const tmFirst = tmHtml && tmHtml[1].match(/<button class="eb" data-act="([^"]+)"/);
+    check("index.html: .eb-table-menu's first item is data-act=table",
+      !!tmFirst && tmFirst[1] === "table",
+      tmFirst ? tmFirst[1] : "no table menu match");
+    const omHtml = idxHtml.match(/<div class="eb-menu" hidden>([\s\S]*?)<\/div>/);
+    check("index.html: ⋯ overflow .eb-menu no longer has data-act=table",
+      !!omHtml && omHtml[1].indexOf('data-act="table"') === -1,
+      omHtml ? omHtml[1] : "no overflow menu match");
+  }
   // Overflow menu opens on "more" click, then a button inside it acts.
   cmSetValue("fmt"); cmSetSel(0, 3);
-  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: more opens overflow menu", !window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: more opens overflow menu", !window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   // Click a H5 inside the menu -> "##### fmt".
   window.document.querySelector('#edit-bar .eb-menu .eb[data-act="h5"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("edit bar: h5 inside overflow prefixes the line",
     cmGetValue() === "##### fmt", "got: " + cmGetValue());
-  check("edit bar: overflow menu closes after action", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: overflow menu closes after action", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   // Click outside closes the overflow.
   window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: overflow menu reopened", !window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: overflow menu reopened", !window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   // Outside click -> closes.
   window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: outside click closes overflow", window.document.querySelector("#edit-bar .eb-menu").hidden);
+  check("edit bar: outside click closes overflow", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
   // Clear formatting: remove heading + list + quote prefixes.
   cmSetValue("## heading\n- item\n> quote"); cmSetSel(0, cmGetValue().length);
   window.document.querySelector('#edit-bar .eb-menu .eb[data-act="clear"]')
@@ -4419,6 +4467,99 @@ function check(label, cond, extra) {
   window.confirm = () => true;
   click("close-edit-btn"); await tick(10);
   check("edit bar: hidden after Close on dirty", $("edit-bar").hidden);
+
+  console.log("== edit bar: vim-mode visibility ==");
+  // Change 2: VIM mode hides the edit toolbar in the CodeMirror SOURCE
+  // editor only; WYSIWYG (hybrid) always keeps it. show(ctx) records the
+  // context ("source" | "hybrid"), refresh() re-evaluates live off
+  // NB.app.getVimMode(), and hide() clears wantsVisible. The bar starts
+  // hidden (the edit-bar block above exited edit mode on dirty).
+  {
+    const bar = $("edit-bar");
+    check("editbar vim: starts hidden after the edit-bar block", bar.hidden);
+    // Drive the vim flag through a stub so each case is deterministic;
+    // the real NB.app.getVimMode is restored for the public-API case (3f).
+    const realGetVimMode = window.NB.app.getVimMode;
+    let vimStub = false;
+    window.NB.app.getVimMode = () => vimStub;
+
+    // 3a: vim OFF, source context -> visible.
+    window.NB.editbar.show("source");
+    check("editbar vim: source + vim OFF -> bar visible", bar.hidden === false,
+      "hidden=" + bar.hidden);
+
+    // 3b: vim ON, source context -> hidden.
+    vimStub = true;
+    window.NB.editbar.show("source");
+    check("editbar vim: source + vim ON -> bar hidden", bar.hidden === true,
+      "hidden=" + bar.hidden);
+
+    // 3c: vim ON, hybrid context -> visible (the key case: WYSIWYG keeps it).
+    window.NB.editbar.show("hybrid");
+    check("editbar vim: hybrid + vim ON -> bar visible", bar.hidden === false,
+      "hidden=" + bar.hidden);
+
+    // 3d: refresh() re-evaluates live in the recorded context.
+    window.NB.editbar.show("source");
+    check("editbar vim: refresh baseline (source, vim ON) -> hidden",
+      bar.hidden === true, "hidden=" + bar.hidden);
+    vimStub = false;
+    window.NB.editbar.refresh();
+    check("editbar vim: source vim ON->OFF refresh() re-shows",
+      bar.hidden === false, "hidden=" + bar.hidden);
+    vimStub = true;
+    window.NB.editbar.refresh();
+    check("editbar vim: source vim OFF->ON refresh() hides",
+      bar.hidden === true, "hidden=" + bar.hidden);
+    window.NB.editbar.show("hybrid");
+    vimStub = false;
+    window.NB.editbar.refresh();
+    check("editbar vim: hybrid stays visible across vim OFF refresh()",
+      bar.hidden === false, "hidden=" + bar.hidden);
+    vimStub = true;
+    window.NB.editbar.refresh();
+    check("editbar vim: hybrid stays visible across vim ON refresh()",
+      bar.hidden === false, "hidden=" + bar.hidden);
+
+    // 3e: hide() hides the bar and closes the menus + emoji panel.
+    // editbar.js scopes its overflow selector to the plain .eb-overflow
+    // wrapper (`.eb-overflow:not(.eb-table) > .eb-menu`), so the ⋯ menu and
+    // the ▦ table menu are distinct elements; both must close.
+    window.NB.editbar.show("source");
+    vimStub = false;
+    const tableMenu = bar.querySelector(".eb-table-menu");
+    const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
+    const emojiPanel = bar.querySelector(".eb-emoji-panel");
+    tableMenu.hidden = false;
+    overflowMenu.hidden = false;
+    emojiPanel.hidden = false;
+    window.NB.editbar.hide();
+    check("editbar vim: hide() hides the bar", bar.hidden === true,
+      "hidden=" + bar.hidden);
+    check("editbar vim: hide() closes the ▦ table menu",
+      tableMenu.hidden === true, "hidden=" + tableMenu.hidden);
+    check("editbar vim: hide() closes the ⋯ overflow menu",
+      overflowMenu.hidden === true, "hidden=" + overflowMenu.hidden);
+    check("editbar vim: hide() closes the emoji panel",
+      emojiPanel.hidden === true, "hidden=" + emojiPanel.hidden);
+
+    // 3f: the public setting refreshes the bar live while editing source.
+    window.NB.app.getVimMode = realGetVimMode;
+    window.NB.app.setVimMode(false);
+    window.NB.editbar.show("source");
+
+    check("editbar vim: source bar visible with setVimMode(false)",
+      bar.hidden === false, "hidden=" + bar.hidden);
+    window.NB.app.setVimMode(true);
+    check("editbar vim: NB.app.setVimMode(true) hides the source bar live",
+      bar.hidden === true, "hidden=" + bar.hidden);
+    // Leave the suite in the shipped default (vim off, bar hidden).
+    window.NB.app.setVimMode(false);
+    window.NB.editbar.hide();
+    check("editbar vim: restored to vim off + bar hidden",
+      window.NB.app.getVimMode() === false && bar.hidden === true,
+      "vim=" + window.NB.app.getVimMode() + " hidden=" + bar.hidden);
+  }
 
   console.log("== scroll sync ==");
   // Enter edit mode with preview visible.
@@ -8706,7 +8847,7 @@ function check(label, cond, extra) {
     await tick(20);
     await window.NB.hybrid.enter();
     await tick(20);
-    const menuEl = $("edit-bar").querySelector(".eb-menu");
+    const menuEl = $("edit-bar").querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
     const menuHiddenBefore = menuEl.hidden;
     $("edit-bar").querySelector('[data-act="more"]')
       .dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -8849,6 +8990,49 @@ function check(label, cond, extra) {
         window.NB.hybrid.isDirty(), "dirty=false");
       check("hybrid emoji: panel closes after choosing", hybEmojiPanel.hidden);
       hybEmojiPanel.hidden = true;
+
+      // --- Table insert (edit-bar) in hybrid mode ------------------------
+      // Change 1 moved "Insert table" out of the ⋯ overflow into the ▦
+      // table menu. hybrid claims the "table" act, so a click still inserts
+      // even though the button now lives in a (closed) dropdown -- the act
+      // routes the click, not the menu's open state. jsdom has no
+      // execCommand, so stub insertHTML to drop the fragment into the
+      // editable region (hybrid's own onContentChange still marks dirty).
+      vcT.innerHTML = "";
+      const pTable = window.document.createElement("p");
+      pTable.textContent = "start";
+      vcT.appendChild(pTable);
+      caretIn(pTable.firstChild, 5);
+      const tableBtn = $("edit-bar").querySelector('.eb[data-act="table"]');
+      const tableMenuEl = $("edit-bar").querySelector(".eb-table-menu");
+      check("hybrid table: Insert table is the ▦ menu's first item",
+        tableBtn !== null && tableMenuEl !== null &&
+        tableBtn.parentElement === tableMenuEl &&
+        tableMenuEl.firstElementChild === tableBtn,
+        "parent=" + (tableBtn && tableBtn.parentElement &&
+          tableBtn.parentElement.className));
+      check("hybrid table: the ▦ menu is closed when the button is clicked",
+        tableMenuEl !== null && tableMenuEl.hidden);
+      const realExec = window.document.execCommand;
+      window.document.execCommand = (cmd, ui, arg) => {
+        if (cmd === "insertHTML" && arg) vcT.insertAdjacentHTML("beforeend", arg);
+        return true;
+      };
+      try {
+        tableBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+      } finally {
+        if (realExec === undefined) delete window.document.execCommand;
+        else window.document.execCommand = realExec;
+      }
+      const madeHTable = vcT.querySelector("table");
+      check("hybrid table: clicking Insert table (menu closed) inserts a 2-col table",
+        madeHTable !== null && madeHTable.querySelectorAll("th").length === 2 &&
+        /Column 1/.test(madeHTable.textContent) &&
+        /Column 2/.test(madeHTable.textContent),
+        "table=" + (madeHTable && madeHTable.outerHTML));
+      check("hybrid table: the insert marks the note dirty",
+        window.NB.hybrid.isDirty(), "dirty=" + window.NB.hybrid.isDirty());
 
       // The defined list-type model (Word / Google Docs convention): each
       // list button sets the caret ITEM's type; pressing the item's own

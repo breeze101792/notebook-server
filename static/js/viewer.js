@@ -489,7 +489,7 @@
     }
     refreshTopbar();
     NB.cmEditor.focus();
-    if (NB.editbar) NB.editbar.show();
+    if (NB.editbar) NB.editbar.show("source");
   }
 
   /* --- empty state: welcome page ------------------------------------ */

@@ -770,6 +770,9 @@
       // AND the editor's vim keymap (cm-bridge compartment). Toggling
       // the setting flips both so vim can be disabled completely.
       if (NB.cmEditor && NB.cmEditor.setVimMode) NB.cmEditor.setVimMode(cfg.vimMode);
+      // VIM mode hides the edit toolbar; refresh it live so toggling the
+      // setting while editing shows/hides the bar without a reload.
+      if (NB.editbar && NB.editbar.refresh) NB.editbar.refresh();
       persistConfig();
     },
     // Replace the full shortcut override map (called by shortcuts.js
