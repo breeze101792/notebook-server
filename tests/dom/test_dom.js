@@ -19016,6 +19016,333 @@ function check(label, cond, extra) {
   authEnabled = false; authHasAdmin = false; authRole = null;
   await window.NB.settings.close(); await tick(20);
 
+  // --- ai attachments: local text files inlined into the user turn -----
+  // Covers the attach bar / chips / caps / BOM handling / send path. The
+  // public test hooks (_addFilesForTests / _getAttachmentsForTests) drive
+  // the picker path without a real file dialog, exactly as the module's
+  // change handler would. State is cleared between sections so the byte
+  // and chip reservations never leak across checks.
+  console.log("== ai attachments ==");
+  {
+    const aAttach = () => window.document.getElementById("ai-attach");
+    const aBar = () => window.document.querySelector("#ai-view .ai-attach-bar");
+    const aInput = () => window.document.getElementById("ai-attach-input");
+    const aChips = () => Array.from(
+      window.document.querySelectorAll("#ai-view .ai-attach-bar .ai-attach-chip"));
+    const aPending = () => window.NB.ai._getAttachmentsForTests();
+    const aErrs = () => aChips().filter(c => c.classList.contains("error"));
+    const mkFile = (name, parts, opts) => new window.File(parts, name, opts || {});
+    const clearAtt = async () => {
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+    };
+
+    // Deterministic baseline: Clear resets conversation + attachments + log.
+    await clearAtt();
+
+    // (1) attach button opens the picker; it never submits.
+    {
+      const btn = aAttach();
+      check("ai attach: #ai-attach exists and is type=button",
+        !!btn && btn.tagName === "BUTTON" && btn.type === "button",
+        btn ? btn.type : "missing");
+      check("ai attach: hidden multiple file input + attach bar in the host",
+        !!aInput() && aInput().type === "file" && aInput().multiple === true &&
+        aInput().hidden === true && !!aBar() &&
+        aBar().hidden === true,   // empty at rest
+        "input=" + !!aInput() + " bar=" + !!aBar());
+      const logBefore = window.document.querySelectorAll("#ai-chat-log > *").length;
+      const chatBefore = aiChatLog.length;
+      btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(30);
+      check("ai attach: clicking 📎 does not submit or post to /api/ai/chat",
+        aiChatLog.length === chatBefore &&
+        window.document.querySelectorAll("#ai-chat-log > *").length === logBefore &&
+        aPending().length === 0,
+        "chat+" + (aiChatLog.length - chatBefore) +
+        " log=" + window.document.querySelectorAll("#ai-chat-log > *").length);
+    }
+
+    // (2) two small files -> two chips, contents read, bar visible.
+    {
+      await clearAtt();
+      window.NB.ai._addFilesForTests([
+        mkFile("alpha.txt", ["first file body"], { type: "text/plain" }),
+        mkFile("beta.md", ["second file body"], { type: "text/markdown" }),
+      ]);
+      await tick(60);
+      const names = aChips().map(c => c.querySelector(".ai-attach-chip-name").textContent);
+      check("ai attach: two files produce two pending chips with their names",
+        names.length === 2 && names[0] === "alpha.txt" && names[1] === "beta.md",
+        JSON.stringify(names));
+      const pend = aPending();
+      check("ai attach: _getAttachmentsForTests returns the two read contents",
+        pend.length === 2 &&
+        pend[0].name === "alpha.txt" && pend[0].content === "first file body" &&
+        pend[1].name === "beta.md" && pend[1].content === "second file body",
+        JSON.stringify(pend.map(p => p.name + "=" + JSON.stringify(p.content))));
+      check("ai attach: chips left the reading state and the bar is visible",
+        aChips().length === 2 &&
+        aChips().every(c => !c.classList.contains("reading")) &&
+        aBar().hidden === false,
+        "reading=" + aChips().filter(c => c.classList.contains("reading")).length);
+    }
+
+    // (3) remove a chip -> bar/attachments shrink; reservation released.
+    {
+      const betaChip = aChips().find(c =>
+        c.querySelector(".ai-attach-chip-name").textContent === "beta.md");
+      check("ai attach: a chip carries a .ai-attach-chip-remove control",
+        !!betaChip && !!betaChip.querySelector(".ai-attach-chip-remove"));
+      betaChip.querySelector(".ai-attach-chip-remove")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+      check("ai attach: removing a chip shrinks the bar + attachments",
+        aChips().length === 1 && aPending().length === 1 &&
+        aPending()[0].name === "alpha.txt",
+        "chips=" + aChips().length + " pending=" + aPending().length);
+
+      await clearAtt();
+      const max = (n) => mkFile(n, ["x".repeat(32 * 1024)],
+        { type: "text/plain" });   // exactly the per-file cap
+      window.NB.ai._addFilesForTests([max("b1.txt"), max("b2.txt"), max("b3.txt")]);
+      await tick(150);
+      check("ai attach: three max files fill the 96 KiB budget exactly",
+        aPending().length === 3 && aChips().length === 3,
+        "pending=" + aPending().length);
+      // Remove one 32 KiB chip...
+      const b1 = aChips().find(c =>
+        c.querySelector(".ai-attach-chip-name").textContent === "b1.txt");
+      b1.querySelector(".ai-attach-chip-remove")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+      // ...then a max file that only fits once the reservation is released.
+      window.NB.ai._addFilesForTests([mkFile("b4.txt", ["y"], { type: "text/plain" })]);
+      await tick(60);
+      check("ai attach: removing a chip releases its byte reservation",
+        aPending().length === 3 && aPending().some(p => p.name === "b4.txt"),
+        JSON.stringify(aPending().map(p => p.name)));
+    }
+
+    // (4) caps: per-file, file count, and a rejected file must not consume
+    // a slot (the 96 KiB total cap is exercised in (3)).
+    {
+      await clearAtt();
+      const small = (n) => mkFile("f" + n + ".txt", ["b" + n], { type: "text/plain" });
+      window.NB.ai._addFilesForTests([small(1), small(2), small(3), small(4)]);
+      await tick(60);
+      check("ai attach: four small files are accepted",
+        aPending().length === 4, "pending=" + aPending().length);
+      // Over the 32 KiB per-file cap -> error chip, nothing reserved.
+      window.NB.ai._addFilesForTests([
+        mkFile("huge.txt", ["x".repeat(32 * 1024 + 1)], { type: "text/plain" })]);
+      await tick(50);
+      check("ai attach: a file over 32 KiB is rejected with an alert error chip",
+        aErrs().length === 1 && aErrs()[0].getAttribute("role") === "alert" &&
+        /larger than 32 KiB/.test(aErrs()[0].textContent) &&
+        aPending().length === 4,
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+      check("ai attach: the rejected file does not consume the byte budget",
+        aPending().length === 4, "pending=" + aPending().length);
+      // A rejected file must not consume the FILE slot either: the 5th
+      // valid file still fits.
+      window.NB.ai._addFilesForTests([small(5)]);
+      await tick(60);
+      check("ai attach: a rejected file does not consume the 5th slot",
+        aPending().length === 5, "pending=" + aPending().length);
+      // The 6th file is rejected (hard file cap = 5).
+      window.NB.ai._addFilesForTests([small(6)]);
+      await tick(50);
+      check("ai attach: a 6th file is rejected by the file cap",
+        aPending().length === 5 &&
+        aErrs().some(e => /too many files/.test(e.textContent)),
+        "errs=" + aErrs().length);
+    }
+
+    // (5) content/type gate: NUL => binary, empty type accepted, BOMs.
+    {
+      await clearAtt();
+      window.NB.ai._addFilesForTests([
+        mkFile("bin.txt", ["a\u0000b"], { type: "text/plain" })]);
+      await tick(60);
+      check("ai attach: content with a NUL byte is rejected as binary",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /binary/.test(aErrs()[0].textContent),
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+
+      await clearAtt();
+      window.NB.ai._addFilesForTests([
+        mkFile("noext", ["plain enough"], { type: "" })]);
+      await tick(60);
+      check("ai attach: type \"\" with plain text content is accepted",
+        aPending().length === 1 && aPending()[0].content === "plain enough",
+        JSON.stringify(aPending().map(p => p.content)));
+
+      await clearAtt();
+      window.NB.ai._addFilesForTests([
+        mkFile("bom.txt", [new Uint8Array([0xEF, 0xBB, 0xBF, 0x68, 0x65])],
+          { type: "text/plain" })]);
+      await tick(60);
+      check("ai attach: a UTF-8 BOM is stripped from the inlined content",
+        aPending().length === 1 && aPending()[0].content === "he",
+        JSON.stringify(aPending().map(p => p.content)));
+
+      await clearAtt();
+      // "hi" in UTF-16LE: FF FE + 68 00 | 69 00.
+      window.NB.ai._addFilesForTests([
+        mkFile("u16.txt",
+          [new Uint8Array([0xFF, 0xFE, 0x68, 0x00, 0x69, 0x00])],
+          { type: "text/plain" })]);
+      await tick(60);
+      check("ai attach: a UTF-16LE BOM file decodes to the right characters",
+        aPending().length === 1 && aPending()[0].content === "hi",
+        JSON.stringify(aPending().map(p => p.content)));
+
+      // The other read path: jsdom File has no .arrayBuffer(), so the
+      // FileReader fallback runs above; a file that DOES expose
+      // arrayBuffer() must take that branch and decode the same.
+      await clearAtt();
+      window.NB.ai._addFilesForTests([{
+        name: "ab.txt", size: 5, type: "text/plain",
+        arrayBuffer: async () =>
+          new Uint8Array([0x68, 0x65, 0x6C, 0x6C, 0x6F]).buffer,
+      }]);
+      await tick(60);
+      check("ai attach: a file exposing arrayBuffer() uses that read path",
+        aPending().length === 1 && aPending()[0].content === "hello",
+        JSON.stringify(aPending().map(p => p.content)));
+    }
+
+    // (6)+(7) send with an attachment + no typed text; bar clears after.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      const f = mkFile("notes.txt", ["attached body line"], { type: "text/plain" });
+      window.NB.ai._addFilesForTests([f]);
+      await tick(60);
+      const chatBefore = aiChatLog.length;
+      aiChatStreams.push([sseFrame("Got the file.")]);
+      aiInput().value = "";                 // no typed text at all
+      aiSend();
+      await tick(150);
+      check("ai attach: submit is allowed with attachments and empty text",
+        aiChatLog.length === chatBefore + 1,
+        "requests+" + (aiChatLog.length - chatBefore));
+
+      const req = aiChatLog[aiChatLog.length - 1];
+      const lastUser = req && req.messages.filter(m => m.role === "user").pop();
+      check("ai attach: POSTed user turn inlines marker + body + close marker",
+        !!lastUser &&
+        lastUser.content.includes("[Attached file: notes.txt (") &&
+        lastUser.content.includes("attached body line") &&
+        lastUser.content.includes("[/Attached file: notes.txt]"),
+        lastUser ? JSON.stringify(lastUser.content.slice(0, 56)) : "none");
+
+      const convUser = window.NB.ai._getConversationForTests()
+        .filter(m => m.role === "user").pop();
+      check("ai attach: conversation's last user entry carries the body",
+        !!convUser && convUser.content.includes("attached body line"),
+        convUser ? JSON.stringify(convUser.content.slice(0, 40)) : "none");
+
+      const userBubble = Array.from(
+        window.document.querySelectorAll("#ai-chat-log .ai-msg-user")).pop();
+      const uf = userBubble && userBubble.querySelector(".ai-user-files > .ai-user-file");
+      check("ai attach: visible bubble shows the name chip only, never the body",
+        !!uf && uf.textContent === "notes.txt" && uf.title === f.size + " bytes" &&
+        !/attached body line/.test(userBubble.textContent) &&
+        /^$/.test(userBubble.querySelector(".ai-user-text").textContent),
+        uf ? uf.textContent + " / title=" + uf.title : "none");
+
+      check("ai attach: after the send the bar is cleared + hidden",
+        aBar().hidden === true && aChips().length === 0 && aPending().length === 0,
+        "hidden=" + aBar().hidden + " chips=" + aChips().length);
+    }
+
+    // (8) duplicate names in one batch get a " (2)" suffix in chip + marker.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      window.NB.ai._addFilesForTests([
+        mkFile("dup.txt", ["first dup"], { type: "text/plain" }),
+        mkFile("dup.txt", ["second dup"], { type: "text/plain" }),
+      ]);
+      await tick(60);
+      const dupNames = aPending().map(p => p.name);
+      check("ai attach: duplicate names get a ' (2)' suffix on the chip",
+        dupNames.length === 2 && dupNames[0] === "dup.txt" &&
+        dupNames[1] === "dup.txt (2)",
+        JSON.stringify(dupNames));
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "";
+      aiSend();
+      await tick(150);
+      const dUser = aiChatLog[aiChatLog.length - 1].messages
+        .filter(m => m.role === "user").pop();
+      check("ai attach: the ' (2)' suffix appears in the model marker too",
+        dUser.content.includes("[Attached file: dup.txt (") &&
+        dUser.content.includes("[Attached file: dup.txt (2) (") &&
+        dUser.content.includes("[/Attached file: dup.txt (2)]"),
+        dUser.content.slice(0, 80));
+      const dBubble = Array.from(
+        window.document.querySelectorAll("#ai-chat-log .ai-msg-user")).pop();
+      const dVisible = Array.from(dBubble.querySelectorAll(".ai-user-file"))
+        .map(c => c.textContent);
+      check("ai attach: the visible user chips also carry the ' (2)' suffix",
+        JSON.stringify(dVisible) === JSON.stringify(["dup.txt", "dup.txt (2)"]),
+        JSON.stringify(dVisible));
+    }
+
+    // (9) regression: removing a chip while its read is in flight must not
+    // leave the send button disabled forever. removeChip() calls syncSend()
+    // while pendingReads is still 1; the abandoned read then settles and
+    // returns early (chip gone). The buggy code returned WITHOUT a final
+    // syncSend(), so send stayed disabled. The read always re-syncs now.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      const sendBtn = () => window.document.querySelector("#ai-view .ai-send");
+      window.NB.ai._addFilesForTests([
+        new window.File(["hello"], "wedge.txt", { type: "text/plain" })]);
+      // The read is in flight (FileReader settles as a macrotask), so the
+      // chip is .reading and syncSend() has disabled the button.
+      const wedgeChip = aChips().find(c => c.querySelector(".ai-attach-chip-name")
+        .textContent === "wedge.txt");
+      check("ai attach wedge: an in-flight read disables the send button",
+        !!wedgeChip && sendBtn().disabled === true,
+        wedgeChip ? "reading=" + wedgeChip.classList.contains("reading") +
+          " disabled=" + sendBtn().disabled : "no chip");
+      // Remove it synchronously, before the read settles. If it already
+      // settled the chip is no longer .reading, but the end state must hold.
+      if (wedgeChip) {
+        const rm = wedgeChip.querySelector(".ai-attach-chip-remove");
+        if (rm) rm.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      }
+      check("ai attach wedge: bar is empty right after the synchronous remove",
+        aChips().length === 0, "chips=" + aChips().length);
+      await tick(60);   // let the abandoned read settle
+      check("ai attach wedge: send re-enables once the abandoned read settles",
+        sendBtn().disabled === false && aBar().hidden === true &&
+        aChips().length === 0,
+        "disabled=" + sendBtn().disabled + " hidden=" + aBar().hidden);
+      // pendingReads must not have gone negative either: a later send has
+      // to post exactly one request (not blocked, not doubled).
+      const wedgeBefore = aiChatLog.length;
+      aiChatStreams.push([sseFrame("sure")]);
+      aiInput().value = "still here?";
+      aiSend();
+      await tick(150);
+      check("ai attach wedge: a later send posts exactly once",
+        aiChatLog.length === wedgeBefore + 1 &&
+        aiChatLog[aiChatLog.length - 1].messages
+          .some(m => m.role === "user" && m.content === "still here?"),
+        "requests+" + (aiChatLog.length - wedgeBefore));
+    }
+
+    // Leave no attachment/conversation state behind for later blocks.
+    await clearAtt();
+  }
+
   // Restore fixture state for later blocks.
   FILES["notes/a.md"] = FILE_A;
   MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;

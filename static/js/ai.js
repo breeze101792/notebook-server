@@ -30,12 +30,50 @@
  * Memory: this module owns the conversation. Every send re-uploads the
  * full history (system + past turns + tool records), so follow-up
  * questions keep context without the model re-reading files.
+ *
+ * Attachments: the user may attach local text files to a message. Each
+ * file's text is inlined into the user turn, capped at 32 KiB per file,
+ * 96 KiB total, and 5 files. The visible bubble shows only the file
+ * names; the bodies live in the conversation, so they are re-uploaded on
+ * every subsequent request. Clear resets the attachments with the chat.
  */
 (function () {
   "use strict";
   window.NB = window.NB || {};
 
   const MAX_TOOL_ROUNDS = 5;   // safety cap per user turn
+
+  /* Attachments: local text files inlined into the user turn. The caps
+   * are reserved synchronously at selection time so an in-flight read
+   * can never race the accounting. */
+  const AI_ATTACH_MAX_FILES = 5;
+  const AI_ATTACH_MAX_BYTES = 32 * 1024;
+  const AI_ATTACH_MAX_TOTAL = 96 * 1024;
+  const AI_ATTACH_KB = 1024;
+  const AI_ATTACH_MB = 1024 * 1024;
+  const AI_ATTACH_NAME_MAX = 120;              // chars kept from a name
+  const AI_ATTACH_NUL = "\u0000";              // binary-content sentinel
+  const AI_ATTACH_CTRL_RE = /[\u0000-\u001f\u007f]+/g;
+  const AI_ATTACH_BOM_UTF8 = [0xEF, 0xBB, 0xBF];
+  const AI_ATTACH_BOM_UTF16LE = [0xFF, 0xFE];
+  const AI_ATTACH_BOM_UTF16BE = [0xFE, 0xFF];
+  const AI_ATTACH_MARK_OPEN = "[Attached file: ";
+  const AI_ATTACH_MARK_SIZE = " (";
+  const AI_ATTACH_MARK_OPEN_END = ")]";
+  const AI_ATTACH_MARK_CLOSE = "[/Attached file: ";
+  const AI_ATTACH_MARK_CLOSE_END = "]";
+  const AI_ATTACH_ERR_BINARY = "binary";
+  const AI_ATTACH_ERR_READ = "read failed";
+  const AI_ATTACH_TYPE_ALLOW = [
+    "application/json", "application/xml",
+    "application/javascript", "application/x-yaml",
+  ];
+  const AI_ATTACH_EXT_ALLOW = [
+    ".md", ".markdown", ".txt", ".json", ".yaml", ".yml", ".csv", ".log",
+    ".py", ".c", ".h", ".cc", ".cpp", ".hpp", ".js", ".mjs", ".ts", ".tsx",
+    ".html", ".css", ".sh", ".bash", ".toml", ".ini", ".cfg", ".conf",
+    ".xml", ".svg", ".rs", ".go", ".java", ".mk",
+  ];
 
   /* ------------------------------------------------------------------ *
    * nb-edit parsing (user-facing proposal cards) + nb-tool blocks
@@ -940,10 +978,11 @@
    * The tool loop
    * ------------------------------------------------------------------ */
 
-  async function send(log, userText, ui) {
+  async function send(log, userText, ui, files) {
     ui.begin();
-    appendMessage(log, "user", userText);
-    conversation.push({ role: "user", content: userText });
+    const userBubble = appendMessage(log, "user", userText);
+    if (files && files.length) appendUserFiles(userBubble, files);
+    conversation.push({ role: "user", content: composeUserContent(userText, files) });
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const bubble = appendMessage(log, "assistant", "");
@@ -1016,6 +1055,149 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Attachments (local text files inlined into the user turn)
+   * ------------------------------------------------------------------ */
+
+  /* The mounted panel installs these so the test hooks can reach the
+   * pending attachment list, the add path, and the reset without a live
+   * DOM query. */
+  let attachAddFiles = null;
+  let attachGetPending = () => [];
+  let attachReset = () => {};
+
+  function humanSize(bytes) {
+    if (bytes < AI_ATTACH_KB) return bytes + " B";
+    if (bytes < AI_ATTACH_MB) return (bytes / AI_ATTACH_KB).toFixed(1) + " KB";
+    return (bytes / AI_ATTACH_MB).toFixed(1) + " MB";
+  }
+
+  /* Strip control characters/newlines and bound the length so a crafted
+   * name can never break the marker line. */
+  function sanitizeAttachName(name) {
+    return String(name || "").replace(AI_ATTACH_CTRL_RE, "").trim()
+      .slice(0, AI_ATTACH_NAME_MAX);
+  }
+
+  function fileExt(name) {
+    const n = String(name || "").toLowerCase();
+    const dot = n.lastIndexOf(".");
+    return dot >= 0 ? n.slice(dot) : "";
+  }
+
+  /* A file passes the type gate when its MIME type is known-text, when it
+   * has no type at all (the content check decides), or when its extension
+   * is on the allowlist. */
+  function isTextLike(file) {
+    const type = String(file.type || "").toLowerCase();
+    if (type.startsWith("text/") ||
+        AI_ATTACH_TYPE_ALLOW.indexOf(type) >= 0 ||
+        type.endsWith("+json") || type.endsWith("+xml")) {
+      return true;
+    }
+    if (type === "") return true;
+    return AI_ATTACH_EXT_ALLOW.indexOf(fileExt(file.name)) >= 0;
+  }
+
+  function isBom(bytes, bom) {
+    if (bytes.length < bom.length) return false;
+    for (let i = 0; i < bom.length; i++) {
+      if (bytes[i] !== bom[i]) return false;
+    }
+    return true;
+  }
+
+  /* Decode a file's bytes, honouring a BOM. Returns null when the text
+   * contains a NUL, i.e. the content looks binary. */
+  function decodeAttachment(bytes) {
+    let decoder;
+    let offset = 0;
+    if (isBom(bytes, AI_ATTACH_BOM_UTF8)) {
+      decoder = new TextDecoder("utf-8");
+      offset = AI_ATTACH_BOM_UTF8.length;
+    } else if (isBom(bytes, AI_ATTACH_BOM_UTF16LE)) {
+      decoder = new TextDecoder("utf-16le");
+      offset = AI_ATTACH_BOM_UTF16LE.length;
+    } else if (isBom(bytes, AI_ATTACH_BOM_UTF16BE)) {
+      decoder = new TextDecoder("utf-16be");
+      offset = AI_ATTACH_BOM_UTF16BE.length;
+    } else {
+      decoder = new TextDecoder("utf-8");   // non-fatal
+    }
+    const text = decoder.decode(bytes.subarray(offset));
+    return text.indexOf(AI_ATTACH_NUL) >= 0 ? null : text;
+  }
+
+  async function readAttachment(file) {
+    let buf;
+    if (typeof file.arrayBuffer === "function") {
+      buf = await file.arrayBuffer();
+    } else {
+      buf = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(fr.error || new Error(AI_ATTACH_ERR_READ));
+        fr.readAsArrayBuffer(file);
+      });
+    }
+    const text = decodeAttachment(new Uint8Array(buf));
+    if (text === null) throw new Error(AI_ATTACH_ERR_BINARY);
+    return text;
+  }
+
+  /* Unique chip/marker name: a repeated name gets a " (n)" suffix. The
+   * length cap is applied to the FINAL name, suffix included. */
+  function uniqueName(base, used) {
+    const core = sanitizeAttachName(base) || "file";
+    if (!used.has(core)) return core;
+    let n = 2;
+    let suffix = " (" + n + ")";
+    let name = core.slice(0, AI_ATTACH_NAME_MAX - suffix.length) + suffix;
+    while (used.has(name)) {
+      n++;
+      suffix = " (" + n + ")";
+      name = core.slice(0, AI_ATTACH_NAME_MAX - suffix.length) + suffix;
+    }
+    return name;
+  }
+
+  /* Human-readable read failure. The binary sentinel is expanded with the
+   * file's display name so the error chip is never the bare word. */
+  function attachErrorMessage(name, err) {
+    if (err && err.message === AI_ATTACH_ERR_BINARY) {
+      return name + " is binary (not a UTF-8 text file)";
+    }
+    return err && err.message ? err.message : AI_ATTACH_ERR_READ;
+  }
+
+  /* Inline each attachment body into the user turn. The visible bubble
+   * shows only names; this is what the model receives. */
+  function composeUserContent(userText, files) {
+    if (!files || !files.length) return userText;
+    let out = userText;
+    for (const f of files) {
+      const block = AI_ATTACH_MARK_OPEN + f.name + AI_ATTACH_MARK_SIZE +
+        humanSize(f.size) + AI_ATTACH_MARK_OPEN_END + "\n" +
+        f.content + "\n" +
+        AI_ATTACH_MARK_CLOSE + f.name + AI_ATTACH_MARK_CLOSE_END;
+      out += (out ? "\n\n" : "") + block;
+    }
+    return out;
+  }
+
+  function appendUserFiles(bubble, files) {
+    const row = document.createElement("div");
+    row.className = "ai-user-files";
+    for (const f of files) {
+      const chip = document.createElement("span");
+      chip.className = "ai-user-file";
+      chip.textContent = f.name;
+      chip.title = f.size + " bytes";
+      row.appendChild(chip);
+    }
+    bubble.appendChild(row);
+  }
+
+  /* ------------------------------------------------------------------ *
    * Side-panel view mount
    * ------------------------------------------------------------------ */
 
@@ -1039,6 +1221,7 @@
       conversation = [];
       systemCache = null;
       log.innerHTML = "";
+      clearAttachments();
     });
     actions.appendChild(clearBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {
@@ -1073,8 +1256,25 @@
     log.id = "ai-chat-log";
     host.appendChild(log);
 
+    const attachBar = document.createElement("div");
+    attachBar.className = "ai-attach-bar";
+    attachBar.hidden = true;
+    host.appendChild(attachBar);
+
     const form = document.createElement("form");
     form.className = "ai-input-row";
+    const attachBtn = document.createElement("button");
+    attachBtn.type = "button";
+    attachBtn.id = "ai-attach";
+    attachBtn.className = "ai-attach";
+    attachBtn.title = "Attach files";
+    attachBtn.textContent = "📎";
+    const attachInput = document.createElement("input");
+    attachInput.type = "file";
+    attachInput.multiple = true;
+    attachInput.id = "ai-attach-input";
+    attachInput.className = "ai-attach-input";
+    attachInput.hidden = true;
     const ta = document.createElement("textarea");
     ta.id = "ai-input";
     ta.className = "ai-input";
@@ -1091,20 +1291,153 @@
     stopBtn.textContent = "■";
     stopBtn.title = "Stop generating";
     stopBtn.hidden = true;
-    form.append(ta, sendBtn, stopBtn);
+    form.append(ta, attachBtn, sendBtn, stopBtn);
+    form.appendChild(attachInput);
     host.appendChild(form);
 
+    /* Attachment state lives with the mounted panel. Bytes are reserved
+     * when the reading chip appears and released only when the user
+     * removes it or its read fails. */
+    const attachments = [];       // fully-read {name, size, content}
+    const usedNames = new Set();  // chip names (pending + read)
+    let chipTotal = 0;            // attachment chips (excludes errors)
+    let pendingReads = 0;         // in-flight reads
+    let reservedTotal = 0;        // bytes held by pending + read chips
+    let attachEpoch = 0;          // bumped on reset; stale reads don't count
     let ctl = null;
+
+    function syncSend() {
+      sendBtn.disabled = !!ctl || pendingReads > 0;
+      attachBtn.disabled = !!ctl;
+    }
+
+    function addAttachError(msg) {
+      const el = document.createElement("div");
+      el.className = "ai-attach-chip error ai-attach-err";
+      el.setAttribute("role", "alert");
+      el.textContent = msg;
+      attachBar.appendChild(el);
+      attachBar.hidden = false;
+    }
+
+    function removeChip(chip) {
+      const bytes = Number(chip.dataset.bytes) || 0;
+      reservedTotal = Math.max(0, reservedTotal - bytes);
+      const name = chip.dataset.name;
+      if (name) {
+        usedNames.delete(name);
+        const idx = attachments.findIndex(a => a.name === name);
+        if (idx >= 0) attachments.splice(idx, 1);
+      }
+      chipTotal--;
+      chip.remove();
+      if (!attachBar.querySelector(".ai-attach-chip")) attachBar.hidden = true;
+      syncSend();
+    }
+
+    function makeChip(name) {
+      const chip = document.createElement("div");
+      chip.className = "ai-attach-chip reading";
+      const nameEl = document.createElement("span");
+      nameEl.className = "ai-attach-chip-name";
+      nameEl.textContent = name;
+      const sizeEl = document.createElement("span");
+      sizeEl.className = "ai-attach-chip-size";
+      sizeEl.textContent = "reading…";
+      const rm = document.createElement("button");
+      rm.type = "button";
+      rm.className = "ai-attach-chip-remove";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", "Remove " + name);
+      rm.addEventListener("click", () => removeChip(chip));
+      chip.append(nameEl, sizeEl, rm);
+      return chip;
+    }
+
+    async function readOne(file, name, chip) {
+      const epoch = attachEpoch;
+      pendingReads++;
+      syncSend();
+      try {
+        const content = await readAttachment(file);
+        if (!chip.parentNode) return;   // removed while reading
+        chip.classList.remove("reading");
+        chip.querySelector(".ai-attach-chip-size").textContent = humanSize(file.size);
+        attachments.push({ name, size: file.size, content });
+      } catch (e) {
+        if (!chip.parentNode) return;   // already removed; bytes released
+        reservedTotal = Math.max(0, reservedTotal - file.size);
+        usedNames.delete(name);
+        chipTotal--;
+        chip.remove();
+        addAttachError(attachErrorMessage(name, e));
+      } finally {
+        /* The decrement and the re-sync always travel together. A read
+         * abandoned by a reset must not touch the fresh counter. */
+        if (epoch === attachEpoch) pendingReads--;
+        syncSend();
+      }
+    }
+
+    function addFiles(fileList) {
+      if (ctl) return;                  // gated with the picker + drop
+      const files = fileList ? Array.from(fileList) : [];
+      for (const file of files) {
+        if (chipTotal >= AI_ATTACH_MAX_FILES) {
+          addAttachError("too many files (max " + AI_ATTACH_MAX_FILES + ")");
+          continue;
+        }
+        if (file.size > AI_ATTACH_MAX_BYTES) {
+          addAttachError((sanitizeAttachName(file.name) || "file") +
+            " is larger than " + (AI_ATTACH_MAX_BYTES / AI_ATTACH_KB) + " KiB");
+          continue;
+        }
+        if (reservedTotal + file.size > AI_ATTACH_MAX_TOTAL) {
+          addAttachError("attachment size limit reached (" +
+            (AI_ATTACH_MAX_TOTAL / AI_ATTACH_KB) + " KiB total)");
+          continue;
+        }
+        if (!isTextLike(file)) {
+          addAttachError("unsupported file type: " +
+            (sanitizeAttachName(file.name) || "file"));
+          continue;
+        }
+        const name = uniqueName(file.name, usedNames);
+        usedNames.add(name);
+        reservedTotal += file.size;
+        chipTotal++;
+        const chip = makeChip(name);
+        chip.dataset.bytes = String(file.size);
+        chip.dataset.name = name;
+        attachBar.appendChild(chip);
+        attachBar.hidden = false;
+        readOne(file, name, chip);
+      }
+      syncSend();
+    }
+
+    function clearAttachments() {
+      attachments.length = 0;
+      usedNames.clear();
+      chipTotal = 0;
+      reservedTotal = 0;
+      pendingReads = 0;
+      attachEpoch++;
+      attachBar.innerHTML = "";
+      attachBar.hidden = true;
+      syncSend();
+    }
+
     const ui = {
       begin() {
         ctl = new AbortController();
-        sendBtn.disabled = true;
         stopBtn.hidden = false;
+        syncSend();
       },
       end() {
-        sendBtn.disabled = false;
         stopBtn.hidden = true;
         ctl = null;
+        syncSend();
       },
       signal() { return ctl ? ctl.signal : undefined; },
     };
@@ -1113,8 +1446,10 @@
     async function onSubmit(e) {
       e.preventDefault();
       if (ctl) return;                      // a request is already running
+      if (pendingReads > 0) return;         // wait for the attachment reads
       const q = ta.value.trim();
-      if (!q) return;
+      const files = attachments.slice();
+      if (!q && !files.length) return;
       if (!currentServer) {
         const errEl = document.createElement("div");
         errEl.className = "ai-error";
@@ -1124,7 +1459,8 @@
         return;
       }
       ta.value = "";
-      await send(log, q, ui);
+      clearAttachments();
+      await send(log, q, ui, files);
     }
     form.addEventListener("submit", onSubmit);
     ta.addEventListener("keydown", (e) => {
@@ -1136,6 +1472,33 @@
     stopBtn.addEventListener("click", () => {
       if (ctl) ctl.abort();
     });
+    attachBtn.addEventListener("click", () => attachInput.click());
+    attachInput.addEventListener("change", () => {
+      addFiles(attachInput.files);
+      attachInput.value = "";
+    });
+
+    host.addEventListener("dragover", (e) => {
+      e.preventDefault();               // stay a valid drop target
+      if (ctl) return;
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      host.classList.add("ai-drop-active");
+    });
+    host.addEventListener("dragleave", (e) => {
+      if (!e.relatedTarget || !host.contains(e.relatedTarget)) {
+        host.classList.remove("ai-drop-active");
+      }
+    });
+    host.addEventListener("drop", (e) => {
+      e.preventDefault();
+      host.classList.remove("ai-drop-active");
+      if (!ctl && e.dataTransfer) addFiles(e.dataTransfer.files);
+    });
+
+    attachAddFiles = (list) => addFiles(list);
+    attachGetPending = () =>
+      attachments.map(a => ({ name: a.name, size: a.size, content: a.content }));
+    attachReset = clearAttachments;
 
     // Populate the provider picker from the server. Settings-side edits
     // funnel through NB.ai.loadAiConfig (settings.js calls it after every
@@ -1220,9 +1583,12 @@
     },
     _getCurrentServer: () => currentServer,
     _getConversationForTests: () => conversation.slice(),
+    _addFilesForTests(list) { if (attachAddFiles) attachAddFiles(list); },
+    _getAttachmentsForTests: () => attachGetPending(),
     _resetForTests() {
       conversation = [];
       systemCache = null;
+      attachReset();
     },
   };
 })();

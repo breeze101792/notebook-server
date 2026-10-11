@@ -3841,6 +3841,86 @@ body[data-theme="light"] #viewer-content {
 .ai-send:disabled { opacity: .45; cursor: default; }
 .ai-stop { border-color: var(--border); color: var(--fg); background: var(--bg-elev); }
 
+/* --- chat attachments ---------------------------------------------- */
+.ai-attach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 0;
+  flex: 0 0 auto;
+}
+/* An author display:flex would otherwise defeat the hidden attribute. */
+.ai-attach-bar[hidden] { display: none; }
+.ai-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: .75rem;
+  color: var(--fg);
+}
+.ai-attach-chip-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-attach-chip-size { color: var(--fg-muted); }
+.ai-attach-chip.error {
+  border-radius: 6px;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.ai-attach-chip.reading { opacity: .55; }
+.ai-attach-chip-remove {
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: .95rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+.ai-attach-chip-remove:hover { color: var(--danger); }
+.ai-attach {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+.ai-attach:disabled { opacity: .45; cursor: default; }
+.ai-user-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+  max-width: 95%;
+}
+.ai-user-file {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: .72rem;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.ai-drop-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 /* --- Settings -> AI providers rows --------------------------------- */
 .settings-ai-row {
   display: flex;
