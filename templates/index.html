@@ -895,6 +895,142 @@
     </div>
   </div>
 
+  <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
+       "Design diagram…" item. Carries class="settings-overlay" so the app's
+       keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
+       treat it like every other modal. The Visimer canvas bundle is
+       lazy-loaded on first open by static/js/mermaid-designer.js. -->
+  <div id="designer-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
+         aria-labelledby="designer-title">
+      <div class="settings-header designer-header">
+        <div class="designer-heading">
+          <h2 id="designer-title">Design diagram</h2>
+          <span class="designer-type" id="designer-type"></span>
+        </div>
+        <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body designer-body">
+        <!-- Designer sidebar, filled/shown by mermaid-designer.js:
+             Tools (Select/Connect) - divider - Add palette - divider -
+             History (Undo/Redo). Flowchart gets a shape grid (view.addNode);
+             the other editable families get one dispatch()-backed button.
+             Hidden until ready and for types with no add action. -->
+        <aside class="designer-sidebar" id="designer-sidebar" hidden
+               aria-labelledby="designer-add-title">
+          <section class="designer-section designer-section--tools"
+                   aria-labelledby="designer-tools-title">
+            <h3 class="designer-sidebar-title" id="designer-tools-title">Tools</h3>
+            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
+              <button id="designer-tool-select" class="designer-iconbtn" type="button"
+                      aria-pressed="true" title="Select tool" aria-label="Select tool">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
+                </svg>
+              </button>
+              <button id="designer-tool-connect" class="designer-iconbtn" type="button"
+                      aria-pressed="false" title="Connect tool — or Alt+drag from a node"
+                      aria-label="Connect tool">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M3 13 12.5 3.5"></path>
+                  <path d="M8 3.5h4.5v4.5"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--add"
+                   aria-labelledby="designer-add-title">
+            <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
+            <div class="designer-palette" id="designer-palette"></div>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--history"
+                   aria-labelledby="designer-history-title">
+            <h3 class="designer-sidebar-title" id="designer-history-title">History</h3>
+            <div class="designer-history" role="toolbar" aria-label="History">
+              <button id="designer-undo" class="designer-iconbtn" type="button"
+                      title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4 6h5a4 4 0 0 1 4 4v2"></path>
+                  <path d="M6.4 3.6 4 6l2.4 2.4"></path>
+                </svg>
+              </button>
+              <button id="designer-redo" class="designer-iconbtn" type="button"
+                      title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M12 6H7a4 4 0 0 0-4 4v2"></path>
+                  <path d="M9.6 3.6 12 6l-2.4 2.4"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage" id="designer-stage">
+          <!-- the library mounts MermaidCanvasView in here -->
+          <div class="designer-canvas" id="designer-canvas" tabindex="0"
+               role="application" aria-label="Diagram canvas"></div>
+
+          <!-- empty: shown while the model has no nodes -->
+          <div class="designer-empty" id="designer-empty" hidden>
+            <span class="designer-state-icon" aria-hidden="true">◇</span>
+            <p class="designer-state-msg">Use the palette to add your first item.</p>
+          </div>
+
+          <!-- loading: while the lazy bundle downloads -->
+          <div class="designer-state designer-state--loading" id="designer-loading" hidden>
+            <span class="designer-spinner" aria-hidden="true"></span>
+            <p class="designer-state-msg" role="status">Loading editor…</p>
+          </div>
+
+          <!-- error: mermaid render/validate failure, bundle failure, or a
+               type the library cannot edit -->
+          <div class="designer-state designer-state--error" id="designer-error"
+               role="alert" hidden>
+            <span class="designer-state-icon" aria-hidden="true">⚠</span>
+            <h3 class="designer-state-title">Couldn’t open this diagram</h3>
+            <p class="designer-state-msg" id="designer-error-msg"></p>
+            <pre class="designer-error-detail" id="designer-error-detail" hidden></pre>
+            <div class="designer-state-actions">
+              <button id="designer-retry" class="settings-action">Retry</button>
+              <button id="designer-edit-source" class="settings-action">Edit source instead</button>
+            </div>
+          </div>
+
+          <!-- preview-only: a type the library can render but not edit -->
+          <div class="designer-state designer-state--readonly" id="designer-readonly" hidden>
+            <span class="designer-state-icon" aria-hidden="true">👁</span>
+            <h3 class="designer-state-title">Preview only</h3>
+            <p class="designer-state-msg">This diagram type has no editable model yet.
+              Close this window to edit the source instead.</p>
+          </div>
+
+          <p class="designer-hint" id="designer-hint" hidden>
+            Add from the palette · Connect (or Alt+drag a node) · click a node for shape, color and arrow options
+          </p>
+        </div>
+      </div>
+      <div class="settings-footer designer-footer">
+        <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>
+        <button id="designer-cancel" class="settings-action">Cancel</button>
+        <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mermaid lightbox overlay: borderless full-screen backdrop with zoom
        controls. The SVG is cloned into #mermaid-lightbox-body on click;
        the toolbar floats over the top-right corner. -->
@@ -980,6 +1116,7 @@
   <script src="/static/js/windows.js" defer></script>
   <script src="/static/js/settings.js" defer></script>
   <script src="/static/js/export.js" defer></script>
+  <script src="/static/js/mermaid-designer.js" defer></script>
   <script src="/static/js/vimnav.js" defer></script>
   <script src="/static/js/ai.js" defer></script>
   <script src="/static/js/activity.js" defer></script>

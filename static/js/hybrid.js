@@ -4415,12 +4415,22 @@
    * can adapt to the current selection context in the future) and
    * closes on any outside click or Esc. */
 
-  function addMenuItem(label, handler, danger) {
+  function addMenuItem(label, handler, danger, opts) {
     const btn = document.createElement("button");
     btn.textContent = label;
     if (danger) btn.classList.add("danger");
-    btn.addEventListener("click", () => { hideMenu(); handler(); });
+    if (opts && opts.disabled) {
+      // A disabled entry exists to advertise a feature that is not
+      // available for this block; it does not fire. The reason rides on
+      // title/aria-disabled so it is not click-only (a11y).
+      btn.disabled = true;
+      btn.setAttribute("aria-disabled", "true");
+      if (opts.title) btn.title = opts.title;
+    } else {
+      btn.addEventListener("click", () => { hideMenu(); handler(); });
+    }
     menuEl.appendChild(btn);
+    return btn;
   }
 
   function addMenuSep() {
@@ -4947,6 +4957,18 @@
     return (NB.blocks && NB.blocks.pluginTypes) ? NB.blocks.pluginTypes() : [];
   }
 
+  /* Whether the visual designer ("Design diagram…") may be offered. It is
+   * a write path, so it is available when auth is off or the signed-in
+   * role is admin (matching the admin-only mutating routes). The role is
+   * read from auth.js's cached /api/auth response; a stale role falls
+   * through to the existing 401/403 -> auth:required flow on apply. */
+  function designerAllowed() {
+    const a = NB.auth;
+    if (!a || typeof a.status !== "function") return false;
+    const st = a.status();
+    return !!(st && (!st.enabled || st.role === "admin"));
+  }
+
   /* Which plugin module (if any) should re-render a language on commit. */
   function renderModuleFor(lang) {
     const d = NB.blocks && NB.blocks.forLang ? NB.blocks.forLang(lang) : null;
@@ -5175,6 +5197,27 @@
     const blockHit = codeBlockAt(e && e.target);
     if (blockHit) {
       addMenuSep();
+      // "Design diagram…" first (the visual editor is the friendly
+      // default), then the existing source editor. Shown only when the
+      // plugin opts into a designer (plugin.design) AND that module is
+      // actually loaded AND the role allows writes. A render-only type
+      // (the library reports capability:"render") stays visible but
+      // disabled, with the reason on title/aria-disabled.
+      const designMod = blockHit.plugin && blockHit.plugin.design
+        ? NB[blockHit.plugin.design] : null;
+      if (designMod && designerAllowed()) {
+        const cap = (typeof designMod.capabilityFor === "function")
+          ? designMod.capabilityFor(blockHit.plugin.src(blockHit.el) || "")
+          : null;
+        if (cap === "render") {
+          addMenuItem("Design diagram…", null, false, {
+            disabled: true,
+            title: "No visual editor for this diagram type — use Edit source",
+          });
+        } else {
+          addMenuItem("Design diagram…", () => designMod.open(blockHit));
+        }
+      }
       if (blockHit.plugin) {
         addMenuItem("Edit " + blockHit.plugin.name + " source", () => editPluginSource(blockHit));
       } else {
@@ -5239,8 +5282,22 @@
     savedRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
     buildMenu(e);
     menuEl.hidden = false;
-    const x = Math.min(e.clientX, window.innerWidth - 200);
-    const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
+    // Anchor the menu. A pointer right-click carries coordinates; a
+    // keyboard-triggered contextmenu (Shift+F10 / the Menu key on a focused
+    // block, enabled by the block's tabindex) reports 0,0, so anchor to the
+    // focused block instead of the viewport corner.
+    let anchorX = e.clientX;
+    let anchorY = e.clientY;
+    if (!anchorX && !anchorY && e.target && e.target.closest) {
+      const block = e.target.closest(".mermaid-container, .mermaid-error");
+      if (block) {
+        const r = block.getBoundingClientRect();
+        anchorX = r.left + 8;
+        anchorY = r.top + 8;
+      }
+    }
+    const x = Math.min(anchorX, window.innerWidth - 200);
+    const y = Math.min(anchorY, window.innerHeight - menuEl.offsetHeight - 10);
     menuEl.style.left = x + "px";
     menuEl.style.top = y + "px";
     // Keyboard support: the menu is a real menu. Focus the first item
@@ -5399,5 +5456,9 @@
     getCellFromSelection,
     onContentChange,
     flushPendingSnapshot,
+    // Used by mermaid-designer.js: resolve a plugin block and fall back
+    // to the inline source editor when the visual editor can't open.
+    codeBlockAt,
+    editPluginSource,
   };
 })();

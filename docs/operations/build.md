@@ -1,7 +1,7 @@
 # Build and toolchain
 
 The notebook server has no compile step. There is one bootstrap wrapper for the
-Python side and one offline-built frontend asset. This guide records both, the
+Python side and two offline-built frontend assets. This guide records both, the
 vendoring model, and the service worker cache.
 
 ## `start.sh` bootstrap
@@ -58,11 +58,11 @@ To bump one of these, replace the file with the new upstream copy. There is no
 regeneration script and no checksum manifest; correctness is by inspection and
 by the test suite loading the file.
 
-### The one built artifact: `codemirror.bundle.js`
+### The first built artifact: `codemirror.bundle.js`
 
-`static/vendor/codemirror.bundle.js` (738,740 bytes) is the only file that is
-not a copy. It is a single esbuild IIFE, built **offline**, that exposes
-`window.CM6` — a flat object of the CodeMirror 6 named exports.
+`static/vendor/codemirror.bundle.js` (738,740 bytes) is the first of two files
+that are not copies. It is a single esbuild IIFE, built **offline**, that
+exposes `window.CM6` — a flat object of the CodeMirror 6 named exports.
 
 Its source is `static/vendor/codemirror.entry.js`, which re-exports the public
 surface the app uses. The exact dependency set it pulls in:
@@ -101,6 +101,48 @@ package, `@replit/codemirror-vim`, or `codemirror` itself must reconstruct the
 invocation, rebuild from `codemirror.entry.js`, and rebuild byte-for-byte
 reproducibly enough to review the diff. `esbuild` is pinned as a devDependency
 (`^0.28.1`) for this purpose; `@codemirror/buildhelper` is present but unused.
+
+### The second built artifact: `visimer.bundle.js`
+
+`static/vendor/visimer.bundle.js` (147,493 bytes) is a single esbuild IIFE,
+built **offline** like the CodeMirror bundle, that exposes the global
+`Visimer`. It bundles the visual Mermaid editor's engine (`@visimer/core`) and
+DOM canvas (`@visimer/dom`). It is lazy-loaded on demand and is deliberately
+excluded from the service worker `PRECACHE` list.
+
+Its source is `static/vendor/visimer.entry.js`:
+
+```js
+export { MermaidWysiwygEditor } from "@visimer/core";
+export { MermaidCanvasView } from "@visimer/dom";
+```
+
+Only the two symbols the app uses are re-exported, so the global `Visimer`
+surface stays narrow instead of exposing the whole upstream API (parsers,
+ops, `Popover`, `correlate*`). Both packages are ESM-only, so a `<script>`
+tag cannot load them directly;
+esbuild bundles them into one IIFE instead. The exact command is recorded as
+the `vendor:visimer` npm script in `package.json`:
+
+```bash
+node_modules/.bin/esbuild static/vendor/visimer.entry.js \
+  --bundle --format=iife --global-name=Visimer --minify \
+  --outfile=static/vendor/visimer.bundle.js
+```
+
+`@visimer/core` and `@visimer/dom` are pinned **exact** (`1.1.2`, no caret) in
+`devDependencies`. Reproducibility rests on those version pins plus the
+checksums recorded in the repository: the sha256 of the built bundle and the
+sha512 `integrity` of each pinned tarball, both in `static/vendor/NOTICE`.
+`package-lock.json` records the same tarball integrity, but it is gitignored
+and untracked (`.gitignore`), so it is not part of the repo and cannot be the
+record — `NOTICE` is. To bump either, edit the two versions in `package.json`,
+run `npm install`, run `npm run vendor:visimer`, commit the rebuilt bundle, and
+update the checksums in `NOTICE`. Attribution (name, version, MIT text, source
+URL) is also in `static/vendor/NOTICE`.
+
+Only the JS bundle is vendored. `@visimer/dom` ships no stylesheet — it injects
+its own `<style>` element at runtime — so there is no `visimer.css`.
 
 ## Service worker
 

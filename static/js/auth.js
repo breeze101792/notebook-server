@@ -23,6 +23,11 @@
   const errEl   = () => document.getElementById("auth-error");
   const logoutBtn = () => document.getElementById("logout-btn");
 
+  // Raw /api/auth response from boot: {enabled, hasAdmin, hasViewer, role}.
+  // Kept so synchronous callers (the hybrid context menu builds its items
+  // without a fetch) can read the role. null until the fetch resolves.
+  let authStatus = null;
+
   function lock()  {
     document.body.classList.add("auth-locked");
     // Wipe sensitive content from the DOM. The 401 that triggered
@@ -108,6 +113,9 @@
 
   async function tryLogout() {
     try { await NB.api.logout(); } catch (e) { /* ignore */ }
+    // The session is gone; drop the cached role so a synchronous caller
+    // (the designer menu gate) stops treating us as an admin.
+    if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
     // After logout, the next gated call will 401, but we want the modal
     // right now -- show it directly and don't wait.
     showModal();
@@ -141,6 +149,7 @@
       // the app to surface its own error.
       return;
     }
+    authStatus = status;
     if (status && status.enabled) {
       // Auth is on. If a role is already in the session, the logout
       // button is meaningful; if not, the login modal needs to come up.
@@ -159,6 +168,11 @@
     hideModal,
     isLocked: () => document.body.classList.contains("auth-locked"),
     logout:   tryLogout,
+    // Raw boot status (null until /api/auth resolves), plus the one
+    // predicate the designer's menu gate needs: writes are allowed when
+    // auth is off or the signed-in role is admin.
+    status:   () => authStatus,
+    isAdmin:  () => !!(authStatus && authStatus.enabled && authStatus.role === "admin"),
   };
 
   // Boot immediately, NOT on DOMContentLoaded. The scripts sit at the end

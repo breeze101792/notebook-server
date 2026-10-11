@@ -186,6 +186,9 @@
       name: d.name,
       mod: d.mod,
       src: (el) => sourceOf(d, el),
+      // Optional visual-editor hook (e.g. "mermaidDesign"); null when the
+      // type has no visual editor.
+      design: d.design || null,
     }));
   }
 

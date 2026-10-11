@@ -52,6 +52,16 @@
   --graph-vignette-inner-rgb: 60 90 180;  /* radial ambient glow at the centre */
   --graph-vignette-edge-rgb: 14 16 24;    /* radial ambient fade edge */
   --graph-bg: #0e1018;                    /* canvas host bg (overrides --bg here) */
+  /* Mermaid visual designer (static/js/mermaid-designer.js). The canvas
+   * surface, its dot grid, the modal's preferred size, and the text/icon
+   * color used on --accent fills (the primary Apply button). Grid pitch is
+   * px, not rem: it is a micro-decoration that must not balloon at XL. */
+  --designer-canvas-bg: #14151a;
+  --designer-grid: rgba(124, 156, 255, .12);
+  --designer-grid-size: 24px;
+  --designer-modal-w: 1200px;
+  --designer-modal-h: 85vh;
+  --accent-fg: #14151a;
 }
 
 body[data-theme="light"] {
@@ -85,6 +95,13 @@ body[data-theme="light"] {
   --graph-vignette-inner-rgb: 200 215 245;
   --graph-vignette-edge-rgb: 244 246 251;
   --graph-bg: #f4f6fb;
+  /* Mermaid visual designer tokens (see the dark block above). */
+  --designer-canvas-bg: #f7f8fb;
+  --designer-grid: rgba(47, 95, 208, .14);
+  --designer-grid-size: 24px;
+  --designer-modal-w: 1200px;
+  --designer-modal-h: 85vh;
+  --accent-fg: #ffffff;
 }
 
 * { box-sizing: border-box; }
@@ -3971,3 +3988,187 @@ body[data-theme="light"] #viewer-content {
   accent-color: var(--accent, #2f5fd0);
 }
 #export-file-label.empty { color: var(--fg-muted); }
+
+/* ------------------------------------------------------------------ */
+/* Mermaid visual designer                                            */
+/* ------------------------------------------------------------------ */
+.designer-modal { width: min(var(--designer-modal-w), 96vw); height: min(var(--designer-modal-h), 92vh); }
+.designer-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.designer-type {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px;
+  white-space: nowrap;
+}
+.designer-type:empty { display: none; }
+.designer-body { display: flex; flex-direction: row; min-height: 0; min-width: 0; padding: 0; }
+.designer-sidebar {
+  flex: 0 0 168px; width: 168px; min-width: 0;
+  display: flex; flex-direction: column; gap: 10px;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 12px 10px;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+}
+.designer-sidebar[hidden] { display: none; }
+.designer-section { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.designer-sidebar-title {
+  margin: 0; font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--fg-muted);
+}
+.designer-sidebar-title:empty { display: none; }
+.designer-divider { flex: 0 0 auto; height: 1px; background: var(--border); }
+
+/* Tools + History icon buttons. Square, token-colored; aria-pressed marks
+ * the active tool; disabled is used by Undo/Redo when history is empty. */
+.designer-tools,
+.designer-history { display: flex; gap: 6px; }
+.designer-iconbtn {
+  appearance: none; width: 32px; height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--fg); border-radius: 7px; cursor: pointer;
+}
+.designer-iconbtn svg { display: block; }
+.designer-iconbtn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.designer-iconbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.designer-iconbtn[aria-pressed="true"] {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+}
+.designer-iconbtn:disabled { opacity: .45; cursor: not-allowed; }
+.designer-iconbtn:disabled:hover { background: var(--bg); border-color: var(--border); color: var(--fg); }
+
+/* Add palette: flowchart is a 2-column shape grid (SVG glyph + caption);
+ * every other family is one full-width button (plus glyph + label). The
+ * glyph line work inherits currentColor so it follows hover/active state. */
+.designer-palette { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.designer-shapes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.designer-shape {
+  appearance: none; border: 1px solid var(--border); background: var(--bg);
+  color: var(--fg); font: inherit; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 4px; border-radius: 7px; text-align: center; min-width: 0;
+}
+.designer-shape svg { display: block; }
+.designer-shape-caption {
+  font-size: .68rem; line-height: 1.1; color: var(--fg-muted);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.designer-shape:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.designer-shape:hover .designer-shape-caption { color: var(--accent); }
+.designer-shape:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.designer-add {
+  appearance: none; width: 100%; border: 1px solid var(--accent);
+  background: var(--accent-soft); color: var(--accent);
+  font: inherit; font-size: .82rem; padding: 8px 10px; border-radius: 7px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px;
+}
+.designer-add svg { display: block; flex: 0 0 auto; }
+.designer-add:hover { background: var(--accent); color: var(--accent-fg); }
+.designer-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.designer-stage { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.designer-canvas {
+  position: absolute; inset: 0;
+  background-color: var(--designer-canvas-bg);
+  background-image: radial-gradient(circle, var(--designer-grid) 1px, transparent 1px);
+  background-size: var(--designer-grid-size) var(--designer-grid-size);
+  background-position: center;
+  overflow: hidden; outline: none;
+}
+.designer-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.designer-state {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 32px; text-align: center;
+}
+.designer-state[hidden] { display: none; }
+.designer-state--loading,
+.designer-state--error,
+.designer-state--readonly { background: var(--designer-canvas-bg); }
+.designer-state-icon { font-size: 1.6rem; line-height: 1; color: var(--fg-muted); }
+.designer-state-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--fg); }
+.designer-state--error .designer-state-title { color: var(--warn); }
+.designer-state-msg { margin: 0; max-width: 46ch; font-size: .9rem; color: var(--fg-muted); }
+.designer-state-actions { display: flex; gap: 8px; margin-top: 6px; }
+.designer-error-detail {
+  max-width: 60ch; max-height: 9em; overflow: auto; text-align: left;
+  margin: 0; padding: 10px 12px; white-space: pre-wrap;
+  font: .82rem/1.4 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--fg); background: var(--code-bg);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.designer-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  animation: designer-spin .8s linear infinite;
+}
+@keyframes designer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .designer-spinner { animation-duration: 1.6s; } }
+
+.designer-empty {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center;
+}
+.designer-empty[hidden] { display: none; }
+.designer-empty .designer-state-icon { font-size: 2rem; color: var(--accent); opacity: .8; }
+.designer-hint {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 2; max-width: calc(100% - 32px); margin: 0; padding: 6px 12px;
+  font-size: .82rem; color: var(--fg-muted); text-align: center;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25); pointer-events: none;
+}
+.designer-hint[hidden] { display: none; }
+
+.designer-footer { align-items: center; }
+.designer-status { margin-right: auto; font-size: .85rem; color: var(--fg-muted); }
+.designer-status.ok { color: var(--ok); }
+.designer-status.error { color: var(--warn); }
+
+.settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.settings-action--primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.06); }
+.settings-action--primary:disabled,
+.settings-action--primary:disabled:hover {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+  opacity: .5; filter: none; cursor: not-allowed;
+}
+
+/* narrow screens: stack the status line above the buttons, and turn the
+ * sidebar into a horizontal, scrollable strip above the stage. */
+@media (max-width: 720px) {
+  .designer-footer { flex-wrap: wrap; }
+  .designer-status { flex: 1 1 100%; margin: 0 0 6px; }
+  .designer-body { flex-direction: column; }
+  .designer-sidebar {
+    flex: 0 0 auto; width: 100%; flex-direction: row; align-items: center;
+    gap: 8px; padding: 8px 10px;
+    overflow-x: auto; overflow-y: hidden;
+    border-right: none; border-bottom: 1px solid var(--border);
+  }
+  .designer-section { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 8px; }
+  .designer-sidebar-title { flex: 0 0 auto; }
+  .designer-divider { display: none; }
+  .designer-palette { flex-direction: row; align-items: center; gap: 6px; }
+  .designer-shapes { display: flex; gap: 6px; }
+  .designer-shape { flex: 0 0 auto; min-width: 64px; }
+  .designer-add { flex: 0 0 auto; width: auto; }
+}
+
+/* Visimer theme bridge. The library injects its own stylesheet at runtime
+ * (after this file) and adds .mw-canvas to our host, which would win the
+ * position/overflow tie; #designer-canvas raises specificity so our
+ * absolute-inset layout and grid stay in charge. The --mw-* aliases map
+ * the vendor's chrome onto our tokens; the canvas background stays ours
+ * (transparent to the vendor) so the dot grid shows through. */
+#designer-canvas {
+  position: absolute; inset: 0; overflow: hidden;
+  --mw-accent: var(--accent);
+  --mw-chrome-bg: var(--bg-elev);
+  --mw-chrome-fg: var(--fg);
+  --mw-chrome-border: var(--border);
+  --mw-chrome-hover: var(--accent-soft);
+  --mw-chrome-dim: var(--fg-muted);
+  --mw-editor-bg: var(--bg-elev);
+}

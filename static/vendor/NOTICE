@@ -1,0 +1,78 @@
+Vendored third-party software
+=============================
+
+@visimer/core
+-------------
+Version:  1.1.2 (pinned exact in package.json devDependencies)
+License:  MIT
+Source:   https://github.com/inkeep/visimer (packages/core)
+Runtime dependencies: none.
+
+@visimer/dom
+------------
+Version:  1.1.2 (pinned exact in package.json devDependencies)
+License:  MIT
+Source:   https://github.com/inkeep/visimer (packages/dom)
+Runtime dependencies: @visimer/core only.
+
+Both packages are ESM-only. They are bundled offline into the committed
+static/vendor/visimer.bundle.js (a single IIFE exposing the global
+`Visimer`) by the `vendor:visimer` npm script, so the app keeps its
+no-runtime-build-step contract:
+
+  node_modules/.bin/esbuild static/vendor/visimer.entry.js \
+    --bundle --format=iife --global-name=Visimer --minify \
+    --outfile=static/vendor/visimer.bundle.js
+
+`static/vendor/visimer.entry.js` re-exports only the symbols the app
+uses, so `window.Visimer` stays narrow:
+
+  export { MermaidWysiwygEditor, parse } from "@visimer/core";
+  export { MermaidCanvasView } from "@visimer/dom";
+
+Provenance
+----------
+
+Reproducibility rests on the exact version pins in package.json (both
+packages pinned `1.1.2`, no caret) plus the checksums recorded here.
+package-lock.json is untracked (gitignored), so it is not part of the
+repository and cannot serve as the recorded record; these hashes are.
+
+  @visimer/core@1.1.2  integrity: sha512-do8MDqlLQeDRI1fy2PUTVnzBkLrzpaq260UX1WrtE/3XtSoLge4T5oY+cvSXFyINhYiYKB9tgetkx+o14LFrjA==
+  @visimer/dom@1.1.2   integrity: sha512-Ir+Nl5vRgZA8rQwjGEQrC9ijOkdR0BmD3EjjqU/VedgK0lxleo5dKj8YIoHiocEDS1hlQwmzRZKIKg8MuV2FJw==
+
+  static/vendor/visimer.bundle.js
+    size:    147493 bytes
+    sha256:  1096eb5ffdcd474b77e5aafc0759980cfdb004d010190e1b76f2802a6fa0337b
+
+The tarball `integrity` values above are the sha512 SRI hashes npm records
+for the pinned distributions. Re-running `npm run vendor:visimer` against
+those exact versions must reproduce the bundle and its sha256.
+
+Only the JS bundle is vendored. `@visimer/dom` ships no stylesheet; it
+injects its own <style> element at runtime, so there is no visimer.css.
+
+MIT License
+-----------
+
+Both @visimer/core and @visimer/dom ship this identical license text:
+
+Copyright (c) 2026 Inkeep
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

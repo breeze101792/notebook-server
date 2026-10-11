@@ -47,6 +47,28 @@
 
   function nextId() { return "mermaid-svg-" + (++idCounter); }
 
+  // Ids minted for the designer's canvas. A separate counter keeps them
+  // from ever colliding with the note renderer's mermaid-svg-N series.
+  let designerIdCounter = 0;
+
+  /* mermaidConfig(theme) -- the one owner of our mermaid config literal.
+   *
+   * Both the note renderer (ensureInitialized) and the designer adapter
+   * (designerMermaid) build from this, so the block in the note and the
+   * diagram on the designer canvas can never be configured differently.
+   * startOnLoad:false is critical (otherwise the lib walks the DOM on load
+   * and renders things we don't want), securityLevel:"strict" is the
+   * safest default (clicks/links disabled), and fontFamily matches the
+   * app's monospace stack so diagram text reads as part of the notebook. */
+  function mermaidConfig(theme) {
+    return {
+      startOnLoad: false,
+      theme: theme,
+      securityLevel: "strict",
+      fontFamily: '"SFMono-Regular", Menlo, Consolas, monospace',
+    };
+  }
+
   // Pull the vendored UMD bundle on first use. Resolves once
   // window.mermaid exists, or after the timeout if the bundle fails to
   // load (the viewer then falls back to showing the block as source).
@@ -107,16 +129,47 @@
     // things we don't want), securityLevel:"strict" is the safest
     // default (clicks/links disabled), and theme is light/dark.
     initializedFor = theme;
-    initPromise = Promise.resolve(window.mermaid.initialize({
-      startOnLoad: false,
-      theme: theme,
-      securityLevel: "strict",
-      // fontFamily matches our app's monospace stack so the text
-      // inside diagram nodes reads as part of the notebook.
-      fontFamily: '"SFMono-Regular", Menlo, Consolas, monospace',
-    }));
+    initPromise = Promise.resolve(window.mermaid.initialize(mermaidConfig(theme)));
     await initPromise;
   }
+
+  /* designerMermaid() -- the {initialize, render, parse} adapter handed to
+   * Visimer's MermaidCanvasView (see static/js/mermaid-designer.js).
+   *
+   * It deliberately bypasses ensureInitialized's `initializedFor` guard
+   * (F7): mermaid.initialize deep-merges into the live config, so forwarding
+   * a caller's partial config would leave stale values behind and the
+   * guard would then skip re-initializing forever. The adapter always
+   * re-applies OUR full config (theme from body[data-theme], strict
+   * security, app font stack) so the canvas can never disagree with the
+   * note. Render ids are minted as nb-designer-N (never mermaid-svg-N), and
+   * a rejected render's stray `d<id>` node is removed before the error
+   * propagates -- the same cleanup the note path does at renderOne(). */
+  function designerMermaid() {
+    return {
+      initialize: function () {
+        if (!window.mermaid) return;
+        window.mermaid.initialize(mermaidConfig(currentTheme()));
+      },
+      parse: function (code) {
+        return window.mermaid.parse(code);
+      },
+      render: async function (_id, code) {
+        const id = "nb-designer-" + (++designerIdCounter);
+        try {
+          return await window.mermaid.render(id, code);
+        } catch (err) {
+          // When render() rejects, mermaid appends a stray <div id="d<id>">
+          // (holding a big "Syntax error" SVG) to the end of <body>. The
+          // library only cleans up its own mw-render-N id, so we clean ours.
+          const stray = document.getElementById("d" + id);
+          if (stray) stray.remove();
+          throw err;
+        }
+      },
+    };
+  }
+
 
   /* renderOne(pre) -- render a single <pre><code class="language-mermaid">.
    *
@@ -141,6 +194,10 @@
       const result = await window.mermaid.render(id, source);
       const container = document.createElement("div");
       container.className = "mermaid-container";
+      // Focusable so a keyboard user can Tab to the diagram and open the
+      // hybrid context menu with Shift+F10 / the Menu key (the only way to
+      // reach the visual designer without a mouse).
+      container.tabIndex = 0;
       container.dataset.mermaid = "ok";
       // Store the original source so hybrid mode's domToMarkdown can
       // round-trip the diagram back to a ```mermaid code block instead
@@ -216,6 +273,9 @@
       if (stray) stray.remove();
       const wrap = document.createElement("div");
       wrap.className = "mermaid-error";
+      // Focusable like .mermaid-container: the repair path (Edit source /
+      // Design) must be reachable with Shift+F10 from the keyboard too.
+      wrap.tabIndex = 0;
       const head = document.createElement("div");
       head.className = "mermaid-error-head";
       head.textContent = "Mermaid error: " + firstLine;
@@ -297,7 +357,7 @@
     containerSelector: ".mermaid-container",
   });
 
-  NB.mermaid = { renderAll, reinit, whenReady,
+  NB.mermaid = { renderAll, reinit, whenReady, designerMermaid,
     openLightbox: lightbox.openLightbox,
     closeLightbox: lightbox.closeLightbox,
     zoomIn: lightbox.zoomIn,
@@ -319,6 +379,10 @@
       errorClass: "mermaid-error",
       sourceClass: "mermaid-source",
       renderAll,
+      // Opt-in hook for a visual editor module (NB.mermaidDesign). The
+      // hybrid context menu shows "Design diagram…" only when a plugin
+      // carries this and NB[design] exists.
+      design: "mermaidDesign",
     });
   }
 })();

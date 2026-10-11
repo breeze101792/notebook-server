@@ -716,6 +716,122 @@ const html = `<!DOCTYPE html><html><head>
       </div>
     </div>
   </div>
+  <!-- Mermaid visual designer (mirrors templates/index.html). Its
+       mermaid-designer.js modal binds these ids at eval time. -->
+  <div id="designer-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
+         aria-labelledby="designer-title">
+      <div class="settings-header designer-header">
+        <div class="designer-heading">
+          <h2 id="designer-title">Design diagram</h2>
+          <span class="designer-type" id="designer-type"></span>
+        </div>
+        <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar" id="designer-sidebar" hidden
+               aria-labelledby="designer-add-title">
+          <section class="designer-section designer-section--tools"
+                   aria-labelledby="designer-tools-title">
+            <h3 class="designer-sidebar-title" id="designer-tools-title">Tools</h3>
+            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
+              <button id="designer-tool-select" class="designer-iconbtn" type="button"
+                      aria-pressed="true" title="Select tool" aria-label="Select tool">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
+                </svg>
+              </button>
+              <button id="designer-tool-connect" class="designer-iconbtn" type="button"
+                      aria-pressed="false" title="Connect tool — or Alt+drag from a node"
+                      aria-label="Connect tool">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M3 13 12.5 3.5"></path>
+                  <path d="M8 3.5h4.5v4.5"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--add"
+                   aria-labelledby="designer-add-title">
+            <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
+            <div class="designer-palette" id="designer-palette"></div>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--history"
+                   aria-labelledby="designer-history-title">
+            <h3 class="designer-sidebar-title" id="designer-history-title">History</h3>
+            <div class="designer-history" role="toolbar" aria-label="History">
+              <button id="designer-undo" class="designer-iconbtn" type="button"
+                      title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M4 6h5a4 4 0 0 1 4 4v2"></path>
+                  <path d="M6.4 3.6 4 6l2.4 2.4"></path>
+                </svg>
+              </button>
+              <button id="designer-redo" class="designer-iconbtn" type="button"
+                      title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                     stroke="currentColor" stroke-width="1.5"
+                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                  <path d="M12 6H7a4 4 0 0 0-4 4v2"></path>
+                  <path d="M9.6 3.6 12 6l-2.4 2.4"></path>
+                </svg>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage" id="designer-stage">
+          <div class="designer-canvas" id="designer-canvas" tabindex="0"
+               role="application" aria-label="Diagram canvas"></div>
+          <div class="designer-empty" id="designer-empty" hidden>
+            <span class="designer-state-icon" aria-hidden="true">◇</span>
+            <p class="designer-state-msg">Use the palette to add your first item.</p>
+          </div>
+          <div class="designer-state designer-state--loading" id="designer-loading" hidden>
+            <span class="designer-spinner" aria-hidden="true"></span>
+            <p class="designer-state-msg" role="status">Loading editor…</p>
+          </div>
+          <div class="designer-state designer-state--error" id="designer-error"
+               role="alert" hidden>
+            <span class="designer-state-icon" aria-hidden="true">⚠</span>
+            <h3 class="designer-state-title">Couldn’t open this diagram</h3>
+            <p class="designer-state-msg" id="designer-error-msg"></p>
+            <pre class="designer-error-detail" id="designer-error-detail" hidden></pre>
+            <div class="designer-state-actions">
+              <button id="designer-retry" class="settings-action">Retry</button>
+              <button id="designer-edit-source" class="settings-action">Edit source instead</button>
+            </div>
+          </div>
+          <div class="designer-state designer-state--readonly" id="designer-readonly" hidden>
+            <span class="designer-state-icon" aria-hidden="true">👁</span>
+            <h3 class="designer-state-title">Preview only</h3>
+            <p class="designer-state-msg">This diagram type has no editable model yet.
+              Close this window to edit the source instead.</p>
+          </div>
+          <p class="designer-hint" id="designer-hint" hidden>
+            Add from the palette · Connect (or Alt+drag a node) · click a node for shape, color and arrow options
+          </p>
+        </div>
+      </div>
+      <div class="settings-footer designer-footer">
+        <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>
+        <button id="designer-cancel" class="settings-action">Cancel</button>
+        <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
+      </div>
+    </div>
+  </div>
   <!-- Mermaid lightbox overlay -->
   <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
     <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
@@ -1457,8 +1573,9 @@ evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/windows.js"));
 evalIn(read("static/js/settings.js"));
-evalIn(read("static/js/export.js"));
-evalIn(read("static/js/vimnav.js"));
+  evalIn(read("static/js/export.js"));
+  evalIn(read("static/js/mermaid-designer.js"));
+  evalIn(read("static/js/vimnav.js"));
 evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/shortcuts.js"));
@@ -10932,8 +11049,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v6",
-      /const CACHE = "notebook-v6"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v7",
+      /const CACHE = "notebook-v7"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -18548,6 +18665,10 @@ function check(label, cond, extra) {
       "/static/vendor/codemirror.bundle.js",
       "/static/vendor/katex/katex.min.js",
       "/static/vendor/wavedrom.unpkg.min.js",
+      // Visimer (the mermaid visual designer canvas) is a ~264 KB IIFE
+      // lazy-loaded by mermaid-designer.js on first open; it must not be
+      // parsed at boot either.
+      "/static/vendor/visimer.bundle.js",
     ];
     for (const src of heavyEager) {
       check("lazy: index.html does not eagerly load " + src,
@@ -18583,7 +18704,8 @@ function check(label, cond, extra) {
     for (const src of ["vendor/mermaid.min.js", "vendor/viz.full.js",
                        "vendor/codemirror.bundle.js",
                        "vendor/katex/katex.min.js",
-                       "vendor/wavedrom.unpkg.min.js"]) {
+                       "vendor/wavedrom.unpkg.min.js",
+                       "vendor/visimer.bundle.js"]) {
       check("lazy: service worker precache excludes " + src,
         sw.indexOf(src) === -1,
         sw.indexOf(src) === -1 ? "" : "still in PRECACHE");
@@ -18803,6 +18925,1016 @@ function check(label, cond, extra) {
       "width=" + cssVar("--side-panel-width") + " saved=" + savedWidth);
     // Leave the suite in the state it started (expanded).
     window.document.documentElement.style.setProperty("--side-panel-width", widthBefore);
+  }
+
+  // --- mermaid visual designer (NB.mermaidDesign) --------------------
+  // The Visimer canvas is ESM + DOM and cannot render real mermaid in
+  // jsdom, so the bundle is stubbed: NB.lazyload.script resolves and
+  // installs a fake window.Visimer whose editor exposes a mutable .code
+  // and whose canvas view echoes a successful render. Everything else
+  // (the menu gate, the fixed write-back order, the round-trip) is the
+  // real code under test.
+  console.log("== mermaid designer ==");
+  {
+    const vc = $("viewer-content");
+    const overlay = $("designer-overlay");
+    const ctxmenu = () => new window.MouseEvent("contextmenu",
+      { bubbles: true, cancelable: true, clientX: 100, clientY: 100 });
+    const clickEv = (el) => el.dispatchEvent(new window.Event("click", { bubbles: true }));
+
+    // --- markup + wiring completeness ------------------------------
+    check("designer: #designer-overlay exists", !!overlay);
+    check("designer: #designer-overlay carries settings-overlay",
+      !!overlay && overlay.classList.contains("settings-overlay"),
+      overlay ? overlay.className : "missing");
+    check("designer: #designer-overlay is hidden by default",
+      !!overlay && overlay.hidden === true);
+    {
+      const dlg = overlay && overlay.querySelector(".settings-modal.designer-modal");
+      check("designer: modal carries role=dialog + aria-modal",
+        !!dlg && dlg.getAttribute("role") === "dialog" &&
+        dlg.getAttribute("aria-modal") === "true");
+    }
+    check("designer: NB.mermaidDesign is exposed",
+      !!window.NB.mermaidDesign &&
+      typeof window.NB.mermaidDesign.open === "function" &&
+      typeof window.NB.mermaidDesign.apply === "function" &&
+      typeof window.NB.mermaidDesign.isOpen === "function");
+    // The three duplicated modal guards match .settings-overlay:not([hidden]),
+    // so the designer (which carries that class) blocks the global shortcuts.
+    for (const f of ["static/js/shortcuts.js", "static/js/vimnav.js", "static/js/table-select.js"]) {
+      check("designer: " + f + " modal guard sees .settings-overlay",
+        read(f).indexOf(".settings-overlay:not([hidden])") !== -1);
+    }
+    {
+      const idxHtml = read("templates/index.html");
+      const swJs = read("static/sw.js");
+      check("designer: mermaid-designer.js is in index.html",
+        idxHtml.indexOf("/static/js/mermaid-designer.js") !== -1);
+      check("designer: mermaid-designer.js is in sw.js PRECACHE",
+        swJs.indexOf("/static/js/mermaid-designer.js") !== -1);
+      check("designer: visimer.bundle.js is NOT eagerly loaded by index.html",
+        idxHtml.indexOf("visimer.bundle.js") === -1);
+      check("designer: visimer.bundle.js is NOT in sw.js PRECACHE",
+        swJs.indexOf("visimer.bundle.js") === -1);
+      // The stage toolbar was removed: its controls moved into
+      // #designer-sidebar as icon buttons. The template must no longer carry
+      // the old toolbar, but must carry the tool/history ids the module
+      // binds at eval time.
+      check("designer: #designer-toolbar is gone from index.html",
+        idxHtml.indexOf('id="designer-toolbar"') === -1);
+      for (const id of ["designer-tool-select", "designer-tool-connect",
+        "designer-undo", "designer-redo"]) {
+        check("designer: #" + id + " is in index.html",
+          idxHtml.indexOf('id="' + id + '"') !== -1);
+      }
+      // The add action lives in the sidebar palette; the sidebar carries
+      // Tools / Add / History sections. All must be present in the template.
+      check("designer: #designer-tool-addnode is gone from index.html",
+        idxHtml.indexOf("designer-tool-addnode") === -1);
+      for (const id of ["designer-sidebar", "designer-add-title", "designer-palette",
+        "designer-tools-title", "designer-history-title"]) {
+        check("designer: #" + id + " is in index.html",
+          idxHtml.indexOf('id="' + id + '"') !== -1);
+      }
+      // The narrow Visimer global must re-export the headless capability
+      // probe mermaid-designer.js's capabilityFor() calls.
+      const entrySrc = read("static/vendor/visimer.entry.js");
+      check("designer: visimer.entry.js re-exports parse (capability probe)",
+        /export\s*\{[^}]*\bparse\b[^}]*\}/.test(entrySrc),
+        entrySrc.replace(/\s+/g, " ").slice(0, 90));
+    }
+
+    // --- stubs ------------------------------------------------------
+    const origVisimer = window.Visimer;
+    const realLazyload = window.NB.lazyload.script;
+    const realAuthStatus = window.NB.auth.status;
+    const hadMermaidParse = Object.prototype.hasOwnProperty.call(window.mermaid, "parse");
+    const realMermaidParse = window.mermaid.parse;
+    window.mermaid.parse = async () => {};   // apply() validates before writing
+
+    const __visimer = {
+      capability: "edit", typeId: "flowchart",
+      // The parsed family drives familyFor()'s add-sidebar palette. The
+      // default keeps the flowchart model so the existing tests see the
+      // same result shape. Tests flip it to exercise the other families.
+      family: "flowchart",
+      failLoad: false, editors: [], views: [], undos: 0, redos: 0,
+      // When true, the fake editor's model reports zero nodes so the
+      // module's modelEmpty() shows #designer-empty (used by the empty
+      // ```mermaid block tests).
+      emptyModel: false,
+      // Toolbar probes: the tool row drives these library methods and reads
+      // these history flags.
+      tools: [], addNodes: [], canUndo: false, canRedo: false,
+      // Add-sidebar probe: every editor.dispatch(op) call is recorded so a
+      // palette button can be asserted against the op it sends.
+      dispatches: [],
+    };
+    // Build the editor's parsed model for the current __visimer.family.
+    // Only the family's own graph key is non-null (familyFor checks them in
+    // order), and the model is non-empty unless __visimer.emptyModel is set.
+    function fakeResult() {
+      const empty = __visimer.emptyModel;
+      const r = { typeInfo: { capability: __visimer.capability, id: __visimer.typeId } };
+      switch (__visimer.family) {
+        case "sequence": r.sequence = { participants: empty ? [] : [{}], events: [] }; break;
+        case "state": r.state = { states: empty ? [] : [{}], transitions: [] }; break;
+        case "class": r.classGraph = { classes: empty ? [] : [{}], relations: [] }; break;
+        case "er": r.er = { entities: empty ? [] : [{}], relations: [] }; break;
+        case "pie": r.pie = { slices: empty ? [] : [{}] }; break;
+        case "gantt": r.gantt = { tasks: empty ? [] : [{}] }; break;
+        case "lineitem": r.lineItems = { items: empty ? [] : [{}] }; break;
+        default: r.flowchart = { nodes: empty ? [] : [{}] }; break;
+      }
+      return r;
+    }
+    function FakeEditor(opts) {
+      this.code = (opts && opts.code) || "";
+      // The constructor argument, untouched by tests that later mutate
+      // `.code`; lets a test assert exactly what the module seeded.
+      this.initCode = (opts && opts.code) || "";
+      this.result = fakeResult();
+      this._handlers = {};
+      __visimer.editors.push(this);
+    }
+    FakeEditor.prototype.on = function (evt, cb) {
+      (this._handlers[evt] = this._handlers[evt] || []).push(cb);
+      const self = this;
+      return function () {
+        self._handlers[evt] = (self._handlers[evt] || []).filter((f) => f !== cb);
+      };
+    };
+    // Test-only: fire an editor event (e.g. "change") so the module re-reads
+    // canUndo/canRedo, matching the real library's post-edit signal.
+    FakeEditor.prototype._emit = function (evt) {
+      for (const cb of (this._handlers[evt] || [])) { try { cb(); } catch (_) {} }
+    };
+    FakeEditor.prototype.undo = function () { __visimer.undos++; };
+    FakeEditor.prototype.redo = function () { __visimer.redos++; };
+    // The single-action palette buttons call editor.dispatch(op); record the
+    // op so a test can assert the exact shape the sidebar sends.
+    FakeEditor.prototype.dispatch = function (op) { __visimer.dispatches.push(op); };
+    // Togglable via __visimer.canUndo / __visimer.canRedo.
+    Object.defineProperty(FakeEditor.prototype, "canUndo", {
+      get: function () { return !!__visimer.canUndo; },
+    });
+    Object.defineProperty(FakeEditor.prototype, "canRedo", {
+      get: function () { return !!__visimer.canRedo; },
+    });
+    function FakeView(opts) {
+      this.opts = opts; this._handlers = {}; this.destroyed = false;
+      // The real canvas holds the editor it was constructed with; expose it
+      // so tests can inspect the mounted model.
+      this.editor = opts && opts.editor;
+      __visimer.views.push(this);
+    }
+    FakeView.prototype.on = function (evt, cb) { this._handlers[evt] = cb; };
+    FakeView.prototype.render = function () {
+      if (this._handlers.render) this._handlers.render({ ok: true });
+      return Promise.resolve();
+    };
+    // The real canvas toggles a mode class and emits "toolChange"; the
+    // module listens to that event to drive the toolbar's aria-pressed.
+    FakeView.prototype.setTool = function (tool) {
+      __visimer.tools.push(tool);
+      const el = this.opts && this.opts.container;
+      if (el && el.classList) el.classList.toggle("mw-tool-connect", tool === "connect");
+      if (this._handlers.toolChange) this._handlers.toolChange(tool);
+    };
+    FakeView.prototype.addNode = function (shape, label) {
+      __visimer.addNodes.push({ shape: shape, label: label });
+      return { id: "n" + __visimer.addNodes.length };
+    };
+    FakeView.prototype.destroy = function () { this.destroyed = true; };
+    window.Visimer = {
+      parse() { return { typeInfo: { capability: __visimer.capability, id: __visimer.typeId } }; },
+      MermaidWysiwygEditor: FakeEditor,
+      MermaidCanvasView: FakeView,
+    };
+    window.NB.lazyload.script = function (src) {
+      if (__visimer.failLoad) return Promise.reject(new Error("load failed (stub)"));
+      return Promise.resolve(src);
+    };
+
+    // A fresh note so the designer tests do not depend on the state other
+    // tests left in notes/mermaid.md.
+    const DSRC = "# Designer\n\nBefore.\n\n```mermaid\ngraph TD; A-->B; B-->C;\n```\n\nAfter.\n";
+    FILES["notes/designer.md"] = DSRC;
+    const dNotes = TREE.find((n) => n.path === "notes");
+    if (dNotes && !dNotes.children.some((c) => c.path === "notes/designer.md")) {
+      dNotes.children.push({ name: "designer.md", type: "file", path: "notes/designer.md" });
+    }
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    window.NB.viewer.close("notes/designer.md");
+    await window.NB.tabs.open("notes/designer.md");
+    let dContainer = null;
+    for (let i = 0; i < 20 && !dContainer; i++) {
+      await tick(25); dContainer = vc.querySelector(".mermaid-container");
+    }
+    await window.NB.hybrid.enter();
+    await tick(20);
+    dContainer = vc.querySelector(".mermaid-container");
+    check("designer: a mermaid block is rendered (precondition)", !!dContainer,
+      "containers=" + vc.querySelectorAll(".mermaid-container").length);
+
+    const hcm = $("hybrid-context-menu");
+    const menuButtons = () => Array.from(hcm.querySelectorAll("button"));
+    const designBtn = () => menuButtons().find((b) => /^Design diagram/.test(b.textContent));
+    const editSourceBtn = () => menuButtons().find((b) => /Edit mermaid source/.test(b.textContent));
+    const openBlockMenu = async (el) => { el.dispatchEvent(ctxmenu()); await tick(10); };
+
+    // --- menu visibility / enabled matrix --------------------------
+    await openBlockMenu(dContainer);
+    check("designer menu: item shown when auth is off", !!designBtn(),
+      menuButtons().map((b) => b.textContent.trim()).join(" / "));
+    {
+      const btns = menuButtons();
+      check("designer menu: item precedes 'Edit mermaid source'",
+        btns.indexOf(designBtn()) !== -1 &&
+        btns.indexOf(designBtn()) < btns.indexOf(editSourceBtn()));
+    }
+    window.NB.auth.status = () => ({ enabled: true, role: "admin" });
+    await openBlockMenu(dContainer);
+    check("designer menu: item shown for an admin", !!designBtn());
+    // viewer: writes are admin-only, so the item is hidden entirely.
+    window.NB.auth.status = () => ({ enabled: true, role: "viewer" });
+    await openBlockMenu(dContainer);
+    check("designer menu: item absent for a viewer", !designBtn(),
+      menuButtons().map((b) => b.textContent.trim()).join(" / "));
+    window.NB.auth.status = realAuthStatus;
+    // render-only type: shown but disabled with the reason attached.
+    __visimer.capability = "render";
+    await openBlockMenu(dContainer);
+    {
+      const db = designBtn();
+      check("designer menu: render-only type is disabled with aria-disabled + title",
+        !!db && db.disabled === true && db.getAttribute("aria-disabled") === "true" &&
+        /No visual editor/.test(db.title || ""),
+        db ? ("disabled=" + db.disabled + " title=" + db.title) : "no item");
+    }
+    __visimer.capability = "edit";
+
+    // --- non-mermaid plugin block (wavedrom) ------------------------
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    const WDSRC = "# Wave\n\n```wavedrom\n{signal:[{name:\"clk\",wave:\"p.....\"}]}\n```\n";
+    FILES["notes/designer-wd.md"] = WDSRC;
+    if (dNotes && !dNotes.children.some((c) => c.path === "notes/designer-wd.md")) {
+      dNotes.children.push({ name: "designer-wd.md", type: "file", path: "notes/designer-wd.md" });
+    }
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    window.NB.viewer.close("notes/designer-wd.md");
+    await window.NB.tabs.open("notes/designer-wd.md");
+    let wdContainer = null;
+    for (let i = 0; i < 20 && !wdContainer; i++) {
+      await tick(25); wdContainer = vc.querySelector(".wavedrom-container, .wavedrom-error");
+    }
+    await window.NB.hybrid.enter();
+    await tick(20);
+    wdContainer = vc.querySelector(".wavedrom-container, .wavedrom-error");
+    check("designer: a non-mermaid (wavedrom) block is present (precondition)", !!wdContainer);
+    if (wdContainer) {
+      await openBlockMenu(wdContainer);
+      check("designer menu: item absent for a non-mermaid (wavedrom) block", !designBtn());
+      check("designer menu: non-mermaid block still offers its source editor",
+        !!menuButtons().find((b) => /Edit wavedrom source/i.test(b.textContent)));
+    }
+
+    // --- back to mermaid: open -> Apply no-op -----------------------
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    window.NB.viewer.close("notes/designer.md");
+    await window.NB.tabs.open("notes/designer.md");
+    dContainer = null;
+    for (let i = 0; i < 20 && !dContainer; i++) {
+      await tick(25); dContainer = vc.querySelector(".mermaid-container");
+    }
+    await window.NB.hybrid.enter();
+    await tick(20);
+    dContainer = vc.querySelector(".mermaid-container");
+
+    let contentChanges = 0;
+    const realOCC = window.NB.hybrid.onContentChange;
+    window.NB.hybrid.onContentChange = function () {
+      contentChanges++; return realOCC.apply(this, arguments);
+    };
+    const filePosts = () => fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+
+    await openBlockMenu(dContainer);
+    clickEv(designBtn());               // open through the real menu item
+    await tick(80);
+    check("designer: menu item opens the modal", !overlay.hidden);
+    check("designer: mount reaches the ready state (Apply enabled)",
+      $("designer-apply").disabled === false && $("designer-hint").hidden === false);
+    {
+      const before = filePosts();
+      contentChanges = 0;
+      clickEv($("designer-apply"));
+      await tick(40);
+      check("designer: no-edit Apply closes the modal", overlay.hidden);
+      check("designer: no-edit Apply issues no write", filePosts() === before,
+        "before/after=" + before + "/" + filePosts());
+      check("designer: no-edit Apply does not call onContentChange", contentChanges === 0);
+    }
+
+    // --- open -> Apply with an edit (validate/re-render/onContentChange)
+    {
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const ed = __visimer.editors[__visimer.editors.length - 1];
+      const NEW = "graph TD; A-->B; B-->C; B-->D;\n";
+      ed.code = NEW;
+      contentChanges = 0;
+      clickEv($("designer-apply"));
+      await tick(120);
+      check("designer: edited Apply calls onContentChange exactly once",
+        contentChanges === 1, "calls=" + contentChanges);
+      check("designer: edited Apply closes the modal", overlay.hidden);
+      const nc = vc.querySelector(".mermaid-container");
+      check("designer: the block re-rendered with the edited source",
+        !!nc && nc.dataset.mermaidSource === NEW,
+        nc ? JSON.stringify(nc.dataset.mermaidSource) : "no container");
+      const md = window.NB.hybrid.domToMarkdown();
+      check("designer: domToMarkdown emits the new fence via restoreForMarkdown",
+        md.indexOf("```mermaid") !== -1 && md.indexOf("B-->D") !== -1 &&
+        md.indexOf("Before.") !== -1 && md.indexOf("After.") !== -1,
+        JSON.stringify(md.slice(0, 160)));
+      window.NB.hybrid.flushPendingSnapshot();
+    }
+
+    // --- Cancel / Esc write nothing; focus returns to the invoker ---
+    {
+      const btn = window.document.createElement("button");
+      window.document.body.appendChild(btn);
+      btn.focus();
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const ed = __visimer.editors[__visimer.editors.length - 1];
+      ed.code = "graph TD; X-->Y;\n";
+      contentChanges = 0;
+      const before = filePosts();
+      clickEv($("designer-cancel"));
+      await tick(40);
+      check("designer: Cancel closes the modal", overlay.hidden);
+      check("designer: Cancel issues no write and no onContentChange",
+        filePosts() === before && contentChanges === 0);
+      check("designer: Cancel returns focus to the invoker",
+        window.document.activeElement === btn,
+        "active=" + (window.document.activeElement && window.document.activeElement.tagName));
+      btn.remove();
+
+      const hit2 = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit2);
+      await tick(80);
+      const ed2 = __visimer.editors[__visimer.editors.length - 1];
+      ed2.code = "graph TD; Q-->R;\n";
+      contentChanges = 0;
+      const before2 = filePosts();
+      window.document.dispatchEvent(
+        new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await tick(30);
+      check("designer: Esc closes the modal", overlay.hidden);
+      check("designer: Esc issues no write and no onContentChange",
+        filePosts() === before2 && contentChanges === 0);
+    }
+
+    // --- non-editable type: inline notice + Edit source fallback ----
+    {
+      __visimer.capability = "render";
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      check("designer: non-editable type shows the inline notice",
+        !overlay.hidden && /can.t be edited visually/.test($("designer-error-msg").textContent),
+        $("designer-error-msg").textContent);
+      check("designer: render-only uses the notice, not the preview-only state",
+        $("designer-readonly").hidden === true);
+      check("designer: non-editable hides Retry and shows Edit source",
+        $("designer-retry").hidden === true && $("designer-edit-source").hidden === false);
+      let editHit = null;
+      const realEditPlugin = window.NB.hybrid.editPluginSource;
+      window.NB.hybrid.editPluginSource = function (h) { editHit = h; };   // record only
+      clickEv($("designer-edit-source"));
+      await tick(30);
+      check("designer: Edit source closes the modal", overlay.hidden);
+      check("designer: Edit source delegates to NB.hybrid.editPluginSource(hit)",
+        !!editHit && !!editHit.el, editHit ? "has el" : "null");
+      window.NB.hybrid.editPluginSource = realEditPlugin;
+      __visimer.capability = "edit";
+    }
+
+    // --- bundle load failure: toast + close -------------------------
+    {
+      __visimer.failLoad = true;
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(60);
+      check("designer: a bundle load failure closes the modal", overlay.hidden);
+      check("designer: a bundle load failure surfaces a toast",
+        !!window.document.querySelector(".toast.warn"));
+      __visimer.failLoad = false;
+    }
+
+    // --- Ctrl/Cmd+Z isolation --------------------------------------
+    // While the modal is open the designer captures Ctrl+Z and forwards it
+    // to the canvas editor; the note's history must never see it.
+    {
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      contentChanges = 0;
+      __visimer.undos = 0;
+      const ev = new window.KeyboardEvent("keydown",
+        { key: "z", ctrlKey: true, bubbles: true, cancelable: true });
+      window.document.dispatchEvent(ev);
+      await tick(20);
+      check("designer: Ctrl+Z while open is captured (default prevented)",
+        ev.defaultPrevented);
+      check("designer: Ctrl+Z forwarded to the canvas editor undo, not the note",
+        __visimer.undos === 1 && contentChanges === 0);
+      clickEv($("designer-cancel"));
+      await tick(20);
+    }
+
+    // --- abort paths: a stale target writes nothing -----------------
+    // The write-back re-resolves the captured block before mutating
+    // (mermaid-designer.js resolveTarget). Each case below rejects for a
+    // different reason -- detached, source mismatch, hybrid inactive --
+    // and every one must abort: no POST /api/file, no onContentChange,
+    // and an abort notice. The held block must not be swapped for a raw
+    // fence.
+    const toastText = () => {
+      const t = window.document.querySelector(".toast");
+      return t ? (t.textContent || "") : "";
+    };
+    // Re-establish a canonical live mermaid block in hybrid mode so each
+    // abort test starts from the same state (the preceding tests may have
+    // re-rendered or replaced the container).
+    async function resetDesigner() {
+      if (window.NB.mermaidDesign.isOpen()) window.NB.mermaidDesign.close();
+      await window.NB.hybrid.exit(false);
+      await tick(40);
+      window.NB.viewer.close("notes/designer.md");
+      await window.NB.tabs.open("notes/designer.md");
+      let c = null;
+      for (let i = 0; i < 20 && !c; i++) { await tick(25); c = vc.querySelector(".mermaid-container"); }
+      await window.NB.hybrid.enter();
+      await tick(20);
+      return vc.querySelector(".mermaid-container");
+    }
+
+    // (1) Detached target: the captured block is removed from the viewer,
+    // so el.isConnected and viewerContentEl.contains(el) both fail.
+    {
+      const c = await resetDesigner();
+      check("designer abort: precondition, live mermaid block", !!c);
+      const hit = window.NB.hybrid.codeBlockAt(c);
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const ed = __visimer.editors[__visimer.editors.length - 1];
+      const original = c.dataset.mermaidSource;
+      ed.code = "graph TD; Detached-->Nope;\n";
+      contentChanges = 0;
+      const before = filePosts();
+      c.remove();
+      check("designer abort(detached): captured block is detached and out of the viewer",
+        c.isConnected === false && vc.contains(c) === false);
+      clickEv($("designer-apply"));
+      await tick(60);
+      check("designer abort(detached): no /api/file write", filePosts() === before,
+        "before/after=" + before + "/" + filePosts());
+      check("designer abort(detached): no onContentChange", contentChanges === 0);
+      check("designer abort(detached): abort notice shown",
+        /diagram changed/.test(toastText()), toastText());
+      check("designer abort(detached): captured block not swapped for a raw fence",
+        c.matches(".mermaid-container, .mermaid-error") && c.dataset.mermaidSource === original,
+        JSON.stringify(c.dataset.mermaidSource));
+    }
+
+    // (2) Source mismatch: the connected block at the captured index now
+    // holds a different diagram, so sourceOf(el) !== target.source.
+    {
+      const c = await resetDesigner();
+      const hit = window.NB.hybrid.codeBlockAt(c);
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const ed = __visimer.editors[__visimer.editors.length - 1];
+      ed.code = "graph TD; Edited-->Diagram;\n";
+      contentChanges = 0;
+      const before = filePosts();
+      const DIFFERENT = "graph TD; P-->Q;\n";
+      c.dataset.mermaidSource = DIFFERENT;
+      clickEv($("designer-apply"));
+      await tick(60);
+      check("designer abort(source mismatch): no /api/file write", filePosts() === before,
+        "before/after=" + before + "/" + filePosts());
+      check("designer abort(source mismatch): no onContentChange", contentChanges === 0);
+      check("designer abort(source mismatch): abort notice shown",
+        /diagram changed/.test(toastText()), toastText());
+      check("designer abort(source mismatch): live block left untouched",
+        c.isConnected && c.matches(".mermaid-container") &&
+        c.dataset.mermaidSource === DIFFERENT, JSON.stringify(c.dataset.mermaidSource));
+    }
+
+    // (3) Hybrid inactive: an external edit exited hybrid while open.
+    {
+      const c = await resetDesigner();
+      const hit = window.NB.hybrid.codeBlockAt(c);
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const ed = __visimer.editors[__visimer.editors.length - 1];
+      const original = c.dataset.mermaidSource;
+      ed.code = "graph TD; Hybrid-->Off;\n";
+      contentChanges = 0;
+      const before = filePosts();
+      const realIsActive = window.NB.hybrid.isActive;
+      window.NB.hybrid.isActive = () => false;
+      try {
+        clickEv($("designer-apply"));
+        await tick(60);
+      } finally {
+        window.NB.hybrid.isActive = realIsActive;
+      }
+      check("designer abort(hybrid inactive): no /api/file write", filePosts() === before,
+        "before/after=" + before + "/" + filePosts());
+      check("designer abort(hybrid inactive): no onContentChange", contentChanges === 0);
+      check("designer abort(hybrid inactive): abort notice shown",
+        /no longer active/.test(toastText()), toastText());
+      check("designer abort(hybrid inactive): diagram block untouched",
+        c.isConnected && c.matches(".mermaid-container") &&
+        c.dataset.mermaidSource === original, JSON.stringify(c.dataset.mermaidSource));
+    }
+
+    // --- a11y: keyboard focus + keyboard-anchored context menu ------
+    // The fix under test: a rendered mermaid block (and its error box)
+    // is Tab-focusable, and a keyboard-invoked contextmenu (Shift+F10 /
+    // the Menu key reports clientX/clientY 0) anchors the hybrid menu to
+    // the focused block instead of the viewport corner.
+    {
+      const c = await resetDesigner();
+      check("designer a11y: rendered .mermaid-container is keyboard-focusable (tabIndex 0)",
+        !!c && c.tabIndex === 0, c ? "tabIndex=" + c.tabIndex : "no container");
+
+      // (1) keyboard contextmenu (0,0) anchors to the focused block's rect.
+      if (c) {
+        // jsdom has no layout engine, so give the block a real rect and
+        // compute the expected position from it (openMenu adds 8 px and
+        // clamps to the viewport).
+        const rect = { left: 120, top: 80, right: 420, bottom: 280,
+          width: 300, height: 200, x: 120, y: 80, toJSON() { return {}; } };
+        const origRect = c.getBoundingClientRect.bind(c);
+        c.getBoundingClientRect = () => rect;
+        c.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: 0, clientY: 0 }));
+        await tick(10);
+        check("designer a11y: keyboard contextmenu opens the hybrid menu",
+          hcm.hidden === false, "hidden=" + hcm.hidden);
+        check("designer a11y: keyboard menu offers the 'Design diagram…' item",
+          !!designBtn(), menuButtons().map((b) => b.textContent.trim()).join(" / "));
+        const expLeft = Math.min(rect.left + 8, window.innerWidth - 200);
+        const expTop = Math.min(rect.top + 8,
+          window.innerHeight - hcm.offsetHeight - 10);
+        check("designer a11y: keyboard menu left anchors to the block rect, not 0",
+          hcm.style.left !== "0px" && hcm.style.left === expLeft + "px",
+          "left=" + hcm.style.left + " expected=" + expLeft + "px");
+        check("designer a11y: keyboard menu top anchors to the block rect, not 0",
+          hcm.style.top !== "0px" && hcm.style.top === expTop + "px",
+          "top=" + hcm.style.top + " expected=" + expTop + "px");
+        c.getBoundingClientRect = origRect;
+        window.document.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await tick(10);
+      }
+
+      // (2) sanity: a pointer contextmenu (non-zero coords) still uses
+      // the event coordinates, not the block rect.
+      if (c) {
+        c.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: 250, clientY: 175 }));
+        await tick(10);
+        const expLeft = Math.min(250, window.innerWidth - 200);
+        const expTop = Math.min(175, window.innerHeight - hcm.offsetHeight - 10);
+        check("designer a11y: pointer menu uses the event coordinates, not the block rect",
+          hcm.style.left === expLeft + "px" && hcm.style.top === expTop + "px",
+          "left=" + hcm.style.left + " top=" + hcm.style.top +
+          " expected=" + expLeft + "/" + expTop);
+        window.document.dispatchEvent(
+          new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        await tick(10);
+      }
+
+      // (3) the error box is keyboard-focusable too. The harness's mermaid
+      // stub can fail on demand (__mermaid.failNext), so render a broken
+      // block in a throwaway note and check the .mermaid-error fallback.
+      await window.NB.hybrid.exit(false);
+      await tick(30);
+      __mermaid.failNext = true;
+      FILES["notes/designer-bad.md"] = "# Bad\n\n```mermaid\nthis is not valid mermaid\n```\n";
+      if (dNotes && !dNotes.children.some((x) => x.path === "notes/designer-bad.md")) {
+        dNotes.children.push({ name: "designer-bad.md", type: "file", path: "notes/designer-bad.md" });
+      }
+      await window.NB.sidebar.refresh();
+      await tick(30);
+      window.NB.viewer.close("notes/designer-bad.md");
+      await window.NB.tabs.open("notes/designer-bad.md");
+      let errEl = null;
+      for (let i = 0; i < 20 && !errEl; i++) {
+        await tick(25); errEl = vc.querySelector(".mermaid-error");
+      }
+      check("designer a11y: broken mermaid renders a .mermaid-error block",
+        !!errEl, "errors=" + vc.querySelectorAll(".mermaid-error").length);
+      check("designer a11y: .mermaid-error is keyboard-focusable (tabIndex 0)",
+        !!errEl && errEl.tabIndex === 0, errEl ? "tabIndex=" + errEl.tabIndex : "no error block");
+    }
+
+    // --- sidebar controls: Tools (Select/Connect) + History (Undo/Redo) ---
+    // The stage toolbar was removed; its controls moved into #designer-sidebar
+    // as icon buttons. These checks drive the real click handlers in
+    // mermaid-designer.js against the fake canvas and assert the state
+    // machine: the buttons live in the sidebar, it is hidden until ready,
+    // aria-pressed mirrors the view's toolChange, the history buttons track
+    // canUndo/canRedo, and everything resets on close.
+    console.log("== designer sidebar controls ==");
+    {
+      const sidebar = $("designer-sidebar");
+      const selBtn = $("designer-tool-select");
+      const conBtn = $("designer-tool-connect");
+      const toolUndo = $("designer-undo");
+      const toolRedo = $("designer-redo");
+
+      // --- fixture markup: tools + history live in the sidebar -------
+      check("designer sidebar controls: #designer-sidebar exists", !!sidebar);
+      check("designer sidebar controls: Select/Connect are descendants of #designer-sidebar",
+        !!sidebar && sidebar.contains(selBtn) && sidebar.contains(conBtn));
+      check("designer sidebar controls: Undo/Redo are descendants of #designer-sidebar",
+        !!sidebar && sidebar.contains(toolUndo) && sidebar.contains(toolRedo));
+      check("designer sidebar controls: tool + history buttons carry designer-iconbtn",
+        !!selBtn && !!conBtn && !!toolUndo && !!toolRedo &&
+        selBtn.classList.contains("designer-iconbtn") &&
+        conBtn.classList.contains("designer-iconbtn") &&
+        toolUndo.classList.contains("designer-iconbtn") &&
+        toolRedo.classList.contains("designer-iconbtn"));
+      check("designer sidebar controls: Select/Connect carry aria-pressed; Undo/Redo start disabled",
+        !!selBtn && !!conBtn && !!toolUndo && !!toolRedo &&
+        selBtn.getAttribute("aria-pressed") === "true" &&
+        conBtn.getAttribute("aria-pressed") === "false" &&
+        toolUndo.disabled === true && toolRedo.disabled === true);
+      check("designer sidebar controls: hidden by default", !!sidebar && sidebar.hidden === true);
+      check("designer sidebar controls: empty-state text references the palette",
+        /Use the palette to add your first item/.test($("designer-empty").textContent),
+        $("designer-empty").textContent.trim().slice(0, 60));
+      check("designer sidebar controls: hint text references the palette",
+        /Add from the palette . Connect/.test($("designer-hint").textContent),
+        $("designer-hint").textContent.trim().slice(0, 60));
+
+      // --- hidden until ready, shown in ready -----------------------
+      let c = await resetDesigner();
+      check("designer sidebar controls: precondition, live mermaid block", !!c);
+      if (c) {
+        const hit = window.NB.hybrid.codeBlockAt(c);
+        __visimer.tools.length = 0;
+        __visimer.addNodes.length = 0;
+        window.NB.mermaidDesign.open(hit);
+        check("designer sidebar controls: hidden while loading",
+          sidebar.hidden === true, "hidden=" + sidebar.hidden);
+        await tick(80);
+        check("designer sidebar controls: visible in the ready state (Apply enabled)",
+          sidebar.hidden === false && $("designer-apply").disabled === false,
+          "hidden=" + sidebar.hidden + " applyDisabled=" + $("designer-apply").disabled);
+        check("designer sidebar controls: mount resets Select pressed + Undo/Redo disabled",
+          selBtn.getAttribute("aria-pressed") === "true" &&
+          conBtn.getAttribute("aria-pressed") === "false" &&
+          toolUndo.disabled === true && toolRedo.disabled === true);
+
+        // --- Select / Connect ---------------------------------------
+        clickEv(selBtn);
+        check("designer sidebar controls: Select calls view.setTool('select')",
+          __visimer.tools[__visimer.tools.length - 1] === "select",
+          JSON.stringify(__visimer.tools));
+        check("designer sidebar controls: Select sets aria-pressed select=true/connect=false",
+          selBtn.getAttribute("aria-pressed") === "true" &&
+          conBtn.getAttribute("aria-pressed") === "false");
+        clickEv(conBtn);
+        check("designer sidebar controls: Connect calls view.setTool('connect')",
+          __visimer.tools[__visimer.tools.length - 1] === "connect",
+          JSON.stringify(__visimer.tools));
+        check("designer sidebar controls: Connect flips the aria-pressed pair",
+          conBtn.getAttribute("aria-pressed") === "true" &&
+          selBtn.getAttribute("aria-pressed") === "false");
+        check("designer sidebar controls: connect mode toggles the canvas class",
+          $("designer-canvas").classList.contains("mw-tool-connect"));
+
+        // --- Undo / Redo + history-button state ---------------------
+        const ed = __visimer.editors[__visimer.editors.length - 1];
+        __visimer.canUndo = false; __visimer.canRedo = false;
+        ed._emit("change");
+        check("designer sidebar controls: Undo/Redo disabled with empty history",
+          toolUndo.disabled === true && toolRedo.disabled === true);
+        __visimer.canUndo = true; __visimer.canRedo = false;
+        ed._emit("change");
+        check("designer sidebar controls: Undo enabled when canUndo is true",
+          toolUndo.disabled === false && toolRedo.disabled === true);
+        __visimer.canUndo = false; __visimer.canRedo = true;
+        ed._emit("change");
+        check("designer sidebar controls: Redo enabled when canRedo is true",
+          toolUndo.disabled === true && toolRedo.disabled === false);
+        __visimer.canUndo = true; __visimer.canRedo = true;
+        ed._emit("change");
+        __visimer.undos = 0; __visimer.redos = 0;
+        clickEv(toolUndo);
+        clickEv(toolRedo);
+        check("designer sidebar controls: Undo/Redo delegate to editor.undo()/redo()",
+          __visimer.undos === 1 && __visimer.redos === 1,
+          "undos=" + __visimer.undos + " redos=" + __visimer.redos);
+
+        // --- reset on close -----------------------------------------
+        clickEv($("designer-cancel"));
+        await tick(40);
+        check("designer sidebar controls: hidden after close", sidebar.hidden === true);
+        check("designer sidebar controls: reset after close (Select pressed, Undo/Redo disabled)",
+          selBtn.getAttribute("aria-pressed") === "true" &&
+          conBtn.getAttribute("aria-pressed") === "false" &&
+          toolUndo.disabled === true && toolRedo.disabled === true);
+      }
+
+      // --- hidden in the non-editable (error) state -----------------
+      {
+        __visimer.capability = "render";
+        const hit = window.NB.hybrid.codeBlockAt(await resetDesigner());
+        window.NB.mermaidDesign.open(hit);
+        await tick(80);
+        check("designer sidebar controls: hidden for a non-editable (error) type",
+          sidebar.hidden === true, "hidden=" + sidebar.hidden);
+        window.NB.mermaidDesign.close();
+        await tick(20);
+        __visimer.capability = "edit";
+      }
+    }
+
+    // --- add-sidebar palette: per-type add actions ------------------
+    // The add action moved out of the toolbar into a per-type sidebar. The
+    // flowchart family gets a 14-shape grid driven by view.addNode; every
+    // other editable family gets one dispatch()-backed button. The sidebar
+    // shows only in the ready state for a family with an add action, and
+    // Connect is hidden for families the canvas cannot drag-connect.
+    console.log("== designer sidebar ==");
+    {
+      const sidebar = $("designer-sidebar");
+      const palette = $("designer-palette");
+      const addTitle = $("designer-add-title");
+      const conBtn = $("designer-tool-connect");
+      const shapeButtons = () => Array.from(palette.querySelectorAll(".designer-shape"));
+
+      // --- markup ----------------------------------------------------
+      check("designer sidebar: #designer-sidebar exists", !!sidebar);
+      check("designer sidebar: carries the sidebar class + aria-labelledby",
+        !!sidebar && sidebar.classList.contains("designer-sidebar") &&
+        sidebar.getAttribute("aria-labelledby") === "designer-add-title");
+      check("designer sidebar: has title + divider + palette",
+        !!addTitle && !!sidebar.querySelector(".designer-divider") && !!palette);
+      check("designer sidebar: hidden by default", !!sidebar && sidebar.hidden === true);
+
+      // --- flowchart: 14-shape grid -> view.addNode(shape) -----------
+      let c = await resetDesigner();
+      __visimer.family = "flowchart";
+      check("designer sidebar: precondition, live mermaid block", !!c);
+      if (c) {
+        const hit = window.NB.hybrid.codeBlockAt(c);
+        __visimer.addNodes.length = 0;
+        window.NB.mermaidDesign.open(hit);
+        check("designer sidebar: hidden while loading",
+          sidebar.hidden === true, "hidden=" + sidebar.hidden);
+        await tick(80);
+        check("designer sidebar: visible in the ready state",
+          sidebar.hidden === false, "hidden=" + sidebar.hidden);
+        check("designer sidebar: the title reads 'Shapes'",
+          addTitle.textContent === "Shapes", JSON.stringify(addTitle.textContent));
+        check("designer sidebar: palette holds a shape grid of 14 buttons",
+          !!palette.querySelector(".designer-shapes") && shapeButtons().length === 14,
+          "buttons=" + shapeButtons().length);
+        // Shape buttons map 1:1 (and in order) to FLOWCHART_SHAPES; clicking
+        // each must call view.addNode with that shape id.
+        const expectedShapes = ["rect", "round", "stadium", "subroutine",
+          "cylinder", "circle", "doublecircle", "diamond", "hexagon",
+          "lean_r", "lean_l", "trap_t", "trap_b", "odd"];
+        let allShapes = true;
+        shapeButtons().forEach((b, i) => {
+          clickEv(b);
+          const rec = __visimer.addNodes[__visimer.addNodes.length - 1];
+          if (!rec || rec.shape !== expectedShapes[i]) allShapes = false;
+        });
+        check("designer sidebar: each shape button calls view.addNode with its shape id",
+          allShapes && __visimer.addNodes.length === expectedShapes.length,
+          JSON.stringify(__visimer.addNodes.map((n) => n.shape)));
+        // Every shape cell shows a shape-glyph SVG (its `id` doubles as the
+        // SHAPE_GLYPHS key); the grid must hold exactly one SVG per shape.
+        const shapeSvgs = palette.querySelectorAll("svg");
+        check("designer sidebar: each of the 14 shape buttons contains an SVG glyph",
+          shapeButtons().every((b) => !!b.querySelector("svg")) &&
+          shapeSvgs.length === expectedShapes.length,
+          "svgs=" + shapeSvgs.length + " buttons=" + shapeButtons().length);
+        check("designer sidebar: flowchart Connect tool is visible + enabled",
+          conBtn.hidden === false && conBtn.disabled === false,
+          "hidden=" + conBtn.hidden + " disabled=" + conBtn.disabled);
+        clickEv($("designer-cancel"));
+        await tick(40);
+        check("designer sidebar: hidden after close", sidebar.hidden === true);
+        check("designer sidebar: palette cleared after close",
+          palette.innerHTML === "" && addTitle.textContent === "",
+          "children=" + palette.children.length);
+      }
+
+      // --- one dispatch-backed button per structured family ----------
+      // Each entry: the parsed family, the button label, the op the module
+      // must send through editor.dispatch, and whether the canvas
+      // drag-connects for it (CONNECTABLE in mermaid-designer.js).
+      const FAMILIES = [
+        { family: "state", label: "Add state", type: "st.addState", connect: true },
+        { family: "class", label: "Add class", type: "cl.addClass", connect: true },
+        { family: "er", label: "Add entity", type: "er.addEntity", connect: true },
+        { family: "pie", label: "Add slice", type: "pie.addSlice", connect: false },
+        { family: "gantt", label: "Add task", type: "gantt.addTask", connect: false },
+        { family: "sequence", label: "Add participant", type: "seq.addParticipant", connect: false },
+        { family: "lineitem", label: "Add line", type: "li.addItem", connect: false },
+      ];
+      for (const fam of FAMILIES) {
+        const cc = await resetDesigner();
+        __visimer.family = fam.family;
+        if (!cc) {
+          check("designer sidebar(" + fam.family + "): precondition, live mermaid block", false);
+          continue;
+        }
+        const hit = window.NB.hybrid.codeBlockAt(cc);
+        __visimer.dispatches.length = 0;
+        window.NB.mermaidDesign.open(hit);
+        await tick(80);
+        const btn = palette.querySelector(".designer-add");
+        check("designer sidebar(" + fam.family + "): sidebar visible with the add button",
+          sidebar.hidden === false && !!btn && btn.textContent === fam.label,
+          "hidden=" + sidebar.hidden + " label=" + (btn ? btn.textContent : "none"));
+        if (btn) {
+          // The non-flowchart add button pairs the "+" glyph SVG with its
+          // label. Assert both the glyph and the label order the module builds.
+          const addSvg = btn.querySelector("svg");
+          check("designer sidebar(" + fam.family + "): add button contains an SVG '+' glyph",
+            !!addSvg && !!addSvg.querySelector("path"),
+            "svg=" + !!addSvg);
+          clickEv(btn);
+          const op = __visimer.dispatches[__visimer.dispatches.length - 1];
+          check("designer sidebar(" + fam.family + "): button dispatches " + fam.type,
+            !!op && op.type === fam.type, JSON.stringify(op));
+          check("designer sidebar(" + fam.family + "): Connect tool " +
+            (fam.connect ? "visible + enabled" : "hidden + disabled"),
+            fam.connect
+              ? (conBtn.hidden === false && conBtn.disabled === false)
+              : (conBtn.hidden === true && conBtn.disabled === true),
+            "hidden=" + conBtn.hidden + " disabled=" + conBtn.disabled);
+        }
+        window.NB.mermaidDesign.close();
+        await tick(20);
+      }
+      __visimer.family = "flowchart";
+
+      // --- render-only (zenuml): no sidebar -------------------------
+      {
+        __visimer.capability = "render";
+        __visimer.typeId = "zenuml";
+        const cc = await resetDesigner();
+        if (cc) {
+          const hit = window.NB.hybrid.codeBlockAt(cc);
+          window.NB.mermaidDesign.open(hit);
+          await tick(80);
+          check("designer sidebar: hidden for a render-only (zenuml) type",
+            sidebar.hidden === true, "hidden=" + sidebar.hidden);
+          check("designer sidebar: no palette built for zenuml",
+            palette.children.length === 0 && addTitle.textContent === "",
+            "children=" + palette.children.length);
+          window.NB.mermaidDesign.close();
+          await tick(20);
+        }
+        __visimer.capability = "edit";
+        __visimer.typeId = "flowchart";
+      }
+    }
+
+    // --- empty mermaid block: seeded blank flowchart ----------------
+    // An empty ```mermaid block (blank source) must still open the
+    // designer as a blank flowchart to build from scratch, not fail with
+    // the "can't be edited visually" notice. mermaid-designer.js seeds
+    // EMPTY_SEED ("flowchart TD\n"), uses it as the no-op baseline, and
+    // hybrid's menu gate keeps the item enabled (capabilityFor reads the
+    // empty source as "edit"/null, never "render"). The seed has no
+    // nodes, so the empty-state overlay is visible.
+    console.log("== designer empty block ==");
+    {
+      const c = await resetDesigner();
+      check("designer empty: precondition, live mermaid block", !!c);
+      if (c) {
+        // The viewer stores an empty fence's source as the empty string
+        // (dataset.mermaidSource = ""); simulate exactly that.
+        c.dataset.mermaidSource = "";
+        __visimer.emptyModel = true;   // the seed flowchart has no nodes
+
+        // (1) menu: the item is shown AND enabled for an empty block.
+        await openBlockMenu(c);
+        {
+          const db = designBtn();
+          check("designer empty: 'Design diagram' item shown for an empty block", !!db,
+            menuButtons().map((b) => b.textContent.trim()).join(" / "));
+          check("designer empty: item is not disabled for an empty block",
+            !!db && db.disabled === false && db.getAttribute("aria-disabled") !== "true",
+            db ? ("disabled=" + db.disabled + " aria-disabled=" + db.getAttribute("aria-disabled")) : "no item");
+        }
+
+        // (2) open: no non-editable notice; reaches ready; empty overlay.
+        clickEv(designBtn());
+        await tick(80);
+        // The notice lives in #designer-error, one of the mutually
+        // exclusive state overlays; setState("ready") hides it. Assert
+        // visibility, not the (stale, hidden) msg text: a prior test may
+        // have written that element.
+        check("designer empty: opening does not show the non-editable notice",
+          overlay.hidden === false && $("designer-error").hidden === true,
+          "overlayHidden=" + overlay.hidden + " errorHidden=" + $("designer-error").hidden);
+        check("designer empty: reaches the ready state (sidebar visible, Apply enabled)",
+          $("designer-sidebar").hidden === false && $("designer-apply").disabled === false,
+          "sidebarHidden=" + $("designer-sidebar").hidden + " applyDisabled=" + $("designer-apply").disabled);
+        check("designer empty: the empty-state overlay is visible (seed has no nodes)",
+          $("designer-empty").hidden === false,
+          "hidden=" + $("designer-empty").hidden);
+
+        // (3) the fake editor was constructed with the seed flowchart.
+        const ed = __visimer.editors[__visimer.editors.length - 1];
+        check("designer empty: editor was constructed with the 'flowchart TD' seed",
+          !!ed && /^flowchart TD\s*$/.test(ed.initCode || ""),
+          ed ? JSON.stringify(ed.initCode) : "no editor");
+
+        // (4) Apply with no edits on the seeded block is a no-op.
+        {
+          const before = filePosts();
+          contentChanges = 0;
+          clickEv($("designer-apply"));
+          await tick(40);
+          check("designer empty: no-edit Apply closes the modal", overlay.hidden);
+          check("designer empty: no-edit Apply issues no write", filePosts() === before,
+            "before/after=" + before + "/" + filePosts());
+          check("designer empty: no-edit Apply does not call onContentChange",
+            contentChanges === 0);
+          check("designer empty: the block stays empty after a no-edit Apply",
+            c.isConnected && c.dataset.mermaidSource === "",
+            c.isConnected ? JSON.stringify(c.dataset.mermaidSource) : "detached");
+        }
+
+        // (5) adding a node then Apply writes the flowchart.
+        {
+          const hit = window.NB.hybrid.codeBlockAt(c);
+          window.NB.mermaidDesign.open(hit);
+          await tick(80);
+          const ed2 = __visimer.editors[__visimer.editors.length - 1];
+          const NEW = "flowchart TD\n  n1[A]\n";
+          ed2.code = NEW;
+          contentChanges = 0;
+          clickEv($("designer-apply"));
+          await tick(120);
+          check("designer empty: adding a node then Apply calls onContentChange exactly once",
+            contentChanges === 1, "calls=" + contentChanges);
+          check("designer empty: edited Apply closes the modal", overlay.hidden);
+          const nc = vc.querySelector(".mermaid-container");
+          check("designer empty: the block re-rendered with the new flowchart",
+            !!nc && nc.dataset.mermaidSource === NEW,
+            nc ? JSON.stringify(nc.dataset.mermaidSource) : "no container");
+          const md = window.NB.hybrid.domToMarkdown();
+          check("designer empty: domToMarkdown emits the new fence (built on the seed)",
+            md.indexOf("```mermaid") !== -1 && md.indexOf("n1[A]") !== -1 &&
+            md.indexOf("Before.") !== -1 && md.indexOf("After.") !== -1,
+            JSON.stringify(md.slice(0, 160)));
+          // Force the pending write so the assertion is on the file, not a
+          // debounced timer: save() serializes the same DOM path Apply fed.
+          const before = filePosts();
+          await window.NB.hybrid.save();
+          await tick(20);
+          check("designer empty: the edited flowchart is written through the save path",
+            filePosts() > before, "before/after=" + before + "/" + filePosts());
+          window.NB.hybrid.flushPendingSnapshot();
+        }
+      }
+      __visimer.emptyModel = false;
+    }
+
+    // --- restore harness globals -----------------------------------
+    window.NB.hybrid.onContentChange = realOCC;
+    window.NB.lazyload.script = realLazyload;
+    window.NB.auth.status = realAuthStatus;
+    if (hadMermaidParse) window.mermaid.parse = realMermaidParse;
+    else delete window.mermaid.parse;
+    window.Visimer = origVisimer;
+    await window.NB.hybrid.exit(false);
+    await tick(30);
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

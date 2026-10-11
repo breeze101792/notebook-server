@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node tests/dom/test_dom.js",
     "test:browser": "node tests/browser/test_hybrid_browser.js",
-    "test:browser:firefox": "BROWSER=firefox node tests/browser/test_hybrid_browser.js"
+    "test:browser:firefox": "BROWSER=firefox node tests/browser/test_hybrid_browser.js",
+    "vendor:visimer": "node_modules/.bin/esbuild static/vendor/visimer.entry.js --bundle --format=iife --global-name=Visimer --minify --outfile=static/vendor/visimer.bundle.js"
   },
   "devDependencies": {
     "@codemirror/buildhelper": "^1.0.2",
@@ -16,6 +17,8 @@
     "@codemirror/state": "^6.7.1",
     "@codemirror/view": "^6.43.6",
     "@replit/codemirror-vim": "^6.3.0",
+    "@visimer/core": "1.1.2",
+    "@visimer/dom": "1.1.2",
     "codemirror": "^6.0.2",
     "esbuild": "^0.28.1",
     "jsdom": "^24.1.3",

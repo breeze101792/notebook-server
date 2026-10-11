@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mermaid visual designer — reference mockup</title>
+<!--
+  Reference mockup for docs/architecture/design/mermaid-designer-ui.md.
+  This is a design artifact, not app code. It reproduces the real modal
+  chrome and tokens (static/css/style.css) and the designer's new classes so
+  the layout, states, and theme behavior can be seen and tuned.
+
+  Class names match what the app already uses (.settings-overlay,
+  .settings-modal, .settings-header, .settings-body, .settings-footer,
+  .settings-action, .icon-btn) plus the new .designer-* family from the doc.
+  The diagram is a hand-drawn SVG stand-in for Visimer's MermaidCanvasView;
+  no real library is loaded. Colors and sizes are copied from static/css/style.css
+  and are the source of truth; this file is the visual reference.
+
+  Toggle light/dark with the button. Switch the canvas state to see the
+  loading/empty/error/preview-only layers. The app behind the overlay is a
+  static mock (dimmed by the real .settings-overlay backdrop).
+-->
+<style>
+/* ---- Theme tokens (copied from style.css:4-88) ---------------------- */
+:root, html[data-theme="dark"], body[data-theme="dark"] {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --code-bg: #14151a;
+  /* --- new designer tokens --- */
+  --designer-canvas-bg: #14151a;
+  --designer-grid: rgba(124, 156, 255, .12);
+  --designer-grid-size: 24px;
+  --designer-modal-w: 1200px;
+  --designer-modal-h: 85vh;
+  --accent-fg: #14151a;
+}
+body[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #2faa66;
+  --warn: #c9831d;
+  --code-bg: #f0f2f5;
+  --designer-canvas-bg: #f7f8fb;
+  --designer-grid: rgba(47, 95, 208, .14);
+  --designer-grid-size: 24px;
+  --designer-modal-w: 1200px;
+  --designer-modal-h: 85vh;
+  --accent-fg: #ffffff;
+}
+
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* ---- The app mock behind the overlay (not part of the design) ------- */
+#app-mock {
+  position: fixed; inset: 0; display: flex; flex-direction: column; overflow: hidden;
+}
+.mock-topbar {
+  display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.mock-topbar .brand { font-weight: 600; font-size: .95rem; }
+.mock-topbar .spacer { flex: 1 1 auto; }
+.mock-topbar button {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 10px; font: inherit; font-size: .82rem; cursor: pointer;
+}
+.mock-body { display: flex; flex: 1 1 auto; min-height: 0; }
+.mock-activity {
+  flex: 0 0 48px; background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 14px;
+  color: var(--fg-muted); font-size: 1.05rem;
+}
+.mock-sidebar {
+  flex: 0 0 240px; background: var(--bg); border-right: 1px solid var(--border);
+  padding: 12px 10px; font-size: .86rem; color: var(--fg-muted);
+}
+.mock-sidebar .tree-row { padding: 4px 8px; border-radius: 5px; }
+.mock-sidebar .tree-row.active { background: var(--accent-soft); color: var(--accent); }
+.mock-viewer { flex: 1 1 auto; overflow: auto; padding: 26px 40px; }
+.mock-note { max-width: 720px; margin: 0 auto; }
+.mock-note h1 { font-size: 1.5rem; margin: 0 0 10px; }
+.mock-note p { color: var(--fg-muted); }
+.mermaid-container {
+  margin: .7em 0; padding: 14px 16px; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 8px; text-align: center;
+}
+.mermaid-container svg { display: inline-block; max-width: 100%; height: auto; }
+
+/* ---- Modal chrome (copied from style.css:1303-1763) ----------------- */
+.settings-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 2000;
+  min-width: 0; min-height: 0;
+}
+.settings-overlay[hidden] { display: none; }
+.settings-modal {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  display: flex; flex-direction: column; overflow: hidden; touch-action: none;
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.settings-header h2 { margin: 0; font-size: 1.14rem; font-weight: 600; letter-spacing: .3px; }
+.icon-btn {
+  background: none; border: none; color: var(--fg-muted); font-size: 1.3rem;
+  line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 5px;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.settings-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; padding: 0; }
+.settings-footer {
+  display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px;
+  border-top: 1px solid var(--border); background: var(--bg-panel); flex-shrink: 0;
+}
+.settings-action {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 14px; font: inherit; font-size: .93rem; cursor: pointer;
+}
+.settings-action:hover { background: var(--accent-soft); border-color: var(--accent); }
+.settings-action:disabled { opacity: .5; cursor: not-allowed; background: var(--bg-elev); border-color: var(--border); }
+
+/* ---- DESIGN: the modal shell + canvas (mermaid-designer-ui.md §3, §5) */
+.designer-modal { width: min(var(--designer-modal-w), 96vw); height: min(var(--designer-modal-h), 92vh); }
+.designer-heading { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.designer-type {
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+}
+.designer-body { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 0; }
+.designer-stage { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.designer-canvas {
+  position: absolute; inset: 0;
+  background-color: var(--designer-canvas-bg);
+  background-image: radial-gradient(circle, var(--designer-grid) 1px, transparent 1px);
+  background-size: var(--designer-grid-size) var(--designer-grid-size);
+  background-position: center; overflow: hidden; outline: none;
+}
+.designer-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.designer-canvas > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* states */
+.designer-state {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 32px; text-align: center;
+}
+.designer-state[hidden] { display: none; }
+.designer-state--loading, .designer-state--error, .designer-state--readonly { background: var(--designer-canvas-bg); }
+.designer-state-icon { font-size: 1.6rem; line-height: 1; color: var(--fg-muted); }
+.designer-state-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--fg); }
+.designer-state--error .designer-state-title { color: var(--warn); }
+.designer-state-msg { margin: 0; max-width: 46ch; font-size: .9rem; color: var(--fg-muted); }
+.designer-state-actions { display: flex; gap: 8px; margin-top: 6px; }
+.designer-error-detail {
+  max-width: 60ch; max-height: 9em; overflow: auto; text-align: left; margin: 0;
+  padding: 10px 12px; white-space: pre-wrap;
+  font: .82rem/1.4 ui-monospace, Menlo, Consolas, monospace;
+  color: var(--fg); background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+}
+.designer-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+  animation: designer-spin .8s linear infinite;
+}
+@keyframes designer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .designer-spinner { animation-duration: 1.6s; } }
+
+.designer-empty {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 24px; text-align: center;
+}
+.designer-empty[hidden] { display: none; }
+.designer-empty .designer-state-icon { font-size: 2rem; color: var(--accent); opacity: .8; }
+.designer-hint {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 2; max-width: calc(100% - 32px); margin: 0; padding: 6px 12px;
+  font-size: .82rem; color: var(--fg-muted); text-align: center;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .25); pointer-events: none;
+}
+.designer-hint[hidden] { display: none; }
+
+/* library tool row (rendered by the library at toolbar: 'top') */
+.designer-toolrow {
+  position: absolute; top: 12px; left: 12px; z-index: 4;
+  display: flex; align-items: center; gap: 4px; padding: 5px 6px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.designer-tool-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: 1px solid transparent; color: var(--fg-muted);
+  border-radius: 5px; padding: 4px 9px; font: inherit; font-size: .85rem; cursor: pointer;
+}
+.designer-tool-btn:hover { background: var(--accent-soft); color: var(--fg); }
+.designer-tool-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* library entity popover */
+.designer-popover {
+  position: absolute; z-index: 5; width: 220px; padding: 10px 12px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .4); font-size: .86rem;
+}
+.designer-popover-title { margin: 0 0 6px; font-weight: 600; color: var(--fg); }
+.designer-popover-row { display: flex; justify-content: space-between; gap: 10px; padding: 2px 0; color: var(--fg-muted); }
+.designer-popover-row b { font-weight: 500; color: var(--fg); }
+
+.designer-footer { align-items: center; }
+.designer-status { margin-right: auto; font-size: .85rem; color: var(--fg-muted); }
+.designer-status.ok { color: var(--ok); }
+.designer-status.error { color: var(--warn); }
+.settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.settings-action--primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.06); }
+.settings-action--primary:disabled,
+.settings-action--primary:disabled:hover {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+  opacity: .5; filter: none; cursor: not-allowed;
+}
+@media (max-width: 720px) {
+  .designer-footer { flex-wrap: wrap; }
+  .designer-status { flex: 1 1 100%; margin: 0 0 6px; }
+}
+
+/* ---- Mockup-only page chrome (not part of the design) --------------- */
+.page {
+  position: fixed; inset: 0; z-index: 3000; display: flex;
+  flex-direction: column; pointer-events: none;
+}
+.page-controls {
+  pointer-events: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 8px 12px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .8rem;
+  backdrop-filter: blur(4px);
+}
+.page-controls b { font-weight: 600; }
+.page-controls button {
+  background: rgba(255, 255, 255, .12); color: #fff; border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 6px; padding: 4px 10px; font: inherit; font-size: .8rem; cursor: pointer;
+}
+.page-controls button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.gallery {
+  position: fixed; right: 12px; bottom: 12px; z-index: 3100; width: 440px; max-height: 46vh;
+  overflow: auto; pointer-events: auto; background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  font-size: .78rem;
+}
+.gallery > h2 {
+  margin: 0; padding: 8px 12px; font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--fg-muted); border-bottom: 1px solid var(--border); font-weight: 600;
+}
+.gallery .g-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; }
+.gallery .g-cell { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--designer-canvas-bg); }
+.gallery .g-cell h3 { margin: 0; padding: 6px 8px; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); background: var(--bg-panel); border-bottom: 1px solid var(--border); }
+.gallery .g-body { position: relative; height: 130px; display: flex; align-items: center; justify-content: center; }
+.gallery .designer-state, .gallery .designer-empty { padding: 10px; gap: 5px; }
+.gallery .designer-state-title, .gallery .designer-state-msg { font-size: .72rem; }
+.gallery .designer-state-icon { font-size: 1.1rem; }
+</style>
+</head>
+<body data-theme="dark">
+
+<!-- ===== the app, dimmed by the overlay ===== -->
+<div id="app-mock" aria-hidden="true">
+  <div class="mock-topbar">
+    <span class="brand">◈ Notebook</span>
+    <span class="spacer"></span>
+    <button>WYSIWYG</button><button>⚙</button>
+  </div>
+  <div class="mock-body">
+    <div class="mock-activity">
+      <span>🗂</span><span>🔍</span><span>🕸</span><span>✨</span>
+    </div>
+    <div class="mock-sidebar">
+      <div class="tree-row active">📄 System overview.md</div>
+      <div class="tree-row">📄 Design notes.md</div>
+      <div class="tree-row">📁 architecture</div>
+      <div class="tree-row">📄 README.md</div>
+    </div>
+    <div class="mock-viewer">
+      <article class="mock-note">
+        <h1>System overview</h1>
+        <p>The pipeline below is rendered from a fenced <code>mermaid</code> block in the note.</p>
+        <div class="mermaid-container">
+          <svg viewBox="0 0 460 90" width="420" height="82" role="img" aria-label="flowchart">
+            <defs>
+              <marker id="arrow-a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+                <path d="M0,0 L9,4.5 L0,9 z" fill="var(--fg-muted)"/>
+              </marker>
+            </defs>
+            <rect x="6" y="22" width="110" height="46" rx="12" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="61" y="50" text-anchor="middle" font-size="13" fill="var(--fg)">Start</text>
+            <line x1="118" y1="45" x2="184" y2="45" stroke="var(--fg-muted)" stroke-width="1.5" marker-end="url(#arrow-a)"/>
+            <polygon points="238,16 296,45 238,74 180,45" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="238" y="50" text-anchor="middle" font-size="13" fill="var(--fg)">Valid?</text>
+            <line x1="298" y1="45" x2="360" y2="45" stroke="var(--fg-muted)" stroke-width="1.5" marker-end="url(#arrow-a)"/>
+            <rect x="362" y="22" width="92" height="46" rx="12" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="408" y="50" text-anchor="middle" font-size="13" fill="var(--fg)">Save</text>
+          </svg>
+        </div>
+        <p>Right-click the diagram in WYSIWYG mode to open the visual designer.</p>
+      </article>
+    </div>
+  </div>
+</div>
+
+<!-- ===== the designer modal ===== -->
+<div id="designer-overlay" class="settings-overlay">
+  <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
+       aria-labelledby="designer-title">
+    <div class="settings-header designer-header">
+      <div class="designer-heading">
+        <h2 id="designer-title">Design diagram</h2>
+        <span class="designer-type" id="designer-type">flowchart</span>
+      </div>
+      <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+    </div>
+
+    <div class="settings-body designer-body">
+      <div class="designer-stage" id="designer-stage">
+
+        <!-- library canvas -->
+        <div class="designer-canvas" id="designer-canvas" tabindex="0" role="application" aria-label="Diagram canvas">
+          <svg viewBox="0 0 900 520" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+                <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+              </marker>
+            </defs>
+            <!-- subgraph frame -->
+            <rect x="330" y="40" width="520" height="250" rx="14" fill="none"
+                  stroke="var(--border)" stroke-dasharray="6 6"/>
+            <text x="348" y="66" font-size="13" fill="var(--fg-muted)">subgraph validate</text>
+
+            <!-- A -->
+            <rect x="70" y="120" width="180" height="70" rx="16" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="160" y="162" text-anchor="middle" font-size="16" fill="var(--fg)">Start</text>
+
+            <!-- B (selected) -->
+            <rect x="380" y="112" width="190" height="86" rx="16" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2.5"/>
+            <text x="475" y="150" text-anchor="middle" font-size="16" fill="var(--fg)">Valid?</text>
+            <text x="475" y="172" text-anchor="middle" font-size="12" fill="var(--fg-muted)">B</text>
+            <!-- selection handles -->
+            <circle cx="380" cy="155" r="5" fill="var(--accent)"/>
+            <circle cx="570" cy="155" r="5" fill="var(--accent)"/>
+            <circle cx="475" cy="112" r="5" fill="var(--accent)"/>
+            <circle cx="475" cy="198" r="5" fill="var(--accent)"/>
+
+            <!-- edge A -> B -->
+            <line x1="252" y1="155" x2="374" y2="155" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)"/>
+            <text x="313" y="144" text-anchor="middle" font-size="12" fill="var(--fg-muted)">input</text>
+
+            <!-- edge B -> C -->
+            <line x1="572" y1="155" x2="700" y2="155" stroke="var(--accent)" stroke-width="2" marker-end="url(#arrow)"/>
+            <text x="636" y="144" text-anchor="middle" font-size="12" fill="var(--fg-muted)">yes</text>
+
+            <!-- C -->
+            <rect x="702" y="120" width="160" height="70" rx="16" fill="var(--bg-elev)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="782" y="162" text-anchor="middle" font-size="16" fill="var(--fg)">Save</text>
+
+            <!-- B -> error (dotted) -->
+            <path d="M475,200 L475,300 L260,300 L260,380" fill="none" stroke="var(--fg-muted)" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+            <text x="360" y="290" text-anchor="middle" font-size="12" fill="var(--fg-muted)">no</text>
+            <!-- error node -->
+            <rect x="170" y="382" width="180" height="70" rx="16" fill="var(--bg-elev)" stroke="var(--danger)" stroke-width="2"/>
+            <text x="260" y="424" text-anchor="middle" font-size="16" fill="var(--fg)">Report error</text>
+          </svg>
+        </div>
+
+        <!-- library tool row (toolbar: 'top') -->
+        <div class="designer-toolrow" id="designer-toolrow" role="toolbar" aria-label="Canvas tools">
+          <button class="designer-tool-btn" aria-pressed="true">▖ Select</button>
+          <button class="designer-tool-btn" aria-pressed="false">⇢ Connect</button>
+        </div>
+
+        <!-- library entity popover -->
+        <div class="designer-popover" id="designer-popover" style="top: 210px; left: 250px;">
+          <p class="designer-popover-title">Node B</p>
+          <div class="designer-popover-row"><span>id</span><b>B</b></div>
+          <div class="designer-popover-row"><span>label</span><b>Valid?</b></div>
+          <div class="designer-popover-row"><span>shape</span><b>rectangle</b></div>
+        </div>
+
+        <!-- empty -->
+        <div class="designer-empty" id="designer-empty" hidden>
+          <span class="designer-state-icon" aria-hidden="true">◇</span>
+          <p class="designer-state-msg">Double-click the canvas to add your first node.</p>
+        </div>
+
+        <!-- loading -->
+        <div class="designer-state designer-state--loading" id="designer-loading" hidden>
+          <span class="designer-spinner" aria-hidden="true"></span>
+          <p class="designer-state-msg" role="status">Loading editor…</p>
+        </div>
+
+        <!-- error -->
+        <div class="designer-state designer-state--error" id="designer-error" role="alert" hidden>
+          <span class="designer-state-icon" aria-hidden="true">⚠</span>
+          <h3 class="designer-state-title">Couldn’t open this diagram</h3>
+          <p class="designer-state-msg">The diagram failed to render.</p>
+          <pre class="designer-error-detail">Parse error on line 4:
+...  B[Valid?] --&gt; C[Save
+------------------------^
+Expecting 'SQE', 'PS', 'PE', got 'EOF'</pre>
+          <div class="designer-state-actions">
+            <button class="settings-action">Retry</button>
+            <button class="settings-action">Edit source instead</button>
+          </div>
+        </div>
+
+        <!-- preview-only -->
+        <div class="designer-state designer-state--readonly" id="designer-readonly" hidden>
+          <span class="designer-state-icon" aria-hidden="true">👁</span>
+          <h3 class="designer-state-title">Preview only</h3>
+          <p class="designer-state-msg">This diagram type has no editable model yet.
+            Close this window to edit the source instead.</p>
+        </div>
+
+        <!-- hint -->
+        <p class="designer-hint" id="designer-hint">
+          Double-click to add a node · drag from a handle to connect
+        </p>
+      </div>
+    </div>
+
+    <div class="settings-footer designer-footer">
+      <span class="designer-status" id="designer-status" role="status" aria-live="polite">Ready</span>
+      <button id="designer-cancel" class="settings-action">Cancel</button>
+      <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== mockup controls (not part of the design) ===== -->
+<div class="page" aria-hidden="false">
+  <div class="page-controls">
+    <b>Mockup:</b>
+    <button id="btn-theme">Toggle light / dark</button>
+    <span>Canvas state:</span>
+    <button class="state-btn" data-state="ready" aria-pressed="true">Ready</button>
+    <button class="state-btn" data-state="empty" aria-pressed="false">Empty</button>
+    <button class="state-btn" data-state="loading" aria-pressed="false">Loading</button>
+    <button class="state-btn" data-state="error" aria-pressed="false">Error</button>
+    <button class="state-btn" data-state="readonly" aria-pressed="false">Preview only</button>
+  </div>
+</div>
+
+<div class="gallery">
+  <h2>Canvas states (reference)</h2>
+  <div class="g-grid">
+    <div class="g-cell"><h3>Ready</h3><div class="g-body" style="padding:0">
+      <div class="designer-canvas" style="position:absolute;inset:0"></div>
+      <div class="designer-empty" style="position:absolute;inset:0"><span class="designer-state-icon">◇</span><p class="designer-state-msg" style="font-size:.68rem">grid + hint</p></div>
+    </div></div>
+    <div class="g-cell"><h3>Empty</h3><div class="g-body">
+      <div class="designer-canvas" style="position:absolute;inset:0"></div>
+      <div class="designer-empty" style="position:absolute;inset:0"><span class="designer-state-icon">◇</span><p class="designer-state-msg" style="font-size:.72rem">Double-click to add your first node.</p></div>
+    </div></div>
+    <div class="g-cell"><h3>Loading</h3><div class="g-body">
+      <div class="designer-state designer-state--loading"><span class="designer-spinner" style="width:20px;height:20px;border-width:2px"></span><p class="designer-state-msg">Loading editor…</p></div>
+    </div></div>
+    <div class="g-cell"><h3>Error</h3><div class="g-body">
+      <div class="designer-state designer-state--error"><span class="designer-state-icon">⚠</span><h3 class="designer-state-title">Couldn’t open this diagram</h3></div>
+    </div></div>
+    <div class="g-cell" style="grid-column:1 / -1"><h3>Preview only</h3><div class="g-body">
+      <div class="designer-state designer-state--readonly"><span class="designer-state-icon">👁</span><h3 class="designer-state-title">Preview only</h3><p class="designer-state-msg">No editable model for this diagram type.</p></div>
+    </div></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var body = document.body;
+  document.getElementById("btn-theme").addEventListener("click", function () {
+    body.dataset.theme = body.dataset.theme === "light" ? "dark" : "light";
+  });
+
+  var overlays = {
+    ready: [],
+    empty: ["designer-empty"],
+    loading: ["designer-loading"],
+    error: ["designer-error"],
+    readonly: ["designer-readonly"]
+  };
+  var allIds = ["designer-empty", "designer-loading", "designer-error", "designer-readonly"];
+  var canvas = document.getElementById("designer-canvas");
+  var toolrow = document.getElementById("designer-toolrow");
+  var popover = document.getElementById("designer-popover");
+  var hint = document.getElementById("designer-hint");
+  var status = document.getElementById("designer-status");
+  var apply = document.getElementById("designer-apply");
+
+  function setState(name) {
+    allIds.forEach(function (id) {
+      document.getElementById(id).hidden = overlays[name].indexOf(id) === -1;
+    });
+    var interactive = (name === "ready" || name === "empty");
+    canvas.style.visibility = interactive ? "visible" : "hidden";
+    toolrow.hidden = !interactive;
+    popover.hidden = !(name === "ready");
+    hint.hidden = (name !== "ready");
+    apply.disabled = (name === "loading" || name === "error" || name === "readonly");
+    status.className = "designer-status";
+    status.textContent = name === "ready" ? "Ready"
+      : name === "empty" ? "No nodes — add one to enable Apply"
+      : name === "loading" ? "Loading…"
+      : name === "error" ? "Couldn’t open"
+      : "Preview only";
+    if (name === "error") status.className = "designer-status error";
+    document.querySelectorAll(".state-btn").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.state === name ? "true" : "false");
+    });
+  }
+  document.querySelectorAll(".state-btn").forEach(function (b) {
+    b.addEventListener("click", function () { setState(b.dataset.state); });
+  });
+  setState("ready");
+})();
+</script>
+</body>
+</html>

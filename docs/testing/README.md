@@ -14,6 +14,7 @@ optional browser suite:
 | Backend | `tests/test_app.py` | The real Flask app through its test client | stdlib `unittest` |
 | Frontend DOM | `tests/dom/test_dom.js` | The real app modules in jsdom | Hand-rolled `check()` harness |
 | Frontend browser | `tests/browser/test_hybrid_browser.js` | The real app in a real browser via Playwright | Hand-rolled `check()` harness |
+| Frontend browser (designer) | `tests/browser/test_designer_browser.js` | The real Visimer canvas + mermaid in a real browser via Playwright | Hand-rolled `check()` harness |
 
 The backend suite exercises routing, path safety, the atomic write paths, the
 auth layer, and the AI proxy end to end, with real loopback `HTTPServer`
@@ -42,6 +43,7 @@ node tests/dom/test_dom.js          # equivalent once jsdom is resolvable
 # Frontend browser (optional; needs a browser binary)
 npm run test:browser                # chromium, the default
 npm run test:browser:firefox
+node tests/browser/test_designer_browser.js   # mermaid designer canvas
 ```
 
 Both host suites are expected to pass clean. See
