@@ -1581,6 +1581,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
   evalIn(read("static/js/table-edit.js"));
+  evalIn(read("static/js/list-edit.js"));
   evalIn(read("static/js/table-view.js"));
   evalIn(read("static/js/table-select.js"));
 evalIn(read("static/js/watcher.js"));
@@ -10342,6 +10343,574 @@ function check(label, cond, extra) {
     delete MTIMES[CONTRACT_PATH];
     FILES["notes/a.md"] = FILE_A;
     MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+    if (window.NB.tabs.isOpen("notes/a.md")) {
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(20);
+    }
+  }
+
+  console.log("== list reorder ==");
+  // List-item drag reorder in hybrid mode (§4.7.2), acceptance criteria
+  // AC9-AC17. jsdom drives the RESOLVED move through the exported hybrid
+  // entry points (moveListItem / resolveListItemMove / moveItemBySelection),
+  // the way moveRow / moveCol are tested, so the DOM mutation, the ordered
+  // renumbering, sentinel survival, the no-op, undo, refusal, and the
+  // serialized bytes are asserted without layout. The pointer path (grip
+  // reveal/hide, boundary split, gutter hit region, indent-rail depth, drop
+  // line, subtree drag, touch) reads getBoundingClientRect and is covered by
+  // the Chromium harness's `list drag` block. No backend test changes.
+  {
+    const LR_PATH = "notes/listmove.md";
+    const vcEl = () => $("viewer-content");
+    // Open a note, enter hybrid, and return #viewer-content. Mirrors the
+    // contractEnter idiom.
+    const listEnter = async (source) => {
+      FILES[LR_PATH] = source;
+      if (window.NB.tabs.isOpen(LR_PATH)) window.NB.viewer.close(LR_PATH);
+      await window.NB.tabs.open(LR_PATH);
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      return vcEl();
+    };
+    const listLeave = async () => {
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    };
+    const postFile = () =>
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    // The item's OWN text: child lists and checkboxes removed, ZWS stripped,
+    // so an order comparison is not polluted by a nested subtree's text.
+    const ownText = (li) => {
+      const clone = li.cloneNode(true);
+      clone.querySelectorAll("ul,ol,input").forEach((n) => n.remove());
+      return clone.textContent.replace(/\u200B/g, "").trim();
+    };
+    const childItems = (list) => Array.from(list.children)
+      .filter((n) => n.tagName === "LI");
+    const order = (list) => childItems(list).map(ownText);
+    const caretInto = (li) => {
+      const r = window.document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+    const caretItem = () => {
+      const s = window.getSelection();
+      if (!s || !s.rangeCount) return null;
+      let n = s.getRangeAt(0).startContainer;
+      if (n.nodeType === window.Node.TEXT_NODE) n = n.parentElement;
+      return n.closest ? n.closest("li") : null;
+    };
+
+    check("list reorder: list-edit overlay module loaded", !!window.NB.listEdit);
+
+    // --- AC9: a clean structural move, nested subtree carried ----------
+    {
+      const vc = await listEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      const [a, b, c] = childItems(ul);
+      const container = window.NB.hybrid.listContainer(a);
+      check("list reorder AC9: listContainer resolves the root <ul>",
+        container === ul);
+      check("list reorder AC9: listItems lists every item in document order",
+        window.NB.hybrid.listItems(container).length === 3);
+      check("list reorder AC9: listItemDepth is 0 at the top level",
+        window.NB.hybrid.listItemDepth(a, container) === 0);
+      check("list reorder AC9: moveListItem reorders sibling items",
+        window.NB.hybrid.moveListItem(c, a, "before", 0) === true &&
+        JSON.stringify(order(ul)) === JSON.stringify(["c", "a", "b"]),
+        JSON.stringify(order(ul)));
+      check("list reorder AC9: the moved node is the same element (no clone)",
+        childItems(ul)[0] === c);
+      check("list reorder AC9: a move marks the note dirty",
+        window.NB.hybrid.isDirty());
+      check("list reorder AC9: the caret follows into the moved item",
+        caretItem() === c);
+      await listLeave();
+    }
+    {
+      const vc = await listEnter("- a\n    - a1\n    - a2\n- b\n");
+      const ul = vc.querySelector("ul");
+      const [a, b] = childItems(ul);
+      const nested = a.querySelector(":scope > ul");
+      check("list reorder AC9: a nested list renders under its parent item",
+        !!nested && order(nested).join(",") === "a1,a2");
+      check("list reorder AC9: moving a parent carries its whole subtree",
+        window.NB.hybrid.moveListItem(a, b, "after", 0) === true &&
+        JSON.stringify(order(ul)) === JSON.stringify(["b", "a"]) &&
+        a.querySelector(":scope > ul") === nested &&
+        order(nested).join(",") === "a1,a2",
+        JSON.stringify(order(ul)));
+      await listLeave();
+    }
+    // AC9 splice: moving one item re-serializes only the list block; an
+    // untouched setext heading and trailing paragraph keep their source
+    // bytes.
+    {
+      const vc = await listEnter("Title\n=====\n\n- a\n- b\n- c\n\ntail\n");
+      const ul = vc.querySelector("ul");
+      const [a, b, c] = childItems(ul);
+      window.NB.hybrid.moveListItem(c, a, "before", 0);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES[LR_PATH] || "";
+      check("list reorder AC9: an untouched setext heading keeps its bytes",
+        saved.indexOf("Title\n=====") !== -1, JSON.stringify(saved));
+      check("list reorder AC9: an untouched tail paragraph keeps its bytes",
+        saved.indexOf("\ntail\n") !== -1, JSON.stringify(saved));
+      check("list reorder AC9: only the moved list block is re-serialized",
+        /-   c\n-   a\n-   b/.test(saved), JSON.stringify(saved));
+      await listLeave();
+    }
+    // AC9 container coverage: a blockquote-nested list reorders within the
+    // quote and round-trips with its `>` prefix.
+    {
+      const vc = await listEnter("> - a\n> - b\n> - c\n");
+      const bqUl = vc.querySelector("blockquote ul");
+      const items = childItems(bqUl);
+      check("list reorder AC9: a quoted list's container is its own <ul>",
+        window.NB.hybrid.listContainer(items[0]) === bqUl &&
+        bqUl.closest("blockquote") === vc.querySelector("blockquote"));
+      window.NB.hybrid.moveListItem(items[2], items[0], "before", 0);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const bqLines = (FILES[LR_PATH] || "").split("\n").filter((l) => /^>/.test(l));
+      check("list reorder AC9: a quoted list reorders within its quote",
+        JSON.stringify(order(bqUl)) === JSON.stringify(["c", "a", "b"]));
+      check("list reorder AC9: a quoted list round-trips with its '>' prefix",
+        bqLines.length === 3 && /c/.test(bqLines[0]) &&
+        /a/.test(bqLines[1]) && /b/.test(bqLines[2]),
+        JSON.stringify(FILES[LR_PATH]));
+      await listLeave();
+    }
+    // AC9 container coverage: an in-cell list is its own movable container.
+    {
+      const vc = await listEnter("# T\n");
+      const tbl = window.document.createElement("table");
+      tbl.innerHTML = "<tbody><tr><td><ul><li>a</li><li>b</li>" +
+        "<li>c</li></ul></td></tr></tbody>";
+      vc.appendChild(tbl);
+      const cellUl = tbl.querySelector("ul");
+      const items = childItems(cellUl);
+      check("list reorder AC9: an in-cell list is its own movable container",
+        window.NB.hybrid.listContainer(items[0]) === cellUl &&
+        window.NB.hybrid.listContainer(vc.querySelector("h1")) === null);
+      check("list reorder AC9: an in-cell list reorders within its own cell",
+        window.NB.hybrid.moveListItem(items[2], items[0], "before", 0) === true &&
+        JSON.stringify(order(cellUl)) === JSON.stringify(["c", "a", "b"]) &&
+        cellUl.closest("td") === tbl.querySelector("td"),
+        cellUl.outerHTML);
+      await listLeave();
+    }
+
+    // --- AC10: ordered lists renumber on save --------------------------
+    {
+      const vc = await listEnter("1. a\n2. b\n3. c\n");
+      const ol = vc.querySelector("ol");
+      const [a, b, c] = childItems(ol);
+      window.NB.hybrid.moveListItem(b, a, "before", 0);
+      const md = window.NB.hybrid.domToMarkdown();
+      check("list reorder AC10: a moved ordered item renumbers as a run",
+        /1\.  b\n2\.  a\n3\.  c/.test(md), JSON.stringify(md));
+      check("list reorder AC10: the moved <li> keeps no literal old marker",
+        ownText(childItems(ol)[0]) === "b" &&
+        childItems(ol)[0].textContent.indexOf("2.") === -1);
+      await listLeave();
+    }
+
+    // --- AC11: task state rides along ----------------------------------
+    {
+      const vc = await listEnter("- [ ] a\n- [x] b\n- [ ] c\n");
+      const ul = vc.querySelector("ul");
+      const [a, b] = childItems(ul);
+      window.NB.hybrid.moveListItem(b, a, "before", 0);
+      const md = window.NB.hybrid.domToMarkdown();
+      check("list reorder AC11: the moved task item keeps its checked state",
+        window.NB.hybrid.taskCheckboxOf(childItems(ul)[0]).checked === true &&
+        window.NB.hybrid.taskCheckboxOf(childItems(ul)[1]).checked === false);
+      check("list reorder AC11: the [x] marker moves with the item",
+        md.indexOf("[x] b") !== -1 && md.indexOf("[ ] a") !== -1 &&
+        md.indexOf("[x] b") < md.indexOf("[ ] a"), JSON.stringify(md));
+      await listLeave();
+    }
+    {
+      // A checked parent carrying an unchecked child: neither cascades.
+      const vc = await listEnter("- [x] parent\n    - [ ] child\n- [ ] other\n");
+      const ul = vc.querySelector("ul");
+      const [parent, other] = childItems(ul);
+      const child = parent.querySelector(":scope > ul > li");
+      window.NB.hybrid.moveListItem(parent, other, "after", 0);
+      check("list reorder AC11: a moved task parent keeps its own state",
+        window.NB.hybrid.taskCheckboxOf(parent).checked === true);
+      check("list reorder AC11: a child's state does not follow its parent",
+        window.NB.hybrid.taskCheckboxOf(child).checked === false);
+      await listLeave();
+    }
+    {
+      // A plain parent carrying a checked task child: the child keeps its
+      // marker.
+      const vc = await listEnter("- plain\n    - [x] child\n- z\n");
+      const ul = vc.querySelector("ul");
+      const [plain, z] = childItems(ul);
+      const child = plain.querySelector(":scope > ul > li");
+      window.NB.hybrid.moveListItem(plain, z, "after", 0);
+      check("list reorder AC11: a plain parent's task child keeps its state",
+        window.NB.hybrid.taskCheckboxOf(child).checked === true &&
+        window.NB.hybrid.taskCheckboxOf(plain) === null);
+      await listLeave();
+    }
+
+    // --- AC12: tight/loose and empty items survive ---------------------
+    {
+      const vc = await listEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      const [a, b] = childItems(ul);
+      check("list reorder AC12: a tight item has no wrapping <p>",
+        a.querySelector(":scope > p") === null);
+      window.NB.hybrid.moveListItem(b, a, "before", 0);
+      check("list reorder AC12: a moved tight item stays tight (no <p>)",
+        childItems(ul)[0].querySelector(":scope > p") === null);
+      await listLeave();
+    }
+    {
+      const vc = await listEnter("- a\n\n- b\n\n");
+      const ul = vc.querySelector("ul");
+      const items = childItems(ul);
+      check("list reorder AC12: a loose item renders with a wrapping <p>",
+        !!items[0].querySelector(":scope > p"), JSON.stringify(order(ul)));
+      window.NB.hybrid.moveListItem(items[1], items[0], "before", 0);
+      check("list reorder AC12: a moved loose item keeps its <p>",
+        !!childItems(ul)[0].querySelector(":scope > p"),
+        JSON.stringify(order(ul)));
+      await listLeave();
+    }
+    {
+      // An item the user emptied during the session still saves as a bare
+      // marker after the move.
+      const vc = await listEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      const items = childItems(ul);
+      items[1].textContent = "";           // the user emptied item b
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      window.NB.hybrid.moveListItem(items[1], items[0], "before", 0);
+      const md = window.NB.hybrid.domToMarkdown();
+      check("list reorder AC12: an emptied item saves as a bare marker",
+        /^-$/m.test(md) &&
+        JSON.stringify(order(ul)) === JSON.stringify(["", "a", "c"]),
+        JSON.stringify(md));
+      await listLeave();
+    }
+    {
+      // A checkbox-only item keeps its trailing space (needed to re-render
+      // as a checkbox).
+      const vc = await listEnter("- [ ] a\n- [x] b\n- [ ] c\n");
+      const ul = vc.querySelector("ul");
+      const items = childItems(ul);
+      Array.from(items[0].childNodes).forEach((n) => {
+        if (n.nodeType === window.Node.TEXT_NODE) n.remove();
+      });
+      window.NB.hybrid.moveListItem(items[0], items[2], "after", 0);
+      const md = window.NB.hybrid.domToMarkdown();
+      const cbLines = md.split("\n").filter((l) => /\[ \]/.test(l));
+      check("list reorder AC12: a checkbox-only item keeps its trailing space",
+        cbLines.some((l) => /\[ \]\s$/.test(l)), JSON.stringify(md));
+      await listLeave();
+    }
+
+    // --- AC13: a no-op drop writes nothing -----------------------------
+    {
+      const vc = await listEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      const [a, b] = childItems(ul);
+      const before = postFile();
+      check("list reorder AC13: dropping an item at its current position is a no-op",
+        window.NB.hybrid.moveListItem(a, b, "before", 0) === false);
+      check("list reorder AC13: a no-op move leaves the note clean",
+        !window.NB.hybrid.isDirty());
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("list reorder AC13: a no-op drop issues zero POST /api/file",
+        postFile() - before === 0, "delta=" + (postFile() - before));
+      await listLeave();
+    }
+
+    // --- AC14: one drag is one undo ------------------------------------
+    {
+      const vc = await listEnter("- a\n- b\n- c\n");
+      const [a, b, c] = childItems(vc.querySelector("ul"));
+      window.NB.hybrid.moveListItem(c, a, "before", 0);
+      check("list reorder AC14: the drag move applied",
+        JSON.stringify(order(vc.querySelector("ul"))) ===
+        JSON.stringify(["c", "a", "b"]));
+      vc.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+      await tick(30);
+      check("list reorder AC14: one Ctrl+Z restores the pre-drop DOM",
+        JSON.stringify(order(vc.querySelector("ul"))) ===
+        JSON.stringify(["a", "b", "c"]),
+        JSON.stringify(order(vc.querySelector("ul"))));
+      await listLeave();
+    }
+    {
+      // Esc mid-drag cancels with no mutation and no snapshot: drive the
+      // overlay's startDrag hook, then cancel before pointerup.
+      const vc = await listEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      const items = childItems(ul);
+      const domBefore = vc.innerHTML;
+      const dirtyBefore = window.NB.hybrid.isDirty();
+      window.NB.listEdit.startDrag(
+        { pointerId: 7, clientX: 0, clientY: 0,
+          preventDefault() {}, stopPropagation() {} }, items[1]);
+      check("list reorder AC14: startDrag puts the overlay into a drag",
+        !!window.NB.listEdit.drag);
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      check("list reorder AC14: Esc mid-drag cancels with no mutation",
+        window.NB.listEdit.drag === null && vc.innerHTML === domBefore &&
+        window.NB.hybrid.isDirty() === dirtyBefore);
+      await listLeave();
+    }
+
+    // --- AC15: cross-list and non-list drops are refused ---------------
+    {
+      const vc = await listEnter("- a\n- b\n\npara\n\n- c\n- d\n");
+      const lists = vc.querySelectorAll("ul");
+      const itemA = lists[0].children[0];
+      const itemC = lists[1].children[0];
+      const para = vc.querySelector("p");
+      const domBefore = vc.innerHTML;
+      const dirtyBefore = window.NB.hybrid.isDirty();
+      check("list reorder AC15: a cross-list drop is refused",
+        window.NB.hybrid.moveListItem(itemA, itemC, "before", 0) === false &&
+        vc.innerHTML === domBefore && window.NB.hybrid.isDirty() === dirtyBefore);
+      check("list reorder AC15: a drop onto a non-list block is refused",
+        window.NB.hybrid.moveListItem(itemA, para, "before", 0) === false &&
+        vc.innerHTML === domBefore);
+      // The refusal is decided BEFORE flushPendingSnapshot(): with a clean
+      // history, Ctrl+Z after a refused drop must not change the DOM.
+      const domPreUndo = vc.innerHTML;
+      vc.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+      await tick(20);
+      check("list reorder AC15: a refused drop pushes no undo step",
+        vc.innerHTML === domPreUndo);
+      await listLeave();
+    }
+    {
+      // A drop inside the dragged item's own subtree is refused.
+      const vc = await listEnter("- a\n    - a1\n- b\n");
+      const ul = vc.querySelector("ul");
+      const [a, b] = childItems(ul);
+      const a1 = a.querySelector(":scope > ul > li");
+      const domBefore = vc.innerHTML;
+      check("list reorder AC15: a drop into the item's own subtree is refused",
+        window.NB.hybrid.moveListItem(a, a1, "before", 0) === false &&
+        vc.innerHTML === domBefore);
+      await listLeave();
+    }
+    {
+      // Cross-container: a quoted list cannot drop into the root list, and
+      // vice versa.
+      const vc = await listEnter("> - qa\n> - qb\n\n- ra\n- rb\n");
+      const qUl = vc.querySelector("blockquote ul");
+      const rUl = Array.from(vc.querySelectorAll("ul")).find((u) => u !== qUl);
+      const domBefore = vc.innerHTML;
+      check("list reorder AC15: a quoted item cannot leave its blockquote",
+        window.NB.hybrid.moveListItem(qUl.children[0], rUl.children[0],
+          "before", 0) === false &&
+        window.NB.hybrid.moveListItem(rUl.children[0], qUl.children[0],
+          "before", 0) === false &&
+        vc.innerHTML === domBefore);
+      await listLeave();
+    }
+
+    // --- AC9 depth clamp: the §4.7.2 placement-table boundary cases -----
+    {
+      // A nested target with NO preceding sibling, requesting depth
+      // T.depth+1 / side "before": the ceiling collapses to T's own depth,
+      // so the item lands as a sibling BEFORE T in T's OWN nested list --
+      // never an outdent to the container base.
+      const vc = await listEnter("- a\n    - b\n- c\n");
+      const rootUl = vc.querySelector("ul");
+      const nestedUl = vc.querySelector("ul ul");
+      const c = childItems(rootUl)[1];
+      const b = childItems(nestedUl)[0];
+      const dest = window.NB.hybrid.resolveListItemMove(c, b, "before", 1);
+      check("list reorder AC9: a nested target with no preceding sibling clamps to its own list",
+        !!dest && dest.list === nestedUl && dest.before === b &&
+        dest.createParent === null,
+        JSON.stringify(dest && { list: dest.list && dest.list.tagName,
+          before: dest.before && ownText(dest.before),
+          createParent: dest.createParent }));
+      check("list reorder AC9: the clamped drop enters the nested list, not the base",
+        window.NB.hybrid.moveListItem(c, b, "before", 1) === true &&
+        childItems(nestedUl).map(ownText).join(",") === "c,b" &&
+        c.parentElement === nestedUl &&
+        childItems(rootUl).length === 1,
+        JSON.stringify(childItems(rootUl).map(ownText)));
+      await listLeave();
+    }
+    {
+      // The movable container's first item has no preceding visible item at
+      // its first boundary, so a requested nest clamps to the base: it is a
+      // plain top-level sibling-before, and no child list is created.
+      const vc = await listEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      const a = childItems(ul)[0];
+      const c = childItems(ul)[2];
+      const dest = window.NB.hybrid.resolveListItemMove(c, a, "before", 1);
+      check("list reorder AC9: the container's first item clamps a request to base",
+        !!dest && dest.list === ul && dest.before === a &&
+        dest.createParent === null,
+        JSON.stringify(dest && { before: dest.before && ownText(dest.before),
+          createParent: dest.createParent }));
+      check("list reorder AC9: the clamp keeps the item a top-level sibling",
+        window.NB.hybrid.moveListItem(c, a, "before", 1) === true &&
+        childItems(ul).map(ownText).join(",") === "c,a,b" &&
+        a.querySelector(":scope > ul") === null);
+      await listLeave();
+    }
+    {
+      // Cycle guard: A immediately precedes B, so a request to nest A under
+      // B's preceding sibling ("before B at depth T.depth+1") would make A a
+      // child of itself. prevSib === item collapses to the base
+      // sibling-before, which is A's current position -- a no-op that
+      // returns false, mutates nothing, and pushes no undo step.
+      const vc = await listEnter("- A\n- B\n");
+      const ul = vc.querySelector("ul");
+      const a = childItems(ul)[0];
+      const b = childItems(ul)[1];
+      const domBefore = vc.innerHTML;
+      const dirtyBefore = window.NB.hybrid.isDirty();
+      const dest = window.NB.hybrid.resolveListItemMove(a, b, "before", 1);
+      check("list reorder AC9: nesting under the moved item itself collapses to base",
+        !!dest && dest.list === ul && dest.before === b &&
+        dest.createParent === null,
+        JSON.stringify(dest && { before: dest.before && ownText(dest.before),
+          createParent: dest.createParent }));
+      const before = postFile();
+      check("list reorder AC9: the self-cycle drop is refused (no mutation, no step)",
+        window.NB.hybrid.moveListItem(a, b, "before", 1) === false &&
+        vc.innerHTML === domBefore && window.NB.hybrid.isDirty() === dirtyBefore);
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("list reorder AC9: the self-cycle drop writes nothing",
+        postFile() - before === 0, "delta=" + (postFile() - before));
+      await listLeave();
+    }
+
+    // --- AC16: drag chrome never reaches content ------------------------
+    {
+      const vc = await listEnter("- a\n- b\n");
+      const ov = $("viewer").querySelector(".nb-list-overlay");
+      check("list reorder AC16: the list overlay lives outside #viewer-content",
+        !!ov && !vc.contains(ov));
+      const items = childItems(vc.querySelector("ul"));
+      window.NB.listEdit.startDrag(
+        { pointerId: 9, clientX: 0, clientY: 0,
+          preventDefault() {}, stopPropagation() {} }, items[1]);
+      check("list reorder AC16: the drag chrome is created in the overlay",
+        ov.querySelectorAll(".nb-drag-ghost").length === 1 &&
+        ov.querySelectorAll(".nb-drag-proxy").length === 1 &&
+        ov.querySelectorAll(".nb-drop-line").length === 1,
+        "ov=" + JSON.stringify(ov.innerHTML).slice(0, 100));
+      check("list reorder AC16: no drag chrome reaches #viewer-content",
+        vc.querySelectorAll(".nb-list-overlay,.nb-list-grip,.nb-drag-ghost," +
+          ".nb-drag-proxy,.nb-drop-line").length === 0 &&
+        vc.innerHTML.indexOf("nb-") === -1 &&
+        Array.from(vc.querySelectorAll("li"))
+          .every((li) => !/\bnb-/.test(li.className)));
+      check("list reorder AC16: the serialized note carries no nb- chrome",
+        window.NB.hybrid.domToMarkdown().indexOf("nb-") === -1);
+      window.NB.listEdit._endDrag(false);
+      check("list reorder AC16: ending the drag clears the overlay chrome",
+        ov.querySelectorAll(".nb-drag-ghost,.nb-drag-proxy,.nb-drop-line")
+          .length === 0);
+      await listLeave();
+    }
+
+    // --- AC17: keyboard parity and aria-live announcement --------------
+    {
+      const vc = await listEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      const [, b] = childItems(ul);
+      caretInto(b);
+      ul.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true }));
+      await tick(20);
+      check("list reorder AC17: Alt+Up moves the caret item up among siblings",
+        JSON.stringify(order(ul)) === JSON.stringify(["b", "a", "c"]),
+        JSON.stringify(order(ul)));
+      check("list reorder AC17: the caret follows the keyboard move",
+        caretItem() === b);
+      const live = window.NB.listEdit.liveRegion;
+      check("list reorder AC17: the move is announced in aria-live",
+        !!live && live.getAttribute("aria-live") === "polite" &&
+        /Item moved to position 1, level 1/.test(live.textContent),
+        JSON.stringify(live && live.textContent));
+      check("list reorder AC17: the live region is outside #viewer-content",
+        !!live && !vc.contains(live));
+
+      // The context-menu List submenu runs the same command.
+      const x = childItems(ul)[0];   // b, now first after the Alt+Up move
+      caretInto(x);
+      x.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
+      await tick(10);
+      const menu = $("hybrid-context-menu");
+      // Skip the .submenu wrapper ("List"): its textContent includes the
+      // whole flyout, so a bare text match would find the wrapper (whose
+      // click only opens the flyout) instead of the command button.
+      const downItem = Array.from(menu.querySelectorAll("button"))
+        .find((btn) => !btn.classList.contains("submenu") &&
+          /^Move item down/.test(btn.textContent));
+      check("list reorder AC17: the List submenu offers Move item down",
+        !!downItem, "menu=" + menu.textContent.slice(0, 80));
+      // jsdom's HTMLElement.focus() moves the document selection into the
+      // focused menu button (a real browser keeps the range). Re-establish
+      // the caret on the item so the click-time caretListItem() resolves,
+      // then run the menu command.
+      caretInto(x);
+      if (downItem) {
+        downItem.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+      }
+      // b moves back below a: [b,a,c] -> [a,b,c].
+      check("list reorder AC17: the context-menu move reorders the item",
+        JSON.stringify(order(ul)) === JSON.stringify(["a", "b", "c"]),
+        JSON.stringify(order(ul)));
+      check("list reorder AC17: the context-menu move is announced too",
+        /Item moved to position 2, level 1/.test(
+          window.NB.listEdit.liveRegion.textContent),
+        JSON.stringify(window.NB.listEdit.liveRegion.textContent));
+
+      // A keyboard move must not change a block outside the list.
+      await listLeave();
+      const vc2 = await listEnter("keep me\n\n- a\n- b\n");
+      const ul2 = vc2.querySelector("ul");
+      const kItems = childItems(ul2);
+      caretInto(kItems[1]);
+      ul2.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "ArrowUp", altKey: true, bubbles: true, cancelable: true }));
+      await tick(20);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES[LR_PATH] || "";
+      check("list reorder AC17: a keyboard move leaves other blocks' bytes",
+        saved.indexOf("keep me") !== -1, JSON.stringify(saved));
+      await listLeave();
+    }
+
+    // Restore the shared fixture state for the sections that follow.
+    if (window.NB.tabs.isOpen(LR_PATH)) {
+      window.NB.tabs.close(LR_PATH, { force: true });
+    }
+    delete FILES[LR_PATH];
+    delete MTIMES[LR_PATH];
     if (window.NB.tabs.isOpen("notes/a.md")) {
       await window.NB.tabs.activate("notes/a.md");
       await tick(20);

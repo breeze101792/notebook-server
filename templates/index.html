@@ -157,6 +157,13 @@
           <button class="eb" data-act="ol"     title="Numbered list">1.&nbsp;List</button>
           <button class="eb" data-act="task"   title="Task list">☑</button>
           <button class="eb" data-act="quote"  title="Quote">&gt;</button>
+          <span class="eb-overflow eb-list">
+            <button class="eb eb-list-btn" data-act="list-menu" title="List actions" aria-haspopup="true">☰</button>
+            <div class="eb-menu eb-list-menu" hidden>
+              <button class="eb" data-act="list-move-up">Move item up</button>
+              <button class="eb" data-act="list-move-down">Move item down</button>
+            </div>
+          </span>
           <span class="eb-sep"></span>
           <button class="eb" data-act="link"   title="Link">🔗</button>
           <button class="eb" data-act="image"  title="Image">🖼</button>
@@ -1105,6 +1112,7 @@
   <script src="/static/js/editbar.js" defer></script>
   <script src="/static/js/hybrid.js" defer></script>
   <script src="/static/js/table-edit.js" defer></script>
+  <script src="/static/js/list-edit.js" defer></script>
   <script src="/static/js/table-view.js" defer></script>
   <script src="/static/js/table-select.js" defer></script>
   <script src="/static/js/watcher.js" defer></script>

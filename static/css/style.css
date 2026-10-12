@@ -62,6 +62,11 @@
   --designer-modal-w: 1200px;
   --designer-modal-h: 85vh;
   --accent-fg: #14151a;
+  /* Width of one list-nesting step. The list drag overlay (list-edit.js)
+   * reads this value to place the indent rails; it is the same padding
+   * the rendered lists use, so the rail and the text agree at every
+   * level. */
+  --list-indent: 1.6em;
 }
 
 body[data-theme="light"] {
@@ -864,6 +869,74 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * contentEditable, so neither turndown nor undo snapshots see them. */
 body.nb-table-drag { cursor: grabbing; }
 body.nb-table-drag #viewer-content { user-select: none; }
+
+/* ------------------------------------------------------------------ */
+/* Hybrid list-item drag overlay (list-edit.js)                        */
+/* ------------------------------------------------------------------ */
+/* A SEPARATE layer from .nb-table-overlay (table-edit.js wipes its own
+ * node on every render, which would delete a list drop line mid-drag).
+ * Same rules otherwise: a child of #viewer, outside the contentEditable
+ * subtree, so turndown's clone and hybrid's innerHTML undo snapshots
+ * never see it. The layer is pointer-events:none; only the grip takes
+ * pointers, so typing and clicking in the note are unaffected. */
+.nb-list-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;                 /* same band as .nb-table-overlay */
+  pointer-events: none;
+}
+.nb-list-overlay:empty { display: none; }
+
+.nb-list-grip {
+  position: absolute;
+  width: 24px;                /* GRIP_SIZE in list-edit.js */
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: grab;
+  user-select: none;
+  pointer-events: auto;       /* the only interactive part of the overlay */
+  touch-action: none;         /* a touch drag must not become a scroll */
+}
+.nb-list-grip:hover {
+  background: var(--accent-soft);
+  border-color: var(--border);
+  color: var(--fg);
+}
+.nb-list-grip:active {
+  cursor: grabbing;
+  background: var(--accent);
+  color: var(--bg);           /* theme bg on the accent fill reads on BOTH themes */
+}
+.nb-list-grip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The list drop line: same 2px accent bar as the table one, horizontal. */
+.nb-drop-line.is-list { height: 2px; }
+
+/* Drag-scoped cursor + selection guards (see the table block above). */
+body.nb-list-drag { cursor: grabbing; }
+body.nb-list-drag #viewer-content { user-select: none; }
+
+/* Polite move announcer: outside #viewer-content, visually hidden but
+ * read by assistive tech ("Item moved to position 3, level 1"). */
+.nb-list-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 /* ------------------------------------------------------------------ */
 /* Preview table view controls (table-view.js)                         */
@@ -2661,7 +2734,7 @@ body[data-theme="light"] #viewer-content {
 /* Wikilinks ([[Target]]) are internal note links. Give them a subtle
  * underline so they read as clickable, distinct from plain text. */
 .markdown-body a[data-wikilink] { text-decoration: underline; text-underline-offset: 2px; }
-.markdown-body ul, .markdown-body ol { padding-left: 1.6em; margin: .7em 0; }
+.markdown-body ul, .markdown-body ol { padding-left: var(--list-indent); margin: .7em 0; }
 /* List spacing is unified so a toggle never changes it.
  *
  * Two separate mismatches caused visibly different spacing:

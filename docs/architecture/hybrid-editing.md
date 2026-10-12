@@ -576,6 +576,203 @@ that prefix, so the two modes agree on `> - item`. Pinned by the "Quote wraps
 the top-level block" check (`tests/dom/test_dom.js`) and the `quote(...)`
 cases in the browser list-model block.
 
+### 4.7.2 List-item drag reorder (all list kinds)
+
+Status: ✳ specified here. Applies to every list kind in §4.4–4.7: bullet (`-`/`*`/`+`),
+ordered (`1.`/`1)`), nested, task (`- [ ]`/`- [x]`), and empty items — in every container
+(the editor root, a `<blockquote>`, or a table cell). The rendered hybrid surface is the
+editing surface (goal G1); a drag is a structural DOM move that Turndown re-serializes on
+save (goal G4). There is no popup window and no separate list editor. The pattern
+precedent is the table row/column reorder (`table-edit.js` + `moveRow`/`moveCol`,
+`hybrid.js:4817`/`:4838`); this is **pattern reuse only, not shared code**. §4.7.2 is a
+second module of comparable size to `table-edit.js` — its own overlay, an indent-rail
+depth chooser, subtree carry, outdent, a variable-height recursive hit-test, a keyboard
+submenu, and an `aria-live` region — plus a substantial Playwright suite. The estimate
+must not treat it as a small addition to `table-edit.js`.
+
+**Affordance (the grip).** One grip `<button>` is drawn for the list item under the
+pointer, or containing the caret, in the left gutter — the same hover-reveal model as
+the table row grip (`table-edit.js:626`). The grip, the drag ghost, and the drop line are
+children of the list feature's **own** overlay layer, `.nb-list-overlay`, a sibling of
+`.nb-table-overlay` under `#viewer` (created the same way at `table-edit.js:772`), with
+the same rules: deliberately OUTSIDE `#viewer-content`, `pointer-events: none` on the
+layer and `auto` on the controls, so the chrome is never in Turndown's clone and never in
+a hybrid `innerHTML` undo snapshot.
+
+**Overlay ownership is one layer per feature — no cross-module arbitration.**
+`table-edit.js` owns `.nb-table-overlay` exclusively and wipes that node on every render
+(`overlay.textContent = ""`, `table-edit.js:189`, `:623`); its `hide()` refuses to clear
+mid-drag (`if (drag) return`, `table-edit.js:619`). Drawing list chrome into that node
+would let a table hover wipe a list drop line, and a table `hide()` called while the
+table module is idle would delete a list ghost mid-drag (its guard only protects a
+*table* drag). The list module therefore clears and rebuilds only `.nb-list-overlay`; the
+two layers never touch each other's nodes. No class or attribute is ever put on a list
+node during a drag: the lifted item is drawn as a translucent ghost and the insertion
+point as a drop line, both in the list overlay (`table-edit.js:18-24`). Because no chrome
+reaches the content, no `CHROME_CLASS_TOKENS` / `prepareTurndownClone` strip is added.
+Drags use Pointer Events with `setPointerCapture`, never HTML5 DnD
+(`table-edit.js:440-448`); the pointerdown is `preventDefault`ed so the caret and the
+native drag never start. Hover-intent lock and a grace timer mirror `table-edit.js:35`,
+`:637-658`.
+
+**Drop positions.** The pointer resolves `(target item T, side, depth)`:
+
+- `T` = the list item whose **hit region** contains the pointer; `side` = `before` on the
+  top half, `after` on the bottom half (the `rowBoundary` rule, `table-edit.js:495-503`).
+  The hit region is the union of the item's `<li>` rect and its own checkbox rect
+  (`taskCheckboxOf(li)`), because a task checkbox hangs outside the item's border box
+  (`margin: 0 .53em 0 -1.53em`, `style.css:2712`) and a pointer over that marker column
+  would otherwise resolve no item. If still no rect matches (the pointer sits in the
+  gutter left of every item), the item on the pointer's row is resolved by clamping the
+  pointer x to the container's base rail.
+- `depth` = the nearest indent rail to the pointer x. One nesting step's rendered width
+  is the CSS list indent (`static/css/style.css`), a named variable, not a literal, so
+  the same rule works at every level.
+- Legal `depth` ∈ `[base, depth(previous visible item at the boundary) + 1]`, where
+  `base` is the enclosing block's list depth (0 at the editor root, the quoted list's
+  depth inside a `<blockquote>`, the cell's list depth inside a table). The ceiling is the
+  depth of the visible item immediately above the boundary, plus one. For a `before`
+  boundary at a nested list's first child, that preceding visible item is the parent
+  `<li>` at depth `T's depth − 1`, so the ceiling is `T's depth`: the item lands as a
+  sibling of T at T's own depth — the placement table's "clamped to T's depth when there
+  is none" — never nested under T's absent preceding sibling. The ceiling collapses to
+  `base` only when T is the movable container's very first item, where no visible item
+  precedes it and `base` already equals T's depth. The clamp is the whole "maximum at
+  depth boundaries" rule: dragging past the leftmost rail stays at the base, dragging past
+  the rightmost stays one level under the item above.
+
+Before measuring, the resolved item is given a line box if it has none. An item the user
+emptied during this session may not have one — `addEmptyLineBoxes` / `addListPlaceholders`
+run only on enter and re-render (`hybrid.js:1582-1589`, `:4242-4246`), not on every input —
+and a zero-height `<li>` cannot be split by the top-half/bottom-half rule. The list module
+appends the same marked caret `<br>` (`CARET_BR_ATTR`) the enter path uses; it is
+hash-stripped (`hybrid.js:1042`) and removed before serialization, so it never reaches the
+note.
+
+Placement from `(side, depth)`:
+
+| `depth` vs T | Result |
+|---|---|
+| equal to T's depth | sibling of T, before/after per `side` |
+| T's depth + 1, `side:after` | becomes the first child of T (drop **into** T) |
+| T's depth + 1, `side:before` | becomes the first child of T's preceding sibling at T's depth; clamped to T's depth when there is none |
+| less than T's depth | outdent: sibling (per `side`) of T's ancestor at that depth |
+
+The drop line is drawn at the resolved boundary in the overlay. A resolved destination
+inside the item's own subtree is refused. A drop that resolves to the item's current
+position hides the line and is a no-op (below).
+
+**Nesting and subtrees.** The mutation moves the existing `<li>` node, never a clone, so
+its whole subtree — nested `<ul>`/`<ol>`, their items, text, and inline markup — travels
+with it (the `moveRow` rule, `hybrid.js:4785`). The destination list is created or reused
+exactly as `indentListItem` does (`hybrid.js:2710-2722`): if the parent item has no child
+list, a new list is created with the **moved item's source list type**
+(`document.createElement(list.tagName)`, `hybrid.js:2715`); if the parent already has a
+child list, the item joins it. A drag never explicitly retypes an item — that is §4.7.1 —
+so mixed-type nesting (`- a` with a nested `1. b`) is legal, and the emitted marker follows
+whichever list contains the item (Turndown's `listItem` rule,
+`static/vendor/turndown.browser.js:149-155`). A source nested list left empty by the move
+is removed (`indentListItem`'s `if (!list.firstElementChild) list.remove()`). The item may
+move between nesting levels of its own movable list container; it may not leave that
+container (cross-list rule below).
+
+**Ordered lists renumber on save.** The DOM `<ol>` carries no literal number: the browser
+numbers by position, and Turndown renumbers by DOM position (honouring a source
+`ol[start]`). A move therefore never edits markers in the DOM; the containing `<ol>`
+renumbers as a contiguous run on serialization, emitting canonical `N.  ` padding
+(Appendix A). Moving item 2 above item 1 in `1. a\n2. b` emits `1.  b\n2.  a`. Nested
+ordered sublists keep their own order and numbering. Q4 applies: a *touched* ordered
+block canonicalizes its padding and numbering; untouched blocks keep bytes (§5.5).
+
+**Task items.** The checkbox `<input>` is a child of the moved `<li>`, so its `checked`
+state rides along with the item and is hashed explicitly (`canonicalSubtree`,
+`hybrid.js:1080`). A parent's checkbox state never cascades to its children and a child's
+never to its parent: moving a task parent carries plain and task children unchanged, and
+moving a plain parent carries task children unchanged — each item keeps its own marker.
+A checkbox-only item keeps its `EMPTY_TASK_SENTINEL` trailing space on save (Appendix A).
+
+**Empty items and tight/loose items.** The live `<li>` is relocated with its ZWS
+placeholder or browser `<br>` line box intact, so `markEmptyListItems` still emits a bare
+marker for an item that was empty before the move. The move does not add or remove a
+`<p>`, so a tight item stays tight and a loose `<li><p>…</p></li>` stays loose; hybrid
+does not normalize tight/loose on a move. A move must not run `ensureListMarker` on a
+non-empty item.
+
+Tight/loose has a round-trip consequence to state honestly: a move that puts a loose item
+into a tight list (or the reverse) changes the list's serialized blank-line structure, and
+after a reload marked re-decides the **whole list's** tight/loose shape from that structure
+— so previously tight siblings may render loose. There is no data loss, and the list's
+immediately saved bytes are canonical. Hybrid does not normalize or refuse this: tight vs
+loose is a whole-list property of Markdown, not a per-item one, and refusing the move would
+block legitimate reordering.
+
+**Movable container; cross-list and non-list drops are refused.** The movable container
+is the dragged item's **outermost `<ul>`/`<ol>` ancestor** — the root list (parent
+`#viewer-content`), the outermost list inside a `<blockquote>` (`> - a` renders
+`<blockquote><ul>…`), or the outermost list inside a table cell. Defining the container by
+the outermost list ancestor, not by direct parentage, is what makes §4.7.2 apply to every
+list kind in every container: a quoted list and an in-cell list are reorderable within
+themselves. A drop target exists only inside that container. A drop onto a paragraph,
+heading, the enclosing `<blockquote>`, the table, or a different list container is
+refused: the ghost returns to origin, no DOM is mutated, no snapshot is pushed, and
+nothing is written. Refusal is decided while the pointer moves, **before** any
+`flushPendingSnapshot()` or mutation, so a refused drop leaves history untouched. Merging
+two source-separate lists would change the blank-line structure the splice carries raw and
+has no clean Markdown round-trip, so conversion is rejected.
+
+**No-op.** A drop that resolves to the item's current parent and next sibling returns
+before any flush, mutation, or `onContentChange` — the no-op check precedes
+`flushPendingSnapshot()`, exactly as `moveRow` orders it (`hybrid.js:4821` before `:4827`).
+Even if a path did mutate, a save whose output equals the baseline writes nothing
+(`isNoOpMarkdown`, §5.6 / I3).
+
+**Undo.** One completed drag is one undo step. Before the mutation call
+`flushPendingSnapshot()` to commit any debounced typing snapshot (`hybrid.js:4798`),
+mutate by moving nodes, then `onContentChange()` to push the post-drop snapshot. A refused
+or no-op drop returns before this flush, so it never creates a step. Esc during the drag
+cancels with no mutation and no snapshot. The overlay chrome is outside `#viewer-content`,
+so no snapshot can contain it and no restore can resurrect it.
+
+**Change-hash / dirty classification.** `spliceSave` dispatches on
+`els.length !== blockHashes.length` (`hybrid.js:1241-1242`). A drag changes child order,
+not the top-level element count, so when the live DOM still aligns with the enter baseline
+(the common case — the note was opened, dragged, and saved) the same-count path runs: the
+containing block's content key differs, and only that block is re-serialized
+(`hybrid.js:1246-1263`). When the baseline count has already drifted — e.g. the user
+pressed `Enter` earlier in the same edit session and the autosave/rebase has not yet
+re-seated the baseline — the count differs and `structuralSplice` (`hybrid.js:1336`) runs
+instead, matching the unchanged prefix/suffix by key and re-serializing only the changed
+middle. Both paths preserve every untouched block's bytes; the classification is
+path-dependent but the outcome is safe either way. The change key (`canonicalSubtree`,
+`hybrid.js:1048`) walks children in order, so a reorder is always seen as a change.
+`onContentChange` (`hybrid.js:3849`) marks the note dirty and schedules autosave and the
+coalesced snapshot; the no-op guard decides the write.
+
+**Keyboard, touch, accessibility.** Keyboard parity is the context menu's **List**
+submenu, extended with the operations the table submenu has (`buildTableMenu`,
+`hybrid.js:4903`): "Move item up" / "Move item down" among siblings, plus the existing
+`Tab`/`Shift+Tab` for indent/outdent (`indentListItem`, `hybrid.js:2692`). The moved item
+takes the caret after the move so the command repeats (the `focusRow` pattern,
+`hybrid.js:4955`). Touch uses the same Pointer Events path; the grip is shown for the
+item containing the caret when no hover exists, carries `touch-action: none`, and starts
+on pointerdown. The grip is a focusable `<button>` labelled "Reorder list item"; a
+polite `aria-live` region outside `#viewer-content` announces each completed move's new
+position and level ("Item moved to position 3, level 1"), for both drag and keyboard.
+
+**Non-goals (this feature).**
+
+- No popup window or separate list editor (goals G1/G4).
+- No dragging of non-list blocks; only `<li>` subtrees.
+- No cross-list merge and no drop onto a non-list block (both refused).
+- No drag out of a list's own container: a quoted list stays in its blockquote and an
+  in-cell list stays in its cell (cross-container drops are refused).
+- No multi-item or multi-selection drag; one item subtree per drag.
+- No list-type conversion by drag (that is §4.7.1); a drag changes position and nesting
+  only.
+- No auto-scroll while dragging past the viewport edge.
+- No HTML5 drag-and-drop; Pointer Events only.
+- No server or `/api/edit` change; no drag state is persisted.
+
 ### 4.8 Blockquotes `>`
 
 Rendered `<blockquote>` (often containing `<p>`); canonical output `> q`
@@ -1198,6 +1395,13 @@ required wherever the **native editing engine** produces the DOM that jsdom cann
   `:1467`).
 - Any assertion about file bytes after a structural edit (Q1), because the
   browser's element tree, not jsdom's, decides the count.
+- List-item drag geometry (§4.7.2): grip reveal and hide, the before/after boundary, the
+  checkbox/marker-gutter hit region, the indent-rail depth choice, creating a line box on a
+  freshly emptied item before measuring, the drop line, subtree carrying, and touch — all
+  read layout the jsdom harness stubs away. The DOM mutation and serialization are tested in
+  jsdom; only the pointer path is native. The module is a second implementation, not a small
+  patch to `table-edit.js` (see the §4.7.2 preamble); the estimate and Playwright budget must
+  reflect that.
 
 The harness already provides `caretInBlock` (`test_hybrid_browser.js:70`),
 `writeNote`/`readNote` (`:59-65`), and the locality corpus (`:216`). Extend it;
@@ -1244,6 +1448,44 @@ The Q5/Q7/Q10/`~~~`/nested-list/owner entries already exist as contract cases
 - AC8. **The raw file has no presentation HTML (I8).** After every edit in the
   matrix, `domToMarkdown()` contains no `<br>`, `<div>`, `<span>`, or `<table>`
   outside a fence, except HTML the owner already had (Q10).
+- AC9. **A list drag is a clean structural move (§4.7.2).** Dropping a list item subtree
+  and saving re-serializes only the containing list block — or, on the count-changed path,
+  only the changed middle — and every untouched block keeps its bytes (extends AC2). The
+  moved `<li>` subtree, its inline markup, its checkbox state, and an empty item's marker
+  all survive. Covered for a root list, a blockquote-nested list, and a table-cell list.
+- AC10. **Ordered renumber.** After a move in an ordered list, the emitted `<ol>` is
+  renumbered as a contiguous run with canonical `N.  ` padding; a moved item takes its
+  new position's number and keeps none of its old literal marker.
+- AC11. **Task state rides along.** Moving a checked or unchecked task item — including
+  as a parent carrying children — preserves every moved item's `[ ]`/`[x]`; a differing
+  parent state does not change a child's.
+- AC12. **Tight/loose and empty survive.** In the DOM, a moved tight item stays tight and a
+  moved loose item keeps its `<p>`; in the saved bytes, a task item is canonicalized by
+  `normalizeLooseTaskItems` (`hybrid.js:371-379`) and so may not carry that `<p>`, while a
+  non-task item emits the shape its DOM has. An item that was empty before the move still
+  saves as a bare marker (`-` / `1.`), including a checkbox-only item's trailing space.
+- AC13. **No-op drop writes nothing.** A drop resolving to the item's current position
+  issues zero `POST /api/file` (the `isNoOpMarkdown` pattern, §5.6).
+- AC14. **One drag, one undo.** A completed drag is a single undo step that restores the
+  pre-drop DOM; Esc mid-drag leaves the DOM and the history unchanged.
+- AC15. **Cross-list and non-list drops are refused, before any flush or mutation.** A drop
+  outside the dragged item's own movable list container (its outermost `<ul>`/`<ol>`
+  ancestor), or onto a non-list block, leaves the DOM and the undo history unchanged and
+  writes nothing; the refusal is decided before `flushPendingSnapshot()` runs.
+- AC16. **Drag chrome never reaches content.** No `.nb-*` class or drag attribute appears
+  on any list node in the live DOM, in a Turndown clone, or in a snapshot during or after
+  a drag.
+- AC17. **Keyboard parity and announcement.** The List submenu moves a list item up/down
+  among siblings and the caret follows; each completed move (drag or keyboard) is
+  announced in an `aria-live` region and never changes the note outside the list block.
+
+**Test split for §4.7.2.** jsdom (§8.1) drives the resolved move through the exported
+hybrid list-move entry point — the way `moveRow`/`moveCol` are tested — so the DOM
+mutation, ordered renumbering, sentinel survival, no-op, undo, refusal, and serialized
+bytes are asserted without layout. The Chromium harness (§8.2) is required for the
+pointer path, which reads `getBoundingClientRect`: grip reveal and hide, the
+before/after boundary, the indent-rail depth clamp, the drop line, subtree carrying, and
+touch `touch-action`. No backend test changes.
 
 ---
 

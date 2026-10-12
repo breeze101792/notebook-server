@@ -3285,6 +3285,15 @@
         moveRowBySelection(e.key === "ArrowUp" ? "up" : "down");
         return;
       }
+      // Alt+Up/Down on a list item moves it among its siblings: the
+      // keyboard path for the list drag overlay (list-edit.js). Tab /
+      // Shift+Tab still indent/outdent.
+      const ctx = caretListItem();
+      if (ctx && ctx.li) {
+        e.preventDefault();
+        moveItemBySelection(e.key === "ArrowUp" ? "up" : "down");
+        return;
+      }
     }
     if (e.altKey && e.shiftKey &&
         (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
@@ -3487,6 +3496,7 @@
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "quote", "link", "image",
     "codeblock", "hr", "table", "task",
+    "list-menu", "list-move-up", "list-move-down",
     "table-menu", "table-row-up", "table-row-down",
     "table-col-left-move", "table-col-right-move", "table-col-align",
     "table-row-above", "table-row-below", "table-row-delete",
@@ -3578,6 +3588,28 @@
         if (menu) menu.hidden = !menu.hidden;
         break;
       }
+      case "list-menu": {
+        const menu = document.querySelector(".eb-list-menu");
+        if (menu) {
+          const ctx = caretListItem();
+          menu.hidden = !menu.hidden;
+          if (!menu.hidden) {
+            const inList = !!(ctx && ctx.li);
+            menu.querySelectorAll("button[data-act^='list-move']")
+              .forEach((b) => {
+                b.disabled = !inList;
+                b.setAttribute("aria-disabled", String(!inList));
+              });
+          }
+        }
+        break;
+      }
+      case "list-move-up":
+        moveItemBySelection("up");
+        break;
+      case "list-move-down":
+        moveItemBySelection("down");
+        break;
       case "table-row-up":
         moveRowBySelection("up");
         break;
@@ -4946,6 +4978,243 @@
     sel.addRange(r);
   }
 
+  /* --- list-item reordering --------------------------------------- */
+  /* The drag overlay (list-edit.js) resolves (target item T, side,
+   * depth) from pointer geometry and commits through moveListItem();
+   * the keyboard path calls moveItemBySelection(). The mutation MOVES
+   * the existing <li> -- never a clone -- so its whole subtree (nested
+   * lists, text, inline markup, task checkboxes) travels with it. A
+   * refused or no-op drop is decided BEFORE flushPendingSnapshot(), so
+   * the undo history is untouched (the moveRow rule). */
+
+  /* The movable container of `li`: its outermost <ul>/<ol> ancestor
+   * WITHOUT crossing a blockquote or a table cell. A list nested
+   * directly under another list's <li> shares that outer list as its
+   * container; a quoted list and an in-cell list are their own
+   * containers, so a drop can never move an item out of its quote or
+   * cell (cross-container drops are then refused by identity). */
+  function listContainer(li) {
+    const list = li && li.closest ? li.closest("ul,ol") : null;
+    if (!list) return null;
+    let cur = list;
+    for (;;) {
+      const parent = cur.parentElement;
+      if (!parent) break;
+      // An editing-scope boundary ends the walk: a list under a quote or
+      // a cell is its own container, and a list at the root has no outer
+      // list to share.
+      if (/^(BLOCKQUOTE|TD|TH)$/.test(parent.tagName)) break;
+      const outer = parent.closest ? parent.closest("ul,ol") : null;
+      if (!outer || outer === cur) break;
+      cur = outer;
+    }
+    return cur;
+  }
+
+  /* Every <li> in a movable container, in document order. */
+  function listItems(container) {
+    return container ? Array.from(container.querySelectorAll("li")) : [];
+  }
+
+  /* How many list levels `li` sits below its container: a direct child
+   * of the container is 0, its grandchildren 1, ... */
+  function listItemDepth(li, container) {
+    let d = 0;
+    let node = li.parentElement;
+    while (node && node !== container) {
+      if (/^(UL|OL)$/.test(node.tagName)) d += 1;
+      node = node.parentElement;
+    }
+    return d;
+  }
+
+  /* The <li> ancestor of `li` (or `li` itself) at list-depth `depth`
+   * relative to `container`, or null. */
+  function listItemAtDepth(li, depth, container) {
+    let node = li;
+    let d = listItemDepth(li, container);
+    while (d > depth && node) {
+      node = node.parentElement && node.parentElement.closest("li");
+      d -= 1;
+    }
+    return d === depth ? node : null;
+  }
+
+  /* The deepest last <li> of `li`'s own subtree: the item above the
+   * boundary when a drop lands after `li`. */
+  function lastListItemOf(li) {
+    const childList = li.querySelector(":scope > ul, :scope > ol");
+    if (!childList || !childList.lastElementChild) return li;
+    return lastListItemOf(childList.lastElementChild);
+  }
+
+  /* The item immediately above the boundary (target, side) in document
+   * order, or null at a first boundary (no preceding item at T's level).
+   * The parent <li> is deliberately NOT a fallback: it is not a sibling
+   * of the boundary. */
+  function itemAboveBoundary(target, side) {
+    if (side === "after") return lastListItemOf(target);
+    let prev = target.previousElementSibling;
+    while (prev && prev.tagName !== "LI") prev = prev.previousElementSibling;
+    if (prev) return lastListItemOf(prev);
+    return null;
+  }
+
+  /* Resolve a requested drop to a {list, before, createParent} target
+   * WITHOUT mutating the DOM (list-edit.js draws the drop line from it;
+   * only moveListItem commits). `list` is null and `createParent` set
+   * when a new child list must be created. Returns null when the drop is
+   * refused: a target outside `item`'s movable container, inside `item`'s
+   * own subtree, or `item` itself. `depth` is the nesting level the
+   * pointer's rail picked; it is clamped to the legal range here, so a
+   * cross-container target is impossible to reach. */
+  function resolveListItemMove(item, target, side, depth) {
+    if (!item || !target) return null;
+    if (!viewerContentEl.contains(item) || !viewerContentEl.contains(target)) return null;
+    const container = listContainer(item);
+    if (!container || listContainer(target) !== container) return null;
+    if (item === target || item.contains(target)) return null;
+    const base = 0;
+    const td = listItemDepth(target, container);
+    const prev = itemAboveBoundary(target, side);
+    // With a preceding item, nesting one level under it is legal. At a
+    // first boundary the ceiling collapses to T's own depth: a sibling
+    // before T (in T's own list), never a nest under it (§4.7.2 table
+    // rule, "clamped to T's depth when there is none"). For the
+    // container's first item td === base, so it also collapses to base.
+    const maxDepth = prev ? listItemDepth(prev, container) + 1 : td;
+    let d = Number.isFinite(depth) ? Math.round(depth) : td;
+    d = Math.max(base, Math.min(d, maxDepth, td + 1));
+    if (d <= td) {
+      const anchor = listItemAtDepth(target, d, container);
+      if (!anchor || !anchor.parentElement) return null;
+      return { list: anchor.parentElement,
+               before: (side === "before") ? anchor : anchor.nextElementSibling,
+               createParent: null };
+    }
+    if (side === "after") {
+      const childList = target.querySelector(":scope > ul, :scope > ol");
+      return { list: childList || null,
+               before: childList ? childList.firstElementChild : null,
+               createParent: childList ? null : target };
+    }
+    // side "before" at depth td+1: under T's preceding sibling, else
+    // clamped back to T's own depth. `prevSib === item` is the same
+    // "none" case: nesting under the moved item itself would be a cycle.
+    const anchor = listItemAtDepth(target, td, container);
+    const prevSib = anchor && anchor.previousElementSibling;
+    if (!prevSib || prevSib.tagName !== "LI" || prevSib === item) {
+      return { list: anchor.parentElement, before: anchor, createParent: null };
+    }
+    const childList = prevSib.querySelector(":scope > ul, :scope > ol");
+    return { list: childList || null,
+             before: childList ? childList.firstElementChild : null,
+             createParent: childList ? null : prevSib };
+  }
+
+  /* Move `item` (subtree and all) to the position (target, side, depth)
+   * resolves to. Refuses and returns false -- BEFORE any flush or
+   * mutation -- for a cross-container / own-subtree / non-list drop and
+   * for a drop at the item's current position. One committed move is ONE
+   * undo step: the pending typing snapshot is flushed first, then the
+   * existing <li> is moved and onContentChange() pushes the post-drop
+   * snapshot. A source list left empty is removed (indentListItem's
+   * rule). A new destination list takes the moved item's SOURCE list
+   * type. */
+  function moveListItem(item, target, side, depth) {
+    if (!item || !item.parentNode) return false;
+    const dest = resolveListItemMove(item, target, side, depth);
+    if (!dest) return false;
+    // No-op only when the resolved position IS the item's current parent
+    // and next sibling. A null `before` on a freshly created child list
+    // must not be mistaken for `item.nextElementSibling === null`.
+    if (dest.list === item.parentNode &&
+        (dest.before === item || dest.before === item.nextElementSibling)) {
+      return false;
+    }
+    const sourceList = item.parentNode;
+    if (!/^(UL|OL)$/.test(sourceList ? sourceList.tagName : "")) return false;
+    clearSelection();
+    flushPendingSnapshot();
+    let list = dest.list;
+    if (!list) {
+      list = document.createElement(sourceList.tagName);
+      dest.createParent.appendChild(list);
+    }
+    list.insertBefore(item, dest.before || null);
+    if (sourceList !== list && !sourceList.firstElementChild) sourceList.remove();
+    focusListItem(item);
+    onContentChange();
+    NB.evt.emit("list:item-moved", { item });
+    return true;
+  }
+
+  /* Keyboard/menu path: swap the caret's list item with its previous /
+   * next sibling. The caret follows into the moved item so the command
+   * repeats. */
+  function moveItemBySelection(dir) {
+    const ctx = caretListItem();
+    const li = ctx && ctx.li;
+    if (!li || !li.parentNode) return false;
+    const sibling = dir === "up" ? li.previousElementSibling : li.nextElementSibling;
+    if (!sibling || sibling.tagName !== "LI") return false;
+    const container = listContainer(li);
+    if (!container) return false;
+    const depth = listItemDepth(li, container);
+    return (dir === "up")
+      ? moveListItem(li, sibling, "before", depth)
+      : moveListItem(li, sibling, "after", depth);
+  }
+
+  /* Put the caret at the start of a list item's own content, AFTER its
+   * checkbox when it is a task item (the taskItemRule shape), so a
+   * follow-up Move command targets the same item and typing does not
+   * land before the checkbox ("- X[ ] buy milk"). An empty plain item
+   * gets a caret line box so the caret has a line to sit on. Mirrors
+   * focusRow. */
+  function focusListItem(li) {
+    if (!li || !viewerContentEl.contains(li)) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    const r = document.createRange();
+    const cb = taskCheckboxOf(li);
+    if (cb) {
+      r.setStartAfter(cb);
+      r.collapse(true);
+    } else {
+      if (!li.textContent && !li.querySelector("img,br,canvas,svg,iframe")) {
+        const br = document.createElement("br");
+        br.setAttribute(CARET_BR_ATTR, "1");
+        li.appendChild(br);
+      }
+      r.selectNodeContents(li);
+      r.collapse(true);
+    }
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* Add the marked caret <br> the drag uses to give a zero-height list
+   * item a line box before measuring, and return the exact node added
+   * (null when the item already has a box). The <br> is hash-stripped and
+   * stripped on save (prepareTurndownClone), so it can never reach the
+   * note; the caller removes the SAME node after measuring, so an
+   * enter-time caret <br> elsewhere in the subtree is never disturbed. */
+  function addMeasureLineBox(li) {
+    if (!li) return null;
+    if (li.textContent || li.querySelector("img,br,canvas,svg,iframe,input,hr")) {
+      return null;
+    }
+    const br = document.createElement("br");
+    br.setAttribute(CARET_BR_ATTR, "1");
+    li.appendChild(br);
+    return br;
+  }
+
+  function stripMeasureLineBox(br) {
+    if (br && br.parentNode) br.parentNode.removeChild(br);
+  }
+
   /* --- spatial caret navigation inside a table ---------------------- */
   /* A contentEditable caret engine (verified in Chromium) traverses a
    * table's cells in DOM order for vertical movement: ArrowDown from a
@@ -5296,6 +5565,15 @@
       addSubItem(fly, "Numbered list", () => toggleList("ol"));
       addSubItem(fly, "Task list", () => toggleTask());
       addSubItem(fly, "Quote", () => toggleQuote());
+      // Move up/down among siblings: the keyboard path for the list
+      // drag overlay (list-edit.js). Added only when the caret is in a
+      // list; the entries are the same commands Alt+Up/Down run.
+      const ctx = caretListItem();
+      if (ctx && ctx.li) {
+        fly.appendChild(document.createElement("hr"));
+        addSubItem(fly, "Move item up", () => moveItemBySelection("up"), "Alt+Up");
+        addSubItem(fly, "Move item down", () => moveItemBySelection("down"), "Alt+Down");
+      }
     });
 
     // Table submenu -- only shown when the click is inside a table.
@@ -5567,6 +5845,18 @@
     getTableFromSelection,
     getRowFromSelection,
     getCellFromSelection,
+    // List reordering: shared by the drag overlay (list-edit.js) and the
+    // keyboard/context-menu paths. resolveListItemMove is the dry-run the
+    // overlay draws the drop line from; moveListItem commits.
+    moveListItem,
+    resolveListItemMove,
+    moveItemBySelection,
+    listContainer,
+    listItems,
+    listItemDepth,
+    addMeasureLineBox,
+    stripMeasureLineBox,
+    taskCheckboxOf,
     onContentChange,
     flushPendingSnapshot,
     // Used by mermaid-designer.js: resolve a plugin block and fall back

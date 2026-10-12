@@ -1364,6 +1364,351 @@ async function main() {
       readNote("notes/lmsplit.md") === "-   a\n-   [ ] b\n-   c\n",
       JSON.stringify(readNote("notes/lmsplit.md")));
 
+    // --- list-item drag reorder: pointer/geometry (§4.7.2, AC9-AC17) ---
+    // jsdom cannot read layout, so the pointer path lives here: the grip
+    // reveal/hide, the before/after split at the hit-region midline, the
+    // checkbox-gutter hit region, the indent-rail depth clamp, the drop
+    // line, subtree carrying, and the touch contract. The DOM mutation and
+    // the saved bytes are asserted here too, against the real file on disk.
+    {
+      // #viewer-content's list geometry: the container's left edge, one
+      // nesting step (the CSS list indent), and each top-level item's rect.
+      const geom = () => page.evaluate(() => {
+        const ul = document.querySelector("#viewer-content ul");
+        const step = parseFloat(getComputedStyle(ul).paddingLeft) || 26;
+        const r = ul.getBoundingClientRect();
+        const lis = Array.from(ul.children).filter((n) => n.tagName === "LI")
+          .map((li) => {
+            const b = li.getBoundingClientRect();
+            return { text: li.textContent.replace(/\u200B/g, "").trim(),
+              x: b.x, y: b.y, h: b.height, bottom: b.bottom,
+              cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+          });
+        const p = document.querySelector("#viewer-content p");
+        const pr = p ? p.getBoundingClientRect() : null;
+        return { step: step, baseX: r.x + step, lis: lis,
+          paraY: pr ? pr.y + pr.height / 2 : null };
+      });
+      // The live drag state: resolved (target/side/depth) and the drop line.
+      const dragState = () => page.evaluate(() => {
+        const d = window.NB.listEdit.drag;
+        if (!d) return { noDrag: true };
+        const line = document.querySelector(".nb-drop-line");
+        const visible = !!line && line.offsetWidth > 0 &&
+          getComputedStyle(line).display !== "none";
+        return { noDrag: false, resolved: !!d.resolved,
+          side: d.resolved ? d.resolved.side : null,
+          depth: d.resolved ? d.resolved.depth : null,
+          target: d.resolved && d.resolved.target
+            ? d.resolved.target.textContent.replace(/\u200B/g, "").trim() : null,
+          lineVisible: visible,
+          lineTop: line ? line.getBoundingClientRect().top : null };
+      });
+      const gripAt = () => page.evaluate(() => {
+        const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+        if (!g) return null;
+        const b = g.getBoundingClientRect();
+        return { x: b.x + b.width / 2, y: b.y + b.height / 2, left: b.x };
+      });
+      const ownOrder = () => page.evaluate(() =>
+        Array.from(document.querySelectorAll("#viewer-content ul > li")).map((li) => {
+          const c = li.cloneNode(true);
+          c.querySelectorAll("ul,ol,input").forEach((n) => n.remove());
+          return c.textContent.replace(/\u200B/g, "").trim();
+        }));
+      // list-edit.js exports startDrag as a test seam (line 531). jsdom
+      // drives moveListItem directly; here we drive the pointer geometry
+      // through the seam with synthetic pointer events on #viewer, because
+      // the real grip cannot be pressed (see the defect checks below).
+      const hookStart = (idx) => page.evaluate((i) => {
+        const vc = document.getElementById("viewer-content");
+        const item = Array.from(vc.querySelectorAll("li"))[i];
+        const viewer = document.getElementById("viewer");
+        const orig = viewer.setPointerCapture;
+        viewer.setPointerCapture = () => {};   // no real pointer to capture
+        window.NB.listEdit.startDrag({ pointerId: 1, clientX: 1, clientY: 1,
+          preventDefault() {}, stopPropagation() {} }, item);
+        viewer.setPointerCapture = orig;
+        return !!window.NB.listEdit.drag;
+      }, idx);
+      const hookMove = (x, y) => page.evaluate(({ x, y }) => {
+        document.getElementById("viewer").dispatchEvent(new PointerEvent(
+          "pointermove", { bubbles: true, pointerId: 1, clientX: x, clientY: y }));
+      }, { x, y });
+      const hookUp = () => page.evaluate(() => {
+        document.getElementById("viewer").dispatchEvent(new PointerEvent(
+          "pointerup", { bubbles: true, pointerId: 1 }));
+      });
+      const hookCancel = () => page.evaluate(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown",
+          { key: "Escape", bubbles: true, cancelable: true }));
+      });
+
+      // Session 1: flat list.
+      await openNote("notes/listdrag.md", "para\n\n- a\n- b\n- c\n- d\n");
+      check("real browser list drag: overlay is outside #viewer-content",
+        await page.evaluate(() => {
+          const ov = document.querySelector(".nb-list-overlay");
+          const vc = document.getElementById("viewer-content");
+          return !!ov && !vc.contains(ov);
+        }));
+      const g1 = await geom();
+
+      // Grip reveal on hover: the grip appears in the left gutter, left of
+      // the item's own box.
+      await page.mouse.move(g1.lis[1].cx, g1.lis[1].cy);
+      await page.waitForTimeout(80);
+      const grip1 = await gripAt();
+      check("real browser list drag: hovering an item reveals its grip",
+        !!grip1, JSON.stringify(grip1));
+      check("real browser list drag: the grip sits in the left gutter",
+        !!grip1 && grip1.left < g1.lis[1].x - 4,
+        "grip=" + (grip1 && grip1.left) + " item=" + g1.lis[1].x);
+      check("real browser list drag: the active item is the hovered one",
+        (await page.evaluate(() => {
+          const it = window.NB.listEdit.activeItem;
+          return it ? it.textContent.replace(/\u200B/g, "").trim() : null;
+        })) === "b");
+
+      // Hide after the pointer leaves the list.
+      await page.mouse.move(2, 2);
+      await page.waitForTimeout(320);
+      check("real browser list drag: the grip hides after the pointer leaves",
+        (await page.evaluate(() =>
+          document.querySelectorAll(".nb-list-overlay .nb-list-grip").length)) === 0);
+
+      // Hover-intent lock: the grip must survive the pointer crossing from
+      // the item onto the grip. The strip between the item's left edge and
+      // the grip is part of the item's hit region (list-edit.js hitRect /
+      // GUTTER_X), so the pointer never enters a dead band; a pointerdown on
+      // the grip then starts a drag. These two checks guard that invariant.
+      await page.mouse.move(g1.lis[3].cx, g1.lis[3].cy);
+      await page.waitForTimeout(80);
+      const gripD = await gripAt();
+      await page.mouse.move(gripD.x, gripD.y);
+      await page.waitForTimeout(30);
+      check("real browser list drag: the hover-intent lock keeps the item on the grip",
+        (await page.evaluate(() => {
+          const it = window.NB.listEdit.activeItem;
+          return it ? it.textContent.trim() : null;
+        })) === "d");
+      await page.mouse.move(g1.lis[3].cx, g1.lis[3].cy);   // re-reveal
+      await page.waitForTimeout(80);
+      const gripD2 = await gripAt();
+      await page.mouse.move(gripD2.x, gripD2.y);
+      await page.mouse.down();
+      await page.waitForTimeout(30);
+      check("real browser list drag: pointerdown on the grip starts a drag",
+        await page.evaluate(() => !!window.NB.listEdit.drag &&
+          document.body.classList.contains("nb-list-drag")));
+      await page.mouse.up();
+      await page.waitForTimeout(40);
+
+      // The rest of the pointer path is driven through the startDrag seam so
+      // the resolver, drop line, and commit run against real layout.
+      check("real browser list drag: the exported drag hook starts a drag",
+        await hookStart(3));   // item d
+      check("real browser list drag: the ghost and proxy are drawn in the overlay",
+        await page.evaluate(() => {
+          const ov = document.querySelector(".nb-list-overlay");
+          const vc = document.getElementById("viewer-content");
+          return ov.querySelectorAll(".nb-drag-ghost").length === 1 &&
+            ov.querySelectorAll(".nb-drag-proxy").length === 1 &&
+            !vc.querySelector(".nb-drag-ghost,.nb-drag-proxy,.nb-drop-line");
+        }));
+
+      // A drop over the paragraph above the list is refused (non-list).
+      await hookMove(g1.baseX, g1.paraY);
+      await page.waitForTimeout(70);
+      const stRefuse = await dragState();
+      check("real browser list drag: a drop onto a non-list block is refused",
+        !stRefuse.noDrag && !stRefuse.resolved && !stRefuse.lineVisible,
+        JSON.stringify(stRefuse));
+
+      // A drop at d's current position (after c) is a no-op: line hidden.
+      await hookMove(g1.baseX, g1.lis[2].bottom - 2);
+      await page.waitForTimeout(70);
+      const stNoop = await dragState();
+      check("real browser list drag: a drop at the current position hides the line",
+        !stNoop.noDrag && !stNoop.resolved && !stNoop.lineVisible,
+        JSON.stringify(stNoop));
+
+      // Before/after split: the top half of b is "before", the bottom half
+      // is "after". The drop line is drawn at the resolved boundary.
+      await hookMove(g1.baseX, g1.lis[1].y + g1.lis[1].h * 0.25);
+      await page.waitForTimeout(70);
+      const stBefore = await dragState();
+      check("real browser list drag: the top half of an item resolves 'before'",
+        stBefore.resolved && stBefore.side === "before" &&
+        stBefore.target === "b" && stBefore.lineVisible, JSON.stringify(stBefore));
+      await hookMove(g1.baseX, g1.lis[1].y + g1.lis[1].h * 0.75);
+      await page.waitForTimeout(70);
+      const stAfter = await dragState();
+      check("real browser list drag: the bottom half of an item resolves 'after'",
+        stAfter.resolved && stAfter.side === "after" && stAfter.lineVisible,
+        JSON.stringify(stAfter));
+      check("real browser list drag: the drop line sits on the resolved boundary",
+        stAfter.lineTop !== null &&
+        Math.abs(stAfter.lineTop - g1.lis[1].bottom) < 6,
+        "line=" + stAfter.lineTop + " bottom=" + g1.lis[1].bottom);
+
+      // Commit the drop after b: [a,b,d,c].
+      await hookUp();
+      await page.waitForTimeout(120);
+      check("real browser list drag: a completed drag reorders the list",
+        JSON.stringify(await ownOrder()) === JSON.stringify(["a", "b", "d", "c"]),
+        JSON.stringify(await ownOrder()));
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser list drag: the reordered list saves canonical bytes",
+        readNote("notes/listdrag.md") === "para\n\n-   a\n-   b\n-   d\n-   c\n",
+        JSON.stringify(readNote("notes/listdrag.md")));
+
+      // Session 2: the indent rail nests the item one level under item b.
+      await openNote("notes/listindent.md", "- a\n- b\n- c\n");
+      const g2 = await geom();
+      await hookStart(2);   // item c
+      // One rail right of the base, on b's bottom half -> depth 1, after b.
+      await hookMove(g2.baseX + g2.step, g2.lis[1].y + g2.lis[1].h * 0.75);
+      await page.waitForTimeout(70);
+      const stDepth = await dragState();
+      check("real browser list drag: the indent rail picks depth 1",
+        stDepth.resolved && stDepth.depth === 1 && stDepth.side === "after",
+        JSON.stringify(stDepth));
+      await hookUp();
+      await page.waitForTimeout(120);
+      check("real browser list drag: a depth-1 drop nests the item under its target",
+        await page.evaluate(() => {
+          // b's textContent now includes the nested c; match on its own text.
+          const b = Array.from(document.querySelectorAll("#viewer-content li"))
+            .find((li) => {
+              const c = li.cloneNode(true);
+              c.querySelectorAll("ul,ol").forEach((n) => n.remove());
+              return c.textContent.replace(/\u200B/g, "").trim() === "b";
+            });
+          const child = b && b.querySelector(":scope > ul");
+          return !!child && child.children.length === 1 &&
+            child.children[0].textContent.trim() === "c";
+        }));
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser list drag: the nested drop saves nested Markdown",
+        readNote("notes/listindent.md") === "-   a\n-   b\n    -   c\n",
+        JSON.stringify(readNote("notes/listindent.md")));
+
+      // Session 3: the checkbox-gutter hit region. A task checkbox hangs
+      // LEFT of its item's box; pointing at it must still resolve the item,
+      // both for the grip reveal and for the drop target.
+      await openNote("notes/listtaskdrag.md", "- [ ] a\n- [x] b\n- [ ] c\n");
+      const cb = await page.evaluate(() => {
+        const boxes = Array.from(document.querySelectorAll("#viewer-content li"))
+          .map((li) => {
+            const inp = li.querySelector('input[type="checkbox"]');
+            const cr = inp.getBoundingClientRect();
+            return { liLeft: li.getBoundingClientRect().x,
+              cx: cr.x + cr.width / 2, cy: cr.y + cr.height / 2 };
+          });
+        return boxes;
+      });
+      check("real browser list drag: a task checkbox hangs outside the item box",
+        cb[1].cx < cb[1].liLeft, "cb=" + cb[1].cx + " li=" + cb[1].liLeft);
+      await page.mouse.move(cb[1].cx, cb[1].cy);
+      await page.waitForTimeout(80);
+      check("real browser list drag: the checkbox gutter still resolves the item",
+        await page.evaluate(() => {
+          const it = window.NB.listEdit.activeItem;
+          const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+          return !!g && !!it && it.textContent.replace(/\u200B/g, "").includes("b");
+        }));
+      // The same union decides the drop target: dragging item a over c's
+      // checkbox gutter resolves c.
+      await hookStart(0);   // item a
+      await hookMove(cb[2].cx, cb[2].cy);
+      await page.waitForTimeout(70);
+      const stCb = await dragState();
+      check("real browser list drag: the checkbox gutter resolves the drop target",
+        stCb.resolved && stCb.target === "c", JSON.stringify(stCb));
+      await hookCancel();
+      await page.waitForTimeout(40);
+
+      // Session 4: a parent drag carries its whole nested subtree.
+      await openNote("notes/listsubtree.md", "- a\n    - a1\n    - a2\n- b\n");
+      const g4 = await geom();
+      await hookStart(0);   // parent item a
+      await hookMove(g4.baseX, g4.lis[1].y + g4.lis[1].h * 0.75);
+      await page.waitForTimeout(70);
+      await hookUp();
+      await page.waitForTimeout(120);
+      check("real browser list drag: a parent drag carries its nested subtree",
+        await page.evaluate(() => {
+          const ul = document.querySelector("#viewer-content > ul");
+          const lis = Array.from(ul.children).filter((n) => n.tagName === "LI");
+          const a = lis.find((li) => li.textContent.trim().startsWith("a"));
+          const nested = a && a.querySelector(":scope > ul");
+          return lis[0].textContent.trim() === "b" && !!nested &&
+            Array.from(nested.children).map((x) => x.textContent.trim())
+              .join(",") === "a1,a2";
+        }));
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser list drag: the subtree drag saves intact Markdown",
+        readNote("notes/listsubtree.md") ===
+          "-   b\n-   a\n    -   a1\n    -   a2\n",
+        JSON.stringify(readNote("notes/listsubtree.md")));
+
+      // Session 5: the touch contract. With no hover the grip is shown for
+      // the item containing the caret and carries touch-action: none (a
+      // touch drag must not become a scroll). The pointerdown-on-grip path
+      // is blocked by the defect marker above; Esc cancels a drag with no
+      // mutation or write.
+      await openNote("notes/listtouch.md", "- a\n- b\n");
+      await page.mouse.move(2, 2);   // ensure no hover
+      await page.waitForTimeout(80);
+      await page.evaluate(() => {
+        const li = document.querySelectorAll("#viewer-content li")[1];
+        const r = document.createRange();
+        r.selectNodeContents(li);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        li.dispatchEvent(new Event("focusin", { bubbles: true }));
+      });
+      await page.waitForTimeout(60);
+      const touch = await page.evaluate(() => {
+        const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+        const it = window.NB.listEdit.activeItem;
+        return { hasGrip: !!g, item: it ? it.textContent.trim() : null,
+          touchAction: g ? getComputedStyle(g).touchAction : null };
+      });
+      check("real browser list drag: no hover shows the grip for the caret item",
+        touch.hasGrip && touch.item === "b", JSON.stringify(touch));
+      check("real browser list drag: the grip carries touch-action: none",
+        touch.touchAction === "none", String(touch.touchAction));
+      // Esc mid-drag cancels with no mutation and no write.
+      const touchGeo = await geom();
+      await hookStart(1);   // item b
+      await hookMove(touchGeo.baseX, touchGeo.lis[0].y + touchGeo.lis[0].h * 0.25);
+      await page.waitForTimeout(70);
+      await hookCancel();
+      await page.waitForTimeout(60);
+      check("real browser list drag: Esc cancels the drag with no mutation",
+        (await page.evaluate(() => !window.NB.listEdit.drag &&
+          !document.body.classList.contains("nb-list-drag"))) &&
+        JSON.stringify(await ownOrder()) === JSON.stringify(["a", "b"]) &&
+        readNote("notes/listtouch.md") === "- a\n- b\n",
+        JSON.stringify(readNote("notes/listtouch.md")));
+      await page.click("#close-edit-btn");
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+
+      check("real browser list drag: no uncaught page errors",
+        pageErrors.length === 0, pageErrors.join(" | "));
+    }
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

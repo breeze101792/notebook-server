@@ -31,11 +31,13 @@
 
   const bar         = document.getElementById("edit-bar");
   const overflowBtn = bar.querySelector(".eb-overflow-btn");
-  // Both the ⋯ overflow wrapper and the ▦ table wrapper carry .eb-menu, and
-  // the table one comes first in the DOM. Scope the selectors so the ⋯ menu
-  // is not aliased to the table menu.
-  const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
+  // The ⋯ overflow wrapper, the ▦ table wrapper, and the ☰ list wrapper all
+  // carry .eb-menu. Scope the selector so the ⋯ menu is not aliased to a
+  // different wrapper (the table/list ones come first in the DOM).
+  const MORE_OVERFLOW = ".eb-overflow:not(.eb-table):not(.eb-list)";
+  const overflowMenu = bar.querySelector(MORE_OVERFLOW + " > .eb-menu");
   const tableMenu   = bar.querySelector(".eb-table-menu");
+  const listMenu    = bar.querySelector(".eb-list-menu");
 
   /* --- emoji picker -------------------------------------------------
    * A curated set (not a full Unicode table): enough to cover everyday
@@ -440,6 +442,112 @@
     });
   }
 
+  /* --- source-mode list-item move -----------------------------------
+   * The keyboard path for the hybrid list drag overlay (list-edit.js)
+   * when the source editor is active, and the edit bar's List menu.
+   * Moves the caret's list item -- its line plus every deeper-indented
+   * continuation line, so a nested subtree rides along -- above the
+   * previous / below the next sibling line at the same indent. A leading
+   * "> " quote prefix is part of the indent key, so a quoted list keeps
+   * its quote. No-op when the caret is not on a list line or the item is
+   * already first / last. */
+
+  /* Length of a line's leading whitespace plus any "> " quote prefixes:
+   * the key that decides what counts as the same list level. Deeper
+   * continuation lines and nested items score higher. */
+  function linePrefixLen(line) {
+    const m = line.match(/^(\s*(?:>\s*)*)/);
+    return m ? m[1].length : 0;
+  }
+
+  /* The current line, its index in the document, and the document's
+   * lines. */
+  function currentLine() {
+    const { start, value } = sel();
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const lineEndIdx = value.indexOf("\n", start);
+    const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
+    return {
+      lines: value.split("\n"),
+      idx: value.slice(0, lineStart).split("\n").length - 1,
+      text: value.slice(lineStart, lineEnd),
+    };
+  }
+
+  /* The extent of the item starting at `idx`: its own line plus every
+   * following continuation line (deeper-indented, or a blank run that a
+   * deeper-indented line follows). A trailing blank line is NOT part of
+   * the block -- otherwise a move drags the file's final newline along
+   * and inserts a spurious blank between items. */
+  function itemBlockEnd(lines, idx) {
+    const base = linePrefixLen(lines[idx]);
+    let end = idx + 1;
+    while (end < lines.length) {
+      if (BLANK_LINE_RE.test(lines[end])) {
+        let j = end;
+        while (j < lines.length && BLANK_LINE_RE.test(lines[j])) j++;
+        if (j < lines.length && linePrefixLen(lines[j]) > base) { end = j; continue; }
+        break;
+      }
+      if (linePrefixLen(lines[end]) > base) { end++; continue; }
+      break;
+    }
+    return end;
+  }
+
+  /* The previous / next same-level list line (with its own block
+   * extent), scanning past deeper-indented lines; null at the list
+   * edge. A same-indent line that is NOT a list line ends the list
+   * scope, so a move never crosses an intervening paragraph or heading
+   * into another source-separate list (§4.7.2 refuses that for the drag
+   * path too). */
+  function adjacentItem(lines, blockStart, blockEnd, dir) {
+    const base = linePrefixLen(lines[blockStart]);
+    const step = dir === "up" ? -1 : 1;
+    for (let j = dir === "up" ? blockStart - 1 : blockEnd;
+         j >= 0 && j < lines.length; j += step) {
+      if (BLANK_LINE_RE.test(lines[j])) continue;
+      const ind = linePrefixLen(lines[j]);
+      if (ind < base) return null;
+      if (ind === base) {
+        return parseListLine(lines[j])
+          ? { start: j, end: itemBlockEnd(lines, j) }
+          : null;
+      }
+      // Deeper-indented: a continuation line of the neighbouring item.
+    }
+    return null;
+  }
+
+  /* Move the caret's list line up/down among its siblings. */
+  function moveItemLine(dir) {
+    const cur = currentLine();
+    if (!parseListLine(cur.text)) return;
+    const lines = cur.lines;
+    const start = cur.idx;
+    const end = itemBlockEnd(lines, start);
+    const nb = adjacentItem(lines, start, end, dir);
+    if (!nb) return;
+    const block = lines.slice(start, end);
+    const nbBlock = lines.slice(nb.start, nb.end);
+    let newLines, newStart;
+    if (dir === "up") {
+      const between = lines.slice(nb.end, start);
+      newLines = lines.slice(0, nb.start).concat(block, between, nbBlock,
+        lines.slice(end));
+      newStart = nb.start;
+    } else {
+      const between = lines.slice(end, nb.start);
+      newLines = lines.slice(0, start).concat(nbBlock, between, block,
+        lines.slice(nb.end));
+      newStart = start + nbBlock.length + between.length;
+    }
+    NB.cmEditor.setValue(newLines.join("\n"));
+    let off = 0;
+    for (let i = 0; i < newStart; i++) off += newLines[i].length + 1;
+    NB.cmEditor.setSelection(off, off + block.join("\n").length);
+  }
+
   /* --- actions ------------------------------------------------------ */
 
   const PLACEHOLDER = {
@@ -464,6 +572,25 @@
     ol:    () => listAction("number"),
     task:  () => listAction("task"),
     quote: () => quoteAction(),
+
+    /* List menu: move the caret's item up/down among its siblings. The
+     * two move entries are enabled only while the caret is on a list
+     * line -- decided when the menu opens, since the bar has no cheap
+     * selection-change hook. */
+    "list-menu"() {
+      if (!listMenu) return;
+      const inList = !!parseListLine(currentLine().text);
+      listMenu.hidden = !listMenu.hidden;
+      if (!listMenu.hidden) {
+        listMenu.querySelectorAll("button[data-act^='list-move']")
+          .forEach((b) => {
+            b.disabled = !inList;
+            b.setAttribute("aria-disabled", String(!inList));
+          });
+      }
+    },
+    "list-move-up":   () => moveItemLine("up"),
+    "list-move-down": () => moveItemLine("down"),
 
     /* Inline link: ask the user for the URL, then wrap. */
     link() {
@@ -752,6 +879,7 @@
     if (bar.hidden) {
       overflowMenu.hidden = true;
       if (tableMenu) tableMenu.hidden = true;
+      if (listMenu) listMenu.hidden = true;
       closeEmojiPanel();
     }
   }
@@ -788,11 +916,15 @@
     if (fn) fn();
     if (btn.closest(".eb-menu")) overflowMenu.hidden = true;
     if (btn.closest(".eb-table-menu")) tableMenu.hidden = true;
+    if (listMenu && btn.closest(".eb-list-menu")) listMenu.hidden = true;
   });
 
   document.addEventListener("click", (e) => {
     if (!overflowMenu.hidden) {
-      if (!e.target.closest(".eb-overflow")) overflowMenu.hidden = true;
+      if (!e.target.closest(MORE_OVERFLOW)) overflowMenu.hidden = true;
+    }
+    if (listMenu && !listMenu.hidden && !e.target.closest(".eb-list")) {
+      listMenu.hidden = true;
     }
     if (emojiPanel && !emojiPanel.hidden && !e.target.closest(".eb-emoji-wrap")) {
       closeEmojiPanel();
