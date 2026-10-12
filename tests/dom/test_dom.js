@@ -19768,30 +19768,48 @@ function check(label, cond, extra) {
         aPending()[0].name === "alpha.txt",
         "chips=" + aChips().length + " pending=" + aPending().length);
 
+      // --- criterion 11: raised text caps (128 KiB per file, 512 KiB total)
       await clearAtt();
-      const max = (n) => mkFile(n, ["x".repeat(32 * 1024)],
-        { type: "text/plain" });   // exactly the per-file cap
+      const max = (n) => mkFile(n, ["x".repeat(128 * 1024)],
+        { type: "text/plain" });   // exactly the new per-file cap
       window.NB.ai._addFilesForTests([max("b1.txt"), max("b2.txt"), max("b3.txt")]);
-      await tick(150);
-      check("ai attach: three max files fill the 96 KiB budget exactly",
+      await tick(250);
+      check("ai attach: a 128 KiB text file is accepted at the cap",
         aPending().length === 3 && aChips().length === 3,
         "pending=" + aPending().length);
-      // Remove one 32 KiB chip...
+      // Remove one 128 KiB chip, then a cap-sized file fits again.
       const b1 = aChips().find(c =>
         c.querySelector(".ai-attach-chip-name").textContent === "b1.txt");
       b1.querySelector(".ai-attach-chip-remove")
         .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       await tick(20);
-      // ...then a max file that only fits once the reservation is released.
-      window.NB.ai._addFilesForTests([mkFile("b4.txt", ["y"], { type: "text/plain" })]);
-      await tick(60);
+      window.NB.ai._addFilesForTests([max("b4.txt")]);
+      await tick(120);
       check("ai attach: removing a chip releases its byte reservation",
         aPending().length === 3 && aPending().some(p => p.name === "b4.txt"),
         JSON.stringify(aPending().map(p => p.name)));
+
+      // Fill the 512 KiB total exactly (4 x 128 KiB), then the next byte
+      // is refused with the total error.
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      window.NB.ai._addFilesForTests([max("t1.txt"), max("t2.txt"),
+        max("t3.txt"), max("t4.txt")]);
+      await tick(300);
+      check("ai attach: four 128 KiB files fill the 512 KiB total exactly",
+        aPending().length === 4, "pending=" + aPending().length);
+      window.NB.ai._addFilesForTests([
+        mkFile("t5.txt", ["z"], { type: "text/plain" })]);
+      await tick(40);
+      check("ai attach: over the 512 KiB total is rejected with the total error",
+        aPending().length === 4 && aErrs().length === 1 &&
+        /attachment size limit reached \(512 KiB total\)/.test(
+          aErrs()[0].textContent),
+        aErrs()[0] ? aErrs()[0].textContent : "none");
     }
 
     // (4) caps: per-file, file count, and a rejected file must not consume
-    // a slot (the 96 KiB total cap is exercised in (3)).
+    // a slot (the 512 KiB total cap is exercised in (3)).
     {
       await clearAtt();
       const small = (n) => mkFile("f" + n + ".txt", ["b" + n], { type: "text/plain" });
@@ -19799,13 +19817,13 @@ function check(label, cond, extra) {
       await tick(60);
       check("ai attach: four small files are accepted",
         aPending().length === 4, "pending=" + aPending().length);
-      // Over the 32 KiB per-file cap -> error chip, nothing reserved.
+      // Over the 128 KiB per-file cap -> error chip, nothing reserved.
       window.NB.ai._addFilesForTests([
-        mkFile("huge.txt", ["x".repeat(32 * 1024 + 1)], { type: "text/plain" })]);
+        mkFile("huge.txt", ["x".repeat(128 * 1024 + 1)], { type: "text/plain" })]);
       await tick(50);
-      check("ai attach: a file over 32 KiB is rejected with an alert error chip",
+      check("ai attach: a file over 128 KiB is rejected with an alert error chip",
         aErrs().length === 1 && aErrs()[0].getAttribute("role") === "alert" &&
-        /larger than 32 KiB/.test(aErrs()[0].textContent) &&
+        /larger than 128 KiB/.test(aErrs()[0].textContent) &&
         aPending().length === 4,
         aErrs()[0] ? aErrs()[0].textContent : "none");
       check("ai attach: the rejected file does not consume the byte budget",
@@ -19816,12 +19834,16 @@ function check(label, cond, extra) {
       await tick(60);
       check("ai attach: a rejected file does not consume the 5th slot",
         aPending().length === 5, "pending=" + aPending().length);
-      // The 6th file is rejected (hard file cap = 5).
-      window.NB.ai._addFilesForTests([small(6)]);
+      // Fill to the raised hard file cap (8), then the 9th is rejected.
+      window.NB.ai._addFilesForTests([small(6), small(7), small(8)]);
+      await tick(60);
+      check("ai attach: eight files fill the raised file cap",
+        aPending().length === 8, "pending=" + aPending().length);
+      window.NB.ai._addFilesForTests([small(9)]);
       await tick(50);
-      check("ai attach: a 6th file is rejected by the file cap",
-        aPending().length === 5 &&
-        aErrs().some(e => /too many files/.test(e.textContent)),
+      check("ai attach: a 9th file is rejected by the file cap (max 8)",
+        aPending().length === 8 &&
+        aErrs().some(e => /too many files \(max 8\)/.test(e.textContent)),
         "errs=" + aErrs().length);
     }
 
@@ -20008,6 +20030,535 @@ function check(label, cond, extra) {
     await clearAtt();
   }
 
+  // --- ai image attachments: content-part wire format, caps, recovery ----
+  // jsdom has no canvas, so every test injects a stub codec through the
+  // NB.ai._setImageCodec seam. The size POLICY (pass-through vs render,
+  // the second pass, the reject) stays in ai.js and is what these checks
+  // exercise; the codec's probe/render decide the numbers. The real
+  // canvas decode/re-encode path (criteria 18/19) is browser-only and is
+  // a documented manual step, not faked here.
+  console.log("== ai image attachments ==");
+  {
+    const aBar = () => window.document.querySelector("#ai-view .ai-attach-bar");
+    const aChips = () => Array.from(window.document.querySelectorAll(
+      "#ai-view .ai-attach-bar .ai-attach-chip"));
+    const aErrs = () => aChips().filter(c => c.classList.contains("error"));
+    const aPending = () => window.NB.ai._getAttachmentsForTests();
+    const sendBtn = () => window.document.querySelector("#ai-view .ai-send");
+    const clearAtt = async () => {
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+    };
+    const mkTxt = (name, parts, opts) =>
+      new window.File(parts, name, opts || {});
+    const lastUserReq = () => {
+      const req = aiChatLog[aiChatLog.length - 1];
+      return req && req.messages.filter(m => m.role === "user").pop();
+    };
+    const convUser = () => window.NB.ai._getConversationForTests()
+      .filter(m => m.role === "user").pop();
+
+    const toB64 = (bytes) => {
+      let bin = "";
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return window.btoa(bin);
+    };
+    const bytesOf = (file) => typeof file.arrayBuffer === "function"
+      ? file.arrayBuffer().then(b => new Uint8Array(b))
+      : new Promise((res, rej) => {
+          const fr = new window.FileReader();
+          fr.onload = () => res(new Uint8Array(fr.result));
+          fr.onerror = () => rej(fr.error);
+          fr.readAsArrayBuffer(file);
+        });
+    // File-like image with deterministic bytes and a real name/type/size.
+    const mkImg = (name, size, type) => {
+      const bytes = new Uint8Array(size);
+      for (let i = 0; i < size; i++) bytes[i] = (i * 7) & 0xff;
+      return {
+        name, type: type || "image/png", size,
+        arrayBuffer: async () => bytes.buffer,
+      };
+    };
+
+    // Per-name codec behaviour + call log. `setCodec` reinstalls the seam
+    // so each check starts from a known state.
+    let imgSpecs = {};
+    let codecLog = { probe: [], render: [], passthrough: [] };
+    const setCodec = (specs) => {
+      imgSpecs = specs || {};
+      codecLog = { probe: [], render: [], passthrough: [] };
+      window.NB.ai._setImageCodec({
+        probe(file) {
+          codecLog.probe.push(file.name);
+          const s = imgSpecs[file.name] || {};
+          if (s.unreadable) return Promise.resolve({ width: 0, height: 0, mime: null });
+          return Promise.resolve({
+            width: s.width != null ? s.width : 100,
+            height: s.height != null ? s.height : 100,
+            mime: s.mime !== undefined ? s.mime : (file.type || "image/png"),
+          });
+        },
+        passthrough(file) {
+          codecLog.passthrough.push(file.name);
+          const mime = file.type || "image/png";
+          return bytesOf(file).then(bytes => ({
+            dataUrl: "data:" + mime + ";base64," + toB64(bytes),
+            bytes: bytes.length, mime,
+          }));
+        },
+        render(file, opts) {
+          const maxEdge = opts && opts.maxEdge;
+          codecLog.render.push({ name: file.name, maxEdge });
+          const s = imgSpecs[file.name] || {};
+          const second = maxEdge === 1024;
+          const mime = s.renderMime || "image/png";
+          return Promise.resolve({
+            dataUrl: "data:" + mime + ";base64,UkVG",
+            bytes: second
+              ? (s.secondBytes != null ? s.secondBytes : 512 * 1024)
+              : (s.renderBytes != null ? s.renderBytes : 512 * 1024),
+            mime,
+          });
+        },
+      });
+    };
+    const addAndSettle = async (files, ms) => {
+      window.NB.ai._addFilesForTests(files);
+      await tick(ms || 80);
+    };
+
+    // (1) a PNG larger than the old 32 KiB cap attaches with a thumbnail.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "screenshot.png": { width: 800, height: 600, mime: "image/png" } });
+      await addAndSettle([mkImg("screenshot.png", 200 * 1024, "image/png")]);
+      const pend = aPending();
+      const chip = aChips().find(c => c.querySelector(".ai-attach-chip-name")
+        .textContent === "screenshot.png");
+      const thumb = chip && chip.querySelector(".ai-attach-chip-thumb");
+      check("ai image: a 200 KiB PNG attaches with a thumbnail and no error",
+        pend.length === 1 && pend[0].kind === "image" &&
+        !!thumb && thumb.hidden === false &&
+        /^data:image\/png/.test(thumb.getAttribute("src")) &&
+        aErrs().length === 0,
+        "pending=" + pend.length + " errs=" + aErrs().length);
+      check("ai image: the > old 32 KiB image took the pass-through path",
+        aErrs().length === 0 && codecLog.passthrough.length === 1 &&
+        codecLog.probe.length === 1,
+        "errs=" + aErrs().length + " pass=" + codecLog.passthrough.length);
+    }
+
+    // (2) source over 10 MiB is rejected before any decode.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({});
+      await addAndSettle([mkImg("huge.png", 10 * 1024 * 1024 + 1, "image/png")]);
+      check("ai image: a >10 MiB source is rejected with the size error and no chip",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /huge\.png is larger than 10 MiB — downscale it first/.test(
+          aErrs()[0].textContent) &&
+        codecLog.probe.length === 0,
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+    }
+
+    // (3) pass-through: <= target and <= max edge keeps identical bytes.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      const img = mkImg("pass.png", 1000, "image/png");
+      setCodec({ "pass.png": { width: 200, height: 100, mime: "image/png" } });
+      await addAndSettle([img]);
+      const pend = aPending();
+      check("ai image: a small in-budget image is sent via pass-through",
+        codecLog.passthrough.length === 1 && codecLog.render.length === 0 &&
+        pend.length === 1 && pend[0].mime === "image/png" &&
+        /^data:image\/png;base64,/.test(pend[0].dataUrl),
+        "pass=" + codecLog.passthrough.length + " render=" + codecLog.render.length);
+      const b64 = pend[0].dataUrl.slice(pend[0].dataUrl.indexOf(",") + 1);
+      const decoded = window.atob(b64);
+      const orig = new Uint8Array(await img.arrayBuffer());
+      let same = decoded.length === orig.length;
+      for (let i = 0; same && i < orig.length; i++) {
+        if (decoded.charCodeAt(i) !== orig[i]) same = false;
+      }
+      check("ai image: pass-through bytes are byte-identical + keep the MIME",
+        same && pend[0].bytes === 1000,
+        "same=" + same + " bytes=" + pend[0].bytes);
+    }
+
+    // (4)+(5) downscale policy through the stubbed codec.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "wide.png": { width: 3000, height: 1000, renderBytes: 500 * 1024 } });
+      await addAndSettle([mkImg("wide.png", 200, "image/png")]);
+      const p1 = aPending();
+      check("ai image: an oversized image is downscaled at 1568 and accepted",
+        codecLog.render.length === 1 && codecLog.render[0].maxEdge === 1568 &&
+        codecLog.passthrough.length === 0 && p1.length === 1 &&
+        p1[0].width === 3000 && p1[0].height === 1000 &&
+        p1[0].bytes <= 2 * 1024 * 1024,
+        JSON.stringify(codecLog.render));
+      check("ai image: the downscaled 3000x3000 PNG stays PNG and within 2 MiB",
+        p1.length === 1 && /^data:image\/png/.test(p1[0].dataUrl) &&
+        p1[0].bytes <= 2 * 1024 * 1024,
+        p1[0] ? p1[0].dataUrl.slice(0, 24) : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      // A first render over 2 MiB triggers one retry at 1024, then accepts.
+      setCodec({ "big2.png": { width: 3000, height: 3000,
+        renderBytes: 3 * 1024 * 1024, secondBytes: 900 * 1024 } });
+      await addAndSettle([mkImg("big2.png", 200, "image/png")]);
+      check("ai image: an over-2-MiB render retries once at 1024 then accepts",
+        codecLog.render.length === 2 &&
+        codecLog.render[0].maxEdge === 1568 && codecLog.render[1].maxEdge === 1024 &&
+        aPending().length === 1,
+        JSON.stringify(codecLog.render));
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      // Both passes over 2 MiB -> reject with the reduction error.
+      setCodec({ "hopeless.png": { width: 3000, height: 3000,
+        renderBytes: 3 * 1024 * 1024, secondBytes: 3 * 1024 * 1024 } });
+      await addAndSettle([mkImg("hopeless.png", 200, "image/png")]);
+      check("ai image: an image that cannot reach 2 MiB is rejected",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /hopeless\.png could not be reduced below 2 MiB/.test(
+          aErrs()[0].textContent) && codecLog.render.length === 2,
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      // A probe that finds no decodable MIME is unreadable (R6).
+      setCodec({ "fake.png": { unreadable: true } });
+      await addAndSettle([mkImg("fake.png", 500, "text/plain")]);
+      check("ai image: an undecodable image is rejected as unreadable",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /fake\.png could not be read as an image/.test(aErrs()[0].textContent),
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      // Decompression guard: >40 MP is rejected before drawing (R5).
+      setCodec({ "hugepx.png": { width: 8000, height: 8000 } });
+      await addAndSettle([mkImg("hugepx.png", 500, "image/png")]);
+      check("ai image: an over-40-MP image is rejected before drawing",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /hugepx\.png could not be read as an image/.test(aErrs()[0].textContent) &&
+        codecLog.render.length === 0,
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+    }
+
+    // (6)(7)(8)(9) wire format: content-part array vs plain string.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "shot.png": { width: 100, height: 100 } });
+      await addAndSettle([mkImg("shot.png", 800, "image/png")]);
+      aiChatStreams.push([sseFrame("I see it.")]);
+      aiInput().value = "what is this?";
+      aiSend();
+      await tick(200);
+      const u = lastUserReq();
+      check("ai image: an image turn's content is a content-part array",
+        u && Array.isArray(u.content) && u.content.length === 2 &&
+        u.content[0].type === "text" &&
+        u.content[0].text.includes("what is this?") &&
+        u.content[1].type === "image_url" &&
+        /^data:image\//.test(u.content[1].image_url.url),
+        u ? JSON.stringify(u.content).slice(0, 96) : "none");
+      const bubble = Array.from(window.document.querySelectorAll(
+        "#ai-chat-log .ai-msg-user")).pop();
+      check("ai image: the sent bubble shows an image thumbnail",
+        !!bubble && !!bubble.querySelector(".ai-user-files > img.ai-user-thumb"),
+        bubble ? "thumb=" + !!bubble.querySelector("img.ai-user-thumb") : "no bubble");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "just text";
+      aiSend();
+      await tick(150);
+      const u = lastUserReq();
+      check("ai image: a text-only turn's content stays a plain string",
+        u && typeof u.content === "string" && u.content === "just text",
+        u ? typeof u.content : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "a.png": { width: 50, height: 50 },
+        "b.png": { width: 50, height: 50 } });
+      await addAndSettle([mkTxt("notes.txt", ["inline body"], { type: "text/plain" })]);
+      await addAndSettle([mkImg("a.png", 400, "image/png")]);
+      await addAndSettle([mkImg("b.png", 410, "image/png")]);
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "review these";
+      aiSend();
+      await tick(200);
+      const u = lastUserReq();
+      const parts = u && u.content;
+      check("ai image: mixed attachments inline all text into the one text part",
+        Array.isArray(parts) && parts[0].type === "text" &&
+        parts[0].text.includes("review these") &&
+        parts[0].text.includes("[Attached file: notes.txt (") &&
+        parts[0].text.includes("inline body") &&
+        parts.filter(p => p.type === "text").length === 1,
+        parts ? parts.map(p => p.type).join(",") : "none");
+      check("ai image: one image part per image follows the text part, in order",
+        Array.isArray(parts) && parts.length === 3 &&
+        parts[1].type === "image_url" && parts[2].type === "image_url" &&
+        parts[1].image_url.url !== parts[2].image_url.url,
+        parts ? parts.length + " parts" : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "only.png": { width: 50, height: 50 } });
+      await addAndSettle([mkImg("only.png", 400, "image/png")]);
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "";            // image-only send
+      aiSend();
+      await tick(200);
+      const u = lastUserReq();
+      check("ai image: an image-only send has image parts and no text part",
+        u && Array.isArray(u.content) && u.content.length === 1 &&
+        u.content[0].type === "image_url" &&
+        !u.content.some(p => p.type === "text"),
+        u ? JSON.stringify(u.content.map(p => p.type)) : "none");
+    }
+
+    // (10) at most 4 images per message.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({});
+      await addAndSettle([
+        mkImg("i1.png", 100), mkImg("i2.png", 100), mkImg("i3.png", 100),
+        mkImg("i4.png", 100), mkImg("i5.png", 100)]);
+      check("ai image: a 5th image is rejected, the first four remain",
+        aPending().filter(p => p.kind === "image").length === 4 &&
+        aErrs().some(e => /too many images \(max 4\)/.test(e.textContent)),
+        "images=" + aPending().filter(p => p.kind === "image").length +
+        " errs=" + aErrs().length);
+    }
+
+    // (12) images persist and are re-sent on the next turn.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "keep.png": { width: 50, height: 50 } });
+      await addAndSettle([mkImg("keep.png", 400, "image/png")]);
+      aiChatStreams.push([sseFrame("seen")]);
+      aiInput().value = "first";
+      aiSend();
+      await tick(200);
+      aiChatStreams.push([sseFrame("again")]);
+      aiInput().value = "second";
+      aiSend();
+      await tick(200);
+      const firstUser = aiChatLog[aiChatLog.length - 1].messages
+        .filter(m => m.role === "user")[0];
+      check("ai image: a later aiChat call still carries the earlier image part",
+        Array.isArray(firstUser.content) &&
+        firstUser.content.some(p => p.type === "image_url"),
+        firstUser ? JSON.stringify(firstUser.content.map(p => p.type)) : "none");
+    }
+
+    // (13) provider rejection on an image turn shows the vision hint and
+    // does NOT rewrite the transcript (R1); a network failure shows no hint.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "rej.png": { width: 50, height: 50 } });
+      await addAndSettle([mkImg("rej.png", 400, "image/png")]);
+      // In-band SSE error -> api.js throws with err.status = 400.
+      aiChatStreams.push([
+        'event: error\ndata: {"error":true,"status":400,"message":"no vision"}\n\n']);
+      aiInput().value = "describe";
+      aiSend();
+      await tick(200);
+      const logText = window.document.getElementById("ai-chat-log").textContent;
+      check("ai image: a provider rejection on an image turn shows the vision hint",
+        /may not support image input/.test(logText) &&
+        /AI request failed/.test(logText),
+        logText.slice(-130));
+      const kept = convUser();
+      check("ai image: the rejection does NOT rewrite the transcript (R1)",
+        kept && Array.isArray(kept.content) &&
+        kept.content.some(p => p.type === "image_url"),
+        kept ? JSON.stringify(kept.content.map(p => p.type)) : "none");
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "try again";
+      aiSend();
+      await tick(200);
+      const retry = aiChatLog[aiChatLog.length - 1].messages
+        .filter(m => m.role === "user")[0];
+      check("ai image: a retry after a rejection still carries the image part",
+        Array.isArray(retry.content) &&
+        retry.content.some(p => p.type === "image_url"),
+        retry ? JSON.stringify(retry.content.map(p => p.type)) : "none");
+    }
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "net.png": { width: 50, height: 50 } });
+      await addAndSettle([mkImg("net.png", 400, "image/png")]);
+      // status 0 = network/connection failure: normal error, no vision hint.
+      aiChatStreams.push([
+        'event: error\ndata: {"error":true,"status":0,"message":"connection refused"}\n\n']);
+      aiInput().value = "describe";
+      aiSend();
+      await tick(200);
+      const logText = window.document.getElementById("ai-chat-log").textContent;
+      check("ai image: a network failure on an image turn shows no vision hint",
+        /AI request failed/.test(logText) &&
+        !/may not support image input/.test(logText),
+        logText.slice(-130));
+    }
+
+    // (14) unsupported type + binary text errors are unchanged.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({});
+      await addAndSettle([{ name: "blob.bin", type: "application/octet-stream",
+        size: 10, arrayBuffer: async () => new ArrayBuffer(10) }]);
+      check("ai image: an unsupported file type still errors",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /unsupported file type: blob\.bin/.test(aErrs()[0].textContent),
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      await addAndSettle([mkTxt("nul.txt", ["a\u0000b"], { type: "text/plain" })]);
+      check("ai image: a NUL text file still shows the binary error",
+        aPending().length === 0 && aErrs().length === 1 &&
+        /binary \(not a UTF-8 text file\)/.test(aErrs()[0].textContent),
+        aErrs()[0] ? aErrs()[0].textContent : "none");
+    }
+
+    // (15) Send is disabled while an image read/downscale is pending.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      let releaseProbe;
+      const gate = new Promise((res) => { releaseProbe = res; });
+      window.NB.ai._setImageCodec({
+        probe: () => gate.then(() => ({ width: 50, height: 50, mime: "image/png" })),
+        passthrough: (file) => bytesOf(file).then(bytes => ({
+          dataUrl: "data:image/png;base64," + toB64(bytes),
+          bytes: bytes.length, mime: "image/png" })),
+        render: () => Promise.resolve({ dataUrl: "data:image/png;base64,UkVG",
+          bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([mkImg("gate.png", 400, "image/png")]);
+      await tick(20);
+      check("ai image: Send is disabled while an image read is pending",
+        sendBtn().disabled === true, "disabled=" + sendBtn().disabled);
+      releaseProbe();
+      await tick(80);
+      check("ai image: Send re-enables once the image read settles",
+        sendBtn().disabled === false && aPending().length === 1,
+        "disabled=" + sendBtn().disabled + " pending=" + aPending().length);
+    }
+
+    // (16) Clear empties image chips/thumbnails and the conversation.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "clr.png": { width: 50, height: 50 } });
+      await addAndSettle([mkImg("clr.png", 400, "image/png")]);
+      aiChatStreams.push([sseFrame("bye")]);
+      aiInput().value = "hi";
+      aiSend();
+      await tick(200);
+      // A fresh image stays pending while the conversation is populated.
+      await addAndSettle([mkImg("clr.png", 400, "image/png")]);
+      check("ai image: precondition, conversation + a pending image chip exist",
+        window.NB.ai._getConversationForTests().length > 0 &&
+        aPending().length === 1 && aChips().length === 1,
+        "conv=" + window.NB.ai._getConversationForTests().length +
+        " pending=" + aPending().length);
+      await clearAtt();
+      check("ai image: Clear empties image chips/thumbnails and the conversation",
+        aChips().length === 0 && aPending().length === 0 && aBar().hidden === true &&
+        window.NB.ai._getConversationForTests().length === 0,
+        "chips=" + aChips().length + " conv=" +
+        window.NB.ai._getConversationForTests().length);
+    }
+
+    // (R4) paste: clipboard files take the same addFiles path.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      setCodec({ "pasted.png": { width: 50, height: 50 } });
+      const ev = new window.Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "clipboardData", {
+        value: { files: [mkImg("pasted.png", 400, "image/png")] },
+      });
+      aiInput().dispatchEvent(ev);
+      await tick(80);
+      check("ai image: a pasted clipboard file goes through addFiles",
+        aPending().length === 1 && aPending()[0].name === "pasted.png" &&
+        aPending()[0].kind === "image" && ev.defaultPrevented === true,
+        "pending=" + aPending().length + " prevented=" + ev.defaultPrevented);
+    }
+
+    // Wire guard: a serialized body over 12 MiB is refused before the
+    // request, with the conversation left unchanged.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      window.NB.ai._setImageCodec({
+        probe: () => Promise.resolve({ width: 50, height: 50, mime: "image/png" }),
+        passthrough: () => Promise.resolve({
+          dataUrl: "data:image/png;base64," + "A".repeat(2.5 * 1024 * 1024),
+          bytes: 1900 * 1024, mime: "image/png" }),
+        render: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      const sendTurn = async (names, text) => {
+        window.NB.ai._addFilesForTests(names.map(n => mkImg(n, 100, "image/png")));
+        await tick(120);
+        aiInput().value = text;
+        aiSend();
+        await tick(200);
+      };
+      aiChatStreams.push([sseFrame("round one")]);
+      const chatStart = aiChatLog.length;
+      await sendTurn(["w1.png", "w2.png", "w3.png", "w4.png"], "first");
+      const chatAfterFirst = aiChatLog.length;
+      const convAfterFirst = window.NB.ai._getConversationForTests().length;
+      check("ai image: precondition, the first image turn posted",
+        chatAfterFirst === chatStart + 1 && convAfterFirst === 2,
+        "chat+" + (chatAfterFirst - chatStart) + " conv=" + convAfterFirst);
+      // Turn 2 re-uploads turn 1's image parts, pushing the body over the
+      // 12 MiB wire cap. No request must be made.
+      await sendTurn(["w5.png", "w6.png", "w7.png", "w8.png"], "second");
+      check("ai image: an over-12-MiB wire body is refused without a request",
+        aiChatLog.length === chatAfterFirst &&
+        window.NB.ai._getConversationForTests().length === convAfterFirst &&
+        /Message too large to send/.test(
+          window.document.getElementById("ai-chat-log").textContent),
+        "chat=" + aiChatLog.length + " conv=" +
+        window.NB.ai._getConversationForTests().length);
+    }
+
+    // Restore the real browser codec for any later block.
+    window.NB.ai._resetImageCodec();
+    await clearAtt();
+  }
+
   // Restore fixture state for later blocks.
   FILES["notes/a.md"] = FILE_A;
   MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
@@ -20015,6 +20566,936 @@ function check(label, cond, extra) {
   TREE = TREE.filter(n => n.path !== WRITE_PATH);
   MTIMES[WRITE_PATH] = 1;
   MTIMES["notes/a.md"] = (MTIMES["notes/a.md"] || 1) + 1;
+
+  // --- AI regenerate / retry ------------------------------------------
+  // The newest assistant bubble carries a "↻ Regenerate" footer control
+  // once a turn ends (success, provider rejection, or abort). regenerate()
+  // trims the conversation back to the latest GENUINE user turn (skipping
+  // tool-result messages) and re-runs the tool loop, re-sending that turn
+  // unchanged. These checks assert on observable state: aiChatLog bodies,
+  // real DOM node counts, and the button's disabled attribute -- not just
+  // that a stub was called.
+  console.log("== ai regenerate ==");
+  {
+    const regenLog = () => window.document.getElementById("ai-chat-log");
+    const regenBtns = () => Array.from(regenLog().querySelectorAll(".ai-regenerate"));
+    const asstBubbles = () => Array.from(regenLog().querySelectorAll(".ai-msg-assistant"));
+    const userBubbles = () => Array.from(regenLog().querySelectorAll(".ai-msg-user"));
+    const clickRegen = (btn) => btn.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }));
+    const clearAll = async () => {
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+    };
+    const resetAi = async () => {
+      await clearAll();
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+    };
+    const genuineUserMsgs = (i) => (aiChatLog[i] || { messages: [] })
+      .messages.filter(m => m.role === "user" && !(
+        typeof m.content === "string" && m.content.indexOf("(tool ") === 0));
+
+    // Re-sync the provider config (the Settings block above rewrote it).
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (1) a control appears after a successful reply -------------------
+    await resetAi();
+    aiChatStreams.push([sseFrame("First answer.")]);
+    aiInput().value = "first question";
+    aiSend();
+    await tick(120);
+    check("ai regenerate: a control exists after a successful reply",
+      regenBtns().length === 1, "controls=" + regenBtns().length);
+    check("ai regenerate: the control lives under the last assistant reply",
+      asstBubbles().length === 1 &&
+      asstBubbles()[0].querySelector(".ai-regenerate") === regenBtns()[0]);
+    check("ai regenerate: the control is enabled while idle",
+      regenBtns()[0] && regenBtns()[0].disabled === false);
+
+    // (2) clicking it re-sends the same genuine turn, replaces the reply --
+    {
+      const chatBefore = aiChatLog.length;
+      aiChatStreams.push([sseFrame("Replaced answer.")]);
+      clickRegen(regenBtns()[0]);
+      await tick(120);
+      check("ai regenerate: clicking issues another /api/ai/chat",
+        aiChatLog.length === chatBefore + 1,
+        "requests=" + aiChatLog.length + " expected=" + (chatBefore + 1));
+      const req = aiChatLog[aiChatLog.length - 1];
+      const genuine = genuineUserMsgs(aiChatLog.length - 1);
+      check("ai regenerate: the request still ends at the same genuine user turn",
+        genuine.length === 1 && genuine[0].content === "first question",
+        JSON.stringify(genuine.map(m => m.content)));
+      check("ai regenerate: no duplicate user turn is re-sent",
+        req.messages.filter(m => m.role === "user").length === 1 &&
+        userBubbles().length === 1,
+        "wire users=" + req.messages.filter(m => m.role === "user").length +
+        " dom users=" + userBubbles().length);
+      check("ai regenerate: the old assistant bubble is replaced (one reply)",
+        asstBubbles().length === 1 &&
+        /Replaced answer/.test(asstBubbles()[0].textContent),
+        "assistant bubbles=" + asstBubbles().length);
+      check("ai regenerate: exactly one control remains, under the new reply",
+        regenBtns().length === 1 &&
+        asstBubbles()[0].querySelector(".ai-regenerate") === regenBtns()[0]);
+      check("ai regenerate: the conversation holds one user + one assistant turn",
+        window.NB.ai._getConversationForTests().filter(m => m.role === "user").length === 1 &&
+        window.NB.ai._getConversationForTests().filter(m => m.role === "assistant").length === 1,
+        JSON.stringify(window.NB.ai._getConversationForTests().map(m => m.role)));
+    }
+
+    // (3) after a provider rejection on an image turn: the vision hint
+    // shows, then Regenerate re-sends the same turn, image parts included.
+    {
+      await resetAi();
+      window.NB.ai._setImageCodec({
+        probe: () => Promise.resolve({ width: 50, height: 50, mime: "image/png" }),
+        passthrough: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,QUJD", bytes: 3, mime: "image/png" }),
+        render: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([{ name: "regen.png", type: "image/png",
+        size: 800, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }]);
+      await tick(60);
+      check("ai regenerate: precondition, an image is attached",
+        window.NB.ai._getAttachmentsForTests().length === 1,
+        "pending=" + window.NB.ai._getAttachmentsForTests().length);
+      // In-band SSE error (HTTP 400) -> api.js throws with err.status = 400.
+      aiChatStreams.push([
+        'event: error\ndata: {"error":true,"status":400,"message":"no vision"}\n\n']);
+      aiInput().value = "describe this";
+      aiSend();
+      await tick(180);
+      check("ai regenerate: a rejected image turn shows the vision hint",
+        /may not support image input/.test(regenLog().textContent) &&
+        /AI request failed/.test(regenLog().textContent),
+        regenLog().textContent.slice(-120));
+      check("ai regenerate: a rejected turn still offers an enabled control",
+        regenBtns().length === 1 && regenBtns()[0].disabled === false,
+        "controls=" + regenBtns().length);
+      const rejectedReq = aiChatLog[aiChatLog.length - 1];
+      const imgUser = rejectedReq.messages.filter(m => m.role === "user").pop();
+      check("ai regenerate: the rejected image request carried one image_url part",
+        Array.isArray(imgUser.content) &&
+        imgUser.content.filter(p => p.type === "image_url").length === 1,
+        imgUser ? JSON.stringify(imgUser.content.map(p => p.type)) : "none");
+      // Regenerate: re-sends the SAME turn, image parts included.
+      aiChatStreams.push([sseFrame("Now I can see it.")]);
+      const chatBefore = aiChatLog.length;
+      clickRegen(regenBtns()[0]);
+      await tick(180);
+      check("ai regenerate: regenerate after a rejection issues a fresh request",
+        aiChatLog.length === chatBefore + 1,
+        "requests+" + (aiChatLog.length - chatBefore));
+      const retryUser = aiChatLog[aiChatLog.length - 1].messages
+        .filter(m => m.role === "user").pop();
+      check("ai regenerate: the retried turn re-sends the same image_url parts",
+        Array.isArray(retryUser.content) &&
+        JSON.stringify(retryUser.content) === JSON.stringify(imgUser.content),
+        retryUser ? JSON.stringify(retryUser.content.map(p => p.type)) : "none");
+      check("ai regenerate: the vision hint is replaced by the new reply",
+        asstBubbles().length === 1 &&
+        /Now I can see it/.test(asstBubbles()[0].textContent) &&
+        !/may not support image input/.test(regenLog().textContent),
+        "assistant bubbles=" + asstBubbles().length);
+      window.NB.ai._resetImageCodec();
+      await clearAll();
+    }
+
+    // (4) it works after an abort: an AbortError ends the turn, the
+    // control appears, and Regenerate re-runs the turn.
+    {
+      await resetAi();
+      const realAiChat = window.NB.api.aiChat;
+      let releaseGate;
+      const gate = new Promise((res) => { releaseGate = res; });
+      window.NB.api.aiChat = (body, onDelta, signal) => {
+        aiChatLog.push(body);
+        return new Promise((resolve, reject) => {
+          const onAbort = () => {
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          };
+          if (signal && signal.aborted) return onAbort();
+          if (signal) signal.addEventListener("abort", onAbort, { once: true });
+          gate.then(() => resolve());   // stays pending during the abort
+        });
+      };
+      aiInput().value = "start then stop me";
+      aiSend();
+      await tick(30);
+      const stopBtn = window.document.querySelector("#ai-view .ai-stop");
+      check("ai regenerate: precondition, a request is in flight (stop shown)",
+        !!stopBtn && stopBtn.hidden === false);
+      stopBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(40);
+      window.NB.api.aiChat = realAiChat;
+      releaseGate();
+      check("ai regenerate: an aborted turn still offers an enabled control",
+        regenBtns().length === 1 && regenBtns()[0].disabled === false,
+        "controls=" + regenBtns().length);
+      aiChatStreams.push([sseFrame("Fresh answer after abort.")]);
+      const chatBefore = aiChatLog.length;
+      clickRegen(regenBtns()[0]);
+      await tick(150);
+      check("ai regenerate: regenerate after an abort issues a new request",
+        aiChatLog.length === chatBefore + 1,
+        "requests+" + (aiChatLog.length - chatBefore));
+      check("ai regenerate: the aborted bubble is replaced by the new reply",
+        asstBubbles().length === 1 &&
+        /Fresh answer after abort/.test(asstBubbles()[0].textContent),
+        "assistant bubbles=" + asstBubbles().length);
+    }
+
+    // (5) no-op guards: in flight, no genuine user turn, pending card.
+    {
+      // (5a) a request in flight: regenerate() must not issue a request.
+      await resetAi();
+      const realAiChat = window.NB.api.aiChat;
+      let releaseGate;
+      const gate = new Promise((res) => { releaseGate = res; });
+      window.NB.api.aiChat = (body) => {
+        aiChatLog.push(body);
+        return gate.then(() => undefined);
+      };
+      aiInput().value = "gated question";
+      aiSend();
+      await tick(40);
+      check("ai regenerate: no control persists while a request is in flight",
+        regenBtns().length === 0, "controls=" + regenBtns().length);
+      const chatBefore = aiChatLog.length;
+      const logBefore = regenLog().children.length;
+      window.NB.ai.regenerate();       // direct call -> must no-op
+      await tick(40);
+      check("ai regenerate: regenerate() is a no-op while a request is in flight",
+        aiChatLog.length === chatBefore &&
+        regenLog().children.length === logBefore,
+        "requests+" + (aiChatLog.length - chatBefore));
+      window.NB.api.aiChat = realAiChat;
+      releaseGate();
+      await tick(120);
+
+      // (5b) no genuine user turn (conversation cleared): no-op.
+      await resetAi();
+      const chatBefore2 = aiChatLog.length;
+      window.NB.ai.regenerate();
+      await tick(30);
+      check("ai regenerate: no genuine user turn -> regenerate is a no-op",
+        aiChatLog.length === chatBefore2 && regenBtns().length === 0 &&
+        regenLog().children.length === 0,
+        "requests+" + (aiChatLog.length - chatBefore2));
+
+      // (5c) a write permission card pending: the control exists but is
+      // disabled and regenerate() is a no-op until the card resolves.
+      await resetAi();
+      const CARD_PATH = "notes/regen-pending.md";
+      aiChatStreams.push([sseFrame("Creating it.\n\n```nb-tool\n" + JSON.stringify({
+        tool: "write", path: CARD_PATH, content: "# pending\n" }) + "\n```")]);
+      aiInput().value = "create a note";
+      aiSend();
+      await tick(120);
+      const card = aiCards().at(-1);
+      check("ai regenerate: precondition, a write permission card is pending",
+        !!card && card.dataset.testWriteCard === "1" &&
+        !!card.querySelector(".ai-edit-actions"));
+      check("ai regenerate: the control is disabled while a card is pending",
+        regenBtns().length === 1 && regenBtns()[0].disabled === true,
+        "controls=" + regenBtns().length + " disabled=" +
+        (regenBtns()[0] ? regenBtns()[0].disabled : "n/a"));
+      const chatBefore3 = aiChatLog.length;
+      clickRegen(regenBtns()[0]);          // disabled -> no-op
+      window.NB.ai.regenerate();           // direct -> hasPendingCard guard
+      await tick(80);
+      check("ai regenerate: regenerate() is a no-op while a card is pending",
+        aiChatLog.length === chatBefore3,
+        "requests+" + (aiChatLog.length - chatBefore3));
+      check("ai regenerate: the pending card was not applied by the no-op",
+        FILES[CARD_PATH] === undefined);
+      // Rejecting resolves the pending state -> the control re-enables.
+      card.querySelector(".ai-reject").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(40);
+      check("ai regenerate: resolving the card re-enables the control",
+        regenBtns().length === 1 && regenBtns()[0].disabled === false);
+    }
+
+    // (6) while attachment reads are pending the idle control is disabled.
+    {
+      await resetAi();
+      aiChatStreams.push([sseFrame("ok")]);
+      aiInput().value = "hello";
+      aiSend();
+      await tick(100);
+      check("ai regenerate: an idle control starts enabled",
+        regenBtns().length === 1 && regenBtns()[0].disabled === false);
+      let releaseProbe;
+      const probeGate = new Promise((res) => { releaseProbe = res; });
+      window.NB.ai._setImageCodec({
+        probe: () => probeGate.then(() => ({ width: 50, height: 50, mime: "image/png" })),
+        passthrough: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,QUJD", bytes: 3, mime: "image/png" }),
+        render: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([{ name: "pending.png", type: "image/png",
+        size: 400, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }]);
+      await tick(20);
+      check("ai regenerate: the control is disabled while an attachment read is pending",
+        regenBtns().length === 1 && regenBtns()[0].disabled === true);
+      releaseProbe();
+      await tick(80);
+      check("ai regenerate: the control re-enables once the read settles",
+        regenBtns().length === 1 && regenBtns()[0].disabled === false);
+      window.NB.ai._resetImageCodec();
+      await clearAll();
+    }
+
+    // (7) regenerating a turn that invoked a tool re-runs the tool loop.
+    {
+      await resetAi();
+      const readStream = () => [sseFrame("Let me read it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "read", path: "notes/a.md" }) + "\n```")];
+      const finalStream = () => [sseFrame("Finished reading notes/a.md.")];
+      aiChatStreams.push(readStream());
+      aiChatStreams.push(finalStream());
+      aiInput().value = "read the file for me";
+      aiSend();
+      await tick(160);
+      check("ai regenerate: precondition, the tool turn took two model calls",
+        aiChatLog.length === 2, "requests=" + aiChatLog.length);
+      check("ai regenerate: precondition, one user + two assistant bubbles",
+        userBubbles().length === 1 && asstBubbles().length === 2,
+        "users=" + userBubbles().length + " assistants=" + asstBubbles().length);
+      // Regenerate the tool-invoking turn, replaying the same scripted replies.
+      aiChatStreams.push(readStream());
+      aiChatStreams.push(finalStream());
+      const chatBefore = aiChatLog.length;   // 2
+      clickRegen(regenBtns()[0]);
+      await tick(180);
+      check("ai regenerate: regenerating a tool turn re-runs the loop (2 new calls)",
+        aiChatLog.length === chatBefore + 2,
+        "requests+" + (aiChatLog.length - chatBefore));
+      // Re-run request 1: only the genuine user turn (no tool result yet).
+      const rerun1 = aiChatLog[chatBefore];
+      const r1users = rerun1 ? rerun1.messages.filter(m => m.role === "user") : [];
+      check("ai regenerate: the re-run starts from the genuine user turn only",
+        !!rerun1 && rerun1.messages[0].role === "system" &&
+        r1users.length === 1 && r1users[0].content === "read the file for me",
+        rerun1 ? JSON.stringify(rerun1.messages.map(m => m.role)) : "none");
+      // Follow-up request: system, user, assistant(tool call), user(tool result).
+      const rerun2 = aiChatLog[chatBefore + 1];
+      const roles = rerun2 ? rerun2.messages.map(m => m.role) : [];
+      const lastMsg = rerun2 ? rerun2.messages[rerun2.messages.length - 1] : null;
+      check("ai regenerate: the follow-up request carries the tool-result shape",
+        JSON.stringify(roles) === JSON.stringify(["system", "user", "assistant", "user"]) &&
+        /tool read notes\/a\.md result/.test(lastMsg.content) &&
+        lastMsg.content.indexOf("(tool ") === 0,
+        JSON.stringify(roles));
+      check("ai regenerate: the tool re-run produced one reply + the old bubbles were stripped",
+        asstBubbles().length === 2 &&
+        /Finished reading notes\/a\.md/.test(asstBubbles().at(-1).textContent) &&
+        userBubbles().length === 1 &&
+        regenBtns().length === 1,
+        "assistants=" + asstBubbles().length);
+    }
+
+    // Leave the panel idle for later blocks.
+    await resetAi();
+    window.NB.ai._resetImageCodec();
+  }
+
+  // --- AI Edit last message -------------------------------------------
+  // Once a turn ends the newest user bubble carries a "✎ Edit" control
+  // (shared with Regenerate via .ai-turn-control). editLastMessage() drops
+  // the last turn's whole DOM tail (user bubble, replies, traces, cards,
+  // controls), trims conversation to BEFORE that turn, and restores the
+  // prompt + the last sent attachments into the composer. Restoration must
+  // reuse the already-read entries -- no re-read, no re-decode -- so a
+  // resend is byte-for-byte the same turn with an edited prompt. The trace
+  // regression: Regenerate used to leave stale .ai-tool-trace lines because
+  // it removed only .ai-msg siblings; clearLastTurnDom() now drops the whole
+  // tail, so a re-run leaves exactly one trace per turn. Every check below
+  // asserts real observable state: DOM node counts, aiChatLog bodies,
+  // #ai-input value, and disabled attributes -- never just a stub call.
+  console.log("== ai edit message ==");
+  {
+    const editLog = () => window.document.getElementById("ai-chat-log");
+    const editBtns = () => Array.from(editLog().querySelectorAll(".ai-edit"));
+    const regenBtns = () => Array.from(editLog().querySelectorAll(".ai-regenerate"));
+    const userBubbles = () => Array.from(editLog().querySelectorAll(".ai-msg-user"));
+    const asstBubbles = () => Array.from(editLog().querySelectorAll(".ai-msg-assistant"));
+    const traces = () => Array.from(editLog().querySelectorAll(".ai-tool-trace"));
+    const attachBar = () => window.document.querySelector("#ai-view .ai-attach-bar");
+    const attachChips = () => Array.from(window.document.querySelectorAll(
+      "#ai-view .ai-attach-bar .ai-attach-chip"));
+    const pending = () => window.NB.ai._getAttachmentsForTests();
+    const clickEl = (el) => el.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }));
+    const clearAll = async () => {
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+    };
+    const resetAi = async () => {
+      await clearAll();
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+    };
+    const genuineUserMsgs = (i) => (aiChatLog[i] || { messages: [] })
+      .messages.filter(m => m.role === "user" && !(
+        typeof m.content === "string" && m.content.indexOf("(tool ") === 0));
+
+    // Re-sync the provider config (earlier blocks may have rewritten it).
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (1) a completed reply offers exactly one Edit + one Regenerate ----
+    await resetAi();
+    aiChatStreams.push([sseFrame("Hello there.")]);
+    aiInput().value = "say hi";
+    aiSend();
+    await tick(120);
+    check("ai edit: a completed reply shows exactly one Edit control",
+      editBtns().length === 1, "edits=" + editBtns().length);
+    check("ai edit: exactly one Regenerate control also exists",
+      regenBtns().length === 1, "regens=" + regenBtns().length);
+    const firstEdit = editBtns()[0];
+    check("ai edit: the Edit control lives in the last user bubble",
+      userBubbles().length === 1 &&
+      userBubbles()[0].querySelector(".ai-edit") === firstEdit);
+    check("ai edit: the idle Edit control is enabled and labelled",
+      firstEdit.disabled === false && firstEdit.textContent === "✎ Edit" &&
+      /Edit your last question/.test(firstEdit.title),
+      "disabled=" + firstEdit.disabled + " label=" + firstEdit.textContent);
+
+    // (2) clicking Edit removes the last turn, restores the prompt, trims
+    // the conversation; a resend makes exactly one genuine user turn. -----
+    {
+      clickEl(firstEdit);
+      await tick(60);
+      check("ai edit: clicking Edit removes the user bubble, reply and controls",
+        userBubbles().length === 0 && asstBubbles().length === 0 &&
+        traces().length === 0 && editBtns().length === 0 &&
+        regenBtns().length === 0,
+        "users=" + userBubbles().length + " asst=" + asstBubbles().length +
+        " traces=" + traces().length);
+      check("ai edit: the prompt is restored into #ai-input",
+        aiInput().value === "say hi", JSON.stringify(aiInput().value));
+      check("ai edit: the conversation is trimmed to before the turn",
+        window.NB.ai._getConversationForTests().length === 0,
+        "conv=" + window.NB.ai._getConversationForTests().length);
+      // Sending the edited prompt yields exactly one genuine user turn.
+      aiChatStreams.push([sseFrame("Edited reply.")]);
+      aiInput().value = "say hello instead";
+      aiSend();
+      await tick(120);
+      const req = aiChatLog[aiChatLog.length - 1];
+      const genuine = genuineUserMsgs(aiChatLog.length - 1);
+      check("ai edit: resending produces one genuine user turn with the new text",
+        genuine.length === 1 && genuine[0].content === "say hello instead" &&
+        req.messages.filter(m => m.role === "user").length === 1,
+        JSON.stringify(genuine.map(m => m.content)));
+      check("ai edit: the edited turn re-renders one user + one reply",
+        userBubbles().length === 1 && asstBubbles().length === 1 &&
+        /Edited reply/.test(asstBubbles()[0].textContent) &&
+        editBtns().length === 1 && regenBtns().length === 1,
+        "users=" + userBubbles().length + " asst=" + asstBubbles().length);
+    }
+
+    // (3) Edit on a tool-invoking turn drops the trace line too. --------
+    {
+      await resetAi();
+      const readStream = () => [sseFrame("Reading.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "read", path: "notes/a.md" }) + "\n```")];
+      const finalStream = () => [sseFrame("Read notes/a.md.")];
+      aiChatStreams.push(readStream());
+      aiChatStreams.push(finalStream());
+      aiInput().value = "read it for me";
+      aiSend();
+      await tick(160);
+      check("ai edit: precondition, a tool turn left a trace + two replies",
+        traces().length === 1 && asstBubbles().length === 2 &&
+        userBubbles().length === 1 && editBtns().length === 1,
+        "traces=" + traces().length + " asst=" + asstBubbles().length);
+      clickEl(editBtns()[0]);
+      await tick(60);
+      check("ai edit: Edit removes the trace line, bubbles and controls",
+        traces().length === 0 && asstBubbles().length === 0 &&
+        userBubbles().length === 0 && editBtns().length === 0 &&
+        regenBtns().length === 0,
+        "traces=" + traces().length + " users=" + userBubbles().length);
+      check("ai edit: the tool turn's prompt is restored",
+        aiInput().value === "read it for me", JSON.stringify(aiInput().value));
+      check("ai edit: the tool turn's conversation is trimmed to nothing",
+        window.NB.ai._getConversationForTests().length === 0,
+        "conv=" + window.NB.ai._getConversationForTests().length);
+    }
+
+    // (4) Edit restores text + image attachments with no re-decode; a
+    // resend carries the same attachments plus the edited prompt. --------
+    {
+      await resetAi();
+      const codecCounts = { probe: 0, render: 0, passthrough: 0 };
+      window.NB.ai._setImageCodec({
+        probe() { codecCounts.probe++; return Promise.resolve(
+          { width: 50, height: 50, mime: "image/png" }); },
+        passthrough() { codecCounts.passthrough++; return Promise.resolve(
+          { dataUrl: "data:image/png;base64,QUJD", bytes: 3, mime: "image/png" }); },
+        render() { codecCounts.render++; return Promise.resolve(
+          { dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }); },
+      });
+      const docFile = new window.File(["attached body text"], "doc.txt",
+        { type: "text/plain" });
+      const imgFile = { name: "pic.png", type: "image/png", size: 800,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer };
+      window.NB.ai._addFilesForTests([docFile, imgFile]);
+      await tick(120);
+      check("ai edit: precondition, a text + image are attached",
+        attachChips().length === 2 && pending().length === 2,
+        "chips=" + attachChips().length + " pending=" + pending().length);
+      const afterAttach = Object.assign({}, codecCounts);
+      aiChatStreams.push([sseFrame("I see the file and image.")]);
+      aiInput().value = "review these";
+      aiSend();
+      await tick(200);
+      check("ai edit: after sending, the attach bar is empty",
+        attachChips().length === 0, "chips=" + attachChips().length);
+      const firstReq = aiChatLog[aiChatLog.length - 1];
+      const firstUser = firstReq.messages.filter(m => m.role === "user").pop();
+      check("ai edit: precondition, the turn carried the text + image parts",
+        Array.isArray(firstUser.content) && firstUser.content[0].type === "text" &&
+        firstUser.content[0].text.includes("attached body text") &&
+        firstUser.content.filter(p => p.type === "image_url").length === 1,
+        firstUser ? firstUser.content.map(p => p.type).join(",") : "none");
+      const firstImgUrl = firstUser.content.find(p => p.type === "image_url")
+        .image_url.url;
+      clickEl(editBtns()[0]);
+      await tick(60);
+      check("ai edit: Edit restores the text chip and the image thumbnail",
+        attachChips().length === 2 && attachBar().hidden === false &&
+        attachChips().some(c =>
+          c.querySelector(".ai-attach-chip-name").textContent === "doc.txt" &&
+          !c.classList.contains("reading")) &&
+        attachChips().some(c => {
+          const n = c.querySelector(".ai-attach-chip-name").textContent;
+          const t = c.querySelector(".ai-attach-chip-thumb");
+          return n === "pic.png" && t && t.hidden === false &&
+            /^data:image\/png/.test(t.getAttribute("src"));
+        }),
+        "chips=" + attachChips().map(c =>
+          c.querySelector(".ai-attach-chip-name").textContent).join(","));
+      check("ai edit: restoring attachments does not re-decode (counts unchanged)",
+        codecCounts.probe === afterAttach.probe &&
+        codecCounts.render === afterAttach.render &&
+        codecCounts.passthrough === afterAttach.passthrough,
+        JSON.stringify(codecCounts) + " vs " + JSON.stringify(afterAttach));
+      check("ai edit: the restored attachments are back in the pending list",
+        pending().length === 2 &&
+        pending().some(p => p.name === "doc.txt" &&
+          p.content === "attached body text") &&
+        pending().some(p => p.name === "pic.png" && p.kind === "image"),
+        JSON.stringify(pending().map(p => p.name)));
+      // Re-send carries the same attachments plus the edited prompt.
+      aiChatStreams.push([sseFrame("Edited and resent.")]);
+      aiInput().value = "edited prompt";
+      aiSend();
+      await tick(200);
+      const resendReq = aiChatLog[aiChatLog.length - 1];
+      const resendUser = resendReq.messages.filter(m => m.role === "user").pop();
+      const resendImg = resendUser.content.find(p => p.type === "image_url");
+      check("ai edit: resending carries the edited prompt + the text attachment",
+        Array.isArray(resendUser.content) &&
+        resendUser.content[0].type === "text" &&
+        resendUser.content[0].text.includes("edited prompt") &&
+        resendUser.content[0].text.includes("attached body text") &&
+        resendUser.content.filter(p => p.type === "image_url").length === 1,
+        resendUser ? JSON.stringify(resendUser.content[0].text).slice(0, 80) : "none");
+      check("ai edit: resending reuses the original image bytes",
+        !!resendImg && resendImg.image_url.url === firstImgUrl,
+        resendImg ? resendImg.image_url.url.slice(0, 24) : "none");
+      window.NB.ai._resetImageCodec();
+      await clearAll();
+    }
+
+    // (5) no-op guards: in flight, attachment read pending, card pending,
+    // and no genuine user turn. No DOM change, no new request. ----------
+    {
+      // (5a) a request in flight: no control, editLastMessage() no-ops.
+      await resetAi();
+      const realAiChat = window.NB.api.aiChat;
+      let releaseGate;
+      const gate = new Promise((res) => { releaseGate = res; });
+      window.NB.api.aiChat = (body) => {
+        aiChatLog.push(body);
+        return gate.then(() => undefined);
+      };
+      aiInput().value = "gated edit";
+      aiSend();
+      await tick(40);
+      check("ai edit: no control persists while a request is in flight",
+        editBtns().length === 0 && regenBtns().length === 0,
+        "edits=" + editBtns().length);
+      const chatBefore = aiChatLog.length;
+      const logBefore = editLog().children.length;
+      window.NB.ai.editLastMessage();      // direct -> busy guard
+      await tick(40);
+      check("ai edit: editLastMessage() is a no-op while in flight",
+        aiChatLog.length === chatBefore &&
+        editLog().children.length === logBefore,
+        "requests+" + (aiChatLog.length - chatBefore));
+      window.NB.api.aiChat = realAiChat;
+      releaseGate();
+      await tick(120);
+
+      // (5b) an attachment read is pending: the idle control is disabled.
+      await resetAi();
+      aiChatStreams.push([sseFrame("idle reply")]);
+      aiInput().value = "idle";
+      aiSend();
+      await tick(100);
+      check("ai edit: an idle Edit control starts enabled",
+        editBtns().length === 1 && editBtns()[0].disabled === false);
+      let releaseProbe;
+      const probeGate = new Promise((res) => { releaseProbe = res; });
+      window.NB.ai._setImageCodec({
+        probe: () => probeGate.then(() =>
+          ({ width: 50, height: 50, mime: "image/png" })),
+        passthrough: () => Promise.resolve(
+          { dataUrl: "data:image/png;base64,QUJD", bytes: 3, mime: "image/png" }),
+        render: () => Promise.resolve(
+          { dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([{ name: "wait.png", type: "image/png",
+        size: 400, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }]);
+      await tick(20);
+      check("ai edit: the Edit control is disabled while a read is pending",
+        editBtns().length === 1 && editBtns()[0].disabled === true,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+      const chatB2 = aiChatLog.length;
+      const logB2 = editLog().children.length;
+      clickEl(editBtns()[0]);
+      window.NB.ai.editLastMessage();
+      await tick(40);
+      check("ai edit: editLastMessage() is a no-op while a read is pending",
+        aiChatLog.length === chatB2 && editLog().children.length === logB2 &&
+        editBtns().length === 1,
+        "requests+" + (aiChatLog.length - chatB2));
+      releaseProbe();
+      await tick(80);
+      // The chip is a pending attachment once the read settles. Edit stays
+      // disabled while it is present (restoring would clear it), then
+      // re-enables only after the chip is removed.
+      check("ai edit: the control stays disabled while the pending chip remains",
+        editBtns().length === 1 && editBtns()[0].disabled === true &&
+        attachChips().length === 1,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a") +
+        " chips=" + attachChips().length);
+      attachChips()[0].querySelector(".ai-attach-chip-remove").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+      check("ai edit: the control re-enables once the pending chip is removed",
+        editBtns().length === 1 && editBtns()[0].disabled === false &&
+        attachChips().length === 0,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a") +
+        " chips=" + attachChips().length);
+      window.NB.ai._resetImageCodec();
+
+      // (5c) a write permission card pending: disabled + no-op.
+      await resetAi();
+      const CARD_PATH = "notes/edit-pending.md";
+      aiChatStreams.push([sseFrame("Creating it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "write", path: CARD_PATH, content: "# pending\n" }) +
+        "\n```")]);
+      aiInput().value = "create a note";
+      aiSend();
+      await tick(120);
+      const card = lastCard();
+      check("ai edit: precondition, a write card is pending",
+        !!card && card.dataset.testWriteCard === "1" &&
+        !!card.querySelector(".ai-edit-actions"));
+      check("ai edit: the Edit control is disabled while a card is pending",
+        editBtns().length === 1 && editBtns()[0].disabled === true,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+      const chatB3 = aiChatLog.length;
+      const logB3 = editLog().children.length;
+      clickEl(editBtns()[0]);
+      window.NB.ai.editLastMessage();
+      await tick(60);
+      check("ai edit: editLastMessage() is a no-op while a card is pending",
+        aiChatLog.length === chatB3 && editLog().children.length === logB3 &&
+        FILES[CARD_PATH] === undefined,
+        "requests+" + (aiChatLog.length - chatB3));
+      card.querySelector(".ai-reject").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(40);
+      check("ai edit: resolving the card re-enables the Edit control",
+        editBtns().length === 1 && editBtns()[0].disabled === false);
+
+      // (5d) no genuine user turn: no-op.
+      await resetAi();
+      const chatB4 = aiChatLog.length;
+      window.NB.ai.editLastMessage();
+      await tick(30);
+      check("ai edit: no genuine user turn -> editLastMessage() is a no-op",
+        aiChatLog.length === chatB4 && editBtns().length === 0 &&
+        editLog().children.length === 0,
+        "requests+" + (aiChatLog.length - chatB4));
+    }
+
+    // (6) regression: Regenerate on a tool turn leaves one trace, not two. -
+    {
+      await resetAi();
+      const readStream = () => [sseFrame("Let me read.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "read", path: "notes/a.md" }) + "\n```")];
+      const finalStream = () => [sseFrame("Done reading.")];
+      aiChatStreams.push(readStream());
+      aiChatStreams.push(finalStream());
+      aiInput().value = "read for regenerate";
+      aiSend();
+      await tick(160);
+      check("ai edit: precondition, the read turn produced one trace",
+        traces().length === 1 && aiChatLog.length === 2,
+        "traces=" + traces().length + " requests=" + aiChatLog.length);
+      aiChatStreams.push(readStream());
+      aiChatStreams.push(finalStream());
+      const chatBefore = aiChatLog.length;
+      clickEl(regenBtns()[0]);
+      await tick(200);
+      check("ai edit: Regenerate leaves exactly ONE trace for the turn (regression)",
+        traces().length === 1 && traces()[0].dataset.testToolTrace === "read",
+        "traces=" + traces().length);
+      check("ai edit: the regenerated tool turn re-ran the loop cleanly",
+        aiChatLog.length === chatBefore + 2 && asstBubbles().length === 2 &&
+        userBubbles().length === 1 && regenBtns().length === 1,
+        "requests+" + (aiChatLog.length - chatBefore) +
+        " asst=" + asstBubbles().length);
+    }
+
+    // Leave the panel idle for later blocks.
+    await resetAi();
+    window.NB.ai._resetImageCodec();
+  }
+
+  console.log("== ai turn review fixes ==");
+  // Review fixes for the Regenerate/Edit controls:
+  //  - genuine turns are detected structurally (a toolMessages WeakSet),
+  //    not by sniffing for a "(tool " text prefix;
+  //  - Edit is disabled while the composer holds a draft or pending
+  //    attachment chips (restoring would clear them);
+  //  - after Edit trims the tail, restoreTurnControls() re-adds exactly
+  //    one Edit + one Regenerate to the now-newest turn;
+  //  - every tool round re-checks the 12 MiB wire cap before sending.
+  {
+    const fixLog = () => window.document.getElementById("ai-chat-log");
+    const fixInput = () => window.document.getElementById("ai-input");
+    const editBtns = () => Array.from(fixLog().querySelectorAll(".ai-edit"));
+    const regenBtns = () => Array.from(fixLog().querySelectorAll(".ai-regenerate"));
+    const userBubbles = () => Array.from(fixLog().querySelectorAll(".ai-msg-user"));
+    const asstBubbles = () => Array.from(fixLog().querySelectorAll(".ai-msg-assistant"));
+    const attachChips = () => Array.from(window.document.querySelectorAll(
+      "#ai-view .ai-attach-bar .ai-attach-chip"));
+    // Real activation: element.click() is suppressed on a disabled button,
+    // so it faithfully models the user path the disabled attribute guards.
+    const clickBtn = (el) => el.click();
+    const fireInput = (v) => {
+      fixInput().value = v;
+      fixInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    };
+    const clearAll = async () => {
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+    };
+    const resetAi = async () => {
+      await clearAll();
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+    };
+    const reqUsers = (i) => (aiChatLog[i] || { messages: [] })
+      .messages.filter(m => m.role === "user");
+
+    // Re-sync the provider config (earlier blocks may have rewritten it).
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (B1) structural genuine-turn detection ----------------------------
+    // Two genuine turns; the newest text starts with "(tool ". The old
+    // prefix heuristic would have skipped it and acted on the earlier
+    // turn instead. Regenerate must re-send the newest turn, and Edit must
+    // restore its prompt. This setup doubles as the B3 restore-controls
+    // case: after Edit, the previous turn regains both controls.
+    {
+      await resetAi();
+      aiChatStreams.push([sseFrame("First reply.")]);
+      fireInput("ordinary first question");
+      aiSend();
+      await tick(100);
+      aiChatStreams.push([sseFrame("Second reply.")]);
+      fireInput("(tool note) what about this?");
+      aiSend();
+      await tick(100);
+      check("ai turn fix: two genuine turns; the newest starts with '(tool '",
+        userBubbles().length === 2 && asstBubbles().length === 2 &&
+        reqUsers(1).length === 2 &&
+        reqUsers(1).at(-1).content === "(tool note) what about this?",
+        "users=" + userBubbles().length + " reqUsers=" +
+        JSON.stringify(reqUsers(1).map(m => m.content)));
+
+      // Regenerate re-sends the "(tool "-prefixed genuine turn. The request
+      // keeps the earlier turn as history but must END at the newest
+      // genuine turn (the old heuristic would have anchored on the earlier
+      // one and re-sent only that).
+      aiChatStreams.push([sseFrame("Second reply, regenerated.")]);
+      const chatBefore = aiChatLog.length;
+      clickBtn(regenBtns()[0]);
+      await tick(140);
+      const regenReq = aiChatLog[aiChatLog.length - 1] || { messages: [] };
+      const regenUsers = reqUsers(aiChatLog.length - 1);
+      check("ai turn fix: Regenerate re-sends the '(tool '-prefixed genuine turn",
+        aiChatLog.length === chatBefore + 1 &&
+        regenUsers.at(-1).content === "(tool note) what about this?" &&
+        regenReq.messages.at(-1).role === "user",
+        JSON.stringify(regenUsers.map(m => m.content)));
+      check("ai turn fix: Regenerate replaced only the newest reply",
+        userBubbles().length === 2 && asstBubbles().length === 2 &&
+        /Second reply, regenerated/.test(asstBubbles().at(-1).textContent),
+        "users=" + userBubbles().length + " asst=" + asstBubbles().length);
+
+      // Edit restores the "(tool "-prefixed prompt, not the earlier one.
+      clickBtn(editBtns()[0]);
+      await tick(60);
+      check("ai turn fix: Edit restores the newest prompt, not the earlier one",
+        fixInput().value === "(tool note) what about this?",
+        JSON.stringify(fixInput().value));
+
+      // (B3) restore controls after Edit (multi-turn).
+      check("ai turn fix: after Edit there is still exactly one Edit + one Regenerate",
+        editBtns().length === 1 && regenBtns().length === 1,
+        "edits=" + editBtns().length + " regens=" + regenBtns().length);
+      check("ai turn fix: the restored controls sit under the previous turn",
+        userBubbles().length === 1 &&
+        userBubbles()[0].querySelector(".ai-edit") === editBtns()[0] &&
+        asstBubbles().length === 1 &&
+        asstBubbles()[0].querySelector(".ai-regenerate") === regenBtns()[0],
+        "users=" + userBubbles().length + " asst=" + asstBubbles().length);
+    }
+
+    // (B2) Edit disabled by a draft or pending chips --------------------
+    {
+      await resetAi();
+      aiChatStreams.push([sseFrame("Idle reply.")]);
+      fireInput("question");
+      aiSend();
+      await tick(100);
+      check("ai turn fix: a completed turn offers an enabled Edit",
+        editBtns().length === 1 && editBtns()[0].disabled === false,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+
+      // A non-empty draft disables Edit; a real click is a no-op.
+      fireInput("a draft in progress");
+      await tick(20);
+      check("ai turn fix: a non-empty draft disables Edit",
+        editBtns().length === 1 && editBtns()[0].disabled === true &&
+        /Clear the draft/.test(editBtns()[0].title),
+        "disabled=" + editBtns()[0].disabled + " title=" + editBtns()[0].title);
+      const usersBefore = userBubbles().length;
+      const chatB = aiChatLog.length;
+      clickBtn(editBtns()[0]);          // disabled -> activation suppressed
+      await tick(40);
+      check("ai turn fix: clicking the disabled Edit is a no-op",
+        userBubbles().length === usersBefore && aiChatLog.length === chatB &&
+        fixInput().value === "a draft in progress" && editBtns().length === 1,
+        "users=" + userBubbles().length +
+        " input=" + JSON.stringify(fixInput().value));
+
+      // Emptying the draft re-enables Edit.
+      fireInput("");
+      await tick(20);
+      check("ai turn fix: emptying the draft re-enables Edit",
+        editBtns().length === 1 && editBtns()[0].disabled === false,
+        "disabled=" + (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+
+      // A pending attachment chip disables Edit too; removing it re-enables.
+      window.NB.ai._setImageCodec({
+        probe: () => Promise.resolve({ width: 50, height: 50, mime: "image/png" }),
+        passthrough: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,QUJD", bytes: 3, mime: "image/png" }),
+        render: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([{ name: "draft.png", type: "image/png",
+        size: 400, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }]);
+      await tick(80);
+      check("ai turn fix: a pending attachment chip disables Edit",
+        attachChips().length === 1 && editBtns().length === 1 &&
+        editBtns()[0].disabled === true,
+        "chips=" + attachChips().length + " disabled=" +
+        (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+      attachChips()[0].querySelector(".ai-attach-chip-remove").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+      check("ai turn fix: removing the chip re-enables Edit",
+        attachChips().length === 0 && editBtns().length === 1 &&
+        editBtns()[0].disabled === false,
+        "chips=" + attachChips().length + " disabled=" +
+        (editBtns()[0] ? editBtns()[0].disabled : "n/a"));
+      window.NB.ai._resetImageCodec();
+    }
+
+    // (B4) per-round wire-size guard ------------------------------------
+    // A read tool returns a body large enough that the conversation plus
+    // the tool follow-up exceeds 12 MiB on the NEXT round. The loop must
+    // refuse that round (too-large error) and never post an over-cap body.
+    {
+      await resetAi();
+      const HUGE_PATH = "notes/wire-huge.md";
+      FILES[HUGE_PATH] = "x".repeat(13 * 1024 * 1024);
+      aiChatStreams.push([sseFrame("Reading it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "read", path: HUGE_PATH }) + "\n```")]);
+      fireInput("read the huge file");
+      aiSend();
+      await tick(300);
+      const WIRE_CAP = 12 * 1024 * 1024;
+      const sizeOf = (i) =>
+        new TextEncoder().encode(JSON.stringify(aiChatLog[i])).length;
+      const sizes = aiChatLog.map((_, i) => sizeOf(i));
+      check("ai turn fix: the over-cap later round is never posted",
+        aiChatLog.length === 1,
+        "requests=" + aiChatLog.length + " sizes=" + sizes.join(","));
+      check("ai turn fix: every posted body stays within the 12 MiB cap",
+        sizes.every(s => s <= WIRE_CAP),
+        "sizes=" + sizes.join(","));
+      check("ai turn fix: the refused round shows the too-large error",
+        /Message too large to send/.test(fixLog().textContent),
+        fixLog().textContent.slice(-120));
+      check("ai turn fix: the read trace is shown even though the round was refused",
+        Array.from(fixLog().querySelectorAll(".ai-tool-trace"))
+          .some(t => t.dataset.testToolTrace === "read"),
+        "traces=" + fixLog().querySelectorAll(".ai-tool-trace").length);
+      delete FILES[HUGE_PATH];
+    }
+
+    // Leave the panel idle for later blocks.
+    await resetAi();
+    window.NB.ai._resetImageCodec();
+  }
 
   console.log("== side-panel AI collapse button ==");
   // The AI view is mounted (with its test config) by the block above;

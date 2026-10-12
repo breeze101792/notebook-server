@@ -31,11 +31,21 @@
  * full history (system + past turns + tool records), so follow-up
  * questions keep context without the model re-reading files.
  *
- * Attachments: the user may attach local text files to a message. Each
- * file's text is inlined into the user turn, capped at 32 KiB per file,
- * 96 KiB total, and 5 files. The visible bubble shows only the file
- * names; the bodies live in the conversation, so they are re-uploaded on
- * every subsequent request. Clear resets the attachments with the chat.
+ * Regenerate: once a turn finishes (success, error, or stop) the newest
+ * assistant bubble carries a "↻ Regenerate" footer button. regenerate()
+ * trims the conversation back to the latest genuine user turn and re-runs
+ * the loop, re-sending that turn (image parts included) unchanged.
+ *
+ * Attachments: the user may attach images (PNG/JPEG/WebP/GIF) and local
+ * text files. Text bodies are inlined into the user turn (128 KiB per
+ * file, 512 KiB total). Images are read and downscaled/re-encoded locally
+ * in the browser, then sent as OpenAI-compatible image_url content parts
+ * (max 4 per message); a message carrying images uses a content-part
+ * array instead of a plain string. Both kinds share one chip list (max 8
+ * total) and one synchronous slot reservation. The visible bubble shows
+ * text names and image thumbnails; the bodies/bytes live in the
+ * conversation, so they are re-uploaded on every request and tool round.
+ * Clear resets the attachments with the chat.
  */
 (function () {
   "use strict";
@@ -43,12 +53,31 @@
 
   const MAX_TOOL_ROUNDS = 5;   // safety cap per user turn
 
-  /* Attachments: local text files inlined into the user turn. The caps
-   * are reserved synchronously at selection time so an in-flight read
-   * can never race the accounting. */
-  const AI_ATTACH_MAX_FILES = 5;
-  const AI_ATTACH_MAX_BYTES = 32 * 1024;
-  const AI_ATTACH_MAX_TOTAL = 96 * 1024;
+  /* Turn controls under the newest turn: Edit restores the last prompt and
+   * its attachments into the composer (no auto-send); Regenerate re-runs
+   * the turn. Only the newest turn carries them. */
+  const AI_EDIT_LABEL = "✎ Edit";
+  const AI_EDIT_TITLE = "Edit your last question and resend";
+  const AI_EDIT_DRAFT_TITLE = "Clear the draft and attachments first";
+
+  /* Attachments: local text files inlined into the user turn, and local
+   * images sent as content parts. The slot count and the per-file source
+   * cap are reserved synchronously at selection time so an in-flight read
+   * can never race the accounting; encoded-byte accounting settles when
+   * the read/encode completes. */
+  const AI_ATTACH_MAX_FILES = 8;               // text + image chips
+  const AI_ATTACH_MAX_IMAGES = 4;              // image chips per message
+  const AI_ATTACH_IMAGE_SOURCE_MAX_BYTES = 10 * 1024 * 1024;
+  const AI_ATTACH_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+  const AI_ATTACH_IMAGE_TARGET_BYTES = 768 * 1024;
+  const AI_ATTACH_IMAGE_MAX_EDGE = 1568;       // longest edge after downscale
+  const AI_ATTACH_IMAGE_SECOND_EDGE = 1024;    // one retry pass if still large
+  const AI_ATTACH_IMAGE_QUALITY = 0.85;        // JPEG/WebP re-encode quality
+  const AI_ATTACH_IMAGE_SECOND_QUALITY = 0.75; // second-pass quality
+  const AI_ATTACH_IMAGE_MAX_PIXELS = 40 * 1000 * 1000;
+  const AI_ATTACH_TEXT_MAX_BYTES = 128 * 1024;
+  const AI_ATTACH_TEXT_MAX_TOTAL = 512 * 1024;
+  const AI_ATTACH_MAX_WIRE_BYTES = 12 * 1024 * 1024;
   const AI_ATTACH_KB = 1024;
   const AI_ATTACH_MB = 1024 * 1024;
   const AI_ATTACH_NAME_MAX = 120;              // chars kept from a name
@@ -73,6 +102,13 @@
     ".py", ".c", ".h", ".cc", ".cpp", ".hpp", ".js", ".mjs", ".ts", ".tsx",
     ".html", ".css", ".sh", ".bash", ".toml", ".ini", ".cfg", ".conf",
     ".xml", ".svg", ".rs", ".go", ".java", ".mk",
+  ];
+  /* SVG stays text (in the list above); only raster formats are images. */
+  const AI_ATTACH_IMAGE_TYPES = [
+    "image/png", "image/jpeg", "image/webp", "image/gif",
+  ];
+  const AI_ATTACH_IMAGE_EXTS = [
+    ".png", ".jpg", ".jpeg", ".webp", ".gif",
   ];
 
   /* ------------------------------------------------------------------ *
@@ -408,6 +444,8 @@
   function removeActions(card) {
     const a = card.querySelector(".ai-edit-actions");
     if (a) a.remove();
+    /* Resolving a permission card may unblock the turn controls. */
+    updateTurnDisabled();
   }
 
   function applyButtons(card, applyLabel, onApply, onReject) {
@@ -754,6 +792,33 @@
 
   let conversation = [];   // {role, content} minuse the system prompt
   let systemCache = null;  // reset when the active file changes
+  /* Structural tag for role-user entries that are tool follow-ups, not
+   * genuine user turns. A WeakSet keeps sliced-away entries collectable
+   * and adds nothing to the serialized entry (the wire body stays
+   * {role, content}). */
+  const toolMessages = new WeakSet();
+
+  /* The mounted panel installs these so regenerate()/editLastMessage()
+   * (exposed on NB.ai and wired to the turn-control buttons) can read the
+   * live request/attachment state and the chat log without a DOM query.
+   * regenBtn/editBtn are the newest turn's controls; runToolLoop() clears
+   * them before every new turn. lastSentPrompt/lastSentFiles capture the
+   * last sent turn for Edit; they hold the composer's own data only (never
+   * the conversation entries, which serialize to the wire). */
+  let mountLog = null;
+  let mountUi = null;
+  let mountIsBusy = () => false;
+  let mountPendingReads = () => 0;
+  /* Live composer state for the Edit guard: a non-empty draft or a
+   * pending attachment chip means editLastMessage() (which clears the
+   * attach bar and overwrites the textarea) would discard the user's
+   * work, so Edit stays disabled. */
+  let mountDraftNonEmpty = () => false;
+  let mountHasPendingAttachments = () => false;
+  let regenBtn = null;
+  let editBtn = null;
+  let lastSentPrompt = "";
+  let lastSentFiles = [];
 
   function currentPath() {
     return NB.viewer.getPath() || "";
@@ -838,13 +903,40 @@
 
   function invalidateSystem() { systemCache = null; }
 
+  /* Append a tool follow-up/outcome: it goes on the conversation AND into
+   * the structural toolMessages set, so lastUserTurnIndex() can skip it
+   * without sniffing the content. Every tool-role-user push uses this. */
+  function pushToolMessage(entry) {
+    conversation.push(entry);
+    toolMessages.add(entry);
+  }
+
   /* Tool outcome ledger: appended to the conversation so the model sees
    * what happened to each of its proposals (applied / rejected / block). */
   function recordToolOutcome(t, status, note) {
-    conversation.push({
+    pushToolMessage({
       role: "user",
       content: "(tool result) " + t.tool + " -> " + note,
     });
+  }
+
+  /* Index of the latest GENUINE user turn: the last role-user entry that
+   * is not in toolMessages. A content-part array (an image turn) is never
+   * tagged, so it is always genuine. -1 when none. */
+  function lastUserTurnIndex() {
+    for (let i = conversation.length - 1; i >= 0; i--) {
+      const m = conversation[i];
+      if (m.role !== "user") continue;
+      if (toolMessages.has(m)) continue;
+      return i;
+    }
+    return -1;
+  }
+
+  /* An image-bearing turn uses a content-part array with image_url parts. */
+  function turnHasImages(entry) {
+    return !!entry && Array.isArray(entry.content) &&
+      entry.content.some((p) => p && p.type === "image_url");
   }
 
   /* ------------------------------------------------------------------ *
@@ -978,14 +1070,186 @@
    * The tool loop
    * ------------------------------------------------------------------ */
 
+  /* Serialized request size in UTF-8 bytes -- the quantity the wire cap
+   * bounds, including the re-uploaded conversation. */
+  function wireByteSize(str) {
+    return new TextEncoder().encode(str).length;
+  }
+
+  /* Serialized size of a request body with the current conversation plus
+   * optional extra messages -- the exact shape NB.api.aiChat sends, so the
+   * tool loop can re-check the cap before every round. */
+  function wireSizeOfMessages(extraMessages) {
+    const body = {
+      server: currentServer,
+      messages: [getSystem(), ...conversation].concat(extraMessages || []),
+    };
+    return wireByteSize(JSON.stringify(body));
+  }
+
+  function wireSizeOfTurn(userContent) {
+    return wireSizeOfMessages([{ role: "user", content: userContent }]);
+  }
+
+  function showSendTooLarge(log, size) {
+    const errEl = document.createElement("div");
+    errEl.className = "ai-error";
+    errEl.textContent = "Message too large to send (" + humanSize(size) +
+      ", limit " + (AI_ATTACH_MAX_WIRE_BYTES / AI_ATTACH_MB) +
+      " MB); remove attachments or Clear the conversation.";
+    log.appendChild(errEl);
+    scrollLog(log);
+  }
+
+  /* Does a write/patch permission card still await the user after the last
+   * user bubble? The tool loop stops for that decision, so Regenerate stays
+   * disabled until the card is applied or rejected (its actions removed). */
+  function hasPendingCard(log) {
+    const users = log.querySelectorAll(".ai-msg-user");
+    const lastUser = users[users.length - 1];
+    if (!lastUser) return false;
+    let node = lastUser.nextElementSibling;
+    while (node) {
+      if (node.classList && node.classList.contains("ai-edit-card") &&
+          node.querySelector(".ai-edit-actions")) return true;
+      node = node.nextElementSibling;
+    }
+    return false;
+  }
+
+  /* Drop every sibling node after the last .ai-msg-user bubble: assistant
+   * bubbles AND the .ai-tool-trace lines, .ai-error boxes, and cards the
+   * tool loop appends directly to the log. Replacing the last turn is a
+   * whole-tail operation -- trimming only .ai-msg siblings left stale
+   * trace lines behind (duplicate traces after Regenerate). Regenerate
+   * keeps the user bubble (the turn is re-run unchanged); Edit passes
+   * includeUser to drop it too (the turn is re-added by the next send). */
+  function clearLastTurnDom(log, includeUser) {
+    if (!log) return;
+    const users = log.querySelectorAll(".ai-msg-user");
+    const lastUser = users[users.length - 1];
+    if (!lastUser) return;
+    let node = lastUser.nextElementSibling;
+    while (node) {
+      const next = node.nextElementSibling;
+      node.remove();
+      node = next;
+    }
+    if (includeUser) lastUser.remove();
+  }
+
+  /* Only the newest turn carries the turn controls (Edit + Regenerate). */
+  function removeTurnControls(log) {
+    if (log) {
+      log.querySelectorAll(".ai-turn-control").forEach((b) => b.remove());
+    }
+    regenBtn = null;
+    editBtn = null;
+  }
+
+  /* Disabled while a request is in flight, attachment reads are pending,
+   * or a permission card is unresolved -- the guard's visual half. Edit is
+   * additionally disabled while the composer holds a draft or pending
+   * attachment chips, because restoring the last turn would clear them. */
+  function updateTurnDisabled() {
+    const busy = mountIsBusy() || mountPendingReads() > 0 ||
+      (mountLog ? hasPendingCard(mountLog) : false);
+    const hasDraft = mountDraftNonEmpty() || mountHasPendingAttachments();
+    if (regenBtn) regenBtn.disabled = busy;
+    if (editBtn) {
+      editBtn.disabled = busy || hasDraft;
+      editBtn.title = hasDraft ? AI_EDIT_DRAFT_TITLE : AI_EDIT_TITLE;
+    }
+  }
+
+  /* The footer button under the newest assistant reply. */
+  function appendRegenerate(bubble) {
+    if (!bubble) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ai-turn-control ai-regenerate";
+    btn.dataset.testRegenerate = "1";
+    btn.textContent = "↻ Regenerate";
+    btn.title = "Re-run the model on your last question";
+    btn.addEventListener("click", () => { regenerate(); });
+    bubble.appendChild(btn);
+    regenBtn = btn;
+    updateTurnDisabled();
+  }
+
+  /* The "✎ Edit" control on the newest user bubble. It restores the prompt
+   * and attachments into the composer; it never auto-sends. */
+  function appendEditControl(log) {
+    const users = log ? log.querySelectorAll(".ai-msg-user") : [];
+    const lastUser = users[users.length - 1];
+    if (!lastUser) return;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ai-turn-control ai-edit";
+    btn.dataset.testEdit = "1";
+    btn.textContent = AI_EDIT_LABEL;
+    btn.title = AI_EDIT_TITLE;
+    btn.addEventListener("click", () => { editLastMessage(); });
+    lastUser.appendChild(btn);
+    editBtn = btn;
+    updateTurnDisabled();
+  }
+
+  /* Re-add both controls to whatever is now the newest turn. Edit trims
+   * the tail, so the previous turn loses its controls; this restores them
+   * on that turn (no-op when no genuine user turn remains). Existing
+   * controls are removed first to keep the single-set invariant. */
+  function restoreTurnControls(log) {
+    if (!log) return;
+    removeTurnControls(log);
+    const users = log.querySelectorAll(".ai-msg-user");
+    if (!users.length) return;         // no previous turn to control
+    const asst = log.querySelectorAll(".ai-msg-assistant");
+    appendRegenerate(asst[asst.length - 1]);
+    appendEditControl(log);
+  }
+
   async function send(log, userText, ui, files) {
     ui.begin();
+    const userContent = composeUserContent(userText, files);
+    /* Backstop: refuse a request whose serialized body would exceed the
+     * wire cap, before it is sent and before the conversation changes. */
+    const size = wireSizeOfTurn(userContent);
+    if (size > AI_ATTACH_MAX_WIRE_BYTES) {
+      showSendTooLarge(log, size);
+      ui.end();
+      return;
+    }
+    /* Capture the turn for Edit. These live in module state only -- never
+     * on the conversation entry, which serializes into the wire body (an
+     * image entry's data URL would otherwise be duplicated). */
+    lastSentPrompt = userText;
+    lastSentFiles = files ? files.slice() : [];
     const userBubble = appendMessage(log, "user", userText);
     if (files && files.length) appendUserFiles(userBubble, files);
-    conversation.push({ role: "user", content: composeUserContent(userText, files) });
+    conversation.push({ role: "user", content: userContent });
+    await runToolLoop(log, ui);
+  }
 
+  /* One assistant turn: request the model, stream the reply, execute any
+   * tool calls, and feed the results back for the next round. It operates
+   * on the current conversation, so send() and regenerate() share it. It
+   * always ends by releasing the request controller (ui.end()) and
+   * offering the Regenerate control on the final assistant bubble. */
+  async function runToolLoop(log, ui) {
+    removeTurnControls(log);
+    let lastBubble = null;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      /* Re-check the wire cap before every round: a near-limit image turn
+       * can exceed it once tool follow-ups are appended mid-turn. Refuse
+       * and stop cleanly rather than send an oversize body. */
+      const size = wireSizeOfMessages();
+      if (size > AI_ATTACH_MAX_WIRE_BYTES) {
+        showSendTooLarge(log, size);
+        break;
+      }
       const bubble = appendMessage(log, "assistant", "");
+      lastBubble = bubble;
       const state = { lastShape: "" };
       let text = "";
       let aborted = false;
@@ -1001,6 +1265,19 @@
           errEl.className = "ai-error";
           errEl.textContent = "AI request failed: " + (e.message || e);
           bubble.appendChild(errEl);
+          /* A provider HTTP rejection on an image-bearing turn is the
+           * signal the model likely has no vision. The image parts stay
+           * in the conversation, so a retry (or a model switch) still
+           * carries them. */
+          if (e.status >= 400 &&
+              turnHasImages(conversation[lastUserTurnIndex()])) {
+            const hintEl = document.createElement("div");
+            hintEl.className = "ai-error";
+            hintEl.textContent = "This model rejected the image(s). The " +
+              "selected model may not support image input — switch to a " +
+              "vision model and retry.";
+            bubble.appendChild(hintEl);
+          }
         }
         break;
       }
@@ -1019,12 +1296,11 @@
 
       /* Execute every tool in order; reads run now, writes/patches ask. */
       let anyPending = false;         // a card is waiting for the user
-      const followUps = [];
       for (const t of toolCalls) {
         if (t.tool === "list" || t.tool === "read" ||
             t.tool === "fetch" || t.tool === "search") {
           const res = await runAutoTool(t, log);
-          followUps.push({
+          pushToolMessage({
             role: "user",
             content: "(tool " + t.tool + (t.path ? " " + t.path : "") + " result)\n" +
                      (res ? res.text : "unavailable"),
@@ -1033,7 +1309,7 @@
           const kind = runPendingTool(t, log);
           if (kind === "asked-permission") {
             anyPending = true;
-            followUps.push({
+            pushToolMessage({
               role: "user",
               content: "(tool " + t.tool + " " + t.path +
                 " awaiting user approval; the user will apply or reject it)",
@@ -1041,7 +1317,6 @@
           }
         }
       }
-      conversation.push(...followUps);
       if (anyPending) {
         // A permission card is pending; stop polling the model until the
         // user clicks Apply/Reject. The outcome lands in the conversation
@@ -1052,10 +1327,60 @@
       // Read-only tools: loop again so the model can use their output.
     }
     ui.end();
+    appendRegenerate(lastBubble);
+    appendEditControl(log);
+  }
+
+  /* Re-run the model on the latest genuine user turn, replacing the prior
+   * assistant reply for that turn. The user turn (image parts included) is
+   * re-sent unchanged, so a provider rejection can be retried after a
+   * model switch or a config fix. */
+  async function regenerate() {
+    const log = mountLog;
+    const ui = mountUi;
+    if (!log || !ui) return;
+    if (mountIsBusy() || mountPendingReads() > 0) return;
+    if (hasPendingCard(log)) return;    // loop stopped for an Apply/Reject
+    const idx = lastUserTurnIndex();
+    if (idx < 0) return;                // no genuine user turn to re-run
+    /* Trim the DOM: drop the whole tail after the last user bubble (the old
+     * assistant reply, trace lines, errors, and turn controls). */
+    clearLastTurnDom(log);
+    removeTurnControls(log);
+    conversation = conversation.slice(0, idx + 1);
+    ui.begin();
+    await runToolLoop(log, ui);
+  }
+
+  /* Edit the latest genuine user turn: drop its DOM tail and conversation
+   * entries, then restore the prompt + attachments into the composer for
+   * resending. It never auto-sends -- the user edits and presses Send. */
+  function editLastMessage() {
+    const log = mountLog;
+    if (!log) return;
+    if (mountIsBusy() || mountPendingReads() > 0) return;
+    if (hasPendingCard(log)) return;    // loop stopped for an Apply/Reject
+    /* Mirror the button's disabled rule so a direct call cannot silently
+     * discard the user's draft or pending attachments. */
+    if (mountDraftNonEmpty() || mountHasPendingAttachments()) return;
+    const idx = lastUserTurnIndex();
+    if (idx < 0) return;                // no genuine user turn to edit
+    clearLastTurnDom(log, true);        // drop the user bubble + its tail
+    removeTurnControls(log);
+    /* Trim BEFORE the user turn: the edited prompt is re-added by the next
+     * send. */
+    conversation = conversation.slice(0, idx);
+    if (attachRestore) attachRestore(lastSentFiles);
+    composerSetPrompt(lastSentPrompt);
+    composerFocus();
+    /* The previous turn now has no controls; restore them. Run after the
+     * composer restore so the Edit control's disabled state sees the draft
+     * and the restored attachment chips. */
+    restoreTurnControls(log);
   }
 
   /* ------------------------------------------------------------------ *
-   * Attachments (local text files inlined into the user turn)
+   * Attachments (text files inlined; images downscaled into content parts)
    * ------------------------------------------------------------------ */
 
   /* The mounted panel installs these so the test hooks can reach the
@@ -1064,6 +1389,12 @@
   let attachAddFiles = null;
   let attachGetPending = () => [];
   let attachReset = () => {};
+  /* Edit restore path, installed by the mount: repopulate the pending
+   * attachment bar from the last turn's entries, and drive the composer
+   * textarea. */
+  let attachRestore = null;
+  let composerSetPrompt = () => {};
+  let composerFocus = () => {};
 
   function humanSize(bytes) {
     if (bytes < AI_ATTACH_KB) return bytes + " B";
@@ -1098,6 +1429,15 @@
     return AI_ATTACH_EXT_ALLOW.indexOf(fileExt(file.name)) >= 0;
   }
 
+  /* Image classification is best-effort: MIME first, then extension. The
+   * decode step is the final gate, so a text file named ".png" passes here
+   * and is later rejected as unreadable. */
+  function isImageLike(file) {
+    const type = String(file.type || "").toLowerCase();
+    if (AI_ATTACH_IMAGE_TYPES.indexOf(type) >= 0) return true;
+    return AI_ATTACH_IMAGE_EXTS.indexOf(fileExt(file.name)) >= 0;
+  }
+
   function isBom(bytes, bom) {
     if (bytes.length < bom.length) return false;
     for (let i = 0; i < bom.length; i++) {
@@ -1127,21 +1467,207 @@
     return text.indexOf(AI_ATTACH_NUL) >= 0 ? null : text;
   }
 
-  async function readAttachment(file) {
-    let buf;
-    if (typeof file.arrayBuffer === "function") {
-      buf = await file.arrayBuffer();
-    } else {
-      buf = await new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(fr.result);
-        fr.onerror = () => reject(fr.error || new Error(AI_ATTACH_ERR_READ));
-        fr.readAsArrayBuffer(file);
-      });
+  function readFileArrayBuffer(file) {
+    if (file && typeof file.arrayBuffer === "function") {
+      return Promise.resolve(file.arrayBuffer());
     }
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error || new Error(AI_ATTACH_ERR_READ));
+      fr.readAsArrayBuffer(file);
+    });
+  }
+
+  async function readAttachment(file) {
+    const buf = await readFileArrayBuffer(file);
     const text = decodeAttachment(new Uint8Array(buf));
     if (text === null) throw new Error(AI_ATTACH_ERR_BINARY);
     return text;
+  }
+
+  /* ---- image codec seam ------------------------------------------------
+   * All image mechanics (sniff, decode, re-encode, base64) go through this
+   * codec so tests can replace the canvas path with a stub. The policy
+   * (caps, pass-through vs downscale, the second pass) stays in ai.js. */
+  function sniffImageMime(bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E &&
+        bytes[3] === 0x47 && bytes[4] === 0x0D && bytes[5] === 0x0A &&
+        bytes[6] === 0x1A && bytes[7] === 0x0A) {
+      return "image/png";
+    }
+    if (bytes.length >= 3 &&
+        bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+      return "image/jpeg";
+    }
+    if (bytes.length >= 6 &&
+        bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+        bytes[3] === 0x38 &&
+        (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) {
+      return "image/gif";
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+        bytes[3] === 0x46 &&
+        bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 &&
+        bytes[11] === 0x50) {
+      return "image/webp";
+    }
+    return null;
+  }
+
+  function bytesToBase64(bytes) {
+    let bin = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(bin);
+  }
+
+  function dataUrlByteSize(dataUrl) {
+    const comma = dataUrl.indexOf(",");
+    const b64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+    const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+    return Math.floor(b64.length * 3 / 4) - pad;
+  }
+
+  function dataUrlMime(dataUrl) {
+    const semi = dataUrl.indexOf(";");
+    return dataUrl.slice(5, semi >= 0 ? semi : dataUrl.length);
+  }
+
+  function loadImageElement(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("image decode failed"));
+      };
+      img.src = url;
+    });
+  }
+
+  function decodeDrawable(file) {
+    if (typeof createImageBitmap === "function") {
+      return createImageBitmap(file).then((bmp) => ({
+        source: bmp, width: bmp.width, height: bmp.height,
+        release() { if (bmp.close) bmp.close(); },
+      }));
+    }
+    if (typeof document !== "undefined" && typeof Image === "function") {
+      return loadImageElement(file).then((img) => ({
+        source: img,
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+        release() {},
+      }));
+    }
+    return Promise.reject(new Error("image decode unavailable"));
+  }
+
+  function builtinImageCodec() {
+    return {
+      probe(file) {
+        return readFileArrayBuffer(file).then((buf) => {
+          const bytes = new Uint8Array(buf);
+          const mime = sniffImageMime(bytes);
+          if (!mime) return { width: 0, height: 0, mime: null };
+          return decodeDrawable(file).then((d) => {
+            const out = { width: d.width, height: d.height, mime };
+            d.release();
+            return out;
+          });
+        });
+      },
+      render(file, opts) {
+        const maxEdge = (opts && opts.maxEdge) || AI_ATTACH_IMAGE_MAX_EDGE;
+        return Promise.all([readFileArrayBuffer(file), decodeDrawable(file)])
+          .then(([buf, d]) => {
+            try {
+              const mime = sniffImageMime(new Uint8Array(buf));
+              const scale = Math.min(1, maxEdge / Math.max(d.width, d.height));
+              const w = Math.max(1, Math.round(d.width * scale));
+              const h = Math.max(1, Math.round(d.height * scale));
+              const canvas = document.createElement("canvas");
+              canvas.width = w;
+              canvas.height = h;
+              canvas.getContext("2d").drawImage(d.source, 0, 0, w, h);
+              const outMime = mime === "image/jpeg" ? "image/jpeg"
+                : mime === "image/webp" ? "image/webp" : "image/png";
+              const quality = outMime === "image/png" ? undefined
+                : ((opts && opts.quality) || AI_ATTACH_IMAGE_QUALITY);
+              const dataUrl = canvas.toDataURL(outMime, quality);
+              return {
+                dataUrl,
+                bytes: dataUrlByteSize(dataUrl),
+                mime: dataUrlMime(dataUrl),
+              };
+            } finally {
+              d.release();
+            }
+          });
+      },
+      passthrough(file) {
+        return readFileArrayBuffer(file).then((buf) => {
+          const bytes = new Uint8Array(buf);
+          const mime = sniffImageMime(bytes);
+          if (!mime) throw new Error(AI_ATTACH_ERR_READ);
+          return {
+            dataUrl: "data:" + mime + ";base64," + bytesToBase64(bytes),
+            bytes: bytes.length,
+            mime,
+          };
+        });
+      },
+    };
+  }
+
+  const builtinCodecInstance = builtinImageCodec();
+  let imageCodecOverride = null;
+  function activeImageCodec() {
+    return imageCodecOverride || builtinCodecInstance;
+  }
+
+  /* Read one image and apply the size policy. Returns
+   * {dataUrl, bytes, mime, width, height}. */
+  async function readImageAttachment(file, name) {
+    const codec = activeImageCodec();
+    const probed = await codec.probe(file);
+    if (!probed || !probed.mime) {
+      throw new Error(name + " could not be read as an image");
+    }
+    if (probed.width * probed.height > AI_ATTACH_IMAGE_MAX_PIXELS) {
+      throw new Error(name + " could not be read as an image");
+    }
+    const longest = Math.max(probed.width, probed.height);
+    let encoded;
+    if (file.size <= AI_ATTACH_IMAGE_TARGET_BYTES &&
+        longest <= AI_ATTACH_IMAGE_MAX_EDGE) {
+      encoded = await codec.passthrough(file);
+    } else {
+      encoded = await codec.render(file, { maxEdge: AI_ATTACH_IMAGE_MAX_EDGE });
+      if (encoded.bytes > AI_ATTACH_IMAGE_TARGET_BYTES) {
+        encoded = await codec.render(file, {
+          maxEdge: AI_ATTACH_IMAGE_SECOND_EDGE,
+          quality: AI_ATTACH_IMAGE_SECOND_QUALITY,
+        });
+      }
+    }
+    if (encoded.bytes > AI_ATTACH_IMAGE_MAX_BYTES) {
+      throw new Error(name + " could not be reduced below " +
+        (AI_ATTACH_IMAGE_MAX_BYTES / AI_ATTACH_MB) + " MiB");
+    }
+    return {
+      dataUrl: encoded.dataUrl,
+      bytes: encoded.bytes,
+      mime: encoded.mime,
+      width: probed.width,
+      height: probed.height,
+    };
   }
 
   /* Unique chip/marker name: a repeated name gets a " (n)" suffix. The
@@ -1169,12 +1695,12 @@
     return err && err.message ? err.message : AI_ATTACH_ERR_READ;
   }
 
-  /* Inline each attachment body into the user turn. The visible bubble
-   * shows only names; this is what the model receives. */
-  function composeUserContent(userText, files) {
-    if (!files || !files.length) return userText;
+  /* Build the text portion of the user turn: the prompt plus one inline
+   * block per text attachment. Images are not text and are skipped. */
+  function composeUserText(userText, files) {
     let out = userText;
-    for (const f of files) {
+    for (const f of files || []) {
+      if (f.kind === "image") continue;
       const block = AI_ATTACH_MARK_OPEN + f.name + AI_ATTACH_MARK_SIZE +
         humanSize(f.size) + AI_ATTACH_MARK_OPEN_END + "\n" +
         f.content + "\n" +
@@ -1184,15 +1710,39 @@
     return out;
   }
 
+  /* The model receives a plain string when there are no images, and an
+   * OpenAI content-part array (one text part, one image_url part per
+   * image) when there are. */
+  function composeUserContent(userText, files) {
+    const text = composeUserText(userText, files);
+    const images = (files || []).filter((f) => f.kind === "image");
+    if (!images.length) return text;
+    const parts = [];
+    if (text) parts.push({ type: "text", text });
+    for (const f of images) {
+      parts.push({ type: "image_url", image_url: { url: f.dataUrl } });
+    }
+    return parts;
+  }
+
   function appendUserFiles(bubble, files) {
     const row = document.createElement("div");
     row.className = "ai-user-files";
     for (const f of files) {
-      const chip = document.createElement("span");
-      chip.className = "ai-user-file";
-      chip.textContent = f.name;
-      chip.title = f.size + " bytes";
-      row.appendChild(chip);
+      if (f.kind === "image") {
+        const img = document.createElement("img");
+        img.className = "ai-user-thumb";
+        img.src = f.dataUrl;
+        img.alt = f.name;
+        img.title = f.name;
+        row.appendChild(img);
+      } else {
+        const chip = document.createElement("span");
+        chip.className = "ai-user-file";
+        chip.textContent = f.name;
+        chip.title = f.size + " bytes";
+        row.appendChild(chip);
+      }
     }
     bubble.appendChild(row);
   }
@@ -1222,6 +1772,9 @@
       systemCache = null;
       log.innerHTML = "";
       clearAttachments();
+      removeTurnControls(log);
+      lastSentPrompt = "";
+      lastSentFiles = [];
     });
     actions.appendChild(clearBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {
@@ -1295,20 +1848,25 @@
     form.appendChild(attachInput);
     host.appendChild(form);
 
-    /* Attachment state lives with the mounted panel. Bytes are reserved
-     * when the reading chip appears and released only when the user
-     * removes it or its read fails. */
-    const attachments = [];       // fully-read {name, size, content}
+    /* Attachment state lives with the mounted panel. The slot count and
+     * the per-file source cap are reserved when the reading chip appears;
+     * a rejected file reserves nothing and a failed read releases its
+     * slot. reservedTotal tracks TEXT bytes only (the total text cap);
+     * images are bounded per-image and by the combined wire guard. */
+    const attachments = [];       // fully-read pending entries
     const usedNames = new Set();  // chip names (pending + read)
     let chipTotal = 0;            // attachment chips (excludes errors)
+    let imageCount = 0;           // pending + read image chips
     let pendingReads = 0;         // in-flight reads
-    let reservedTotal = 0;        // bytes held by pending + read chips
+    let reservedTotal = 0;        // text bytes held by pending + read chips
     let attachEpoch = 0;          // bumped on reset; stale reads don't count
     let ctl = null;
 
     function syncSend() {
       sendBtn.disabled = !!ctl || pendingReads > 0;
       attachBtn.disabled = !!ctl;
+      /* Keep the newest turn's controls in step with the live state. */
+      updateTurnDisabled();
     }
 
     function addAttachError(msg) {
@@ -1321,23 +1879,33 @@
     }
 
     function removeChip(chip) {
-      const bytes = Number(chip.dataset.bytes) || 0;
-      reservedTotal = Math.max(0, reservedTotal - bytes);
+      const textBytes = Number(chip.dataset.textBytes) || 0;
+      reservedTotal = Math.max(0, reservedTotal - textBytes);
+      if (chip.dataset.kind === "image") {
+        imageCount = Math.max(0, imageCount - 1);
+      }
       const name = chip.dataset.name;
       if (name) {
         usedNames.delete(name);
         const idx = attachments.findIndex(a => a.name === name);
         if (idx >= 0) attachments.splice(idx, 1);
       }
-      chipTotal--;
+      chipTotal = Math.max(0, chipTotal - 1);
       chip.remove();
       if (!attachBar.querySelector(".ai-attach-chip")) attachBar.hidden = true;
       syncSend();
     }
 
-    function makeChip(name) {
+    function makeChip(name, kind) {
       const chip = document.createElement("div");
       chip.className = "ai-attach-chip reading";
+      if (kind === "image") {
+        const thumb = document.createElement("img");
+        thumb.className = "ai-attach-chip-thumb";
+        thumb.alt = "";
+        thumb.hidden = true;
+        chip.appendChild(thumb);
+      }
       const nameEl = document.createElement("span");
       nameEl.className = "ai-attach-chip-name";
       nameEl.textContent = name;
@@ -1354,22 +1922,33 @@
       return chip;
     }
 
-    async function readOne(file, name, chip) {
+    async function readOne(kind, file, name, chip) {
       const epoch = attachEpoch;
       pendingReads++;
       syncSend();
       try {
-        const content = await readAttachment(file);
-        if (!chip.parentNode) return;   // removed while reading
+        let entry;
+        if (kind === "image") {
+          const img = await readImageAttachment(file, name);
+          if (!chip.parentNode) return;   // removed while reading
+          entry = {
+            kind: "image", name, size: file.size, mime: img.mime,
+            bytes: img.bytes, dataUrl: img.dataUrl,
+            width: img.width, height: img.height,
+          };
+          const thumb = chip.querySelector(".ai-attach-chip-thumb");
+          if (thumb) { thumb.src = img.dataUrl; thumb.hidden = false; }
+        } else {
+          const content = await readAttachment(file);
+          if (!chip.parentNode) return;   // removed while reading
+          entry = { kind: "text", name, size: file.size, content };
+        }
         chip.classList.remove("reading");
         chip.querySelector(".ai-attach-chip-size").textContent = humanSize(file.size);
-        attachments.push({ name, size: file.size, content });
+        attachments.push(entry);
       } catch (e) {
-        if (!chip.parentNode) return;   // already removed; bytes released
-        reservedTotal = Math.max(0, reservedTotal - file.size);
-        usedNames.delete(name);
-        chipTotal--;
-        chip.remove();
+        if (!chip.parentNode) return;   // already removed; slot released
+        removeChip(chip);
         addAttachError(attachErrorMessage(name, e));
       } finally {
         /* The decrement and the re-sync always travel together. A read
@@ -1387,31 +1966,49 @@
           addAttachError("too many files (max " + AI_ATTACH_MAX_FILES + ")");
           continue;
         }
-        if (file.size > AI_ATTACH_MAX_BYTES) {
-          addAttachError((sanitizeAttachName(file.name) || "file") +
-            " is larger than " + (AI_ATTACH_MAX_BYTES / AI_ATTACH_KB) + " KiB");
-          continue;
-        }
-        if (reservedTotal + file.size > AI_ATTACH_MAX_TOTAL) {
-          addAttachError("attachment size limit reached (" +
-            (AI_ATTACH_MAX_TOTAL / AI_ATTACH_KB) + " KiB total)");
-          continue;
-        }
-        if (!isTextLike(file)) {
+        const kind = isImageLike(file) ? "image"
+          : isTextLike(file) ? "text" : null;
+        if (kind === "image") {
+          if (file.size > AI_ATTACH_IMAGE_SOURCE_MAX_BYTES) {
+            addAttachError((sanitizeAttachName(file.name) || "file") +
+              " is larger than " +
+              (AI_ATTACH_IMAGE_SOURCE_MAX_BYTES / AI_ATTACH_MB) +
+              " MiB — downscale it first");
+            continue;
+          }
+          if (imageCount >= AI_ATTACH_MAX_IMAGES) {
+            addAttachError("too many images (max " + AI_ATTACH_MAX_IMAGES + ")");
+            continue;
+          }
+        } else if (kind === "text") {
+          if (file.size > AI_ATTACH_TEXT_MAX_BYTES) {
+            addAttachError((sanitizeAttachName(file.name) || "file") +
+              " is larger than " + (AI_ATTACH_TEXT_MAX_BYTES / AI_ATTACH_KB) +
+              " KiB");
+            continue;
+          }
+          if (reservedTotal + file.size > AI_ATTACH_TEXT_MAX_TOTAL) {
+            addAttachError("attachment size limit reached (" +
+              (AI_ATTACH_TEXT_MAX_TOTAL / AI_ATTACH_KB) + " KiB total)");
+            continue;
+          }
+        } else {
           addAttachError("unsupported file type: " +
             (sanitizeAttachName(file.name) || "file"));
           continue;
         }
         const name = uniqueName(file.name, usedNames);
         usedNames.add(name);
-        reservedTotal += file.size;
         chipTotal++;
-        const chip = makeChip(name);
-        chip.dataset.bytes = String(file.size);
+        if (kind === "text") reservedTotal += file.size;
+        else imageCount++;
+        const chip = makeChip(name, kind);
+        chip.dataset.kind = kind;
         chip.dataset.name = name;
+        chip.dataset.textBytes = kind === "text" ? String(file.size) : "0";
         attachBar.appendChild(chip);
         attachBar.hidden = false;
-        readOne(file, name, chip);
+        readOne(kind, file, name, chip);
       }
       syncSend();
     }
@@ -1420,11 +2017,46 @@
       attachments.length = 0;
       usedNames.clear();
       chipTotal = 0;
+      imageCount = 0;
       reservedTotal = 0;
       pendingReads = 0;
       attachEpoch++;
       attachBar.innerHTML = "";
       attachBar.hidden = true;
+      syncSend();
+    }
+
+    /* Edit restore path: repopulate the pending bar from the last turn's
+     * already-read entries -- no re-read, no re-decode. Rebuilds the same
+     * chips a fresh attach produces (name/size, image thumbnail, remove
+     * button) and the same slot/byte reservations, so a restored turn
+     * sends identically. */
+    function restoreAttachments(entries) {
+      clearAttachments();   // no reads in flight: the Edit guard refuses then
+      for (const entry of entries || []) {
+        const kind = entry.kind === "image" ? "image" : "text";
+        const size = Number(entry.size) || 0;
+        attachments.push(entry);
+        usedNames.add(entry.name);
+        chipTotal++;
+        if (kind === "image") imageCount++;
+        else reservedTotal += size;
+        const chip = makeChip(entry.name, kind);
+        chip.classList.remove("reading");
+        chip.dataset.kind = kind;
+        chip.dataset.name = entry.name;
+        chip.dataset.textBytes = kind === "text" ? String(size) : "0";
+        chip.querySelector(".ai-attach-chip-size").textContent = humanSize(size);
+        if (kind === "image") {
+          const thumb = chip.querySelector(".ai-attach-chip-thumb");
+          if (thumb && entry.dataUrl) {
+            thumb.src = entry.dataUrl;
+            thumb.hidden = false;
+          }
+        }
+        attachBar.appendChild(chip);
+      }
+      attachBar.hidden = chipTotal === 0;
       syncSend();
     }
 
@@ -1441,6 +2073,14 @@
       },
       signal() { return ctl ? ctl.signal : undefined; },
     };
+    /* Hand regenerate() and the footer control's disabled check the live
+     * controller state and the mounted log. */
+    mountLog = log;
+    mountUi = ui;
+    mountIsBusy = () => !!ctl;
+    mountPendingReads = () => pendingReads;
+    mountDraftNonEmpty = () => ta.value.trim().length > 0;
+    mountHasPendingAttachments = () => chipTotal > 0;
     sendBtn.dataset.testSend = "1";
 
     async function onSubmit(e) {
@@ -1458,6 +2098,13 @@
         scrollLog(log);
         return;
       }
+      /* Checked before clearing so a refused send keeps the pending chips
+       * (and the typed prompt) for the user to adjust. */
+      const wireSize = wireSizeOfTurn(composeUserContent(q, files));
+      if (wireSize > AI_ATTACH_MAX_WIRE_BYTES) {
+        showSendTooLarge(log, wireSize);
+        return;
+      }
       ta.value = "";
       clearAttachments();
       await send(log, q, ui, files);
@@ -1467,6 +2114,18 @@
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         onSubmit(e);
+      }
+    });
+    /* Typing or clearing the draft flips the Edit control's disabled
+     * state (see updateTurnDisabled). */
+    ta.addEventListener("input", () => { updateTurnDisabled(); });
+    /* Clipboard files (a copied screenshot) take the same add path. Plain
+     * text paste is left alone so the default insertion happens. */
+    ta.addEventListener("paste", (e) => {
+      const items = e.clipboardData && e.clipboardData.files;
+      if (items && items.length) {
+        e.preventDefault();
+        addFiles(items);
       }
     });
     stopBtn.addEventListener("click", () => {
@@ -1496,9 +2155,11 @@
     });
 
     attachAddFiles = (list) => addFiles(list);
-    attachGetPending = () =>
-      attachments.map(a => ({ name: a.name, size: a.size, content: a.content }));
+    attachGetPending = () => attachments.map(a => Object.assign({}, a));
     attachReset = clearAttachments;
+    attachRestore = restoreAttachments;
+    composerSetPrompt = (text) => { ta.value = text; };
+    composerFocus = () => { ta.focus(); };
 
     // Populate the provider picker from the server. Settings-side edits
     // funnel through NB.ai.loadAiConfig (settings.js calls it after every
@@ -1575,6 +2236,12 @@
     /* Ask the module to rebuild the system prompt (active file changed). */
     invalidateSystem: invalidateSystem,
     recordToolOutcomeForTests: recordToolOutcome,
+    /* Re-run the model on the latest genuine user turn (the footer button
+     * calls this). */
+    regenerate,
+    /* Restore the latest genuine user turn's prompt + attachments into the
+     * composer for resending (the Edit control calls this). */
+    editLastMessage,
     /* Test hooks (tests/dom/test_dom.js resets state between blocks). */
     _setServersForTests(list, deflt) {
       servers = list || [];
@@ -1585,10 +2252,19 @@
     _getConversationForTests: () => conversation.slice(),
     _addFilesForTests(list) { if (attachAddFiles) attachAddFiles(list); },
     _getAttachmentsForTests: () => attachGetPending(),
+    /* Image codec seam: jsdom has no canvas, so tests inject a stub with
+     * probe/render/passthrough. _resetImageCodec restores the browser one. */
+    _setImageCodec(codec) { imageCodecOverride = codec || null; },
+    _resetImageCodec() { imageCodecOverride = null; },
     _resetForTests() {
       conversation = [];
       systemCache = null;
       attachReset();
+      if (mountLog) removeTurnControls(mountLog);
+      regenBtn = null;
+      editBtn = null;
+      lastSentPrompt = "";
+      lastSentFiles = [];
     },
   };
 })();

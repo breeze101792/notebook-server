@@ -2711,6 +2711,130 @@ class TestAiChat(BaseTest):
             r = self._chat(bad)
             self.assertEqual(r.status_code, 400, bad)
 
+    def test_chat_accepts_content_part_array(self):
+        # Criterion 17 (accept): a user turn may carry a content-part array
+        # of text + image_url parts; it is relayed to the upstream unchanged.
+        img = "data:image/png;base64," + "A" * 16
+        msgs = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": [
+                {"type": "text", "text": "what is this?"},
+                {"type": "image_url", "image_url": {"url": img}},
+            ]},
+            {"role": "assistant", "content": "an image"},
+        ]
+        r = self._chat({"server": "stub", "messages": msgs})
+        self.assertEqual(r.status_code, 200)
+        up = nb.LAST_UPSTREAM
+        self.assertEqual(up["body"]["messages"], msgs)
+        self.assertEqual(up["body"]["model"], "test-model")
+        self.assertTrue(up["body"]["stream"])
+        self.assertNotIn("server", up["body"])
+
+    def test_chat_rejects_bad_content_parts(self):
+        # Criterion 17 (reject): unknown part type, wrong content shape,
+        # image parts on non-user roles, bad image URLs.
+        img = "data:image/png;base64,AAAA"
+        for bad in (
+            # unknown part type
+            {"role": "user", "content": [{"type": "audio", "audio": {"url": img}}]},
+            # content neither a string nor a list
+            {"role": "user", "content": 123},
+            {"role": "user", "content": {}},
+            # empty list
+            {"role": "user", "content": []},
+            # part not an object
+            {"role": "user", "content": ["text"]},
+            # text part without a string text
+            {"role": "user", "content": [{"type": "text", "text": 5}]},
+            # image part on a non-user message
+            {"role": "assistant",
+             "content": [{"type": "image_url", "image_url": {"url": img}}]},
+            {"role": "system",
+             "content": [{"type": "image_url", "image_url": {"url": img}}]},
+            # url not a data:image/ URL
+            {"role": "user",
+             "content": [{"type": "image_url",
+                          "image_url": {"url": "https://x/y.png"}}]},
+            {"role": "user",
+             "content": [{"type": "image_url",
+                          "image_url": {"url": "data:text/plain;base64,AA"}}]},
+            {"role": "user",
+             "content": [{"type": "image_url", "image_url": {"url": ""}}]},
+            # image_url part missing its image_url object
+            {"role": "user", "content": [{"type": "image_url"}]},
+        ):
+            r = self._chat({"server": "stub", "messages": [bad]})
+            self.assertEqual(r.status_code, 400, bad)
+
+    def test_chat_image_part_cap_is_eight(self):
+        # Criterion 17 (cap): at most 8 image_url parts per user message.
+        img = "data:image/png;base64,AAAA"
+        part = {"type": "image_url", "image_url": {"url": img}}
+        eight = [part for _ in range(8)]
+        r = self._chat({"server": "stub", "messages": [
+            {"role": "user", "content": eight}]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(
+            len(nb.LAST_UPSTREAM["body"]["messages"][0]["content"]), 8)
+        nine = [part for _ in range(9)]
+        r = self._chat({"server": "stub", "messages": [
+            {"role": "user", "content": nine}]})
+        self.assertEqual(r.status_code, 400)
+
+    def test_chat_strips_per_message_extra_keys(self):
+        # Criterion 17 (whitelist): only {role, content} survives, and the
+        # rebuild keeps only the known part fields, so no client key leaks.
+        img = "data:image/png;base64,AAAA"
+        r = self._chat({"server": "stub", "messages": [
+            {"role": "user",
+             "name": "n", "tool_calls": [1],
+             "content": [
+                 {"type": "text", "text": "hi", "evil": "x"},
+                 {"type": "image_url", "image_url": {"url": img, "extra": 1},
+                  "junk": 2},
+             ]},
+        ]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(nb.LAST_UPSTREAM["body"]["messages"], [
+            {"role": "user", "content": [
+                {"type": "text", "text": "hi"},
+                {"type": "image_url", "image_url": {"url": img}},
+            ]}])
+        self.assertNotIn("server", nb.LAST_UPSTREAM["body"])
+
+    def test_chat_image_send_writes_no_file(self):
+        # Criterion 20: no server storage -- config/ai.json is byte-identical
+        # and neither the config nor the data dir gains a file.
+        with open(nb.AI_FILE, "rb") as f:
+            cfg_before = f.read()
+        config_before = set(os.listdir(nb.CONFIG_DIR))
+        data_before = set(os.listdir(nb.DATA_DIR))
+        img = "data:image/png;base64," + "A" * 32
+        r = self._chat({"server": "stub", "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": "look"},
+                {"type": "image_url", "image_url": {"url": img}},
+            ]}]})
+        self.assertEqual(r.status_code, 200)
+        with open(nb.AI_FILE, "rb") as f:
+            self.assertEqual(f.read(), cfg_before)
+        self.assertEqual(set(os.listdir(nb.CONFIG_DIR)), config_before)
+        self.assertEqual(set(os.listdir(nb.DATA_DIR)), data_before)
+
+    def test_request_body_cap_is_32_mib_and_413_is_json(self):
+        # The 32 MiB MAX_CONTENT_LENGTH bound (R8) has a JSON 413 handler.
+        self.assertEqual(nb.app.config["MAX_CONTENT_LENGTH"], 32 * 1024 * 1024)
+        original = nb.app.config["MAX_CONTENT_LENGTH"]
+        nb.app.config["MAX_CONTENT_LENGTH"] = 1024
+        try:
+            r = self._chat({"server": "stub", "messages": [
+                {"role": "user", "content": "x" * 4096}]})
+            self.assertEqual(r.status_code, 413)
+            self.assertEqual(r.get_json(), {"error": "Request body too large"})
+        finally:
+            nb.app.config["MAX_CONTENT_LENGTH"] = original
+
     def test_chat_upstream_http_error_becomes_sse_error_event(self):
         nb.UPSTREAM_STATUS = 401
         try:

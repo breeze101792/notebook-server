@@ -3672,6 +3672,31 @@ body[data-theme="light"] #viewer-content {
 }
 .ai-prose-span img { max-width: 100%; }
 
+/* Turn controls under the newest turn: small and subdued. Regenerate sits
+ * under the newest assistant reply (left in the stretching assistant
+ * column); Edit sits under the newest user bubble (right in the
+ * right-aligned user column). Both are disabled while a request is in
+ * flight, attachment reads are pending, or a write/patch permission card
+ * is unresolved. */
+.ai-regenerate,
+.ai-edit {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: .76rem;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.ai-regenerate { align-self: flex-start; }
+.ai-edit { align-self: flex-end; }
+.ai-regenerate:hover:not(:disabled),
+.ai-edit:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.ai-regenerate:disabled,
+.ai-edit:disabled { opacity: .5; cursor: default; }
+
 .ai-error {
   border: 1px solid var(--danger);
   border-radius: 6px;
@@ -3944,6 +3969,15 @@ body[data-theme="light"] #viewer-content {
   white-space: nowrap;
 }
 .ai-attach-chip-size { color: var(--fg-muted); }
+.ai-attach-chip-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.ai-attach-chip-thumb[hidden] { display: none; }
 .ai-attach-chip.error {
   border-radius: 6px;
   border-color: var(--danger);
@@ -3988,6 +4022,12 @@ body[data-theme="light"] #viewer-content {
   font-size: .72rem;
   color: var(--fg-muted);
   white-space: nowrap;
+}
+.ai-user-thumb {
+  max-height: 96px;
+  max-width: 160px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 .ai-drop-active {
   outline: 2px dashed var(--accent);

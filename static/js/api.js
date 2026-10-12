@@ -139,7 +139,12 @@
           // (the browser can't read the status of a streaming response
           // once it started), so an in-band {error:true} fails the call.
           if (obj && obj.error) {
-            throw new Error(obj.message || "Upstream error " + (obj.status || ""));
+            const err = new Error(obj.message ||
+              "Upstream error " + (obj.status || ""));
+            // Surface the upstream HTTP status so callers can tell a
+            // provider rejection (>= 400) from a network/abort failure.
+            err.status = obj.status;
+            throw err;
           }
           const delta = obj.choices &&
                         obj.choices[0] &&

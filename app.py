@@ -60,7 +60,13 @@ MAX_TOTAL_MATCHES_CEILING = 2000
 MAX_MATCHES_PER_FILE_CEILING = 200
 SNIPPET_PAD = 60  # chars of context each side of a match
 
+# Hard cap on any request body, enforced by Flask before a route reads it.
+# /api/ai/chat re-uploads the whole conversation each turn, images included
+# as base64 data URLs, so the bound must clear a legitimate vision turn.
+MAX_REQUEST_BYTES = 32 * 1024 * 1024  # 32 MiB
+
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 
 # Paths whose responses must never be cached by the browser or any
 # intermediary. These are the gated read endpoints (tree, file, search,
@@ -191,6 +197,16 @@ def safe_path(rel_path):
 
 def err(message, status=400):
     return jsonify({"error": message}), status
+
+
+@app.errorhandler(413)
+def _request_too_large(_exc):
+    """Answer an oversized body (over MAX_CONTENT_LENGTH) with JSON.
+
+    Flask's default 413 is an HTML page; the SPA expects the same
+    {"error": ...} shape every other route returns, so replace it.
+    """
+    return err("Request body too large", 413)
 
 
 def expect_json(*required_keys):
@@ -1170,6 +1186,11 @@ AI_FETCH_TIMEOUT = 15                # seconds
 AI_SEARXNG_TIMEOUT = 15              # seconds
 AI_SEARXNG_MAX_RESULTS = 10
 
+# A vision user turn may carry image_url parts. This per-message cap bounds
+# vision token cost and request size; image parts are rejected on any other
+# role (a provider only reads images from user turns).
+AI_CHAT_MAX_IMAGE_PARTS = 8
+
 
 @dataclasses.dataclass
 class Upstream:
@@ -1431,15 +1452,71 @@ def ai_probe():
         return jsonify({"ok": False, "error": str(exc)}), 200
 
 
+def _rebuild_chat_message(m):
+    """Validate one chat message and rebuild it to strictly {role, content}.
+
+    Returns (message, None) on success or (None, error_message). Only
+    {role, content} survives, so any other client-supplied per-message
+    key is dropped and cannot leak upstream. content is either a string
+    (backward compatible) or a non-empty list of content parts:
+    {"type": "text", "text": <str>} or
+    {"type": "image_url", "image_url": {"url": "data:image/..."}}.
+    Image parts are allowed only on user messages, at most
+    AI_CHAT_MAX_IMAGE_PARTS per message; anything else is rejected.
+    """
+    if not isinstance(m, dict):
+        return None, "each message must be an object"
+    role = m.get("role")
+    if role not in ("system", "user", "assistant"):
+        return None, "role must be system|user|assistant"
+    content = m.get("content")
+    if isinstance(content, str):
+        return {"role": role, "content": content}, None
+    if not isinstance(content, list) or not content:
+        return None, "content must be a string or a non-empty list of parts"
+    rebuilt = []
+    image_parts = 0
+    for part in content:
+        if not isinstance(part, dict):
+            return None, "each content part must be an object"
+        ptype = part.get("type")
+        if ptype == "text":
+            text = part.get("text")
+            if not isinstance(text, str):
+                return None, "text part needs a string text"
+            rebuilt.append({"type": "text", "text": text})
+        elif ptype == "image_url":
+            if role != "user":
+                return None, "image_url parts are allowed only on user messages"
+            image_url = part.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else None
+            if not isinstance(url, str) or not url.startswith("data:image/"):
+                return None, "image_url part needs a data:image/ url"
+            image_parts += 1
+            if image_parts > AI_CHAT_MAX_IMAGE_PARTS:
+                return None, ("at most %d image_url parts per message"
+                              % AI_CHAT_MAX_IMAGE_PARTS)
+            rebuilt.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            return None, "unsupported content part type"
+    return {"role": role, "content": rebuilt}, None
+
+
 @app.route("/api/ai/chat", methods=["POST"])
 @admin_required
 def ai_chat():
     """Stream a chat completion through the saved upstream as SSE.
 
     Body: {"server": "<profile name>", "messages": [{role, content}, ...]}.
-    The chosen profile's apiKey is attached server-side; the browser
-    never sees it. The upstream SSE byte stream is relayed unmodified with
-    Content-Type: text/event-stream (this endpoint IS the upstream body).
+    A message's content is a string, or a list of content parts
+    ({"type":"text",...} / {"type":"image_url","image_url":{"url":
+    "data:image/..."}}) so the side panel can send screenshots to a vision
+    model; image parts are user-only, at most AI_CHAT_MAX_IMAGE_PARTS each.
+    Every message is rebuilt to {role, content} before relaying, so no
+    client key leaks upstream. The chosen profile's apiKey is attached
+    server-side; the browser never sees it. The upstream SSE byte stream is
+    relayed unmodified with Content-Type: text/event-stream (this endpoint
+    IS the upstream body).
     """
     stored = _saved_server((request.get_json(silent=True) or {}).get("server", ""))
     if stored is None:
@@ -1451,15 +1528,17 @@ def ai_chat():
     messages = data.get("messages")
     if not isinstance(messages, list) or not messages:
         return err("messages must be a non-empty list", 400)
+    clean_messages = []
     for m in messages:
-        if (not isinstance(m, dict) or m.get("role") not in ("system", "user", "assistant")
-                or not isinstance(m.get("content"), str)):
-            return err("messages entries must be {role: system|user|assistant, content: str}",
-                       400)
+        built, problem = _rebuild_chat_message(m)
+        if problem is not None:
+            return err("messages entries must be {role: system|user|assistant, "
+                       "content: str or content-part list}: %s" % problem, 400)
+        clean_messages.append(built)
     # White-list the upstream payload: the browser's "server" selector and
     # any extra keys must not leak through to the provider.
     payload_body = {"model": stored.get("model") or "default",
-                    "messages": messages, "stream": True}
+                    "messages": clean_messages, "stream": True}
     payload = json.dumps(payload_body).encode("utf-8")
     req = urllib.request.Request(
         url, data=payload, method="POST",
