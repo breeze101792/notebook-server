@@ -6282,6 +6282,102 @@ function check(label, cond, extra) {
     await tick(20);
     check("hybrid: checkbox toggled on click", cbs[0].checked !== before, "before=" + before + " after=" + cbs[0].checked);
     check("hybrid: dirty after checkbox toggle", window.NB.hybrid.isDirty());
+
+    // A click on / Home at a task item's leading checkbox parks the caret
+    // at offset 0 of the host, which is BEFORE the checkbox: the caret is
+    // painted on the checkbox and typing inserts text ahead of it. The
+    // selectionchange handler must nudge the caret to the item's text
+    // start (just after the checkbox). Both the tight <li><input> and the
+    // loose <li><p><input> shapes are covered.
+    function caretAtHostStart(host) {
+      const r = window.document.createRange();
+      r.setStart(host, 0);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      window.document.dispatchEvent(new window.Event("selectionchange"));
+      return window.getSelection();
+    }
+    vc.innerHTML = "<ul><li><input type=\"checkbox\"> task</li></ul>";
+    let sel = caretAtHostStart(vc.querySelector("li"));
+    check("hybrid: caret before a task checkbox is nudged after it",
+      sel.anchorNode && sel.anchorNode.nodeType === 3 && sel.anchorOffset === 0,
+      "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+    vc.innerHTML = "<ul><li><p><input type=\"checkbox\"> task</p></li></ul>";
+    sel = caretAtHostStart(vc.querySelector("li > p"));
+    check("hybrid: loose task item caret is nudged after its checkbox",
+      sel.anchorNode && sel.anchorNode.nodeType === 3 && sel.anchorOffset === 0,
+      "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+    // A plain item's natural start is left where it is (no over-reach).
+    vc.innerHTML = "<ul><li>plain</li></ul>";
+    sel = caretAtHostStart(vc.querySelector("li"));
+    check("hybrid: a plain list item's start caret is left alone",
+      sel.anchorNode === vc.querySelector("li") && sel.anchorOffset === 0,
+      "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+
+    // Clicking a task checkbox toggles it but must NOT move the editing
+    // caret (Firefox parks it on the checkbox). The caret is captured on
+    // mousedown and put back when the toggle's change event fires.
+    vc.innerHTML = "<ul><li><input type=\"checkbox\"> task</li></ul><p>tail</p>";
+    {
+      const cb = vc.querySelector('input[type="checkbox"]');
+      const tail = vc.querySelector("p").firstChild;
+      const r = window.document.createRange();
+      r.setStart(tail, tail.length);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      cb.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+      // The browser toggles and focuses the box, moving the selection.
+      cb.checked = true;
+      const moved = window.document.createRange();
+      moved.setStart(vc.querySelector("li"), 0);
+      moved.collapse(true);
+      s.removeAllRanges();
+      s.addRange(moved);
+      cb.dispatchEvent(new window.Event("change", { bubbles: true }));
+      const after = window.getSelection();
+      check("hybrid: toggling a checkbox keeps the editing caret",
+        after.anchorNode === tail && after.anchorOffset === tail.length,
+        "anchor=" + (after.anchorNode && after.anchorNode.nodeName) + " off=" + after.anchorOffset);
+      check("hybrid: the checkbox still toggles", cb.checked === true);
+    }
+
+    // An edited checklist must keep the compact spacing it was typed in:
+    // turndown's "-   [ ]  text" padding is collapsed to "- [ ] text", and
+    // an empty task keeps exactly one trailing space (marked needs it to
+    // re-render the checkbox).
+    vc.innerHTML = "<ul><li><input type=\"checkbox\" checked> done</li>" +
+      "<li><input type=\"checkbox\"></li></ul>";
+    const compactTask = window.NB.hybrid.domToMarkdown().trim();
+    check("hybrid: a task list serializes compactly",
+      compactTask === "- [x] done\n- [ ]",
+      JSON.stringify(compactTask));
+    // marked leaves the GFM task marker's separator space inside the item
+    // text ("- [ ] task" renders as "<input> task"). The viewer strips it
+    // so the text aligns with a plain item and typing at the item's start
+    // does not land before the space.
+    {
+      const host = window.document.createElement("div");
+      host.innerHTML = window.marked.parse("- [ ] task\n", { gfm: true, breaks: false });
+      const raw = host.querySelector("li").lastChild.nodeValue;
+      window.NB.viewer.stripTaskItemSpaces(host);
+      const stripped = host.querySelector("li").lastChild.nodeValue;
+      check("hybrid: marked's task separator space is present before strip",
+        raw === " task", JSON.stringify(raw));
+      check("hybrid: NB.viewer.stripTaskItemSpaces drops the separator space",
+        stripped === "task", JSON.stringify(stripped));
+    }
+    // A literal "[ ]" that is plain item text (no whitespace after it) is
+    // not a task and must not be turned into one.
+    vc.innerHTML = "<ul><li>[ ]not a task</li></ul>";
+    const literal = window.NB.hybrid.domToMarkdown().trim();
+    check("hybrid: a literal '[ ]' plain item is left alone",
+      literal === "-   \\[ \\]not a task",
+      JSON.stringify(literal));
+
     await window.NB.hybrid.exit(false);
     await tick(50);
 
@@ -10093,7 +10189,7 @@ function check(label, cond, extra) {
           tn.nodeValue = tn.nodeValue + "!";
           dirty(vc);
         },
-        expectedSaved: "-   [x]  done!\n-   [ ]  \n" },
+        expectedSaved: "- [x] done!\n- [ ] \n" },
       // A structural delete at EOF collapsed a user's blank-line run and
       // dropped the file's end-of-file shape.
       { name: "blankrun: deleting the last block keeps the preceding run",

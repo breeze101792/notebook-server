@@ -194,6 +194,11 @@
   // placeCaretForRule on mouseup only when the gesture did not become a
   // selection. See onContentMouseDown / onContentMouseUp.
   let pendingRuleClick = null;
+  // The editing caret captured on a press on a task checkbox. Clicking a
+  // checkbox must only toggle it: Firefox also parks the caret on the
+  // checkbox, moving the user's insertion point. Captured on mousedown,
+  // put back after the toggle fires (see onCheckboxChange).
+  let savedCheckboxRange = null;
   // The rules carrying HR_SELECTED_CLASS as of the last selectionchange,
   // so the class is touched only when the selected set actually changes
   // (selectionchange fires many times during one drag).
@@ -618,6 +623,12 @@
     // COMMENT_SENTINEL placeholder (turndown drops comment nodes).
     md = md.replace(commentSentinelRe(),
       (_, i) => commentStash[Number(i)] || "");
+    // Turndown emits a task line as "-   [ ]  text": three spaces after the
+    // bullet and two after the checkbox (the second is marked's own leading
+    // space in the item text). Rewrite it to the compact "- [ ] text" so an
+    // edited checklist matches the way it is normally typed -- the mismatch
+    // the owner saw when editing one item rewrote its siblings.
+    md = normalizeTaskListSpacing(md);
     // Turndown's escape list only escapes a heading marker when a SPACE
     // follows ("^#{1,6} "), so a paragraph whose text STARTS with "##x"
     // or "#no-space" would be read back as an ATX heading. Escape a
@@ -626,6 +637,34 @@
     // the leading run is touched, so a "#" mid-line is left alone.
     md = escapeLeadingHashes(md);
     return md;
+  }
+
+  /* Collapse a task line's marker padding to a single space, and its
+   * post-checkbox padding to a single space: "-   [ ]  text" -> "- [ ] text".
+   * A task item with no text keeps exactly one trailing space, because
+   * marked only renders the checkbox when the "[ ]" is followed by
+   * whitespace ("- [ ]" alone reparses as the literal text "[ ]"). A
+   * space is REQUIRED after the checkbox, so a literal "[ ]" that is plain
+   * item text (no whitespace after it) is left untouched. Fenced code is
+   * skipped. Only task lines are touched; plain and ordered list markers
+   * keep turndown's canonical padding. */
+  function normalizeTaskListSpacing(md) {
+    const lines = md.split("\n");
+    let fence = null;   // the opening delimiter, e.g. "```" or "~~~~"
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const fm = /^\s*(?:>[ \t]*)*(`{3,}|~{3,})/.exec(line);
+      if (fm) {
+        if (!fence) fence = fm[1];
+        else if (fm[1][0] === fence[0] && fm[1].length >= fence.length) fence = null;
+        continue;
+      }
+      if (fence) continue;
+      lines[i] = line.replace(
+        /^(\s*(?:>[ \t]*)*)([-*+]|\d+[.)])[ \t]+(\[[ xX]\])[ \t]+/,
+        "$1$2 $3 ");
+    }
+    return lines.join("\n");
   }
 
   function commentSentinelRe() {
@@ -1514,6 +1553,13 @@
   function renderMarkdown(md) {
     if (!window.marked) return;
     viewerContentEl.innerHTML = marked.parse(md, { gfm: true, breaks: false });
+    // Drop marked's task-item separator space (see viewer.js
+    // stripTaskItemSpaces): without this the caret at an item's start
+    // types before the space ("X first") and the text sits one space
+    // right of a plain item.
+    if (NB.viewer && NB.viewer.stripTaskItemSpaces) {
+      NB.viewer.stripTaskItemSpaces(viewerContentEl);
+    }
     viewerContentEl.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => {
       // Reuse viewer's slugify for heading id consistency.
       if (NB.slugify) h.id = NB.slugify(h.textContent);
@@ -2489,6 +2535,14 @@
    * start (see "horizontal rule caret repair" above). */
   function onContentMouseDown(e) {
     if (!active) return;
+    // A press on a task checkbox only toggles it; remember the caret now,
+    // before the browser moves it, so onCheckboxChange can put it back.
+    // Any other press drops a stale capture.
+    if (e.target && e.target.tagName === "INPUT" && e.target.type === "checkbox") {
+      saveCheckboxCaret();
+    } else {
+      savedCheckboxRange = null;
+    }
     const editing = viewerContentEl.querySelector("pre.hybrid-plugin-editing");
     if (editing) {
       if (editing.contains(e.target)) return;   // click inside the block – let it handle itself
@@ -2547,6 +2601,36 @@
     selectedRuleSet = null;
   }
 
+  /* Keep a collapsed hybrid caret out of a task item's marker column.
+   * A click anywhere on or beside the leading checkbox -- and a Home or
+   * ArrowLeft that walks to the item's start -- parks the caret at offset
+   * 0 of the item, which is BEFORE the checkbox. The caret is then
+   * painted on top of the checkbox, and the next typed character lands
+   * ahead of it ("Y<input> task": an item whose text precedes its own
+   * checkbox, which turndown serializes wrong). The item's real text
+   * start is just after the checkbox, so nudge the caret there. Both the
+   * tight <li><input> and the loose <li><p><input> shapes start with the
+   * checkbox, so the host is whichever element directly owns it. */
+  function normalizeTaskCaret() {
+    if (!active) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    const r = sel.getRangeAt(0);
+    const host = r.startContainer;
+    if (host.nodeType !== 1 || r.startOffset !== 0) return;
+    if (!viewerContentEl.contains(host)) return;
+    const cb = host.firstChild;
+    if (!cb || cb.nodeType !== 1 ||
+        cb.tagName !== "INPUT" || cb.type !== "checkbox") return;
+    const after = document.createRange();
+    const next = cb.nextSibling;
+    if (next && next.nodeType === 3) after.setStart(next, 0);
+    else after.setStartAfter(cb);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  }
+
   /* Paint HR_SELECTED_CLASS on every top-level rule inside the current
    * non-collapsed selection. A rule is selected when the range intersects
    * it OR the selection contains it: intersectsNode alone misses a range
@@ -2561,6 +2645,8 @@
    * the border-only box). It is editing chrome, never content: the hybrid
    * serializer strips it from the change hash and the turndown clone. */
   function onSelectionChange() {
+    // A collapsed hybrid caret must never sit before a task checkbox.
+    normalizeTaskCaret();
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.toString().length === 0 ||
         !viewerContentEl.contains(sel.anchorNode) ||
@@ -4017,14 +4103,39 @@
     if (openRuleEdgeLine()) onContentChange();
   }
 
+  /* Remember the current editing caret before a task checkbox is toggled.
+   * Only a selection inside the editor is worth restoring; a click with
+   * the editor unfocused leaves nothing to put back. */
+  function saveCheckboxCaret() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { savedCheckboxRange = null; return; }
+    const r = sel.getRangeAt(0);
+    savedCheckboxRange = viewerContentEl.contains(r.startContainer)
+      ? r.cloneRange() : null;
+  }
+
+  /* Put the caret back where it was before the checkbox was clicked, so
+   * toggling a box never moves the insertion point. Focus returns to the
+   * editor first: the click left it on the <input>. */
+  function restoreCheckboxCaret() {
+    const range = savedCheckboxRange;
+    savedCheckboxRange = null;
+    if (!range) return;
+    const sel = window.getSelection();
+    viewerContentEl.focus({ preventScroll: true });
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   /* Toggle task-list checkboxes on click. marked renders them disabled;
    * we re-enable them in renderMarkdown and let the browser handle the
    * native toggle. The `change` event fires after the native toggle, so
-   * we just mark dirty there. Turndown picks up the new state on save
-   * ([x]/[ ]). */
+   * we mark dirty there and restore the pre-click caret. Turndown picks
+   * up the new state on save ([x]/[ ]). */
   function onCheckboxChange(e) {
     const cb = e.target.closest('input[type="checkbox"]');
     if (!cb) return;
+    restoreCheckboxCaret();
     onContentChange();
   }
 

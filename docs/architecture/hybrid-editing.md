@@ -486,7 +486,11 @@ puts the checkbox directly in the `<li>`; a loose list wraps it in a `<p>`).
 Turndown's gfm `taskListItems` rule detects the checkbox by `parentNode`
 being an `LI` (`turndown-plugin-gfm.browser.js`), so the DOM the editor
 builds must keep the checkbox a direct `<li>` child. Canonical output is
-`-   [x]  done`.
+`- [x] done`: turndown's own padding (`-   ` and `[x]  `) is collapsed to
+one space on each side by `normalizeTaskListSpacing` (`hybrid.js`), so an
+edited checklist matches the compact form it is normally typed in. Only
+task lines are rewritten; plain and ordered markers keep turndown's
+padding.
 
 The bullet is suppressed by CSS, not by the DOM. The selector is
 child-scoped, `li:has(> input[type="checkbox"], > p > input[type="checkbox"])`,
@@ -503,9 +507,18 @@ embedded CSS in `static/js/export.js`).
 
 Task-item detection is the checkbox child, never the `task-list-item`
 class: a note loaded from disk renders a bare `<li>`. A checkbox-only
-item serializes as `-   [ ]` and is given a trailing space through
-`EMPTY_TASK_SENTINEL`, because `-   [ ]` without one is literal text to
-marked while `-   [ ] ` re-renders a checkbox.
+item serializes as `- [ ]` and is given a trailing space through
+`EMPTY_TASK_SENTINEL`, because `- [ ]` without one is literal text to
+marked while `- [ ] ` re-renders a checkbox.
+
+marked keeps the task marker's separator space in the item text:
+`- [ ] task` renders as `<input> task`, a leading space before the text.
+That space pushed the task text one space right of a plain item and,
+with the caret at the item's start, ended up inside the text after typing
+(`- [ ] X task`). `stripTaskItemSpaces` (`viewer.js`) drops that one
+space after every render; turndown's gfm `taskListItems` rule puts the
+separator back on save, so the round-trip is unchanged. Shared with the
+hybrid editor and the exporter through `NB.viewer`.
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
@@ -981,6 +994,9 @@ heading emits ATX (`vendor:101-116`); editing an indented code block emits a fen
 `*`-bulleted list emits `-   ` (`hybrid.js:175`). Correct per I2 for a *touched*
 block but surprising. Proposed: keep and document in the Settings help text;
 alternatively detect "same-construct, text-only" edits and keep the raw marker.
+**Task lines are the exception**: turndown's `-   [ ]  text` padding is
+collapsed to `- [ ] text` by `normalizeTaskListSpacing`, because the mismatched
+spacing on every sibling item when one checklist line was edited read as a bug.
 
 **Q5 — DECIDED. Add the missing live input rules.** `INPUT_RULES`
 (`hybrid.js:1486-1553`) and `INLINE_RULES` (`hybrid.js:1559`) do **not** have
@@ -1247,7 +1263,7 @@ Verified against the vendored bundles at this revision with the exact
 | `<blockquote><p>q</p></blockquote>` | `> q` |
 | `<blockquote><p>a</p><p>b</p></blockquote>` | `> a\n> \n> b` |
 | `<hr>` | `* * *` |
-| task item checked | `-   [x]  done` |
+| task item checked | `- [x] done` |
 | GFM `<table>` | `\| a \| b \|\n\| --- \| --- \|\n\| 1 \| 2 \|` |
 | `<pre><code class="language-python">` | ` ```python\nprint(1)\n``` ` |
 | bare `<pre><code>` | ` ```\nplain\n``` ` |

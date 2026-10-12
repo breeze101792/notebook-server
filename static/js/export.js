@@ -373,6 +373,11 @@
     }
 
     host.innerHTML = marked.parse(content, { gfm: true, breaks: false });
+    // Match the viewer's task-item rendering: drop marked's separator
+    // space so the exported task text aligns like the on-screen one.
+    if (NB.viewer && NB.viewer.stripTaskItemSpaces) {
+      NB.viewer.stripTaskItemSpaces(host);
+    }
 
     // Heading ids (same slugify the viewer uses, so anchors match).
     host.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {

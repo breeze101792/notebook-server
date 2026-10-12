@@ -245,6 +245,26 @@
   NB.slugify = slugify; // exposed for potential reuse
 
   /* --- render --------------------------------------------------------- */
+  /* marked keeps the GFM task marker's separator space in the item text:
+   * "- [ ] first" renders as "<input> first", with a leading space before
+   * the text. That space pushes the task text one space right of a plain
+   * item's text, and when the caret sits at the item's start the space
+   * ends up inside the text after typing ("X first" instead of "Xfirst").
+   * Drop exactly that one leading space; turndown's gfm taskListItems rule
+   * puts the separator back on save ("- [ ] first"), so the round-trip is
+   * unchanged. A tight item holds the checkbox as a direct <li> child, a
+   * loose one inside its <p>; both are covered. Shared with the hybrid
+   * editor and the exporter through NB.viewer. */
+  function stripTaskItemSpaces(root) {
+    root.querySelectorAll('li > input[type="checkbox"], li > p > input[type="checkbox"]')
+      .forEach((cb) => {
+        const next = cb.nextSibling;
+        if (next && next.nodeType === 3 && next.nodeValue.charAt(0) === " ") {
+          next.nodeValue = next.nodeValue.slice(1);
+        }
+      });
+  }
+
   /* We let marked render with its defaults, then post-process the DOM:
    *   - assign ids to headings (for the outline + click-to-scroll)
    *   - run highlight.js on code blocks
@@ -264,6 +284,7 @@
     seenIds = {}; // reset dedup per render
     if (window.marked) {
       viewerContentEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
+      stripTaskItemSpaces(viewerContentEl);
     } else {
       viewerContentEl.innerHTML = "<p>marked.js failed to load.</p>";
       NB.evt.emit("viewer:rendered", { path: active, live: false });
@@ -542,6 +563,9 @@
 
   /* --- public API ----------------------------------------------------- */
   const viewer = {
+    // Shared with hybrid.js and export.js: drop marked's task-item
+    // separator space after rendering (see stripTaskItemSpaces).
+    stripTaskItemSpaces,
     /* Load `path` into the cache (fetch on miss) and show it. Emits
      * file:open so the sidebar highlight and recent list stay in sync.
      * Copies the editor value into the tab being left's cache entry as a
