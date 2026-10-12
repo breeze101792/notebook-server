@@ -697,11 +697,23 @@
     return isDir ? node.path : parentOf(node.path);
   }
 
+  // Notes are always Markdown. Force the .md extension on the basename
+  // (a dot in a parent folder like "v1.0/notes" must not be mistaken
+  // for an extension), so the user never picks an unsupported type.
+  function withMdExtension(name) {
+    const i = name.lastIndexOf("/");
+    const dir = i < 0 ? "" : name.slice(0, i + 1);
+    const base = i < 0 ? name : name.slice(i + 1);
+    const dot = base.lastIndexOf(".");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    return dir + stem + ".md";
+  }
+
   async function doNewFile(node, isDir) {
     const dir = dirForNew(node, isDir);
-    const name = prompt("New file name (e.g. notes.md):", "untitled.md");
+    const name = prompt("New file name:", "untitled");
     if (!name) return;
-    const path = dir ? dir + "/" + name : name;
+    const path = dir ? dir + "/" + withMdExtension(name) : withMdExtension(name);
     try {
       await NB.api.createItem(path, "file");
       await refresh();
@@ -764,8 +776,9 @@
 
   /* --- root-level shortcuts (top bar) -------------------------------- */
   async function createAtRoot(type) {
-    const name = prompt(type === "dir" ? "New folder name:" : "New file name:", type === "dir" ? "new-folder" : "untitled.md");
+    let name = prompt(type === "dir" ? "New folder name:" : "New file name:", type === "dir" ? "new-folder" : "untitled");
     if (!name) return;
+    if (type === "file") name = withMdExtension(name);
     try {
       await NB.api.createItem(name, type);
       if (type === "dir") collapsed.delete(name);
