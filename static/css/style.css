@@ -2368,6 +2368,9 @@ body[data-theme="light"] #viewer-content {
 /* ------------------------------------------------------------------ */
 /* File tree                                                           */
 /* ------------------------------------------------------------------ */
+/* Hidden sprite holding the tree icon <symbol> defs (index.html). Sized
+ * to zero and pulled out of layout so it never paints a visible box. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .tree { padding: 6px 4px; user-select: none; }
 .tree-row {
   display: flex;
@@ -2380,7 +2383,7 @@ body[data-theme="light"] #viewer-content {
 }
 .tree-row:hover { background: var(--accent-soft); }
 .tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.tree-icon { width: 16px; opacity: .85; }
+.tree-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 /* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
  * corners with a continuous ── column in between). Each cell is a fixed

@@ -11,11 +11,30 @@
   const bookmarksEl = document.getElementById("bookmarks");
   const bookmarksListEl = document.getElementById("bookmarks-list");
   const bookmarksAddBtn = document.getElementById("bookmarks-add");
-  const DIR_ICON = "📁";
-  const DIR_ICON_OPEN = "📂";
-  const FILE_ICON = "📄";
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  // Tree icons are inline SVGs referencing the hidden <symbol> sprite in
+  // index.html (id "nb-icon-<name>"). Inline SVG renders in colour on every
+  // platform and does not depend on a colour-emoji font being installed.
+  const DIR_ICON = "folder";
+  const DIR_ICON_OPEN = "folder-open";
+  const FILE_ICON = "file";
   const STAR_ON = "★";
   const STAR_OFF = "☆";
+  // Well-known note names get a distinct icon. Keyed by the basename stem
+  // (extension stripped, lowercased); any other file falls back to
+  // FILE_ICON.
+  const FILE_ICON_MAP = {
+    readme: "readme",
+    claude: "claude",
+    agents: "claude",
+    gemini: "claude",
+    copilot: "claude",
+    instructions: "claude",
+    license: "license",
+    licence: "license",
+    copying: "license",
+    roadmap: "roadmap",
+  };
 
   const collapsed = new Set();      // collapsed dir paths (relative)
   // Top-header manual reload button. A user-driven refresh bypasses the
@@ -83,9 +102,7 @@
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
-      const icon = document.createElement("span");
-      icon.className = "tree-icon";
-      icon.textContent = isCollapsed ? DIR_ICON : DIR_ICON_OPEN;
+      const icon = iconEl(isCollapsed ? DIR_ICON : DIR_ICON_OPEN);
       const name = document.createElement("span");
       name.className = "tree-name";
       name.textContent = node.name;
@@ -109,9 +126,7 @@
       wrap.appendChild(childWrap);
       if (isCollapsed) childWrap.style.display = "none";
     } else {
-      const icon = document.createElement("span");
-      icon.className = "tree-icon";
-      icon.textContent = FILE_ICON;
+      const icon = iconEl(fileIconId(node.name));
       const name = document.createElement("span");
       name.className = "tree-name";
       name.textContent = node.name;
@@ -692,6 +707,30 @@
   function baseName(path) {
     const i = path.lastIndexOf("/");
     return i < 0 ? path : path.slice(i + 1);
+  }
+
+  // A tree icon: a 16x16 <svg> that pulls its shape from the hidden
+  // <symbol> sprite in index.html via <use>. `data-icon` carries the icon
+  // name so tests and CSS can identify it without resolving the sprite.
+  function iconEl(id) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "tree-icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.dataset.icon = id;
+    const use = document.createElementNS(SVG_NS, "use");
+    use.setAttribute("href", "#nb-icon-" + id);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  // Icon id for a file row: the well-known-name lookup, else the generic
+  // file icon. Matching is on the stem with its extension stripped,
+  // case-folded ("README.md" and "readme.markdown" both map to readme).
+  function fileIconId(name) {
+    const dot = name.lastIndexOf(".");
+    const stem = (dot > 0 ? name.slice(0, dot) : name).toLowerCase();
+    return FILE_ICON_MAP[stem] || FILE_ICON;
   }
 
   function dirForNew(node, isDir) {

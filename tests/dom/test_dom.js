@@ -1839,6 +1839,45 @@ function check(label, cond, extra) {
   check("globals loaded (marked/hljs/NB)",
     typeof window.marked === "object" && typeof window.hljs === "object" && !!window.NB.viewer);
 
+  console.log("== sidebar file icons ==");
+  // Tree icons are inline SVGs referencing the #nb-icon-* sprite in
+  // index.html; the svg carries data-icon so the row's icon is readable
+  // without resolving the sprite. Temporarily swap the tree, assert the
+  // icon names, then restore the canonical tree.
+  const savedTree = TREE.slice();
+  const iconNameOf = (p) => {
+    const el = window.document.querySelector('.tree-row[data-path="' + p + '"] svg.tree-icon');
+    return el ? el.dataset.icon : "(no icon)";
+  };
+  TREE.length = 0;
+  TREE.push(
+    // "notes" is in the collapsed set from boot; "brandnew" is unseen, so
+    // it renders expanded.
+    { name: "notes", type: "dir", path: "notes", children: [] },
+    { name: "brandnew", type: "dir", path: "brandnew", children: [] },
+    { name: "README.md", type: "file", path: "README.md" },
+    { name: "CLAUDE.md", type: "file", path: "CLAUDE.md" },
+    { name: "LICENSE.md", type: "file", path: "LICENSE.md" },
+    { name: "ROADMAP.md", type: "file", path: "ROADMAP.md" },
+    { name: "Welcome.md", type: "file", path: "Welcome.md" },
+  );
+  await window.NB.sidebar.refresh();
+  check("icon: README.md -> readme", iconNameOf("README.md") === "readme", iconNameOf("README.md"));
+  check("icon: CLAUDE.md -> claude", iconNameOf("CLAUDE.md") === "claude", iconNameOf("CLAUDE.md"));
+  check("icon: LICENSE.md -> license", iconNameOf("LICENSE.md") === "license", iconNameOf("LICENSE.md"));
+  check("icon: ROADMAP.md -> roadmap", iconNameOf("ROADMAP.md") === "roadmap", iconNameOf("ROADMAP.md"));
+  check("icon: unknown file -> file", iconNameOf("Welcome.md") === "file", iconNameOf("Welcome.md"));
+  check("icon: collapsed folder -> folder", iconNameOf("notes") === "folder", iconNameOf("notes"));
+  check("icon: expanded folder -> folder-open", iconNameOf("brandnew") === "folder-open", iconNameOf("brandnew"));
+  // The stem match is case-insensitive (readme.md == README.md).
+  TREE.length = 0;
+  TREE.push({ name: "readme.md", type: "file", path: "readme.md" });
+  await window.NB.sidebar.refresh();
+  check("icon: case-insensitive stem (readme.md)", iconNameOf("readme.md") === "readme", iconNameOf("readme.md"));
+  TREE.length = 0;
+  for (const n of savedTree) TREE.push(n);
+  await window.NB.sidebar.refresh();
+
   console.log("== theme ==");
   // The theme control lives in the settings modal. The default body
   // theme is "dark" (auto resolves dark on this jsdom's matchMedia stub).
