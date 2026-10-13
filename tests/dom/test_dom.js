@@ -6570,6 +6570,73 @@ function check(label, cond, extra) {
     await tick(10);
     check("hybrid menu: does not open when hybrid is inactive", hcm.hidden);
 
+    // --- native-menu fall-through on plain prose -----------------------
+    // A pointer right-click on plain prose must not preventDefault, so the
+    // browser's native menu (with spellcheck suggestions) shows; a
+    // right-click on structural content keeps the custom menu. jsdom has
+    // no caretRangeFromPoint, so it is stubbed per case.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const proseProbe = window.document.createElement("p");
+      proseProbe.textContent = "spellcheck prose";
+      vc.appendChild(proseProbe);
+      const tableProbe = window.document.createElement("table");
+      const row = window.document.createElement("tr");
+      const cell = window.document.createElement("td");
+      cell.textContent = "cell";
+      row.appendChild(cell);
+      tableProbe.appendChild(row);
+      vc.appendChild(tableProbe);
+
+      // Case a: caret resolves to a text node inside a <p> -> native menu.
+      window.document.caretRangeFromPoint = () => {
+        const r = window.document.createRange();
+        r.setStart(proseProbe.firstChild, 0);
+        r.collapse(true);
+        return r;
+      };
+      const evtProse = new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 50, clientY: 50 });
+      proseProbe.dispatchEvent(evtProse);
+      await tick(10);
+      check("hybrid menu: prose right-click is not defaultPrevented",
+        evtProse.defaultPrevented === false);
+      check("hybrid menu: prose right-click keeps the custom menu hidden",
+        hcm.hidden);
+
+      // Case b: caret resolves to a text node inside a blocked <td> ->
+      // custom menu, event cancelled.
+      window.document.caretRangeFromPoint = () => {
+        const r = window.document.createRange();
+        r.setStart(cell.firstChild, 0);
+        r.collapse(true);
+        return r;
+      };
+      const evtCell = new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 50, clientY: 50 });
+      cell.dispatchEvent(evtCell);
+      await tick(10);
+      check("hybrid menu: structural right-click opens the custom menu",
+        !hcm.hidden);
+      check("hybrid menu: structural right-click is defaultPrevented",
+        evtCell.defaultPrevented === true);
+
+      // Case c: no caret API -> pre-existing custom-menu behavior.
+      delete window.document.caretRangeFromPoint;
+      const evtNoApi = new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 100, clientY: 100 });
+      vc.dispatchEvent(evtNoApi);
+      await tick(10);
+      check("hybrid menu: no caret API falls back to the custom menu",
+        !hcm.hidden && evtNoApi.defaultPrevented === true);
+
+      proseProbe.remove();
+      tableProbe.remove();
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(50);
+
     // --- plugin "Edit source" menu item ---------------------------------
     // Re-enter hybrid and right-click a rendered mermaid container:
     // the menu must offer "Edit mermaid source", which swaps the SVG for

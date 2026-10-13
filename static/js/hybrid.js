@@ -149,6 +149,13 @@
   ];
   const PLUGIN_CONTAINER_SELECTOR =
     PLUGIN_CONTAINER_CLASSES.map((c) => "." + c).join(", ");
+  // Structural content whose right-click keeps the custom menu: a
+  // native spellcheck menu is only useful on plain prose, and these
+  // elements carry their own editing affordances.
+  const NATIVE_MENU_BLOCKED_SELECTOR =
+    "table, thead, tbody, tr, td, th, pre, code, img, .mermaid-container, " +
+    ".mermaid-error, .wavedrom-container, .viz-container, .hybrid-lang-pill, " +
+    "[contenteditable=\"false\"]";
 
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
@@ -5664,6 +5671,27 @@
     addMenuItem("Save", () => onSave());
   }
 
+  // True only for a pointer right-click landing on a plain-text run: the
+  // native menu (with the browser's spellcheck suggestions) should show
+  // there, not the custom one. Any structural target, or a missing caret
+  // API (jsdom), falls back to the custom menu.
+  function isPlainTextTarget(e) {
+    if (e.clientX === 0 && e.clientY === 0) return false;
+    let node = null;
+    if (document.caretRangeFromPoint) {
+      const r = document.caretRangeFromPoint(e.clientX, e.clientY);
+      if (r) node = r.startContainer;
+    } else if (document.caretPositionFromPoint) {
+      const p = document.caretPositionFromPoint(e.clientX, e.clientY);
+      if (p) node = p.offsetNode;
+    }
+    if (!node || node.nodeType !== 3) return false;
+    if (!viewerContentEl || !viewerContentEl.contains(node)) return false;
+    const parent = node.parentElement;
+    if (parent && parent.closest(NATIVE_MENU_BLOCKED_SELECTOR)) return false;
+    return true;
+  }
+
   function openMenu(e) {
     if (!active || !menuEl) return;
     e.preventDefault();
@@ -5702,7 +5730,13 @@
   // Wire the contextmenu event on #viewer-content. Only fires when
   // hybrid mode is active (openMenu guards on `active`).
   if (viewerContentEl) {
-    viewerContentEl.addEventListener("contextmenu", (e) => openMenu(e));
+    viewerContentEl.addEventListener("contextmenu", (e) => {
+      if (active && isPlainTextTarget(e)) {
+        hideMenu();
+        return;
+      }
+      openMenu(e);
+    });
     // Selection highlight for a horizontal rule, in BOTH preview and hybrid
     // mode (selection and copy are the browser's own in both; the class only
     // makes a selected rule visible). Wired once at module load; the handler

@@ -1709,6 +1709,64 @@ async function main() {
         pageErrors.length === 0, pageErrors.join(" | "));
     }
 
+    // --- native menu fall-through on plain prose (right-click) --------
+    // A real right-click on prose must leave the event uncancelled so the
+    // browser's own menu (with spellcheck) shows; a right-click on
+    // structural content keeps the custom menu. A bubble-phase document
+    // listener records defaultPrevented after the hybrid handler runs.
+    writeNote("notes/ctxmenu.md",
+      "hello world prose\n\n| a | b |\n| - | - |\n| 1 | 2 |\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/ctxmenu.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.evaluate(() => {
+      window.__ctx = null;
+      document.addEventListener("contextmenu", (e) => {
+        window.__ctx = {
+          defaultPrevented: e.defaultPrevented,
+          x: e.clientX, y: e.clientY,
+        };
+      });
+    });
+    {
+      const proseBox = await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        const r = p.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.click(proseBox.x, proseBox.y, { button: "right" });
+      await page.waitForTimeout(120);
+      const proseCtx = await page.evaluate(() => window.__ctx);
+      const menuHidden = await page.evaluate(
+        () => document.getElementById("hybrid-context-menu").hidden);
+      check("real browser: prose right-click is not defaultPrevented",
+        proseCtx && proseCtx.defaultPrevented === false, JSON.stringify(proseCtx));
+      check("real browser: prose right-click keeps the custom menu hidden",
+        menuHidden, "hidden=" + menuHidden);
+    }
+    {
+      const cellBox = await page.evaluate(() => {
+        const td = document.querySelector("#viewer-content td");
+        const r = td.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.mouse.click(cellBox.x, cellBox.y, { button: "right" });
+      await page.waitForTimeout(120);
+      const cellCtx = await page.evaluate(() => window.__ctx);
+      const menuOpen = await page.evaluate(
+        () => !document.getElementById("hybrid-context-menu").hidden);
+      check("real browser: structural right-click is defaultPrevented",
+        cellCtx && cellCtx.defaultPrevented === true, JSON.stringify(cellCtx));
+      check("real browser: structural right-click opens the custom menu",
+        menuOpen, "open=" + menuOpen);
+    }
+    await page.click("#close-edit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();
