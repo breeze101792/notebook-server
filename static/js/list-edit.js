@@ -42,10 +42,11 @@
 
   const GRACE_MS = 120;       // hide delay after the pointer leaves an item
   const GRIP_SIZE = 24;       // px, must match .nb-list-grip CSS
-  // The grip's right edge is flush with the item's left edge, so there is
-  // no dead strip between the two that a mouseover could fall into and
-  // clear the grip (the "hover-intent" hole). See pointerInItemGutter for
-  // the belt-and-braces guard at the clamped/edge cases.
+  // The grip's right edge is flush with the item's list rail (the leading
+  // edge of the dot/number indent), so the grip never lands on the marker
+  // and no dead strip remains between the item box and the grip that a
+  // mouseover could fall into (the "hover-intent" hole). See listRailX()
+  // and pointerInItemGutter() for the per-item geometry.
   const GUTTER_X = GRIP_SIZE;
   const PROXY_OFFSET = 8;     // pointer -> drag chip offset
   const FALLBACK_INDENT = 26; // px, when the CSS list indent cannot be read
@@ -147,6 +148,39 @@
              width: right - left, height: bottom - top };
   }
 
+  /* The viewport x of `li`'s containing list left edge -- the rail the
+   * grip's right edge aligns to. Every item in a list shares this rail, so
+   * a dot, number and task checkbox item all get the grip in one column;
+   * the marker (and a checkbox's overhanging box, which hitRect unions in)
+   * is left of it. Null when the item has no list ancestor. */
+  function listRailX(li) {
+    const list = li && li.parentElement;
+    if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) return null;
+    return list.getBoundingClientRect().left;
+  }
+
+  /* Overlay-space y at the vertical centre of `li`'s FIRST line -- the
+   * line its marker sits on. Centering the grip there keeps it beside the
+   * item's own text even when the item also contains nested list children,
+   * whose height would otherwise pull the grip down over the subtree.
+   * Falls back to the item box centre (r) when no line can be measured. */
+  function firstLineCenterY(li, r) {
+    const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !n.nodeValue.replace(/\u200B/g, "").trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      const rects = range.getClientRects ? range.getClientRects() : null;
+      if (rects && rects.length) {
+        const host = viewerEl.getBoundingClientRect();
+        return rects[0].top + rects[0].height / 2 - host.top;
+      }
+      break;
+    }
+    return r.top + r.height / 2;
+  }
+
   /* Overlay-space hit rect (marker-inclusive union), or null. */
   function itemRect(li) {
     const r = hitRect(li);
@@ -189,14 +223,17 @@
     return li && viewerContentEl.contains(li) ? li : null;
   }
 
-  /* True when a viewport point is in the narrow gutter between `li`'s own
-   * box and its grip (GUTTER_X - GRIP_SIZE wide). Crossing that strip must
-   * not clear the grip: it is the approach path, not a new target. */
+  /* True when a viewport point is in the strip between `li`'s hit region
+   * and its grip (the rail-to-hit-region gap plus the grip width).
+   * Crossing that strip must not clear the grip: it is the approach path,
+   * not a new target. */
   function pointerInItemGutter(x, y, li) {
     const r = hitRect(li);
     if (!r) return false;
+    const rail = listRailX(li);
+    const gutter = (rail == null ? 0 : r.left - rail) + GUTTER_X;
     return y >= r.top && y < r.bottom &&
-      x >= r.left - GUTTER_X && x < r.left;
+      x >= r.left - gutter && x < r.left;
   }
 
   /* The container's rail geometry: the base rail (x of a top-level
@@ -230,21 +267,26 @@
     return b;
   }
 
-  /* Rebuild the overlay's single grip for the active item. The x comes
-   * from the item's hit region so a task checkbox -- which overhangs the
-   * item's box -- never has the grip drawn on top of it (the grip must
-   * stay clickable-but-clear, and the checkbox clickable). It is clamped
-   * to #viewer's left edge so a deep overhang cannot clip it off-screen. */
+  /* Rebuild the overlay's single grip for the active item. The x aligns
+   * the grip's right edge to the containing list's left rail, so every
+   * item in a list -- dot, number and checkbox alike -- gets the grip in
+   * one column, left of the marker. The y centres on the item's own first
+   * line, so a nested subtree does not drag the grip off the item (see
+   * firstLineCenterY). The grip must stay clickable-but-clear, and the
+   * marker clickable. It is clamped to #viewer's left edge so a deep nest
+   * cannot clip it off-screen. */
   function renderGrip() {
     overlay.textContent = "";
     if (!activeItem || !viewerEl || !viewerContentEl) return;
     if (!viewerContentEl.contains(activeItem)) { activeItem = null; return; }
     const r = itemRect(activeItem);
     if (!r) return;
+    const rail = listRailX(activeItem);
+    const host = viewerEl.getBoundingClientRect();
     const grip = makeGrip();
     placeAtOverlay(grip,
-      Math.max(r.left - GUTTER_X, EDGE_SAFE),
-      r.top + r.height / 2 - GRIP_SIZE / 2);
+      Math.max((rail == null ? r.left : rail - host.left) - GUTTER_X, EDGE_SAFE),
+      firstLineCenterY(activeItem, r) - GRIP_SIZE / 2);
     grip.addEventListener("pointerdown", (e) => startDrag(e, activeItem));
     overlay.appendChild(grip);
   }
@@ -262,9 +304,10 @@
     if (!enabled || drag || controlHover) return;
     const item = itemAtPointer(e.clientX, e.clientY);
     if (item) { setActiveItem(item); return; }
-    // No item under the pointer. If it crossed the few px between the
-    // active item's box and its own grip (GUTTER_X - GRIP_SIZE), keep the
-    // item: that strip is the grip's approach path, not a new target.
+    // No item under the pointer. If it crossed the strip between the
+    // active item's box and its own grip (the marker column plus the grip
+    // width), keep the item: that strip is the grip's approach path, not
+    // a new target.
     if (activeItem && pointerInItemGutter(e.clientX, e.clientY, activeItem)) {
       return;
     }

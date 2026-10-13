@@ -1464,6 +1464,20 @@ async function main() {
       check("real browser list drag: the grip sits in the left gutter",
         !!grip1 && grip1.left < g1.lis[1].x - 4,
         "grip=" + (grip1 && grip1.left) + " item=" + g1.lis[1].x);
+      // The reported bug: on a plain dot/number list the grip used to sit
+      // at the item's own left edge, on top of the marker. It must clear
+      // the marker column -- the list's left padding, left of the item box.
+      const markerClear = await page.evaluate(() => {
+        const li = document.querySelectorAll("#viewer-content ul > li")[1];
+        const ul = li.parentElement;
+        const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+        if (!g) return null;
+        return { gripRight: g.getBoundingClientRect().right,
+                 ulLeft: ul.getBoundingClientRect().left };
+      });
+      check("real browser list drag: the grip clears the bullet marker column",
+        !!markerClear && markerClear.gripRight <= markerClear.ulLeft + 0.5,
+        JSON.stringify(markerClear));
       check("real browser list drag: the active item is the hovered one",
         (await page.evaluate(() => {
           const it = window.NB.listEdit.activeItem;
@@ -1622,6 +1636,18 @@ async function main() {
           const g = document.querySelector(".nb-list-overlay .nb-list-grip");
           return !!g && !!it && it.textContent.replace(/\u200B/g, "").includes("b");
         }));
+      // The grip column must not depend on the item type: a task item's
+      // grip shares the same list rail as a dot/number item's.
+      const taskRail = await page.evaluate(() => {
+        const ul = document.querySelector("#viewer-content ul");
+        const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+        if (!g) return null;
+        return { gripRight: g.getBoundingClientRect().right,
+                 ulLeft: ul.getBoundingClientRect().left };
+      });
+      check("real browser list drag: a task item's grip shares the list rail",
+        !!taskRail && Math.abs(taskRail.gripRight - taskRail.ulLeft) < 1,
+        JSON.stringify(taskRail));
       // The same union decides the drop target: dragging item a over c's
       // checkbox gutter resolves c.
       await hookStart(0);   // item a
@@ -1636,6 +1662,34 @@ async function main() {
       // Session 4: a parent drag carries its whole nested subtree.
       await openNote("notes/listsubtree.md", "- a\n    - a1\n    - a2\n- b\n");
       const g4 = await geom();
+      // The grip must sit on the parent's OWN line, not the middle of its
+      // nested subtree (the reported "icon off the item's line").
+      await page.mouse.move(g4.lis[0].cx, g4.lis[0].y + g4.lis[0].h * 0.15);
+      await page.waitForTimeout(80);
+      const gripParent = await page.evaluate(() => {
+        const g = document.querySelector(".nb-list-overlay .nb-list-grip");
+        const li = window.NB.listEdit.activeItem;
+        if (!g || !li) return null;
+        const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+        let n, lineMid = null;
+        while ((n = walker.nextNode())) {
+          if (!n.nodeValue.replace(/\u200B/g, "").trim()) continue;
+          const r = document.createRange();
+          r.selectNodeContents(n);
+          const c = r.getClientRects()[0];
+          lineMid = c.top + c.height / 2;
+          break;
+        }
+        const gb = g.getBoundingClientRect();
+        const box = li.getBoundingClientRect();
+        return { gripMid: gb.top + gb.height / 2, lineMid: lineMid,
+                 boxMid: box.top + box.height / 2 };
+      });
+      check("real browser list drag: the grip aligns with the item's own line",
+        !!gripParent && gripParent.lineMid != null &&
+        Math.abs(gripParent.gripMid - gripParent.lineMid) < 2 &&
+        gripParent.boxMid - gripParent.lineMid > 8,
+        JSON.stringify(gripParent));
       await hookStart(0);   // parent item a
       await hookMove(g4.baseX, g4.lis[1].y + g4.lis[1].h * 0.75);
       await page.waitForTimeout(70);
