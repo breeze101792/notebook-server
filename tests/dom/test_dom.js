@@ -4992,6 +4992,12 @@ function check(label, cond, extra) {
     check("hybrid: input rule '[ ] ' makes a task item with checkbox",
       taskLi !== null && taskLi.querySelector('input[type="checkbox"]') !== null,
       "task li=" + !!taskLi);
+    {
+      const typedCb = taskLi && taskLi.querySelector('input[type="checkbox"]');
+      check("hybrid: a typed task checkbox is caret-atomic",
+        !!typedCb && typedCb.getAttribute("contenteditable") === "false",
+        "attr=" + (typedCb && typedCb.getAttribute("contenteditable")));
+    }
 
     // Inline rules: '**bold**' with the caret after the final '*'.
     await typeIn("**bold**");
@@ -6547,6 +6553,57 @@ function check(label, cond, extra) {
     check("hybrid: loose task item caret is nudged after its checkbox",
       sel.anchorNode && sel.anchorNode.nodeType === 3 && sel.anchorOffset === 0,
       "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+    // Firefox does not park the caret at offset 0 of the host; it anchors
+    // the range ON the <input> itself (a valid boundary), which paints the
+    // caret to the box's LEFT. That shape must be nudged too.
+    vc.innerHTML = "<ul><li><input type=\"checkbox\"> task</li></ul>";
+    {
+      const cb = vc.querySelector("li > input");
+      const r = window.document.createRange();
+      const s = window.getSelection();
+      const parkOnBox = () => {
+        r.setStart(cb, 0);
+        r.collapse(true);
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      parkOnBox();
+      window.document.dispatchEvent(new window.Event("selectionchange"));
+      sel = window.getSelection();
+      check("hybrid: caret anchored on the checkbox is nudged after it",
+        sel.anchorNode && sel.anchorNode.nodeType === 3 && sel.anchorOffset === 0,
+        "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+      // WebKit applies a click's selection late, overwriting a
+      // selection-time nudge; the mouseup repair must catch it without any
+      // selectionchange firing at all.
+      parkOnBox();
+      vc.querySelector("li").dispatchEvent(
+        new window.MouseEvent("mouseup", { bubbles: true }));
+      sel = window.getSelection();
+      check("hybrid: a mouseup repairs a caret parked on the checkbox",
+        sel.anchorNode && sel.anchorNode.nodeType === 3 && sel.anchorOffset === 0,
+        "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) + " off=" + sel.anchorOffset);
+    }
+    // A checkbox-only item has no words, so nothing hosts the caret right
+    // of the box -- the caret used to paint beside it, unlike an item
+    // with words. The nudge must PLANT an invisible ZWS text host right
+    // after the box and land in it, and the host must never reach the
+    // note (serialization sweeps the ZWS).
+    vc.innerHTML = "<ul><li><input type=\"checkbox\"></li></ul>";
+    {
+      const cbOnly = vc.querySelector("li > input");
+      sel = caretAtHostStart(vc.querySelector("li"));
+      const host = cbOnly.nextSibling;
+      check("hybrid: a checkbox-only item gets a caret host right of the box",
+        !!host && host.nodeType === 3 && host.nodeValue === "\u200B" &&
+        sel.anchorNode === host && sel.anchorOffset === 0,
+        "host=" + (host && host.nodeName) +
+        " anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) +
+        " off=" + sel.anchorOffset);
+      check("hybrid: the checkbox-only caret host is swept on save",
+        !window.NB.hybrid.domToMarkdown().includes("\u200B"),
+        JSON.stringify(window.NB.hybrid.domToMarkdown().trim()));
+    }
     // A plain item's natural start is left where it is (no over-reach).
     vc.innerHTML = "<ul><li>plain</li></ul>";
     sel = caretAtHostStart(vc.querySelector("li"));
@@ -9148,6 +9205,11 @@ function check(label, cond, extra) {
       const cb = $("viewer-content").querySelector('input[type="checkbox"]');
       check("hybrid splice: a task checkbox rendered for the toggle test",
         !!cb, "checkbox=" + (cb && cb.outerHTML));
+      // enableCheckboxes (enter time) must mark every rendered checkbox
+      // contenteditable="false": the caret can never target the box.
+      check("hybrid: a rendered task checkbox is caret-atomic",
+        !!cb && cb.getAttribute("contenteditable") === "false",
+        "attr=" + (cb && cb.getAttribute("contenteditable")));
       if (cb) {
         cb.checked = true;
         cb.dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -9166,10 +9228,33 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(20);
 
-    // (8) Undo replaces innerHTML wholesale. Alignment must survive it
-    // via the content hash, so undoing an edit restores the source bytes
-    // and a following clean save writes nothing. A stale/false alignment
-    // here would canonicalize the list on the undo path.
+    // (7b) A checkbox-only item LOADED FROM DISK ("- [ ] " -- the
+    // trailing space is required for marked to re-render the box) must
+    // get the same caret host at enter time (addListPlaceholders ->
+    // ensureListMarker), not only after a click nudges it, and the host
+    // must not leak: an untouched enter+exit saves nothing and the bytes
+    // stay identical.
+    FILES["notes/a.md"] = "- [ ] \n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const cb = $("viewer-content").querySelector('input[type="checkbox"]');
+      const host = cb && cb.nextSibling;
+      check("hybrid: a checkbox-only item rendered from disk gets its caret host",
+        !!host && host.nodeType === 3 && host.nodeValue === "\u200B",
+        "host=" + (host && JSON.stringify(host.nodeValue)));
+      check("hybrid: a checkbox-only item keeps its caret-atomic checkbox",
+        !!cb && cb.getAttribute("contenteditable") === "false",
+        "attr=" + (cb && cb.getAttribute("contenteditable")));
+    }
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+    check("hybrid: a checkbox-only item saves nothing on a clean exit",
+      FILES["notes/a.md"] === "- [ ] \n",
+      JSON.stringify(FILES["notes/a.md"]));
     FILES["notes/a.md"] = "para one\n\n* a\n* b\n\npara two\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
@@ -9316,6 +9401,9 @@ function check(label, cond, extra) {
         taskLi !== null && taskCb !== null && taskCb.parentElement === taskLi &&
         taskLi.textContent === "hello",
         "li=" + (taskLi && taskLi.outerHTML));
+      check("hybrid edit bar: the Task button's checkbox is caret-atomic",
+        !!taskCb && taskCb.getAttribute("contenteditable") === "false",
+        "attr=" + (taskCb && taskCb.getAttribute("contenteditable")));
       clickAct("task");
       await tick(20);
       // A second press ends the list: the item becomes a plain paragraph,
@@ -9652,7 +9740,8 @@ function check(label, cond, extra) {
         "li=" + (madeTask && madeTask.outerHTML));
       check("hybrid input rule: the caret lands after the task checkbox",
         sI.rangeCount > 0 && sI.isCollapsed &&
-        sI.anchorNode === madeTask && sI.anchorOffset === 1,
+        cbI && sI.anchorNode === cbI.nextSibling &&
+        sI.anchorNode.nodeType === 3 && sI.anchorOffset === 0,
         "node=" + (sI.anchorNode && sI.anchorNode.nodeName) +
         " off=" + sI.anchorOffset);
 
@@ -9706,9 +9795,13 @@ function check(label, cond, extra) {
         "ul=" + ulE.outerHTML);
       check("hybrid Enter: the caret lands after the new task checkbox",
         eSel.rangeCount > 0 && eSel.isCollapsed &&
-        eSel.anchorNode === liNext && eSel.anchorOffset === 1,
+        cbNext && eSel.anchorNode === cbNext.nextSibling &&
+        eSel.anchorNode.nodeType === 3 && eSel.anchorOffset === 0,
         "node=" + (eSel.anchorNode && eSel.anchorNode.nodeName) +
         " off=" + eSel.anchorOffset);
+      check("hybrid Enter: the new task checkbox is caret-atomic",
+        !!cbNext && cbNext.getAttribute("contenteditable") === "false",
+        "attr=" + (cbNext && cbNext.getAttribute("contenteditable")));
 
       // Regression: a selection whose common ancestor is the whole <ul>
       // (a drag across the list) must NOT be passed to toggleList -- its

@@ -1763,8 +1763,7 @@
       }
       li.classList.add("task-list-item");
       const host = taskCheckboxHost(li);
-      const box = document.createElement("input");
-      box.type = "checkbox";
+      const box = makeTaskCheckbox();
       host.insertBefore(box, host.firstChild);
       ensureListMarker(li);
       return li;
@@ -1907,8 +1906,7 @@
       newList.appendChild(li);
       ctx.block.replaceWith(newList);
       li.classList.add("task-list-item");
-      const box = document.createElement("input");
-      box.type = "checkbox";
+      const box = makeTaskCheckbox();
       li.insertBefore(box, li.firstChild);
       ensureListMarker(li);
       made = newList;
@@ -2031,15 +2029,30 @@
     sel.addRange(r);
   }
 
-  /* Ensure an empty list item shows its marker. A completely empty <li>
-   * (no text, no <br>) does not render its list marker in some browsers,
-   * so the "1." / "-" the user just typed would vanish. A zero-width
-   * space keeps the item non-empty (marker renders) while staying
-   * invisible; it is stripped from the markdown on save. */
+  /* Ensure an empty list item shows its marker, and a checkbox-only task
+   * item can host a caret.
+   *
+   * A completely empty <li> (no text, no <br>) does not render its list
+   * marker in some browsers, so the "1." / "-" the user just typed would
+   * vanish. A zero-width space keeps the item non-empty (marker renders)
+   * while staying invisible; it is stripped from the markdown on save.
+   *
+   * A task item holding ONLY its checkbox has no text position after the
+   * box: an item with words parks the caret in its text node, right of
+   * the box, but a textless one leaves the engines nothing to click or
+   * paint there, so the caret shows beside/before the box instead. Give
+   * it the same host a with-words item has, through taskCaretHost. Only
+   * a textless item is touched; one with words already hosts the caret. */
   function ensureListMarker(li) {
     if (!li) return;
+    const cb = taskCheckboxOf(li);
+    if (cb) {
+      if (li.textContent.replace(/\u200B/g, "").trim()) return;
+      taskCaretHost(cb);
+      return;
+    }
     if (!li.textContent && !li.querySelector("img,br,canvas,svg,iframe,input")) {
-      li.appendChild(document.createTextNode("\u200B"));
+      li.appendChild(document.createTextNode(ZERO_WIDTH_SPACE));
     }
   }
 
@@ -2110,6 +2123,39 @@
     });
   }
 
+  /* A hybrid task checkbox <input>, marked contenteditable="false" so
+   * the editing engines treat it as an atomic island -- the same caret
+   * model a plain item's bullet has, being a ::marker glyph with no DOM
+   * node and no caret slot of its own. An editable checkbox is a caret
+   * target: Firefox and WebKit anchor the caret ON it and paint it left
+   * of the box. The flag is invisible to the serializer (turndown's gfm
+   * taskListItems rule matches the tag and parent) and to the CSS. */
+  function makeTaskCheckbox() {
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.setAttribute("contenteditable", "false");
+    return cb;
+  }
+
+  /* The text host right after a task checkbox, planted when missing and
+   * upgraded when empty. stripTaskItemSpaces slices the item's separator
+   * space, so a wordless item is left with an EMPTY text node after the
+   * box: an empty node paints no inline box, and the caret has nothing
+   * to sit in right of the box -- it showed beside the box instead,
+   * unlike an item with words. A zero-width space is a real (invisible)
+   * glyph the caret sits on exactly like text; the serializer sweeps it
+   * and every empty-item check ignores it. Returns the host node. */
+  function taskCaretHost(cb) {
+    let next = cb.nextSibling;
+    if (!next || next.nodeType !== 3) {
+      next = document.createTextNode(ZERO_WIDTH_SPACE);
+      cb.after(next);
+    } else if (next.nodeValue === "") {
+      next.nodeValue = ZERO_WIDTH_SPACE;
+    }
+    return next;
+  }
+
   /* The task checkbox directly owned by `li`: a tight item holds the
    * input as a child, a loose item (marked wraps its content in a <p>)
    * inside that <p>. A checkbox in a NESTED list belongs to the nested
@@ -2152,8 +2198,7 @@
     li.classList.add("task-list-item");
     if (!taskCheckboxOf(li)) {
       const host = taskCheckboxHost(li);
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
+      const cb = makeTaskCheckbox();
       cb.checked = m[1] !== " ";
       host.insertBefore(cb, host.firstChild);
     }
@@ -2161,7 +2206,15 @@
     const cb = taskCheckboxOf(li);
     const sel = window.getSelection();
     const r = document.createRange();
-    if (cb) { r.setStartAfter(cb); r.collapse(true); }
+    if (cb) {
+      // Land in the item's text host (the ZWS one when it is still
+      // textless): the caret sits right of the box, where continued
+      // typing fills the item.
+      const host = cb.nextSibling;
+      if (host && host.nodeType === 3) r.setStart(host, 0);
+      else r.setStartAfter(cb);
+      r.collapse(true);
+    }
     else { r.selectNodeContents(li); r.collapse(false); }
     sel.removeAllRanges();
     sel.addRange(r);
@@ -2580,7 +2633,16 @@
    * non-collapsed but EMPTY selection (a double-click on the void rule)
    * counts as a plain click and is repaired. */
   function onContentMouseUp(e) {
-    if (!active || !pendingRuleClick) return;
+    if (!active) return;
+    // Repair the task-item caret here as well as on selectionchange:
+    // WebKit applies a click's selection AFTER the change event, so a
+    // selection-time nudge can be overwritten by the engine's own
+    // placement (Safari then paints the caret left of the checkbox).
+    // mouseup is after the engine finishes, the same repair point the
+    // rule press below uses. A checkbox TOGGLE keeps its pre-click caret
+    // anyway: restoreCheckboxCaret (change handler) runs later and wins.
+    normalizeTaskCaret();
+    if (!pendingRuleClick) return;
     const press = pendingRuleClick;
     pendingRuleClick = null;
     const sel = window.getSelection();
@@ -2607,31 +2669,41 @@
     selectedRuleSet = null;
   }
 
+  /* A task-list checkbox <input>. */
+  function isTaskCheckbox(el) {
+    return !!el && el.nodeType === 1 &&
+      el.tagName === "INPUT" && el.type === "checkbox";
+  }
+
   /* Keep a collapsed hybrid caret out of a task item's marker column.
    * A click anywhere on or beside the leading checkbox -- and a Home or
-   * ArrowLeft that walks to the item's start -- parks the caret at offset
-   * 0 of the item, which is BEFORE the checkbox. The caret is then
-   * painted on top of the checkbox, and the next typed character lands
-   * ahead of it ("Y<input> task": an item whose text precedes its own
-   * checkbox, which turndown serializes wrong). The item's real text
-   * start is just after the checkbox, so nudge the caret there. Both the
-   * tight <li><input> and the loose <li><p><input> shapes start with the
-   * checkbox, so the host is whichever element directly owns it. */
+   * ArrowLeft that walks to the item's start -- parks the caret BEFORE
+   * the checkbox, which is then painted over the box, and the next typed
+   * character lands ahead of it ("Y<input> task": an item whose text
+   * precedes its own checkbox, which turndown serializes wrong). The
+   * item's real text start is just after the checkbox, so nudge the caret
+   * there. Two engines express "before the box" differently: Chromium
+   * parks the caret at offset 0 of the checkbox's host -- the <li>, or the
+   * <p> when the item is loose -- while Firefox anchors the range ON the
+   * <input> itself (a valid boundary; the caret has no pixel of its own
+   * and is drawn to the box's left). Handle both. */
   function normalizeTaskCaret() {
     if (!active) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
     const r = sel.getRangeAt(0);
     const host = r.startContainer;
-    if (host.nodeType !== 1 || r.startOffset !== 0) return;
     if (!viewerContentEl.contains(host)) return;
-    const cb = host.firstChild;
-    if (!cb || cb.nodeType !== 1 ||
-        cb.tagName !== "INPUT" || cb.type !== "checkbox") return;
+    let cb = null;
+    if (isTaskCheckbox(host)) cb = host;
+    else if (host.nodeType === 1 && r.startOffset === 0 &&
+             isTaskCheckbox(host.firstChild)) cb = host.firstChild;
+    if (!cb) return;
+    // Land in the box's text host, planting one when the item lost its
+    // text (the user deleted the words): without a glyph right of the
+    // box the caret paints beside it again. Idempotent; swept on save.
     const after = document.createRange();
-    const next = cb.nextSibling;
-    if (next && next.nodeType === 3) after.setStart(next, 0);
-    else after.setStartAfter(cb);
+    after.setStart(taskCaretHost(cb), 0);
     after.collapse(true);
     sel.removeAllRanges();
     sel.addRange(after);
@@ -3457,12 +3529,17 @@
           e.preventDefault();
           const next = document.createElement("li");
           next.className = "task-list-item";
-          const nextCb = document.createElement("input");
-          nextCb.type = "checkbox";
+          const nextCb = makeTaskCheckbox();
           next.appendChild(nextCb);
           li.after(next);
+          // The new item is textless: plant its ZWS caret host
+          // (ensureListMarker) and land in it, the position right of the
+          // box an item with words puts the caret in.
+          ensureListMarker(next);
           const r = document.createRange();
-          r.setStartAfter(nextCb);
+          const nHost = nextCb.nextSibling;
+          if (nHost && nHost.nodeType === 3) r.setStart(nHost, 0);
+          else r.setStartAfter(nextCb);
           r.collapse(true);
           window.getSelection().removeAllRanges();
           window.getSelection().addRange(r);
@@ -4154,7 +4231,9 @@
 
   /* Put the caret back where it was before the checkbox was clicked, so
    * toggling a box never moves the insertion point. Focus returns to the
-   * editor first: the click left it on the <input>. */
+   * editor first: the click left it on the <input>. The restored range is
+   * normalized too (idempotent): a WebKit click applies its selection
+   * late, so the saved range can itself pre-date a nudge. */
   function restoreCheckboxCaret() {
     const range = savedCheckboxRange;
     savedCheckboxRange = null;
@@ -4163,6 +4242,7 @@
     viewerContentEl.focus({ preventScroll: true });
     sel.removeAllRanges();
     sel.addRange(range);
+    normalizeTaskCaret();
   }
 
   /* Toggle task-list checkboxes on click. marked renders them disabled;
@@ -4179,11 +4259,13 @@
 
   /* Re-enable task-list checkboxes in the current DOM. marked renders
    * them with the disabled attribute; hybrid mode needs them clickable.
-   * Called on enter (the DOM is already rendered by viewer.js) and after
-   * any re-render. */
+   * Also marks each one contenteditable="false" (see makeTaskCheckbox)
+   * so the caret can never target the box. Called on enter (the DOM is
+   * already rendered by viewer.js) and after any re-render. */
   function enableCheckboxes() {
     viewerContentEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
       cb.removeAttribute("disabled");
+      cb.setAttribute("contenteditable", "false");
     });
   }
 
