@@ -139,8 +139,8 @@ async function main() {
     async function openDesigner() {
       await page.locator("#viewer-content .mermaid-container").first()
         .click({ button: "right" });
-      await page.waitForSelector("#hybrid-context-menu:not([hidden])", { timeout: 5000 });
-      await page.locator("#hybrid-context-menu button",
+      await page.waitForSelector("#nb-menu:not([hidden])", { timeout: 5000 });
+      await page.locator("#nb-menu button",
         { hasText: "Design diagram" }).first().click();
       await page.waitForFunction(() => {
         const o = document.getElementById("designer-overlay");

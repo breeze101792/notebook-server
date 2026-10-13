@@ -36,7 +36,7 @@ order is load-bearing: each module expects the ones before it to have
 registered already.
 
 ```
-cm-bridge → lightbox → blocks → mermaid → wavedrom → katex → viz →
+cm-bridge → lightbox → blocks → menu → mermaid → wavedrom → katex → viz →
 htmlpreview → viewer → editbar → hybrid → table-edit → table-view →
 table-select → watcher → outline → sidebar → search → graph → tabs → windows →
 settings → export → vimnav → ai → activity → shortcuts → app
@@ -101,6 +101,7 @@ implemented today.
 | `cm-bridge.js` | 611 | `NB.cmEditor` | Thin CodeMirror 6 wrapper. Lazy view creation, stable API, `setVimMode`, `compileVimrc`. |
 | `lightbox.js` | 296 | `NB.lightbox` | Factory shared by mermaid/wavedrom/viz. Zoom/pan overlay, 0.25–5×, Esc and Ctrl+±. |
 | `blocks.js` | 203 | `NB.blocks` | The one authoritative code-block renderer registry: `renderAll`, `restoreForMarkdown`, `pluginTypes`, `forLang`, `forElement`, `selectorFor`, `sourceOf`. |
+| `menu.js` | 211 | `NB.menu` | Shared right-click context-menu module. One singleton `#nb-menu` on `document.body`, descriptor-driven rendering, measured four-edge positioning, one close dispatcher (outside click, outside-scope right-click, Esc), and keyboard nav. Surfaces decide *when* a menu opens and *what* its items are; the module owns *how*. |
 | `mermaid.js` | 324 | `NB.mermaid` | ` ```mermaid ` renderer, `securityLevel: "strict"`. |
 | `wavedrom.js` | 300 | `NB.wavedrom` | ` ```wavedrom ` renderer. Lenient JSON (unquoted keys). |
 | `katex.js` | 153 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |
@@ -108,16 +109,16 @@ implemented today.
 | `htmlpreview.js` | 303 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
 | `viewer.js` | 1248 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
-| `hybrid.js` | 4467 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |
+| `hybrid.js` | 5789 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |
 | `table-edit.js` | 802 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
 | `table-view.js` | 1211 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v1). Tears down before hybrid edit. |
 | `table-select.js` | 427 | `NB.tableSelect` | Ctrl+drag (Cmd on macOS) over table cells paints a rectangle; Ctrl+C copies it as TSV (`text/plain`) plus an HTML `<table>` (`text/html`). One engine for preview and hybrid edit. The selection classes are transient chrome, stripped before serialization and undo snapshots. |
 | `watcher.js` | 317 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
 | `outline.js` | 167 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
-| `sidebar.js` | 1018 | `NB.sidebar` | File tree, bookmarks, and right-click menus (new, rename/move, copy, delete, Export…). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
+| `sidebar.js` | 1038 | `NB.sidebar` | File tree, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
 | `search.js` | 339 | `NB.search` | Search UI. Server `<<…>>` snippets rewrapped as `<mark>` via `textContent`. |
 | `graph.js` | 961 | `NB.graph` | Force-directed wikilink graph view on special tab `§graph`. Canvas physics, pan/zoom/filter, optional particles. |
-| `tabs.js` | 913 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
+| `tabs.js` | 905 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
 | `windows.js` | 179 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1483 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 926 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
@@ -125,7 +126,7 @@ implemented today.
 | `ai.js` | 1227 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; full in-memory transcript; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
 | `activity.js` | 524 | `NB.activity` | Left activity bar and side-panel view switcher. Registers four views: Explorer, Recent (fuzzy quick-open), Search, AI. |
 | `shortcuts.js` | 392 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
-| `app.js` | 821 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
+| `app.js` | 840 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
 
 ## 4. Code-block renderer pipeline
 

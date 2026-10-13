@@ -7,7 +7,7 @@
   window.NB = window.NB || {};
 
   const treeEl = document.getElementById("file-tree");
-  const menuEl = document.getElementById("context-menu");
+  const sidebarEl = document.getElementById("sidebar");
   const bookmarksEl = document.getElementById("bookmarks");
   const bookmarksListEl = document.getElementById("bookmarks-list");
   const bookmarksAddBtn = document.getElementById("bookmarks-add");
@@ -22,7 +22,6 @@
   // watcher's cheap JSON compare so the button always re-fetches.
   const refreshBtn = document.getElementById("sidebar-refresh");
   let selectedPath = null;
-  let menuCtx = null;               // { node } the menu was opened for
   let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
   // Bookmarks: an ordered list of file paths. Lives in module state and is
   // mirrored to cfg.bookmarks by app.js's persistConfig() -- the source of
@@ -444,31 +443,35 @@
   }
 
   /* --- context menu for the bookmark list -------------------------- */
-  function openBookmarkMenu(e, path) {
-    menuCtx = { path, kind: "bookmark" };
-    menuEl.innerHTML = "";
-    addMenuItem("Open", () => openFile(path));
-    menuEl.appendChild(document.createElement("hr"));
-    addMenuItem("Remove bookmark", () => toggleBookmark(path));
-    // Rename / Move mirrors the tree row's menu shape so the user's
-    // mental model is the same: both menus on a file path are
-    // identical. doRename() re-keys the bookmark on the file:moved
-    // event (see below) so the row follows the file to its new path.
-    addMenuItem("Export…", () => doExport(path));
-    addMenuItem("Rename / Move…", () => doRename({ path, type: "file" }));
-    addMenuItem("Copy…", () => doCopy({ path, type: "file" }));
-    if (treeHasDir(treeCache)) {
-      menuEl.appendChild(document.createElement("hr"));
-      addMenuItem("Collapse all folders", () => collapseAll());
-    }
-    menuEl.appendChild(document.createElement("hr"));
-    addMenuItem("Delete", () => doDelete({ path, type: "file" }), true);
+  /* The item categories follow the canonical order: Open, Create,
+   * Organize, View, Terminal, with a separator between each pair of
+   * adjacent non-empty categories. A bookmark references a single file,
+   * so it shows no Create and no View category (Collapse all folders is
+   * a sidebar action, not a file action). */
+  function bookmarkMenuItems(path) {
+    return [
+      { label: "Open", handler: () => openFile(path) },
+      { separator: true },
+      { label: "Export…", handler: () => doExport(path) },
+      // Rename / Move mirrors the tree row's menu shape so the user's
+      // mental model is the same: both menus on a file path are
+      // identical. doRename() re-keys the bookmark on the file:moved
+      // event (see below) so the row follows the file to its new path.
+      { label: "Rename / Move…", handler: () => doRename({ path, type: "file" }) },
+      { label: "Copy…", handler: () => doCopy({ path, type: "file" }) },
+      { label: "Copy path", handler: () => NB.app.copyPath(path) },
+      { label: "Copy link", handler: () => NB.app.copyLink(path) },
+      { label: "Remove bookmark", handler: () => toggleBookmark(path) },
+      { separator: true },
+      { label: "Delete", danger: true, handler: () => doDelete({ path, type: "file" }) },
+    ];
+  }
 
-    menuEl.hidden = false;
-    const x = Math.min(e.clientX, window.innerWidth - 190);
-    const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
-    menuEl.style.left = x + "px";
-    menuEl.style.top = y + "px";
+  function openBookmarkMenu(e, path) {
+    NB.menu.open({
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      items: bookmarkMenuItems(path), focusFirst: true,
+    });
   }
 
 
@@ -598,83 +601,82 @@
   }
 
   /* --- context menu --------------------------------------------------- */
-  function openMenu(e, node) {
-    menuCtx = node;
-    menuEl.innerHTML = "";
-    const isDir = node.type === "dir";
+  /* Tree file row: Open | Create | Organize | View | Terminal. */
+  function treeFileMenuItems(node) {
+    const items = [
+      { label: "Open", handler: () => openFile(node.path) },
+      { separator: true },
+      { label: "New file…", handler: () => doNewFile(node, false) },
+      { label: "New folder…", handler: () => doNewFolder(node, false) },
+      { separator: true },
+      { label: "Export…", handler: () => doExport(node.path) },
+      { label: "Rename / Move…", handler: () => doRename(node) },
+      { label: "Copy…", handler: () => doCopy(node) },
+      { label: "Copy path", handler: () => NB.app.copyPath(node.path) },
+      { label: "Copy link", handler: () => NB.app.copyLink(node.path) },
+      // Bookmark toggle for files only (folders can't be opened as a
+      // single document, and a "bookmark" on a folder is ambiguous --
+      // does it pin the folder itself or every file inside?). The label
+      // flips based on the current state so the user always sees the
+      // action that the click will perform.
+      {
+        label: bookmarks.includes(node.path) ? "Remove bookmark" : "Add bookmark",
+        handler: () => toggleBookmark(node.path),
+      },
+    ];
+    return withCollapseAndDelete(items, node);
+  }
 
-    if (!isDir) addMenuItem("Open", () => openFile(node.path));
-    addMenuItem(isDir ? "New file here…" : "New file beside…", () => doNewFile(node, isDir));
-    addMenuItem("New folder here…", () => doNewFolder(node, isDir));
-    menuEl.appendChild(document.createElement("hr"));
-    if (!isDir) addMenuItem("Export…", () => doExport(node.path));
-    addMenuItem("Rename / Move…", () => doRename(node));
-    addMenuItem("Copy…", () => doCopy(node));
-    // Bookmark toggle for files only (folders can't be opened as a
-    // single document, and a "bookmark" on a folder is ambiguous --
-    // does it pin the folder itself or every file inside?). The label
-    // flips based on the current state so the user always sees the
-    // action that the click will perform.
-    if (!isDir) {
-      const isBookmarked = bookmarks.includes(node.path);
-      addMenuItem(isBookmarked ? "Remove bookmark" : "Add bookmark",
-                  () => toggleBookmark(node.path));
-    }
+  /* Tree folder row: Create | Organize | View | Terminal. No Open, no
+   * Export, and no bookmark toggle (guarded to files). */
+  function treeFolderMenuItems(node) {
+    const items = [
+      { label: "New file…", handler: () => doNewFile(node, true) },
+      { label: "New folder…", handler: () => doNewFolder(node, true) },
+      { separator: true },
+      { label: "Rename / Move…", handler: () => doRename(node) },
+      { label: "Copy…", handler: () => doCopy(node) },
+    ];
+    return withCollapseAndDelete(items, node);
+  }
+
+  /* Append the View category (Collapse all folders, only when the tree has
+   * a folder) and the Terminal category (Delete), each separated from the
+   * group before it. */
+  function withCollapseAndDelete(items, node) {
     if (treeHasDir(treeCache)) {
-      menuEl.appendChild(document.createElement("hr"));
-      addMenuItem("Collapse all folders", () => collapseAll());
+      items.push({ separator: true });
+      items.push({ label: "Collapse all folders", handler: () => collapseAll() });
     }
-    menuEl.appendChild(document.createElement("hr"));
-    addMenuItem("Delete", () => doDelete(node), true);
-
-    menuEl.hidden = false;
-    const x = Math.min(e.clientX, window.innerWidth - 190);
-    const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
-    menuEl.style.left = x + "px";
-    menuEl.style.top = y + "px";
+    items.push({ separator: true });
+    items.push({ label: "Delete", danger: true, handler: () => doDelete(node) });
+    return items;
   }
 
-  function addMenuItem(label, handler, danger) {
-    const btn = document.createElement("button");
-    btn.textContent = label;
-    if (danger) btn.classList.add("danger");
-    btn.addEventListener("click", () => { hideMenu(); handler(); });
-    menuEl.appendChild(btn);
+  function openMenu(e, node) {
+    const items = node.type === "dir" ? treeFolderMenuItems(node) : treeFileMenuItems(node);
+    NB.menu.open({
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      items, focusFirst: true,
+    });
   }
-
-  function hideMenu() {
-    menuEl.hidden = true;
-    menuCtx = null;
-  }
-  document.addEventListener("click", hideMenu);
-  document.addEventListener("contextmenu", (e) => {
-    // Right-clicking outside the sidebar closes any open menu. The
-    // sidebar itself (which now holds both the tree and the bookmarks
-    // section) is a target for the bookmark / tree context menus, so
-    // those row-level handlers run on the way up and must not be
-    // clobbered by this fallback. Only treat "outside" as "outside
-    // the whole sidebar pane".
-    const sidebarEl = treeEl.parentElement;
-    if (!sidebarEl || !sidebarEl.contains(e.target)) hideMenu();
-  });
 
   /* Right-clicking the empty sidebar area (or an empty folder region)
    * offers root-level New file / New folder, so there's always a way to
    * create the first file without top-bar buttons. */
   function openRootMenu(e) {
-    menuCtx = null;
-    menuEl.innerHTML = "";
-    addMenuItem("New file…", () => createAtRoot("file"));
-    addMenuItem("New folder…", () => createAtRoot("dir"));
+    const items = [
+      { label: "New file…", handler: () => createAtRoot("file") },
+      { label: "New folder…", handler: () => createAtRoot("dir") },
+    ];
     if (treeHasDir(treeCache)) {
-      menuEl.appendChild(document.createElement("hr"));
-      addMenuItem("Collapse all folders", () => collapseAll());
+      items.push({ separator: true });
+      items.push({ label: "Collapse all folders", handler: () => collapseAll() });
     }
-    menuEl.hidden = false;
-    const x = Math.min(e.clientX, window.innerWidth - 190);
-    const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
-    menuEl.style.left = x + "px";
-    menuEl.style.top = y + "px";
+    NB.menu.open({
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      items, focusFirst: true,
+    });
   }
   treeEl.addEventListener("contextmenu", (e) => {
     if (e.target.closest(".tree-row")) return;   // a file/folder row handles itself
@@ -992,6 +994,11 @@
     // load; getBookmarks / toggleBookmark are exposed for tests and
     // any future external trigger (e.g. a "pin current tab" shortcut).
     setBookmarks, getBookmarks, toggleBookmark,
+    // File-operation façade. The tab menu runs the same rename / copy /
+    // delete actions the tree and bookmark menus run, for the same path.
+    renameFile: (path) => doRename({ path, type: "file" }),
+    copyFile: (path) => doCopy({ path, type: "file" }),
+    deleteFile: (path) => doDelete({ path, type: "file" }),
   };
 
   // Keep the tree highlight in sync whenever a file is shown, regardless of

@@ -1795,7 +1795,7 @@ async function main() {
       await page.waitForTimeout(120);
       const proseCtx = await page.evaluate(() => window.__ctx);
       const menuHidden = await page.evaluate(
-        () => document.getElementById("hybrid-context-menu").hidden);
+        () => document.getElementById("nb-menu").hidden);
       check("real browser: prose right-click is not defaultPrevented",
         proseCtx && proseCtx.defaultPrevented === false, JSON.stringify(proseCtx));
       check("real browser: prose right-click keeps the custom menu hidden",
@@ -1811,7 +1811,7 @@ async function main() {
       await page.waitForTimeout(120);
       const cellCtx = await page.evaluate(() => window.__ctx);
       const menuOpen = await page.evaluate(
-        () => !document.getElementById("hybrid-context-menu").hidden);
+        () => !document.getElementById("nb-menu").hidden);
       check("real browser: structural right-click is defaultPrevented",
         cellCtx && cellCtx.defaultPrevented === true, JSON.stringify(cellCtx));
       check("real browser: structural right-click opens the custom menu",

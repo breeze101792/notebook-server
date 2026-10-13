@@ -22,7 +22,6 @@
   // cached index.html (pre-split) degrades instead of throwing at module load.
   const listEl = document.getElementById("tab-list") || barEl;
   const pinEl = document.getElementById("tab-pinned") || listEl;
-  const menuEl = document.getElementById("tab-context-menu");
   // The outline toggle (#outline-toggle) is a sibling of both regions, at the
   // fixed right edge, so an overflowing tab can never overlap it. Drag/click
   // events bubble from either region up to #tab-bar, where the delegated
@@ -747,57 +746,50 @@
   }
 
   /* --- tab context menu --------------------------------------------- */
-  let menuPath = null;
-
-  function openMenu(path, e) {
-    menuPath = path;
-    menuEl.innerHTML = "";
-
+  /* Categories, canonical order: Organize (Pin/Unpin, Export…, file ops,
+   * bookmark) | View (Show in file sidebar) | Terminal (close variants,
+   * Delete). A tab creates no files, so there is no Open or Create group. */
+  function tabMenuItems(path) {
     const i = ordered.indexOf(path);
     const others = ordered.filter(p => p !== path && !pinned.has(p));
     const right  = ordered.slice(i + 1).filter(p => !pinned.has(p));
     const left   = ordered.slice(0, i).filter(p => !pinned.has(p));
+    const bookmarked = !!(NB.sidebar && NB.sidebar.getBookmarks &&
+      NB.sidebar.getBookmarks().includes(path));
+    return [
+      { label: pinned.has(path) ? "Unpin" : "Pin", handler: () => togglePin(path) },
+      { label: "Export…", handler: () => { if (NB.export && NB.export.open) NB.export.open(path); } },
+      { label: "Rename / Move…", handler: () => sidebarOp("renameFile", path) },
+      { label: "Copy…", handler: () => sidebarOp("copyFile", path) },
+      { label: "Copy path", handler: () => NB.app.copyPath(path) },
+      { label: "Copy link", handler: () => NB.app.copyLink(path) },
+      { label: bookmarked ? "Remove bookmark" : "Add bookmark",
+        handler: () => sidebarOp("toggleBookmark", path) },
+      { separator: true },
+      { label: "Show in file sidebar",
+        handler: () => { if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path); } },
+      { separator: true },
+      { label: "Close", danger: true, handler: () => close(path) },
+      { label: "Close others", disabled: !others.length,
+        title: "No other closable tabs", handler: () => closeOthers(path) },
+      { label: "Close to the right", disabled: !right.length,
+        title: "No closable tabs to the right", handler: () => closeRight(path) },
+      { label: "Close to the left", disabled: !left.length,
+        title: "No closable tabs to the left", handler: () => closeLeft(path) },
+      { label: "Delete", danger: true, handler: () => sidebarOp("deleteFile", path) },
+    ];
+  }
 
-    addMenuItem(pinned.has(path) ? "Unpin" : "Pin", () => togglePin(path));
-    addMenuItem("Show in file sidebar", () => {
-      if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path);
+  function sidebarOp(name, path) {
+    if (NB.sidebar && typeof NB.sidebar[name] === "function") NB.sidebar[name](path);
+  }
+
+  function openMenu(path, e) {
+    NB.menu.open({
+      owner: "tabs", x: e.clientX, y: e.clientY, scope: barEl,
+      items: tabMenuItems(path), focusFirst: true,
     });
-    addMenuItem("Export…", () => {
-      if (NB.export && NB.export.open) NB.export.open(path);
-    });
-    menuEl.appendChild(document.createElement("hr"));
-    addMenuItem("Close", () => close(path), { danger: true });
-    addMenuItem("Close others", () => closeOthers(path), { disabled: !others.length });
-    addMenuItem("Close to the right", () => closeRight(path), { disabled: !right.length });
-    addMenuItem("Close to the left", () => closeLeft(path), { disabled: !left.length });
-
-    menuEl.hidden = false;
-    positionMenu(e);
   }
-
-  function addMenuItem(label, handler, opts) {
-    opts = opts || {};
-    const btn = document.createElement("button");
-    btn.textContent = label;
-    if (opts.danger) btn.classList.add("danger");
-    if (opts.disabled) btn.disabled = true;
-    btn.addEventListener("click", () => { hideMenu(); handler(); });
-    menuEl.appendChild(btn);
-  }
-
-  function positionMenu(e) {
-    const x = Math.min(e.clientX, window.innerWidth - 200);
-    const y = Math.min(e.clientY, window.innerHeight - menuEl.offsetHeight - 10);
-    menuEl.style.left = x + "px";
-    menuEl.style.top = y + "px";
-  }
-
-  function hideMenu() { menuEl.hidden = true; menuPath = null; }
-  document.addEventListener("click", hideMenu);
-  document.addEventListener("contextmenu", (e) => {
-    // a right-click that didn't start on a tab closes any open tab menu
-    if (!barEl.contains(e.target)) hideMenu();
-  });
 
   /* --- restore on boot ----------------------------------------------- */
   /* openFiles/activeFile/pinnedFiles come from config. We populate the tab

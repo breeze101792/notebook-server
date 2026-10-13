@@ -474,7 +474,7 @@
     // The invoker is usually the hybrid menu item, which the menu hides on
     // click; focusing it would go nowhere. Fall back to the diagram block
     // so keyboard focus lands back in the note.
-    const inMenu = el && el.closest && el.closest(".context-menu, #hybrid-context-menu");
+    const inMenu = el && el.closest && el.closest(".context-menu");
     if (el && el.isConnected && !inMenu && typeof el.focus === "function") {
       try { el.focus({ preventScroll: true }); } catch (_) {}
       return;

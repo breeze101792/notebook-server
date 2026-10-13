@@ -727,6 +727,21 @@
     if (!ok) throw new Error("Clipboard write failed");
   }
 
+  /* copyPath(path) / copyLink(path)
+   *   Copy a note's notebook-relative path, or a deep link to it
+   *   (?file=<encoded path>), through copyToClipboard. Shared by the
+   *   file-like context menus. */
+  function copyPath(path) {
+    if (!path) return;
+    copyToClipboard(path).catch(() => {});
+  }
+
+  function copyLink(path) {
+    if (!path) return;
+    const url = location.origin + location.pathname + "?file=" + encodeURIComponent(path);
+    copyToClipboard(url).catch(() => {});
+  }
+
   /* Tiny façade so other modules (settings.js) can read live config and
    * trigger a persist without reaching into our module-scoped state. */
   NB.app = {
@@ -737,8 +752,9 @@
     getSidePanelWidth: () => (cfg.sidebarWidth || 240),
     // Shared helpers used by ad-hoc UX (code-block Copy button, etc.).
     // notify() is the single-line toast; copyToClipboard() is the
-    // Clipboard-API-with-fallback writer.
-    notify, copyToClipboard,
+    // Clipboard-API-with-fallback writer; copyPath()/copyLink() are the
+    // file-menu clipboard actions.
+    notify, copyToClipboard, copyPath, copyLink,
     setTheme: (pref) => { applyTheme(pref); persistConfig(); },
     setFontSize: (name) => { applyFontSize(name); persistConfig(); },
     getFontSize: () => cfg.fontSize || "medium",

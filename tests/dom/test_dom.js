@@ -317,9 +317,6 @@ const html = `<!DOCTYPE html><html><head>
       </aside>
     </main>
   </div>
-  <div id="context-menu" class="context-menu" hidden></div>
-  <div id="tab-context-menu" class="context-menu" hidden></div>
-  <div id="hybrid-context-menu" class="context-menu" hidden></div>
   <div id="auth-overlay" class="settings-overlay" hidden>
     <div class="settings-modal auth-modal">
       <div class="settings-header">
@@ -1572,6 +1569,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/cm-bridge.js"));
   evalIn(read("static/js/lightbox.js"));
   evalIn(read("static/js/blocks.js"));
+  evalIn(read("static/js/menu.js"));
   evalIn(read("static/js/mermaid.js"));
   evalIn(read("static/js/wavedrom.js"));
   evalIn(read("static/js/katex.js"));
@@ -1628,6 +1626,206 @@ function check(label, cond, extra) {
   window.document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
   await tick(120);
   check("no init errors", errors.length === 0, errors.join("; "));
+
+  console.log("== menu module ==");
+  {
+    const menuEl = $("nb-menu");
+    check("menu module: singleton #nb-menu created with the .context-menu class",
+      !!menuEl && menuEl.classList.contains("context-menu"));
+    check("menu module: starts hidden", menuEl.hidden);
+
+    // --- render: order, separators, danger, disabled, kbd ---
+    window.NB.menu.open({
+      owner: "test", x: 10, y: 10, scope: window.document.body, focusFirst: false,
+      items: [
+        { label: "One", handler: () => {} },
+        { separator: true },
+        { label: "Two", danger: true, handler: () => {} },
+        { label: "Off", disabled: true, title: "not available", handler: () => {} },
+        { label: "Hinted", handler: () => {}, kbd: "Ctrl+S" },
+      ],
+    });
+    check("menu module: visible after open", !menuEl.hidden);
+    check("menu module: role=menu set", menuEl.getAttribute("role") === "menu");
+    const direct = Array.from(menuEl.children);
+    check("menu module: renders buttons + hr in order",
+      direct.map((el) => el.tagName).join(",") === "BUTTON,HR,BUTTON,BUTTON,BUTTON",
+      direct.map((el) => el.tagName).join(","));
+    check("menu module: .danger on the danger item", direct[2].classList.contains("danger"));
+    const off = direct[3];
+    check("menu module: disabled item has disabled + aria-disabled + title",
+      off.disabled === true && off.getAttribute("aria-disabled") === "true" &&
+      off.title === "not available",
+      "disabled=" + off.disabled + " aria=" + off.getAttribute("aria-disabled") + " title=" + off.title);
+    const kbd = direct[4].querySelector("kbd.context-menu-kbd");
+    check("menu module: kbd hint rendered", !!kbd && kbd.textContent === "Ctrl+S");
+    off.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: disabled item click does not activate or close",
+      !menuEl.hidden);
+
+    // --- close-then-run handler order ---
+    let hiddenWhenRan = null;
+    window.NB.menu.open({
+      owner: "test", x: 10, y: 10, scope: window.document.body,
+      items: [{ label: "Act", handler: () => { hiddenWhenRan = menuEl.hidden; } }],
+    });
+    menuEl.querySelector("button").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: item click closes the menu BEFORE running the handler",
+      hiddenWhenRan === true && menuEl.hidden, "hiddenWhenRan=" + hiddenWhenRan);
+
+    // --- open() validation ---
+    let threw = null;
+    try {
+      window.NB.menu.open({ owner: "test", x: 0, y: 0, scope: window.document.body,
+        items: [{ label: "No handler" }] });
+    } catch (e) { threw = e; }
+    check("menu module: open() throws TypeError on an item with no handler",
+      !!threw && threw.name === "TypeError", threw ? String(threw) : "no throw");
+    let threw2 = null;
+    try {
+      window.NB.menu.open({ owner: "test", x: 0, y: 0, scope: window.document.body,
+        items: [{ label: "Off", disabled: true }] });
+    } catch (e) { threw2 = e; }
+    check("menu module: disabled item without a handler is valid", threw2 === null,
+      threw2 ? String(threw2) : "ok");
+    let threwScope = null;
+    try {
+      window.NB.menu.open({ owner: "test", x: 5, y: 5,
+        items: [{ label: "X", handler: () => {} }] });
+    } catch (e) { threwScope = e; }
+    check("menu module: open() throws TypeError without a scope element",
+      !!threwScope && threwScope.name === "TypeError", threwScope ? String(threwScope) : "no throw");
+
+    // --- measured-width four-edge clamp ---
+    const restores = [];
+    const stubProp = (obj, name, value) => {
+      const orig = Object.getOwnPropertyDescriptor(obj, name);
+      Object.defineProperty(obj, name, { value, configurable: true, writable: true });
+      restores.push(() => {
+        if (orig) Object.defineProperty(obj, name, orig);
+        else delete obj[name];
+      });
+    };
+    stubProp(window, "innerWidth", 500);
+    stubProp(window, "innerHeight", 400);
+    stubProp(menuEl, "offsetWidth", 300);
+    stubProp(menuEl, "offsetHeight", 200);
+    window.NB.menu.open({ owner: "test", x: 450, y: 390, scope: window.document.body,
+      items: [{ label: "Wide", handler: () => {} }] });
+    check("menu module: right/bottom clamp uses the measured size",
+      menuEl.style.left === "190px" && menuEl.style.top === "190px",
+      "left=" + menuEl.style.left + " top=" + menuEl.style.top);
+    window.NB.menu.open({ owner: "test", x: 2, y: 1, scope: window.document.body,
+      items: [{ label: "Corner", handler: () => {} }] });
+    check("menu module: left/top clamp keeps the menu on-screen",
+      menuEl.style.left === "10px" && menuEl.style.top === "10px",
+      "left=" + menuEl.style.left + " top=" + menuEl.style.top);
+    restores.forEach((fn) => fn());
+
+    // --- close paths ---
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "X", handler: () => {} }] });
+    window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("menu module: outside click closes", menuEl.hidden);
+
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "X", handler: () => {} }] });
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    check("menu module: Esc closes", menuEl.hidden);
+
+    const scopeEl = window.document.createElement("div");
+    window.document.body.appendChild(scopeEl);
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: scopeEl,
+      items: [{ label: "X", handler: () => {} }] });
+    scopeEl.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 5, clientY: 5 }));
+    check("menu module: right-click inside scope does NOT close", !menuEl.hidden);
+    $("sidebar").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 5, clientY: 5 }));
+    check("menu module: right-click outside scope closes", menuEl.hidden);
+
+    window.NB.menu.open({ owner: "alpha", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "X", handler: () => {} }] });
+    window.NB.menu.close("beta");
+    check("menu module: close(otherOwner) leaves the menu open", !menuEl.hidden);
+    window.NB.menu.close("alpha");
+    check("menu module: close(owner) closes", menuEl.hidden);
+
+    // --- submenus ---
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: false,
+      items: [
+        { label: "Sub A", submenu: [
+          { label: "A1", handler: () => {} },
+          { separator: true },
+          { label: "A2", handler: () => {} },
+        ] },
+        { label: "Sub B", submenu: [{ label: "B1", handler: () => {} }] },
+      ] });
+    const subs = Array.from(menuEl.querySelectorAll("button.submenu"));
+    const subA = subs[0];
+    const subB = subs[1];
+    check("menu module: submenu shape is button.submenu > div.context-menu",
+      !!subA && subA.tagName === "BUTTON" &&
+      Array.from(subA.children).some((c) => c.tagName === "DIV" && c.classList.contains("context-menu")));
+    subA.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: submenu click toggles .open", subA.classList.contains("open"));
+    subB.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: opening a sibling closes the first submenu",
+      !subA.classList.contains("open") && subB.classList.contains("open"));
+    const flyItem = Array.from(subB.querySelectorAll("div.context-menu button"))
+      .find((b) => b.textContent.trim() === "B1");
+    flyItem.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: flyout item click closes the whole menu", menuEl.hidden);
+    check("menu module: flyout item click leaves no .submenu.open",
+      menuEl.querySelectorAll(".submenu.open").length === 0);
+
+    // --- keyboard: submenu traversal ---
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: false,
+      items: [
+        { label: "Parent", submenu: [
+          { label: "P1", handler: () => {} },
+          { label: "P2", handler: () => {} },
+        ] },
+        { label: "Tail", handler: () => {} },
+      ] });
+    const kSub = menuEl.querySelector("button.submenu");
+    kSub.focus({ preventScroll: true });
+    kSub.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    const kFly = kSub.querySelector("div.context-menu");
+    check("menu module: ArrowRight opens the flyout and focuses its first item",
+      kSub.classList.contains("open") &&
+      window.document.activeElement === kFly.querySelector("button"),
+      window.document.activeElement && window.document.activeElement.textContent);
+    window.document.activeElement.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    check("menu module: ArrowLeft closes the flyout and refocuses the parent",
+      !kSub.classList.contains("open") && window.document.activeElement === kSub);
+    window.NB.menu.close();
+
+    // --- focusFirst ---
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: true,
+      items: [
+        { label: "Off", disabled: true, handler: () => {} },
+        { label: "First", handler: () => {} },
+      ] });
+    check("menu module: focusFirst focuses the first non-disabled item",
+      window.document.activeElement && window.document.activeElement.textContent === "First",
+      window.document.activeElement && window.document.activeElement.textContent);
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "NoFocus", handler: () => {} }] });
+    check("menu module: without focusFirst focus is left untouched",
+      window.document.activeElement !== menuEl.querySelector("button"),
+      window.document.activeElement && window.document.activeElement.textContent);
+
+    // --- structural wiring ---
+    const indexHtml = read("templates/index.html");
+    check("menu module: index.html loads menu.js before hybrid.js",
+      indexHtml.indexOf("/static/js/menu.js") !== -1 &&
+      indexHtml.indexOf("/static/js/menu.js") < indexHtml.indexOf("/static/js/hybrid.js"));
+    check("menu module: sw.js PRECACHE includes menu.js",
+      read("static/sw.js").includes('"/static/js/menu.js"'));
+
+    window.NB.menu.close();
+    if (scopeEl.parentNode) scopeEl.parentNode.removeChild(scopeEl);
+  }
 
   console.log("== sidebar tree ==");
   const rows = window.document.querySelectorAll("#file-tree .tree-row");
@@ -6427,7 +6625,7 @@ function check(label, cond, extra) {
     // should open a formatting context menu.
     await window.NB.hybrid.enter();
     await tick(20);
-    const hcm = $("hybrid-context-menu");
+    const hcm = $("nb-menu");
     check("hybrid menu: hidden before right-click", hcm.hidden);
 
     // Simulate a right-click inside #viewer-content.
@@ -7761,7 +7959,7 @@ function check(label, cond, extra) {
       headerRow.cells[0].dispatchEvent(new window.MouseEvent("contextmenu",
         { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
       await tick(10);
-      const menu = $("hybrid-context-menu");
+      const menu = $("nb-menu");
       const headerItem = Array.from(menu.querySelectorAll("button"))
         .find((b) => /header/i.test(b.textContent));
       check("hybrid table-guard: table submenu offers a header action",
@@ -10928,7 +11126,7 @@ function check(label, cond, extra) {
       x.dispatchEvent(new window.MouseEvent("contextmenu",
         { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
       await tick(10);
-      const menu = $("hybrid-context-menu");
+      const menu = $("nb-menu");
       // Skip the .submenu wrapper ("List"): its textContent includes the
       // whole flyout, so a bare text match would find the wrapper (whose
       // click only opens the flyout) instead of the command button.
@@ -12129,8 +12327,8 @@ function check(label, cond, extra) {
   Object.defineProperty(ctxEv, "target", { value: $("file-tree") });
   $("file-tree").dispatchEvent(ctxEv);
   await tick(10);
-  check("root menu opens on empty-area right-click", !$("context-menu").hidden);
-  const menuBtns = Array.from(window.document.querySelectorAll("#context-menu button"));
+  check("root menu opens on empty-area right-click", !$("nb-menu").hidden);
+  const menuBtns = Array.from(window.document.querySelectorAll("#nb-menu button"));
   check("root menu has New file / New folder",
     menuBtns.length === 2 && menuBtns.some(b => b.textContent.includes("New file")) && menuBtns.some(b => b.textContent.includes("New folder")),
     menuBtns.map(b => b.textContent).join(" / "));
@@ -13010,11 +13208,11 @@ function check(label, cond, extra) {
   Object.defineProperty(rootEv, "target", { value: $("file-tree") });
   $("file-tree").dispatchEvent(rootEv);
   await tick(10);
-  const rootBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+  const rootBtns = () => Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
   check("collapse-all: root menu offers 'Collapse all folders' when folders exist",
     rootBtns().includes("Collapse all folders"),
     rootBtns().join(" / "));
-  const collapseBtn = Array.from($("context-menu").querySelectorAll("button"))
+  const collapseBtn = Array.from($("nb-menu").querySelectorAll("button"))
     .find(b => b.textContent === "Collapse all folders");
   collapseBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
@@ -13033,7 +13231,7 @@ function check(label, cond, extra) {
   // menu (not just the empty-area root menu).
   treeRow("notes").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
   await tick(10);
-  const rowBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+  const rowBtns = () => Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
   check("collapse-all: folder row menu also offers 'Collapse all folders'",
     rowBtns().includes("Collapse all folders"),
     rowBtns().join(" / "));
@@ -13179,7 +13377,7 @@ function check(label, cond, extra) {
     row.dispatchEvent(ev);
   };
   const treeMenuItem = (label) =>
-    Array.from($("context-menu").querySelectorAll("button"))
+    Array.from($("nb-menu").querySelectorAll("button"))
       .find(b => b.textContent === label);
   // Welcome.md is bookmarked (added by + click above) -> menu should
   // show "Remove bookmark".
@@ -13187,7 +13385,7 @@ function check(label, cond, extra) {
   await tick(10);
   check("bookmarks: ctx menu on bookmarked file shows 'Remove bookmark'",
     !!treeMenuItem("Remove bookmark"),
-    $("context-menu").textContent);
+    $("nb-menu").textContent);
   treeMenuItem("Remove bookmark").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
   check("bookmarks: menu 'Remove bookmark' drops the row",
@@ -13201,7 +13399,7 @@ function check(label, cond, extra) {
   await tick(10);
   check("bookmarks: ctx menu on unbookmarked file shows 'Add bookmark'",
     !!treeMenuItem("Add bookmark"),
-    $("context-menu").textContent);
+    $("nb-menu").textContent);
   // Close the menu so it doesn't leak into the next test.
   window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
@@ -13220,8 +13418,8 @@ function check(label, cond, extra) {
   // hideMenu() (the items stayed in the DOM, so a label-only check
   // passed). Visible check catches the regression.
   check("bookmarks: list context menu is visible (not hidden by doc handler)",
-    !$("context-menu").hidden, "hidden=" + $("context-menu").hidden);
-  const bmMenuLabels = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+    !$("nb-menu").hidden, "hidden=" + $("nb-menu").hidden);
+  const bmMenuLabels = () => Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
   check("bookmarks: list context menu has Open/Rename/Remove bookmark/Copy/Delete",
     bmMenuLabels().includes("Open") &&
     bmMenuLabels().includes("Remove bookmark") &&
@@ -13263,7 +13461,7 @@ function check(label, cond, extra) {
   // it just for this call.
   const origPromptBm = window.prompt;
   window.prompt = () => "notes/a-renamed.md";
-  Array.from($("context-menu").querySelectorAll("button"))
+  Array.from($("nb-menu").querySelectorAll("button"))
     .find(b => b.textContent === "Rename / Move…")
     .dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
@@ -13708,7 +13906,7 @@ function check(label, cond, extra) {
 
   console.log("== tab pin + region ==");
   const tabPaths = () => Array.from(tabs()).map(t => t.dataset.path);
-  const menuBtn = (label) => Array.from($("tab-context-menu").querySelectorAll("button"))
+  const menuBtn = (label) => Array.from($("nb-menu").querySelectorAll("button"))
     .find(b => b.textContent === label);
   const ctxOpen = (sel, x) => window.document.querySelector(sel)
     .dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: x || 50, clientY: 10 }));
@@ -13761,7 +13959,47 @@ function check(label, cond, extra) {
 
   // context-menu Pin on notes/a -> joins pinned group at its end
   ctxOpen('.tab[data-path="notes/a.md"]', 100);
-  check("tab context menu opened", !$("tab-context-menu").hidden);
+  check("tab context menu opened", !$("nb-menu").hidden);
+  // The tab menu carries the shared file-operation group (product R6/D1).
+  {
+    const tabLabels = Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
+    check("tab menu: carries the shared file ops (Rename/Copy/Copy path/Copy link/bookmark/Delete)",
+      tabLabels.includes("Rename / Move…") &&
+      tabLabels.includes("Copy…") &&
+      tabLabels.includes("Copy path") &&
+      tabLabels.includes("Copy link") &&
+      (tabLabels.includes("Add bookmark") || tabLabels.includes("Remove bookmark")) &&
+      tabLabels.includes("Delete"),
+      tabLabels.join(" / "));
+  }
+  // The tab menu's file ops must reach the sidebar façade that the tree
+  // and bookmark menus use (product R6/D1, AC4). Spy on the façade.
+  {
+    const calls = [];
+    const origRename = window.NB.sidebar.renameFile;
+    const origCopy = window.NB.sidebar.copyFile;
+    const origDelete = window.NB.sidebar.deleteFile;
+    window.NB.sidebar.renameFile = (p) => calls.push("rename:" + p);
+    window.NB.sidebar.copyFile = (p) => calls.push("copy:" + p);
+    window.NB.sidebar.deleteFile = (p) => calls.push("delete:" + p);
+    const clickTabItem = (label) => {
+      ctxOpen('.tab[data-path="notes/a.md"]', 100);
+      Array.from($("nb-menu").querySelectorAll("button"))
+        .find((b) => b.textContent === label)
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+    };
+    clickTabItem("Rename / Move…");
+    clickTabItem("Copy…");
+    clickTabItem("Delete");
+    window.NB.sidebar.renameFile = origRename;
+    window.NB.sidebar.copyFile = origCopy;
+    window.NB.sidebar.deleteFile = origDelete;
+    check("tab menu: Rename/Copy/Delete reach the sidebar façade",
+      calls.join(",") === "rename:notes/a.md,copy:notes/a.md,delete:notes/a.md",
+      calls.join(","));
+  }
+  // Re-open so the Pin flow below runs against a live menu.
+  ctxOpen('.tab[data-path="notes/a.md"]', 100);
   menuBtn("Pin").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
   check("menu pin: notes/a pinned", window.NB.tabs.isPinned("notes/a.md"));
@@ -13815,7 +14053,7 @@ function check(label, cond, extra) {
     menuBtn("Close others") && menuBtn("Close others").disabled);
   window.document.dispatchEvent(new window.Event("click", { bubbles: true })); // close menu
   await tick(10);
-  check("tab context menu hides on outside click", $("tab-context-menu").hidden);
+  check("tab context menu hides on outside click", $("nb-menu").hidden);
 
   console.log("== tab: Show in file sidebar ==");
   // Right-clicking a tab offers "Show in file sidebar", which expands
@@ -13840,7 +14078,7 @@ function check(label, cond, extra) {
   check("reveal: tab menu offers 'Show in file sidebar'",
     ctxOpen('.tab[data-path="notes/sub/deep.md"]', 50) ||
     !!(menuBtn("Show in file sidebar")),
-    "menu=" + Array.from($("tab-context-menu").querySelectorAll("button")).map(b => b.textContent).join(" / "));
+    "menu=" + Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent).join(" / "));
   menuBtn("Show in file sidebar").dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(40);
   const revealNotes = window.document.querySelector('.tree-row[data-path="notes"]');
@@ -16642,14 +16880,14 @@ function check(label, cond, extra) {
     await window.NB.sidebar.refresh();
     await tick(20);
     const treeRow = (p) => window.document.querySelector('.tree-row[data-path="' + p + '"]');
-    const menuBtns = () => Array.from($("context-menu").querySelectorAll("button")).map(b => b.textContent);
+    const menuBtns = () => Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
 
     // File tree row context menu.
     treeRow("notes/b.md").dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
     await tick(10);
     check("export: file tree row menu offers 'Export…'",
       menuBtns().includes("Export…"), menuBtns().join(" / "));
-    Array.from($("context-menu").querySelectorAll("button"))
+    Array.from($("nb-menu").querySelectorAll("button"))
       .find(b => b.textContent === "Export…")
       .dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(10);
@@ -16665,10 +16903,10 @@ function check(label, cond, extra) {
     const tabEl = window.document.querySelector('.tab[data-path="notes/b.md"]');
     tabEl.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
     await tick(10);
-    const tabMenuBtns = () => Array.from($("tab-context-menu").querySelectorAll("button")).map(b => b.textContent);
+    const tabMenuBtns = () => Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
     check("export: tab context menu offers 'Export…'",
       tabMenuBtns().includes("Export…"), tabMenuBtns().join(" / "));
-    Array.from($("tab-context-menu").querySelectorAll("button"))
+    Array.from($("nb-menu").querySelectorAll("button"))
       .find(b => b.textContent === "Export…")
       .dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(10);
@@ -22118,7 +22356,7 @@ function check(label, cond, extra) {
     check("designer: a mermaid block is rendered (precondition)", !!dContainer,
       "containers=" + vc.querySelectorAll(".mermaid-container").length);
 
-    const hcm = $("hybrid-context-menu");
+    const hcm = $("nb-menu");
     const menuButtons = () => Array.from(hcm.querySelectorAll("button"));
     const designBtn = () => menuButtons().find((b) => /^Design diagram/.test(b.textContent));
     const editSourceBtn = () => menuButtons().find((b) => /Edit mermaid source/.test(b.textContent));

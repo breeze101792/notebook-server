@@ -203,14 +203,23 @@ while auth is off, like every other admin route):
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
-lightbox.js → blocks.js → mermaid.js → wavedrom.js → katex.js → viz.js →
+lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
 table-view.js → table-select.js → watcher.js → outline.js → sidebar.js →
 search.js → graph.js → tabs.js → windows.js → settings.js → export.js →
 vimnav.js → ai.js → activity.js → shortcuts.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
-`NB.blocks`).
+`NB.blocks`, `NB.menu`).
+
+**Context menus.** `menu.js` (`NB.menu`) is the one right-click menu renderer: a
+singleton `#nb-menu` on `document.body`, descriptor-driven items
+(`{label, handler, danger, disabled, title, kbd, submenu, separator}`), measured
+four-edge positioning, one close dispatcher (outside click / outside-scope
+right-click / Esc), and keyboard nav. `sidebar.js`, `tabs.js`, and `hybrid.js`
+each build their own item list and call
+`NB.menu.open({owner, x, y, scope, items, focusFirst})`; the edit-bar dropdowns
+and table-view popovers are left-click widgets and stay custom.
 
 The five code-block renderers (`mermaid.js`, `wavedrom.js`, `katex.js`,
 `viz.js`, `htmlpreview.js`) each register a descriptor with `blocks.js` at
@@ -269,8 +278,10 @@ Module responsibilities:
 - `tabs.js` — top-bar file tabs; owns the ordered open set + active file, coordinates
   with `viewer.js` (per-file content cache so unsaved edits survive tab switches), and
   persists `openFiles`/`activeFile` to config.
-- `sidebar.js` — left file tree + right-click context menu (open, new file/folder,
-  rename/move, copy, delete). The Explorer header's ↻ button re-fetches
+- `sidebar.js` — left file tree + bookmarks, and the tree/folder/bookmark/root menu
+  item sets rendered through `NB.menu` (open, new file/folder, rename/move, copy,
+  delete, Export…, copy path/link, bookmark toggle). The Explorer header's ↻ button
+  re-fetches
   `/api/tree` on demand, bypassing the watcher's JSON-diff short-circuit, with a
   one-shot spin animation.
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.

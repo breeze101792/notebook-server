@@ -38,6 +38,7 @@ const PRECACHE = [
   "/static/js/cm-bridge.js",
   "/static/js/lightbox.js",
   "/static/js/blocks.js",
+  "/static/js/menu.js",
   "/static/js/mermaid.js",
   "/static/js/wavedrom.js",
   "/static/js/katex.js",

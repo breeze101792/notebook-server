@@ -42,7 +42,6 @@
   const saveExitBtn    = document.getElementById("save-exit-btn");
   const closeEditBtn   = document.getElementById("close-edit-btn");
   const topbar         = document.getElementById("topbar");
-  const menuEl         = document.getElementById("hybrid-context-menu");
   // The emoji picker panel, owned by editbar.js; hybrid only listens for
   // the click that chooses an emoji (that panel lives outside the editable
   // region, so the insertion is done here, not by editbar.js).
@@ -4327,7 +4326,7 @@
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.removeEventListener("click", onClose, true);
-    hideMenu();
+    NB.menu.close("hybrid");
 
     // Remove contentEditable.
     viewerContentEl.removeAttribute("contenteditable");
@@ -4563,84 +4562,9 @@
   /* A formatting context menu that pops up on right-click inside
    * #viewer-content while hybrid mode is active. It mirrors the edit
    * bar's actions so the user can format without reaching for the top
-   * of the screen. The menu is built fresh on each open (so item labels
-   * can adapt to the current selection context in the future) and
-   * closes on any outside click or Esc. */
-
-  function addMenuItem(label, handler, danger, opts) {
-    const btn = document.createElement("button");
-    btn.textContent = label;
-    if (danger) btn.classList.add("danger");
-    if (opts && opts.disabled) {
-      // A disabled entry exists to advertise a feature that is not
-      // available for this block; it does not fire. The reason rides on
-      // title/aria-disabled so it is not click-only (a11y).
-      btn.disabled = true;
-      btn.setAttribute("aria-disabled", "true");
-      if (opts.title) btn.title = opts.title;
-    } else {
-      btn.addEventListener("click", () => { hideMenu(); handler(); });
-    }
-    menuEl.appendChild(btn);
-    return btn;
-  }
-
-  function addMenuSep() {
-    menuEl.appendChild(document.createElement("hr"));
-  }
-
-  /* Add a submenu item: a button labeled `label` with a nested
-   * .context-menu flyout containing the items returned by `buildFn`.
-   * `buildFn` receives the submenu element and calls addSubItem on it.
-   * The flyout opens on hover (CSS) and on click (toggle .open). */
-  function addSubmenu(label, buildFn) {
-    const wrap = document.createElement("button");
-    wrap.className = "submenu";
-    wrap.textContent = label;
-    const fly = document.createElement("div");
-    fly.className = "context-menu";
-    fly.hidden = false;   // CSS controls visibility via .submenu:hover/.open
-    buildFn(fly);
-    wrap.appendChild(fly);
-    // Click toggles .open so touch devices can navigate.
-    wrap.addEventListener("click", (e) => {
-      e.stopPropagation();
-      // Close any other open submenus.
-      menuEl.querySelectorAll(".submenu.open").forEach((s) => {
-        if (s !== wrap) s.classList.remove("open");
-      });
-      wrap.classList.toggle("open");
-    });
-    menuEl.appendChild(wrap);
-  }
-
-  /* Helper: add a plain button to a submenu element (not the root menu).
-   * `hint` (optional) renders a right-aligned chord label, e.g. "Alt+Up",
-   * so the Move entries advertise their keyboard equivalents. */
-  function addSubItem(subEl, label, handler, hint) {
-    const btn = document.createElement("button");
-    btn.textContent = label;
-    if (hint) {
-      const kbd = document.createElement("kbd");
-      kbd.className = "context-menu-kbd";
-      kbd.textContent = hint;
-      btn.appendChild(kbd);
-    }
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      hideMenu();
-      handler();
-    });
-    subEl.appendChild(btn);
-    return btn;
-  }
-
-  function hideMenu() {
-    if (menuEl) {
-      menuEl.hidden = true;
-      menuEl.querySelectorAll(".submenu.open").forEach((s) => s.classList.remove("open"));
-    }
-  }
+   * of the screen. Items are built fresh on each open (so labels can
+   * adapt to the current selection context); the shared NB.menu module
+   * owns rendering, positioning, closing, and keyboard navigation. */
 
   /* --- table operations ------------------------------------------- */
 
@@ -4903,28 +4827,30 @@
     onContentChange();
   }
 
-  /* Build the Table submenu for the given table. The Move entries are
-   * the keyboard path for the drag overlay (table-edit.js) and the
-   * touch fallback; the caret must be inside the table, which it is
-   * because the submenu only exists when the right-click landed there. */
-  function buildTableMenu(fly, table) {
-    addSubItem(fly, "Move row up", () => moveRowBySelection("up"), "Alt+Up");
-    addSubItem(fly, "Move row down", () => moveRowBySelection("down"), "Alt+Down");
-    fly.appendChild(document.createElement("hr"));
-    addSubItem(fly, "Move column left", () => moveColBySelection("left"), "Alt+Shift+Left");
-    addSubItem(fly, "Move column right", () => moveColBySelection("right"), "Alt+Shift+Right");
-    addSubItem(fly, "Align column (cycle)", () => cycleColAlign(getCellFromSelection()));
-    fly.appendChild(document.createElement("hr"));
-    addSubItem(fly, "Insert row above", () => insertRow(getRowFromSelection(), "above"));
-    addSubItem(fly, "Insert row below", () => insertRow(getRowFromSelection(), "below"));
-    addSubItem(fly, "Delete row", () => deleteRow(getRowFromSelection()));
-    fly.appendChild(document.createElement("hr"));
-    addSubItem(fly, "Insert column left", () => insertCol(getCellFromSelection(), "left"));
-    addSubItem(fly, "Insert column right", () => insertCol(getCellFromSelection(), "right"));
-    addSubItem(fly, "Delete column", () => deleteCol(getCellFromSelection()));
-    fly.appendChild(document.createElement("hr"));
-    addSubItem(fly, "Toggle header row", () => toggleHeaderRow(table));
-    addSubItem(fly, "Delete table", () => deleteTable(table));
+  /* Build the Table submenu descriptors for the given table. The Move
+   * entries are the keyboard path for the drag overlay (table-edit.js)
+   * and the touch fallback; the caret must be inside the table, which it
+   * is because the submenu only exists when the right-click landed there. */
+  function buildTableItems(table) {
+    return [
+      { label: "Move row up", handler: () => moveRowBySelection("up"), kbd: "Alt+Up" },
+      { label: "Move row down", handler: () => moveRowBySelection("down"), kbd: "Alt+Down" },
+      { separator: true },
+      { label: "Move column left", handler: () => moveColBySelection("left"), kbd: "Alt+Shift+Left" },
+      { label: "Move column right", handler: () => moveColBySelection("right"), kbd: "Alt+Shift+Right" },
+      { label: "Align column (cycle)", handler: () => cycleColAlign(getCellFromSelection()) },
+      { separator: true },
+      { label: "Insert row above", handler: () => insertRow(getRowFromSelection(), "above") },
+      { label: "Insert row below", handler: () => insertRow(getRowFromSelection(), "below") },
+      { label: "Delete row", handler: () => deleteRow(getRowFromSelection()) },
+      { separator: true },
+      { label: "Insert column left", handler: () => insertCol(getCellFromSelection(), "left") },
+      { label: "Insert column right", handler: () => insertCol(getCellFromSelection(), "right") },
+      { label: "Delete column", handler: () => deleteCol(getCellFromSelection()) },
+      { separator: true },
+      { label: "Toggle header row", handler: () => toggleHeaderRow(table) },
+      { label: "Delete table", handler: () => deleteTable(table) },
+    ];
   }
 
   /* Keyboard/menu wrappers: resolve the caret's row/column and move it
@@ -5537,56 +5463,54 @@
     });
   }
 
-  function buildMenu(e) {
-    menuEl.innerHTML = "";
-
-    // Clipboard (top-level)
-    addMenuItem("Copy", () => doCopy());
-    addMenuItem("Paste", () => doPaste());
-    addMenuItem("Paste without formatting", () => doPastePlain());
-
-    addMenuSep();
-
-    // Inline formatting submenu
-    addSubmenu("Inline", (fly) => {
-      addSubItem(fly, "Bold", () => execCommand("bold"));
-      addSubItem(fly, "Italic", () => execCommand("italic"));
-      addSubItem(fly, "Strikethrough", () => execCommand("strikeThrough"));
-      addSubItem(fly, "Inline code", () => execCommand("code"));
-      addSubItem(fly, "Clear formatting", () => execCommand("removeFormat"));
-    });
-
-    // Heading submenu
-    addSubmenu("Heading", (fly) => {
-      addSubItem(fly, "Heading 1", () => wrapBlock("h1"));
-      addSubItem(fly, "Heading 2", () => wrapBlock("h2"));
-      addSubItem(fly, "Heading 3", () => wrapBlock("h3"));
-      addSubItem(fly, "Heading 4", () => wrapBlock("h4"));
-      addSubItem(fly, "Heading 5", () => wrapBlock("h5"));
-      addSubItem(fly, "Heading 6", () => wrapBlock("h6"));
-    });
+  function buildItems(e) {
+    const items = [
+      // Clipboard (top-level)
+      { label: "Copy", handler: () => doCopy() },
+      { label: "Paste", handler: () => doPaste() },
+      { label: "Paste without formatting", handler: () => doPastePlain() },
+      { separator: true },
+      // Inline formatting submenu
+      { label: "Inline", submenu: [
+        { label: "Bold", handler: () => execCommand("bold") },
+        { label: "Italic", handler: () => execCommand("italic") },
+        { label: "Strikethrough", handler: () => execCommand("strikeThrough") },
+        { label: "Inline code", handler: () => execCommand("code") },
+        { label: "Clear formatting", handler: () => execCommand("removeFormat") },
+      ] },
+      // Heading submenu
+      { label: "Heading", submenu: [
+        { label: "Heading 1", handler: () => wrapBlock("h1") },
+        { label: "Heading 2", handler: () => wrapBlock("h2") },
+        { label: "Heading 3", handler: () => wrapBlock("h3") },
+        { label: "Heading 4", handler: () => wrapBlock("h4") },
+        { label: "Heading 5", handler: () => wrapBlock("h5") },
+        { label: "Heading 6", handler: () => wrapBlock("h6") },
+      ] },
+    ];
 
     // List & quote submenu
-    addSubmenu("List", (fly) => {
-      addSubItem(fly, "Bulleted list", () => toggleList("ul"));
-      addSubItem(fly, "Numbered list", () => toggleList("ol"));
-      addSubItem(fly, "Task list", () => toggleTask());
-      addSubItem(fly, "Quote", () => toggleQuote());
-      // Move up/down among siblings: the keyboard path for the list
-      // drag overlay (list-edit.js). Added only when the caret is in a
-      // list; the entries are the same commands Alt+Up/Down run.
-      const ctx = caretListItem();
-      if (ctx && ctx.li) {
-        fly.appendChild(document.createElement("hr"));
-        addSubItem(fly, "Move item up", () => moveItemBySelection("up"), "Alt+Up");
-        addSubItem(fly, "Move item down", () => moveItemBySelection("down"), "Alt+Down");
-      }
-    });
+    const listSub = [
+      { label: "Bulleted list", handler: () => toggleList("ul") },
+      { label: "Numbered list", handler: () => toggleList("ol") },
+      { label: "Task list", handler: () => toggleTask() },
+      { label: "Quote", handler: () => toggleQuote() },
+    ];
+    // Move up/down among siblings: the keyboard path for the list
+    // drag overlay (list-edit.js). Added only when the caret is in a
+    // list; the entries are the same commands Alt+Up/Down run.
+    const ctx = caretListItem();
+    if (ctx && ctx.li) {
+      listSub.push({ separator: true });
+      listSub.push({ label: "Move item up", handler: () => moveItemBySelection("up"), kbd: "Alt+Up" });
+      listSub.push({ label: "Move item down", handler: () => moveItemBySelection("down"), kbd: "Alt+Down" });
+    }
+    items.push({ label: "List", submenu: listSub });
 
     // Table submenu -- only shown when the click is inside a table.
     const table = e && e.target && e.target.closest ? e.target.closest("table") : null;
     if (table && viewerContentEl.contains(table)) {
-      addSubmenu("Table", (fly) => buildTableMenu(fly, table));
+      items.push({ label: "Table", submenu: buildTableItems(table) });
     }
 
     // Code & plugin blocks (mermaid / wavedrom / katex / graphviz / any
@@ -5594,7 +5518,7 @@
     // via a pill rendered on the block while editing, not from the menu.
     const blockHit = codeBlockAt(e && e.target);
     if (blockHit) {
-      addMenuSep();
+      items.push({ separator: true });
       // "Design diagram…" first (the visual editor is the friendly
       // default), then the existing source editor. Shown only when the
       // plugin opts into a designer (plugin.design) AND that module is
@@ -5608,32 +5532,31 @@
           ? designMod.capabilityFor(blockHit.plugin.src(blockHit.el) || "")
           : null;
         if (cap === "render") {
-          addMenuItem("Design diagram…", null, false, {
-            disabled: true,
-            title: "No visual editor for this diagram type — use Edit source",
-          });
+          items.push({ label: "Design diagram…", disabled: true,
+            title: "No visual editor for this diagram type — use Edit source" });
         } else {
-          addMenuItem("Design diagram…", () => designMod.open(blockHit));
+          items.push({ label: "Design diagram…", handler: () => designMod.open(blockHit) });
         }
       }
       if (blockHit.plugin) {
-        addMenuItem("Edit " + blockHit.plugin.name + " source", () => editPluginSource(blockHit));
+        items.push({ label: "Edit " + blockHit.plugin.name + " source",
+          handler: () => editPluginSource(blockHit) });
       } else {
-        addMenuItem("Edit code block", () => editPluginSource(blockHit));
+        items.push({ label: "Edit code block", handler: () => editPluginSource(blockHit) });
       }
     }
 
     // Insert submenu
-    addSubmenu("Insert", (fly) => {
-      addSubItem(fly, "Link…", () => {
+    items.push({ label: "Insert", submenu: [
+      { label: "Link…", handler: () => {
         const url = prompt("Link URL:", "https://");
         if (url) execCommand("createLink", url);
-      });
-      addSubItem(fly, "Image…", () => {
+      } },
+      { label: "Image…", handler: () => {
         const url = prompt("Image URL:", "https://");
         if (url) execCommand("insertImage", url);
-      });
-      addSubItem(fly, "Code block", () => {
+      } },
+      { label: "Code block", handler: () => {
         const pre = document.createElement("pre");
         const code = document.createElement("code");
         const sel = window.getSelection();
@@ -5643,32 +5566,41 @@
         try { document.execCommand("insertHTML", false, pre.outerHTML); }
         catch (_) {}
         onContentChange();
-      });
-      addSubItem(fly, "Table", () => {
+      } },
+      { label: "Table", handler: () => {
         const html = '<table><thead><tr><th>Column 1</th><th>Column 2</th></tr></thead>' +
           '<tbody><tr><td>cell</td><td>cell</td></tr></tbody></table>';
         try { document.execCommand("insertHTML", false, html); }
         catch (_) {}
         onContentChange();
-      });
-      addSubItem(fly, "Horizontal rule", () => {
+      } },
+      { label: "Horizontal rule", handler: () => {
         const hr = document.createElement("hr");
         try { document.execCommand("insertHTML", false, hr.outerHTML); }
         catch (_) {}
         onContentChange();
-      });
-    });
+      } },
+    ] });
 
-    addMenuSep();
+    items.push({ separator: true });
 
     // History
-    addSubmenu("History", (fly) => {
-      addSubItem(fly, "Undo", () => undo());
-      addSubItem(fly, "Redo", () => redo());
-    });
+    items.push({ label: "History", submenu: [
+      { label: "Undo", handler: () => undo() },
+      { label: "Redo", handler: () => redo() },
+    ] });
 
-    // Save (top-level)
-    addMenuItem("Save", () => onSave());
+    // Save (top-level). The hint equals the real save binding.
+    items.push({ label: "Save", handler: () => onSave(), kbd: saveChordHint() });
+    return items;
+  }
+
+  /* The pretty-printed save chord, or null when the action has no binding
+   * (then no hint is shown). */
+  function saveChordHint() {
+    if (!NB.shortcuts || !NB.shortcuts.getBinding || !NB.shortcuts.format) return null;
+    const chord = NB.shortcuts.getBinding("save");
+    return chord ? NB.shortcuts.format(chord) : null;
   }
 
   // True only for a pointer right-click landing on a plain-text run: the
@@ -5693,14 +5625,12 @@
   }
 
   function openMenu(e) {
-    if (!active || !menuEl) return;
+    if (!active) return;
     e.preventDefault();
     // Capture the caret position at the right-click point so paste
     // actions can restore it after the menu steals focus.
     const sel = window.getSelection();
     savedRange = (sel && sel.rangeCount) ? sel.getRangeAt(0).cloneRange() : null;
-    buildMenu(e);
-    menuEl.hidden = false;
     // Anchor the menu. A pointer right-click carries coordinates; a
     // keyboard-triggered contextmenu (Shift+F10 / the Menu key on a focused
     // block, enabled by the block's tabindex) reports 0,0, so anchor to the
@@ -5715,24 +5645,20 @@
         anchorY = r.top + 8;
       }
     }
-    const x = Math.min(anchorX, window.innerWidth - 200);
-    const y = Math.min(anchorY, window.innerHeight - menuEl.offsetHeight - 10);
-    menuEl.style.left = x + "px";
-    menuEl.style.top = y + "px";
-    // Keyboard support: the menu is a real menu. Focus the first item
-    // so arrows/Enter work without a pointer, and walk with the
-    // keyboard (see menuKeyHandler below).
-    menuEl.setAttribute("role", "menu");
-    const first = menuEl.querySelector("button:not([disabled])");
-    if (first) first.focus({ preventScroll: true });
+    NB.menu.open({
+      owner: "hybrid", x: anchorX, y: anchorY, scope: viewerContentEl,
+      items: buildItems(e), focusFirst: true,
+    });
   }
 
   // Wire the contextmenu event on #viewer-content. Only fires when
   // hybrid mode is active (openMenu guards on `active`).
   if (viewerContentEl) {
     viewerContentEl.addEventListener("contextmenu", (e) => {
+      // A pointer right-click on plain prose keeps the native menu (with
+      // spellcheck suggestions); structural content gets the custom menu.
       if (active && isPlainTextTarget(e)) {
-        hideMenu();
+        NB.menu.close();
         return;
       }
       openMenu(e);
@@ -5743,43 +5669,6 @@
     // is a no-op outside the editor.
     document.addEventListener("selectionchange", onSelectionChange);
   }
-  // Close the menu on any click outside it, or on Esc.
-  document.addEventListener("click", (e) => {
-    if (menuEl && !menuEl.hidden && !menuEl.contains(e.target)) hideMenu();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && menuEl && !menuEl.hidden) hideMenu();
-  });
-  // Menu keyboard navigation: Up/Down move between enabled items (in
-  // DOM order, including submenus), Enter/Space activate the focused
-  // button, Escape/right-click-away closes. Focus starts on the first
-  // item (see openMenu).
-  document.addEventListener("keydown", (e) => {
-    if (!menuEl || menuEl.hidden) return;
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" &&
-        e.key !== "Enter" && e.key !== " ") return;
-    if (!menuEl.contains(e.target)) return;
-    e.preventDefault();
-    if (e.key === "Enter" || e.key === " ") {
-      if (e.target.closest("button")) e.target.closest("button").click();
-      return;
-    }
-    const items = Array.from(menuEl.querySelectorAll("button"))
-      .filter((b) => !b.disabled &&
-        (b.closest(".submenu") ? b.closest(".submenu").classList.contains("open") || b.classList.contains("submenu")
-                               : true));
-    const visible = items.filter((b) => b.offsetParent !== null);
-    const i = visible.indexOf(document.activeElement);
-    const next = e.key === "ArrowDown"
-      ? visible[(i + 1 + visible.length) % visible.length]
-      : visible[(i - 1 + visible.length) % visible.length];
-    if (next) next.focus({ preventScroll: true });
-  });
-  // Close on another contextmenu event outside #viewer-content (e.g.
-  // right-clicking the sidebar) so the hybrid menu doesn't stay open.
-  document.addEventListener("contextmenu", (e) => {
-    if (menuEl && !menuEl.hidden && !viewerContentEl.contains(e.target)) hideMenu();
-  }, true);
 
   /* --- top-bar button wiring ------------------------------------- */
 
