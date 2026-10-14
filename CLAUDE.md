@@ -361,7 +361,12 @@ Module responsibilities:
     re-uploads it, so follow-ups keep context without re-reading files.
     Reject/apply/blocked outcomes are appended via `recordToolOutcome` so the
     model sees what happened to its proposals. The **Clear** button in the
-    panel header resets the conversation.
+    panel header resets the conversation. The transcript survives a reload:
+    `persistHistory()` writes a versioned `localStorage["nb:aiChat"]` blob
+    (conversation + a parallel `toolFlags` array for the tool-message
+    WeakSet + the newest prompt) after every mutation, and `restoreHistory()`
+    rebuilds it on mount; an over-size blob drops image data URLs to a text
+    placeholder rather than exhausting the quota, and Clear removes the key.
   - Legacy ` ```nb-edit ` single-op blocks still render as patch cards (they
     target the current file when no path is given); patch tools are previewed
     client-side via `previewPatch()` (literal find_replace/append/prepend

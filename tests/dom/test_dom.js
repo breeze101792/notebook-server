@@ -22731,6 +22731,344 @@ function check(label, cond, extra) {
     window.NB.ai._resetImageCodec();
   }
 
+  console.log("== ai history persistence ==");
+  // The transcript survives a reload: persistHistory() writes a versioned
+  // blob to localStorage["nb:aiChat"] on every mutation; mount() (and the
+  // _restoreHistoryForTests seam) rebuilds it. These checks drive real
+  // turns through the same fetch-stubbed loop as the blocks above, then
+  // assert on the stored blob and on a simulated reload.
+  {
+    const histKey = "nb:aiChat";
+    const histLog = () => window.document.getElementById("ai-chat-log");
+    const histStored = () => window.NB.ai._getStoredHistoryForTests();
+    const histRaw = () => window.localStorage.getItem(histKey);
+    const userBubbles = () =>
+      Array.from(histLog().querySelectorAll(".ai-msg-user"));
+    const asstBubbles = () =>
+      Array.from(histLog().querySelectorAll(".ai-msg-assistant"));
+    const cards = () => Array.from(histLog().querySelectorAll(".ai-edit-card"));
+    const firePrompt = (text) => { aiInput().value = text; aiSend(); };
+    // Full isolation: Clear (empties memory + the log + the key) then the
+    // in-memory reset, mirroring the other AI sub-blocks.
+    const histReset = async () => {
+      const clearBtn = window.document.querySelector("#ai-view .ai-clear");
+      if (clearBtn) {
+        clearBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      }
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+      await tick(10);
+    };
+
+    // Re-sync the stub provider (earlier blocks may have rewritten it).
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (H1) a completed exchange is persisted: user + assistant entries,
+    // toolFlags all false, and the prompt captured for Edit.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("Plain persisted answer.")]);
+      firePrompt("history: plain question");
+      await tick(120);
+
+      const stored = histStored();
+      check("ai history: a completed exchange is written to localStorage",
+        !!stored && stored.v === 1 && Array.isArray(stored.conversation),
+        stored ? "v=" + stored.v + " n=" + stored.conversation.length : "none");
+      check("ai history: stored turn holds the user + assistant entries",
+        stored && stored.conversation.length === 2 &&
+        stored.conversation[0].role === "user" &&
+        stored.conversation[0].content === "history: plain question" &&
+        stored.conversation[1].role === "assistant" &&
+        /Plain persisted answer/.test(stored.conversation[1].content),
+        stored ? JSON.stringify(stored.conversation.map(m => m.role)) : "none");
+      check("ai history: every stored toolFlag is false for a plain turn",
+        stored && stored.toolFlags.length === 2 &&
+        stored.toolFlags.every(f => f === false),
+        stored ? JSON.stringify(stored.toolFlags) : "none");
+      check("ai history: lastPrompt captures the sent prompt",
+        stored && stored.lastPrompt === "history: plain question",
+        stored ? JSON.stringify(stored.lastPrompt) : "none");
+      check("ai history: in-memory entries stay clean {role, content}",
+        window.NB.ai._getConversationForTests().every(m =>
+          Object.keys(m).sort().join(",") === "content,role"),
+        JSON.stringify(window.NB.ai._getConversationForTests()
+          .map(m => Object.keys(m))));
+    }
+
+    // (H2) a tool follow-up is flagged and survives a simulated reload as
+    // a NON-genuine turn. Regenerate is the observable: it must anchor on
+    // the genuine user turn, so the re-sent request ends at the original
+    // prompt and never includes the tool result.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("Let me read it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "read", path: "notes/a.md" }) + "\n```")]);
+      aiChatStreams.push([sseFrame("Finished reading notes/a.md.")]);
+      firePrompt("history: read the file");
+      await tick(200);
+
+      const storedBefore = histStored();
+      check("ai history: a tool round appends a tagged follow-up",
+        window.NB.ai._getConversationForTests().length === 4 &&
+        storedBefore && storedBefore.toolFlags.length === 4 &&
+        storedBefore.toolFlags[0] === false && storedBefore.toolFlags[1] === false &&
+        storedBefore.toolFlags[2] === true && storedBefore.toolFlags[3] === false,
+        storedBefore ? JSON.stringify(storedBefore.toolFlags) : "none");
+
+      // Simulate a reload: drop memory, keep storage intact, restore.
+      window.NB.ai._resetMemoryForTests();
+      window.NB.ai._restoreHistoryForTests(histLog());
+      const restored = window.NB.ai._getConversationForTests();
+      check("ai history: reload restores the whole transcript",
+        restored.length === 4 &&
+        restored[0].content === "history: read the file" &&
+        restored[2].role === "user" &&
+        /\(tool read notes\/a\.md result\)/.test(restored[2].content),
+        "n=" + restored.length);
+
+      // Regenerate anchors on the genuine turn: the re-sent request ends at
+      // the original prompt and never includes the tool result.
+      const regen = histLog().querySelector(".ai-regenerate");
+      check("ai history: restore re-adds the turn controls", !!regen);
+      aiChatLog = [];
+      aiChatStreams.push([sseFrame("Regenerated answer.")]);
+      if (regen) regen.click();
+      await tick(150);
+      const req = aiChatLog[aiChatLog.length - 1] || { messages: [] };
+      const lastMsg = req.messages[req.messages.length - 1] || {};
+      check("ai history: reloaded tool message is not treated as a genuine turn",
+        aiChatLog.length === 1 && lastMsg.role === "user" &&
+        lastMsg.content === "history: read the file" &&
+        !req.messages.some(m => typeof m.content === "string" &&
+          m.content.indexOf("(tool ") === 0),
+        "n=" + aiChatLog.length + " last=" + JSON.stringify(lastMsg.content));
+    }
+
+    // (H3) restore re-renders the log: user bubble text + assistant bubble,
+    // and NO permission card for a historical nb-tool write.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("I will create it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "write", path: "notes/hist-write.md",
+          content: "# New file\n" }) + "\n```")]);
+      firePrompt("history: create a note");
+      await tick(150);
+      check("ai history: a write tool renders a permission card live",
+        cards().length === 1, "cards=" + cards().length);
+
+      window.NB.ai._resetMemoryForTests();
+      window.NB.ai._restoreHistoryForTests(histLog());
+      check("ai history: restore re-renders the user bubble text",
+        userBubbles().length === 1 &&
+        /history: create a note/.test(userBubbles()[0].textContent),
+        "users=" + userBubbles().length);
+      check("ai history: restore re-renders the assistant prose",
+        asstBubbles().length >= 1 &&
+        /I will create it/.test(asstBubbles()[0].textContent),
+        "asst=" + asstBubbles().length);
+      check("ai history: a historical permission card is NOT recreated",
+        cards().length === 0, "cards=" + cards().length);
+    }
+
+    // (H4) Clear removes the stored key.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("Clear me.")]);
+      firePrompt("history: clear test");
+      await tick(120);
+      check("ai history: precondition, the key exists before Clear",
+        histRaw() !== null, "key=" + (histRaw() === null ? "null" : "present"));
+      window.document.querySelector("#ai-view .ai-clear")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(20);
+      check("ai history: Clear removes localStorage[\"nb:aiChat\"]",
+        histRaw() === null && histStored() === null,
+        "raw=" + (histRaw() === null ? "null" : "present"));
+    }
+
+    // (H5) invalid stored payloads are ignored and the key is dropped.
+    {
+      const badPayloads = [
+        ["bad JSON", "{not json at all"],
+        ["wrong version", JSON.stringify({ v: 999,
+          conversation: [{ role: "user", content: "x" }] })],
+        ["non-array conversation", JSON.stringify({ v: 1,
+          conversation: { role: "user", content: "x" } })],
+        ["non-string role entry", JSON.stringify({ v: 1,
+          conversation: [{ role: 5, content: "x" }] })],
+        // Role whitelist: only user/assistant survive a restore (a stored
+        // "system" turn would otherwise re-enter the wire body).
+        ["system role entry", JSON.stringify({ v: 1,
+          conversation: [{ role: "system", content: "x" }] })],
+      ];
+      for (const [label, raw] of badPayloads) {
+        // _resetMemoryForTests keeps the set payload; then restore must
+        // reject it and remove the key.
+        window.NB.ai._resetMemoryForTests();
+        window.localStorage.setItem(histKey, raw);
+        window.NB.ai._restoreHistoryForTests(histLog());
+        check("ai history: " + label + " is ignored and the key removed",
+          window.NB.ai._getConversationForTests().length === 0 &&
+          histRaw() === null,
+          "conv=" + window.NB.ai._getConversationForTests().length +
+          " key=" + (histRaw() === null ? "null" : "present"));
+      }
+    }
+
+    // (H6) size guard: an over-4-MiB payload drops image_url parts before
+    // storing; the in-memory conversation keeps them.
+    {
+      await histReset();
+      const bigB64 = "A".repeat(4 * 1024 * 1024 + 200 * 1024);   // ~4.2 MiB
+      window.NB.ai._setImageCodec({
+        probe: () => Promise.resolve({ width: 50, height: 50, mime: "image/png" }),
+        passthrough: () => Promise.resolve({
+          dataUrl: "data:image/png;base64," + bigB64, bytes: 100,
+          mime: "image/png" }),
+        render: () => Promise.resolve({
+          dataUrl: "data:image/png;base64,UkVG", bytes: 100, mime: "image/png" }),
+      });
+      window.NB.ai._addFilesForTests([{ name: "big.png", type: "image/png",
+        size: 100, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }]);
+      await tick(80);
+      aiChatStreams.push([sseFrame("Stored after a big image.")]);
+      firePrompt("history: big image");
+      await tick(200);
+      window.NB.ai._resetImageCodec();
+
+      const stored = histStored();
+      const storedUser = stored && stored.conversation.find(m =>
+        Array.isArray(m.content));
+      const inMemUser = window.NB.ai._getConversationForTests().find(m =>
+        Array.isArray(m.content));
+      check("ai history: an over-4-MiB payload stores the text placeholder",
+        !!storedUser && storedUser.content.every(p => p.type !== "image_url") &&
+        storedUser.content.some(p => p.type === "text" &&
+          p.text === "[image not saved in history]"),
+        storedUser ? JSON.stringify(storedUser.content.map(p => p.type)) : "none");
+      check("ai history: the in-memory conversation keeps the image_url part",
+        !!inMemUser && inMemUser.content.some(p =>
+          p.type === "image_url" && /^data:image\/png/.test(p.image_url.url)),
+        inMemUser ? JSON.stringify(inMemUser.content.map(p => p.type)) : "none");
+    }
+
+    // (H7) abandoned pending card: a reload while a write/patch card awaits
+    // Apply/Reject leaves the transcript ending on the "awaiting user
+    // approval" follow-up. Restore must record the abandonment once (as a
+    // tagged tool result) so the model is not told forever that a card is
+    // pending -- and must not treat it as a genuine turn.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("I will create it.\n\n```nb-tool\n" +
+        JSON.stringify({ tool: "write", path: "notes/hist-abandoned.md",
+          content: "# Abandoned\n" }) + "\n```")]);
+      firePrompt("history: pending approval");
+      await tick(150);
+
+      const storedPending = histStored();
+      check("ai history: precondition, storage ends on the awaiting-approval follow-up",
+        storedPending && storedPending.conversation.length === 3 &&
+        /awaiting user approval/.test(storedPending.conversation[2].content) &&
+        storedPending.toolFlags[2] === true &&
+        cards().length === 1,
+        storedPending ? "n=" + storedPending.conversation.length +
+          " flags=" + JSON.stringify(storedPending.toolFlags) : "none");
+
+      window.NB.ai._resetMemoryForTests();
+      window.NB.ai._restoreHistoryForTests(histLog());
+      const restored = window.NB.ai._getConversationForTests();
+      const abandoned = restored[restored.length - 1] || {};
+      check("ai history: reload records the abandoned card as a tool result",
+        restored.length === 4 && abandoned.role === "user" &&
+        /^\(tool result\)/.test(abandoned.content) &&
+        abandoned.content === "(tool result) awaiting user approval: " +
+          "the page was reloaded before the user decided",
+        "n=" + restored.length + " last=" + JSON.stringify(abandoned.content));
+      check("ai history: no permission card is rendered for the abandoned turn",
+        cards().length === 0, "cards=" + cards().length);
+
+      // The abandonment entry is tool-flagged, so Regenerate still anchors
+      // on the genuine user turn and drops it (as in H2).
+      const regen = histLog().querySelector(".ai-regenerate");
+      aiChatLog = [];
+      aiChatStreams.push([sseFrame("After abandonment.")]);
+      if (regen) regen.click();
+      await tick(150);
+      const req = aiChatLog[aiChatLog.length - 1] || { messages: [] };
+      const lastMsg = req.messages[req.messages.length - 1] || {};
+      check("ai history: the abandoned entry is not treated as a genuine turn",
+        aiChatLog.length === 1 && lastMsg.role === "user" &&
+        lastMsg.content === "history: pending approval" &&
+        !req.messages.some(m => typeof m.content === "string" &&
+          m.content.indexOf("(tool ") === 0),
+        "n=" + aiChatLog.length + " last=" + JSON.stringify(lastMsg.content));
+    }
+
+    // (H8) no-op case: a transcript ending on an assistant turn (no pending
+    // card) gains no abandoned entry on restore.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("No card here.")]);
+      firePrompt("history: no pending card");
+      await tick(120);
+      window.NB.ai._resetMemoryForTests();
+      window.NB.ai._restoreHistoryForTests(histLog());
+      const conv = window.NB.ai._getConversationForTests();
+      check("ai history: an assistant-ending transcript gains no abandoned entry",
+        conv.length === 2 && conv[1].role === "assistant" &&
+        !conv.some(m => /page was reloaded before the user decided/
+          .test(String(m.content))),
+        "n=" + conv.length + " roles=" +
+        JSON.stringify(conv.map(m => m.role)));
+    }
+
+    // (H9) viewer-session gating: a viewer must not restore the transcript
+    // (it can hold note contents the assistant read) and the stored key is
+    // kept for the next admin mount. The gate reads NB.auth.status() at
+    // call time; the harness caches auth at boot, so stub the status
+    // temporarily and restore the original immediately after.
+    {
+      await histReset();
+      aiChatStreams.push([sseFrame("Admin-only transcript.")]);
+      firePrompt("history: viewer gate");
+      await tick(120);
+      const storedForViewer = histStored();
+      const origStatus = window.NB.auth.status;
+
+      window.NB.ai._resetMemoryForTests();
+      const sentinel = window.document.createElement("div");
+      sentinel.className = "hist-sentinel";
+      histLog().appendChild(sentinel);
+      const childrenBefore = histLog().childElementCount;
+      window.NB.auth.status = () => ({ enabled: true, role: "viewer" });
+      try {
+        window.NB.ai._restoreHistoryForTests(histLog());
+        check("ai history: a viewer does not restore the transcript",
+          window.NB.ai._getConversationForTests().length === 0 &&
+          histLog().childElementCount === childrenBefore &&
+          userBubbles().length === 0 && asstBubbles().length === 0,
+          "conv=" + window.NB.ai._getConversationForTests().length +
+          " children=" + histLog().childElementCount);
+        check("ai history: a viewer's mount keeps the stored key",
+          histRaw() !== null && !!storedForViewer &&
+          !!histStored() && histStored().conversation.length === 2,
+          "key=" + (histRaw() === null ? "null" : "present"));
+      } finally {
+        window.NB.auth.status = origStatus;
+      }
+    }
+
+    // Leave the panel idle and the storage clean for later blocks.
+    await histReset();
+    window.NB.ai._resetImageCodec();
+  }
+
   console.log("== side-panel AI collapse button ==");
   // The AI view is mounted (with its test config) by the block above;
   // assert its header carries a ‹ collapse button that closes the panel.

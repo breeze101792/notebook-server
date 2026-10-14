@@ -115,6 +115,22 @@
    * The send path strips any image that still gets in (paste/drop). */
   const AI_ATTACH_TEXT_ACCEPT = "text/*";
 
+  /* Chat history survives a reload through localStorage. The key follows
+   * the nb:tableView / nb:windowGeometry convention; the payload is
+   * versioned and toolFlags is parallel to the conversation so restored
+   * tool follow-ups keep their structural tag. An over-size write drops
+   * image data URLs (rewritten to a text placeholder) rather than
+   * exhausting the quota, and is skipped entirely if it still doesn't
+   * fit. */
+  const AI_HISTORY_KEY = "nb:aiChat";
+  const AI_HISTORY_VERSION = 1;
+  const AI_HISTORY_MAX_BYTES = 4 * 1024 * 1024;
+  const AI_HISTORY_IMAGE_PLACEHOLDER = "[image not saved in history]";
+  /* Substring of the tool-loop's "awaiting user approval" follow-up; a
+   * restored transcript whose last entry carries it gets an abandoned
+   * outcome (the permission card is gone after reload). */
+  const AI_ABANDONED_MARK = "awaiting user approval";
+
   /* ------------------------------------------------------------------ *
    * nb-edit parsing (user-facing proposal cards) + nb-tool blocks
    * ------------------------------------------------------------------ */
@@ -918,6 +934,7 @@
   function pushToolMessage(entry) {
     conversation.push(entry);
     toolMessages.add(entry);
+    persistHistory();
   }
 
   /* Tool outcome ledger: appended to the conversation so the model sees
@@ -946,6 +963,228 @@
   function turnHasImages(entry) {
     return !!entry && Array.isArray(entry.content) &&
       entry.content.some((p) => p && p.type === "image_url");
+  }
+
+  /* ------------------------------------------------------------------ *
+   * Persistence (chat history survives a reload)
+   * ------------------------------------------------------------------ */
+  /* The transcript is text and small except when a turn carries image
+   * data URLs, which can be megabytes. persistHistory() is the single
+   * write chokepoint: the size guard rewrites image parts to a text
+   * placeholder before storing, and skips the write when even the
+   * reduced copy is too large. Nothing here may throw -- a full or
+   * disabled localStorage only means the chat is not restored. */
+  function persistHistory() {
+    try {
+      const payload = {
+        v: AI_HISTORY_VERSION,
+        conversation: conversation,
+        toolFlags: conversation.map((m) => toolMessages.has(m)),
+        lastPrompt: typeof lastSentPrompt === "string" ? lastSentPrompt : "",
+      };
+      let serialized = JSON.stringify(payload);
+      if (wireByteSize(serialized) > AI_HISTORY_MAX_BYTES) {
+        payload.conversation = conversation.map(reduceHistoryEntry);
+        serialized = JSON.stringify(payload);
+      }
+      if (wireByteSize(serialized) > AI_HISTORY_MAX_BYTES) return;
+      localStorage.setItem(AI_HISTORY_KEY, serialized);
+    } catch (e) {
+      /* Quota exceeded or storage unavailable: keep any previous value. */
+    }
+  }
+
+  /* An over-size entry loses its image_url parts; role and text parts
+   * stay, so the restored turn still reads as the user's words. */
+  function reduceHistoryEntry(m) {
+    if (!m || !Array.isArray(m.content)) return m;
+    let changed = false;
+    const content = m.content.map((p) => {
+      if (p && p.type === "image_url") {
+        changed = true;
+        return { type: "text", text: AI_HISTORY_IMAGE_PLACEHOLDER };
+      }
+      return p;
+    });
+    return changed ? Object.assign({}, m, { content }) : m;
+  }
+
+  function clearStoredHistory() {
+    try { localStorage.removeItem(AI_HISTORY_KEY); } catch (e) { /* noop */ }
+  }
+
+  function isHistoryEntry(m) {
+    return !!m && typeof m === "object" &&
+      (m.role === "user" || m.role === "assistant") &&
+      (typeof m.content === "string" || Array.isArray(m.content));
+  }
+
+  /* The AI API is admin-only and the transcript can hold note contents the
+   * assistant read or patched. Do not restore it into a viewer session on a
+   * shared browser; keep the stored blob for the next admin mount. */
+  function historyVisible() {
+    const s = (NB.auth && NB.auth.status) ? NB.auth.status() : null;
+    return !(s && s.enabled && s.role !== "admin");
+  }
+
+  /* A reload can land while a write/patch CARD awaits Apply/Reject: the
+   * stored transcript ends with the "awaiting user approval" follow-up but
+   * the card is gone after reload, so the model would wait forever. Record
+   * the abandonment once so the transcript stays honest. */
+  function resolveAbandonedPending() {
+    const last = conversation[conversation.length - 1];
+    if (!last || !toolMessages.has(last)) return;
+    if (typeof last.content !== "string" ||
+        last.content.indexOf(AI_ABANDONED_MARK) < 0) return;
+    pushToolMessage({
+      role: "user",
+      content: "(tool result) " + AI_ABANDONED_MARK +
+        ": the page was reloaded before the user decided",
+    });
+  }
+
+  /* Rebuild the transcript and the visible log from a stored payload. An
+   * invalid shape drops the key and is ignored. The system prompt is not
+   * persisted (it names the current file), so it is rebuilt fresh. */
+  function restoreHistory(log) {
+    if (!historyVisible()) return;
+    let raw = null;
+    try { raw = localStorage.getItem(AI_HISTORY_KEY); } catch (e) { raw = null; }
+    if (!raw) return;
+    let payload = null;
+    try { payload = JSON.parse(raw); } catch (e) { payload = null; }
+    if (!payload || payload.v !== AI_HISTORY_VERSION ||
+        !Array.isArray(payload.conversation) ||
+        !payload.conversation.every(isHistoryEntry)) {
+      clearStoredHistory();
+      return;
+    }
+    const flags = Array.isArray(payload.toolFlags) ? payload.toolFlags : [];
+    conversation = [];
+    for (let i = 0; i < payload.conversation.length; i++) {
+      /* Rebuild clean {role, content} entries: anything extra a tampered
+       * payload carried must never reach the wire body. */
+      const entry = {
+        role: payload.conversation[i].role,
+        content: payload.conversation[i].content,
+      };
+      conversation.push(entry);
+      if (flags[i] === true) toolMessages.add(entry);
+    }
+    lastSentPrompt = typeof payload.lastPrompt === "string"
+      ? payload.lastPrompt : "";
+    lastSentFiles = [];
+    resolveAbandonedPending();   // persists on its own via pushToolMessage
+    if (log) renderRestoredHistory(log);
+    invalidateSystem();
+  }
+
+  /* Re-render the bubbles in order. Tool follow-ups are skipped (they were
+   * never shown live). User turns show text and image thumbnails;
+   * assistant replies show prose only -- historical permission cards are
+   * not recreated, since their anchors may be stale. */
+  function renderRestoredHistory(log) {
+    let hasGenuineUser = false;
+    for (const entry of conversation) {
+      if (toolMessages.has(entry)) continue;
+      if (entry.role === "user") {
+        hasGenuineUser = true;
+        renderRestoredUser(log, entry);
+      } else if (entry.role === "assistant") {
+        renderRestoredAssistant(log, entry);
+      }
+    }
+    if (hasGenuineUser) restoreTurnControls(log);
+  }
+
+  function renderRestoredUser(log, entry) {
+    const parts = Array.isArray(entry.content) ? entry.content : null;
+    const text = parts
+      ? parts.filter((p) => p && p.type === "text").map((p) => p.text || "").join("")
+      : String(entry.content);
+    const bubble = appendMessage(log, "user", stripAttachBlocks(text));
+    if (!parts) return;
+    const files = parts
+      .filter((p) => p && p.type === "image_url" &&
+        p.image_url && typeof p.image_url.url === "string")
+      .map((p) => ({
+        kind: "image", name: "image", size: 0, dataUrl: p.image_url.url,
+      }));
+    if (files.length) appendUserFiles(bubble, files);
+  }
+
+  function renderRestoredAssistant(log, entry) {
+    const text = typeof entry.content === "string" ? entry.content : "";
+    const prose = stripFencedSpans(text, ["nb-tool", "nb-edit"]);
+    if (!prose.trim()) return;   // tool-only turn: nothing to show
+    const bubble = appendMessage(log, "assistant", "");
+    const span = document.createElement("span");
+    span.className = "ai-prose-span";
+    span.appendChild(renderMarkdown(prose));
+    bubble.appendChild(span);
+  }
+
+  /* Remove the inline "[Attached file: NAME (SIZE)]...[/Attached file:
+   * NAME]" blocks a text attachment appends to the user turn. A scanner
+   * (not a regex) keeps a malformed or unterminated block from hanging:
+   * the cursor always advances. */
+  function stripAttachBlocks(text) {
+    if (typeof text !== "string" || text.indexOf(AI_ATTACH_MARK_OPEN) < 0) {
+      return typeof text === "string" ? text : "";
+    }
+    let out = "";
+    let i = 0;
+    while (i < text.length) {
+      const open = text.indexOf(AI_ATTACH_MARK_OPEN, i);
+      if (open < 0) { out += text.slice(i); break; }
+      out += text.slice(i, open);
+      const nameStart = open + AI_ATTACH_MARK_OPEN.length;
+      const headerEnd = text.indexOf(AI_ATTACH_MARK_OPEN_END, nameStart);
+      if (headerEnd < 0) { out += text.slice(open); break; }  // malformed
+      const sizeSep = text.lastIndexOf(AI_ATTACH_MARK_SIZE, headerEnd);
+      const name = text.slice(nameStart,
+        sizeSep >= nameStart ? sizeSep : headerEnd);
+      const closeMark = AI_ATTACH_MARK_CLOSE + name + AI_ATTACH_MARK_CLOSE_END;
+      const headerAfter = headerEnd + AI_ATTACH_MARK_OPEN_END.length;
+      const close = text.indexOf(closeMark, headerAfter);
+      if (close < 0) {
+        // Unterminated: keep the header and resume past it, never loop.
+        out += text.slice(open, headerAfter);
+        i = headerAfter;
+        continue;
+      }
+      i = close + closeMark.length;
+    }
+    /* The blocks are appended after the prompt separated by blank lines;
+     * trim the separators they leave behind. */
+    return out.replace(/\s+$/, "");
+  }
+
+  /* Blank out the given fenced spans (nb-tool / nb-edit) from an assistant
+   * reply, leaving the prose. Overlapping spans are masked before removal
+   * so a nested fence cannot shift an index. */
+  function stripFencedSpans(text, langs) {
+    const spans = [];
+    for (const lang of langs) {
+      for (const s of collectFenced(text, lang)) spans.push(s);
+    }
+    if (!spans.length) return text;
+    const mask = new Uint8Array(text.length);
+    for (const s of spans) {
+      const from = Math.max(0, s.start);
+      const to = Math.min(text.length, s.end);
+      for (let i = from; i < to; i++) mask[i] = 1;
+    }
+    let out = "";
+    let i = 0;
+    while (i < text.length) {
+      if (mask[i]) { i++; continue; }
+      let j = i;
+      while (j < text.length && !mask[j]) j++;
+      out += text.slice(i, j);
+      i = j;
+    }
+    return out;
   }
 
   /* ------------------------------------------------------------------ *
@@ -1275,6 +1514,7 @@
     const userBubble = appendMessage(log, "user", userText);
     if (sendFiles.length) appendUserFiles(userBubble, sendFiles);
     conversation.push({ role: "user", content: userContent });
+    persistHistory();
     await runToolLoop(log, ui);
   }
 
@@ -1352,6 +1592,7 @@
         if (t) toolCalls.push(t);
       }
       conversation.push({ role: "assistant", content: text });
+      persistHistory();
 
       if (!toolCalls.length) break;   // plain answer; the turn ends
 
@@ -1409,6 +1650,7 @@
     clearLastTurnDom(log);
     removeTurnControls(log);
     conversation = conversation.slice(0, idx + 1);
+    persistHistory();
     ui.begin();
     acpImageNoticeShown = false;
     await runToolLoop(log, ui);
@@ -1432,6 +1674,7 @@
     /* Trim BEFORE the user turn: the edited prompt is re-added by the next
      * send. */
     conversation = conversation.slice(0, idx);
+    persistHistory();
     if (attachRestore) attachRestore(lastSentFiles);
     composerSetPrompt(lastSentPrompt);
     composerFocus();
@@ -1830,6 +2073,7 @@
     clearBtn.textContent = "Clear";
     clearBtn.title = "Clear the conversation (the model forgets context)";
     clearBtn.addEventListener("click", () => {
+      if (ctl) ctl.abort();   // an in-flight reply must not land in the reset
       conversation = [];
       systemCache = null;
       log.innerHTML = "";
@@ -1837,6 +2081,7 @@
       removeTurnControls(log);
       lastSentPrompt = "";
       lastSentFiles = [];
+      clearStoredHistory();   // a true reset: the chat must not come back
     });
     actions.appendChild(clearBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {
@@ -2241,6 +2486,10 @@
     composerSetPrompt = (text) => { ta.value = text; };
     composerFocus = () => { ta.focus(); };
 
+    // Restore any history saved before the reload now that the log and the
+    // panel's references exist. It does not need the provider list.
+    restoreHistory(log);
+
     // Populate the provider picker from the server. Settings-side edits
     // funnel through NB.ai.loadAiConfig (settings.js calls it after every
     // save) so a re-mount isn't needed to see new providers.
@@ -2362,6 +2611,31 @@
       editBtn = null;
       lastSentPrompt = "";
       lastSentFiles = [];
+      clearStoredHistory();   // isolate test blocks
+    },
+    /* Erase in-memory state WITHOUT touching localStorage, so a test can
+     * persist, drop memory, then restore from what was stored. */
+    _resetMemoryForTests() {
+      conversation = [];
+      systemCache = null;
+      attachReset();
+      if (mountLog) {
+        removeTurnControls(mountLog);
+        mountLog.innerHTML = "";
+      }
+      regenBtn = null;
+      editBtn = null;
+      lastSentPrompt = "";
+      lastSentFiles = [];
+    },
+    _restoreHistoryForTests(log) { restoreHistory(log); },
+    _getStoredHistoryForTests() {
+      try {
+        const raw = localStorage.getItem(AI_HISTORY_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
     },
   };
 })();
