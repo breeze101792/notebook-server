@@ -2,9 +2,10 @@
 
 ## Overview
 
-The notebook server is a single-user Markdown notebook. The backend is one Flask
-file, `app.py`; the frontend is a vanilla-JS single-page app. Every application
-route lives under `/api/*` and returns JSON, except `GET /` and the SPA catch-all
+The notebook server is a single-user Markdown notebook. The backend is a Flask
+module, `app.py`, plus `acp_client.py` (the Flask-free ACP client the AI routes
+use); the frontend is a vanilla-JS single-page app. Every application route
+lives under `/api/*` and returns JSON, except `GET /` and the SPA catch-all
 (HTML), `GET /agent.md` (Markdown), and `POST /api/ai/chat` (an SSE byte relay).
 
 A machine-readable companion guide is served at `GET /agent.md`, maintained as
@@ -251,20 +252,22 @@ files are dropped, and self-links are skipped. Edges are unique and undirected;
 
 ### AI assistant
 
-These routes read and write `config/ai.json` (`app.py:1163`), which holds
-provider profiles, the optional global custom prompt, and the optional SearXNG
-URL. The stored key is never returned in a response to the browser, but the
-server attaches it to the upstream request sent to whatever `base_url` the
-profile names. All routes below are admin-gated **only while auth is on**.
+These routes read and write `config/ai.json` (`app.py:1180`), which holds
+OpenAI-compatible provider profiles, the optional global custom prompt, and the
+optional SearXNG URL. A second provider kind, ACP, is configured separately in
+`config/acp.json` (`app.py:1186`) and is **read-only from the server** — no
+route writes it. The stored key is never returned in a response to the browser,
+but the server attaches it to the upstream request sent to whatever `base_url`
+the profile names. All routes below are admin-gated **only while auth is on**.
 
 | Method | Path | Auth | Body / params | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/ai/config` (`app.py:1316`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl}`. The key is never echoed. |
-| POST | `/api/ai/config` (`app.py:1324`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. |
-| GET | `/api/ai/probe` (`app.py:1393`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. |
-| POST | `/api/ai/chat` (`app.py:1434`) | admin | `{server, messages}` | SSE relay. See below. |
-| POST | `/api/ai/fetch` (`app.py:1502`) | admin | `{url}` | Server-side fetch. See below. |
-| POST | `/api/ai/search` (`app.py:1549`) | admin | `{q}` | SearXNG search. See below. |
+| GET | `/api/ai/config` (`app.py:1575`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acpAgents}`. The key is never echoed. `acp` is `{name, model, agent, default}` or `null`; `agent` is the selected known-agent key (`""` when the profile uses `command`). `acpAgents` is always present. |
+| POST | `/api/ai/config` (`app.py:1583`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. Never touches `acp.json`. |
+| GET | `/api/ai/probe` (`app.py:1652`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
+| POST | `/api/ai/chat` (`app.py:1916`) | admin | `{server, messages}` | SSE relay. Serves ACP profiles too. See below. |
+| POST | `/api/ai/fetch` (`app.py:1995`) | admin | `{url}` | Server-side fetch. See below. |
+| POST | `/api/ai/search` (`app.py:2042`) | admin | `{q}` | SearXNG search. See below. |
 
 On `POST /api/ai/config`, a profile with `apiKey: ""` plus `replaceSecret: true`
 carries over the previously stored key server-side, so the browser never echoes
@@ -287,6 +290,30 @@ response body is the upstream byte stream relayed unmodified as
 `text/event-stream` with `Cache-Control: no-store`. Upstream HTTP errors and
 connection failures are re-emitted in-band as `event: error` frames whose data
 is `{"error": true, "status", "message"}`.
+
+When the posted `server` is not an OpenAI profile but equals the `name` in
+`config/acp.json`, `POST /api/ai/chat` drives the ACP agent instead
+(`ai_chat`, `app.py:1916`). `messages` is validated the same way, then the
+system turn is dropped; a request left with no user/assistant turn is 400, any
+`image_url` content part is 400, and the flattened prompt is capped at
+`ACP_MAX_PROMPT_BYTES` = 8 MiB. A short context preamble (the notebook lead,
+the open note from `config/config.json`, and the global custom prompt from
+`config/ai.json`) is prefixed to that prompt. The response uses the identical
+SSE envelope — OpenAI-shaped `data:` delta frames, `data: [DONE]` on completion,
+and `event: error` frames on failure — so clients parse it unchanged; one extra
+frame, `data: {"acp": "trace", "text": "<tool title>"}`, marks each tool the
+agent starts and is ignored by any client that does not read it. No API route
+writes `config/acp.json`; see
+[configuration.md](configuration.md#configacpjson--acp-agent).
+
+`GET /api/ai/config` reports host availability of the known agents in an
+always-present `acpAgents` array: `[{key, label, available}]`, one entry per
+key in the server's table, `available` true when the executable resolves on
+`PATH` (`_detect_acp_agents`, `app.py:1481`). An entry whose wrapping CLI is
+installed but whose ACP adapter binary is not gains `adapterMissing: true` and
+a `hint` string with the adapter's install command (today Claude Code and
+Codex). The array is built with `shutil.which` only — a read-only name lookup,
+nothing is executed — so the endpoint never runs an agent.
 
 On `POST /api/ai/fetch`, only `http(s)` URLs are allowed. The URL is capped at
 2000 characters. The body is capped at `AI_FETCH_MAX_BYTES` = 512 KiB and the

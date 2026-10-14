@@ -11,6 +11,7 @@ import dataclasses
 import fnmatch
 import itertools
 import json
+import math
 import os
 import re
 import secrets
@@ -1178,6 +1179,74 @@ def auth_tokens_delete(name):
 # progressively just like talking to the provider directly.
 AI_FILE = os.path.join(CONFIG_DIR, "ai.json")
 
+# ACP profiles (Agent Client Protocol agents spawned as subprocesses) live in
+# their own hand-edited file -- deliberately NOT written through POST
+# /api/ai/config, because a config blob any authed client can POST must never
+# be able to choose a command to execute. See load_acp_config().
+ACP_FILE = os.path.join(CONFIG_DIR, "acp.json")
+
+# Bounds on config/acp.json fields. The file is server-local and trusted, but
+# a malformed entry should fail cleanly rather than spawn a runaway argv or
+# build a multi-gigabyte prompt.
+ACP_MAX_NAME_LEN = 60
+ACP_MAX_COMMAND_LEN = 300
+ACP_MAX_ARGS = 32
+ACP_MAX_ARG_LEN = 1000
+ACP_MAX_PROMPT_BYTES = 8 * 1024 * 1024
+
+# Prepended to every ACP prompt. An ACP agent brings its own system prompt, so
+# the notebook's system turn is not forwarded; this replaces it with the one
+# fact the agent cannot discover cheaply -- where it is working. Kept to two
+# sentences so it cannot drift into a second system prompt.
+ACP_CONTEXT_PREAMBLE = (
+    "Context: the current working directory is the user's Markdown notebook. "
+    "Treat the request below as the current turn in an ongoing conversation.")
+
+# Known ACP agents, keyed for config/acp.json's "agent" field. The command line
+# lives HERE, server-side, for the same reason config/acp.json is not writable
+# over HTTP: a config blob any client can POST must never choose a command to
+# execute. Both the config file and the browser may only name a key; the argv
+# is resolved from this table. "commands" is a preference list (an agent that
+# renamed its adapter binary keeps working); "requires" names the wrapping CLI
+# used for the "installed, but the ACP adapter is missing" hint. Sources:
+# docs/research/acp-agent-commands.md.
+ACP_KNOWN_AGENTS = (
+    {"key": "opencode", "label": "opencode",
+     "commands": ("opencode",), "args": ("acp",)},
+    {"key": "claude", "label": "Claude Code",
+     "commands": ("claude-agent-acp", "claude-code-acp"), "args": (),
+     "requires": "claude",
+     "hint": "npm install -g @agentclientprotocol/claude-agent-acp"},
+    {"key": "codex", "label": "Codex",
+     "commands": ("codex-acp",), "args": (),
+     "requires": "codex",
+     "hint": "npm install -g @agentclientprotocol/codex-acp"},
+    {"key": "gemini", "label": "Gemini CLI",
+     "commands": ("gemini",), "args": ("--acp",)},
+    {"key": "goose", "label": "Goose",
+     "commands": ("goose",), "args": ("acp",)},
+    {"key": "cursor", "label": "Cursor Agent",
+     "commands": ("cursor-agent", "agent"), "args": ("acp",)},
+    {"key": "qwen", "label": "Qwen Code",
+     "commands": ("qwen",), "args": ("--acp",)},
+    {"key": "kimi", "label": "Kimi CLI",
+     "commands": ("kimi",), "args": ("acp",)},
+    {"key": "cline", "label": "Cline",
+     "commands": ("cline",), "args": ("--acp",)},
+    {"key": "openhands", "label": "OpenHands",
+     "commands": ("openhands",), "args": ("acp",)},
+    {"key": "auggie", "label": "Augment",
+     "commands": ("auggie",), "args": ("--acp",)},
+    {"key": "copilot", "label": "GitHub Copilot CLI",
+     "commands": ("copilot",), "args": ("--acp",)},
+    {"key": "kiro", "label": "Kiro",
+     "commands": ("kiro-cli",), "args": ("acp",)},
+)
+# Fixed display label for the provider picker, which renders "<name> · <model>";
+# an ACP profile has no model, so it gets this type tag instead. Kept in one
+# place so the server's label and the browser's fallback can't drift.
+ACP_LABEL = "ACP"
+
 # Caps for the AI fetch tool so a single call can't balloon memory or hang
 # the request thread. The fetch tool is admin-gated (like every /api/ai/*
 # route) and single-user, but still bounded.
@@ -1215,6 +1284,138 @@ def load_ai_config():
     except (OSError, ValueError):
         data = {}
     return data if isinstance(data, dict) else {}
+
+
+def _acp_known_agent(key):
+    """Return the allowlist entry for `key`, or None when unknown."""
+    for entry in ACP_KNOWN_AGENTS:
+        if entry["key"] == key:
+            return entry
+    return None
+
+
+def _acp_agent_command(entry):
+    """Absolute path of the first command in the entry's list that exists.
+
+    shutil.which only resolves a name against PATH -- it never executes
+    anything -- so detection stays read-only. The resolved *path* is returned,
+    not the bare name: PATH can change between loading the config and spawning
+    the agent, and pinning the path the user was shown avoids a surprise later.
+    Returns None when nothing in the list is installed.
+    """
+    for candidate in entry["commands"]:
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
+
+
+def load_acp_config():
+    """Read the hand-edited config/acp.json, or {} when unset or invalid.
+
+    ACP profiles are configured only by editing this file, never through
+    POST /api/ai/config (a client-POSTable blob must not pick a command to
+    run). Because it is trusted and hand-edited, the whole object is
+    validated here: any violation turns the feature off ({}), never raises.
+    Shape:
+        {"name": str, "agent": "<known key>", "command": str, "args": [str,
+         ...], "cwd": str, "env": {str: str}, "default": bool,
+         "timeout": positive number}
+
+    "agent" names an entry in ACP_KNOWN_AGENTS and is mutually exclusive with
+    "command": the argv is then resolved from that table, so the file names an
+    entry instead of carrying a command line. "command" stays as the escape
+    hatch for an agent the table does not know.
+    """
+    try:
+        with open(ACP_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
+    name = data.get("name")
+    if (not isinstance(name, str) or not name.strip()
+            or len(name.strip()) > ACP_MAX_NAME_LEN):
+        return {}
+    name = name.strip()
+
+    agent = data.get("agent")
+    if agent is not None and not isinstance(agent, str):
+        return {}
+    agent = (agent or "").strip()
+
+    command = data.get("command")
+    if agent:
+        # An allowlisted agent: resolve the executable from the table. Two
+        # sources for the same argv would be an ambiguity waiting to bite.
+        if command not in (None, ""):
+            return {}
+        entry = _acp_known_agent(agent)
+        if entry is None:
+            return {}
+        resolved = _acp_agent_command(entry)
+        if resolved is None:
+            return {}
+        command = resolved
+        clean_args = list(entry["args"])
+    else:
+        if (not isinstance(command, str) or not command.strip()
+                or len(command.strip()) > ACP_MAX_COMMAND_LEN):
+            return {}
+        command = command.strip()
+        args = data.get("args", [])
+        if args is None:
+            args = []
+        if not isinstance(args, list) or len(args) > ACP_MAX_ARGS:
+            return {}
+        clean_args = []
+        for arg in args:
+            if not isinstance(arg, str) or len(arg) > ACP_MAX_ARG_LEN:
+                return {}
+            clean_args.append(arg)
+
+    cwd = data.get("cwd", "")
+    if cwd is None:
+        cwd = ""
+    if not isinstance(cwd, str):
+        return {}
+
+    env = data.get("env")
+    if env is not None:
+        if not isinstance(env, dict):
+            return {}
+        clean_env = {}
+        for key, value in env.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                return {}
+            clean_env[key] = value
+        env = clean_env
+
+    default = data.get("default", False)
+    if not isinstance(default, bool):
+        return {}
+
+    timeout = data.get("timeout")
+    if timeout is not None:
+        # bool is an int subclass; reject it explicitly as a timeout value.
+        # json.load also accepts NaN/Infinity, so require a finite number --
+        # math.isfinite is False for both, which "<= 0" alone would let pass.
+        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                or not math.isfinite(timeout) or timeout <= 0):
+            return {}
+
+    # A name that collides with an ai.json profile would make this a dead
+    # picker entry: ai_chat resolves the OpenAI profile first, so the ACP
+    # branch could never run. Fail closed rather than expose a provider that
+    # silently does something else.
+    if _saved_server(name) is not None:
+        return {}
+
+    return {"name": name, "agent": agent, "command": command,
+            "args": clean_args, "cwd": cwd, "env": env, "default": default,
+            "timeout": timeout}
 
 
 def save_ai_config(data):
@@ -1281,6 +1482,45 @@ def _sanitize_server(raw, index):
             "api_key": api_key, "model": model.strip()}
 
 
+def _detect_acp_agents():
+    """Which known ACP agents this host can launch (read-only PATH lookup).
+
+    Surfaced so the UI can show what is available and, when a wrapping CLI is
+    installed but its ACP adapter is not, point at the adapter's install
+    command. shutil.which only resolves a name against PATH; nothing is
+    executed, so detection has no side effects.
+    """
+    found = []
+    for entry in ACP_KNOWN_AGENTS:
+        available = _acp_agent_command(entry) is not None
+        item = {"key": entry["key"], "label": entry["label"],
+                "available": available}
+        if not available and entry.get("requires"):
+            if shutil.which(entry["requires"]):
+                item["adapterMissing"] = True
+                item["hint"] = entry.get("hint", "")
+        found.append(item)
+    return found
+
+
+def _public_acp_config():
+    """Browser-safe view of the ACP profile, or None when unconfigured.
+
+    Only the name, a fixed type label, the default flag, and the allowlist key
+    are exposed. command / args / env stay server-side: the browser never needs
+    them and must not be able to read a command line. The key is not a secret --
+    it names an entry in ACP_KNOWN_AGENTS -- and the UI needs it to show which
+    agent is selected. The label exists only so the provider picker (which
+    shows "name · model") has a non-empty suffix.
+    """
+    cfg = load_acp_config()
+    if not cfg:
+        return None
+    return {"name": cfg["name"], "model": ACP_LABEL,
+            "agent": cfg.get("agent", ""),
+            "default": bool(cfg.get("default"))}
+
+
 def _public_ai_config():
     """Config safe for the browser: booleans instead of secrets.
 
@@ -1304,7 +1544,9 @@ def _public_ai_config():
     # kept server-side so the browser never needs to know the LAN address.
     return {"servers": servers, "default": data.get("default", ""),
             "customPrompt": data.get("custom_prompt", ""),
-            "searxngUrl": data.get("searxng_url", "")}
+            "searxngUrl": data.get("searxng_url", ""),
+            "acp": _public_acp_config(),
+            "acpAgents": _detect_acp_agents()}
 
 
 def _saved_server(name):
@@ -1502,6 +1744,179 @@ def _rebuild_chat_message(m):
     return {"role": role, "content": rebuilt}, None
 
 
+def _validate_chat_messages(messages, drop_system=False):
+    """Validate a chat message list, returning (clean, error_response).
+
+    Shared by the OpenAI relay and the ACP branch so both enforce the exact
+    same shape and error strings. On success returns (list, None); any
+    violation returns (None, error_response). With drop_system the caller
+    keeps only user/assistant turns (ACP: the agent brings its own prompt).
+    """
+    if not isinstance(messages, list) or not messages:
+        return None, err("messages must be a non-empty list", 400)
+    clean = []
+    for m in messages:
+        built, problem = _rebuild_chat_message(m)
+        if problem is not None:
+            return None, err("messages entries must be "
+                             "{role: system|user|assistant, content: str or "
+                             "content-part list}: %s" % problem, 400)
+        if drop_system and built["role"] == "system":
+            continue
+        clean.append(built)
+    return clean, None
+
+
+def _flatten_acp_prompt(messages):
+    """Flatten validated chat messages into one ACP prompt string.
+
+    ACP has no multi-turn message array -- one prompt starts the agent's own
+    turn -- so the browser's re-uploaded transcript is serialized as
+    "User: ..." / "Assistant: ..." blocks joined by blank lines, in order.
+    System messages are dropped by the caller (the agent brings its own
+    system prompt). Image parts never reach here (rejected earlier).
+    """
+    labels = {"user": "User", "assistant": "Assistant"}
+    blocks = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            text = "".join(part.get("text", "") for part in content
+                           if part.get("type") == "text")
+        elif isinstance(content, str):
+            text = content
+        else:
+            text = ""
+        blocks.append("%s: %s" % (labels.get(m.get("role"), "User"), text))
+    return "\n\n".join(blocks)
+
+
+def _acp_context_preamble():
+    """Rebuild the context the dropped system turn used to carry.
+
+    The ACP branch drops the notebook's system message (the agent has its own),
+    which also drops the global custom prompt and the open-file hint that the
+    single-model path sends. Both are recoverable from server state -- the
+    custom prompt from config/ai.json, the open note from config/config.json --
+    so rebuild them here instead of teaching the browser a second format. The
+    result is prepended to the flattened transcript on every turn, so it is
+    never duplicated into the conversation.
+    """
+    lines = [ACP_CONTEXT_PREAMBLE]
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        cfg = {}
+    active = cfg.get("activeFile") if isinstance(cfg, dict) else None
+    if isinstance(active, str) and active.strip():
+        lines.append("The note currently open: %s" % active.strip())
+    custom = (load_ai_config().get("custom_prompt") or "").strip()
+    if custom:
+        lines.append(custom)
+    return "\n\n".join(lines)
+
+
+def _acp_sse_error(message):
+    """A one-frame SSE error using the OpenAI relay's error convention.
+
+    Used when ACP cannot even start (the SDK is not installed), so the
+    browser's onmessage path shows it inline exactly like an upstream failure.
+    """
+    def frames():
+        yield "event: error\ndata: %s\n\n" % json.dumps(
+            {"error": True, "status": 0, "message": message})
+
+    return Response(frames(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-store",
+                             "X-Accel-Buffering": "no"})
+
+
+def _acp_chat_response(acp, data):
+    """Stream one ACP turn as SSE: one agent process per request.
+
+    The ACP profile lives in config/acp.json (never in the ai.json server
+    list), so this branch is reached when the POSTed server name matches the
+    ACP profile. Message validation is shared with the OpenAI path; system
+    messages are then dropped (the agent has its own prompt) and image parts
+    are rejected (no vision over ACP in v1). The surviving transcript is
+    flattened to one prompt string. Each SSE event mirrors the OpenAI relay's
+    framing so static/js/api.js parses it unchanged: text rides the OpenAI
+    delta shape, done is `data: [DONE]`, and a failure is the same
+    `event: error` payload. The ACP client module is imported lazily so a
+    missing agent-client-protocol package disables only ACP, never the server.
+    """
+    clean_messages, error = _validate_chat_messages(
+        data.get("messages"), drop_system=True)
+    if error:
+        return error
+    if not clean_messages:
+        return err("ACP profiles require at least one user or assistant "
+                   "message", 400)
+    for m in clean_messages:
+        content = m["content"]
+        if isinstance(content, list) and any(
+                part.get("type") == "image_url" for part in content):
+            return err("ACP profiles do not support image attachments", 400)
+
+    prompt = _acp_context_preamble() + "\n\n" + _flatten_acp_prompt(clean_messages)
+    if len(prompt.encode("utf-8")) > ACP_MAX_PROMPT_BYTES:
+        return err("ACP prompt exceeds %d bytes" % ACP_MAX_PROMPT_BYTES, 400)
+
+    try:
+        import acp_client
+    except ImportError:
+        return _acp_sse_error("ACP support is unavailable: the "
+                              "agent-client-protocol package is not installed")
+
+    command = acp["command"]
+    args = list(acp.get("args") or [])
+    # The agent runs with the configured cwd, else the notebook folder, so a
+    # relative-path tool call resolves against the notebook by default.
+    cwd = acp.get("cwd") or DATA_DIR
+    env = acp.get("env")
+    timeout = acp.get("timeout")
+
+    def pump():
+        try:
+            for event in acp_client.run_turn(
+                    command, args=args, cwd=cwd, env=env,
+                    prompt=prompt, timeout=timeout, keepalive=True):
+                etype = event.get("type")
+                if etype == "text":
+                    yield "data: %s\n\n" % json.dumps(
+                        {"choices": [{"delta": {"content": event["text"]}}]},
+                        separators=(",", ":"))
+                elif etype == "trace":
+                    # A tool the agent started. Carried as a namespaced frame
+                    # the OpenAI-shaped parser ignores; the panel renders it as
+                    # a trace line so a long multi-step turn shows activity.
+                    yield "data: %s\n\n" % json.dumps(
+                        {"acp": "trace", "text": event["text"]},
+                        separators=(",", ":"))
+                elif etype == "done":
+                    yield "data: [DONE]\n\n"
+                    return
+                elif etype == "error":
+                    yield "event: error\ndata: %s\n\n" % json.dumps(
+                        {"error": True, "status": 0,
+                         "message": event["message"]})
+                    return
+                else:
+                    # Idle poll: a keep-alive comment so a long silent agent
+                    # turn (multi-step tool run) is not dropped as a timeout.
+                    yield ": ping\n\n"
+        except GeneratorExit:
+            # Browser closed mid-stream; the runner generator is closed too,
+            # which cancels the turn and runs the SDK's subprocess kill
+            # ladder. Mirror the OpenAI relay's re-raise.
+            raise
+
+    return Response(pump(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-store",
+                             "X-Accel-Buffering": "no"})
+
+
 @app.route("/api/ai/chat", methods=["POST"])
 @admin_required
 def ai_chat():
@@ -1517,24 +1932,27 @@ def ai_chat():
     server-side; the browser never sees it. The upstream SSE byte stream is
     relayed unmodified with Content-Type: text/event-stream (this endpoint
     IS the upstream body).
+
+    The same route serves ACP profiles (config/acp.json): if the name is not
+    an OpenAI server but matches the ACP profile, the turn is driven through
+    acp_client and streamed in the same SSE envelope.
     """
-    stored = _saved_server((request.get_json(silent=True) or {}).get("server", ""))
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    stored = _saved_server(data.get("server", ""))
     if stored is None:
+        acp = load_acp_config()
+        if acp and acp.get("name") == data.get("server", ""):
+            return _acp_chat_response(acp, data)
         return err("Unknown or missing server", 400)
     url = _chat_url(stored.get("base_url", ""))
     if not url:
         return err("Server has no baseUrl configured", 400)
-    data = request.get_json()
     messages = data.get("messages")
-    if not isinstance(messages, list) or not messages:
-        return err("messages must be a non-empty list", 400)
-    clean_messages = []
-    for m in messages:
-        built, problem = _rebuild_chat_message(m)
-        if problem is not None:
-            return err("messages entries must be {role: system|user|assistant, "
-                       "content: str or content-part list}: %s" % problem, 400)
-        clean_messages.append(built)
+    clean_messages, error = _validate_chat_messages(messages)
+    if error:
+        return error
     # White-list the upstream payload: the browser's "server" selector and
     # any extra keys must not leak through to the provider.
     payload_body = {"model": stored.get("model") or "default",

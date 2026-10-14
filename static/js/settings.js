@@ -1004,6 +1004,15 @@
 
   let aiProviders = [];      // working copy while the modal is open
   let aiDefaultName = "";
+  // The server-local ACP profile (config/acp.json), mirrored from the last
+  // GET/POST response. Deliberately kept OUT of aiProviders: that array is
+  // the POST payload for every save path, so anything in it is re-sent. The
+  // ACP entry is read-only here and must never round-trip through a save.
+  let aiAcpProfile = null;
+  // The server's read-only PATH probe (cfg.acpAgents): which known ACP agent
+  // CLIs are installed. Display-only, like aiAcpProfile — never part of any
+  // save payload.
+  let aiAcpAgents = [];
   // Global custom prompt: snapshot at modal open + dirty flag for the
   // prompt's own Save button (independent from provider add/edit).
   let aiPromptSaved = "";
@@ -1191,6 +1200,8 @@
         payload, aiDefaultName, aiPromptEl ? aiPromptEl.value : undefined);
       aiProviders = (cfg && cfg.servers) || [];
       aiDefaultName = (cfg && cfg.default) || "";
+      aiAcpProfile = (cfg && cfg.acp) || null;
+      aiAcpAgents = (cfg && cfg.acpAgents) || [];
       if (cfg && typeof cfg.customPrompt === "string") {
         aiPromptSaved = cfg.customPrompt;
         if (aiPromptEl) aiPromptEl.value = aiPromptSaved;
@@ -1280,11 +1291,97 @@
     }
   }
 
+  /* One compact help-text line per detected ACP agent: label + status.
+   * `available` means the executable was found on the server's PATH;
+   * `adapterMissing` (with the server's `hint`) means the wrapping CLI is
+   * installed but its ACP adapter binary is not, so the agent cannot run
+   * yet. Absent/empty fields are skipped rather than rendered blank. */
+  function buildAcpAgentLines(agents) {
+    const box = document.createElement("div");
+    box.className = "settings-ai-acp-agents";
+    for (const a of agents) {
+      const label = (a && (a.label || a.key)) || "";
+      if (!label) continue;
+      const line = document.createElement("div");
+      line.className = "settings-ai-acp-agent";
+      line.dataset.acpKey = (a && a.key) || "";
+      const statusEl = document.createElement("span");
+      statusEl.className = "settings-ai-acp-agent-status";
+      if (a.available) {
+        statusEl.textContent = "installed";
+      } else if (a.adapterMissing) {
+        statusEl.textContent = a.hint
+          ? "installed — ACP adapter missing (" + a.hint + ")"
+          : "installed — ACP adapter missing";
+      } else {
+        statusEl.textContent = "not installed";
+      }
+      line.textContent = label + " — ";
+      line.appendChild(statusEl);
+      box.appendChild(line);
+    }
+    return box;
+  }
+
+  /* Read-only ACP row, rendered straight from cfg.acp and never pushed into
+   * aiProviders (so a provider save cannot re-send or overwrite it). Uses a
+   * distinct class, not .settings-ai-row, so it is not mistaken for an
+   * editable provider. */
+  function buildAiAcpRow(acp, agents) {
+    const row = document.createElement("div");
+    row.className = "settings-ai-acp-row settings-help";
+    row.dataset.acpName = acp.name;
+
+    const title = document.createElement("div");
+    title.textContent = "ACP agent: " + acp.name + " — local agent over the " +
+      "Agent Client Protocol; configured in config/acp.json on the server " +
+      "(not editable here).";
+    row.appendChild(title);
+
+    // Which allowlist key the profile selects. An empty key is legitimate:
+    // the profile then carries an explicit `command` instead.
+    const selected = document.createElement("div");
+    selected.className = "settings-ai-acp-selected";
+    selected.textContent = acp.agent
+      ? "Selected agent key: " + acp.agent
+      : "Selected agent key: none — this profile uses an explicit " +
+        "\"command\" instead of an allowlist key.";
+    row.appendChild(selected);
+
+    const lines = buildAcpAgentLines(agents || []);
+    if (lines.childElementCount) row.appendChild(lines);
+    return row;
+  }
+
+  /* Shown when config/acp.json has no profile but the server detected at
+   * least one usable agent. Read-only: it only names the allowlist key the
+   * user could add by hand. Rendered as help text under the provider list. */
+  function buildAiAcpInfoRow(agents) {
+    const row = document.createElement("div");
+    row.className = "settings-ai-acp-info settings-help";
+
+    const title = document.createElement("div");
+    title.textContent = "ACP agents were detected on this server, but none " +
+      "is configured. Enable one by adding \"agent\": \"<key>\" (or a " +
+      "\"command\") to config/acp.json on the server (not editable here).";
+    row.appendChild(title);
+
+    row.appendChild(buildAcpAgentLines(agents));
+    return row;
+  }
+
   function renderAiList() {
     if (!aiListEl || !aiCountEl) return;
     aiCountEl.textContent = String(aiProviders.length);
     aiListEl.innerHTML = "";
     for (const p of aiProviders) aiListEl.appendChild(buildAiRow(p));
+    if (aiAcpProfile && aiAcpProfile.name) {
+      aiListEl.appendChild(buildAiAcpRow(aiAcpProfile, aiAcpAgents));
+    } else if (aiAcpAgents.some(a => a && (a.available || a.adapterMissing))) {
+      // No profile, but a usable agent exists: say so rather than render
+      // nothing. If nothing was detected at all, stay silent.
+      aiListEl.appendChild(buildAiAcpInfoRow(aiAcpAgents));
+    }
   }
 
   async function renderAiProviders() {
@@ -1293,6 +1390,8 @@
     if (!isAdmin()) {
       aiCountEl.textContent = "—";
       aiListEl.textContent = "";
+      aiAcpProfile = null;
+      aiAcpAgents = [];
       refreshAiControls();
       return;
     }
@@ -1300,6 +1399,8 @@
       const cfg = await NB.api.aiGetConfig();
       aiProviders = (cfg && cfg.servers) || [];
       aiDefaultName = (cfg && cfg.default) || "";
+      aiAcpProfile = (cfg && cfg.acp) || null;
+      aiAcpAgents = (cfg && cfg.acpAgents) || [];
       aiPromptSaved = (cfg && cfg.customPrompt) || "";
       if (aiPromptEl) aiPromptEl.value = aiPromptSaved;
       aiSearxngSaved = (cfg && typeof cfg.searxngUrl === "string")

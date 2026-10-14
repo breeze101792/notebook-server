@@ -12,8 +12,9 @@ Two folders are deliberately separate:
 - `notebook/` holds the user's notes. It is a symlink to
   `/mnt/projects/notebook` in this checkout.
 - `config/` holds settings: `config.json` (UI state), `auth.json`
-  (password hashes, token hashes, session-signing secret), and `ai.json`
-  (AI provider profiles).
+  (password hashes, token hashes, session-signing secret), `ai.json`
+  (OpenAI-compatible provider profiles), and `acp.json` (one hand-edited
+  ACP agent command).
 
 `notebook.template/` ships a starter notebook. On a fresh install the
 server copies it into `notebook/`.
@@ -28,9 +29,11 @@ test suites are described in [`../testing/README.md`](../testing/README.md).
 
 ## 2. Backend structure
 
-`app.py` is one 2537-line file. Every route returns JSON except `GET /`
-(serves `index.html`), `GET /agent.md` (serves Markdown), and
-`POST /api/ai/chat` (relays `text/event-stream`).
+The backend is two files. `app.py` is the 2878-line Flask module: every route
+returns JSON except `GET /` (serves `index.html`), `GET /agent.md` (serves
+Markdown), and `POST /api/ai/chat` (relays `text/event-stream`).
+`acp_client.py` (298 lines) is the one exception to the single-file rule —
+see [Design decisions](#9-design-decisions-and-trade-offs).
 
 ### Import-time path resolution
 
@@ -100,13 +103,16 @@ file then calls `os.replace`. The temp name includes pid, thread id, and a
 counter (`app.py:238-243`), so concurrent writers to the same target never
 share a temp file. `save_auth()` uses the same pattern (`app.py:449`).
 
-Three files sit under `config/`: `config.json` (opaque UI-state JSON,
+Four files sit under `config/`: `config.json` (opaque UI-state JSON,
 stored verbatim, POSTable by any authenticated client), `auth.json`
 (`secret`, password hashes, `tokens` — keys documented at
-`app.py:35-43`), and `ai.json` (provider profiles, global prompt,
-SearXNG URL). Both secrets files are split out of the POSTable
-`config.json` blob: a client that can POST settings must not reach
-credential storage.
+`app.py:35-43`), `ai.json` (provider profiles, global prompt,
+SearXNG URL), and `acp.json` (a hand-edited ACP agent `command` + `args`).
+Three of the four are split out of the POSTable `config.json` blob for the
+same reason: a client that can POST settings must not reach credential
+storage (`auth.json`, `ai.json`), and must never be able to choose a command
+to execute (`acp.json`). `acp.json` is read-only from the server's side:
+no route writes it.
 
 ## 4. Auth architecture
 
@@ -163,7 +169,7 @@ client can read or rewrite the provider profiles and spend the stored key.
 See [Security posture](#6-security-posture) for the full caveat. The API key
 never appears in a response to the browser, but it is attached server-side to
 the request sent to whatever `base_url` is saved. `config/ai.json` is
-snake_case on disk (keys documented at `app.py:1154-1163`):
+snake_case on disk (documented with the section banner at `app.py:1168`):
 
 ```
 {
@@ -175,30 +181,48 @@ snake_case on disk (keys documented at `app.py:1154-1163`):
 ```
 
 The HTTP API is camelCase (`baseUrl`, `customPrompt`, `searxngUrl`) and
-masks `api_key` to a boolean `hasKey` (`_public_ai_config`,
-`app.py:1263-1286`). The stored key is never echoed to a client. A POST
-with `apiKey: ""` plus `replaceSecret: true` carries the stored key over
-server-side.
+masks `api_key` to a boolean `hasKey` (`_public_ai_config`, `app.py:1402`).
+The stored key is never echoed to a client. A POST with `apiKey: ""` plus
+`replaceSecret: true` carries the stored key over server-side.
 
 `GET /api/ai/probe` checks reachability: an upstream HTTP error counts as
 reachable, while a connection failure returns `{ok: false}` with HTTP 200.
 `POST /api/ai/chat` streams the completion. The server rebuilds the
 upstream payload from the model, messages, and a `stream: true` flag, so
-extra client keys never reach the provider (`app.py:1459-1463`). The
+extra client keys never reach the provider (`app.py:1802-1804`). The
 stored `api_key` is attached server-side by `_upstream_auth_headers`
-(`app.py:1600-1603`). The upstream bytes are relayed verbatim as
-`text/event-stream` (`relay()`, `app.py:1470-1499`). Upstream errors are
-re-emitted in-band as `event: error` frames (`app.py:1490-1495`), because
+(`app.py:1941`). The upstream bytes are relayed verbatim as
+`text/event-stream` (`relay()`, `app.py:1811-1840`). Upstream errors are
+re-emitted in-band as `event: error` frames (`app.py:1825-1836`), because
 EventSource cannot read a non-200 status; the relay handles `GeneratorExit`
 so an early disconnect does not become an error banner.
+
+**ACP branch.** The same route serves the ACP provider. `config/acp.json` is
+a separate, hand-edited file holding one agent profile (`name`, `command`,
+`args`, `cwd`, `env`, `default`, `timeout`); `load_acp_config()`
+(`app.py:1240`) validates the whole object and fails closed to `{}` on any
+violation, and it deliberately never comes through `POST /api/ai/config`
+(`app.py:1182-1185`) — a config blob any authed client can POST must not be
+able to choose a command to execute. `ai_chat` resolves an OpenAI profile
+first; when the posted `server` instead matches the ACP name it calls
+`_acp_chat_response` (`app.py:1686-1761`). Messages go through the shared
+`_validate_chat_messages` (`app.py:1624`), the system turn is dropped, image
+parts are rejected, and the rest is flattened to one prompt
+(`_flatten_acp_prompt`, `app.py:1647`). The turn is streamed by
+`acp_client.run_turn` as the same OpenAI delta frames plus `data: [DONE]`
+and `event: error` frames, so the browser parser is unchanged. `acp_client`
+is imported lazily (`app.py:1717`), so a missing `agent-client-protocol`
+package disables only ACP rather than the server. See
+[ai-assistant.md](ai-assistant.md#acp-providers) for the full contract,
+including the agent's filesystem trust boundary.
 
 `POST /api/ai/fetch` fetches a URL server-side for the assistant's fetch
 tool, since the browser cannot cross CORS. Only http(s) is allowed. The
 body is capped at `AI_FETCH_MAX_BYTES` (512 KiB) and times out after
-`AI_FETCH_TIMEOUT` (15s) (`app.py:1168-1169`, route `app.py:1502-1546`).
+`AI_FETCH_TIMEOUT` (15s) (`app.py:1204-1205`, route `app.py:1843`).
 `POST /api/ai/search` queries a SearXNG instance's JSON output and returns
 the top `AI_SEARXNG_MAX_RESULTS` (10) results with a 15-second
-`AI_SEARXNG_TIMEOUT` (`app.py:1170-1171`, route `app.py:1549`). With no
+`AI_SEARXNG_TIMEOUT` (`app.py:1206-1207`, route `app.py:1890`). With no
 `searxng_url` configured it returns 400, and the model is told the tool is
 disabled.
 
@@ -272,13 +296,18 @@ repository, not generated code.
 
 ## 9. Design decisions and trade-offs
 
-**Two-folder split.** `auth.json` and `ai.json` are split out of
+**Config split.** `auth.json`, `ai.json`, and `acp.json` are split out of
 `config.json` so the client-POSTable settings blob provably cannot carry
-secrets. The cost is three small files instead of one.
+secrets (`auth.json`, `ai.json`) or choose a command to execute
+(`acp.json`). The cost is four small files instead of one.
 
 **Single-file backend.** `app.py` keeps import-time state (paths, seeding)
 trivial and avoids a package layout for a single-user tool. The cost is a
-large file; section banners and the line map above mitigate it.
+large file; section banners and the line map above mitigate it. The one
+deliberate exception is `acp_client.py`: it owns a subprocess and an asyncio
+loop on a daemon thread, is coupled to the `agent-client-protocol` SDK, and
+imports neither Flask nor `app.py`, so it stays testable against a stub agent
+with no server around it.
 
 **No build step.** There is no bundler, transpiler, or framework. The cost
 is 29 HTTP requests on a cold load, which the service worker caches. The
@@ -306,13 +335,14 @@ renderer is the exception: it runs in a sandboxed iframe with
 
 ```
 notebook-server/
-  app.py                  single-file Flask backend (2537 lines)
+  app.py                  Flask backend (2878 lines)
+  acp_client.py           Flask-free ACP client, one agent process per turn (298 lines)
   agent.md                machine-readable API guide, served at /agent.md
   start.sh                venv bootstrap + launcher
   requirements.txt        Python dependencies
   notebook/               notes (symlink to /mnt/projects/notebook)
   notebook.template/      starter notebook copied on first run
-  config/                 config.json, auth.json, ai.json
+  config/                 config.json, auth.json, ai.json, acp.json
   templates/index.html    the single SPA shell (983 lines)
   static/
     manifest.json         PWA manifest

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler
 
 # Put the project root on sys.path so `import app` works from tests/.
@@ -2451,10 +2452,16 @@ class TestAiConfig(BaseTest):
     never echo back."""
 
     def test_get_empty_by_default(self):
-        code, data = self.jget("/api/ai/config")
+        # Patch which so acpAgents is deterministic (all absent) rather than
+        # reflecting whatever happens to be installed on the host.
+        with mock.patch.object(nb.shutil, "which", return_value=None):
+            code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
+        expected_agents = [{"key": e["key"], "label": e["label"],
+                            "available": False} for e in nb.ACP_KNOWN_AGENTS]
         self.assertEqual(data, {"servers": [], "default": "", "customPrompt": "",
-                                "searxngUrl": ""})
+                                "searxngUrl": "", "acp": None,
+                                "acpAgents": expected_agents})
         # No file is created by a read.
         self.assertFalse(os.path.isfile(nb.AI_FILE))
 
@@ -2883,6 +2890,770 @@ class TestAiChat(BaseTest):
                              json={"server": "stub", "messages":
                                    [{"role": "user", "content": "x"}]}
                              ).status_code, 401)
+
+    def test_acp_name_collision_routes_to_openai_profile(self):
+        # With an ai.json profile and a config/acp.json profile sharing a name,
+        # the collision disables ACP, so POST /api/ai/chat must resolve the
+        # OpenAI profile and relay it -- never hand the turn to the ACP runner.
+        # The ACP command is deliberately unrunnable: were it reached, the
+        # response would be an in-band ACP error frame instead of the stream.
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump({"name": "stub", "command": "/nonexistent/acp-agent",
+                       "args": [], "timeout": 5}, f)
+        r = self._chat({"server": "stub",
+                        "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"hello"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        self.assertEqual(nb.LAST_UPSTREAM["path"], "/v1/chat/completions")
+
+def _pid_reaped(pid, deadline=5.0):
+    """True once `pid` no longer exists (its parent has reaped it).
+
+    The ACP runner enqueues the terminal event only after the spawn context
+    manager has finished its teardown, so a completed turn normally means the
+    child is already gone; poll anyway so a slow child-exit is not a flake.
+    ESRCH means reaped; EPERM means still alive (owned by another user), which
+    counts as not reaped.
+    """
+    end = time.time() + deadline
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            return False
+        if time.time() >= end:
+            return False
+        time.sleep(0.02)
+
+
+class TestAcpConfig(BaseTest):
+    """config/acp.json: a hand-edited, server-local ACP profile.
+
+    GET /api/ai/config exposes a masked view under "acp" (name + fixed type
+    label + selected agent key + default flag only). Anything malformed turns
+    the feature off (acp = None) without raising. The file is deliberately NOT
+    POSTable: POST /api/ai/config must never create or touch it, because a
+    config blob any authed client can send must not be able to choose a command
+    to run.
+    """
+
+    def _write_acp(self, obj):
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+
+    def test_valid_file_exposed_masked(self):
+        self._write_acp({"name": "  opencode  ", "command": "opencode",
+                         "args": ["acp"], "default": True, "timeout": 30})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
+                                       "agent": "", "default": True})
+        # Only name/model/agent/default reach the browser; the command line and
+        # its cwd/env/timeout stay server-side.
+        self.assertEqual(set(data["acp"]), {"name", "model", "agent", "default"})
+        self.assertNotIn("command", data["acp"])
+        self.assertNotIn("args", data["acp"])
+
+    def test_default_false_when_absent(self):
+        self._write_acp({"name": "opencode", "command": "opencode"})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
+                                       "agent": "", "default": False})
+
+    def test_missing_file_is_none(self):
+        self.assertFalse(os.path.isfile(nb.ACP_FILE))
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertIsNone(data["acp"])
+
+    def test_malformed_files_degrade_to_none(self):
+        # Each entry is invalid per load_acp_config(); the endpoint must
+        # answer 200 with acp=None, never raise.
+        for bad in (
+            {},                                                    # no name/command
+            {"command": "opencode"},                               # no name
+            {"name": "x"},                                         # no command
+            {"name": "x", "command": ""},                          # blank command
+            {"name": "x", "command": "c", "args": "not-a-list"},   # args not a list
+            {"name": "x", "command": "c", "args": [1, 2]},         # non-string arg
+            {"name": "x", "command": "c", "args": ["ok", {"x": 1}]},
+            {"name": "x", "command": "c", "timeout": -1},          # bad timeout
+            {"name": "x", "command": "c", "timeout": 0},
+            {"name": "x", "command": "c", "timeout": "soon"},
+            {"name": "x", "command": "c", "timeout": True},        # bool rejected
+            {"name": "x", "command": "c", "timeout": float("nan")},   # NaN
+            {"name": "x", "command": "c", "timeout": float("inf")},   # Infinity
+            {"name": "x", "command": "c", "env": {"A": 1}},         # non-str env
+            {"name": "x", "command": "c", "cwd": 5},                # non-str cwd
+            {"name": "x", "command": "c", "default": "yes"},       # non-bool default
+            "not-an-object",
+            [1, 2, 3],
+        ):
+            with self.subTest(bad=bad):
+                if isinstance(bad, str):
+                    with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+                        f.write(bad)          # valid JSON string scalar
+                elif isinstance(bad, list):
+                    with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+                        f.write(json.dumps(bad))
+                else:
+                    self._write_acp(bad)
+                code, data = self.jget("/api/ai/config")
+                self.assertEqual(code, 200)
+                self.assertIsNone(data["acp"], "expected None for %r" % (bad,))
+
+    def test_invalid_json_is_none(self):
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            f.write("{ this is not json")
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertIsNone(data["acp"])
+
+    def test_config_post_never_touches_acp_file(self):
+        # A hand-edited ACP profile must survive any number of config saves
+        # byte-for-byte, and no save may ever create the file.
+        payload = {"name": "acpstub", "command": "python", "args": ["agent.py"],
+                   "cwd": "/tmp", "env": {"A": "b"}, "default": True,
+                   "timeout": 12}
+        self._write_acp(payload)
+        with open(nb.ACP_FILE, "rb") as f:
+            before = f.read()
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "openai", "baseUrl": "https://api.openai.com",
+            "apiKey": "sk-secret", "model": "gpt-4o-mini",
+        }], "default": "openai", "customPrompt": "hi"})
+        self.assertEqual(r.status_code, 200)
+        with open(nb.ACP_FILE, "rb") as f:
+            self.assertEqual(f.read(), before)
+        # And starting with no file, a save must not create one.
+        os.remove(nb.ACP_FILE)
+        r = self.post("/api/ai/config", {"servers": [], "default": ""})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(os.path.isfile(nb.ACP_FILE))
+
+    def test_name_collision_with_ai_profile_disables_acp(self):
+        # A name shared with an ai.json profile would be a dead picker entry:
+        # ai_chat resolves the OpenAI profile first, so the ACP branch could
+        # never run. load_acp_config() fails closed instead.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "shared", "baseUrl": "http://x", "apiKey": "k"}],
+            "default": "shared"})
+        self.assertEqual(r.status_code, 200)
+        self._write_acp({"name": "shared", "command": "opencode",
+                         "args": ["acp"]})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertIsNone(data["acp"])
+        # A non-colliding name is still exposed...
+        self._write_acp({"name": "other", "command": "opencode",
+                         "args": ["acp"]})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(data["acp"], {"name": "other", "model": "ACP",
+                                       "agent": "", "default": False})
+        # ...and removing the colliding profile re-enables the entry.
+        self._write_acp({"name": "shared", "command": "opencode",
+                         "args": ["acp"]})
+        self.post("/api/ai/config", {"servers": [], "default": ""})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(data["acp"], {"name": "shared", "model": "ACP",
+                                       "agent": "", "default": False})
+
+    # --- agent-key resolution (ACP_KNOWN_AGENTS) --------------------------
+    def test_known_agent_key_resolves_command(self):
+        # "agent" names a table entry; the command and args are resolved from
+        # the table (absolute path from which()), not carried in the file.
+        fake = "/fake/bin/opencode"
+        self._write_acp({"name": "x", "agent": "opencode"})
+        with mock.patch.object(nb.shutil, "which",
+                               side_effect=lambda name: fake if name == "opencode"
+                               else None):
+            cfg = nb.load_acp_config()
+            code, data = self.jget("/api/ai/config")
+        self.assertEqual(cfg["agent"], "opencode")
+        self.assertEqual(cfg["command"], fake)
+        self.assertEqual(cfg["args"], ["acp"])
+        self.assertEqual(data["acp"]["agent"], "opencode")
+
+    def test_known_agent_missing_executable_fails_closed(self):
+        # A known key whose executable is not on PATH must turn ACP off, never
+        # store a command that cannot launch.
+        self._write_acp({"name": "x", "agent": "opencode"})
+        with mock.patch.object(nb.shutil, "which", return_value=None):
+            self.assertEqual(nb.load_acp_config(), {})
+            code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertIsNone(data["acp"])
+
+    def test_unknown_agent_key_fails_closed(self):
+        self._write_acp({"name": "x", "agent": "definitely-not-a-known-agent"})
+        with mock.patch.object(nb.shutil, "which", return_value="/somewhere"):
+            self.assertEqual(nb.load_acp_config(), {})
+            code, data = self.jget("/api/ai/config")
+        self.assertIsNone(data["acp"])
+
+    def test_agent_and_command_are_mutually_exclusive(self):
+        # Two sources for the same argv would be an ambiguity; fail closed.
+        self._write_acp({"name": "x", "agent": "opencode",
+                         "command": "opencode"})
+        with mock.patch.object(nb.shutil, "which", return_value="/fake/opencode"):
+            self.assertEqual(nb.load_acp_config(), {})
+            code, data = self.jget("/api/ai/config")
+        self.assertIsNone(data["acp"])
+
+    def test_agent_must_be_a_string(self):
+        self._write_acp({"name": "x", "agent": 123})
+        self.assertEqual(nb.load_acp_config(), {})
+
+    def test_command_escape_hatch_has_empty_agent(self):
+        # The command+args form is the escape hatch for an agent the table does
+        # not know; it loads with agent == "".
+        self._write_acp({"name": "x", "command": "/bin/echo", "args": ["hi"]})
+        cfg = nb.load_acp_config()
+        self.assertEqual(cfg["agent"], "")
+        self.assertEqual(cfg["command"], "/bin/echo")
+        self.assertEqual(cfg["args"], ["hi"])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(data["acp"]["agent"], "")
+
+    # --- detection (_detect_acp_agents) -----------------------------------
+    def test_detect_agents_marks_available_and_adapter_missing(self):
+        present = {"opencode": "/fake/bin/opencode", "claude": "/fake/bin/claude"}
+        with mock.patch.object(nb.shutil, "which",
+                               side_effect=lambda name: present.get(name)):
+            agents = nb._detect_acp_agents()
+            code, data = self.jget("/api/ai/config")
+        by_key = {a["key"]: a for a in agents}
+        self.assertEqual(len(agents), len(nb.ACP_KNOWN_AGENTS))
+        for item in agents:
+            self.assertEqual(set(item) - {"adapterMissing", "hint"},
+                             {"key", "label", "available"})
+        # (a) present adapter -> available.
+        self.assertTrue(by_key["opencode"]["available"])
+        self.assertNotIn("adapterMissing", by_key["opencode"])
+        # (b) wrapping CLI present, adapter missing -> hint.
+        self.assertFalse(by_key["claude"]["available"])
+        self.assertTrue(by_key["claude"].get("adapterMissing"))
+        self.assertIn("claude", by_key["claude"].get("hint", ""))
+        # (c) nothing present -> unavailable, no hint.
+        self.assertFalse(by_key["codex"]["available"])
+        self.assertNotIn("adapterMissing", by_key["codex"])
+        # The endpoint exposes the same array.
+        self.assertEqual(data["acpAgents"], agents)
+
+    def test_detect_agents_is_a_read_only_path_lookup(self):
+        # detection must only resolve bare names against PATH; nothing runs.
+        calls = []
+
+        def fake_which(name):
+            calls.append(name)
+            return None
+
+        with mock.patch.object(nb.shutil, "which", side_effect=fake_which):
+            agents = nb._detect_acp_agents()
+            bogus = nb._acp_agent_command(
+                {"commands": ("definitely-not-a-real-binary-xyz",), "args": ()})
+        self.assertIsNone(bogus)
+        self.assertTrue(calls)
+        # Every probe was a bare command name, never a path or a shell string.
+        for name in calls:
+            self.assertNotIn("/", name)
+            self.assertNotIn(" ", name)
+        self.assertTrue(all(a["available"] is False for a in agents))
+
+
+class TestAcpChat(BaseTest):
+    """POST /api/ai/chat driven through the ACP branch (config/acp.json).
+
+    Every turn spawns one stub agent subprocess (tests/fixtures/
+    stub_acp_agent.py -- stdlib-only, newline-delimited JSON-RPC on stdio).
+    A per-test pidfile records the child's PID so each test can prove the
+    backend reaped it. No real agent (`opencode` or otherwise) is ever run.
+    """
+
+    STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
+    SERVER = "acpstub"
+
+    def setUp(self):
+        super().setUp()
+        self._pidfile = os.path.join(nb.CONFIG_DIR, "acp-stub.pid")
+        self._configure_acp()
+
+    # --- helpers --------------------------------------------------------
+    def _configure_acp(self, mode="normal", timeout=15, command=None,
+                       args=None, name=None):
+        if args is None:
+            args = [self.STUB, "--mode", mode, "--pidfile", self._pidfile]
+        cfg = {"name": name or self.SERVER,
+               "command": sys.executable if command is None else command,
+               "args": args,
+               "cwd": nb.DATA_DIR,
+               "timeout": timeout}
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def _configure_acp_agent(self, key, timeout=15, name=None):
+        """Write config/acp.json in the key-based form (no command/args)."""
+        cfg = {"name": name or self.SERVER, "agent": key,
+               "cwd": nb.DATA_DIR, "timeout": timeout}
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def _chat(self, body):
+        return self.client.post("/api/ai/chat", json=body)
+
+    def _write_config(self, obj):
+        """Overwrite config/config.json (the frontend state blob)."""
+        with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+
+    def _write_ai_custom_prompt(self, text):
+        """Write config/ai.json carrying the global custom prompt."""
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [], "default": "", "custom_prompt": text}, f)
+
+    def _user_turn(self, text="hello"):
+        return {"server": self.SERVER,
+                "messages": [{"role": "user", "content": text}]}
+
+    def _assert_reaped(self, deadline=5.0):
+        """The stub writes its PID before doing anything; assert it is gone.
+
+        `deadline` is how long to wait for reaping. The fixed agent path
+        completes its kill ladder *before* reporting the turn done, so the
+        default is generous but an eof test can pass a tight value to prove
+        the child was already gone when the terminal event arrived.
+        """
+        if not os.path.exists(self._pidfile):
+            self.fail("stub pidfile was never written")
+        with open(self._pidfile, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+        self.assertTrue(_pid_reaped(pid, deadline),
+                        "stub child %d was not reaped" % pid)
+
+    # --- key-based launch -------------------------------------------------
+    def test_agent_key_launches_agent_end_to_end(self):
+        # Key-based config: "agent": "opencode" with no command. which() is
+        # faked to resolve the key to a wrapper that logs its argv and runs the
+        # stub, proving the table path really resolves and launches an agent
+        # (and that the table's args are the ones passed).
+        import shlex
+        argv_log = os.path.join(nb.CONFIG_DIR, "wrapper-argv.txt")
+        wrapper = os.path.join(nb.CONFIG_DIR, "fake-opencode")
+        wrapper_src = (
+            "#!/bin/sh\n"
+            "printf '%s\\n' \"$@\" > " + shlex.quote(argv_log) + "\n"
+            "exec " + shlex.quote(sys.executable) + " "
+            + shlex.quote(self.STUB) + " --mode normal --pidfile "
+            + shlex.quote(self._pidfile) + "\n"
+        )
+        with open(wrapper, "w", encoding="utf-8") as f:
+            f.write(wrapper_src)
+        os.chmod(wrapper, 0o755)
+
+        self._configure_acp_agent("opencode")
+        with mock.patch.object(nb.shutil, "which",
+                               side_effect=lambda name: wrapper if name == "opencode"
+                               else None):
+            r = self._chat(self._user_turn())
+            body = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn('{"choices":[{"delta":{"content":" world"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        # The wrapper saw exactly the table's args for the opencode entry.
+        with open(argv_log, encoding="utf-8") as f:
+            self.assertEqual(f.read().split(), ["acp"])
+        self._assert_reaped()
+
+    # --- happy path ------------------------------------------------------
+    def test_chat_streams_two_deltas_then_done(self):
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/event-stream", r.content_type)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn('{"choices":[{"delta":{"content":" world"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        # No in-band error frame on the success path.
+        self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_tool_call_update_streams_a_trace_frame(self):
+        # A tool_call update becomes a namespaced trace frame the panel renders
+        # as a trace line; the text deltas and [DONE] must be unaffected.
+        self._configure_acp(mode="trace")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"acp":"trace","text":"Running a shell command"}', body)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn('{"choices":[{"delta":{"content":" world"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_system_message_dropped_from_flattened_prompt(self):
+        # The ACP agent brings its own system prompt, so the client drops
+        # system turns before flattening. The echo stub returns the exact
+        # prompt it received, so the system text must be absent from the
+        # stream while the user/assistant turns survive, labelled.
+        self._configure_acp(mode="echo")
+        r = self._chat({"server": self.SERVER, "messages": [
+            {"role": "system", "content": "SYS-SECRET-INSTRUCTION"},
+            {"role": "user", "content": "user-visible-turn"},
+            {"role": "assistant", "content": "prior-reply"},
+        ]})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("User: user-visible-turn", body)
+        self.assertIn("Assistant: prior-reply", body)
+        self.assertNotIn("SYS-SECRET-INSTRUCTION", body)
+        self.assertNotIn("System:", body)
+        self._assert_reaped()
+
+    # --- context preamble -------------------------------------------------
+    def test_preamble_reaches_agent_with_open_file_and_custom_prompt(self):
+        # The dropped system turn's context is rebuilt into the ACP prompt: the
+        # fixed lead, the open note from config/config.json, and the global
+        # custom prompt from config/ai.json. The echo stub returns the exact
+        # prompt it received.
+        self._configure_acp(mode="echo")
+        self._write_config({"activeFile": "notes/open.md"})
+        self._write_ai_custom_prompt("CUSTOM-INSTRUCTION-XYZ")
+        r = self._chat(self._user_turn("hello there"))
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn(nb.ACP_CONTEXT_PREAMBLE, body)
+        self.assertIn("The note currently open: notes/open.md", body)
+        self.assertIn("CUSTOM-INSTRUCTION-XYZ", body)
+        self.assertIn("User: hello there", body)
+        self._assert_reaped()
+
+    def test_preamble_degrades_to_fixed_lead_when_context_absent(self):
+        # No activeFile and no custom prompt -> only the fixed lead.
+        self._configure_acp(mode="echo")
+        self._write_config({})
+        self._write_ai_custom_prompt("")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn(nb.ACP_CONTEXT_PREAMBLE, body)
+        self.assertNotIn("The note currently open:", body)
+        self.assertEqual(body.count(nb.ACP_CONTEXT_PREAMBLE), 1)
+        self._assert_reaped()
+
+    def test_preamble_prepended_once_even_with_prior_turns(self):
+        # The preamble is prepended once per turn, not per message: a
+        # multi-turn transcript still carries exactly one copy of the lead.
+        self._configure_acp(mode="echo")
+        self._write_config({"activeFile": "notes/open.md"})
+        self._write_ai_custom_prompt("")
+        r = self._chat({"server": self.SERVER, "messages": [
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+            {"role": "user", "content": "second question"},
+        ]})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertEqual(body.count(nb.ACP_CONTEXT_PREAMBLE), 1)
+        self.assertIn("User: first question", body)
+        self.assertIn("Assistant: first answer", body)
+        self.assertIn("User: second question", body)
+        self._assert_reaped()
+
+    # --- validation / routing -------------------------------------------
+    def test_image_attachment_rejected_400(self):
+        img = "data:image/png;base64,AAAA"
+        r = self._chat({"server": self.SERVER, "messages": [
+            {"role": "user", "content": [
+                {"type": "text", "text": "look"},
+                {"type": "image_url", "image_url": {"url": img}},
+            ]}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("ACP profiles do not support image attachments",
+                      r.get_json()["error"])
+        # Rejected before any agent process is spawned.
+        self.assertFalse(os.path.exists(self._pidfile))
+
+    def test_system_only_messages_rejected_400(self):
+        # A transcript of only system turns flattens to an empty prompt; the
+        # branch rejects it before spawning anything.
+        r = self._chat({"server": self.SERVER, "messages": [
+            {"role": "system", "content": "instructions only"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("require at least one user or assistant message",
+                      r.get_json()["error"])
+        self.assertFalse(os.path.exists(self._pidfile))
+
+    def test_unknown_server_does_not_fall_through_to_acp(self):
+        # A name that matches neither an OpenAI profile nor the ACP profile
+        # is a plain 400; it must not be handed to the ACP runner.
+        r = self._chat({"server": "ghost",
+                        "messages": [{"role": "user", "content": "x"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["error"], "Unknown or missing server")
+        self.assertFalse(os.path.exists(self._pidfile))
+        # Sanity: the configured ACP name DOES route to ACP (so "ghost" is
+        # genuinely unmatched, not a broken config).
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("data: [DONE]", r.get_data(as_text=True))
+        self._assert_reaped()
+
+    # --- failure paths (must be in-band SSE, never a 500) ----------------
+    def test_bad_command_is_inband_error_not_500(self):
+        # The backend deliberately returns a generic message and logs the
+        # specifics server-side (a security fix), so the configured command
+        # line must not appear in the response.
+        bad = "/nonexistent/no-such-acp-binary"
+        self._configure_acp(command=bad, args=[])
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)          # SSE always answers 200
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn('"error": true', body)
+        self.assertIn("ACP agent failed to start", body)
+        self.assertNotIn(bad, body)
+        self.assertNotIn("command not found", body)
+
+    def test_protocol_version_mismatch_names_both_versions(self):
+        self._configure_acp(mode="mismatch")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("protocol version mismatch", body)
+        self.assertIn("offered 2", body)
+        self.assertIn("requires 1", body)
+        self._assert_reaped()
+
+    def test_eof_ignoring_agent_is_reaped_before_done(self):
+        # Regression for the orphaned-child bug: the agent answers the prompt
+        # normally but then ignores stdin EOF and SIGTERM, so only the SDK's
+        # escalate-to-kill ladder ends it. The backend must run that ladder to
+        # completion *before* it reports the turn done, or a `run_turn` whose
+        # finally cancels the task orphans the child.
+        #
+        # Discriminating check: the child must already be gone when the
+        # terminal event is delivered. Under the pre-fix ordering the terminal
+        # was enqueued inside the spawn context, the caller returned at once,
+        # and the still-running child (4s of teardown ahead of it) would fail a
+        # 1.0s reaping deadline.
+        self._configure_acp(mode="eof")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self._assert_reaped(deadline=1.0)
+
+    def test_permission_request_is_auto_allowed(self):
+        # The agent asks for permission (offering one allow_once option); the
+        # client's trusted single-user auto-allow must pick it so the turn
+        # completes. The stub echoes the decision it received.
+        self._configure_acp(mode="perm")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("perm outcome=selected option=allow-1", body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_client_bound_fs_terminal_and_elicitation_are_refused(self):
+        # The client advertises no fs/terminal capability and does not enable
+        # the unstable elicitation route, so an agent request for any of them
+        # must come back as a JSON-RPC method-not-found error and must not hang
+        # the turn. The stub reports all three codes. The SDK warns that
+        # elicitation/create is unstable before refusing it; silence that one
+        # expected warning so the passing test stays quiet.
+        self._configure_acp(mode="cap")
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            r = self._chat(self._user_turn())
+            body = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("cap fs=error/-32601 term=error/-32601 elic=error/-32601",
+                      body)
+        self.assertIn("data: [DONE]", body)
+        self._assert_reaped()
+
+    def test_crash_before_initialize_is_inband_error(self):
+        self._configure_acp(mode="crash")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn('"error": true', body)
+        self._assert_reaped()
+
+    def test_junk_line_before_valid_response_is_skipped(self):
+        # A malformed line must be ignored by the NDJSON reader, not abort
+        # the turn; the valid response that follows still completes it.
+        # The SDK logs the skipped line via logging.exception; silence it so
+        # the passing test doesn't print a traceback.
+        self._configure_acp(mode="junk")
+        import logging
+        previous = logging.root.manager.disable
+        logging.disable(logging.CRITICAL)
+        try:
+            r = self._chat(self._user_turn())
+            body = r.get_data(as_text=True)
+        finally:
+            logging.disable(previous)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self._assert_reaped()
+
+    def test_hung_agent_times_out_and_is_reaped(self):
+        # The `hang` stub never answers session/prompt; the turn must fail
+        # in-band after the small timeout and the child must be reaped.
+        self._configure_acp(mode="hang", timeout=2)
+        start = time.time()
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("timed out", body)
+        self.assertLess(time.time() - start, 30)
+        self._assert_reaped()
+
+    def test_missing_sdk_degrades_to_inband_error(self):
+        # A missing agent-client-protocol package must disable only ACP: the
+        # route answers 200 with one in-band error frame, never a 500.
+        from unittest import mock
+        with mock.patch.dict(sys.modules, {"acp_client": None}):
+            r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("agent-client-protocol", body)
+        self.assertFalse(os.path.exists(self._pidfile))
+
+    # --- authorization ---------------------------------------------------
+    def test_viewer_token_is_rejected(self):
+        import bcrypt as _bcrypt
+        nb._login_failures.clear()
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+                "viewer_password_hash": _bcrypt.hashpw(
+                    b"viewer-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        body = self._user_turn()
+        # No credential -> 401 (route is @admin_required).
+        self.assertEqual(self.client.post("/api/ai/chat", json=body).status_code,
+                         401)
+        # Mint a viewer token as admin.
+        admin = nb.app.test_client()
+        self.assertEqual(
+            admin.post("/api/login", json={"password": "admin-pw"}).status_code,
+            200)
+        tok = admin.post("/api/auth/tokens",
+                         json={"name": "viewer-tok", "role": "viewer"})
+        self.assertEqual(tok.status_code, 200, tok.get_data(as_text=True))
+        token = tok.get_json()["token"]
+        fresh = nb.app.test_client()
+        r = fresh.post("/api/ai/chat", json=body,
+                       headers={"Authorization": "Bearer %s" % token})
+        self.assertEqual(r.status_code, 403)
+        # No agent was spawned for the rejected viewer request.
+        self.assertFalse(os.path.exists(self._pidfile))
+
+
+class TestAcpClient(unittest.TestCase):
+    """Direct unit tests for acp_client.run_turn (no Flask app involved).
+
+    These cover paths the SSE-level tests only reach indirectly and cheaply:
+    the exactly-one-terminal-event invariant, the generic dead-agent error,
+    the timeout error, and the version-mismatch message. `acp_client` is
+    imported lazily so collection still works if the SDK is absent.
+    """
+
+    STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
+
+    def _run(self, mode, timeout=15, command=None, args=None, prompt="User: hi"):
+        import acp_client
+        if args is None:
+            args = [self.STUB, "--mode", mode]
+        return list(acp_client.run_turn(
+            sys.executable if command is None else command,
+            args=args, cwd=tempfile.gettempdir(), prompt=prompt,
+            timeout=timeout))
+
+    @staticmethod
+    def _terminals(events):
+        return [e for e in events if e.get("type") in ("done", "error")]
+
+    def test_normal_turn_has_exactly_one_terminal_event(self):
+        events = self._run("normal")
+        terminals = self._terminals(events)
+        self.assertEqual(len(terminals), 1)
+        self.assertIs(terminals[0], events[-1])
+        self.assertEqual(terminals[0]["type"], "done")
+        self.assertEqual(terminals[0]["stopReason"], "end_turn")
+
+    def test_mismatch_turn_has_exactly_one_terminal_event(self):
+        terminals = self._terminals(self._run("mismatch"))
+        self.assertEqual(len(terminals), 1)
+        self.assertEqual(terminals[0]["type"], "error")
+
+    def test_dead_agent_yields_single_generic_error(self):
+        bad = "/nonexistent/no-such-acp-binary"
+        events = self._run("normal", command=bad, args=[])
+        terminals = self._terminals(events)
+        self.assertEqual(len(terminals), 1)
+        self.assertEqual(terminals[0]["type"], "error")
+        self.assertEqual(terminals[0]["message"], "ACP agent failed to start")
+        # The configured command line must not leak into the event.
+        self.assertNotIn(bad, terminals[0]["message"])
+
+    def test_timeout_yields_single_error(self):
+        terminals = self._terminals(self._run("hang", timeout=2))
+        self.assertEqual(len(terminals), 1)
+        self.assertEqual(terminals[0]["type"], "error")
+        self.assertIn("timed out", terminals[0]["message"])
+
+    def test_version_mismatch_names_both_versions(self):
+        message = self._terminals(self._run("mismatch"))[0]["message"]
+        self.assertIn("offered 2", message)
+        self.assertIn("requires 1", message)
+
+    def test_create_elicitation_override_refuses_method(self):
+        # The _Client override must fail loudly with method_not_found rather
+        # than let the SDK encode the base's None as an empty success. The
+        # stub-level cap test only proves the wire refusal (the SDK's unstable
+        # route gate also returns -32601 before the handler runs), so exercise
+        # the override directly to cover the changed line.
+        import asyncio
+        import queue as queue_mod
+        import acp
+        import acp_client
+        client = acp_client._Client(queue_mod.Queue())
+        with self.assertRaises(acp.RequestError) as ctx:
+            asyncio.run(client.create_elicitation(message="need input",
+                                                  mode="form"))
+        self.assertEqual(ctx.exception.code, -32601)
+
+    def test_tool_call_update_yields_trace_event(self):
+        # `_Client.session_update` translates a started tool call into a
+        # {"type": "trace"} event; the turn still ends normally.
+        events = self._run("trace")
+        traces = [e for e in events if e.get("type") == "trace"]
+        self.assertEqual([e["text"] for e in traces],
+                         ["Running a shell command"])
+        self.assertEqual(self._terminals(events)[0]["type"], "done")
 
 
 if __name__ == "__main__":

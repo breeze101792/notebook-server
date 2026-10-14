@@ -110,6 +110,10 @@
   const AI_ATTACH_IMAGE_EXTS = [
     ".png", ".jpg", ".jpeg", ".webp", ".gif",
   ];
+  /* Accept filter for the attach input while an ACP provider is active:
+   * keeps the OS picker from offering raster images the agent cannot take.
+   * The send path strips any image that still gets in (paste/drop). */
+  const AI_ATTACH_TEXT_ACCEPT = "text/*";
 
   /* ------------------------------------------------------------------ *
    * nb-edit parsing (user-facing proposal cards) + nb-tool blocks
@@ -819,6 +823,11 @@
   let editBtn = null;
   let lastSentPrompt = "";
   let lastSentFiles = [];
+  /* Set by mount(); re-applies the attach control's ACP affordance when the
+   * active provider changes (picker change or a config reload). */
+  let mountSyncAttachAffordance = null;
+  /* One inline ACP image notice per turn, however many rounds/requests. */
+  let acpImageNoticeShown = false;
 
   function currentPath() {
     return NB.viewer.getPath() || "";
@@ -1101,6 +1110,48 @@
     scrollLog(log);
   }
 
+  /* An ACP profile (config/acp.json) is tagged client-side by loadAiConfig.
+   * It runs a local agent process with no image input: the server answers
+   * 400 for any image_url part, and because the whole transcript is
+   * re-uploaded every turn one stale image would poison every later turn.
+   * So an ACP turn drops image parts and says so. */
+  function activeServerIsAcp() {
+    return servers.some((s) => s && s.name === currentServer && s.acp === true);
+  }
+
+  /* Messages exactly as they go on the wire. For ACP, every image_url part
+   * is removed and a mixed turn collapses to its text; the conversation
+   * itself is left intact, so switching back to an OpenAI profile restores
+   * the images. */
+  function buildRequestMessages() {
+    const messages = [getSystem(), ...conversation];
+    if (!activeServerIsAcp()) return { messages, strippedImages: 0 };
+    let strippedImages = 0;
+    const out = messages.map((m) => {
+      if (!m || !Array.isArray(m.content)) return m;
+      const kept = m.content.filter((p) => !(p && p.type === "image_url"));
+      if (kept.length === m.content.length) return m;
+      strippedImages += m.content.length - kept.length;
+      const text = kept.filter((p) => p && p.type === "text")
+        .map((p) => p.text || "").join("");
+      return Object.assign({}, m, { content: text });
+    });
+    return { messages: out, strippedImages };
+  }
+
+  /* The panel's send-problem notice element (.ai-error), shown at most once
+   * per turn. */
+  function showAcpImageNotice(log, count) {
+    if (!log || acpImageNoticeShown) return;
+    acpImageNoticeShown = true;
+    const errEl = document.createElement("div");
+    errEl.className = "ai-error";
+    errEl.textContent = "ACP agents do not accept image attachments — " +
+      (count === 1 ? "the image was not sent." : count + " images were not sent.");
+    log.appendChild(errEl);
+    scrollLog(log);
+  }
+
   /* Does a write/patch permission card still await the user after the last
    * user bubble? The tool loop stops for that decision, so Regenerate stays
    * disabled until the card is applied or rejected (its actions removed). */
@@ -1211,7 +1262,19 @@
 
   async function send(log, userText, ui, files) {
     ui.begin();
-    const userContent = composeUserContent(userText, files);
+    acpImageNoticeShown = false;
+    /* ACP has no image input. Strip image entries before they can enter the
+     * transcript (they would otherwise be re-uploaded every turn) and say
+     * so; text attachments and the prompt are kept. */
+    let sendFiles = files || [];
+    if (activeServerIsAcp()) {
+      const images = sendFiles.filter((f) => f.kind === "image");
+      if (images.length) {
+        sendFiles = sendFiles.filter((f) => f.kind !== "image");
+        showAcpImageNotice(log, images.length);
+      }
+    }
+    const userContent = composeUserContent(userText, sendFiles);
     /* Backstop: refuse a request whose serialized body would exceed the
      * wire cap, before it is sent and before the conversation changes. */
     const size = wireSizeOfTurn(userContent);
@@ -1224,9 +1287,9 @@
      * on the conversation entry, which serializes into the wire body (an
      * image entry's data URL would otherwise be duplicated). */
     lastSentPrompt = userText;
-    lastSentFiles = files ? files.slice() : [];
+    lastSentFiles = sendFiles.slice();
     const userBubble = appendMessage(log, "user", userText);
-    if (files && files.length) appendUserFiles(userBubble, files);
+    if (sendFiles.length) appendUserFiles(userBubble, sendFiles);
     conversation.push({ role: "user", content: userContent });
     await runToolLoop(log, ui);
   }
@@ -1243,7 +1306,10 @@
       /* Re-check the wire cap before every round: a near-limit image turn
        * can exceed it once tool follow-ups are appended mid-turn. Refuse
        * and stop cleanly rather than send an oversize body. */
-      const size = wireSizeOfMessages();
+      const built = buildRequestMessages();
+      if (built.strippedImages) showAcpImageNotice(log, built.strippedImages);
+      const size = wireByteSize(JSON.stringify(
+        { server: currentServer, messages: built.messages }));
       if (size > AI_ATTACH_MAX_WIRE_BYTES) {
         showSendTooLarge(log, size);
         break;
@@ -1255,9 +1321,20 @@
       let aborted = false;
       try {
         await NB.api.aiChat(
-          { server: currentServer, messages: [getSystem(), ...conversation] },
+          { server: currentServer, messages: built.messages },
           (delta) => { text += delta; renderAssistantContent(bubble, text, state); },
-          ui.signal());
+          ui.signal(),
+          (frame) => {
+            /* ACP agents run their own tool loop inside one turn, which can
+             * take minutes; a trace frame keeps the panel from looking
+             * frozen. Insert above the still-growing answer bubble so the
+             * traces read chronologically. Inert for OpenAI providers. */
+            if (frame.acp === "trace" &&
+                typeof frame.text === "string" && frame.text) {
+              log.insertBefore(makeTrace(frame.text), bubble);
+              scrollLog(log);
+            }
+          });
       } catch (e) {
         if (e && e.name === "AbortError") aborted = true;
         else {
@@ -1349,6 +1426,7 @@
     removeTurnControls(log);
     conversation = conversation.slice(0, idx + 1);
     ui.begin();
+    acpImageNoticeShown = false;
     await runToolLoop(log, ui);
   }
 
@@ -1800,6 +1878,7 @@
       // The prompt is global now, so switching providers doesn't change
       // the instructions; still cheap to keep the cache coherent.
       invalidateSystem();
+      syncAttachAffordance();
     });
     modelBar.appendChild(sel);
     host.appendChild(modelBar);
@@ -1828,6 +1907,18 @@
     attachInput.id = "ai-attach-input";
     attachInput.className = "ai-attach-input";
     attachInput.hidden = true;
+    /* The attach control's image path: hidden from the OS picker while an
+     * ACP provider is active (ACP agents take no images). Text files stay
+     * attachable; paste/drop still bypass accept, so send() strips too. */
+    function syncAttachAffordance() {
+      if (activeServerIsAcp()) {
+        attachInput.accept = AI_ATTACH_TEXT_ACCEPT;
+        attachBtn.title = "Attach text files (ACP agents do not accept images)";
+      } else {
+        attachInput.removeAttribute("accept");
+        attachBtn.title = "Attach files";
+      }
+    }
     const ta = document.createElement("textarea");
     ta.id = "ai-input";
     ta.className = "ai-input";
@@ -2081,6 +2172,8 @@
     mountPendingReads = () => pendingReads;
     mountDraftNonEmpty = () => ta.value.trim().length > 0;
     mountHasPendingAttachments = () => chipTotal > 0;
+    mountSyncAttachAffordance = syncAttachAffordance;
+    syncAttachAffordance();
     sendBtn.dataset.testSend = "1";
 
     async function onSubmit(e) {
@@ -2099,8 +2192,11 @@
         return;
       }
       /* Checked before clearing so a refused send keeps the pending chips
-       * (and the typed prompt) for the user to adjust. */
-      const wireSize = wireSizeOfTurn(composeUserContent(q, files));
+       * (and the typed prompt) for the user to adjust. Size the request as
+       * it will actually go out: ACP drops image parts (see send()). */
+      const sendFiles = activeServerIsAcp()
+        ? files.filter((f) => f.kind !== "image") : files;
+      const wireSize = wireSizeOfTurn(composeUserContent(q, sendFiles));
       if (wireSize > AI_ATTACH_MAX_WIRE_BYTES) {
         showSendTooLarge(log, wireSize);
         return;
@@ -2180,8 +2276,23 @@
     try {
       const cfg = await NB.api.aiGetConfig();
       servers = (cfg && cfg.servers) || [];
+      // ACP profiles live in config/acp.json, not the ai.json server list, so
+      // the backend exposes one under "acp" for the picker only. Only its
+      // name and a type label reach the browser; command/args stay server-side.
+      if (cfg && cfg.acp && cfg.acp.name) {
+        servers = servers.concat([{
+          name: cfg.acp.name,
+          baseUrl: "",
+          model: cfg.acp.model || "ACP",
+          acp: true,
+        }]);
+      }
       currentServer = (cfg && cfg.default) ||
         (servers.length ? servers[0].name : "");
+      // An ACP profile can nominate itself as the startup pick.
+      if (cfg && cfg.acp && cfg.acp.default && cfg.acp.name) {
+        currentServer = cfg.acp.name;
+      }
       globalCustomPrompt =
         cfg && typeof cfg.customPrompt === "string" ? cfg.customPrompt : "";
     } catch (e) {
@@ -2207,6 +2318,7 @@
       opt.textContent = "no provider configured";
       sel.appendChild(opt);
       if (hint) hint.hidden = false;
+      if (mountSyncAttachAffordance) mountSyncAttachAffordance();
       return;
     }
     for (const s of servers) {
@@ -2220,6 +2332,7 @@
     }
     sel.value = currentServer;
     if (hint) hint.hidden = true;
+    if (mountSyncAttachAffordance) mountSyncAttachAffordance();
   }
 
   NB.ai = {

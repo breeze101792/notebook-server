@@ -99,7 +99,7 @@
     aiSearch: (q) => request("POST", "/api/ai/search", { q }),
     // SSE relay. Does NOT use request(): the response is a text/event-stream,
     // not JSON -- we parse OpenAI-style deltas and invoke onDelta per token.
-    aiChat: async (body, onDelta, signal) => {
+    aiChat: async (body, onDelta, signal, onEvent) => {
       const resp = await fetch("/api/ai/chat", {
         method: "POST",
         credentials: "same-origin",
@@ -135,6 +135,14 @@
           if (payload === "[DONE]") return;
           let obj;
           try { obj = JSON.parse(payload); } catch (_) { continue; }
+          // ACP agent activity frames ("acp": "<kind>") are side-channel
+          // events, not deltas; hand them to onEvent and do not fall
+          // through to the OpenAI delta extraction below. Inert for every
+          // OpenAI provider, which never emits them.
+          if (obj && typeof obj.acp === "string" && obj.acp) {
+            if (onEvent) onEvent(obj);
+            continue;
+          }
           // The relay maps upstream HTTP failures onto an SSE error event
           // (the browser can't read the status of a streaming response
           // once it started), so an in-band {error:true} fails the call.

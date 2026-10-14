@@ -201,6 +201,38 @@ while auth is off, like every other admin route):
   disabled). Queries the instance's JSON output format and returns the top
   `AI_SEARXNG_MAX_RESULTS` (10) results as `{title, url, snippet}`.
 
+**ACP provider (second provider kind).** `config/acp.json` (own hand-edited
+file, never written by any route) holds one `{name, agent, command, args, cwd,
+env, default, timeout}` ACP agent profile; `agent` names a key in the
+server-side `ACP_KNOWN_AGENTS` table, which resolves the command line (and is
+mutually exclusive with `command`), so neither the file nor the browser ever
+supplies a command for the common case. The server is the ACP *client*:
+`acp_client.py` (Flask-free; one asyncio loop on a daemon thread) spawns one
+agent process per turn, drives `initialize → session/new → prompt`,
+auto-allows tool permission (`allow_once`), advertises no fs/terminal/
+elicitation capability (those methods raise `method_not_found`), and yields
+`agent_message_chunk` prose plus one trace event per `tool_call` the agent
+starts. `GET /api/ai/config` exposes it under `acp`
+as `{name, model: "ACP", agent, default}` or null, and reports per-agent host
+availability in an always-present `acpAgents` array (a read-only `shutil.which`
+PATH lookup, plus an adapter-install hint for Claude Code / Codex);
+`loadAiConfig` appends one picker entry `<name> · ACP` and tags it
+`acp: true`, and Settings → AI shows a read-only ACP row (never in the editable
+provider list) that lists the detected agents' status read-only. An ACP-tagged provider
+strips `image_url` parts client-side, narrows the attach input to `text/*`,
+and the server rejects any image part with 400. `POST /api/ai/chat` serves it
+when the posted `server` matches the `acp.json` name: messages go through the
+same `_validate_chat_messages`, the system turn is dropped, and the rest
+is flattened to one prompt capped at 8 MiB — same SSE envelope; text arrives as
+OpenAI deltas, each started tool as a `data: {"acp":"trace"}` frame the panel
+renders as a trace line. Because the system turn is dropped,
+`_acp_context_preamble` rebuilds the agent's context server-side from
+`config/config.json` (`activeFile`) and `config/ai.json` (`custom_prompt`), so
+the custom prompt and open-note hint still reach the agent. `acp_client` is
+imported lazily, so a missing SDK disables only ACP. The agent runs as the
+server user with filesystem access; `safe_path` and the approval cards do not
+apply.
+
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →

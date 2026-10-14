@@ -46,6 +46,116 @@ Editing a profile never re-sends the stored key. A blank API key plus
 `replaceSecret: true` carries the previous key over server-side
 (`app.py:1245`).
 
+## ACP providers
+
+A second provider kind, **Agent Client Protocol (ACP)**, drives an external
+coding agent as a subprocess and streams its prose into the same panel. It is
+a peer of the OpenAI profiles in the picker only; the execution model is not
+the same.
+
+**Config and the picker.** ACP is configured in `config/acp.json`, a single
+hand-edited object. The profile names a **known agent by key**; the server
+resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
+`app.py:1213`):
+
+```jsonc
+{"name": "opencode", "agent": "opencode",
+ "cwd": "", "env": {}, "default": false, "timeout": 900}
+```
+
+The command line lives in the server table, never in the file: a config blob
+any authenticated client can POST must never choose a command to execute, so
+both the file and the browser may only name a key. `agent` and `command` are
+mutually exclusive — the `command` + `args` form is the escape hatch for an
+agent the table does not know. Known keys: `opencode`, `claude`, `codex`,
+`gemini`, `goose`, `cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`,
+`copilot`, `kiro`.
+
+`load_acp_config` (`app.py:1309`) validates the whole object and fails closed
+to `{}` on any violation — never raises. Bounds: `name` ≤ 60 characters,
+`command` ≤ 300, `args` ≤ 32 entries of ≤ 1000 characters each, `cwd` a
+string, `env` a string-to-string map, `default` a boolean, `timeout` a finite
+positive number. An `agent` must name a table entry and must not be set
+alongside `command`; if the selected agent's executable is not on `PATH` the
+whole object is treated as unconfigured (`{}`), so a missing agent never yields
+a picker entry that always errors. A name that collides with an `ai.json`
+profile also returns `{}`, because `ai_chat` resolves the OpenAI profile first
+and the ACP branch could never run. An invalid file simply turns the feature
+off.
+
+`GET /api/ai/config` returns the profile under the `acp` key as
+`{name, model: "ACP", agent, default}` or `null`; `command`, `args`, and `env`
+stay server-side. It also returns an always-present `acpAgents` array —
+`[{key, label, available}]`, built by a read-only `shutil.which` PATH lookup
+(`_detect_acp_agents`, `app.py:1481`) — so the UI can show which known agents
+the host can launch; an agent whose wrapping CLI is present but whose ACP
+adapter is missing gains `adapterMissing: true` and a `hint` install command
+(today Claude Code and Codex). `loadAiConfig` appends one option labelled
+`<name> · ACP` after the OpenAI profiles, tags it client-side with `acp: true`,
+and selects it when `default` is true (`static/js/ai.js:2275-2294`). Settings →
+AI renders a read-only ACP row from `cfg.acp` (`buildAiAcpRow`,
+`static/js/settings.js:1330`); it is deliberately kept out of the editable
+provider list so a provider save cannot re-send or overwrite it. The same row
+lists every detected agent from `cfg.acpAgents` with its status — installed,
+ACP adapter missing (showing the server's `hint`), or not installed
+(`buildAcpAgentLines`), and when no profile is configured yet but an agent is
+detected, an info row prompts the user to add an `agent` key by hand
+(`buildAiAcpInfoRow`) — the UI only reports; it never writes the file. `POST
+/api/ai/config` never writes `config/acp.json`: a config blob any authenticated
+client can POST must never choose a command to execute. The file is read on
+every request, so an edit takes effect on the next send without a restart.
+
+**One turn.** `POST /api/ai/chat` serves ACP when the posted `server` is not
+an OpenAI profile but matches the `acp.json` name (`ai_chat`, `app.py:1916`).
+Messages are validated by the same `_validate_chat_messages` used by the
+OpenAI relay, then system messages are dropped, image parts are rejected with
+400, and the surviving user/assistant turns are flattened into one prompt —
+`"User: …"` / `"Assistant: …"` blocks joined by blank lines
+(`_flatten_acp_prompt`, `app.py:1766`) — capped at 8 MiB. On the client, an
+ACP-tagged provider narrows the attach input to `text/*` and
+`buildRequestMessages` strips every `image_url` part before the request is
+built (a one-per-turn notice says the image was not sent), so a stale image
+cannot poison every later turn; the server's 400 covers anything that still
+arrives (`activeServerIsAcp` / `buildRequestMessages`,
+`static/js/ai.js:1113-1142`). Multi-turn context is the replayed transcript,
+exactly as for a model. `acp_client.run_turn` spawns a fresh agent process per
+request (`initialize → session/new → prompt`), kills it at turn end, and
+streams `agent_message_chunk` text back as OpenAI delta frames plus
+`data: [DONE]`. Each `tool_call` update the agent starts becomes a namespaced
+`data: {"acp":"trace","text":…}` frame that the panel renders as a trace line,
+so a long multi-step turn shows activity; thought, plan, and usage updates are
+dropped (`acp_client.py:74-84`). The prompt is prefixed with a short preamble
+(`_acp_context_preamble`, `app.py:1790`) built from server state: the fixed
+`ACP_CONTEXT_PREAMBLE` lead, the user's open note (`config/config.json`
+`activeFile`), and the global custom prompt (`config/ai.json` `custom_prompt`).
+It is re-sent on every turn, so it is never duplicated into the transcript.
+
+The notebook's `nb-tool` contract is never sent to the ACP agent, because the
+system message is dropped. `runToolLoop` is not branched for ACP, however, so
+it still scans the agent's reply for fenced `nb-tool` / `nb-edit` blocks: a
+fence that the agent emits in its own prose would still be parsed. In normal
+use the agent answers in prose and the loop runs a single round.
+
+**Trust and capabilities.** `acp_client.py` is imported lazily, so a missing
+`agent-client-protocol` package disables only ACP and degrades to an in-band
+SSE error (`app.py:1863`). The client advertises no `fs/*`, `terminal/*`, or
+elicitation capability; those client methods raise JSON-RPC
+`method_not_found` rather than returning a bogus empty success
+(`acp_client.py:109-134`). `session/request_permission` is auto-allowed with
+the agent's one-shot `allow_once` option, or `allow_always`, or denied when
+neither is offered (`acp_client.py:81-103`). A spawn failure becomes the
+generic `"ACP agent failed to start"`; the configured command line is logged,
+never sent to the browser (`acp_client.py:218-224`). The agent runs as the
+server user with filesystem access, and its own tools execute directly —
+`safe_path` and the notebook's approval cards do not apply to it.
+
+**Known limitation.** The notebook's system message is dropped server-side, so
+the agent uses its own system prompt; the notebook can only rebuild the custom
+prompt and the open-note hint from server state (above), and it does so through
+the preamble rather than by forwarding the system turn. Images are unsupported.
+The agent's streamed prose and its tool-activity trace lines are rendered; its
+thoughts and plans are not.
+
 ## The six tools
 
 The tools are declared in `systemPrompt()` and

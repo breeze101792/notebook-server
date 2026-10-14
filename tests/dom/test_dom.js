@@ -142,17 +142,24 @@ let authTokensCalls = [];         // log of {op, body} for assertions
 // a blank key + replaceSecret carries the stored key over.
 let aiConfig = { servers: [], default: "" };
 // Masked view of aiConfig, mirroring the server's _public_ai_config():
-// hasKey booleans instead of keys; customPrompt is NOT a secret.
+// hasKey booleans instead of keys; customPrompt is NOT a secret. `acp` is
+// the masked ACP profile (config/acp.json, server-local) or null; it is
+// exposed for the picker only and never editable through the providers list.
 function publicAiConfigBody() {
   return { servers: (aiConfig.servers || []).map(s => ({
     name: s.name, baseUrl: s.baseUrl, model: s.model || "",
     hasKey: !!(s.apiKey && s.apiKey.length),
   })), default: aiConfig.default || "",
     customPrompt: aiConfig.customPrompt || "",
-    searxngUrl: aiConfig.searxngUrl || "" };
+    searxngUrl: aiConfig.searxngUrl || "",
+    acp: aiConfig.acp || null,
+    // Always-present read-only PATH probe: which known ACP agent CLIs the
+    // server found. Display-only; never part of a config POST payload.
+    acpAgents: aiConfig.acpAgents || [] };
 }
 let aiChatStreams = [];           // queued responses for /api/ai/chat
 let aiChatLog = [];               // bodies POSTed to /api/ai/chat
+let aiConfigLog = [];             // bodies POSTed to /api/ai/config
 
 const html = `<!DOCTYPE html><html><head>
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
@@ -1347,6 +1354,9 @@ window.fetch = async (url, opts) => {
   } else if (p === "/api/ai/config") {
     if (method === "POST") {
       const d = JSON.parse(opts.body || "{}");
+      // Record a pristine copy of the wire body before the key-carry
+      // mutation below, so tests can assert what the client actually sent.
+      aiConfigLog.push(JSON.parse(JSON.stringify(d)));
       const keepers = [];
       for (const s of (d.servers || [])) {
         if (s && s.apiKey === "" && s.replaceSecret) {
@@ -1369,6 +1379,11 @@ window.fetch = async (url, opts) => {
         // SearXNG instance URL: same preserve-when-omitted semantics.
         searxngUrl: d.searxngUrl !== undefined
           ? d.searxngUrl : (aiConfig.searxngUrl || ""),
+        // config/acp.json is a separate server-local file the config POST
+        // never touches, so the masked ACP profile carries through. The
+        // acpAgents PATH probe is likewise re-run server-side, not sent up.
+        acp: aiConfig.acp || null,
+        acpAgents: aiConfig.acpAgents || [],
       };
       body = publicAiConfigBody();
     } else {
@@ -21724,6 +21739,397 @@ function check(label, cond, extra) {
     // Leave the panel idle for later blocks.
     await resetAi();
     window.NB.ai._resetImageCodec();
+  }
+
+  console.log("== acp provider ==");
+  // A second provider type: an ACP agent (config/acp.json, server-local)
+  // surfaces as cfg.acp for the picker only. Selecting it and sending must
+  // stream an ordinary assistant reply — the notebook's own nb-tool / nb-edit
+  // loop is not involved, so no trace lines or cards appear. The Settings
+  // provider editor must ignore the ACP entry (it is not editable there).
+  {
+    const acpInput = () => window.document.getElementById("ai-input");
+    const acpSend = () => {
+      acpInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+      acpInput().closest("form").dispatchEvent(
+        new window.Event("submit", { bubbles: true, cancelable: true }));
+    };
+    const acpCards = () =>
+      Array.from(window.document.querySelectorAll("#ai-chat-log .ai-edit-card"));
+    const acpTraces = () =>
+      Array.from(window.document.querySelectorAll("#ai-chat-log .ai-tool-trace"));
+    const acpBubbles = () =>
+      Array.from(window.document.querySelectorAll("#ai-chat-log .ai-msg-assistant"));
+    const resetAcp = async () => {
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+      aiConfigLog = [];
+    };
+
+    const ACP = { name: "acp-agent", model: "ACP", default: false,
+      agent: "opencode" };
+    // Read-only PATH probe the server returns alongside cfg.acp: one agent
+    // is installed, one has its CLI but lacks the ACP adapter (with a fix
+    // hint), one is absent entirely.
+    const ACP_AGENTS = [
+      { key: "opencode", label: "opencode", available: true },
+      { key: "claude", label: "Claude Code", available: false,
+        adapterMissing: true,
+        hint: "npm install -g @agentclientprotocol/claude-agent-acp" },
+      { key: "codex", label: "Codex", available: false },
+    ];
+
+    // Baseline: with acp null the masked config has no ACP entry, and the
+    // picker therefore offers no ACP option.
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub", acp: null };
+    await resetAcp();
+    await window.NB.ai.loadAiConfig();
+    await tick(20);
+    {
+      const sel0 = window.document.getElementById("ai-model-select");
+      check("acp: with acp=null the picker has no ACP entry",
+        !!sel0 && Array.from(sel0.options).every(o => o.value !== ACP.name),
+        sel0 ? sel0.options.length + " opts" : "no select");
+    }
+
+    // Now expose the ACP profile alongside the OpenAI one.
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "", acp: ACP, acpAgents: ACP_AGENTS };
+    await window.NB.ai.loadAiConfig();
+    await tick(20);
+
+    const sel = window.document.getElementById("ai-model-select");
+    const acpOpt = sel
+      ? Array.from(sel.options).find(o => o.value === ACP.name) : null;
+    check("acp: picker lists the ACP profile as 'name · ACP'",
+      !!acpOpt && acpOpt.textContent === "acp-agent · ACP",
+      acpOpt ? acpOpt.textContent : "missing");
+    check("acp: the OpenAI profile is still listed alongside",
+      !!sel && Array.from(sel.options).some(o => o.value === "stub"),
+      sel ? sel.options.length + " opts" : "no select");
+
+    // Select the ACP profile (fires the picker's change handler).
+    sel.value = ACP.name;
+    sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    check("acp: selecting the ACP profile makes it active",
+      window.NB.ai._getCurrentServer() === ACP.name,
+      window.NB.ai._getCurrentServer());
+
+    // Send one message; a plain text reply (no fences) streams through.
+    aiChatStreams.push([sseFrame("Hello from the ACP agent.")]);
+    acpInput().value = "summarize the repo";
+    acpSend();
+    await tick(140);
+    check("acp: the chat request names the ACP server",
+      aiChatLog.length === 1 && aiChatLog[0].server === ACP.name,
+      aiChatLog[0] ? aiChatLog[0].server : "none");
+    check("acp: the reply rendered as a normal assistant bubble",
+      acpBubbles().some(b => /Hello from the ACP agent/.test(b.textContent)),
+      "asst=" + acpBubbles().length);
+    check("acp: no tool trace lines (the notebook tool loop is bypassed)",
+      acpTraces().length === 0, "traces=" + acpTraces().length);
+    check("acp: no nb-tool / nb-edit cards were created",
+      acpCards().length === 0, "cards=" + acpCards().length);
+
+    // --- ACP tool-activity frames --------------------------------------
+    // The server emits {"acp":"trace","text":<tool title>} frames when an
+    // ACP agent starts a tool. api.js hands them to the onEvent callback
+    // and does NOT treat them as deltas; ai.js inserts a trace line above
+    // the still-growing answer bubble. An OpenAI stream carries no such
+    // frames and must stay unaffected.
+    {
+      const acpTraceFrame = (t) =>
+        'data: {"acp":"trace","text":' + JSON.stringify(t) + '}\n\n';
+      aiChatStreams.push([
+        sseFrame("Looking into it."),
+        acpTraceFrame("read notes/todo.md"),
+        sseFrame(" Done."),
+        "data: [DONE]\n\n",
+      ]);
+      acpInput().value = "what is in the todo?";
+      acpSend();
+      await tick(140);
+
+      const traces = acpTraces();
+      check("acp trace: an activity frame renders one .ai-tool-trace line",
+        traces.length === 1, "traces=" + traces.length);
+      const tname = traces[0] && traces[0].querySelector(".ai-tool-name");
+      check("acp trace: the trace shows the tool title in .ai-tool-name",
+        !!tname && tname.textContent === "read notes/todo.md",
+        tname ? tname.textContent : "none");
+
+      const lastAsst = acpBubbles().at(-1);
+      check("acp trace: the streamed text still renders into the bubble",
+        !!lastAsst && /Looking into it/.test(lastAsst.textContent) &&
+        /Done/.test(lastAsst.textContent),
+        lastAsst ? lastAsst.textContent.slice(0, 60) : "none");
+
+      // Chronology: the trace line sits before the answer bubble it belongs
+      // to, so traces read above the reply rather than under a growing block.
+      const acpLogEl = window.document.getElementById("ai-chat-log");
+      const acpChildren = Array.from(acpLogEl.children);
+      check("acp trace: the trace is positioned before the assistant bubble",
+        !!lastAsst && !!traces[0] &&
+        acpChildren.indexOf(traces[0]) < acpChildren.indexOf(lastAsst),
+        traces[0] ? "trace@" + acpChildren.indexOf(traces[0]) +
+          " bubble@" + acpChildren.indexOf(lastAsst) : "no trace");
+
+      // An OpenAI provider emits no acp frames: the same send path must add
+      // no trace lines.
+      sel.value = "stub";
+      sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+      await tick(20);
+      const tracesBeforeOa = acpTraces().length;
+      aiChatStreams.push([sseFrame("Plain OpenAI reply.")]);
+      acpInput().value = "hello openai";
+      acpSend();
+      await tick(140);
+      check("acp trace: an OpenAI stream (no acp frames) adds no trace lines",
+        acpTraces().length === tracesBeforeOa && aiChatLog.length >= 2 &&
+        aiChatLog[aiChatLog.length - 1].server === "stub",
+        "traces=" + acpTraces().length + " before=" + tracesBeforeOa);
+    }
+
+    // --- Settings: the ACP entry is not editable there -----------------
+    authEnabled = true; authHasAdmin = true; authRole = "admin";
+    window.NB.settings.open(); await tick(30);
+    window.document.querySelector('.settings-nav-item[data-tab="ai"]')
+      .click();
+    await tick(30);
+    const rows = Array.from(
+      window.document.querySelectorAll("#settings-ai-list .settings-ai-row"));
+    check("acp: settings provider list still renders the OpenAI provider only",
+      rows.length === 1 && rows[0].dataset.name === "stub",
+      "rows=" + rows.length);
+    check("acp: the ACP profile is not listed as an editable provider",
+      window.document.querySelector(
+        "#settings-ai-list .settings-ai-row[data-name='acp-agent']") === null,
+      "count=" + window.document.getElementById("settings-ai-count").textContent);
+
+    // The read-only ACP row is rendered from cfg.acp, beside the editable
+    // providers.
+    const acpRow = window.document.querySelector(
+      "#settings-ai-list .settings-ai-acp-row");
+    check("acp: settings AI tab renders a read-only ACP row",
+      !!acpRow && acpRow.dataset.acpName === ACP.name &&
+      /ACP agent: acp-agent/.test(acpRow.textContent) &&
+      /config\/acp\.json/.test(acpRow.textContent) &&
+      /not editable here/.test(acpRow.textContent),
+      acpRow ? acpRow.textContent.slice(0, 70) : "missing");
+
+    // Detected agents, one compact help line each: label + status. An
+    // installed agent reads "installed", an adapter-missing one surfaces
+    // the server's fix hint, and anything else reads "not installed".
+    const acpAgentLine = (key) => acpRow.querySelector(
+      ".settings-ai-acp-agent[data-acp-key='" + key + "']");
+    check("acp agents: one help line per detected agent",
+      acpRow.querySelectorAll(".settings-ai-acp-agent").length === 3,
+      "lines=" + acpRow.querySelectorAll(".settings-ai-acp-agent").length);
+    check("acp agents: an installed agent reads 'installed'",
+      /^opencode — installed$/.test(
+        (acpAgentLine("opencode") || {}).textContent || ""),
+      (acpAgentLine("opencode") || {}).textContent || "missing");
+    check("acp agents: an adapter-missing agent shows its install hint",
+      (acpAgentLine("claude") || {}).textContent === "Claude Code — " +
+        "installed — ACP adapter missing (npm install -g " +
+        "@agentclientprotocol/claude-agent-acp)",
+      (acpAgentLine("claude") || {}).textContent || "missing");
+    check("acp agents: a missing agent reads 'not installed'",
+      /^Codex — not installed$/.test(
+        (acpAgentLine("codex") || {}).textContent || ""),
+      (acpAgentLine("codex") || {}).textContent || "missing");
+    check("acp agents: the currently selected allowlist key is shown",
+      /Selected agent key: opencode/.test(acpRow.textContent),
+      acpRow ? acpRow.textContent.slice(0, 110) : "missing");
+
+    // A provider save must never carry the ACP entry back to the server.
+    // The prompt Save posts the provider list (aiProviders) + prompt; the
+    // ACP profile is held outside that array, so it cannot appear.
+    aiConfigLog = [];
+    const acpPromptEl = window.document.getElementById("settings-ai-custom-prompt");
+    acpPromptEl.value = "an ACP-era prompt";
+    acpPromptEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+    window.document.getElementById("settings-ai-prompt-save").click();
+    await tick(60);
+    const acpSaveBody = aiConfigLog[aiConfigLog.length - 1];
+    check("acp: a provider save never carries the ACP profile in the POST body",
+      !!acpSaveBody &&
+      (acpSaveBody.servers || []).every(s => s.name !== ACP.name) &&
+      !JSON.stringify(acpSaveBody).includes(ACP.name) &&
+      !("acp" in acpSaveBody) && !("acpAgents" in acpSaveBody) &&
+      !JSON.stringify(acpSaveBody).includes("opencode"),
+      acpSaveBody ? JSON.stringify(acpSaveBody).slice(0, 110) : "no save");
+
+    // A helper that swaps the masked config and re-renders the AI tab, so
+    // each ACP shape is exercised through the real open() path.
+    const renderAcpTab = async (cfgAcp, agents) => {
+      aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+        model: "m-1", apiKey: "sk-stub" }], default: "stub",
+        customPrompt: "", searxngUrl: "", acp: cfgAcp, acpAgents: agents };
+      await window.NB.settings.close(); await tick(20);
+      window.NB.settings.open(); await tick(30);
+      window.document.querySelector('.settings-nav-item[data-tab="ai"]').click();
+      await tick(30);
+    };
+
+    // No profile, but a usable agent was detected: a read-only info block
+    // names the key the user could enable by hand. No profile row renders.
+    await renderAcpTab(null, ACP_AGENTS);
+    const acpInfo = window.document.querySelector(
+      "#settings-ai-list .settings-ai-acp-info");
+    check("acp info: a null profile with a detected agent shows the enable hint",
+      !!acpInfo && /none is configured/.test(acpInfo.textContent) &&
+      /"agent": "<key>"/.test(acpInfo.textContent) &&
+      /config\/acp\.json/.test(acpInfo.textContent),
+      acpInfo ? acpInfo.textContent.slice(0, 110) : "missing");
+    check("acp info: no read-only profile row is rendered when acp is null",
+      window.document.querySelector(
+        "#settings-ai-list .settings-ai-acp-row") === null,
+      "rows=" + window.document.querySelectorAll(
+        "#settings-ai-list .settings-ai-acp-row").length);
+
+    // An empty allowlist key is legitimate: the profile then carries an
+    // explicit command. The row must say so rather than leave it blank.
+    await renderAcpTab({ name: "acp-agent", model: "ACP", default: false,
+      agent: "" }, ACP_AGENTS);
+    const acpRowCmd = window.document.querySelector(
+      "#settings-ai-list .settings-ai-acp-row");
+    check("acp agents: an empty key says the profile uses an explicit command",
+      !!acpRowCmd && /explicit "command" instead of an allowlist key/.test(
+        acpRowCmd.textContent),
+      acpRowCmd ? acpRowCmd.textContent.slice(0, 130) : "missing");
+
+    // Nothing detected and no profile: no ACP help is rendered at all.
+    await renderAcpTab(null, []);
+    check("acp info: nothing detected and no profile renders no ACP help",
+      window.document.querySelector(
+        "#settings-ai-list .settings-ai-acp-info") === null &&
+      window.document.querySelector(
+        "#settings-ai-list .settings-ai-acp-row") === null,
+      "info=" + !!window.document.querySelector(
+        "#settings-ai-list .settings-ai-acp-info"));
+
+    authEnabled = false; authHasAdmin = false; authRole = null;
+    await window.NB.settings.close(); await tick(20);
+
+    // --- ACP image turns: disable, strip, notify, never persist ------
+    // Restore the ACP-exposed config and reset the panel transcript.
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "", acp: ACP };
+    await window.NB.ai.loadAiConfig();
+    await tick(20);
+
+    // jsdom has no canvas; install the image-codec seam the image tests use.
+    window.NB.ai._setImageCodec({
+      probe: (f) => Promise.resolve({ width: 50, height: 50,
+        mime: f.type || "image/png" }),
+      passthrough: (f) => Promise.resolve({
+        dataUrl: "data:image/png;base64,AAAA", bytes: 4,
+        mime: f.type || "image/png" }),
+      render: (f) => Promise.resolve({
+        dataUrl: "data:image/png;base64,AAAA", bytes: 4,
+        mime: f.type || "image/png" }),
+    });
+    const acpImg = (name) => ({ name, type: "image/png", size: 400,
+      arrayBuffer: async () => new Uint8Array(400).buffer });
+    const acpUserReq = (i) => (aiChatLog[i] || { messages: [] }).messages
+      .filter(m => m.role === "user")[0];
+    const acpLogText = () =>
+      window.document.getElementById("ai-chat-log").textContent;
+
+    // Select ACP. The attach affordance must filter raster images out.
+    sel.value = ACP.name;
+    sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    await resetAcp();
+    check("acp image: the attach input filters images out while ACP is active",
+      window.document.getElementById("ai-attach-input")
+        .getAttribute("accept") === "text/*",
+      window.document.getElementById("ai-attach-input").getAttribute("accept"));
+
+    // Paste/drop bypasses accept, so a chip still forms; the send strips it.
+    window.NB.ai._addFilesForTests([acpImg("acp-shot.png")]);
+    await tick(80);
+    check("acp image: the image attaches (a bypassing path) and is pending pre-send",
+      window.NB.ai._getAttachmentsForTests().some(a => a.kind === "image"),
+      "pending=" + window.NB.ai._getAttachmentsForTests().length);
+
+    aiChatStreams.push([sseFrame("Text only, no image.")]);
+    acpInput().value = "look at this screenshot";
+    acpSend();
+    await tick(200);
+
+    const acpBody1 = acpUserReq(0);
+    check("acp image: the image part is stripped from the ACP request body",
+      aiChatLog.length === 1 && aiChatLog[0].server === ACP.name &&
+      !!acpBody1 && typeof acpBody1.content === "string" &&
+      acpBody1.content.includes("look at this screenshot") &&
+      !JSON.stringify(aiChatLog[0]).includes("image_url"),
+      acpBody1 ? JSON.stringify(acpBody1.content).slice(0, 60) : "no user turn");
+    check("acp image: the panel shows an inline notice that the image was not sent",
+      /ACP agents do not accept image attachments/.test(acpLogText()),
+      acpLogText().slice(0, 90));
+
+    // A later turn must not carry the image either.
+    aiChatStreams.push([sseFrame("Still text only.")]);
+    acpInput().value = "and now?";
+    acpSend();
+    await tick(200);
+    check("acp image: the image does not persist into a later ACP turn",
+      aiChatLog.length === 2 &&
+      !JSON.stringify(aiChatLog[1]).includes("image_url") &&
+      !!acpUserReq(1) && typeof acpUserReq(1).content === "string",
+      acpUserReq(1) ? JSON.stringify(acpUserReq(1).content).slice(0, 60) : "none");
+
+    // Regression guard: an OpenAI provider still sends the image part.
+    sel.value = "stub";
+    sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    await resetAcp();
+    window.NB.ai._addFilesForTests([acpImg("openai-shot.png")]);
+    await tick(80);
+    aiChatStreams.push([sseFrame("I see the image.")]);
+    acpInput().value = "describe this";
+    acpSend();
+    await tick(200);
+    const oaBody = acpUserReq(0);
+    check("acp image: an OpenAI provider still sends the image as an image_url part",
+      !!oaBody && Array.isArray(oaBody.content) &&
+      oaBody.content.some(p => p.type === "image_url") &&
+      oaBody.content.some(p => p.type === "text" && /describe this/.test(p.text)),
+      oaBody ? JSON.stringify(oaBody.content.map(p => p.type)) : "none");
+
+    // The original bug: an image already in the transcript (sent under an
+    // OpenAI provider) is re-uploaded every turn. Switching to ACP must
+    // strip it from the request so later turns keep working.
+    sel.value = ACP.name;
+    sel.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    aiChatLog = [];
+    aiChatStreams = [];
+    aiChatStreams.push([sseFrame("No image reached me.")]);
+    acpInput().value = "follow up without the image";
+    acpSend();
+    await tick(200);
+    const acpFollow = aiChatLog[0];
+    check("acp image: switching to ACP strips a transcript image from the re-uploaded history",
+      !!acpFollow && !JSON.stringify(acpFollow).includes("image_url") &&
+      acpFollow.messages.filter(m => m.role === "user").length >= 2 &&
+      acpFollow.messages.at(-1).content === "follow up without the image",
+      acpFollow ? "users=" + acpFollow.messages.filter(m => m.role === "user").length
+        : "none");
+    window.NB.ai._resetImageCodec();
+
+    // Cleanup: restore the single-provider config for later blocks.
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub" };
+    await window.NB.ai.loadAiConfig();
+    await resetAcp();
   }
 
   console.log("== ai turn review fixes ==");

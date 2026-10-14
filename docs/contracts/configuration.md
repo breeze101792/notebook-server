@@ -3,11 +3,12 @@
 ## Overview
 
 This server keeps notes and settings in two separate folders. `notebook/`
-holds the Markdown notes. `config/` holds three settings files:
+holds the Markdown notes. `config/` holds four settings files:
 `config.json` (UI state), `auth.json` (passwords, session secret, API
-tokens), and `ai.json` (assistant provider profiles). The split is
-deliberate: a client can POST the UI-prefs blob, and that blob must never
-be able to carry credentials.
+tokens), `ai.json` (assistant provider profiles), and `acp.json` (one
+hand-edited ACP agent). The split is deliberate: a client can POST the
+UI-prefs blob, and that blob must never be able to carry credentials or
+choose a command to run (`acp.json`).
 
 The server stores `config.json` verbatim with no validation. The
 authoritative schema lives in the frontend. `boot_state()` in `app.py:737`
@@ -55,8 +56,9 @@ address (`app.py:2526-2533`). Debug mode with a non-loopback host prints a
 warning because Flask exposes the interactive debugger to the network
 (`app.py:2534`).
 
-Python dependencies (`requirements.txt`): `Flask==3.0.3` and
-`bcrypt==5.0.0`.
+Python dependencies (`requirements.txt`): `Flask==3.0.3`, `bcrypt==5.0.0`,
+and `agent-client-protocol==0.12.1` (the ACP SDK, used only by the ACP
+provider).
 
 ## Environment variables
 
@@ -272,6 +274,87 @@ password), and it is attached to the upstream request sent to whatever
 Base URLs are normalized on save: a trailing slash and a trailing `/v1`
 are stripped. The chat endpoint appends `/v1/chat/completions`
 (`app.py:1227-1232`, `app.py:1297-1308`).
+
+## `config/acp.json` — ACP agent
+
+A second provider kind, the Agent Client Protocol (ACP), is configured in
+`config/acp.json` (`ACP_FILE`, `app.py:1186`). The file holds a single
+object; the feature is off when the file is missing or invalid.
+
+This file is **hand-edited**. The server never writes it and no HTTP route
+touches it, deliberately: a config blob that any authenticated client can POST
+must never be able to choose a command to execute (`app.py:1182-1185`). Copy
+`config/acp.json.example` and edit it:
+
+```json
+{
+  "name": "opencode",
+  "agent": "opencode",
+  "cwd": "",
+  "env": {},
+  "default": false,
+  "timeout": 900
+}
+```
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | Picker label; shown as `<name> · ACP`. Required. |
+| `agent` | string | Key in the server's known-agent table; the command line is resolved from it. Mutually exclusive with `command`. |
+| `command` | string | Executable to spawn, argv[0] only, no shell. Required unless `agent` is set; the escape hatch for an agent the table does not know. |
+| `args` | string[] | Arguments passed to `command`. Default `[]`. Used only with `command`. |
+| `cwd` | string | Agent working directory; empty defaults to the notebook folder. |
+| `env` | object | Extra environment variables (string to string). |
+| `default` | boolean | `true` makes the ACP profile the startup pick. |
+| `timeout` | number | Per-turn wall-clock cap in seconds; default 900. |
+
+The known-agent keys are `opencode`, `claude`, `codex`, `gemini`, `goose`,
+`cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`, `copilot`, and
+`kiro` (`ACP_KNOWN_AGENTS`, `app.py:1213`). The executable and argv for each
+live in that server-side table, not in the file, so neither the file nor the
+browser can supply a command for the common case. `agent` and `command` are
+mutually exclusive: supplying both makes the file invalid. Provenance for each
+command line is in
+[`../research/acp-agent-commands.md`](../research/acp-agent-commands.md). One
+fact there is unresolved: Gemini's dedicated ACP doc says `--acp` while the same
+repo's CLI cheatsheet still lists `--experimental-acp`; the table uses
+`--acp`.
+
+`load_acp_config` (`app.py:1309`) validates the whole object and **fails
+closed to `{}`** — turning the feature off, never raising — on any violation:
+
+- `name` must be a non-empty, non-whitespace string of at most 60 characters.
+- `agent`, when set, must name a key in `ACP_KNOWN_AGENTS` and must not be
+  combined with `command`. The selected agent's executable must also be present
+  on `PATH`, or the file is treated as unconfigured (`{}`), so an uninstalled
+  agent never yields a picker entry that always errors. The executable is
+  located with `shutil.which` (`_acp_agent_command`, `app.py:1297`), a
+  read-only name lookup that runs nothing.
+- `command`, when used instead of `agent`, must be a non-empty, non-whitespace
+  string of at most 300 characters.
+- `args` must be a list of at most 32 strings, each at most 1000 characters.
+- `cwd` must be a string; `env` a map of string to string; `default` a
+  boolean.
+- `timeout`, when present, must be a finite positive number. `true`/`false`
+  are rejected as a timeout, and `NaN`/`Infinity` are rejected.
+- `name` must not equal the name of an `ai.json` profile. A collision would
+  make a dead picker entry (`ai_chat` resolves the OpenAI profile first), so
+  it also fails closed.
+
+Because `command` is argv[0] with no shell, a wrapper executable belongs in
+`command` and the agent in `args`; a single string such as
+`"systemd-run --scope opencode acp"` silently fails. The file is re-read on
+every request, so an edit takes effect on the next send with no restart.
+
+Four fields reach the browser: `name`, the fixed label `"ACP"` as `model`, the
+allowlist key `agent` (possibly `""` when the profile uses `command`), and
+`default` (`_public_acp_config`, `app.py:1502`). `command`, `args`, and `env`
+stay server-side. The always-present `acpAgents` array in `GET /api/ai/config`
+reports which known agents the host can launch, with an adapter hint when a
+wrapper CLI is installed but its ACP adapter is missing (`_detect_acp_agents`,
+`app.py:1481`). The full trust boundary — the agent runs as the server user
+with filesystem access and is not constrained by `safe_path` — is in
+[`../architecture/ai-assistant.md`](../architecture/ai-assistant.md#acp-providers).
 
 ## Browser storage
 

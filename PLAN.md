@@ -318,3 +318,156 @@ The browser harness is Chromium-only by default; `BROWSER=firefox` selects the
 Firefox runner. Firefox selection normalization is not verified until it is
 run.
 
+---
+
+# PLAN — ACP provider (opencode and other ACP agents)
+
+Status: approved 2026-10-13. Owner: `build`.
+
+## Goal
+
+Add the Agent Client Protocol (ACP) as a second AI provider type, peer to the
+OpenAI-compatible profiles: configured by a hand-edited `config/acp.json`,
+selected in the existing ✨ panel picker, streaming into the existing assistant.
+The ACP agent uses its **own** tools; the notebook's six-tool loop is idle for
+ACP providers and is **not** modified. `agent.md` and the OpenAI path are
+untouched.
+
+## Decisions (user-approved)
+
+- **Provider-agnostic.** `command`/`args` accept any ACP agent (`opencode acp`,
+  Gemini CLI, Claude Code, Goose, Cursor, …). opencode is the verified default
+  because it is already on this host.
+- **Hand-edited `config/acp.json`,** not writable through
+  `POST /api/ai/config`. Sidesteps the settings-modal wholesale-replace and the
+  LAN writable-RCE surface. The settings AI tab is untouched.
+- **Client built on the official Python SDK** `agent-client-protocol==0.12.1`
+  (`import acp`), pinned. Stable line, speaks ACP v1.
+- **No** permission cards, `fs/*` capability, `terminal`, cancel route, or
+  server-side sessions. One agent process per turn, killed at turn end.
+- **Confinement is the launcher.** `command` may be `systemd-run …`/`bwrap …`.
+  The agent has the server user's filesystem access; the notebook's `safe_path`
+  and approval cards do **not** apply to it. Documented, not engineered around.
+
+## SDK facts (verified against installed 0.12.1)
+
+- `acp.PROTOCOL_VERSION == 1`; the API is async-only.
+- `async with spawn_agent_process(client, command, *args, env=, cwd=) as (conn, proc)`
+  spawns the subprocess via `asyncio.create_subprocess_exec` (no shell).
+- `conn.initialize(protocol_version=1, client_capabilities=…, client_info=…)`
+- `conn.new_session(cwd=…)` → `NewSessionResponse(session_id=…)`
+- `conn.prompt(session_id, prompt=[text_block(text)])` → `PromptResponse(stop_reason=…)`
+- `Client` is a `Protocol` whose unimplemented methods return `None`, so
+  `session_update` and `request_permission` **must** be implemented.
+- `spawn_stdio_transport` kills with a graceful ladder (write_eof → 2 s →
+  terminate → kill); `default_environment()` passes only a trimmed env.
+- `PermissionOptionKind` ∈ {allow_once, allow_always, reject_once, reject_always}.
+
+## Architecture
+
+`acp_client.py` is a new, Flask-free module (imports neither Flask nor `app.py`).
+It owns an asyncio event loop on one daemon thread; each turn runs
+`initialize → new_session → prompt` inside `spawn_agent_process` and bridges
+`session/update` to a `queue.Queue`. `app.py` keeps the route, the config, the
+JSON validation, and the SSE envelope; it pumps the queue and re-emits each
+`agent_message_chunk` as the OpenAI delta shape `api.js` already parses.
+
+Only the agent's prose is surfaced in v1. Thought/tool/plan/usage updates are
+ignored, so the frontend needs no new event vocabulary.
+
+## Implementation
+
+| Step | Work | Owner | Risk |
+|------|------|-------|------|
+| 1 | `acp_client.py`: loop thread, `_Client`, `run_turn` generator, event translation, queue pump, cancel-on-close | `python-engineer` | High |
+| 2 | `app.py`: `ACP_FILE` loader, `"acp"` in `_public_ai_config`, `ai_chat` type branch, prompt flattening, SSE relay | `python-engineer` | Medium |
+| 3 | `requirements.txt`: pin `agent-client-protocol==0.12.1` | `python-engineer` | Low |
+| 4 | `config/acp.json.example` + live `config/acp.json` (opencode, not default) | `python-engineer` | Low |
+| 5 | `static/js/ai.js`: append the ACP entry to the picker in `loadAiConfig` | `build` | Low |
+| 6 | Fake ACP agent fixture + `TestAcpConfig`/`TestAcpChat` + DOM check | `tester` | Medium |
+| 7 | Docs: `docs/architecture/ai-assistant.md` + README trust boundary + this plan | `build` | Low |
+| 8 | Security review of the diff, then code review | `security-reviewer`, `code-reviewer` | — |
+
+## Verification
+
+Backend/JS change; nothing runs on target. Verify on the host.
+
+- `.venv_nixlab/bin/python -m unittest discover -s tests -v`
+- `node tests/dom/test_dom.js`
+- Manual: point `config/acp.json` at `opencode acp`, pick it in the panel,
+  send one message, confirm prose streams and the turn ends.
+- Confirm no `POST /api/ai/config` path can create or edit `config/acp.json`,
+  and that the OpenAI path is behaviourally unchanged (it now parses the body
+  once with `get_json(silent=True)`; a non-object body returns 400 instead of
+  the old 500, which is an improvement, not byte-identity).
+
+## Accepted limitations
+
+- The agent is a child process with the server user's filesystem access, minus
+  whatever the launcher confines. The notebook's `safe_path`/cards do not apply.
+- Multi-turn context is replayed into each prompt; the agent has no persistent
+  session and re-reads files per turn.
+- Images are unsupported on ACP profiles.
+- Tool/thought progress is not rendered in v1.
+- The agent is killed at turn end by the SDK's kill ladder, which runs before
+  the terminal event is emitted. There is no `atexit` handler: if the server
+  dies mid-turn (SIGKILL, or SIGTERM from the `--debug` reloader), stdin EOF is
+  the backstop that makes a conforming agent exit.
+
+## Post-review additions (2026-10-13)
+
+Code, security, architecture, and product reviews landed after the first
+implementation. Follow-ups applied:
+
+- **Orphan fix (Major).** The terminal event is now emitted only after the
+  SDK's spawn context manager finishes its teardown, so `run_turn`'s
+  `GeneratorExit` cancel can no longer interrupt the kill ladder. Regression
+  test uses an EOF-ignoring stub.
+- `finish()` made idempotent; a liveness guard added to `run_turn`.
+- `acp_client` imported lazily, so a missing SDK degrades to an in-band SSE
+  error instead of killing the server.
+- `_validate_chat_messages(messages, drop_system=...)` shared by both chat paths.
+- `load_acp_config` fails closed when the ACP name collides with an `ai.json`
+  profile; rejects non-finite `timeout`; `ACP_LABEL` / `ACP_MAX_NAME_LEN` named.
+- `_Client` refuses `fs/*`, `terminal/*`, and `elicitation/create` with JSON-RPC
+  `method_not_found`; spawn failures no longer echo the command line.
+- Frontend: read-only ACP row in Settings → AI (rendered from `cfg.acp`, never
+  in the POST payload), and image attachments stripped/disabled for ACP turns
+  so an image can no longer poison every later turn.
+- No permission cards, no `fs/*` advertisement, no held writes: the agent uses
+  its own tools and is trusted; confinement is the launcher in `config/acp.json`.
+
+## Post-review product additions (2026-10-13)
+
+Two gaps the product review ranked highest, both additive:
+
+- **Context preamble.** Because the system turn is dropped, the agent previously
+  got neither the open file nor the global custom prompt. `_acp_context_preamble`
+  rebuilds both from server state (`config/config.json` `activeFile`,
+  `config/ai.json` `custom_prompt`) and prefixes the flattened prompt each turn.
+  No frontend change, no cache/invalidations to get wrong.
+- **Tool activity.** `_Client.session_update` translates each `tool_call` the
+  agent starts into a `trace` event; the relay emits `data: {"acp":"trace",…}`
+  and the panel renders it as a trace line above the streaming answer, so a
+  long multi-step turn no longer looks frozen. OpenAI clients ignore the frame.
+  Verified against the real `opencode acp` with a tool-forcing prompt.
+
+Thoughts, plans, and usage updates remain dropped.
+
+## Agent auto-detection (2026-10-13)
+
+`config/acp.json` may now select a known agent by key (`"agent": "opencode"`)
+instead of carrying a command line. The argv is resolved from the server-side
+`ACP_KNOWN_AGENTS` table, preserving the rule that neither the config file nor
+any HTTP client supplies a command for the common case; `command`/`args` remain
+the escape hatch. `agent` and `command` are mutually exclusive, and a key whose
+executable is not on PATH fails closed to "unconfigured" rather than exposing a
+picker entry that always errors.
+
+`GET /api/ai/config` gained an always-present `acpAgents` array from a read-only
+`shutil.which` lookup (`{key, label, available}`, plus `adapterMissing` and a
+`hint` when the wrapping CLI is installed but its ACP adapter is not). Claude
+Code and Codex are the two that need an adapter package; neither is installed
+on this host, so detection reports the install command rather than a launchable
+agent. Settings → AI renders the list read-only. No route writes `acp.json`.
+
