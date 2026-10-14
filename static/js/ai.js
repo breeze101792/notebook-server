@@ -997,27 +997,11 @@
         catch (e) { /* leave as plain text */ }
       });
     }
+    // Delegate to the shared copy-button owner (copy-image.js) so the AI
+    // panel's code blocks use the same affordance as every other block.
     host.querySelectorAll("pre").forEach(pre => {
-      if (NB.app && NB.app.copyToClipboard) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "code-copy-btn";
-        btn.textContent = "Copy";
-        btn.setAttribute("aria-label", "Copy code to clipboard");
-        btn.addEventListener("click", async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          try {
-            await NB.app.copyToClipboard(pre.textContent);
-            btn.textContent = "Copied!";
-            btn.classList.add("copied");
-            setTimeout(() => {
-              btn.textContent = "Copy";
-              btn.classList.remove("copied");
-            }, 1200);
-          } catch (_) { /* toast path not available here */ }
-        });
-        pre.appendChild(btn);
+      if (NB.copyButton && NB.copyButton.attachTextCopy) {
+        NB.copyButton.attachTextCopy(pre);
       }
     });
     return frag;

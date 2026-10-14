@@ -13,7 +13,9 @@
  * CACHE is versioned: bumping the name makes every installed worker
  * re-run install (re-precache the current assets) and activate (delete
  * the old cache). */
-const CACHE = "notebook-v7";
+/* Bumped v7 -> v8: the newly precached copy-image.js must reach already
+ * installed workers, which only re-run install when CACHE changes. */
+const CACHE = "notebook-v8";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -44,6 +46,7 @@ const PRECACHE = [
   "/static/js/katex.js",
   "/static/js/viz.js",
   "/static/js/htmlpreview.js",
+  "/static/js/copy-image.js",
   "/static/js/viewer.js",
   "/static/js/editbar.js",
   "/static/js/hybrid.js",

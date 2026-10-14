@@ -95,6 +95,10 @@
     if (!(await whenReady())) return; // viz unavailable -> leave source
     const container = document.createElement("div");
     container.className = "viz-container";
+    // Focusable so a keyboard user can Tab to the diagram and open the
+    // hybrid context menu with Shift+F10 / the Menu key (and reach the
+    // copy-image button, which is revealed on :focus-within).
+    container.tabIndex = 0;
     container.dataset.viz = "ok";
     container.dataset.vizSource = source;
     try {

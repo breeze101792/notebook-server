@@ -2849,7 +2849,20 @@ body[data-theme="light"] #viewer-content {
 }
 .markdown-body pre:hover .code-copy-btn,
 .markdown-body pre:focus-within .code-copy-btn,
-.code-copy-btn:focus {
+.ai-prose-span pre:hover .code-copy-btn,
+.ai-prose-span pre:focus-within .code-copy-btn,
+.katex-container:hover .code-copy-btn,
+.katex-container:focus-within .code-copy-btn,
+.htmlpreview-card:hover .code-copy-btn,
+.htmlpreview-card:focus-within .code-copy-btn,
+.mermaid-container:hover .code-copy-btn,
+.mermaid-container:focus-within .code-copy-btn,
+.wavedrom-container:hover .code-copy-btn,
+.wavedrom-container:focus-within .code-copy-btn,
+.viz-container:hover .code-copy-btn,
+.viz-container:focus-within .code-copy-btn,
+.code-copy-btn:focus,
+.code-copy-btn:focus-visible {
   opacity: 1;
 }
 .code-copy-btn:hover { background: var(--accent-soft); color: var(--fg); }
@@ -3012,6 +3025,7 @@ body[data-theme="light"] #viewer-content {
  * matching the diagram containers. Math is black-on-transparent, so it
  * reads on both light and dark surfaces. */
 .katex-container {
+  position: relative;
   margin: .7em 0;
   padding: 14px 16px;
   background: var(--bg-panel);
@@ -3049,12 +3063,39 @@ body[data-theme="light"] #viewer-content {
   width: auto;
   cursor: zoom-in;
 }
+
+/* Copy affordance (copy-image.js). One shared .code-copy-btn sits in the
+ * top-right of every rendered code-block variant: the <pre> wrapper, the
+ * katex / html-live containers, and the three diagram containers (whose
+ * image button adds the .nb-copy-img-btn icon modifier). Hidden by default
+ * (base .code-copy-btn rule) and revealed on hover / focus within the host
+ * or on the button's own focus. The three diagram containers need to be a
+ * positioning context for the absolutely-positioned button. */
+.mermaid-container,
+.wavedrom-container,
+.viz-container {
+  position: relative;
+}
+/* Icon modifier of the shared .code-copy-btn: square padding and no text
+ * line-height. Position, colors, and the reveal all come from the base. */
+.nb-copy-img-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  line-height: 0;
+}
+@media print {
+  .code-copy-btn,
+  .nb-copy-img-btn { display: none !important; }
+}
 /* Live HTML previews. A ```html-live fenced block is replaced with a
  * .htmlpreview-card holding just a sandboxed iframe (allow-scripts, no
  * allow-same-origin). The card mirrors the diagram containers; the frame
  * is resizable so a demo taller than the default can be enlarged without
  * editing the note. */
 .htmlpreview-card {
+  position: relative;
   margin: .7em 0;
   background: var(--bg-panel);
   border: 1px solid var(--border);

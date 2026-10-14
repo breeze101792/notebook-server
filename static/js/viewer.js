@@ -185,62 +185,17 @@
   }
 
   /* --- copy button on code blocks ----------------------------------- */
-  /* attachCopyButton(pre) wires a single "Copy" button into a <pre>
-   * wrapper. The button:
-   *   - Sits absolutely positioned in the top-right of the pre.
-   *   - Is hidden by default and shown on hover (CSS).
-   *   - On click, copies the RAW source text (the <pre>'s textContent,
-   *     which is the un-highlighted code) to the clipboard via
-   *     NB.app.copyToClipboard. We use textContent rather than
-   *     the post-highlight innerHTML so the pasted code is real
-   *     source, not a soup of <span class="hljs-..."> markup.
-   *   - Flips its label to "Copied!" for ~1.2s and reverts. Also
-   *     fires a shared toast via NB.app.notify so the user gets
-   *     the same feedback regardless of where the click landed.
-   *
-   * The button is appended to the <pre> itself, not to a wrapper
-   * around it, so the <pre> needs position:relative in CSS. The
-   * button gets a class .code-copy-btn so styles can target it. */
+  /* attachCopyButton(pre) delegates to NB.copyButton.attachTextCopy, the
+   * single owner of the source-block copy affordance (copy-image.js). The
+   * behavior is unchanged: a "Copy" button in the <pre>'s top-right copies
+   * the RAW source (textContent, not the highlighted innerHTML), flips to
+   * "Copied!" briefly, and fires a toast. The call is synchronous so the
+   * button exists the moment a render completes. Guarded so a missing
+   * copy-image.js degrades to no button instead of throwing. */
   function attachCopyButton(pre) {
-    if (pre.querySelector(".code-copy-btn")) return;   // idempotent
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "code-copy-btn";
-    btn.textContent = "Copy";
-    btn.setAttribute("aria-label", "Copy code to clipboard");
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // textContent strips the highlight <span>s; the raw text
-      // matches the original markdown source.
-      const text = pre.textContent;
-      try {
-        if (NB.app && NB.app.copyToClipboard) {
-          await NB.app.copyToClipboard(text);
-        } else if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(text);
-        } else {
-          throw new Error("No clipboard API available");
-        }
-        // Flip the button to "Copied!" for a short moment. The
-        // NB.app.notify toast is the canonical user feedback, but
-        // the button flip keeps the action anchored to the
-        // affordance the user just clicked -- useful when the user
-        // has scrolled the toast out of view.
-        const prev = btn.textContent;
-        btn.textContent = "Copied!";
-        btn.classList.add("copied");
-        setTimeout(() => {
-          btn.textContent = prev;
-          btn.classList.remove("copied");
-        }, 1200);
-        if (NB.app && NB.app.notify) NB.app.notify("Copied to clipboard");
-      } catch (err) {
-        if (NB.app && NB.app.notify) NB.app.notify("Copy failed", 2200);
-        else console.error("copy failed", err);
-      }
-    });
-    pre.appendChild(btn);
+    if (NB.copyButton && NB.copyButton.attachTextCopy) {
+      NB.copyButton.attachTextCopy(pre);
+    }
   }
   NB.slugify = slugify; // exposed for potential reuse
 

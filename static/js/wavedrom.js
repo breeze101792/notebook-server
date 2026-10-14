@@ -138,6 +138,10 @@
       host.style.display = "";
       const container = document.createElement("div");
       container.className = "wavedrom-container";
+      // Focusable so a keyboard user can Tab to the diagram and open the
+      // hybrid context menu with Shift+F10 / the Menu key (and reach the
+      // copy-image button, which is revealed on :focus-within).
+      container.tabIndex = 0;
       container.dataset.wavedrom = "ok";
       // Store the original source so hybrid mode's domToMarkdown can
       // round-trip the diagram back to a ```wavedrom code block instead

@@ -1590,6 +1590,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/katex.js"));
   evalIn(read("static/js/viz.js"));
   evalIn(read("static/js/htmlpreview.js"));
+  evalIn(read("static/js/copy-image.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
   evalIn(read("static/js/hybrid.js"));
@@ -1980,16 +1981,21 @@ function check(label, cond, extra) {
   // Clicking the button writes the raw code (pre-hljs) to the
   // clipboard stub, flips the label to 'Copied!', and triggers a
   // shared toast via NB.app.notify.
+  const expectedRaw = viewerPre().querySelector("code")
+    ? viewerPre().querySelector("code").textContent : "";
   const clipboardBefore = __clipboard.writes;
   viewerCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
   await tick(20);
   check("code block: click writes to navigator.clipboard",
     __clipboard.writes === clipboardBefore + 1, "writes=" + __clipboard.writes);
-  check("code block: clipboard receives the raw code (not post-hljs markup)",
+  check("code block: clipboard receives the exact raw code (no button label)",
     typeof __clipboard.lastText === "string" &&
     __clipboard.lastText.length > 0 &&
+    __clipboard.lastText === expectedRaw &&
+    !/(?:Copy|Copied!)$/.test(__clipboard.lastText) &&
+    __clipboard.lastText.indexOf("code-copy-btn") === -1 &&
     !/<span\s+class="hljs/.test(__clipboard.lastText),
-    "len=" + (__clipboard.lastText || "").length + " | first120=" + JSON.stringify((__clipboard.lastText || "").slice(0, 120)));
+    "expected=" + JSON.stringify(expectedRaw) + " | got=" + JSON.stringify(__clipboard.lastText));
   check("code block: click flips label to 'Copied!'",
     viewerCopyBtn() && viewerCopyBtn().textContent === "Copied!",
     viewerCopyBtn() && viewerCopyBtn().textContent);
@@ -3137,6 +3143,338 @@ function check(label, cond, extra) {
   await window.NB.tabs.activate("notes/a.md");
   await tick(40);
 
+  console.log("== copy image ==");
+  // copy-image.js injects a "Copy image" button into each rendered SVG
+  // diagram container (mermaid / wavedrom / graphviz) inside
+  // #viewer-content. It skips non-SVG blocks (katex, html-live), is
+  // idempotent across re-scans, removes its chrome in hybrid mode, and
+  // rasterizes the diagram to PNG on click. One combined note renders all
+  // five block types so the selector is exercised in a single pass. Reset
+  // the renderer stubs so prior failures don't leak into this render.
+  __mermaid.failNext = false;
+  __mermaid.nextSvg = '<svg viewBox="0 0 100 50" width="100" height="50"><text>mock</text></svg>';
+  __wavedrom.failNext = false;
+  __wavedrom.nextSvg = '<svg viewBox="0 0 480 60" width="480" height="60"><text>wave</text></svg>';
+  __viz.failNext = false;
+  __viz.nextSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200" height="100"><text>graph</text></svg>';
+  __katex.failNext = false;
+  __katex.nextHtml = '<span class="katex">E=mc^2</span>';
+  const COPY_IMG_PATH = "notes/copyimg.md";
+  const COPY_IMG_BODY = "# Diagrams\n\n" +
+    "```mermaid\ngraph TD; A-->B;\n```\n\n" +
+    "```wavedrom\n" + '{signal:[{name:"clk",wave:"p.....|..."}]}' + "\n```\n\n" +
+    "```dot\ndigraph { a -> b }\n```\n\n" +
+    "```math\nE = mc^2\n```\n\n" +
+    "```html-live\n<div>hi</div>\n```\n\n" +
+    // A plain code fence gives the hybrid-gating checks a <pre> button to
+    // prove it survives while this module strips its own buttons.
+    "```js\nconsole.log(1);\n```\n\n" +
+    "End.\n";
+  FILES[COPY_IMG_PATH] = COPY_IMG_BODY;
+  const ciNotesDir = TREE.find(n => n.path === "notes");
+  if (ciNotesDir && !ciNotesDir.children.some(c => c.path === COPY_IMG_PATH)) {
+    ciNotesDir.children.push({ name: "copyimg.md", type: "file", path: COPY_IMG_PATH });
+  }
+  await window.NB.sidebar.refresh();
+  await tick(40);
+  await window.NB.tabs.open(COPY_IMG_PATH);
+  await tick(120);
+
+  const ciViewer = window.document.getElementById("viewer-content");
+  const containerBtnCount = (sel) => {
+    const c = ciViewer.querySelector(sel);
+    return c ? c.querySelectorAll(".nb-copy-img-btn").length : -1;
+  };
+  const mermaidCopyBtn = () => ciViewer.querySelector(".mermaid-container .nb-copy-img-btn");
+  // The unified base class .code-copy-btn also labels the TEXT buttons the
+  // module injects into katex / html-live containers.
+  const textBtnCount = (sel) => {
+    const c = ciViewer.querySelector(sel);
+    return c ? c.querySelectorAll(".code-copy-btn").length : -1;
+  };
+  const katexCopyBtn = () => ciViewer.querySelector(".katex-container .code-copy-btn");
+  const htmlCopyBtn = () => ciViewer.querySelector(".htmlpreview-card .code-copy-btn");
+  const ciPreCopyBtn = () => ciViewer.querySelector("pre .code-copy-btn");
+
+  // (1) Exactly one button in each SVG-diagram container; none elsewhere.
+  check("copy image: mermaid container gets exactly one .nb-copy-img-btn",
+    containerBtnCount(".mermaid-container") === 1,
+    "count=" + containerBtnCount(".mermaid-container"));
+  check("copy image: wavedrom container gets exactly one .nb-copy-img-btn",
+    containerBtnCount(".wavedrom-container") === 1,
+    "count=" + containerBtnCount(".wavedrom-container"));
+  check("copy image: graphviz container gets exactly one .nb-copy-img-btn",
+    containerBtnCount(".viz-container") === 1,
+    "count=" + containerBtnCount(".viz-container"));
+  check("copy image: katex container gets no button",
+    containerBtnCount(".katex-container") === 0,
+    "count=" + containerBtnCount(".katex-container"));
+  check("copy image: html-live card gets no button",
+    containerBtnCount(".htmlpreview-card") === 0,
+    "count=" + containerBtnCount(".htmlpreview-card"));
+  check("copy image: button is labelled 'Copy image'",
+    !!mermaidCopyBtn() && mermaidCopyBtn().getAttribute("aria-label") === "Copy image",
+    mermaidCopyBtn() && mermaidCopyBtn().getAttribute("aria-label"));
+
+  // (1b) The katex and html-live containers get the TEXT copy button (the
+  // same unified .code-copy-btn base class), labelled "Copy" -- distinct
+  // from the image button, so the two "no button" checks above stay true.
+  check("copy image: katex container gets exactly one .code-copy-btn labelled 'Copy'",
+    textBtnCount(".katex-container") === 1 && katexCopyBtn().textContent === "Copy",
+    "count=" + textBtnCount(".katex-container") +
+    " label=" + (katexCopyBtn() && JSON.stringify(katexCopyBtn().textContent)));
+  check("copy image: html-live card gets exactly one .code-copy-btn labelled 'Copy'",
+    textBtnCount(".htmlpreview-card") === 1 && htmlCopyBtn().textContent === "Copy",
+    "count=" + textBtnCount(".htmlpreview-card") +
+    " label=" + (htmlCopyBtn() && JSON.stringify(htmlCopyBtn().textContent)));
+  // The image button proves the unified base class: it carries BOTH the
+  // shared .code-copy-btn and its own .nb-copy-img-btn modifier.
+  check("copy image: image button carries the unified .code-copy-btn base class",
+    !!mermaidCopyBtn() &&
+    mermaidCopyBtn().classList.contains("code-copy-btn") &&
+    mermaidCopyBtn().classList.contains("nb-copy-img-btn"),
+    mermaidCopyBtn() && mermaidCopyBtn().className);
+
+  // (2) Idempotency: a forced re-scan never doubles the buttons.
+  window.NB.evt.emit("viewer:rendered", { path: COPY_IMG_PATH, live: false });
+  await tick(20);
+  check("copy image: re-scan does not duplicate the mermaid button",
+    containerBtnCount(".mermaid-container") === 1,
+    "count=" + containerBtnCount(".mermaid-container"));
+  check("copy image: re-scan does not duplicate the wavedrom button",
+    containerBtnCount(".wavedrom-container") === 1,
+    "count=" + containerBtnCount(".wavedrom-container"));
+  check("copy image: re-scan does not duplicate the graphviz button",
+    containerBtnCount(".viz-container") === 1,
+    "count=" + containerBtnCount(".viz-container"));
+  check("copy image: re-scan does not duplicate the katex text button",
+    textBtnCount(".katex-container") === 1,
+    "count=" + textBtnCount(".katex-container"));
+  check("copy image: re-scan does not duplicate the html-live text button",
+    textBtnCount(".htmlpreview-card") === 1,
+    "count=" + textBtnCount(".htmlpreview-card"));
+
+  // (2b) The katex text button copies the stored LaTeX source and flips to
+  // "Copied!" -- same shared attachTextCopy UX as the <pre> button. Reuse
+  // the harness clipboard recorder through NB.app.copyToClipboard.
+  const katexClipBefore = __clipboard.writes;
+  katexCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("copy image: katex copy button writes the exact LaTeX source (no button label)",
+    __clipboard.writes === katexClipBefore + 1 &&
+    (__clipboard.lastText || "").trim() === "E = mc^2" &&
+    !/(?:Copy|Copied!)$/.test((__clipboard.lastText || "").trim()) &&
+    (__clipboard.lastText || "").indexOf("code-copy-btn") === -1,
+    "writes=" + __clipboard.writes + " text=" + JSON.stringify(__clipboard.lastText));
+  check("copy image: katex copy button flips to 'Copied!'",
+    katexCopyBtn().textContent === "Copied!" && katexCopyBtn().classList.contains("copied"),
+    katexCopyBtn() && katexCopyBtn().textContent);
+
+  // (3) Hybrid gating: the buttons are view-only chrome, removed on
+  // hybrid:will-enter and never injected while hybrid is active.
+  const realIsActive = window.NB.hybrid.isActive;
+  check("copy image: the <pre> copy button is present before hybrid:will-enter",
+    !!ciPreCopyBtn(), "preBtn=" + !!ciPreCopyBtn());
+  window.NB.evt.emit("hybrid:will-enter", COPY_IMG_PATH);
+  check("copy image: hybrid:will-enter removes injected buttons",
+    containerBtnCount(".mermaid-container") === 0 &&
+    containerBtnCount(".wavedrom-container") === 0 &&
+    containerBtnCount(".viz-container") === 0,
+    "m=" + containerBtnCount(".mermaid-container") +
+    " w=" + containerBtnCount(".wavedrom-container") +
+    " v=" + containerBtnCount(".viz-container"));
+  check("copy image: hybrid:will-enter removes the katex/html-live text buttons",
+    textBtnCount(".katex-container") === 0 && textBtnCount(".htmlpreview-card") === 0,
+    "k=" + textBtnCount(".katex-container") + " h=" + textBtnCount(".htmlpreview-card"));
+  check("copy image: hybrid:will-enter leaves the <pre> copy button alone",
+    !!ciPreCopyBtn(), "preBtn=" + !!ciPreCopyBtn());
+  window.NB.hybrid.isActive = () => true;
+  window.NB.evt.emit("viewer:rendered", { path: COPY_IMG_PATH, live: false });
+  await tick(20);
+  check("copy image: no button is injected while hybrid is active",
+    containerBtnCount(".mermaid-container") === 0 &&
+    containerBtnCount(".wavedrom-container") === 0 &&
+    containerBtnCount(".viz-container") === 0,
+    "m=" + containerBtnCount(".mermaid-container"));
+  window.NB.hybrid.isActive = realIsActive;
+  window.NB.evt.emit("hybrid:exited", COPY_IMG_PATH);
+  await tick(20);
+  check("copy image: hybrid:exited re-injects the buttons",
+    containerBtnCount(".mermaid-container") === 1 &&
+    containerBtnCount(".wavedrom-container") === 1 &&
+    containerBtnCount(".viz-container") === 1,
+    "m=" + containerBtnCount(".mermaid-container"));
+
+  // (3b) Round-trip guard: serializing the rendered note back to Markdown
+  // must never leak the injected button chrome into the note. Drive the real
+  // serializer (the whole-DOM path, since no hybrid session is active here)
+  // over the combined note -- a rendered diagram AND a code block both carry
+  // buttons at this point -- and assert the emitted Markdown is button-free
+  // while the real content survives.
+  {
+    const md = window.NB.hybrid.domToMarkdown();
+    check("copy image: domToMarkdown serializes the rendered note",
+      typeof md === "string" && md.length > 0, "len=" + (md ? md.length : 0));
+    check("copy image: serialized markdown keeps the code + diagram source",
+      md.indexOf("console.log(1)") !== -1 &&
+      md.indexOf("graph TD; A-->B;") !== -1,
+      JSON.stringify(md).slice(0, 160));
+    check("copy image: serialized markdown contains no copy-button markup",
+      md.indexOf("<button") === -1 &&
+      md.indexOf("code-copy-btn") === -1 &&
+      md.indexOf("nb-copy-img-btn") === -1,
+      "button=" + md.indexOf("<button") + " textBtn=" + md.indexOf("code-copy-btn") +
+      " imgBtn=" + md.indexOf("nb-copy-img-btn"));
+  }
+
+  // (4) Clipboard path. jsdom has no canvas rasterization, image decode,
+  // or image clipboard; stub the minimum so copySvgToPng reaches the
+  // ClipboardItem write. The getContext stub must carry fillRect/drawImage
+  // (the harness's recording 2D context does not) or drawToBlob rejects.
+  check("copy image: mermaid lightbox hidden before the click",
+    window.document.getElementById("mermaid-lightbox").hidden);
+  const __copyImg = { writes: 0, items: null };
+  window.navigator.clipboard.write = async (items) => {
+    __copyImg.writes++;
+    __copyImg.items = items;
+  };
+  const realClipboardItem = window.ClipboardItem;
+  window.ClipboardItem = class ClipboardItemStub {
+    constructor(parts) { this.parts = parts; }
+  };
+  const realSecure = window.isSecureContext;
+  window.isSecureContext = true;
+  const realGetContext2d = window.HTMLCanvasElement.prototype.getContext;
+  window.HTMLCanvasElement.prototype.getContext = function () {
+    return { fillStyle: "", fillRect() {}, drawImage() {} };
+  };
+  const realToBlob = window.HTMLCanvasElement.prototype.toBlob;
+  window.HTMLCanvasElement.prototype.toBlob = function (cb) {
+    cb(new window.Blob(["x"], { type: "image/png" }));
+  };
+  const realImage = window.Image;
+  window.Image = class ImageStub {
+    constructor() { this._src = ""; this.onload = null; this.onerror = null; }
+    set src(v) { this._src = v; if (typeof this.onload === "function") this.onload(); }
+    get src() { return this._src; }
+  };
+
+  mermaidCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(30);
+  check("copy image: clipboard path calls navigator.clipboard.write once",
+    __copyImg.writes === 1, "writes=" + __copyImg.writes);
+  const ciItem = __copyImg.items && __copyImg.items[0];
+  check("copy image: write receives a single ClipboardItem",
+    !!__copyImg.items && __copyImg.items.length === 1 &&
+    ciItem instanceof window.ClipboardItem,
+    "items=" + (__copyImg.items ? __copyImg.items.length : "null"));
+  const pngValue = ciItem && ciItem.parts && ciItem.parts["image/png"];
+  check("copy image: ClipboardItem carries a Promise for image/png",
+    !!pngValue && typeof pngValue.then === "function",
+    "value=" + (pngValue && typeof pngValue));
+  const pngBlob = pngValue ? await pngValue : null;
+  check("copy image: the image/png Promise resolves to an image/png Blob",
+    pngBlob instanceof window.Blob && pngBlob.type === "image/png",
+    pngBlob ? "type=" + pngBlob.type : "no blob");
+
+  // (5) stopPropagation: the click must not reach the delegated lightbox
+  // handler on #viewer-content, so no overlay opens.
+  check("copy image: clicking the button does not open the mermaid lightbox",
+    window.document.getElementById("mermaid-lightbox").hidden,
+    "hidden=" + window.document.getElementById("mermaid-lightbox").hidden);
+  check("copy image: clicking the button opens no other lightbox",
+    window.document.getElementById("wavedrom-lightbox").hidden &&
+    window.document.getElementById("viz-lightbox").hidden);
+
+  // Download fallback (insecure context): the anchor download path runs.
+  // Observe anchor clicks, and allow a test to force the anchor to throw so
+  // the window.open last resort is exercised too.
+  const hadOwnAnchorClick = Object.prototype.hasOwnProperty.call(
+    window.HTMLAnchorElement.prototype, "click");
+  const realAnchorClick = window.HTMLAnchorElement.prototype.click;
+  let downloadedAnchors = [];
+  let anchorThrows = false;
+  window.HTMLAnchorElement.prototype.click = function () {
+    if (anchorThrows) throw new Error("anchor download blocked (stub)");
+    if (this.download) downloadedAnchors.push(this);
+  };
+  const toastText = () => {
+    const t = window.document.querySelector(".toast");
+    return t ? t.textContent : "";
+  };
+
+  window.isSecureContext = false;
+  downloadedAnchors = [];
+  mermaidCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(30);
+  check("copy image: insecure context falls back to a PNG anchor download",
+    downloadedAnchors.length === 1 && /\.png$/.test(downloadedAnchors[0].download),
+    "anchors=" + downloadedAnchors.length);
+  check("copy image: the download shows the download toast, not the failure toast",
+    /downloaded PNG/.test(toastText()) && !/Could not copy/.test(toastText()),
+    JSON.stringify(toastText()));
+
+  // (6) A clipboard write that never settles must not hang the copy: the
+  // bounded wait times out and the download fallback still runs, with the
+  // download toast (not the failure toast).
+  window.isSecureContext = true;
+  window.navigator.clipboard.write = () => new Promise(() => {});   // never settles
+  downloadedAnchors = [];
+  mermaidCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(3200);   // CLIPBOARD_TIMEOUT_MS (3000) + margin
+  check("copy image: a never-settling clipboard write still reaches the download",
+    downloadedAnchors.length === 1, "anchors=" + downloadedAnchors.length);
+  check("copy image: the timeout path shows the download toast, not the failure toast",
+    /downloaded PNG/.test(toastText()) && !/Could not copy/.test(toastText()),
+    JSON.stringify(toastText()));
+
+  // (7) A rejected clipboard write also falls back to the download.
+  window.navigator.clipboard.write = async () => { throw new Error("denied (stub)"); };
+  downloadedAnchors = [];
+  mermaidCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(40);
+  check("copy image: a rejected clipboard write falls back to the download",
+    downloadedAnchors.length === 1 && /downloaded PNG/.test(toastText()),
+    "anchors=" + downloadedAnchors.length + " toast=" + JSON.stringify(toastText()));
+
+  // (8) Safari/iOS can make the anchor download a no-op (here: it throws).
+  // The last resort opens the PNG in a new tab and tells the user how to
+  // save/copy it.
+  window.isSecureContext = false;
+  anchorThrows = true;
+  const realOpen = window.open;
+  const openedUrls = [];
+  window.open = (url, target) => { openedUrls.push({ url: url, target: target }); return {}; };
+  mermaidCopyBtn().dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(40);
+  check("copy image: a failed anchor download opens the PNG in a new tab",
+    openedUrls.length === 1 && /^blob:/.test(openedUrls[0].url) &&
+    openedUrls[0].target === "_blank",
+    "opens=" + JSON.stringify(openedUrls));
+  check("copy image: the open-in-tab toast tells the user how to save it",
+    /right-click or long-press/.test(toastText()) && !/Could not copy/.test(toastText()),
+    JSON.stringify(toastText()));
+  window.open = realOpen;
+  anchorThrows = false;
+
+  if (hadOwnAnchorClick) window.HTMLAnchorElement.prototype.click = realAnchorClick;
+  else delete window.HTMLAnchorElement.prototype.click;
+
+  // Cleanup: restore every stub so later tests are unaffected.
+  delete window.navigator.clipboard.write;
+  if (realClipboardItem === undefined) delete window.ClipboardItem;
+  else window.ClipboardItem = realClipboardItem;
+  if (realSecure === undefined) delete window.isSecureContext;
+  else window.isSecureContext = realSecure;
+  window.HTMLCanvasElement.prototype.getContext = realGetContext2d;
+  window.HTMLCanvasElement.prototype.toBlob = realToBlob;
+  window.Image = realImage;
+
+  // Close the combined tab so the rest of the suite starts clean.
+  await window.NB.tabs.close(COPY_IMG_PATH, { force: true });
+  await window.NB.tabs.activate("notes/a.md");
+  await tick(40);
+
   console.log("== html-live preview ==");
   // The html-live integration is in static/js/htmlpreview.js + the
   // viewer's render() pipeline. It wraps the block source in a
@@ -3199,10 +3537,12 @@ function check(label, cond, extra) {
     hpCards()[0] && !hpCards()[0].querySelector(".htmlpreview-bar"));
   check("html-live: no Source/Preview toggle button in the card",
     hpCards()[0] && !hpCards()[0].querySelector(".htmlpreview-toggle"));
-  check("html-live: the card contains only the iframe",
-    hpCards()[0] && hpCards()[0].children.length === 1 &&
-    hpCards()[0].children[0].tagName === "IFRAME",
-    "children=" + (hpCards()[0] && hpCards()[0].children.length));
+  check("html-live: the card holds only the iframe (plus the copy button)",
+    hpCards()[0] && Array.from(hpCards()[0].children)
+      .filter((c) => !c.classList.contains("code-copy-btn"))
+      .map((c) => c.tagName).join(",") === "IFRAME",
+    "children=" + (hpCards()[0] && Array.from(hpCards()[0].children)
+      .map((c) => c.tagName).join(",")));
   check("html-live: the frame is visible (not hidden)",
     hpFrame && !hpFrame.hidden);
 
@@ -12310,8 +12650,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v7",
-      /const CACHE = "notebook-v7"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v8",
+      /const CACHE = "notebook-v8"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -19745,6 +20085,57 @@ function check(label, cond, extra) {
       lastProse && lastProse.querySelector("pre code.hljs") &&
       lastProse.querySelector("pre .code-copy-btn"),
       "");
+
+    // --- copy-button unification regression guards --------------------
+    // Source-level: the panel used to build its own `.code-copy-btn`; it now
+    // delegates to NB.copyButton.attachTextCopy (copy-image.js). Pin both so a
+    // future edit cannot silently re-fork the affordance. The negative check
+    // probes the exact `className = "code-copy-btn"` assignment the removed
+    // code used. That literal only occurs where a copy button is built, so
+    // its absence cannot false-positive on unrelated code -- unlike the
+    // generic word "copied" or a broad `classList.add` match, which could
+    // legitimately appear for other UI reasons.
+    const aiSrc = read("static/js/ai.js");
+    check("ai copy: ai.js delegates to NB.copyButton.attachTextCopy",
+      aiSrc.indexOf("NB.copyButton.attachTextCopy") !== -1,
+      "no attachTextCopy call in ai.js");
+    check("ai copy: ai.js no longer builds its own .code-copy-btn " +
+      '(checked via className = "code-copy-btn", unique to copy-button code)',
+      aiSrc.indexOf('className = "code-copy-btn"') === -1,
+      "found a local .code-copy-btn construction in ai.js");
+
+    // CSS-level: the unified reveal rule must cover the AI prose <pre>, or
+    // the delegated button is injected but stays at opacity:0 forever.
+    const aiCss = read("static/css/style.css");
+    check("ai copy: style.css reveals .code-copy-btn inside .ai-prose-span pre",
+      /\.ai-prose-span pre:hover \.code-copy-btn/.test(aiCss) &&
+      /\.ai-prose-span pre:focus-within \.code-copy-btn/.test(aiCss),
+      "no .ai-prose-span pre reveal rule for .code-copy-btn");
+
+    // DOM-level: exactly ONE shared button on the rendered block (the old
+    // local construction plus the shared injection would have produced two),
+    // and it copies the code + flips to "Copied!" like every other block.
+    const aiProsePre = lastProse && lastProse.querySelector("pre");
+    const aiCopyBtns = aiProsePre ? aiProsePre.querySelectorAll(".code-copy-btn") : [];
+    const aiCodeEl = aiProsePre ? aiProsePre.querySelector("code") : null;
+    const aiExpected = aiCodeEl ? aiCodeEl.textContent : "";
+    check("ai copy: assistant prose code block has exactly one .code-copy-btn",
+      aiCopyBtns.length === 1, "count=" + aiCopyBtns.length);
+    const aiClipBefore = __clipboard.writes;
+    if (aiCopyBtns.length === 1) {
+      aiCopyBtns[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+      await tick(20);
+    }
+    check("ai copy: clicking it writes the exact code text (no button label)",
+      aiCopyBtns.length === 1 && __clipboard.writes === aiClipBefore + 1 &&
+      __clipboard.lastText === aiExpected &&
+      !/(?:Copy|Copied!)$/.test(__clipboard.lastText || "") &&
+      (__clipboard.lastText || "").indexOf("code-copy-btn") === -1,
+      "expected=" + JSON.stringify(aiExpected) + " got=" + JSON.stringify(__clipboard.lastText));
+    check("ai copy: the button flips to 'Copied!'",
+      aiCopyBtns.length === 1 && aiCopyBtns[0].textContent === "Copied!" &&
+      aiCopyBtns[0].classList.contains("copied"),
+      aiCopyBtns.length ? JSON.stringify(aiCopyBtns[0].textContent) : "(no button)");
   }
 
   // --- Turn 3: DELETE-style patch whose find no longer matches -> 400 --
