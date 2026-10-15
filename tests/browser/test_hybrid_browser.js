@@ -1821,6 +1821,120 @@ async function main() {
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
 
+    // --- hybrid chord core: preventDefault + selection survives prompt ---
+    // AC13 is browser-only: jsdom does not blur on prompt() and cannot prove
+    // that Ctrl+K / Ctrl+\ call preventDefault (Ctrl+K would otherwise focus
+    // the address bar). This case drives the real prompt path and asserts the
+    // link lands on the ORIGINAL selection after the prompt closes.
+    writeNote("notes/chords.md", "click here\n\nsecond para\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/chords.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+
+    // Record each keydown AFTER hybrid's own handler has run (bubble phase
+    // on document), so defaultPrevented reflects the handler's decision.
+    await page.evaluate(() => {
+      window.__chordKeys = [];
+      document.addEventListener("keydown", (e) => {
+        window.__chordKeys.push({ code: e.code, defaultPrevented: e.defaultPrevented });
+      });
+    });
+    const lastKey = () => page.evaluate(
+      () => window.__chordKeys[window.__chordKeys.length - 1] || null);
+
+    // Select "here" and answer the URL prompt.
+    await page.evaluate(() => {
+      const tn = document.querySelector("#viewer-content p").firstChild;
+      const r = document.createRange();
+      r.setStart(tn, 6); r.setEnd(tn, 10);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
+    let dialogSeen = null;
+    page.once("dialog", async (d) => {
+      dialogSeen = { type: d.type(), defaultValue: d.defaultValue() };
+      await d.accept("https://example.com");
+    });
+    await page.keyboard.press("Control+k");
+    await page.waitForTimeout(200);
+    const kKey = await lastKey();
+    const linkState = await page.evaluate(() => {
+      const a = document.querySelector("#viewer-content p a");
+      return {
+        hasLink: !!a,
+        href: a && a.getAttribute("href"),
+        label: a && a.textContent,
+        selection: window.getSelection().toString(),
+      };
+    });
+    check("real browser chords: Ctrl+K is defaultPrevented",
+      kKey && kKey.defaultPrevented === true, JSON.stringify(kKey));
+    check("real browser chords: the URL prompt is prefilled with https://",
+      !!dialogSeen && dialogSeen.defaultValue === "https://",
+      JSON.stringify(dialogSeen));
+    check("real browser chords: the link lands on the original selection",
+      linkState.hasLink && linkState.href === "https://example.com" &&
+      linkState.label === "here" && linkState.selection === "here",
+      JSON.stringify(linkState));
+
+    // Ctrl+\ must preventDefault too.
+    await page.evaluate(() => {
+      const p = document.querySelector("#viewer-content p");
+      const r = document.createRange();
+      r.selectNodeContents(p);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
+    await page.keyboard.press("Control+Backslash");
+    await page.waitForTimeout(120);
+    const clearKey = await lastKey();
+    check("real browser chords: Ctrl+\\ is defaultPrevented",
+      clearKey && clearKey.code === "Backslash" && clearKey.defaultPrevented === true,
+      JSON.stringify(clearKey));
+
+    // A new chord matched on e.code: Ctrl+Shift+7 (Shift makes e.key "&")
+    // must make an ordered list and type no "&".
+    writeNote("notes/chordlist.md", "alpha\n");
+    await page.click("#close-edit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/chordlist.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const p = document.querySelector("#viewer-content p");
+      p.focus();
+      const r = document.createRange();
+      r.setStart(p.firstChild, 5);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
+    await page.keyboard.press("Control+Shift+Digit7");
+    await page.waitForTimeout(150);
+    const listState = await page.evaluate(() => ({
+      ordered: !!document.querySelector("#viewer-content ol li"),
+      text: document.querySelector("#viewer-content").textContent,
+    }));
+    check("real browser chords: Ctrl+Shift+7 makes an ordered list, types no '&'",
+      listState.ordered && listState.text.indexOf("&") === -1,
+      JSON.stringify(listState));
+    check("real browser chords: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+    await page.click("#save-exit-btn");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser chords: the list chord saves valid Markdown",
+      readNote("notes/chordlist.md").indexOf("1.  alpha") === 0,
+      JSON.stringify(readNote("notes/chordlist.md")));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

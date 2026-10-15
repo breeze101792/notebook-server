@@ -2692,6 +2692,12 @@
   }
 
   /* --- inline-format shortcuts --------------------------------------- */
+  /* The refusal shown when an inline action (bold/italic/strike/code or
+   * link) is asked to act on a selection crossing top-level blocks.
+   * Named once so the inline toggles and the link flow cannot drift. */
+  const MSG_INLINE_ONE_BLOCK =
+    "Inline formatting needs a selection inside one block";
+
   /* Toggle bold/italic/strike/inline-code on the current selection with
    * the keyboard (Ctrl/Cmd+B / I / Shift+X / Shift+C). DOM-based, not
    * execCommand, so it behaves identically in every browser: if the
@@ -2773,9 +2779,7 @@
       sel.focusNode.nodeType === Node.TEXT_NODE
         ? sel.focusNode.parentElement : sel.focusNode);
     if (!anchorTop || !focusTop || anchorTop !== focusTop) {
-      if (NB.app && NB.app.notify) {
-        NB.app.notify("Inline formatting needs a selection inside one block");
-      }
+      if (NB.app && NB.app.notify) NB.app.notify(MSG_INLINE_ONE_BLOCK);
       return;
     }
     // Toggle ON: wrap the selection contents.
@@ -3505,6 +3509,225 @@
     return true;
   }
 
+  /* --- hybrid formatting shortcuts ---------------------------------- */
+  /* The chords shipped for hybrid mode; the binding scope is
+   * docs/product/hybrid-shortcuts.md §12. ONE declarative table is the
+   * single source: the dispatcher reads `code`/`shift`, and the Settings
+   * reference rows in index.html read `display`. Every new chord matches
+   * on e.code, never e.key, because Shift changes the produced character
+   * (Shift+7 arrives as "&", Shift+. as ">"); matching on the physical key
+   * keeps the chords layout-independent. The existing inline letter chords
+   * (Mod+B/I/Shift+X/Shift+C) stay on e.key in onEnterKey. */
+  const HYBRID_SHORTCUTS = [
+    { action: "link",  display: "Mod+K",       code: "KeyK" },
+    { action: "ol",    display: "Mod+Shift+7", code: "Digit7",    shift: true },
+    { action: "ul",    display: "Mod+Shift+8", code: "Digit8",    shift: true },
+    { action: "task",  display: "Mod+Shift+9", code: "Digit9",    shift: true },
+    { action: "quote", display: "Mod+Shift+.", code: "Period",    shift: true },
+    { action: "clear", display: "Mod+\\",      code: "Backslash" },
+  ];
+
+  const LINK_URL_PROMPT = "Link URL:";
+  const LINK_URL_PREFILL = "https://";
+  const LINK_LABEL_TEXT = "link text";
+  // A link is clickable and the renderer is un-sanitized, so the
+  // destination is checked against an allowlist: http(s) and mailto:, a
+  // relative/bare path, and "#frag" -- all of which resolve to an http(s)
+  // protocol against the page URL. javascript:, data:, vbscript:, file:
+  // and any other explicit scheme are refused. HTML entities are decoded
+  // and whitespace/control characters are rejected first, so
+  // `&#106;avascript:` cannot bypass the check and a newline cannot inject
+  // Markdown when the note is serialized.
+  const ALLOWED_LINK_SCHEMES = ["http:", "https:", "mailto:"];
+  const MSG_LINK_SCHEME = "Links can't use javascript: or data: URLs";
+
+  function notifyHybridMsg(msg) {
+    if (NB.app && NB.app.notify) NB.app.notify(msg);
+  }
+
+  function textParentEl(node) {
+    return node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  }
+
+  /* Decode HTML entities in a typed URL so an entity-encoded scheme
+   * (`&#106;avascript:`) is caught here, not by the un-sanitized renderer.
+   * A detached <textarea> is the standard entity decoder. */
+  function decodeHtmlEntities(s) {
+    const ta = document.createElement("textarea");
+    ta.innerHTML = s;
+    return ta.value;
+  }
+
+  /* True when `url` is a safe link destination (see the allowlist comment
+   * above). `url` must be non-empty; the caller handles cancel/empty. */
+  function isSafeLinkUrl(url) {
+    if (!url) return false;
+    const decoded = decodeHtmlEntities(url);
+    // A space, newline, or control character can inject Markdown into the
+    // note (turndown escapes only parentheses) and is never valid here.
+    if (/[\s\u0000-\u001f]/.test(decoded)) return false;
+    // Strip the C0 controls a URL parser silently ignores, then resolve.
+    const cleaned = decoded.replace(/[\u0000-\u001f]+/g, "");
+    let resolved;
+    try {
+      resolved = new URL(cleaned, window.location.href);
+    } catch (_) {
+      return false;
+    }
+    return ALLOWED_LINK_SCHEMES.indexOf(resolved.protocol) !== -1;
+  }
+
+  /* The <a> the selection targets: one containing either endpoint, or any
+   * link the range intersects. A selection that only partially covers a
+   * link must update/unwrap that link, never nest a new <a> inside it. */
+  function linkAtRange(range) {
+    const startEl = textParentEl(range.startContainer);
+    const fromStart = startEl && startEl.closest ? startEl.closest("a") : null;
+    if (fromStart) return fromStart;
+    const endEl = textParentEl(range.endContainer);
+    const fromEnd = endEl && endEl.closest ? endEl.closest("a") : null;
+    if (fromEnd) return fromEnd;
+    let root = range.commonAncestorContainer;
+    if (root && root.nodeType === Node.TEXT_NODE) root = root.parentElement;
+    if (!root || !root.querySelectorAll) return null;
+    const anchors = root.querySelectorAll("a");
+    for (let i = 0; i < anchors.length; i++) {
+      if (range.intersectsNode(anchors[i])) return anchors[i];
+    }
+    return null;
+  }
+
+  function selectNodeContents(el) {
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    viewerContentEl.focus({ preventScroll: true });
+  }
+
+  /* The chord a keydown matches, or null. The caller has already checked
+   * that a primary modifier (Ctrl/Cmd) is held and Alt is not. */
+  function matchHybridShortcut(e) {
+    for (let i = 0; i < HYBRID_SHORTCUTS.length; i++) {
+      const s = HYBRID_SHORTCUTS[i];
+      if (e.code !== s.code) continue;
+      if (!!s.shift !== e.shiftKey) continue;
+      if (e.altKey) continue;
+      return s;
+    }
+    return null;
+  }
+
+  function runHybridShortcut(action) {
+    switch (action) {
+      case "link":  return linkAction();
+      case "ol":    return toggleList("ol");
+      case "ul":    return toggleList("ul");
+      case "task":  return toggleTask();
+      case "quote": return toggleQuote();
+      case "clear": return clearFormatting();
+      default:      return null;
+    }
+  }
+
+  /* Link (Mod+K). DOM-based so create / href-update / unwrap are one
+   * deterministic path; execCommand("createLink") -- the edit bar's
+   * mechanism -- has no update or unwrap primitive and is absent in jsdom.
+   * Flow per docs/product/hybrid-shortcuts.md §12.3. */
+  function linkAction() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    if (!viewerContentEl.contains(sel.anchorNode)) return;
+    const range = sel.getRangeAt(0);
+    const wasCollapsed = range.collapsed;
+
+    // A link is inline text within one block: refuse a selection that
+    // crosses top-level blocks (the same rule as the inline toggles).
+    if (!wasCollapsed) {
+      const anchorTop = topLevelBlock(textParentEl(sel.anchorNode));
+      const focusTop = topLevelBlock(textParentEl(sel.focusNode));
+      if (!anchorTop || !focusTop || anchorTop !== focusTop) {
+        notifyHybridMsg(MSG_INLINE_ONE_BLOCK);
+        return;
+      }
+    }
+
+    // The selection decides whether we edit an existing link: any link it
+    // touches (not just the anchor endpoint), so a partial-coverage
+    // selection updates/unwraps the link instead of nesting a new one.
+    const existing = linkAtRange(range);
+    const prefill = existing && existing.getAttribute
+      ? (existing.getAttribute("href") || LINK_URL_PREFILL)
+      : LINK_URL_PREFILL;
+
+    // Pin the selection range before the prompt: a prompt blurs the
+    // contentEditable and the caret/selection would otherwise be lost
+    // (the same savedEmojiRange pattern the emoji picker uses). Focus
+    // before restoring the range, matching restoreCaret.
+    const saved = range.cloneRange();
+    const url = prompt(LINK_URL_PROMPT, prefill);
+    viewerContentEl.focus({ preventScroll: true });
+    sel.removeAllRanges();
+    sel.addRange(saved);
+
+    if (existing) {
+      if (url === null) return;                 // cancel -> no change
+      if (url === "") {                         // toggle off
+        // Clear the live range FIRST (it points into nodes about to be
+        // detached; both jsdom and real browsers misbehave otherwise),
+        // then re-anchor onto the unwrapped text -- mirrors toggleInline.
+        const parent = existing.parentNode;
+        if (!parent) return;
+        const first = existing.firstChild;
+        const last = existing.lastChild;
+        sel.removeAllRanges();
+        unwrapElement(existing);
+        const r = document.createRange();
+        if (first && last) { r.setStartBefore(first); r.setEndAfter(last); }
+        else r.selectNodeContents(parent);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        onContentChange();
+        return;
+      }
+      if (!isSafeLinkUrl(url)) {
+        notifyHybridMsg(MSG_LINK_SCHEME);
+        return;
+      }
+      existing.setAttribute("href", url);       // update href, keep label
+      selectNodeContents(existing);
+      onContentChange();
+      return;
+    }
+
+    if (url === null || url === "") return;     // cancel / empty -> no change
+    if (!isSafeLinkUrl(url)) {
+      notifyHybridMsg(MSG_LINK_SCHEME);
+      return;
+    }
+
+    const a = document.createElement("a");
+    a.setAttribute("href", url);
+    if (wasCollapsed) {
+      a.textContent = LINK_LABEL_TEXT;
+      saved.insertNode(a);
+    } else {
+      // A link is inline text within one inline run. surroundContents
+      // throws for a range that splits block content (two <li> or two
+      // <td>); the old extractContents fallback then pulled those blocks
+      // into the <a>, corrupting the structure. Refuse instead.
+      try {
+        saved.surroundContents(a);
+      } catch (_) {
+        notifyHybridMsg(MSG_INLINE_ONE_BLOCK);
+        return;
+      }
+    }
+    selectNodeContents(a);
+    onContentChange();
+  }
+
   /* keydown handler for hybrid mode: the markdown input rules that need
    * a key (``` + Enter, list outdent) plus the inline-format shortcuts. */
   function onEnterKey(e) {
@@ -3562,6 +3785,17 @@
       if (e.shiftKey && k === "c") {
         e.preventDefault();
         toggleInline("code");
+        return;
+      }
+      // The block/link/clear chords (table-driven, matched on e.code).
+      // preventDefault is mandatory: without it Ctrl/Cmd+K focuses the
+      // browser address bar and Shift+7 types "&".
+      const shortcut = matchHybridShortcut(e);
+      const shortcutSel = window.getSelection();
+      if (shortcut && shortcutSel &&
+          viewerContentEl.contains(shortcutSel.anchorNode)) {
+        e.preventDefault();
+        runHybridShortcut(shortcut.action);
         return;
       }
     }
@@ -3843,11 +4077,12 @@
       case "ol":     toggleList("ol"); break;
       case "task":   toggleTask(); break;
       case "quote":  toggleQuote(); break;
-      case "link": {
-        const url = prompt("Link URL:", "https://");
-        if (url) execCommand("createLink", url);
+      case "link":
+        // Route through the guarded hybrid link flow (create / href-update
+        // / unwrap + scheme allowlist), so the toolbar cannot set a
+        // javascript:/data: href the Mod+K path refuses.
+        linkAction();
         break;
-      }
       case "image": {
         const url = prompt("Image URL:", "https://");
         if (url) execCommand("insertImage", url);
@@ -5838,8 +6073,10 @@
     // Insert submenu
     items.push({ label: "Insert", submenu: [
       { label: "Link…", handler: () => {
-        const url = prompt("Link URL:", "https://");
-        if (url) execCommand("createLink", url);
+        // Restore the caret captured at menu-open, then run the guarded
+        // hybrid link flow (same refuse/create/update behavior as Mod+K).
+        restoreCaret();
+        linkAction();
       } },
       { label: "Image…", handler: () => {
         const url = prompt("Image URL:", "https://");
@@ -6041,6 +6278,10 @@
     flattenTheads,
     updateButtonVisibility,
     commitForTabSwitch,
+    // The hybrid keyboard chord table (action -> display chord -> e.code).
+    // Exposed read-only so the Settings reference rows and the tests can
+    // assert the dispatcher and the displayed labels cannot drift.
+    shortcuts: HYBRID_SHORTCUTS,
     // Table reordering: shared by the drag overlay (table-edit.js) and
     // the keyboard/context-menu paths.
     moveRow,

@@ -507,6 +507,30 @@ const html = `<!DOCTYPE html><html><head>
                 <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+C"></kbd></span>
               </div>
               <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Link</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+K"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Ordered list (toggle caret block)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+7"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Bulleted list (toggle caret block)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+8"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Task list (toggle caret block)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+9"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Blockquote (toggle caret block)</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+Shift+."></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
+                <span class="shortcut-label">Clear formatting</span>
+                <span class="shortcut-binding-wrap"><kbd class="shortcut-binding" data-key="Mod+\\"></kbd></span>
+              </div>
+              <div class="shortcut-row shortcut-row-static" role="listitem">
                 <span class="shortcut-label">Code block (type <code>\`\`\`lang</code> then Enter)</span>
                 <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Enter</kbd></span>
               </div>
@@ -8332,6 +8356,589 @@ function check(label, cond, extra) {
     }
   }
 
+  console.log("== hybrid: keyboard shortcut core (§12) ==");
+  {
+    // The chords shipped by docs/product/hybrid-shortcuts.md §12: link,
+    // ordered/bulleted/task list, blockquote, clear formatting. The new
+    // chords match on e.code (Shift changes e.key: Shift+7 is "&", Shift+.
+    // is ">"), so the events below deliberately send the SHIFTED e.key with
+    // the unshifted physical code. jsdom has no blur-on-prompt and no
+    // execCommand; linkAction is DOM-based, so the whole flow is testable
+    // here except the real-browser selection-survival / preventDefault
+    // cases (AC13), which live in tests/browser/test_hybrid_browser.js.
+    const vc = $("viewer-content");
+    const doc = window.document;
+    const norm = (s) => String(s).replace(/\s+/g, " ").trim();
+    const md = () => window.NB.hybrid.domToMarkdown();
+    const press = (target, opts) => {
+      const ev = new window.KeyboardEvent("keydown",
+        Object.assign({ bubbles: true, cancelable: true }, opts));
+      target.dispatchEvent(ev);
+      return ev;
+    };
+    const caret = (node, offset) => {
+      const r = doc.createRange();
+      r.setStart(node, offset);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    };
+    const select = (node, from, to) => {
+      const r = doc.createRange();
+      r.setStart(node, from); r.setEnd(node, to);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    };
+    const para = (text) => {
+      vc.innerHTML = "<p>" + text + "</p>";
+      return vc.firstElementChild;
+    };
+    const toastText = () => {
+      const t = doc.querySelector(".toast");
+      return t ? t.textContent : "";
+    };
+
+    if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+    FILES["notes/a.md"] = "# File A\n\nbase\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    check("chords: hybrid active for the chord tests", window.NB.hybrid.isActive());
+
+    // --- drift guard: the table is the single source for the labels ------
+    {
+      const staticKeys = Array.from(
+        doc.querySelectorAll("kbd.shortcut-binding[data-key]"))
+        .map((k) => k.dataset.key);
+      const missing = window.NB.hybrid.shortcuts
+        .map((s) => s.display)
+        .filter((d) => staticKeys.indexOf(d) === -1);
+      check("chords: every chord-table display label is a static index.html row",
+        missing.length === 0, "missing=" + JSON.stringify(missing));
+      const idxHtml = read("templates/index.html");
+      const htmlMissing = window.NB.hybrid.shortcuts
+        .map((s) => 'data-key="' + s.display + '"')
+        .filter((attr) => idxHtml.indexOf(attr) === -1);
+      check("chords: every chord-table display label is in templates/index.html",
+        htmlMissing.length === 0, "missing=" + JSON.stringify(htmlMissing));
+      // F3: the link prompt strings are single-sourced constants (both
+      // sibling entry points now route through linkAction, so the literals
+      // exist only there).
+      const hybridSrc = read("static/js/hybrid.js");
+      check("chords: the link URL prompt literals are single-sourced (F3)",
+        hybridSrc.indexOf('prompt("Link URL:"') === -1 &&
+        hybridSrc.indexOf("prompt(LINK_URL_PROMPT, prefill)") !== -1 &&
+        hybridSrc.indexOf("LINK_URL_PREFILL") !== -1);
+    }
+
+    // --- AC6/AC14: protected block is a silent no-op, doc stays clean ---
+    {
+      vc.innerHTML = "<pre><code>x</code></pre>";
+      const pre = vc.firstElementChild;
+      caret(pre.querySelector("code").firstChild, 1);
+      const ev = press(pre, { ctrlKey: true, shiftKey: true, key: "&", code: "Digit8" });
+      check("chords: a list chord inside a fence is a silent no-op",
+        ev.defaultPrevented && vc.querySelector("pre") === pre &&
+        vc.querySelector("ul") === null && !window.NB.hybrid.isDirty(),
+        "html=" + vc.innerHTML.slice(0, 40) +
+        " dirty=" + window.NB.hybrid.isDirty());
+    }
+
+    // --- F1: a selection spanning two list items is refused, not corrupted -
+    // surroundContents throws for a range that splits block content; the old
+    // extractContents fallback pulled the <li>s into the <a>. The doc must
+    // stay untouched and clean.
+    {
+      const before = "<ul><li>aaa</li><li>bbb</li></ul>";
+      vc.innerHTML = before;
+      const ul = vc.firstElementChild;
+      const r = doc.createRange();
+      r.setStart(ul.children[0].firstChild, 1);
+      r.setEnd(ul.children[1].firstChild, 2);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      promptValue = "https://example.com";
+      press(ul, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F1: a selection across two list items is refused intact",
+        vc.innerHTML === before && !vc.querySelector("a") &&
+        /inside one block/.test(toastText()) && !window.NB.hybrid.isDirty(),
+        "html=" + vc.innerHTML + " dirty=" + window.NB.hybrid.isDirty());
+      // Same shape across two table cells.
+      const tbefore =
+        "<table><tbody><tr><td>aaa</td><td>bbb</td></tr></tbody></table>";
+      vc.innerHTML = tbefore;
+      const tbl = vc.firstElementChild;
+      const cells = tbl.querySelectorAll("td");
+      const rt = doc.createRange();
+      rt.setStart(cells[0].firstChild, 1);
+      rt.setEnd(cells[1].firstChild, 2);
+      const st = window.getSelection();
+      st.removeAllRanges(); st.addRange(rt);
+      promptValue = "https://example.com";
+      press(tbl, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F1: a selection across two table cells is refused intact",
+        vc.innerHTML === tbefore && !vc.querySelector("a") &&
+        !window.NB.hybrid.isDirty(),
+        "html=" + vc.innerHTML + " dirty=" + window.NB.hybrid.isDirty());
+    }
+
+    // --- AC3: list chords, matched on e.code, toggle + serialize ---------
+    {
+      const p = para("alpha");
+      caret(p.firstChild, 5);
+      let ev = press(p, { ctrlKey: true, shiftKey: true, key: "&", code: "Digit7" });
+      check("chords: Mod+Shift+7 makes an ordered list (e.code Digit7)",
+        ev.defaultPrevented && !!vc.querySelector("ol li") &&
+        norm(md()) === "1. alpha",
+        "html=" + vc.innerHTML + " md=" + JSON.stringify(norm(md())));
+      const li = vc.querySelector("ol li");
+      caret(li.firstChild, 0);
+      ev = press(li, { ctrlKey: true, shiftKey: true, key: "&", code: "Digit7" });
+      check("chords: a second ordered-list chord returns the item to a paragraph",
+        !vc.querySelector("ol") && norm(md()) === "alpha",
+        "html=" + vc.innerHTML);
+
+      const pb = para("beta");
+      caret(pb.firstChild, 4);
+      ev = press(pb, { ctrlKey: true, shiftKey: true, key: "*", code: "Digit8" });
+      check("chords: Mod+Shift+8 makes a bullet list",
+        ev.defaultPrevented && !!vc.querySelector("ul li") &&
+        norm(md()) === "- beta",
+        "html=" + vc.innerHTML + " md=" + JSON.stringify(norm(md())));
+
+      const pt = para("gamma");
+      caret(pt.firstChild, 5);
+      ev = press(pt, { ctrlKey: true, shiftKey: true, key: "(", code: "Digit9" });
+      check("chords: Mod+Shift+9 makes a task item",
+        ev.defaultPrevented && !!vc.querySelector("li input[type=checkbox]") &&
+        norm(md()) === "- [ ] gamma",
+        "html=" + vc.innerHTML + " md=" + JSON.stringify(norm(md())));
+    }
+
+    // --- AC4: blockquote chord -----------------------------------------
+    {
+      const p = para("quoted");
+      caret(p.firstChild, 6);
+      let ev = press(p, { ctrlKey: true, shiftKey: true, key: ">", code: "Period" });
+      check("chords: Mod+Shift+. wraps the caret's block in a blockquote",
+        ev.defaultPrevented && !!vc.querySelector("blockquote") &&
+        norm(md()) === "> quoted",
+        "html=" + vc.innerHTML + " md=" + JSON.stringify(norm(md())));
+      const bq = vc.querySelector("blockquote");
+      caret(bq.querySelector("p").firstChild, 0);
+      ev = press(bq, { ctrlKey: true, shiftKey: true, key: ">", code: "Period" });
+      check("chords: a second blockquote chord lifts the block out",
+        !vc.querySelector("blockquote") && norm(md()) === "quoted",
+        "html=" + vc.innerHTML);
+    }
+
+    // --- AC5: clear formatting ------------------------------------------
+    {
+      vc.innerHTML = "<h2><strong>x</strong></h2>";
+      const h = vc.firstElementChild;
+      caret(h.querySelector("strong").firstChild, 1);
+      let ev = press(h, { ctrlKey: true, key: "\\", code: "Backslash" });
+      check("chords: Mod+\\ strips a heading and inline emphasis",
+        ev.defaultPrevented && vc.firstElementChild.tagName === "P" &&
+        !vc.querySelector("strong") && norm(md()) === "x",
+        "html=" + vc.innerHTML + " md=" + JSON.stringify(norm(md())));
+
+      vc.innerHTML = '<p><a href="https://e.test">link</a> <img src="i.png"></p>';
+      const pl = vc.firstElementChild;
+      caret(pl.querySelector("a").firstChild, 1);
+      press(pl, { ctrlKey: true, key: "\\", code: "Backslash" });
+      check("chords: Mod+\\ leaves links and images intact",
+        !!vc.querySelector("a") && !!vc.querySelector("img"),
+        "html=" + vc.innerHTML);
+
+      vc.innerHTML = "<pre><code><strong>y</strong></code></pre>";
+      const pre2 = vc.firstElementChild;
+      caret(pre2.querySelector("strong").firstChild, 1);
+      press(pre2, { ctrlKey: true, key: "\\", code: "Backslash" });
+      check("chords: Mod+\\ leaves a fenced code block untouched",
+        !!vc.querySelector("pre strong"), "html=" + vc.innerHTML);
+
+      // Clear is the one block chord that is NOT a no-op inside a cell:
+      // it clears the cell's inline emphasis (existing clearFormatting).
+      vc.innerHTML =
+        "<table><tbody><tr><td><strong>c</strong></td></tr></tbody></table>";
+      const cell = vc.querySelector("td");
+      caret(cell.querySelector("strong").firstChild, 1);
+      press(cell, { ctrlKey: true, key: "\\", code: "Backslash" });
+      check("chords: Mod+\\ clears inline emphasis inside a table cell",
+        !!vc.querySelector("td") && !vc.querySelector("strong"),
+        "html=" + vc.innerHTML);
+    }
+
+    // --- AC7/AC8: link create -------------------------------------------
+    {
+      promptValue = "https://example.com";
+      vc.innerHTML = "<p>click here</p>";
+      const lp = vc.firstElementChild;
+      select(lp.firstChild, 6, 10);
+      const ev = press(lp, { ctrlKey: true, key: "k", code: "KeyK" });
+      const la = lp.querySelector("a");
+      check("link: Mod+K wraps the selection and keeps it selected",
+        ev.defaultPrevented && la && la.getAttribute("href") === "https://example.com" &&
+        la.textContent === "here" && window.getSelection().toString() === "here",
+        "html=" + lp.innerHTML);
+      check("link: the wrapped link serializes to [label](url)",
+        md().includes("[here](https://example.com)"), JSON.stringify(md()));
+    }
+
+    // --- AC8: link from a collapsed caret -------------------------------
+    {
+      promptValue = "https://x.test";
+      vc.innerHTML = "<p>a</p>";
+      const cp = vc.firstElementChild;
+      caret(cp.firstChild, 1);
+      const ev = press(cp, { ctrlKey: true, key: "k", code: "KeyK" });
+      const ca = cp.querySelector("a");
+      check("link: a collapsed caret inserts the placeholder label, selected",
+        ev.defaultPrevented && ca && ca.textContent === "link text" &&
+        ca.getAttribute("href") === "https://x.test" &&
+        window.getSelection().toString() === "link text",
+        "html=" + cp.innerHTML);
+      check("link: the placeholder link serializes to [link text](url)",
+        md().includes("[link text](https://x.test)"), JSON.stringify(md()));
+
+      // --- AC10: update href only, then unwrap --------------------------
+      promptValue = "https://new.test";
+      caret(ca.firstChild, 3);
+      press(cp, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: Mod+K inside an existing link updates only the href",
+        ca.getAttribute("href") === "https://new.test" &&
+        ca.textContent === "link text" &&
+        window.getSelection().toString() === "link text",
+        "html=" + cp.innerHTML);
+
+      promptValue = "";
+      press(cp, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: Mod+K with an empty URL unwraps the existing link",
+        cp.querySelector("a") === null && cp.textContent.indexOf("link text") !== -1,
+        "html=" + cp.innerHTML);
+    }
+
+    // --- F4: unwrap clears the range first and re-anchors on the text ----
+    {
+      promptValue = "https://f4.test";
+      vc.innerHTML = '<p>before <a href="https://f4.test">mid</a> after</p>';
+      const f4p = vc.firstElementChild;
+      const f4a = f4p.querySelector("a");
+      const rf = doc.createRange();
+      rf.selectNodeContents(f4a);
+      const sf = window.getSelection();
+      sf.removeAllRanges(); sf.addRange(rf);
+      promptValue = "";
+      press(f4p, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F4: unwrap re-anchors the selection on the unwrapped text",
+        !f4p.querySelector("a") && f4p.textContent === "before mid after" &&
+        window.getSelection().toString() === "mid",
+        "html=" + f4p.innerHTML +
+        " sel=" + JSON.stringify(window.getSelection().toString()));
+    }
+
+    // --- F5: a selection that partially covers a link targets that link --
+    {
+      promptValue = "https://old.test";
+      vc.innerHTML = '<p>xx <a href="https://old.test">link here</a> yy</p>';
+      const f5p = vc.firstElementChild;
+      const f5a = f5p.querySelector("a");
+      // Start before the <a> ("xx "), end inside its text.
+      const r5 = doc.createRange();
+      r5.setStart(f5p.firstChild, 3);
+      r5.setEnd(f5a.firstChild, 4);
+      const s5 = window.getSelection();
+      s5.removeAllRanges(); s5.addRange(r5);
+      promptValue = "https://new.test";
+      press(f5p, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F5: a partial-coverage selection updates the existing link",
+        f5p.querySelectorAll("a").length === 1 &&
+        f5a.getAttribute("href") === "https://new.test" &&
+        f5a.textContent === "link here",
+        "html=" + f5p.innerHTML);
+
+      // Fully covering the link: neither endpoint is inside it.
+      promptValue = "https://old2.test";
+      vc.innerHTML = '<p>aa <a href="https://old2.test">mid</a> bb</p>';
+      const g = vc.firstElementChild;
+      const ga = g.querySelector("a");
+      const r6 = doc.createRange();
+      r6.setStart(g.firstChild, 0);
+      r6.setEnd(g.lastChild, 3);
+      const s6 = window.getSelection();
+      s6.removeAllRanges(); s6.addRange(r6);
+      promptValue = "https://new2.test";
+      press(g, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F5: a fully-covering selection updates the link via intersectsNode",
+        g.querySelectorAll("a").length === 1 &&
+        ga.getAttribute("href") === "https://new2.test",
+        "html=" + g.innerHTML);
+    }
+
+    // --- AC9/AC11: cancel, empty, and dangerous schemes ------------------
+    {
+      promptValue = null;
+      vc.innerHTML = "<p>plain text</p>";
+      const np = vc.firstElementChild;
+      select(np.firstChild, 0, 5);
+      press(np, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: cancel leaves the selection unchanged",
+        !np.querySelector("a") && np.textContent === "plain text",
+        "html=" + np.innerHTML);
+
+      promptValue = "";
+      select(np.firstChild, 0, 5);
+      press(np, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: an empty URL on a fresh selection changes nothing",
+        !np.querySelector("a"), "html=" + np.innerHTML);
+
+      promptValue = "javascript:alert(1)";
+      select(np.firstChild, 0, 5);
+      press(np, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: a javascript: URL is refused with a notice",
+        !np.querySelector("a") && /javascript/i.test(toastText()),
+        "toast=" + JSON.stringify(toastText()));
+
+      promptValue = "data:text/html,<b>x</b>";
+      select(np.firstChild, 0, 5);
+      press(np, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: a data: URL is refused",
+        !np.querySelector("a"), "html=" + np.innerHTML);
+    }
+
+    // --- F2: the guard decodes entities and uses a scheme allowlist ------
+    {
+      const tryLink = (url) => {
+        vc.innerHTML = "<p>dest</p>";
+        const p = vc.firstElementChild;
+        select(p.firstChild, 0, 4);
+        promptValue = url;
+        press(p, { ctrlKey: true, key: "k", code: "KeyK" });
+        return p;
+      };
+      const rejected = [
+        "&#106;avascript:alert(1)",
+        "javascript:alert(1)",
+        "JavaScript:alert(1)",
+        "data:text/html,<b>x</b>",
+        "vbscript:msgbox(1)",
+        "file:///etc/passwd",
+        "java\nscript:alert(1)",
+        "java&#9;script:alert(1)",
+      ];
+      const leaked = rejected.filter((u) => !!tryLink(u).querySelector("a"));
+      check("link F2: dangerous / entity-encoded / newline schemes are refused",
+        leaked.length === 0, "leaked=" + JSON.stringify(leaked));
+
+      const allowed = ["#x", "./a.md", "mailto:a@b", "https://x", "a.md"];
+      const refusedAllowed = allowed.filter((u) => {
+        const p = tryLink(u);
+        const a = p.querySelector("a");
+        return !a || a.getAttribute("href") !== u;
+      });
+      check("link F2: http(s), mailto, relative, bare, and #fragment are allowed",
+        refusedAllowed.length === 0, "refused=" + JSON.stringify(refusedAllowed));
+
+      // A rejected URL must not change an existing link's href.
+      promptValue = "https://good.test";
+      const gp = tryLink("https://good.test");
+      const ga = gp.querySelector("a");
+      const r = doc.createRange();
+      r.selectNodeContents(ga);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      promptValue = "&#106;avascript:alert(1)";
+      press(gp, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link F2: a rejected URL leaves an existing href unchanged",
+        ga.getAttribute("href") === "https://good.test",
+        "href=" + ga.getAttribute("href"));
+    }
+
+    // --- AC12: cross-block refusal --------------------------------------
+    {
+      promptValue = "https://ok.test";
+      vc.innerHTML = "<p>one</p><p>two</p>";
+      const [b1, b2] = vc.children;
+      const r = doc.createRange();
+      r.setStart(b1.firstChild, 1);
+      r.setEnd(b2.firstChild, 2);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      press(b1, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("link: a cross-block selection is refused with the inline message",
+        !vc.querySelector("a") && /inside one block/.test(toastText()),
+        "toast=" + JSON.stringify(toastText()) + " html=" + vc.innerHTML);
+    }
+
+    // --- AC14: a refusal/cancel leaves isDirty() false -------------------
+    {
+      await window.NB.hybrid.exit(false);
+      FILES["notes/a.md"] = "clean\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      check("no-op: clean after re-enter", !window.NB.hybrid.isDirty());
+      vc.innerHTML = "<p>abc</p>";
+      const q = vc.firstElementChild;
+      select(q.firstChild, 0, 3);
+      promptValue = null;
+      press(q, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("no-op: a cancelled link leaves isDirty() false",
+        !window.NB.hybrid.isDirty() && !q.querySelector("a"),
+        "dirty=" + window.NB.hybrid.isDirty());
+      vc.innerHTML = "<pre><code>z</code></pre>";
+      const preNoop = vc.firstElementChild;
+      caret(preNoop.querySelector("code").firstChild, 1);
+      press(preNoop, { ctrlKey: true, shiftKey: true, key: "(", code: "Digit9" });
+      check("no-op: a protected-block chord leaves isDirty() false",
+        !window.NB.hybrid.isDirty() && !vc.querySelector("li"),
+        "dirty=" + window.NB.hybrid.isDirty());
+    }
+
+    // --- F2b: the sibling link entry points are guarded too --------------
+    // The toolbar Link button (edit-bar case "link") and the hybrid
+    // context-menu Insert -> Link used to call execCommand("createLink")
+    // with the raw prompt value; both now route through linkAction(), so
+    // the same scheme allowlist applies. This block runs in the AC14 clean
+    // window, so a refusal must leave isDirty() false.
+    {
+      const linkBtn = doc.querySelector('#edit-bar .eb[data-act="link"]');
+      const selRange = (node, from, to) => {
+        const r = doc.createRange();
+        r.setStart(node, from); r.setEnd(node, to);
+        const s = window.getSelection();
+        s.removeAllRanges(); s.addRange(r);
+      };
+      const openInsertLink = () => {
+        vc.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
+        const menu = $("nb-menu");
+        const insert = Array.from(menu.querySelectorAll("button")).find((b) => {
+          let l = "";
+          for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
+          return l.trim() === "Insert";
+        });
+        return Array.from(insert.querySelector(".context-menu").querySelectorAll("button"))
+          .find((b) => b.textContent.trim() === "Link…");
+      };
+
+      const bad = ["&#106;avascript:alert(1)", "javascript:alert(1)"];
+      const toolbarLeak = [], menuLeak = [];
+      for (const u of bad) {
+        vc.innerHTML = "<p>dest</p>";
+        const p = vc.firstElementChild;
+        selRange(p.firstChild, 0, 4);
+        promptValue = u;
+        linkBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+        if (p.querySelector("a")) toolbarLeak.push(u);
+
+        vc.innerHTML = "<p>dest</p>";
+        const q = vc.firstElementChild;
+        selRange(q.firstChild, 0, 4);
+        const linkItem = openInsertLink();
+        promptValue = u;
+        linkItem.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(5);
+        if (q.querySelector("a")) menuLeak.push(u);
+      }
+      check("link F2b: the toolbar Link button refuses dangerous URLs",
+        toolbarLeak.length === 0, "leaked=" + JSON.stringify(toolbarLeak));
+      check("link F2b: the context-menu Insert -> Link refuses dangerous URLs",
+        menuLeak.length === 0, "leaked=" + JSON.stringify(menuLeak));
+      check("link F2b: refusals leave the document clean",
+        !window.NB.hybrid.isDirty(), "dirty=" + window.NB.hybrid.isDirty());
+
+      // A normal URL still works through both entry points.
+      vc.innerHTML = "<p>dest</p>";
+      const t1 = vc.firstElementChild;
+      selRange(t1.firstChild, 0, 4);
+      promptValue = "https://ok.test";
+      linkBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      const t1a = t1.querySelector("a");
+      check("link F2b: the toolbar Link button creates [label](url)",
+        !!t1a && t1a.getAttribute("href") === "https://ok.test" &&
+        t1a.textContent === "dest",
+        "html=" + t1.innerHTML);
+
+      vc.innerHTML = "<p>dest</p>";
+      const t2 = vc.firstElementChild;
+      selRange(t2.firstChild, 0, 4);
+      const linkItem2 = openInsertLink();
+      promptValue = "https://ok.test";
+      linkItem2.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(5);
+      const t2a = t2.querySelector("a");
+      check("link F2b: the context-menu Insert -> Link creates [label](url)",
+        !!t2a && t2a.getAttribute("href") === "https://ok.test" &&
+        t2a.textContent === "dest",
+        "html=" + t2.innerHTML);
+    }
+
+    // --- AC15: an untouched sibling block keeps its bytes ----------------
+    {
+      await window.NB.hybrid.exit(false);
+      FILES["notes/a.md"] = "alpha\n\n* star\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const first = vc.querySelector("p");
+      caret(first.firstChild, 5);
+      press(first, { ctrlKey: true, shiftKey: true, key: "*", code: "Digit8" });
+      await window.NB.hybrid.save();
+      await tick(20);
+      const saved = FILES["notes/a.md"];
+      check("chords: a list chord leaves the untouched block byte-identical",
+        saved.indexOf("* star") !== -1 && /-\s+alpha/.test(saved),
+        JSON.stringify(saved));
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
+
+    // --- AC2: preview mode ignores every new chord -----------------------
+    {
+      check("chords: hybrid inactive before the preview test",
+        !window.NB.hybrid.isActive());
+      vc.innerHTML = "<p>preview text</p>";
+      const pp = vc.firstElementChild;
+      caret(pp.firstChild, 3);
+      const evList = press(pp, { ctrlKey: true, shiftKey: true, key: "&", code: "Digit8" });
+      check("chords: a list chord is ignored in preview mode",
+        !evList.defaultPrevented && !vc.querySelector("ul"),
+        "prevented=" + evList.defaultPrevented + " html=" + vc.innerHTML);
+      promptValue = "https://e.test";
+      select(pp.firstChild, 0, 4);
+      const evLink = press(pp, { ctrlKey: true, key: "k", code: "KeyK" });
+      check("chords: Mod+K is ignored in preview mode",
+        !evLink.defaultPrevented && !pp.querySelector("a"),
+        "prevented=" + evLink.defaultPrevented);
+    }
+
+    // --- AC2: source (CM6) mode ignores every new chord ------------------
+    {
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      click("edit-toggle");
+      await tick(20);
+      check("chords: source mode is not hybrid", !window.NB.hybrid.isActive());
+      const cmBefore = cmGetValue();
+      const evSrc = press($("viewer-content"),
+        { ctrlKey: true, shiftKey: true, key: "&", code: "Digit7" });
+      check("chords: hybrid is inert in source mode",
+        !evSrc.defaultPrevented && cmGetValue() === cmBefore,
+        "prevented=" + evSrc.defaultPrevented);
+      await window.NB.viewer.endEdit();
+      await tick(10);
+    }
+    promptValue = null;
+  }
+
   console.log("== hybrid autosave ==");
   {
     // Autosave is on by default (cfg.autosave=true). Enter hybrid mode,
@@ -15577,13 +16184,16 @@ function check(label, cond, extra) {
   // The fixed hybrid-editor reference table below the configurable rows.
   const staticRows = $("settings-section-shortcuts")
     .querySelectorAll(".shortcut-row-static");
-  check("shortcuts: 7 fixed hybrid reference rows",
-    staticRows.length === 7, "got " + staticRows.length);
+  check("shortcuts: 13 fixed hybrid reference rows",
+    staticRows.length === 13, "got " + staticRows.length);
   const staticKbds = Array.from(staticRows).map(r =>
     r.querySelector(".shortcut-binding").textContent);
   check("shortcuts: hybrid rows localized via format() (Mod+B -> Ctrl+B)",
     staticKbds.includes("Ctrl+B") && staticKbds.includes("Ctrl+I") &&
-    staticKbds.includes("Ctrl+Shift+X") && staticKbds.includes("Ctrl+Shift+C"),
+    staticKbds.includes("Ctrl+Shift+X") && staticKbds.includes("Ctrl+Shift+C") &&
+    staticKbds.includes("Ctrl+K") && staticKbds.includes("Ctrl+Shift+7") &&
+    staticKbds.includes("Ctrl+Shift+8") && staticKbds.includes("Ctrl+Shift+9") &&
+    staticKbds.includes("Ctrl+Shift+.") && staticKbds.includes("Ctrl+\\"),
     JSON.stringify(staticKbds));
   check("shortcuts: hybrid rows have no Change/Reset buttons",
     Array.from(staticRows).every(r => !r.querySelector(".shortcut-change") &&
