@@ -208,18 +208,33 @@ const html = `<!DOCTYPE html><html><head>
           <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
-          <button class="eb" data-act="bold">B</button>
-          <button class="eb" data-act="italic">I</button>
-          <button class="eb" data-act="strike">S</button>
-          <button class="eb" data-act="code">code</button>
+          <button class="eb" data-act="undo">Undo</button>
+          <button class="eb" data-act="redo">Redo</button>
+          <span class="eb-sep"></span>
           <button class="eb" data-act="h1">H1</button>
           <button class="eb" data-act="h2">H2</button>
           <button class="eb" data-act="h3">H3</button>
           <button class="eb" data-act="h4">H4</button>
+          <button class="eb" data-act="h5">H5</button>
+          <button class="eb" data-act="h6">H6</button>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="bold">B</button>
+          <button class="eb" data-act="italic">I</button>
+          <button class="eb" data-act="strike">S</button>
+          <button class="eb" data-act="code">code</button>
+          <span class="eb-sep"></span>
           <button class="eb" data-act="ul">UL</button>
           <button class="eb" data-act="ol">OL</button>
           <button class="eb" data-act="task">Task</button>
           <button class="eb" data-act="quote">Q</button>
+          <span class="eb-overflow eb-list">
+            <button class="eb eb-list-btn" data-act="list-menu">☰</button>
+            <div class="eb-menu eb-list-menu" hidden>
+              <button class="eb" data-act="list-move-up">Move item up</button>
+              <button class="eb" data-act="list-move-down">Move item down</button>
+            </div>
+          </span>
+          <span class="eb-sep"></span>
           <button class="eb" data-act="link">Link</button>
           <button class="eb" data-act="image">Img</button>
           <span class="eb-emoji-wrap">
@@ -231,6 +246,8 @@ const html = `<!DOCTYPE html><html><head>
             </div>
           </span>
           <button class="eb" data-act="codeblock">CB</button>
+          <button class="eb" data-act="hr">HR</button>
+          <span class="eb-sep"></span>
           <span class="eb-overflow eb-table">
             <button class="eb eb-table-btn" data-act="table-menu">▦</button>
             <div class="eb-menu eb-table-menu" hidden>
@@ -250,18 +267,8 @@ const html = `<!DOCTYPE html><html><head>
               <button class="eb" data-act="table-delete">Delete table</button>
             </div>
           </span>
-          <button class="eb" data-act="undo">Undo</button>
-          <button class="eb" data-act="redo">Redo</button>
-          <span class="eb-overflow">
-            <button class="eb eb-overflow-btn" data-act="more">More</button>
-            <div class="eb-menu" hidden>
-              <button class="eb" data-act="hr">HR</button>
-              <button class="eb" data-act="h5">H5</button>
-              <button class="eb" data-act="h6">H6</button>
-              <button class="eb" data-act="clear">Clear</button>
-            </div>
-          </span>
-          <span class="eb-spacer"></span>
+          <span class="eb-sep"></span>
+          <button class="eb" data-act="clear">Clear</button>
           <span class="eb-actions">
             <button id="preview-btn" class="eb">Preview</button>
             <button id="save-btn" class="eb eb-primary" hidden>Save</button>
@@ -4796,11 +4803,15 @@ function check(label, cond, extra) {
   // Enter edit mode -> bar appears.
   click("edit-toggle"); await tick(10);
   check("edit bar: visible in edit mode", !$("edit-bar").hidden);
-  // The bar has the inline + heading + line-prefix + undo/redo + overflow
-  // buttons. We don't assert every label here -- just the structural ones.
+  // The bar has the history + heading + inline + line-prefix + insert +
+  // table + reset buttons. We don't assert every label here -- just the
+  // structural ones.
   const barButtons = window.document.querySelectorAll("#edit-bar .eb[data-act]");
-  check("edit bar: at least 14 buttons present", barButtons.length >= 14, "got " + barButtons.length);
-  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
+  check("edit bar: at least 18 buttons present", barButtons.length >= 18, "got " + barButtons.length);
+  check("edit bar: no More overflow button or menu",
+    !window.document.querySelector('#edit-bar [data-act="more"]') &&
+    !window.document.querySelector("#edit-bar .eb-overflow-btn") &&
+    !window.document.querySelector("#edit-bar .eb-menu:not(.eb-table-menu):not(.eb-list-menu)"));
   // Selection-wrap: select "hello", click Bold -> **hello**.
   cmSetValue("hello world"); cmSetSel(0, 5);
   window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -4977,17 +4988,18 @@ function check(label, cond, extra) {
   {
     const bar = $("edit-bar");
     const tableMenu = bar.querySelector(".eb-table-menu");
-    // The ⋯ overflow menu is the .eb-menu inside the plain .eb-overflow
-    // span (the table menu lives in .eb-overflow.eb-table).
-    const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
     check("edit bar: .eb-table-menu's first item is data-act=table",
       !!tableMenu && !!tableMenu.firstElementChild &&
       tableMenu.firstElementChild.getAttribute("data-act") === "table",
       tableMenu ? (tableMenu.firstElementChild
         ? tableMenu.firstElementChild.getAttribute("data-act") : "empty") : "no table menu");
-    check("edit bar: ⋯ overflow menu no longer carries data-act=table",
-      !!overflowMenu && !overflowMenu.querySelector('[data-act="table"]'),
-      overflowMenu ? overflowMenu.innerHTML.slice(0, 80) : "no overflow menu");
+    // The ⋯ More menu is gone; the ▦ table and ☰ list menus are the only
+    // menus left under the bar.
+    check("edit bar: only the table and list menus remain",
+      !bar.querySelector(".eb-menu:not(.eb-table-menu):not(.eb-list-menu)") &&
+      !bar.querySelector('[data-act="more"]') &&
+      !!bar.querySelector(".eb-list-menu"),
+      "menus=" + bar.querySelectorAll(".eb-menu").length);
     // index.html must carry the same layout the fixture mirrors.
     const idxHtml = read("templates/index.html");
     const tmHtml = idxHtml.match(/<div class="eb-menu eb-table-menu"[^>]*>([\s\S]*?)<\/div>/);
@@ -4995,39 +5007,68 @@ function check(label, cond, extra) {
     check("index.html: .eb-table-menu's first item is data-act=table",
       !!tmFirst && tmFirst[1] === "table",
       tmFirst ? tmFirst[1] : "no table menu match");
-    const omHtml = idxHtml.match(/<div class="eb-menu" hidden>([\s\S]*?)<\/div>/);
-    check("index.html: ⋯ overflow .eb-menu no longer has data-act=table",
-      !!omHtml && omHtml[1].indexOf('data-act="table"') === -1,
-      omHtml ? omHtml[1] : "no overflow menu match");
+    check("index.html: the ⋯ More menu is gone",
+      idxHtml.indexOf('<div class="eb-menu" hidden>') === -1 &&
+      idxHtml.indexOf('data-act="more"') === -1,
+      "index.html still has a plain .eb-menu or a more button");
   }
-  // Overflow menu opens on "more" click, then a button inside it acts.
+  // The four formerly-overflow controls are direct bar buttons now.
   cmSetValue("fmt"); cmSetSel(0, 3);
-  check("edit bar: overflow menu hidden by default", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
-  window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  window.document.querySelector('#edit-bar .eb[data-act="h5"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: more opens overflow menu", !window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
-  // Click a H5 inside the menu -> "##### fmt".
-  window.document.querySelector('#edit-bar .eb-menu .eb[data-act="h5"]').dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(10);
-  check("edit bar: h5 inside overflow prefixes the line",
+  check("edit bar: h5 direct prefixes the line",
     cmGetValue() === "##### fmt", "got: " + cmGetValue());
-  check("edit bar: overflow menu closes after action", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
-  // Click outside closes the overflow.
-  window.document.querySelector('#edit-bar .eb[data-act="more"]').dispatchEvent(new window.Event("click", { bubbles: true }));
+  // H6 on its own line -> "###### fmt".
+  cmSetValue("fmt"); cmSetSel(0, 3);
+  window.document.querySelector('#edit-bar .eb[data-act="h6"]').dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: overflow menu reopened", !window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
-  // Outside click -> closes.
-  window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-  await tick(10);
-  check("edit bar: outside click closes overflow", window.document.querySelector("#edit-bar .eb-overflow:not(.eb-table) > .eb-menu").hidden);
-  // Clear formatting: remove heading + list + quote prefixes.
-  cmSetValue("## heading\n- item\n> quote"); cmSetSel(0, cmGetValue().length);
-  window.document.querySelector('#edit-bar .eb-menu .eb[data-act="clear"]')
+  check("edit bar: h6 direct prefixes the line",
+    cmGetValue() === "###### fmt", "got: " + cmGetValue());
+  // Clear formatting: strip block prefixes (heading/list/quote/task) AND
+  // inline emphasis, but leave links, images, and fenced code intact.
+  cmSetValue("## heading\n- item\n> quote\n- [ ] todo\n" +
+    "**bold** *ital* ~~strike~~ `code`\n[t](u) ![a](i)\nsnake_case\n" +
+    "```\nraw **x** - item\n```");
+  cmSetSel(0, cmGetValue().length);
+  window.document.querySelector('#edit-bar .eb[data-act="clear"]')
     .dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("edit bar: clear strips heading, list, quote prefixes",
-    cmGetValue() === "heading\nitem\nquote",
+  check("edit bar: clear strips block prefixes and inline emphasis",
+    cmGetValue() === "heading\nitem\nquote\ntodo\n" +
+      "bold ital strike code\n[t](u) ![a](i)\nsnake_case\n" +
+      "```\nraw **x** - item\n```",
     "got: " + JSON.stringify(cmGetValue()));
+  // Nested emphasis: `**a *b* c**` must clear to `a b c`, not degrade to
+  // `*a b c*` (italic) via the single-`*` rule.
+  cmSetValue("**a *b* c**"); cmSetSel(0, cmGetValue().length);
+  window.document.querySelector('#edit-bar .eb[data-act="clear"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: clear strips nested emphasis",
+    cmGetValue() === "a b c", "got: " + JSON.stringify(cmGetValue()));
+  // A link/image destination is data, not styling: an underscore inside
+  // the URL must survive byte-for-byte.
+  cmSetValue("[a](http://x/_b_/y) ![i](http://x/_c_/z) [d][e_f]");
+  cmSetSel(0, cmGetValue().length);
+  window.document.querySelector('#edit-bar .eb[data-act="clear"]')
+    .dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(10);
+  check("edit bar: clear leaves link/image destinations intact",
+    cmGetValue() === "[a](http://x/_b_/y) ![i](http://x/_c_/z) [d][e_f]",
+    "got: " + JSON.stringify(cmGetValue()));
+  // A selection that starts inside an open fence must not strip the raw
+  // code body.
+  {
+    const mf = "before\n```\n**raw** - code\n```\nafter";
+    cmSetValue(mf);
+    const mfStart = mf.indexOf("**raw**");
+    cmSetSel(mfStart, mfStart + "**raw** - code".length);
+    window.document.querySelector('#edit-bar .eb[data-act="clear"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("edit bar: clear leaves a mid-fence selection untouched",
+      cmGetValue() === mf, "got: " + JSON.stringify(cmGetValue()));
+  }
   // Ctrl+B wraps selection (keyboard shortcut). CM6 catches it via the
   // Prec.high keymap, but the keydown still bubbles. We dispatch on
   // the bridge's view.contentDOM to make sure CM sees it.
@@ -5115,24 +5156,23 @@ function check(label, cond, extra) {
       bar.hidden === false, "hidden=" + bar.hidden);
 
     // 3e: hide() hides the bar and closes the menus + emoji panel.
-    // editbar.js scopes its overflow selector to the plain .eb-overflow
-    // wrapper (`.eb-overflow:not(.eb-table) > .eb-menu`), so the ⋯ menu and
-    // the ▦ table menu are distinct elements; both must close.
+    // The ▦ table menu and the ☰ list menu are distinct elements; both
+    // must close.
     window.NB.editbar.show("source");
     vimStub = false;
     const tableMenu = bar.querySelector(".eb-table-menu");
-    const overflowMenu = bar.querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
+    const listMenu = bar.querySelector(".eb-list-menu");
     const emojiPanel = bar.querySelector(".eb-emoji-panel");
     tableMenu.hidden = false;
-    overflowMenu.hidden = false;
+    listMenu.hidden = false;
     emojiPanel.hidden = false;
     window.NB.editbar.hide();
     check("editbar vim: hide() hides the bar", bar.hidden === true,
       "hidden=" + bar.hidden);
     check("editbar vim: hide() closes the ▦ table menu",
       tableMenu.hidden === true, "hidden=" + tableMenu.hidden);
-    check("editbar vim: hide() closes the ⋯ overflow menu",
-      overflowMenu.hidden === true, "hidden=" + overflowMenu.hidden);
+    check("editbar vim: hide() closes the ☰ list menu",
+      listMenu.hidden === true, "hidden=" + listMenu.hidden);
     check("editbar vim: hide() closes the emoji panel",
       emojiPanel.hidden === true, "hidden=" + emojiPanel.hidden);
 
@@ -9679,23 +9719,23 @@ function check(label, cond, extra) {
   {
     // --- edit bar: acts hybrid does NOT own must fall through ---------
     // onEditBarClick used to e.stopPropagation() for EVERY [data-act]
-    // before its switch, so editbar.js's own listener never saw "more"
-    // (the overflow menu) or "task" -- both were dead in WYSIWYG mode.
-    // Only the acts hybrid actually handles may be claimed.
+    // before its switch, so editbar.js's own listener never saw the emoji
+    // toggle (which opens the picker) or "task" -- both were dead in
+    // WYSIWYG mode. Only the acts hybrid actually handles may be claimed.
     FILES["notes/a.md"] = "# File A\n\nhello\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
     await tick(20);
     await window.NB.hybrid.enter();
     await tick(20);
-    const menuEl = $("edit-bar").querySelector(".eb-overflow:not(.eb-table) > .eb-menu");
-    const menuHiddenBefore = menuEl.hidden;
-    $("edit-bar").querySelector('[data-act="more"]')
+    const fbEmojiPanel = $("edit-bar").querySelector(".eb-emoji-panel");
+    const fbPanelHiddenBefore = fbEmojiPanel.hidden;
+    $("edit-bar").querySelector('[data-act="emoji"]')
       .dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(20);
-    check("hybrid edit bar: 'more' falls through and opens the overflow menu",
-      menuHiddenBefore && !menuEl.hidden,
-      "hiddenBefore=" + menuHiddenBefore + " hiddenAfter=" + menuEl.hidden);
+    check("hybrid edit bar: 'emoji' falls through and opens the picker",
+      fbPanelHiddenBefore && !fbEmojiPanel.hidden,
+      "hiddenBefore=" + fbPanelHiddenBefore + " hiddenAfter=" + fbEmojiPanel.hidden);
 
     // A handled act still works: H1 converts the paragraph.
     const pForH1 = $("viewer-content").querySelector("p");
@@ -9712,8 +9752,187 @@ function check(label, cond, extra) {
     check("hybrid edit bar: a handled act (H1) still converts the block",
       !!$("viewer-content").querySelector("h1") && window.NB.hybrid.isDirty(),
       "h1=" + $("viewer-content").querySelectorAll("h1").length);
+
+    // --- Clear formatting (data-act="clear") in hybrid mode -----------
+    // "clear" used to call execCommand("removeFormat"), which only
+    // unwrapped inline tags and left headings/lists/quotes alone, and did
+    // nothing on a collapsed caret. It must now strip both block
+    // formatting and inline emphasis, dirty the note only when something
+    // changed, and never touch a table or a fence.
+    {
+      const vcC = $("viewer-content");
+      await window.NB.hybrid.save();
+      await tick(40);
+      check("hybrid clear: clean after save (precondition)",
+        !window.NB.hybrid.isDirty(), "dirty=" + window.NB.hybrid.isDirty());
+      vcC.innerHTML = "<h2>head</h2><ul><li>item</li></ul>" +
+        "<p><strong>bold</strong> plain</p>";
+      const cr = window.document.createRange();
+      cr.selectNodeContents(vcC);
+      const cs = window.getSelection();
+      cs.removeAllRanges();
+      cs.addRange(cr);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: heading, list, and inline emphasis all cleared",
+        !vcC.querySelector("h2") && !vcC.querySelector("ul") &&
+        !vcC.querySelector("strong") &&
+        vcC.textContent.indexOf("head") !== -1 &&
+        vcC.textContent.indexOf("item") !== -1 &&
+        vcC.querySelectorAll("p").length >= 3,
+        "html=" + vcC.innerHTML);
+      check("hybrid clear: dirty after a real clear",
+        window.NB.hybrid.isDirty(), "dirty=" + window.NB.hybrid.isDirty());
+      {
+        const sp = window.getSelection();
+        check("hybrid clear: a multi-block selection stays re-selected",
+          sp.rangeCount && sp.getRangeAt(0).startContainer === vcC &&
+          sp.getRangeAt(0).endContainer === vcC &&
+          sp.getRangeAt(0).endOffset - sp.getRangeAt(0).startOffset > 1,
+          "ranges=" + sp.rangeCount);
+      }
+
+      // A clear on already-plain content changes nothing and must not
+      // mark the document dirty (the "no-op writes nothing" contract).
+      await window.NB.hybrid.save();
+      await tick(40);
+      vcC.innerHTML = "<p>plain one</p><p>plain two</p>";
+      const before = vcC.innerHTML;
+      const cr2 = window.document.createRange();
+      cr2.selectNodeContents(vcC);
+      const cs2 = window.getSelection();
+      cs2.removeAllRanges();
+      cs2.addRange(cr2);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: a no-op does not dirty the note",
+        vcC.innerHTML === before && !window.NB.hybrid.isDirty(),
+        "dirty=" + window.NB.hybrid.isDirty() + " html=" + vcC.innerHTML);
+
+      // A collapsed caret clears just its own block (the old code did
+      // nothing at all with a collapsed caret).
+      await window.NB.hybrid.save();
+      await tick(40);
+      vcC.innerHTML = "<h3>only</h3><p>keep</p>";
+      const cr3 = window.document.createRange();
+      cr3.selectNodeContents(vcC.querySelector("h3"));
+      cr3.collapse(true);
+      const cs3 = window.getSelection();
+      cs3.removeAllRanges();
+      cs3.addRange(cr3);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: a collapsed caret clears its own block",
+        !vcC.querySelector("h3") &&
+        vcC.textContent.indexOf("only") !== -1 &&
+        vcC.textContent.indexOf("keep") !== -1 &&
+        window.NB.hybrid.isDirty(),
+        "html=" + vcC.innerHTML);
+
+      // Inline emphasis inside a table cell IS cleared (gating on
+      // insideProtectedBlock there would wrongly refuse it), while the
+      // table, a fence, and an atomic plugin block are left alone.
+      await window.NB.hybrid.save();
+      await tick(40);
+      vcC.innerHTML =
+        "<h2>h</h2>" +
+        "<table><thead><tr><th>c</th></tr></thead>" +
+        "<tbody><tr><td><strong>cell</strong></td></tr></tbody></table>" +
+        "<pre><code>**raw**</code></pre>" +
+        '<div class="mermaid-container" data-hybrid-atomic="1">' +
+        "<strong>svg</strong></div>";
+      const cr4 = window.document.createRange();
+      cr4.selectNodeContents(vcC);
+      const cs4 = window.getSelection();
+      cs4.removeAllRanges();
+      cs4.addRange(cr4);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: table cell emphasis cleared, table kept",
+        !vcC.querySelector("td strong") && !!vcC.querySelector("table") &&
+        vcC.querySelector("td").textContent === "cell",
+        "html=" + vcC.innerHTML);
+      check("hybrid clear: a fence and an atomic plugin block survive",
+        !!vcC.querySelector("pre code") &&
+        vcC.querySelector("pre code").textContent === "**raw**" &&
+        !!vcC.querySelector(".mermaid-container strong") &&
+        vcC.querySelector(".mermaid-container strong").textContent === "svg",
+        "html=" + vcC.innerHTML);
+
+      // List flattening preserves reading order and never nests a block
+      // inside a paragraph.
+      await window.NB.hybrid.save();
+      await tick(40);
+      vcC.innerHTML = "<ul><li>a<ul><li>b</li></ul>c</li></ul>";
+      const cr5 = window.document.createRange();
+      cr5.selectNodeContents(vcC);
+      const cs5 = window.getSelection();
+      cs5.removeAllRanges();
+      cs5.addRange(cr5);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: nested list flattens in order without nesting",
+        !vcC.querySelector("ul") && !vcC.querySelector("p p") &&
+        vcC.textContent === "abc",
+        "html=" + vcC.innerHTML);
+
+      // A selection ending exactly at the start of the next block must
+      // not clear that block.
+      await window.NB.hybrid.save();
+      await tick(40);
+      vcC.innerHTML = "<p><strong>one</strong></p><h2>two</h2>";
+      const p0 = vcC.querySelector("p");
+      const h2b = vcC.querySelector("h2");
+      const cr6 = window.document.createRange();
+      cr6.setStart(p0.firstChild.firstChild, 1);
+      cr6.setEnd(h2b, 0);
+      const cs6 = window.getSelection();
+      cs6.removeAllRanges();
+      cs6.addRange(cr6);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("hybrid clear: a boundary block is not cleared",
+        !vcC.querySelector("p strong") && !!vcC.querySelector("h2") &&
+        vcC.querySelector("h2").textContent === "two",
+        "html=" + vcC.innerHTML);
+    }
     await window.NB.hybrid.exit(false);
     await tick(20);
+
+    // Clearing a heading, a list, and a blockquote then saving must
+    // round-trip to plain paragraphs, with no leftover prefixes.
+    {
+      FILES["notes/a.md"] = "# Title\n\n- one\n\n> quoted\n";
+      window.NB.viewer.close("notes/a.md");
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const vcR = $("viewer-content");
+      const rr = window.document.createRange();
+      rr.selectNodeContents(vcR);
+      const rs = window.getSelection();
+      rs.removeAllRanges();
+      rs.addRange(rr);
+      $("edit-bar").querySelector('[data-act="clear"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      await window.NB.hybrid.save();
+      await tick(60);
+      const saved = FILES["notes/a.md"] || "";
+      check("hybrid clear: heading/list/quote round-trip to plain text",
+        saved.split("\n").filter((l) => l.trim().length).join("|") ===
+          "Title|one|quoted",
+        JSON.stringify(saved));
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
 
     // --- Task button (edit-bar) in hybrid mode ------------------------
     // "task" used to fall through to editbar.js, which drives the hidden

@@ -29,15 +29,9 @@
   "use strict";
   window.NB = window.NB || {};
 
-  const bar         = document.getElementById("edit-bar");
-  const overflowBtn = bar.querySelector(".eb-overflow-btn");
-  // The ⋯ overflow wrapper, the ▦ table wrapper, and the ☰ list wrapper all
-  // carry .eb-menu. Scope the selector so the ⋯ menu is not aliased to a
-  // different wrapper (the table/list ones come first in the DOM).
-  const MORE_OVERFLOW = ".eb-overflow:not(.eb-table):not(.eb-list)";
-  const overflowMenu = bar.querySelector(MORE_OVERFLOW + " > .eb-menu");
-  const tableMenu   = bar.querySelector(".eb-table-menu");
-  const listMenu    = bar.querySelector(".eb-list-menu");
+  const bar       = document.getElementById("edit-bar");
+  const tableMenu = bar.querySelector(".eb-table-menu");
+  const listMenu  = bar.querySelector(".eb-list-menu");
 
   /* --- emoji picker -------------------------------------------------
    * A curated set (not a full Unicode table): enough to cover everyday
@@ -555,6 +549,40 @@
     code: "code", link: "link text", image: "alt text",
   };
 
+  /* Shield link/image destinations, autolinks, and inline-code spans
+   * from the inline-emphasis pass: a `*` or `_` inside a URL or a code
+   * span is never formatting. One combined pass, so a span can never
+   * nest inside another shield. Links and images are restored verbatim;
+   * a code span comes back without its backticks. */
+  const INLINE_SHIELD_RE =
+    /`([^`]+)`|!?\[[^\]]*\]\([^)]*\)|!?\[[^\]]*\]\[[^\]]*\]|<[^>\s]+>/g;
+
+  function stripInlineFormatting(line) {
+    const shields = [];
+    const masked = line.replace(INLINE_SHIELD_RE, (m, code) => {
+      shields.push(code === undefined ? m : code);
+      return "\u0000" + (shields.length - 1) + "\u0000";
+    });
+    const stripped = masked
+      .replace(/\*\*(.+?)\*\*/g, "$1")
+      .replace(/__(.+?)__/g, "$1")
+      .replace(/~~([^~]+)~~/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/(^|[^\w])_([^_]+)_(?!\w)/g, "$1$2");
+    return stripped.replace(/\u0000(\d+)\u0000/g, (m, i) => shields[Number(i)]);
+  }
+
+  /* True when the line starting at `pos` sits inside an unclosed
+   * ``` / ~~~ fence: a selection that begins mid-fence would otherwise
+   * strip raw code. */
+  function inOpenFence(value, pos) {
+    let open = false;
+    value.slice(0, pos).split("\n").forEach((l) => {
+      if (/^\s{0,3}(```|~~~)/.test(l)) open = !open;
+    });
+    return open;
+  }
+
   const actions = {
     bold:   () => wrap("**", PLACEHOLDER.bold),
     italic: () => wrap("*",  PLACEHOLDER.italic),
@@ -675,27 +703,33 @@
       }
     },
 
-    /* Strip leading markdown formatting from every selected line. */
+    /* Strip block prefixes and inline emphasis from every selected
+     * line (or the current line). Fences carry content, not styling, so
+     * a fenced line and everything up to its closing fence are left
+     * untouched, including a selection that starts inside an open fence;
+     * links and images are left in place too. */
     clear() {
       const { start, end, value } = sel();
       const lineStart = value.lastIndexOf("\n", start - 1) + 1;
       const lineEndIdx = value.indexOf("\n", end);
       const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
       const block = value.slice(lineStart, lineEnd);
-      const stripped = block.split("\n").map(l =>
-        l.replace(/^\s{0,3}#{1,6}\s+/, "")
-         .replace(/^\s{0,3}>\s?/, "")
-         .replace(/^\s{0,3}([-*+]|\d+\.)\s+/, "")
-         .replace(/^\s{0,3}([-*+])\s+\[[ x]\]\s+/i, "")
-      ).join("\n");
+      let inFence = inOpenFence(value, lineStart);
+      const stripped = block.split("\n").map(l => {
+        if (/^\s{0,3}(```|~~~)/.test(l)) { inFence = !inFence; return l; }
+        if (inFence) return l;
+        // Block prefixes. Task before the generic marker so "- [ ] x"
+        // clears to "x", not "[ ] x".
+        const plain = l
+          .replace(/^\s{0,3}#{1,6}\s+/, "")
+          .replace(/^\s{0,3}>\s?/, "")
+          .replace(/^\s{0,3}([-*+])\s+\[[ xX]\]\s+/, "")
+          .replace(/^\s{0,3}([-*+]|\d+\.)\s+/, "");
+        return stripInlineFormatting(plain);
+      }).join("\n");
       const newDoc = value.slice(0, lineStart) + stripped + value.slice(lineEnd);
       NB.cmEditor.setValue(newDoc);
       NB.cmEditor.setSelection(lineStart, lineStart + stripped.length);
-    },
-
-    /* The overflow trigger. */
-    more() {
-      overflowMenu.hidden = !overflowMenu.hidden;
     },
 
     /* Table actions dropdown trigger. */
@@ -877,7 +911,6 @@
   function refresh() {
     bar.hidden = !wantsVisible || (context === "source" && vimOn());
     if (bar.hidden) {
-      overflowMenu.hidden = true;
       if (tableMenu) tableMenu.hidden = true;
       if (listMenu) listMenu.hidden = true;
       closeEmojiPanel();
@@ -914,15 +947,11 @@
     const act = btn.dataset.act;
     const fn = actions[act];
     if (fn) fn();
-    if (btn.closest(".eb-menu")) overflowMenu.hidden = true;
     if (btn.closest(".eb-table-menu")) tableMenu.hidden = true;
     if (listMenu && btn.closest(".eb-list-menu")) listMenu.hidden = true;
   });
 
   document.addEventListener("click", (e) => {
-    if (!overflowMenu.hidden) {
-      if (!e.target.closest(MORE_OVERFLOW)) overflowMenu.hidden = true;
-    }
     if (listMenu && !listMenu.hidden && !e.target.closest(".eb-list")) {
       listMenu.hidden = true;
     }

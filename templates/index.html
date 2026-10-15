@@ -185,10 +185,15 @@
           <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
+          <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
+          <button class="eb" data-act="redo"   title="Redo (Ctrl+Y)">↷</button>
+          <span class="eb-sep"></span>
           <button class="eb" data-act="h1"     title="Heading 1">H1</button>
           <button class="eb" data-act="h2"     title="Heading 2">H2</button>
           <button class="eb" data-act="h3"     title="Heading 3">H3</button>
           <button class="eb" data-act="h4"     title="Heading 4">H4</button>
+          <button class="eb" data-act="h5"     title="Heading 5">H5</button>
+          <button class="eb" data-act="h6"     title="Heading 6">H6</button>
           <span class="eb-sep"></span>
           <button class="eb" data-act="bold"   title="Bold (Ctrl+B)"><b>B</b></button>
           <button class="eb" data-act="italic" title="Italic (Ctrl+I)"><i>I</i></button>
@@ -218,6 +223,7 @@
             </div>
           </span>
           <button class="eb" data-act="codeblock" title="Code block">{}</button>
+          <button class="eb" data-act="hr"      title="Horizontal rule">──</button>
           <span class="eb-sep"></span>
           <span class="eb-overflow eb-table">
             <button class="eb eb-table-btn" data-act="table-menu" title="Table actions">▦</button>
@@ -239,20 +245,7 @@
             </div>
           </span>
           <span class="eb-sep"></span>
-          <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
-          <button class="eb" data-act="redo"   title="Redo (Ctrl+Y)">↷</button>
-          <!-- Overflow menu: the less-common syntaxes live here -->
-          <span class="eb-overflow">
-            <button class="eb eb-overflow-btn" data-act="more" title="More">⋯</button>
-            <div class="eb-menu" hidden>
-              <button class="eb" data-act="hr">── Horizontal rule</button>
-              <button class="eb" data-act="h5">H5</button>
-              <button class="eb" data-act="h6">H6</button>
-              <button class="eb" data-act="clear">Clear formatting</button>
-            </div>
-          </span>
-          <!-- Spacer pushes the mode buttons to the right edge. -->
-          <span class="eb-spacer"></span>
+          <button class="eb" data-act="clear"  title="Clear formatting">Tx</button>
           <span class="eb-actions">
             <button id="preview-btn" class="eb" title="Render and return to preview">Preview</button>
             <button id="save-btn"    class="eb eb-primary" title="Save current file" hidden>Save</button>

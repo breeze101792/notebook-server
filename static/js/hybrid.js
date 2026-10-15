@@ -1706,6 +1706,217 @@
     return made;
   }
 
+  /* --- clear formatting ------------------------------------------ */
+
+  /* Inline tags Clear-formatting unwraps. Links and images carry
+   * content, not styling, so they are never touched. */
+  const CLEAR_INLINE_SELECTOR = "strong,b,em,i,s,del,strike,u,code";
+
+  /* Tags that may not sit inside a <p>. Flattening a list item keeps
+   * them as their own top-level block, in document order. */
+  const LIST_ITEM_BLOCK_TAGS =
+    ["P", "DIV", "UL", "OL", "LI", "PRE", "TABLE", "BLOCKQUOTE", "HR",
+      "FIGURE", "H1", "H2", "H3", "H4", "H5", "H6"];
+
+  /* Unwrap `el`, moving its children up to its parent. */
+  function unwrapElement(el) {
+    const parent = el.parentNode;
+    while (el.firstChild) parent.insertBefore(el.firstChild, el);
+    parent.removeChild(el);
+  }
+
+  /* Inline unwrapping skips a code fence and any atomic plugin block --
+   * its live rendered markup is chrome, not note content, so unwrapping
+   * it would mutate the view and dirty the document spuriously. Unlike a
+   * block transform it MAY act inside a table cell: unwrapping a
+   * <strong> there does not damage the table. */
+  function insideClearInlineProtected(el) {
+    if (el.closest("pre")) return true;
+    return !!(el.closest("[" + ATOMIC_BLOCK_MARKER + "], " + ATOMIC_BLOCK_SELECTOR));
+  }
+
+  /* Remove inline emphasis inside `block`. Returns true when something
+   * was unwrapped, false for an already-plain run. */
+  function clearInlineFormatting(block) {
+    let changed = false;
+    block.querySelectorAll(CLEAR_INLINE_SELECTOR).forEach((el) => {
+      if (insideClearInlineProtected(el)) return;
+      unwrapElement(el);
+      changed = true;
+    });
+    return changed;
+  }
+
+  /* Flatten one list item into the top-level blocks that replace it,
+   * inserted before `anchor` in document order. Inline runs become a
+   * <p>; a block child (a nested list, a fence, a paragraph) flushes the
+   * current run and takes its own place. So `<li>a<ul><li>b</li></ul>c`
+   * yields a, b, c -- never an invalid <p><p> nor a reordered run. */
+  function flattenListItem(li, parent, anchor) {
+    const out = [];
+    let p = document.createElement("p");
+    const flush = () => {
+      if (p.childNodes.length) { parent.insertBefore(p, anchor); out.push(p); }
+      p = document.createElement("p");
+    };
+    Array.from(li.childNodes).forEach((node) => {
+      const isBlock = node.nodeType === Node.ELEMENT_NODE &&
+        LIST_ITEM_BLOCK_TAGS.indexOf(node.tagName) !== -1;
+      if (!isBlock) { p.appendChild(node); return; }
+      flush();
+      if (node.tagName === "UL" || node.tagName === "OL") {
+        Array.from(node.children).forEach((child) => {
+          if (child.tagName === "LI") out.push(...flattenListItem(child, parent, anchor));
+        });
+      } else {
+        parent.insertBefore(node, anchor);
+        out.push(node);
+      }
+    });
+    flush();
+    return out;
+  }
+
+  /* Remove block formatting from a top-level block: a heading becomes a
+   * <p>, a <blockquote> is lifted (its children cleared as top-level
+   * blocks), and a list's items become a run of <p>s. A protected block
+   * (table, fence) returns null untouched. Returns the array of top-level
+   * nodes that replace `el`, or null when the block needed no transform. */
+  function clearTopLevelBlock(el) {
+    if (!el || insideProtectedBlock(el)) return null;
+    const tag = el.tagName;
+    if (/^H[1-6]$/.test(tag)) {
+      const p = document.createElement("p");
+      while (el.firstChild) p.appendChild(el.firstChild);
+      el.replaceWith(p);
+      return [p];
+    }
+    if (tag === "BLOCKQUOTE") {
+      const parent = el.parentNode;
+      const moved = [];
+      while (el.firstChild) {
+        moved.push(el.firstChild);
+        parent.insertBefore(el.firstChild, el);
+      }
+      el.remove();
+      const out = [];
+      moved.forEach((child) => {
+        if (child.nodeType !== Node.ELEMENT_NODE) { out.push(child); return; }
+        const sub = clearTopLevelBlock(child);
+        if (sub) out.push(...sub); else out.push(child);
+      });
+      return out;
+    }
+    if (tag === "UL" || tag === "OL") {
+      const parent = el.parentNode;
+      const anchor = el.nextSibling;
+      const out = [];
+      Array.from(el.children).forEach((li) => {
+        if (li.tagName !== "LI") return;
+        out.push(...flattenListItem(li, parent, anchor));
+      });
+      el.remove();
+      return out;
+    }
+    return null;
+  }
+
+  /* The index of the top-level block a range boundary sits in, or -1
+   * when the boundary is outside #viewer-content. A boundary on the
+   * editor root itself clamps to the nearest block. */
+  function blockIndexForPoint(container, offset) {
+    const kids = viewerContentEl.children;
+    if (!kids.length) return -1;
+    if (container === viewerContentEl) {
+      return Math.min(Math.max(offset, 0), kids.length - 1);
+    }
+    let el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+    while (el && el.parentNode && el.parentNode !== viewerContentEl) {
+      el = el.parentElement;
+    }
+    if (!el || el.parentNode !== viewerContentEl) return -1;
+    return Array.prototype.indexOf.call(kids, el);
+  }
+
+  /* True when a range boundary is exactly at the start of `blockEl`:
+   * no content of the block precedes it. */
+  function pointAtBlockStart(container, offset, blockEl) {
+    if (!blockEl) return false;
+    try {
+      const whole = document.createRange();
+      whole.selectNodeContents(blockEl);
+      if (!whole.isPointInRange(container, offset)) return false;
+      whole.setEnd(container, offset);
+      return whole.toString().replace(/\u200B/g, "") === "";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /* The top-level blocks the selection covers. Derived from the two
+   * range boundaries rather than intersectsNode: a selection ending
+   * exactly at the start of the next block does not include it, and a
+   * caret on the editor root still resolves to a block. */
+  function clearTargetBlocks(range) {
+    let startIdx = blockIndexForPoint(range.startContainer, range.startOffset);
+    let endIdx = blockIndexForPoint(range.endContainer, range.endOffset);
+    if (startIdx < 0 || endIdx < 0) return [];
+    if (endIdx < startIdx) endIdx = startIdx;
+    const kids = viewerContentEl.children;
+    if (!range.collapsed && endIdx > startIdx &&
+        pointAtBlockStart(range.endContainer, range.endOffset, kids[endIdx])) {
+      endIdx -= 1;
+    }
+    const out = [];
+    for (let i = startIdx; i <= endIdx; i++) out.push(kids[i]);
+    return out;
+  }
+
+  /* Re-anchor after Clear replaced one or more blocks. A caret collapses
+   * to the end of the first produced block; a text selection spans from
+   * the first to the last, so a multi-block pick stays selected. */
+  function reselectBlocks(nodes, wasCollapsed) {
+    const els = nodes.filter((n) => n && n.nodeType === Node.ELEMENT_NODE);
+    if (!els.length) return;
+    if (wasCollapsed) { reselectBlock(els[0], true); return; }
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.setStartBefore(els[0]);
+    range.setEndAfter(els[els.length - 1]);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    viewerContentEl.focus({ preventScroll: true });
+  }
+
+  /* Clear formatting for the selection: remove block prefixes and
+   * inline emphasis from every top-level block the gesture covers (a
+   * collapsed caret covers its own block). A code fence and any atomic
+   * plugin block keep their content; inline emphasis inside a table cell
+   * is still cleared. Marks the document dirty only when something
+   * changed. */
+  function clearFormatting() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    const wasCollapsed = range.collapsed;
+    const targets = clearTargetBlocks(range);
+    let changed = false;
+    const producedAll = [];
+    targets.forEach((el) => {
+      const produced = clearTopLevelBlock(el);
+      if (produced) changed = true;
+      (produced || [el]).forEach((node) => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (clearInlineFormatting(node)) changed = true;
+        producedAll.push(node);
+      });
+    });
+    if (!changed) return false;
+    reselectBlocks(producedAll, wasCollapsed);
+    onContentChange();
+    return true;
+  }
+
   /* Split the item `li` out of its list into a new list of `tag`,
    * keeping the other items in order on either side. The item node is
    * reused, so the caret keeps pointing into it. Returns the new list. */
@@ -3569,8 +3780,8 @@
    *
    * Interception is keyed on the act, not on "any [data-act]": editbar.js
    * owns its own bar-level listener and still needs the acts hybrid does
-   * NOT implement -- "more" opens the overflow menu. Swallowing those
-   * (the old unconditional stopPropagation) meant the overflow menu never
+   * NOT implement -- "emoji" opens the picker panel. Swallowing those
+   * (the old unconditional stopPropagation) meant the emoji picker never
    * opened in WYSIWYG mode. The capture-phase listener below still runs
    * FIRST for the handled acts, and only they are claimed; everything
    * else falls through untouched. */
@@ -3614,7 +3825,7 @@
       return;
     }
     // Claim the event ONLY when the switch below will actually act on
-    // it, so editbar.js keeps the rest (more, ...).
+    // it, so editbar.js keeps the rest (emoji, ...).
     if (EDIT_BAR_HYBRID_ACTS.indexOf(act) === -1) return;
     e.stopPropagation();
     switch (act) {
@@ -3750,11 +3961,7 @@
       }
       case "undo": undo(); break;
       case "redo": redo(); break;
-      case "clear": {
-        // Strip formatting from selection.
-        execCommand("removeFormat");
-        break;
-      }
+      case "clear": clearFormatting(); break;
       // Save / Close / Preview are handled by their own listeners.
     }
   }
@@ -5558,7 +5765,7 @@
         { label: "Italic", handler: () => execCommand("italic") },
         { label: "Strikethrough", handler: () => execCommand("strikeThrough") },
         { label: "Inline code", handler: () => execCommand("code") },
-        { label: "Clear formatting", handler: () => execCommand("removeFormat") },
+        { label: "Clear formatting", handler: () => clearFormatting() },
       ] },
       // Heading submenu
       { label: "Heading", submenu: [

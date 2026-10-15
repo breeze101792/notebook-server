@@ -1188,12 +1188,13 @@ kbd.context-menu-kbd {
   font-size: 9px;
   vertical-align: middle;
 }
-/* Spacer pushes the mode buttons (Preview/Save/Close) to the right. */
-.edit-bar .eb-spacer { flex: 1; }
+/* margin-left:auto pins the mode buttons (Preview/Save/Close) to the
+ * right edge wherever the wrapped row lands. */
 .edit-bar .eb-actions {
   display: flex;
   gap: 4px;
   align-items: center;
+  margin-left: auto;
 }
 /* Save gets a primary accent to stand out from the formatting buttons. */
 .edit-bar .eb-primary {
