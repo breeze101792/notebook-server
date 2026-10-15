@@ -56,9 +56,22 @@
   /* Turn controls under the newest turn: Edit restores the last prompt and
    * its attachments into the composer (no auto-send); Regenerate re-runs
    * the turn. Only the newest turn carries them. */
-  const AI_EDIT_LABEL = "✎ Edit";
+  const AI_ICON_EDIT =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+    'stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  const AI_ICON_REGEN =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+    'stroke-linejoin="round" aria-hidden="true">' +
+    '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
   const AI_EDIT_TITLE = "Edit your last question and resend";
   const AI_EDIT_DRAFT_TITLE = "Clear the draft and attachments first";
+
+  /* Composer textarea auto-grow cap, in px; mirrors .ai-input's
+   * max-height in style.css. */
+  const AI_INPUT_MAX_HEIGHT = 160;
 
   /* Attachments: local text files inlined into the user turn, and local
    * images sent as content parts. The slot count and the per-file source
@@ -1443,7 +1456,7 @@
     btn.type = "button";
     btn.className = "ai-turn-control ai-regenerate";
     btn.dataset.testRegenerate = "1";
-    btn.textContent = "↻ Regenerate";
+    btn.innerHTML = AI_ICON_REGEN + "Regenerate";
     btn.title = "Re-run the model on your last question";
     btn.addEventListener("click", () => { regenerate(); });
     bubble.appendChild(btn);
@@ -1451,7 +1464,7 @@
     updateTurnDisabled();
   }
 
-  /* The "✎ Edit" control on the newest user bubble. It restores the prompt
+  /* The Edit control on the newest user bubble. It restores the prompt
    * and attachments into the composer; it never auto-sends. */
   function appendEditControl(log) {
     const users = log ? log.querySelectorAll(".ai-msg-user") : [];
@@ -1461,7 +1474,7 @@
     btn.type = "button";
     btn.className = "ai-turn-control ai-edit";
     btn.dataset.testEdit = "1";
-    btn.textContent = AI_EDIT_LABEL;
+    btn.innerHTML = AI_ICON_EDIT + "Edit";
     btn.title = AI_EDIT_TITLE;
     btn.addEventListener("click", () => { editLastMessage(); });
     lastUser.appendChild(btn);
@@ -2129,7 +2142,12 @@
     attachBtn.id = "ai-attach";
     attachBtn.className = "ai-attach";
     attachBtn.title = "Attach files";
-    attachBtn.textContent = "📎";
+    attachBtn.setAttribute("aria-label", "Attach files");
+    attachBtn.innerHTML =
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" ' +
+      'stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
     const attachInput = document.createElement("input");
     attachInput.type = "file";
     attachInput.multiple = true;
@@ -2143,9 +2161,11 @@
       if (activeServerIsAcp()) {
         attachInput.accept = AI_ATTACH_TEXT_ACCEPT;
         attachBtn.title = "Attach text files (ACP agents do not accept images)";
+        attachBtn.setAttribute("aria-label", "Attach text files");
       } else {
         attachInput.removeAttribute("accept");
         attachBtn.title = "Attach files";
+        attachBtn.setAttribute("aria-label", "Attach files");
       }
     }
     const ta = document.createElement("textarea");
@@ -2156,17 +2176,38 @@
     const sendBtn = document.createElement("button");
     sendBtn.type = "submit";
     sendBtn.className = "ai-send";
-    sendBtn.textContent = "↑";
     sendBtn.title = "Send (Enter)";
+    sendBtn.setAttribute("aria-label", "Send message");
+    sendBtn.innerHTML =
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+      'stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
     const stopBtn = document.createElement("button");
     stopBtn.type = "button";
     stopBtn.className = "ai-stop";
-    stopBtn.textContent = "■";
     stopBtn.title = "Stop generating";
+    stopBtn.setAttribute("aria-label", "Stop generating");
+    stopBtn.innerHTML =
+      '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" ' +
+      'aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
     stopBtn.hidden = true;
     form.append(ta, attachBtn, sendBtn, stopBtn);
     form.appendChild(attachInput);
     host.appendChild(form);
+
+    /* The card's padding and empty action row behave like the field. */
+    form.addEventListener("click", (ev) => {
+      if (ev.target === ta || ev.target.closest("button")) return;
+      ta.focus();
+    });
+
+    /* Auto-grow: reset to auto so the field can shrink, then grow to the
+     * content height, capped at AI_INPUT_MAX_HEIGHT. */
+    function autoGrow() {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight, AI_INPUT_MAX_HEIGHT) + "px";
+    }
 
     /* Attachment state lives with the mounted panel. The slot count and
      * the per-file source cap are reserved when the reading chip appears;
@@ -2184,6 +2225,7 @@
 
     function syncSend() {
       sendBtn.disabled = !!ctl || pendingReads > 0;
+      sendBtn.hidden = !!ctl;
       attachBtn.disabled = !!ctl;
       /* Keep the newest turn's controls in step with the live state. */
       updateTurnDisabled();
@@ -2384,11 +2426,13 @@
       begin() {
         ctl = new AbortController();
         stopBtn.hidden = false;
+        form.classList.add("ai-streaming");
         syncSend();
       },
       end() {
         stopBtn.hidden = true;
         ctl = null;
+        form.classList.remove("ai-streaming");
         syncSend();
       },
       signal() { return ctl ? ctl.signal : undefined; },
@@ -2431,6 +2475,7 @@
         return;
       }
       ta.value = "";
+      autoGrow();
       clearAttachments();
       await send(log, q, ui, files);
     }
@@ -2442,8 +2487,8 @@
       }
     });
     /* Typing or clearing the draft flips the Edit control's disabled
-     * state (see updateTurnDisabled). */
-    ta.addEventListener("input", () => { updateTurnDisabled(); });
+     * state (see updateTurnDisabled); it also resizes the field. */
+    ta.addEventListener("input", () => { updateTurnDisabled(); autoGrow(); });
     /* Clipboard files (a copied screenshot) take the same add path. Plain
      * text paste is left alone so the default insertion happens. */
     ta.addEventListener("paste", (e) => {
@@ -2483,8 +2528,9 @@
     attachGetPending = () => attachments.map(a => Object.assign({}, a));
     attachReset = clearAttachments;
     attachRestore = restoreAttachments;
-    composerSetPrompt = (text) => { ta.value = text; };
+    composerSetPrompt = (text) => { ta.value = text; autoGrow(); };
     composerFocus = () => { ta.focus(); };
+    autoGrow();
 
     // Restore any history saved before the reload now that the log and the
     // panel's references exist. It does not need the provider list.

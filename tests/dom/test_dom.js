@@ -21579,10 +21579,19 @@ function check(label, cond, extra) {
       const stopBtn = window.document.querySelector("#ai-view .ai-stop");
       check("ai regenerate: precondition, a request is in flight (stop shown)",
         !!stopBtn && stopBtn.hidden === false);
+      const sendWhileStreaming = window.document.querySelector("#ai-view .ai-send");
+      check("ai regenerate: send leaves the action slot while streaming",
+        !!sendWhileStreaming && sendWhileStreaming.hidden === true &&
+        sendWhileStreaming.disabled === true,
+        sendWhileStreaming ? "hidden=" + sendWhileStreaming.hidden +
+          " disabled=" + sendWhileStreaming.disabled : "no send");
       stopBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       await tick(40);
       window.NB.api.aiChat = realAiChat;
       releaseGate();
+      check("ai regenerate: send returns to the action slot after streaming ends",
+        !!sendWhileStreaming && sendWhileStreaming.hidden === false,
+        sendWhileStreaming ? "hidden=" + sendWhileStreaming.hidden : "no send");
       check("ai regenerate: an aborted turn still offers an enabled control",
         regenBtns().length === 1 && regenBtns()[0].disabled === false,
         "controls=" + regenBtns().length);
@@ -21820,7 +21829,7 @@ function check(label, cond, extra) {
       userBubbles().length === 1 &&
       userBubbles()[0].querySelector(".ai-edit") === firstEdit);
     check("ai edit: the idle Edit control is enabled and labelled",
-      firstEdit.disabled === false && firstEdit.textContent === "✎ Edit" &&
+      firstEdit.disabled === false && firstEdit.textContent === "Edit" &&
       /Edit your last question/.test(firstEdit.title),
       "disabled=" + firstEdit.disabled + " label=" + firstEdit.textContent);
 

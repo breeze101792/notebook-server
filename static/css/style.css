@@ -13,7 +13,7 @@
   --outline-active: #7c9cff;
   --code-bg: #14151a;
   --danger: #ff6b6b;
-  --danger-soft: rgba(255, 107, 107, .15);  /* delete-button hover fill */
+  --danger-soft: rgba(255, 107, 107, .15);  /* delete-button hover fill, error surface */
   --ok: #5fd49a;       /* "watching is on" -- green for the active state */
   --warn: #f3b454;     /* "watching is off" -- amber draws the eye */
   --sidebar-width: 240px;   /* legacy alias; kept for any external callers */
@@ -81,7 +81,7 @@ body[data-theme="light"] {
   --outline-active: #2f5fd0;
   --code-bg: #f0f2f5;
   --danger: #c0392b;
-  --danger-soft: rgba(192, 57, 43, .12);   /* delete-button hover fill */
+  --danger-soft: rgba(192, 57, 43, .12);   /* delete-button hover fill, error surface */
   --ok: #2faa66;
   --warn: #c9831d;
   /* Graph canvas colors on a light body: same hue families as dark but
@@ -3610,7 +3610,7 @@ body[data-theme="light"] #viewer-content {
   padding: 4px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .ai-msg { display: flex; flex-direction: column; min-width: 0; flex: 0 0 auto; }
@@ -3618,9 +3618,8 @@ body[data-theme="light"] #viewer-content {
 .ai-msg-assistant { align-items: stretch; }
 .ai-user-text {
   background: var(--accent-soft);
-  border: 1px solid var(--border);
-  border-radius: 10px 10px 3px 10px;
-  padding: 7px 10px;
+  border-radius: 12px 12px 3px 12px;
+  padding: 7px 11px;
   font-size: .9rem;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3716,38 +3715,54 @@ body[data-theme="light"] #viewer-content {
 }
 .ai-prose-span img { max-width: 100%; }
 
-/* Turn controls under the newest turn: small and subdued. Regenerate sits
- * under the newest assistant reply (left in the stretching assistant
- * column); Edit sits under the newest user bubble (right in the
- * right-aligned user column). Both are disabled while a request is in
- * flight, attachment reads are pending, or a write/patch permission card
- * is unresolved. */
-.ai-regenerate,
-.ai-edit {
-  margin-top: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
-  color: var(--fg-muted);
+/* Turn controls under the newest turn: quiet text affordances, not
+ * buttons. No fill or border at rest; hover/focus reveals the accent.
+ * Regenerate sits under the assistant reply, Edit under the user bubble.
+ * Both are disabled while busy / pending reads / an unresolved card;
+ * Edit also while the composer holds a draft. */
+.ai-turn-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  padding: 3px 10px;
-  font-size: .76rem;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: .72rem;
+  line-height: 1;
   cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  transition: background .12s ease, color .12s ease;
 }
+.ai-turn-control > svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .ai-regenerate { align-self: flex-start; }
 .ai-edit { align-self: flex-end; }
-.ai-regenerate:hover:not(:disabled),
-.ai-edit:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
-.ai-regenerate:disabled,
-.ai-edit:disabled { opacity: .5; cursor: default; }
+.ai-turn-control:hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--accent-soft);
+}
+.ai-turn-control:active:not(:disabled) { background: var(--accent-soft); }
+.ai-turn-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.ai-turn-control:disabled {
+  opacity: .4;
+  color: var(--fg-muted);
+  background: transparent;
+  cursor: default;
+}
 
 .ai-error {
   border: 1px solid var(--danger);
-  border-radius: 6px;
-  background: var(--bg-elev);
+  border-radius: 8px;
+  background: var(--danger-soft);
   color: var(--danger);
-  padding: 7px 10px;
-  font-size: .84rem;
+  padding: 8px 10px;
+  font-size: .82rem;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -3946,42 +3961,94 @@ body[data-theme="light"] #viewer-content {
 .ai-card-status.error { color: var(--danger); }
 .ai-card-status.rejected { color: var(--fg-muted); }
 
-/* --- chat input row ------------------------------------------------ */
+/* --- chat composer card -------------------------------------------- */
+/* The card is the one bordered surface: a full-width borderless textarea
+ * in row 1, attach (left) and send/stop (right) sharing row 2. */
 .ai-input-row {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px 12px;
-  border-top: 1px solid var(--border);
-  flex: 0 0 auto;
-  align-items: flex-end;
-}
-.ai-input {
-  flex: 1 1 auto;
-  resize: vertical;
-  min-height: 44px;
-  max-height: 160px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "input  input"
+    "attach actions";
+  align-items: end;
+  row-gap: 4px;
+  column-gap: 4px;
+  margin: 8px 12px 12px;
+  padding: 8px 8px 6px;
   background: var(--bg-elev);
-  color: var(--fg);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: 12px;
+  flex: 0 0 auto;
+}
+.ai-input-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.ai-input-row.ai-streaming { border-color: var(--accent); }
+.ai-input {
+  grid-area: input;
+  resize: none;
+  min-height: 40px;
+  max-height: 160px;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  padding: 4px 6px 0;
   font: inherit;
   font-size: .9rem;
+  line-height: 1.5;
 }
-.ai-input:focus { outline: none; border-color: var(--accent); }
-.ai-send, .ai-stop {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 1rem;
+.ai-input:focus { outline: none; }
+.ai-input::placeholder { color: var(--fg-muted); }
+.ai-send {
+  grid-area: actions;
+  justify-self: end;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
   cursor: pointer;
 }
-.ai-send:disabled { opacity: .45; cursor: default; }
-.ai-stop { border-color: var(--border); color: var(--fg); background: var(--bg-elev); }
+.ai-send:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+.ai-send:active { transform: translateY(1px); }
+.ai-send:disabled {
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  box-shadow: none;
+  opacity: .6;
+  cursor: default;
+}
+.ai-stop {
+  grid-area: actions;
+  justify-self: end;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elev);
+  color: var(--fg);
+  cursor: pointer;
+}
+.ai-stop:hover { color: var(--danger); border-color: var(--danger); }
+/* The action slot holds send and stop; the hidden attribute must win over
+ * the author display so only one is in the cell. */
+.ai-send[hidden] { display: none; }
+.ai-stop[hidden] { display: none; }
+.ai-attach:focus-visible,
+.ai-send:focus-visible,
+.ai-stop:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 /* --- chat attachments ---------------------------------------------- */
 .ai-attach-bar {
@@ -3989,7 +4056,7 @@ body[data-theme="light"] #viewer-content {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px 0;
+  padding: 0 12px;
   flex: 0 0 auto;
 }
 /* An author display:flex would otherwise defeat the hidden attribute. */
@@ -4039,17 +4106,26 @@ body[data-theme="light"] #viewer-content {
 }
 .ai-attach-chip-remove:hover { color: var(--danger); }
 .ai-attach {
-  flex: 0 0 auto;
-  width: 36px;
-  height: 36px;
+  grid-area: attach;
+  justify-self: start;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-elev);
+  background: transparent;
   color: var(--fg-muted);
-  font-size: 1rem;
   cursor: pointer;
 }
-.ai-attach:disabled { opacity: .45; cursor: default; }
+.ai-attach:hover { color: var(--fg); background: var(--accent-soft); }
+.ai-attach:disabled {
+  opacity: .4;
+  cursor: default;
+  color: var(--fg-muted);
+  background: transparent;
+}
 .ai-user-files {
   display: flex;
   flex-wrap: wrap;
