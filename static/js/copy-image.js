@@ -2,13 +2,20 @@
  * rendered code-block variant in the viewer.
  *
  * Two kinds of button, one shared look:
- *   - Source blocks (plain <pre> code, katex equations, html-live cards)
- *     get a text button that copies the block's source string. The <pre>
- *     buttons are wired by viewer.js through attachTextCopy; the katex /
- *     html-live containers are wired here.
- *   - The three SVG-producing block types (mermaid, wavedrom, graphviz)
- *     get an icon button that rasterizes the diagram to PNG and writes it
- *     to the system clipboard, so the user can paste it into another app.
+ *   - Source blocks (plain <pre> code, katex equations) get a text button
+ *     that copies the block's source string. The <pre> buttons are wired
+ *     by viewer.js through attachTextCopy; the katex container is wired
+ *     here.
+ *   - The image-producing blocks (mermaid, wavedrom, graphviz, and the
+ *     html-live card) get an icon button that rasterizes the block to PNG
+ *     and writes it to the system clipboard, so the user can paste it into
+ *     another app. For an html-live card the rasterized source is the
+ *     stored fenced HTML + CSS, snapshotted inertly into a real
+ *     html>body document so `html`/`body` page styles apply. Static-snapshot
+ *     limits (see htmlToPngBlob): scripts do not run, and SVG-image secure
+ *     static mode blocks external subresources (images, @import, url(),
+ *     web fonts), so script/canvas/animation output and remote assets are
+ *     not captured.
  *     When the clipboard image write is unavailable (insecure context,
  *     unsupported browser, denied permission, or a failed rasterize), it
  *     downloads the PNG instead.
@@ -34,16 +41,15 @@
   window.NB = window.NB || {};
 
   const VIEWER_CONTENT_ID = "viewer-content";
-  // SVG diagrams: an image button (rasterize to PNG).
+  // SVG diagrams: an image button (rasterize the <svg> to PNG).
   const IMAGE_CONTAINER_SELECTOR = ".mermaid-container, .wavedrom-container, .viz-container";
-  // HTML-ish rendered blocks: a text button (copy the stored source), but
-  // only when the container actually carries a non-empty source string.
+  // Katex: a text button (copy the stored LaTeX source).
   const KATEX_CONTAINER_SELECTOR = ".katex-container";
+  // Live HTML previews: an image button (rasterize the stored source).
   const HTMLPREVIEW_CONTAINER_SELECTOR = ".htmlpreview-card";
   // Used only to remove this module's text buttons; injection is gated on
-  // the source string, not on this combined selector.
-  const TEXT_CONTAINER_SELECTOR =
-    KATEX_CONTAINER_SELECTOR + ", " + HTMLPREVIEW_CONTAINER_SELECTOR;
+  // the source string, not on this selector.
+  const TEXT_CONTAINER_SELECTOR = KATEX_CONTAINER_SELECTOR;
 
   // The text button and the image button share the base class so they style
   // identically and hybrid.js strips both from the note on save (it skips
@@ -61,8 +67,29 @@
   const TEXT_FAIL_MS = 2200;
 
   const SVG_NS = "http://www.w3.org/2000/svg";
+  const XHTML_NS = "http://www.w3.org/1999/xhtml";
   const SVG_MIME = "image/svg+xml;charset=utf-8";
+  // Data-URL prefix for the html-live snapshot. Chromium/WebKit taint the
+  // canvas for an SVG-with-foreignObject loaded from blob:, so this path
+  // must not use a blob URL.
+  const SVG_DATA_URL_PREFIX = "data:image/svg+xml;charset=utf-8,";
   const PNG_MIME = "image/png";
+
+  // Namespaces that XMLSerializer already knows how to declare; attributes in
+  // them (xlink:*, xml:*, xmlns:*) are left untouched by the sanitizer below.
+  const XMLNS_NS = "http://www.w3.org/2000/xmlns/";
+
+  // XML 1.0 NCName (a Name with no colon) character classes, written out
+  // rather than reusing a loose "identifier" test because HTML attribute
+  // names like "@click" and ":class" would pass a loose check and then break
+  // the XML parse. BMP only; attribute names outside the BMP do not occur in
+  // practice.
+  const XML_NC_START =
+    "A-Za-z_\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF" +
+    "\\u0370-\\u037D\\u037F-\\u1FFF\\u200C-\\u200D\\u2070-\\u218F" +
+    "\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD";
+  const XML_NC_REST = XML_NC_START + "\\-.0-9\\u00B7\\u0300-\\u036F\\u203F-\\u2040";
+  const XML_NCNAME_RE = new RegExp("^[" + XML_NC_START + "][" + XML_NC_REST + "]*$");
 
   const ICON_SIZE = 16;
 
@@ -74,6 +101,125 @@
   // Transparent PNGs paste badly into apps that assume a white page
   // (mermaid and graphviz emit no background), so paint white first.
   const CANVAS_BG = "#ffffff";
+
+  // The reset the html-live preview iframe injects, reproduced so the
+  // snapshot lays out like the preview. The preview nests body inside html,
+  // each with 12px padding, so the content inset is 12px(html) + the source's
+  // own body padding (12px default). This variant is used when the source has
+  // no html background (the common case); it keeps that exact inset while
+  // still letting a body background fill the frame.
+  //
+  // Two deliberate changes from the preview's literal reset, both because an
+  // SVG-image document differs from a real document:
+  //   - html gets no padding; body carries the 12px as a transparent BORDER.
+  //     In the preview the html padding ring is invisible (the html/body
+  //     background propagates to the canvas); here there is no propagation,
+  //     so html padding would paint a visible ring. A body border takes the
+  //     same space and, with the default background-clip:border-box, is
+  //     painted with the body background -- so a body background fills the
+  //     frame with no ring, and the content inset stays 12 + body padding
+  //     (the border survives a source's `body{padding:0}` override, so an
+  //     edge-to-edge source lands at the same offset as the preview).
+  //   - html/body get height:100% so a short demo's body background does not
+  //     leave a blank band at the bottom.
+  // The reset is a stylesheet (not inline), placed before the source, so a
+  // source's own `html`/`body`/`:root` rules win and its `<style>` after it
+  // still overrides the base.
+  const SNAPSHOT_RESET =
+    "html{margin:0;padding:0;height:100%;box-sizing:border-box;" +
+    "background:" + CANVAS_BG + ";font-family:system-ui,sans-serif;overflow:hidden}" +
+    "body{margin:0;border:12px solid transparent;padding:12px;height:100%;" +
+    "box-sizing:border-box;display:flex;align-items:flex-start;" +
+    "justify-content:center;font-family:system-ui,sans-serif}";
+
+  // Variant used when the source itself sets an `html`/`:root` background.
+  // Then the html background is the page color and the body may be shorter
+  // than the frame, so html must stay the full frame height while body is
+  // auto-height (min-height:0) and the 12px inset is split across html/body
+  // exactly as the preview does -- otherwise the body would paint over the
+  // html background below it.
+  const SNAPSHOT_RESET_HTML_BG =
+    "html,body{margin:0;padding:12px;font-family:system-ui,sans-serif;overflow:hidden}" +
+    "html{height:100%;box-sizing:border-box}" +
+    "body{display:flex;align-items:flex-start;justify-content:center;min-height:0}";
+
+  // Best-effort text scan of the source's <style> rules for an `html`/`:root`
+  // selector with a background declaration. CSS is not parsed. A miss is
+  // benign except for the rare source that sets BOTH an html and a body
+  // background: the fill reset's full-height body would then cover the html
+  // background below a short body. An html-only background still renders
+  // (the transparent body lets it show through).
+  const HTML_BG_RE = /(?:^|[\s{},])(?:html|:root)\b[^{}]*\{[^{}]*background/i;
+  function sourceStylesHtmlBackground(fragment) {
+    if (!fragment || typeof fragment.querySelectorAll !== "function") return false;
+    const styles = fragment.querySelectorAll("style");
+    for (let i = 0; i < styles.length; i++) {
+      if (HTML_BG_RE.test(styles[i].textContent || "")) return true;
+    }
+    return false;
+  }
+
+  /* isXmlQName(name, declared) -> boolean.
+   * A snapshot attribute name must be a legal XML QName: either an NCName, or
+   * "prefix:local" where both parts are NCNames and the prefix is declared.
+   * HTML happily accepts names XML rejects -- "@click" and ":class" have
+   * illegal start characters, "v-bind:title" / "v-on:click" carry an
+   * undeclared prefix -- and XMLSerializer copies them verbatim, so the whole
+   * SVG then fails to parse. */
+  function isXmlQName(name, declared) {
+    const colon = name.indexOf(":");
+    if (colon === -1) return XML_NCNAME_RE.test(name);
+    const prefix = name.slice(0, colon);
+    const local = name.slice(colon + 1);
+    return local.indexOf(":") === -1 &&
+      XML_NCNAME_RE.test(prefix) &&
+      XML_NCNAME_RE.test(local) &&
+      declared.has(prefix);
+  }
+
+  /* sanitizeXmlAttributes(root) -- drop attributes that are not legal XML
+   * QNames from the adopted snapshot subtree before serialization. This is
+   * lossless for rendering: the snapshot is inert (no script runs), so a
+   * framework binding such as Alpine's `@click` or Vue's `:class` has no
+   * visual effect anyway, while leaving it in makes the entire SVG fail to
+   * load (Firefox hard-fails on the first bad name). Namespaced attributes
+   * (xlink:*, xml:*, xmlns:*) are left for XMLSerializer to declare, and all
+   * visually meaningful plain attributes (class, style, id, src, width,
+   * height, href, ...) are NCNames and survive untouched. */
+  function sanitizeXmlAttributes(root) {
+    if (!root || typeof root.querySelectorAll !== "function") return;
+    const elements = [root].concat(Array.prototype.slice.call(root.querySelectorAll("*")));
+    // First pass: the prefixes this subtree declares, so a legitimate
+    // "foo:bar" alongside "xmlns:foo" is kept.
+    const declared = new Set(["xml", "xmlns"]);
+    for (const el of elements) {
+      const attrs = el.attributes;
+      if (!attrs) continue;
+      for (let i = 0; i < attrs.length; i++) {
+        const a = attrs[i];
+        if (a.namespaceURI === XMLNS_NS) {
+          if (a.prefix === "xmlns") declared.add(a.localName);
+          else if (a.localName === "xmlns") declared.add("");
+        } else if (!a.namespaceURI) {
+          if (a.name === "xmlns") declared.add("");
+          else if (a.name.indexOf("xmlns:") === 0) declared.add(a.name.slice(6));
+        }
+      }
+    }
+    // Second pass: remove illegal names. Namespaced attributes are valid by
+    // construction and skipped.
+    for (const el of elements) {
+      const attrs = el.attributes;
+      if (!attrs) continue;
+      const doomed = [];
+      for (let i = 0; i < attrs.length; i++) {
+        const a = attrs[i];
+        if (a.namespaceURI) continue;
+        if (!isXmlQName(a.name, declared)) doomed.push(a.name);
+      }
+      for (const name of doomed) el.removeAttribute(name);
+    }
+  }
 
   // Fallback intrinsic size when an SVG carries neither a usable viewBox
   // nor width/height attributes.
@@ -281,6 +427,99 @@
     });
   }
 
+  /* buildHtmlSnapshotSvg(source, width, height) -> SVGSVGElement.
+   * Wrap the card's stored source in an SVG <foreignObject> so it can go
+   * through the same Image -> canvas path the SVG diagrams use.
+   *
+   * The source is parsed into an inert <template> first: template content is
+   * not connected, so its <script>s never run and its images are never
+   * fetched. It is then placed inside a real XHTML html>head>body document,
+   * not a bare <div>. This matters: a source that styles `html`, `body`, or
+   * `:root` (nearly every standalone demo) only matches if those elements
+   * exist, and the preview puts the source in exactly such a body. The
+   * source's own <html>/<head>/<body> wrappers were already dropped by the
+   * HTML parse, so its <style>/<link>/<meta> and body content land flat
+   * inside <body>, after the head reset -- matching the preview's cascade.
+   *
+   * Serializing html/head/body into foreignObject content is valid XHTML and
+   * is rendered (with CSS matching) by Chromium and Firefox. Attribute names
+   * illegal in XML are stripped first (see sanitizeXmlAttributes) so a single
+   * framework binding cannot break the load. */
+  function buildHtmlSnapshotSvg(source, width, height) {
+    const t = document.createElement("template");
+    t.innerHTML = source;
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    const fo = document.createElementNS(SVG_NS, "foreignObject");
+    fo.setAttribute("x", "0");
+    fo.setAttribute("y", "0");
+    fo.setAttribute("width", String(width));
+    fo.setAttribute("height", String(height));
+
+    const html = document.createElementNS(XHTML_NS, "html");
+    const head = document.createElementNS(XHTML_NS, "head");
+    const style = document.createElementNS(XHTML_NS, "style");
+    style.textContent = sourceStylesHtmlBackground(t.content)
+      ? SNAPSHOT_RESET_HTML_BG
+      : SNAPSHOT_RESET;
+    head.appendChild(style);
+    const body = document.createElementNS(XHTML_NS, "body");
+    body.append(t.content);
+    // HTML attribute names illegal in XML (@click, :class, v-bind:*, ...)
+    // would poison the serialized SVG and make the whole load fail; drop them
+    // (they have no visual effect here) while keeping every real attribute.
+    sanitizeXmlAttributes(body);
+    html.appendChild(head);
+    html.appendChild(body);
+
+    fo.appendChild(html);
+    svg.appendChild(fo);
+    return svg;
+  }
+
+  /* htmlToPngBlob(source, width, height) -> Promise<Blob>.
+   * The executor runs synchronously, so the caller can hand this promise to
+   * the clipboard write inside the user gesture (see copyBlobToPng). Rejects
+   * on any failure -- invalid size, XML serialization, image load, or a
+   * tainted canvas -- and a rejection surfaces the failure message; only a
+   * clipboard-write failure/timeout falls back to the download.
+   *
+   * Loaded from a data: URL, NOT a blob: URL: Chromium and WebKit taint the
+   * canvas for an SVG containing <foreignObject> loaded from blob: (so
+   * canvas.toBlob throws SecurityError), while both allow the data-URL form.
+   * svgToPngBlob stays on blob: -- those diagrams emit no foreignObject.
+   *
+   * This is a STATIC snapshot: no script runs (inert template + image
+   * document), and an SVG loaded as an <img> renders in secure static mode,
+   * which does not fetch external subresources (remote images, @import,
+   * url(), webfonts). So a JS-rendered demo (canvas, DOM built by script)
+   * copies as its pre-script markup, and remote images/fonts come out
+   * blank/fallback. Local system fonts and inline data:/gradients work. */
+  function htmlToPngBlob(source, width, height) {
+    return new Promise((resolve, reject) => {
+      if (!(width > 0 && height > 0)) {
+        reject(new Error("Invalid snapshot size"));
+        return;
+      }
+      let xml;
+      try {
+        const svg = buildHtmlSnapshotSvg(source, width, height);
+        xml = new XMLSerializer().serializeToString(svg);
+      } catch (err) {
+        reject(err);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        drawToBlob(img, width, height).then(resolve, reject);
+      };
+      img.onerror = () => reject(new Error("HTML snapshot failed to load"));
+      img.src = SVG_DATA_URL_PREFIX + encodeURIComponent(xml);
+    });
+  }
+
   /* clipboardAvailable() -- the modern image-clipboard path is gated on a
    * secure context, the async Clipboard API, and ClipboardItem. */
   function clipboardAvailable() {
@@ -326,22 +565,18 @@
     return outcome;
   }
 
-  /* copySvgToPng(svgEl, { name }) -- copy the diagram as a PNG, or fall
-   * back to the download (then a new tab) when the clipboard image write is
+  /* copyBlobToPng(blobPromise, name) -- shared tail of both image-copy
+   * paths: hand the PNG blob to the system clipboard, or fall back to the
+   * download (then a new tab) when the clipboard image write is
    * unavailable, fails, or never settles. Exactly one toast fires per
-   * outcome. */
-  async function copySvgToPng(svgEl, opts) {
-    const name = (opts && opts.name) || FALLBACK_NAME;
-    if (!svgEl) { notify(FAIL_MESSAGE, "warn"); return; }
-
-    // Built synchronously, before any await: the clipboard write below
-    // must happen inside the user gesture and is handed this promise.
-    const blobPromise = svgToPngBlob(svgEl);
-
+   * outcome.
+   *
+   * blobPromise must already exist. The caller creates it synchronously
+   * inside the click handler, so the write below can happen inside the user
+   * gesture (Safari); only the await is bounded. The no-op catch swallows a
+   * late rejection after we have already timed out and moved on. */
+  async function copyBlobToPng(blobPromise, name) {
     if (clipboardAvailable()) {
-      // The write is CALLED synchronously in this turn (Safari gesture
-      // requirement); only the await is bounded. The no-op catch swallows a
-      // late rejection after we have already timed out and moved on.
       const writePromise = navigator.clipboard.write([
         new ClipboardItem({ [PNG_MIME]: blobPromise }),
       ]);
@@ -375,6 +610,53 @@
     }
   }
 
+  /* copySvgToPng(svgEl, { name }) -- rasterize an SVG diagram to a PNG and
+   * copy it, falling back to the download path. The blob promise is built
+   * synchronously, before any await (see copyBlobToPng). */
+  async function copySvgToPng(svgEl, opts) {
+    const name = (opts && opts.name) || FALLBACK_NAME;
+    if (!svgEl) { notify(FAIL_MESSAGE, "warn"); return; }
+    const blobPromise = svgToPngBlob(svgEl);
+    return copyBlobToPng(blobPromise, name);
+  }
+
+  /* copyHtmlToPng(source, { name, width, height }) -- rasterize an
+   * html-live card's stored source to a PNG and copy it, with the same
+   * download fallback. The blob promise is built synchronously, before any
+   * await (see copyBlobToPng). */
+  async function copyHtmlToPng(source, opts) {
+    const name = (opts && opts.name) || FALLBACK_NAME;
+    if (!source) { notify(FAIL_MESSAGE, "warn"); return; }
+    const width = opts && opts.width;
+    const height = opts && opts.height;
+    const blobPromise = htmlToPngBlob(source, width, height);
+    return copyBlobToPng(blobPromise, name);
+  }
+
+  /* htmlPreviewSize(container) -> { width, height }.
+   * The snapshot matches the preview frame's on-screen box. jsdom reports
+   * zero for every rect, so fall back to the card box and then to the fixed
+   * fallback; round up so a fractional layout never yields a 0px
+   * dimension. */
+  function htmlPreviewSize(container) {
+    const measure = (el) => {
+      if (!el) return { width: 0, height: 0 };
+      const r = el.getBoundingClientRect();
+      return { width: r && r.width, height: r && r.height };
+    };
+    let { width, height } = measure(container.querySelector("iframe.htmlpreview-frame"));
+    if (!(width > 0 && height > 0)) {
+      ({ width, height } = measure(container));
+    }
+    width = Math.ceil(width);
+    height = Math.ceil(height);
+    if (!(width > 0 && height > 0)) {
+      width = FALLBACK_W;
+      height = FALLBACK_H;
+    }
+    return { width, height };
+  }
+
   /* --- button injection ------------------------------------------- */
 
   /* sourceTextOf(targetEl) -- the copyable source of a block, with any
@@ -396,9 +678,9 @@
    * .code-copy-btn is skipped.
    *
    * getText, when supplied, is the source getter and is used unchanged
-   * (katex / html-live pass a dataset-source getter). With no getText, the
-   * sanitized sourceTextOf default is used so the button never copies its
-   * own label. */
+   * (the katex container passes a dataset-source getter). With no getText,
+   * the sanitized sourceTextOf default is used so the button never copies
+   * its own label. */
   function attachTextCopy(targetEl, getText) {
     if (!targetEl) return;
     if (targetEl.querySelector("." + BUTTON_BASE_CLASS)) return;
@@ -454,14 +736,32 @@
   function attachImageCopy(container) {
     if (!container || container.querySelector("." + IMAGE_BUTTON_CLASS)) return;
     if (!container.querySelector("svg")) return;
-    container.appendChild(buildImageButton(container));
+    container.appendChild(buildImageButton(() => {
+      copySvgToPng(container.querySelector("svg"), { name: pngName() });
+    }));
   }
 
-  function buildImageButton(container) {
+  /* attachHtmlImageCopy(container) -- wire the same icon button into an
+   * html-live card, rasterizing the stored fenced source instead of an
+   * <svg>. Skipped when the card carries no source. Idempotent. The source
+   * is read at click time (like the katex path) so a later re-render of the
+   * card is picked up. */
+  function attachHtmlImageCopy(container) {
+    if (!container || container.querySelector("." + IMAGE_BUTTON_CLASS)) return;
+    if (!container.dataset.htmlpreviewSource) return;
+    container.appendChild(buildImageButton(() => {
+      const source = container.dataset.htmlpreviewSource || "";
+      const size = htmlPreviewSize(container);
+      copyHtmlToPng(source, { name: pngName(), width: size.width, height: size.height });
+    }));
+  }
+
+  /* buildImageButton(onClick) -- the shared square icon button. Base +
+   * modifier class: the shared chrome plus the icon tweak, and the
+   * .code-copy-btn class hybrid.js strips from the note on save. */
+  function buildImageButton(onClick) {
     const btn = document.createElement("button");
     btn.type = "button";
-    // Base + modifier: the shared chrome plus the square-icon tweak, and
-    // the .code-copy-btn class hybrid.js strips from the note on save.
     btn.className = BUTTON_BASE_CLASS + " " + IMAGE_BUTTON_CLASS;
     btn.title = IMAGE_BUTTON_LABEL;
     btn.setAttribute("aria-label", IMAGE_BUTTON_LABEL);
@@ -472,15 +772,15 @@
       // #viewer-content from also opening the full-screen overlay.
       e.preventDefault();
       e.stopPropagation();
-      const svg = container.querySelector("svg");
-      copySvgToPng(svg, { name: pngName() });
+      onClick();
     });
     return btn;
   }
 
   /* removeAll() -- drop the buttons THIS module injected (image buttons on
-   * diagram containers, text buttons on the katex / html-live containers).
-   * The <pre> buttons belong to viewer.js and are left alone. */
+   * the diagram containers and the html-live cards, text buttons on the
+   * katex containers). The <pre> buttons belong to viewer.js and are left
+   * alone. */
   function removeAll() {
     const host = document.getElementById(VIEWER_CONTENT_ID);
     if (!host) return;
@@ -502,26 +802,23 @@
   }
 
   /* scan() -- inject the right button into every rendered block: an image
-   * button into each SVG diagram container, a text button into the katex /
-   * html-live containers. Skipped in hybrid mode and in the live preview;
-   * the buttons are view-only chrome and must never enter the editable /
-   * serialized DOM. */
+   * button into each SVG diagram container and each html-live card, a text
+   * button into the katex container. Skipped in hybrid mode and in the live
+   * preview; the buttons are view-only chrome and must never enter the
+   * editable / serialized DOM. */
   function scan() {
     if (livePreview) return;
     if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
     const host = document.getElementById(VIEWER_CONTENT_ID);
     if (!host) return;
     host.querySelectorAll(IMAGE_CONTAINER_SELECTOR).forEach(attachImageCopy);
+    host.querySelectorAll(HTMLPREVIEW_CONTAINER_SELECTOR).forEach(attachHtmlImageCopy);
     // Only offer the text button when there is a source to copy, so a
     // render that stores nothing never yields a "Copied!" toast for an
     // empty string.
     host.querySelectorAll(KATEX_CONTAINER_SELECTOR).forEach((container) => {
       if (!container.dataset.katexSource) return;
       attachTextCopy(container, () => container.dataset.katexSource || "");
-    });
-    host.querySelectorAll(HTMLPREVIEW_CONTAINER_SELECTOR).forEach((container) => {
-      if (!container.dataset.htmlpreviewSource) return;
-      attachTextCopy(container, () => container.dataset.htmlpreviewSource || "");
     });
   }
 
@@ -539,7 +836,9 @@
     scan();
   }
 
-  NB.copyButton = { attachTextCopy, attachImageCopy, copySvgToPng };
+  NB.copyButton = {
+    attachTextCopy, attachImageCopy, attachHtmlImageCopy, copySvgToPng, copyHtmlToPng,
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

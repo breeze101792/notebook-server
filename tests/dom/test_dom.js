@@ -3176,12 +3176,13 @@ function check(label, cond, extra) {
 
   console.log("== copy image ==");
   // copy-image.js injects a "Copy image" button into each rendered SVG
-  // diagram container (mermaid / wavedrom / graphviz) inside
-  // #viewer-content. It skips non-SVG blocks (katex, html-live), is
-  // idempotent across re-scans, removes its chrome in hybrid mode, and
-  // rasterizes the diagram to PNG on click. One combined note renders all
-  // five block types so the selector is exercised in a single pass. Reset
-  // the renderer stubs so prior failures don't leak into this render.
+  // diagram container (mermaid / wavedrom / graphviz) AND each html-live
+  // card inside #viewer-content. It skips non-SVG, non-card blocks (katex),
+  // is idempotent across re-scans, removes its chrome in hybrid mode, and
+  // rasterizes the diagram / HTML snapshot to PNG on click. One combined
+  // note renders all five block types so the selector is exercised in a
+  // single pass. Reset the renderer stubs so prior failures don't leak into
+  // this render.
   __mermaid.failNext = false;
   __mermaid.nextSvg = '<svg viewBox="0 0 100 50" width="100" height="50"><text>mock</text></svg>';
   __wavedrom.failNext = false;
@@ -3217,17 +3218,19 @@ function check(label, cond, extra) {
     return c ? c.querySelectorAll(".nb-copy-img-btn").length : -1;
   };
   const mermaidCopyBtn = () => ciViewer.querySelector(".mermaid-container .nb-copy-img-btn");
-  // The unified base class .code-copy-btn also labels the TEXT buttons the
-  // module injects into katex / html-live containers.
+  // The unified base class .code-copy-btn also labels the TEXT button the
+  // module injects into the katex container (html-live now gets an image
+  // button instead).
   const textBtnCount = (sel) => {
     const c = ciViewer.querySelector(sel);
     return c ? c.querySelectorAll(".code-copy-btn").length : -1;
   };
   const katexCopyBtn = () => ciViewer.querySelector(".katex-container .code-copy-btn");
-  const htmlCopyBtn = () => ciViewer.querySelector(".htmlpreview-card .code-copy-btn");
+  const htmlCopyImgBtn = () => ciViewer.querySelector(".htmlpreview-card .nb-copy-img-btn");
   const ciPreCopyBtn = () => ciViewer.querySelector("pre .code-copy-btn");
 
-  // (1) Exactly one button in each SVG-diagram container; none elsewhere.
+  // (1) Exactly one button in each SVG-diagram container and each html-live
+  // card; katex keeps its text button only.
   check("copy image: mermaid container gets exactly one .nb-copy-img-btn",
     containerBtnCount(".mermaid-container") === 1,
     "count=" + containerBtnCount(".mermaid-container"));
@@ -3237,27 +3240,32 @@ function check(label, cond, extra) {
   check("copy image: graphviz container gets exactly one .nb-copy-img-btn",
     containerBtnCount(".viz-container") === 1,
     "count=" + containerBtnCount(".viz-container"));
-  check("copy image: katex container gets no button",
+  check("copy image: katex container gets no image button",
     containerBtnCount(".katex-container") === 0,
     "count=" + containerBtnCount(".katex-container"));
-  check("copy image: html-live card gets no button",
-    containerBtnCount(".htmlpreview-card") === 0,
+  check("copy image: html-live card gets exactly one image button",
+    containerBtnCount(".htmlpreview-card") === 1,
     "count=" + containerBtnCount(".htmlpreview-card"));
   check("copy image: button is labelled 'Copy image'",
     !!mermaidCopyBtn() && mermaidCopyBtn().getAttribute("aria-label") === "Copy image",
     mermaidCopyBtn() && mermaidCopyBtn().getAttribute("aria-label"));
 
-  // (1b) The katex and html-live containers get the TEXT copy button (the
-  // same unified .code-copy-btn base class), labelled "Copy" -- distinct
-  // from the image button, so the two "no button" checks above stay true.
+  // (1b) The katex container gets the TEXT copy button (the same unified
+  // .code-copy-btn base class), labelled "Copy"; the html-live card gets the
+  // icon button instead -- the same base class plus the .nb-copy-img-btn
+  // modifier, labelled "Copy image".
   check("copy image: katex container gets exactly one .code-copy-btn labelled 'Copy'",
     textBtnCount(".katex-container") === 1 && katexCopyBtn().textContent === "Copy",
     "count=" + textBtnCount(".katex-container") +
     " label=" + (katexCopyBtn() && JSON.stringify(katexCopyBtn().textContent)));
-  check("copy image: html-live card gets exactly one .code-copy-btn labelled 'Copy'",
-    textBtnCount(".htmlpreview-card") === 1 && htmlCopyBtn().textContent === "Copy",
-    "count=" + textBtnCount(".htmlpreview-card") +
-    " label=" + (htmlCopyBtn() && JSON.stringify(htmlCopyBtn().textContent)));
+  check("copy image: html-live card gets exactly one .nb-copy-img-btn, labelled 'Copy image'",
+    containerBtnCount(".htmlpreview-card") === 1 &&
+    !!htmlCopyImgBtn() &&
+    htmlCopyImgBtn().classList.contains("code-copy-btn") &&
+    htmlCopyImgBtn().getAttribute("aria-label") === "Copy image",
+    "count=" + containerBtnCount(".htmlpreview-card") +
+    " cls=" + (htmlCopyImgBtn() && htmlCopyImgBtn().className) +
+    " aria=" + (htmlCopyImgBtn() && htmlCopyImgBtn().getAttribute("aria-label")));
   // The image button proves the unified base class: it carries BOTH the
   // shared .code-copy-btn and its own .nb-copy-img-btn modifier.
   check("copy image: image button carries the unified .code-copy-btn base class",
@@ -3281,9 +3289,9 @@ function check(label, cond, extra) {
   check("copy image: re-scan does not duplicate the katex text button",
     textBtnCount(".katex-container") === 1,
     "count=" + textBtnCount(".katex-container"));
-  check("copy image: re-scan does not duplicate the html-live text button",
-    textBtnCount(".htmlpreview-card") === 1,
-    "count=" + textBtnCount(".htmlpreview-card"));
+  check("copy image: re-scan does not duplicate the html-live image button",
+    containerBtnCount(".htmlpreview-card") === 1,
+    "count=" + containerBtnCount(".htmlpreview-card"));
 
   // (2b) The katex text button copies the stored LaTeX source and flips to
   // "Copied!" -- same shared attachTextCopy UX as the <pre> button. Reuse
@@ -3314,9 +3322,9 @@ function check(label, cond, extra) {
     "m=" + containerBtnCount(".mermaid-container") +
     " w=" + containerBtnCount(".wavedrom-container") +
     " v=" + containerBtnCount(".viz-container"));
-  check("copy image: hybrid:will-enter removes the katex/html-live text buttons",
-    textBtnCount(".katex-container") === 0 && textBtnCount(".htmlpreview-card") === 0,
-    "k=" + textBtnCount(".katex-container") + " h=" + textBtnCount(".htmlpreview-card"));
+  check("copy image: hybrid:will-enter removes the katex text and html-live image buttons",
+    textBtnCount(".katex-container") === 0 && containerBtnCount(".htmlpreview-card") === 0,
+    "k=" + textBtnCount(".katex-container") + " h=" + containerBtnCount(".htmlpreview-card"));
   check("copy image: hybrid:will-enter leaves the <pre> copy button alone",
     !!ciPreCopyBtn(), "preBtn=" + !!ciPreCopyBtn());
   window.NB.hybrid.isActive = () => true;
@@ -3325,16 +3333,22 @@ function check(label, cond, extra) {
   check("copy image: no button is injected while hybrid is active",
     containerBtnCount(".mermaid-container") === 0 &&
     containerBtnCount(".wavedrom-container") === 0 &&
-    containerBtnCount(".viz-container") === 0,
-    "m=" + containerBtnCount(".mermaid-container"));
+    containerBtnCount(".viz-container") === 0 &&
+    containerBtnCount(".htmlpreview-card") === 0 &&
+    textBtnCount(".katex-container") === 0,
+    "m=" + containerBtnCount(".mermaid-container") +
+    " h=" + containerBtnCount(".htmlpreview-card"));
   window.NB.hybrid.isActive = realIsActive;
   window.NB.evt.emit("hybrid:exited", COPY_IMG_PATH);
   await tick(20);
   check("copy image: hybrid:exited re-injects the buttons",
     containerBtnCount(".mermaid-container") === 1 &&
     containerBtnCount(".wavedrom-container") === 1 &&
-    containerBtnCount(".viz-container") === 1,
-    "m=" + containerBtnCount(".mermaid-container"));
+    containerBtnCount(".viz-container") === 1 &&
+    containerBtnCount(".htmlpreview-card") === 1 &&
+    textBtnCount(".katex-container") === 1,
+    "m=" + containerBtnCount(".mermaid-container") +
+    " h=" + containerBtnCount(".htmlpreview-card"));
 
   // (3b) Round-trip guard: serializing the rendered note back to Markdown
   // must never leak the injected button chrome into the note. Drive the real
@@ -3364,7 +3378,7 @@ function check(label, cond, extra) {
   // (the harness's recording 2D context does not) or drawToBlob rejects.
   check("copy image: mermaid lightbox hidden before the click",
     window.document.getElementById("mermaid-lightbox").hidden);
-  const __copyImg = { writes: 0, items: null };
+  const __copyImg = { writes: 0, items: null, imgSrcs: [] };
   window.navigator.clipboard.write = async (items) => {
     __copyImg.writes++;
     __copyImg.items = items;
@@ -3386,7 +3400,11 @@ function check(label, cond, extra) {
   const realImage = window.Image;
   window.Image = class ImageStub {
     constructor() { this._src = ""; this.onload = null; this.onerror = null; }
-    set src(v) { this._src = v; if (typeof this.onload === "function") this.onload(); }
+    set src(v) {
+      this._src = v;
+      __copyImg.imgSrcs.push(v);
+      if (typeof this.onload === "function") this.onload();
+    }
     get src() { return this._src; }
   };
 
@@ -3416,6 +3434,132 @@ function check(label, cond, extra) {
   check("copy image: clicking the button opens no other lightbox",
     window.document.getElementById("wavedrom-lightbox").hidden &&
     window.document.getElementById("viz-lightbox").hidden);
+
+  // (4b) The same clipboard path drives the html-live image button: the
+  // "Copy image" affordance rasterizes the card's stored fenced source
+  // (HTML + CSS, script output not captured) instead of an SVG. The blob is
+  // built synchronously and handed to the clipboard as a PNG. The snapshot
+  // is loaded from a data: URL (not a blob URL) so Chromium/WebKit do not
+  // taint the canvas for the SVG-with-foreignObject.
+  {
+    const htmlBtn = htmlCopyImgBtn();
+    check("copy image: html-live card carries a .nb-copy-img-btn", !!htmlBtn);
+    __copyImg.writes = 0;
+    __copyImg.items = null;
+    __copyImg.imgSrcs = [];
+    htmlBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    await tick(30);
+    check("copy image: html-live image click calls navigator.clipboard.write once",
+      __copyImg.writes === 1, "writes=" + __copyImg.writes);
+    const htmlItem = __copyImg.items && __copyImg.items[0];
+    const htmlPngValue = htmlItem && htmlItem.parts && htmlItem.parts["image/png"];
+    check("copy image: html-live ClipboardItem carries a Promise for image/png",
+      !!htmlPngValue && typeof htmlPngValue.then === "function",
+      "value=" + (htmlPngValue && typeof htmlPngValue));
+    const htmlPngBlob = htmlPngValue ? await htmlPngValue : null;
+    check("copy image: html-live image/png Promise resolves to an image/png Blob",
+      htmlPngBlob instanceof window.Blob && htmlPngBlob.type === "image/png",
+      htmlPngBlob ? "type=" + htmlPngBlob.type : "no blob");
+    // The snapshot goes through an <img> loaded from a data: URL; decode it
+    // and assert it wraps the source in an SVG <foreignObject> holding a real
+    // XHTML html>head>body document. The document structure is load-bearing:
+    // a source that styles `html`/`body`/`:root` (nearly every standalone
+    // demo) only matches if those elements exist, and the preview places the
+    // source in exactly such a body. A bare <div> wrapper would drop every
+    // page-level rule.
+    const dataUrl = __copyImg.imgSrcs[0] || "";
+    const prefix = "data:image/svg+xml;charset=utf-8,";
+    const snapshot = dataUrl.indexOf(prefix) === 0
+      ? decodeURIComponent(dataUrl.slice(prefix.length))
+      : "";
+    check("copy image: html-live snapshot is a data: SVG wrapping the source in a foreignObject",
+      /<foreignObject/.test(snapshot) && /hi<\/div>/.test(snapshot),
+      JSON.stringify(dataUrl).slice(0, 120) + " / " + JSON.stringify(snapshot).slice(0, 200));
+    check("copy image: html-live snapshot uses a real html>head>body document",
+      /<html[ >]/.test(snapshot) && /<head[ >]/.test(snapshot) && /<\/head><body[ >]/.test(snapshot),
+      JSON.stringify(snapshot).slice(0, 260));
+    check("copy image: html-live source is placed inside the snapshot <body>",
+      /<body[^>]*><div>hi<\/div>\s*<\/body>/.test(snapshot),
+      JSON.stringify(snapshot).slice(-200));
+    // The reset stylesheet is in <head>, BEFORE the source, so the source's
+    // own html/body rules (serialized after it) win by document order. The
+    // fill reset gives the content its 24px inset as a transparent body
+    // BORDER (12px) + body padding (12px) -- a border, not html padding, keeps
+    // the inset even when a source sets its own `body{padding:...}`, matching
+    // the preview's nested html+body padding -- and 100% height so a body
+    // background fills the frame edge to edge with no ring or clipping.
+    check("copy image: html-live snapshot carries the preview reset before the source",
+      /<head><style>html\{margin:0;padding:0;height:100%[^<]*body\{margin:0;border:12px solid transparent;padding:12px/.test(snapshot),
+      JSON.stringify(snapshot).slice(0, 320));
+    check("copy image: html-live snapshot no longer wraps the source in a flex <div>",
+      !/<div[^>]*display:flex[^>]*><div>hi<\/div>/.test(snapshot),
+      JSON.stringify(snapshot).slice(0, 200));
+    // The reset is chosen from the source: a source that styles an
+    // `html`/`:root` background uses the split html/body reset (html keeps
+    // the frame height, body stays auto) so the html background shows below a
+    // short body, as the preview's canvas propagation would. A body-only
+    // background uses the fill reset asserted just above.
+    __copyImg.imgSrcs = [];
+    await window.NB.copyButton.copyHtmlToPng(
+      "<style>html{background:#111}body{color:#fff}</style><p>x</p>",
+      { name: "x.png", width: 200, height: 100 });
+    await tick(20);
+    const htmlBgUrl = __copyImg.imgSrcs[__copyImg.imgSrcs.length - 1] || "";
+    const htmlBgSnap = htmlBgUrl.indexOf(prefix) === 0
+      ? decodeURIComponent(htmlBgUrl.slice(prefix.length)) : "";
+    check("copy image: an html-background source selects the split html/body reset",
+      /<head><style>html,body\{margin:0;padding:12px[^<]*html\{height:100%/.test(htmlBgSnap),
+      JSON.stringify(htmlBgSnap).slice(0, 300));
+
+    // Attribute names legal in HTML but illegal in XML (@click, :class,
+    // v-bind:*, v-on:*) poison the serialized SVG and make the whole snapshot
+    // fail to load (Firefox hard-fails on the first one). They are stripped
+    // before serialization; a framework binding has no visual effect in the
+    // inert snapshot, so this is lossless. Real, visually meaningful
+    // attributes and declared-prefix attributes must survive.
+    __copyImg.imgSrcs = [];
+    await window.NB.copyButton.copyHtmlToPng(
+      '<div @click="a()" :class="b" v-bind:title="c" v-on:click="d" ' +
+      'x-data="{n:0}" class="keep" style="color:red">A</div>' +
+      '<div xmlns:foo="urn:x" foo:bar="1">B</div>',
+      { name: "x.png", width: 200, height: 100 });
+    await tick(20);
+    const attrUrl = __copyImg.imgSrcs[__copyImg.imgSrcs.length - 1] || "";
+    const attrSnap = attrUrl.indexOf(prefix) === 0
+      ? decodeURIComponent(attrUrl.slice(prefix.length)) : "";
+    check("copy image: illegal-XML attribute names are stripped from the snapshot",
+      attrSnap.indexOf("@click") === -1 && attrSnap.indexOf(":class") === -1 &&
+      attrSnap.indexOf("v-bind:") === -1 && attrSnap.indexOf("v-on:") === -1,
+      JSON.stringify(attrSnap).slice(0, 320));
+    check("copy image: valid and visually meaningful attributes survive sanitizing",
+      /x-data="/.test(attrSnap) && /class="keep"/.test(attrSnap) &&
+      /style="color:red"/.test(attrSnap) &&
+      /xmlns:foo="urn:x"/.test(attrSnap) && /foo:bar="1"/.test(attrSnap),
+      JSON.stringify(attrSnap).slice(0, 320));
+
+    // Graceful degradation: if serialization itself fails, the copy surfaces
+    // the failure toast instead of emitting a corrupt image. Force the
+    // serializer to throw and make the clipboard unavailable so the rejected
+    // blob promise is awaited rather than handed to a (stubbed) clipboard.
+    const realXMLSerializer = window.XMLSerializer;
+    const realSecureForFail = window.isSecureContext;
+    window.XMLSerializer = function () {
+      this.serializeToString = function () { throw new Error("serialize failed (stub)"); };
+    };
+    window.isSecureContext = false;
+    await window.NB.copyButton.copyHtmlToPng("<p>x</p>", { name: "x.png", width: 100, height: 50 });
+    await tick(20);
+    const failToast = window.document.querySelector(".toast");
+    check("copy image: a serialization failure surfaces the failure toast, not a corrupt image",
+      !!failToast && /Could not copy diagram image/.test(failToast.textContent),
+      failToast ? JSON.stringify(failToast.textContent) : "no toast");
+    window.XMLSerializer = realXMLSerializer;
+    window.isSecureContext = realSecureForFail;
+    check("copy image: html-live click opens no lightbox",
+      window.document.getElementById("mermaid-lightbox").hidden &&
+      window.document.getElementById("wavedrom-lightbox").hidden &&
+      window.document.getElementById("viz-lightbox").hidden);
+  }
 
   // Download fallback (insecure context): the anchor download path runs.
   // Observe anchor clicks, and allow a test to force the anchor to throw so
