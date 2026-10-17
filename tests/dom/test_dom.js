@@ -188,15 +188,9 @@ const html = `<!DOCTYPE html><html><head>
               <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
               <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button>
             </div></div>
-          <div id="bookmarks" class="bookmarks">
-            <div class="bookmarks-header">
-              <span class="bookmarks-title">Bookmarks</span>
-              <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
-            </div>
-            <div id="bookmarks-list" class="bookmarks-list"></div>
-          </div>
           <div id="file-tree" class="tree"></div>
         </div>
+        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
         <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
         <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
@@ -1646,6 +1640,7 @@ evalIn(read("static/js/settings.js"));
   evalIn(read("static/js/vimnav.js"));
 evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
+evalIn(read("static/js/bookmarks.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/app.js"));
 
@@ -1873,6 +1868,12 @@ function check(label, cond, extra) {
       indexHtml.indexOf("/static/js/menu.js") < indexHtml.indexOf("/static/js/hybrid.js"));
     check("menu module: sw.js PRECACHE includes menu.js",
       read("static/sw.js").includes('"/static/js/menu.js"'));
+
+    // --- bookmarks module structural wiring ---
+    check("bookmarks module: index.html loads bookmarks.js",
+      indexHtml.indexOf("/static/js/bookmarks.js") !== -1);
+    check("bookmarks module: sw.js PRECACHE includes bookmarks.js",
+      read("static/sw.js").includes('"/static/js/bookmarks.js"'));
 
     window.NB.menu.close();
     if (scopeEl.parentNode) scopeEl.parentNode.removeChild(scopeEl);
@@ -13624,8 +13625,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v8",
-      /const CACHE = "notebook-v8"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v9",
+      /const CACHE = "notebook-v9"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -13875,6 +13876,111 @@ function check(label, cond, extra) {
     check("collapse: back to Explorer, panel expanded",
       !$("side-panel").classList.contains("collapsed") &&
       window.NB.activity.getActive() === "explorer");
+  }
+
+  console.log("== bookmarks view (activity bar) ==");
+  // The bookmarks list now lives in its own side-panel view (#bookmarks-view),
+  // built at load by bookmarks.js. The activity bar hosts a 🔖 button that
+  // swaps the panel to it; the Explorer icon swaps back. The host stays in
+  // the DOM (hidden) so list state survives switches.
+  {
+    const bookmarksBtn = window.document.querySelector('#activity-bar .activity-btn[data-view="bookmarks"]');
+    check("bookmarks view: activity bar has a data-view=bookmarks button", !!bookmarksBtn);
+    check("bookmarks view: the host is a .side-panel-view with the right data-view",
+      (function () {
+        const host = $("bookmarks-view");
+        return !!host && host.classList.contains("side-panel-view") &&
+          host.dataset.view === "bookmarks";
+      })());
+    check("bookmarks view: bookmarks.js built the header + list at load",
+      !!window.document.querySelector("#bookmarks-view .panel-header") &&
+      !!$("bookmarks-list"));
+
+    if (bookmarksBtn) {
+      bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("bookmarks view: clicking the 🔖 icon shows #bookmarks-view and hides #sidebar",
+        !$("bookmarks-view").hidden && $("sidebar").hidden,
+        "bookmarksHidden=" + $("bookmarks-view").hidden + " sidebarHidden=" + $("sidebar").hidden);
+      check("bookmarks view: the active view is bookmarks",
+        window.NB.activity.getActive() === "bookmarks");
+
+      // The relocated DOM: a seeded bookmark renders inside the view's own
+      // list (not the old in-#sidebar section).
+      window.NB.bookmarks.set(["notes/a.md"]);
+      await tick(10);
+      const seededRow = window.document.querySelector(
+        "#bookmarks-view #bookmarks-list .bookmark-row");
+      check("bookmarks view: a seeded bookmark renders inside #bookmarks-view",
+        !!seededRow && seededRow.dataset.path === "notes/a.md",
+        seededRow ? seededRow.dataset.path : "no row");
+
+      // "Show in file sidebar" on a bookmark row. The bookmark menu opens
+      // while the Bookmarks view is active, so clicking the item must bring
+      // the Explorer view forward (expanding the panel if collapsed) with the
+      // file's tree row revealed -- not just refresh the hidden tree. Use a
+      // root-level file (no ancestor folders) so revealFile's folder-expand
+      // does not mutate the sidebar's shared `collapsed` set that later tests
+      // depend on. Snapshot/restore the shared TREE fixture around the check.
+      const savedTree = JSON.parse(JSON.stringify(TREE));
+      TREE.length = 0;
+      TREE.push({ name: "Welcome.md", type: "file", path: "Welcome.md" });
+      await window.NB.sidebar.refresh();
+      await tick(20);
+      window.NB.bookmarks.set(["Welcome.md"]);
+      await tick(10);
+      const revealRow = window.document.querySelector(
+        "#bookmarks-view #bookmarks-list .bookmark-row");
+      if (revealRow) {
+        revealRow.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true, clientX: 30, clientY: 30 }));
+        await tick(10);
+        const revealItem = Array.from($("nb-menu").querySelectorAll("button"))
+          .find(b => b.textContent === "Show in file sidebar");
+        check("bookmarks view: bookmark menu offers 'Show in file sidebar'",
+          !!revealItem, $("nb-menu").textContent);
+        if (revealItem) {
+          revealItem.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(40);
+          check("bookmarks view: 'Show in file sidebar' returns to Explorer",
+            window.NB.activity.getActive() === "explorer" && !$("sidebar").hidden &&
+            $("bookmarks-view").hidden,
+            "active=" + window.NB.activity.getActive());
+          const revealed = window.document.querySelector('.tree-row[data-path="Welcome.md"]');
+          check("bookmarks view: the revealed file's tree row is selected",
+            !!revealed && revealed.classList.contains("selected"),
+            revealed ? revealed.className : "no row");
+        }
+        window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(10);
+      }
+      TREE.length = 0;
+      for (const n of savedTree) TREE.push(n);
+      await window.NB.sidebar.refresh();
+      await tick(20);
+      window.NB.bookmarks.set([]);
+      await tick(10);
+
+      // The view's own header carries a ‹ collapse button.
+      const bmCollapse = window.document.querySelector('#bookmarks-view .panel-header .collapse-btn');
+      check("collapse: Bookmarks view has a ‹ button in its header", !!bmCollapse);
+      if (bmCollapse) {
+        bmCollapse.dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(10);
+        check("collapse: Bookmarks ‹ collapses the panel",
+          $("side-panel").classList.contains("collapsed"));
+      }
+
+      // Re-expand via the activity-bar explorer icon so the suite continues
+      // in its expected state.
+      const explorerBack = window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]');
+      explorerBack.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("bookmarks view: Explorer icon returns to the file tree",
+        $("bookmarks-view").hidden && !$("sidebar").hidden &&
+        window.NB.activity.getActive() === "explorer");
+    } else {
+      check("bookmarks view: activity bar button missing", false);
+    }
   }
 
   console.log("== recent files (Quick open) view ==");

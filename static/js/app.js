@@ -46,9 +46,9 @@
     // Defaults to "Notebook"; the user can rename it in General settings.
     siteTitle: "Notebook",
     // Bookmarks: an ordered array of file paths the user has pinned in
-    // the sidebar's bookmarks section. Insertion order; the sidebar
-    // module reorders them via drag-and-drop. Missing files (e.g. after
-    // a delete) are pruned silently on the next tree refresh.
+    // the Bookmarks view. Insertion order; the bookmarks module reorders
+    // them via drag-and-drop. Missing files (e.g. after a delete) are
+    // pruned silently on the next tree refresh.
     bookmarks: [],
     // User-supplied vimrc: lines of VIM initial script applied to the
     // editor's vim plugin (cm-bridge.compileVimrc). Empty by default;
@@ -315,12 +315,12 @@
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
-    // Hand the loaded bookmarks to the sidebar module so the list
+    // Hand the loaded bookmarks to the bookmarks module so the list
     // renders before the first tree refresh arrives. Done here, not
     // in boot(), so any cfg source (load from server, future sync,
     // tests) goes through the same path.
-    if (NB.sidebar && NB.sidebar.setBookmarks) {
-      NB.sidebar.setBookmarks(cfg.bookmarks || []);
+    if (NB.bookmarks && NB.bookmarks.set) {
+      NB.bookmarks.set(cfg.bookmarks || []);
     }
   }
 
@@ -810,11 +810,11 @@
     },
     getAutosave: () => cfg.autosave !== false,
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
-    // Replace the full bookmark list. The sidebar module is the only
+    // Replace the full bookmark list. The bookmarks module is the only
     // caller on the user-mutation path; the config load path also
-    // calls it through setBookmarks, but that goes via the sidebar
-    // directly (applyConfig). Persists + emits config:changed so any
-    // listener can react.
+    // calls it, but that goes via NB.bookmarks.set directly
+    // (applyConfig). Persists + emits config:changed so any listener
+    // can react.
     setBookmarks: (list) => {
       cfg.bookmarks = Array.isArray(list) ? list.slice() : [];
       persistConfig();

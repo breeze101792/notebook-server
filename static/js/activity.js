@@ -7,9 +7,9 @@
  * activates that view (mounts it into the panel and shows it); clicking
  * the active icon again collapses the panel so only the strip remains.
  *
- * The bar is intentionally generic: the Explorer view (the original
- * file tree + bookmarks) ships here by default, but further views
- * (Recent, future plugins) register the same way, so adding a new
+ * The bar is intentionally generic: the Explorer view (the file tree)
+ * ships here by default, but further views (Bookmarks, Recent, Search,
+ * AI, future plugins) register the same way, so adding a new
  * side-panel function is a single NB.activity.register() call.
  */
 (function () {
@@ -490,12 +490,19 @@
 
   /* --- register the built-in views ---------------------------------- */
   // Explorer is the default view; its host (#sidebar) already ships in
-  // the HTML with bookmarks + the file tree wired by sidebar.js, so
-  // mount is a no-op.
+  // the HTML with the file tree wired by sidebar.js, so mount is a no-op.
   register({
     id: "explorer",
     icon: "📁",
     label: "Explorer",
+    mount: function () {},
+  });
+  // Bookmarks: the host (#bookmarks-view) ships empty; bookmarks.js
+  // populates its header + list at load, so mount is a no-op.
+  register({
+    id: "bookmarks",
+    icon: "🔖",
+    label: "Bookmarks",
     mount: function () {},
   });
   register({

@@ -15,7 +15,8 @@
  * the old cache). */
 /* Bumped v7 -> v8: the newly precached copy-image.js must reach already
  * installed workers, which only re-run install when CACHE changes. */
-const CACHE = "notebook-v8";
+/* Bumped v8 -> v9: the newly precached bookmarks.js must reach already installed workers. */
+const CACHE = "notebook-v9";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -65,6 +66,7 @@ const PRECACHE = [
   "/static/js/mermaid-designer.js",
   "/static/js/ai.js",
   "/static/js/activity.js",
+  "/static/js/bookmarks.js",
   "/static/js/graph.js",
   "/static/js/vimnav.js",
   "/static/js/shortcuts.js",

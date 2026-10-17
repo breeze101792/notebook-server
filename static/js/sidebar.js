@@ -1,6 +1,7 @@
 /* sidebar.js -- left file tree + context-menu file operations
- * (open, new file, new folder, rename/move, copy, delete) +
- * bookmarks section above the tree.
+ * (open, new file, new folder, rename/move, copy, delete).
+ * Bookmark state and UI live in bookmarks.js (NB.bookmarks); this module
+ * keeps only the tree's inline ⭐ and reads NB.bookmarks for its state.
  */
 (function () {
   "use strict";
@@ -8,9 +9,6 @@
 
   const treeEl = document.getElementById("file-tree");
   const sidebarEl = document.getElementById("sidebar");
-  const bookmarksEl = document.getElementById("bookmarks");
-  const bookmarksListEl = document.getElementById("bookmarks-list");
-  const bookmarksAddBtn = document.getElementById("bookmarks-add");
   const SVG_NS = "http://www.w3.org/2000/svg";
   // Tree icons are inline SVGs referencing the hidden <symbol> sprite in
   // index.html (id "nb-icon-<name>"). Inline SVG renders in colour on every
@@ -42,23 +40,10 @@
   const refreshBtn = document.getElementById("sidebar-refresh");
   let selectedPath = null;
   let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
-  // Bookmarks: an ordered list of file paths. Lives in module state and is
-  // mirrored to cfg.bookmarks by app.js's persistConfig() -- the source of
-  // truth on disk is config.json; this list is the in-memory view. Insertion
-  // order: bookmark(file) appends; reordering is via drag.
-  let bookmarks = [];
-  // The bookmark row currently being dragged (only one at a time). Same
-  // idiom as draggingNode for the tree -- module-scoped so the dragover
-  // handler on the list can see it without a closure.
-  let draggingBookmark = null;
-  // Tracks the active file so the bookmarks "+" button is enabled only
-  // when there's a file to bookmark (and not already bookmarked).
-  let activeFile = null;
 
   /* --- render -------------------------------------------------------- */
   function render(tree) {
     treeEl.innerHTML = "";
-    renderBookmarks();
     if (!tree.length) {
       const empty = document.createElement("div");
       empty.className = "tree-empty";
@@ -135,13 +120,14 @@
       // already pinned. Click toggles bookmark state and updates both the
       // list and the tree row's class. Click handler stops propagation
       // so the row's own openFile click doesn't also fire.
+      const pinned = NB.bookmarks && NB.bookmarks.has(node.path);
       const star = document.createElement("span");
-      star.className = "tree-star" + (bookmarks.includes(node.path) ? " is-bookmarked" : "");
-      star.textContent = bookmarks.includes(node.path) ? STAR_ON : STAR_OFF;
-      star.title = bookmarks.includes(node.path) ? "Remove bookmark" : "Add bookmark";
+      star.className = "tree-star" + (pinned ? " is-bookmarked" : "");
+      star.textContent = pinned ? STAR_ON : STAR_OFF;
+      star.title = pinned ? "Remove bookmark" : "Add bookmark";
       star.addEventListener("click", (e) => {
         e.stopPropagation();
-        toggleBookmark(node.path);
+        if (NB.bookmarks) NB.bookmarks.toggle(node.path);
       });
       star.addEventListener("mousedown", (e) => e.stopPropagation());
       star.addEventListener("dragstart", (e) => e.preventDefault());
@@ -211,284 +197,20 @@
     return false;
   }
 
-  /* --- bookmarks ------------------------------------------------------ */
-  /* The bookmark section is a fixed list rendered above the file tree.
-   * State lives in module-scope `bookmarks` (an array of file paths in
-   * insertion order) and is mirrored to cfg.bookmarks by app.js via the
-   * NB.sidebar.setBookmarks() setter. The list is rebuilt from scratch on
-   * every render -- bookmarks are a small set (a dozen or two at most), so
-   * the cost of re-rendering is negligible and the code stays uniform with
-   * the tree's render path. */
-  function renderBookmarks() {
-    if (!bookmarksListEl) return;
-    bookmarksListEl.innerHTML = "";
-    if (!bookmarks.length) {
-      const empty = document.createElement("div");
-      empty.className = "bookmarks-empty";
-      empty.textContent = "No bookmarks yet. Right-click a file to pin it.";
-      bookmarksListEl.appendChild(empty);
-      return;
-    }
-    for (const path of bookmarks) {
-      bookmarksListEl.appendChild(renderBookmarkRow(path));
-    }
-  }
-
-  function renderBookmarkRow(path) {
-    const row = document.createElement("div");
-    row.className = "bookmark-row";
-    row.dataset.path = path;
-    row.draggable = true;
-    // Reserve the same width the tree uses for its leading icon so the
-    // file name aligns across the two sections. Empty strings keep
-    // the row's name at the same x position a .tree-row would put it.
-    const pin = document.createElement("span");
-    pin.className = "bookmark-pin";
-    pin.textContent = STAR_ON;
-    const name = document.createElement("span");
-    name.className = "bookmark-name";
-    // Show just the base name in the list; the full path is recoverable
-    // from data-path. baseName() is the existing helper further down.
-    name.textContent = baseName(path);
-    name.title = path;
-    row.append(pin, name);
-    if (path === selectedPath) row.classList.add("selected");
-    row.addEventListener("click", () => openFile(path));
-    row.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      openBookmarkMenu(e, path);
-    });
-    return row;
-  }
-
-  /* Add or remove a path from the bookmark list. The setter call below
-   * is the only path that mutates `bookmarks` AND fires config:changed;
-   * every other call site (star click, context-menu item, + button,
-   * drag-reorder drop, prune-on-refresh) goes through this function so
-   * the order of operations -- mutate, render, persist -- stays in one
-   * place. */
-  function toggleBookmark(path) {
-    if (!path) return;
-    const i = bookmarks.indexOf(path);
-    if (i >= 0) {
-      bookmarks.splice(i, 1);
-    } else {
-      bookmarks.push(path);
-    }
-    render(treeCache);
-    // Reflect the new state in the tree-row's star class. The full
-    // re-render above already redrew the row, but a re-render may not
-    // have happened if render() was called before this function; the
-    // explicit toggle below covers that case (idempotent if the class
-    // is already correct from the re-render).
-    updateTreeStar(path);
-    // The + button's hidden state depends on whether the active file
-    // is bookmarked; re-evaluate it now so the UI reflects the change
-    // immediately (e.g. clicking the + on a file should hide the +,
-    // toggling a file's star off should show the + again).
-    setActiveFile(activeFile);
-    persistBookmarks();
-  }
-
-  /* Keep a single tree row's star class in sync without a full re-render
-   * -- used after a bookmark-list re-render so the tree's row matches
-   * the new state without re-running the full tree walk. */
+  /* Keep a single tree row's star class in sync without a full re-render.
+   * The bookmarks module fires bookmarks:changed from toggle(); this
+   * redraws one row's star rather than re-walking the whole tree. */
   function updateTreeStar(path) {
     const row = document.querySelector(
       '.tree-row[data-path="' + cssEscape(path) + '"]');
     if (!row) return;
     const star = row.querySelector(".tree-star");
     if (!star) return;
-    const isOn = bookmarks.includes(path);
+    const isOn = NB.bookmarks && NB.bookmarks.has(path);
     star.textContent = isOn ? STAR_ON : STAR_OFF;
     star.title = isOn ? "Remove bookmark" : "Add bookmark";
     star.classList.toggle("is-bookmarked", isOn);
   }
-
-  /* Drag-to-reorder the bookmark list. The handlers live on the list
-   * element so the empty area of the list still accepts a drop (which
-   * would otherwise leave the user with no way to drop a row at the end).
-   * Reordering is purely a UI concern: we mutate `bookmarks` in place
-   * and call persistBookmarks() -- no API call, no tree change. */
-  function reorderBookmark(fromPath, toPath, before) {
-    const fromIdx = bookmarks.indexOf(fromPath);
-    if (fromIdx < 0) return;
-    const [moved] = bookmarks.splice(fromIdx, 1);
-    if (!toPath) {
-      // Drop on the empty area: append at the end.
-      bookmarks.push(moved);
-    } else {
-      const toIdx = bookmarks.indexOf(toPath);
-      if (toIdx < 0) {
-        // Target vanished mid-drag (unlikely but defensive): re-append.
-        bookmarks.push(moved);
-      } else {
-        bookmarks.splice(before ? toIdx : toIdx + 1, 0, moved);
-      }
-    }
-    renderBookmarks();
-    persistBookmarks();
-  }
-
-  /* Prune any bookmark whose path isn't in the current tree. Called
-   * after every tree refresh (which already runs after create / rename /
-   * delete). Silently drops stale entries; the user's mental model of
-   * the list stays in sync with what's actually on disk. */
-  function pruneBookmarks(tree) {
-    if (!bookmarks.length) return;
-    const before = bookmarks.length;
-    bookmarks = bookmarks.filter(p => treeHasPath(tree, p));
-    if (bookmarks.length !== before) persistBookmarks();
-  }
-
-  function treeHasPath(tree, path) {
-    for (const n of tree) {
-      if (n.path === path) return true;
-      if (n.children && treeHasPath(n.children, path)) return true;
-    }
-    return false;
-  }
-
-  /* The setter app.js calls after a config load. Triggers a re-render
-   * so the list reflects the loaded state without waiting for the next
-   * tree refresh. */
-  function setBookmarks(list) {
-    bookmarks = Array.isArray(list) ? list.slice() : [];
-    renderBookmarks();
-  }
-  function getBookmarks() { return bookmarks.slice(); }
-
-  /* Persist through the same cfg write path the rest of the UI uses.
-   * NB.app.setBookmarks() is the central mutation point: it mutates
-   * cfg.bookmarks, persists, and emits config:changed so any listener
-   * (e.g. the tabs module) can react. Keeping it on app.js mirrors the
-   * existing setTheme / setFontSize / setWallpaper pattern. */
-  function persistBookmarks() {
-    if (NB.app && NB.app.setBookmarks) NB.app.setBookmarks(bookmarks);
-  }
-
-  /* The "+" button in the bookmarks header: bookmark the active file
-   * if there is one and it isn't already bookmarked. The button is
-   * shown/hidden by setActiveFile() so it only appears when it'd be
-   * useful. */
-  if (bookmarksAddBtn) {
-    bookmarksAddBtn.addEventListener("click", () => {
-      if (activeFile && !bookmarks.includes(activeFile)) {
-        toggleBookmark(activeFile);
-      }
-    });
-  }
-
-  function setActiveFile(path) {
-    activeFile = path || null;
-    if (bookmarksAddBtn) {
-      // Show the + only when there's an active file AND it isn't
-      // already bookmarked. When the active file IS bookmarked, the
-      // row's inline star in the tree is the affordance to remove it.
-      const show = activeFile && !bookmarks.includes(activeFile);
-      bookmarksAddBtn.hidden = !show;
-    }
-  }
-
-  /* --- drag-and-drop handlers for the bookmark list ---------------- */
-  /* Wired up after setActiveFile so the helpers it depends on exist
-   * when the listeners fire. We re-use the same `dataTransfer` pattern
-   * the tree uses (effectAllowed = "move"), but the data key is local
-   * to this module so a tree drag can't accidentally trigger a bookmark
-   * drop. */
-  if (bookmarksListEl) {
-    bookmarksListEl.addEventListener("dragstart", (e) => {
-      const row = e.target.closest && e.target.closest(".bookmark-row");
-      if (!row || !row.dataset.path) { e.preventDefault(); return; }
-      draggingBookmark = row.dataset.path;
-      row.classList.add("dragging");
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = "move";
-        try { e.dataTransfer.setData("text/plain", "bookmark:" + row.dataset.path); }
-        catch (_) {}
-      }
-    });
-    bookmarksListEl.addEventListener("dragover", (e) => {
-      if (!draggingBookmark) return;
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-      clearBookmarkDropMarks();
-      const row = e.target.closest && e.target.closest(".bookmark-row");
-      if (!row || row.dataset.path === draggingBookmark) {
-        // Over the empty area below the last row, OR over the row being
-        // dragged itself. The empty area marker is the list-level
-        // .drop-empty class so the dashed outline shows around the
-        // whole list, not a single row.
-        bookmarksListEl.classList.add("drop-empty");
-        return;
-      }
-      const rect = row.getBoundingClientRect();
-      const before = e.clientY < rect.top + rect.height / 2;
-      row.classList.add(before ? "drop-before" : "drop-after");
-    });
-    bookmarksListEl.addEventListener("drop", (e) => {
-      if (!draggingBookmark) return;
-      e.preventDefault();
-      const row = e.target.closest && e.target.closest(".bookmark-row");
-      let targetPath = null, before = true;
-      if (row && row.dataset.path && row.dataset.path !== draggingBookmark) {
-        const rect = row.getBoundingClientRect();
-        targetPath = row.dataset.path;
-        before = e.clientY < rect.top + rect.height / 2;
-      }
-      const from = draggingBookmark;
-      clearBookmarkDragging();
-      try { reorderBookmark(from, targetPath, before); }
-      catch (err) { console.error("bookmark reorder failed", err); }
-    });
-    bookmarksListEl.addEventListener("dragend", clearBookmarkDragging);
-  }
-  function clearBookmarkDropMarks() {
-    if (!bookmarksListEl) return;
-    bookmarksListEl.querySelectorAll(".drop-before,.drop-after")
-      .forEach(r => r.classList.remove("drop-before", "drop-after"));
-    bookmarksListEl.classList.remove("drop-empty");
-  }
-  function clearBookmarkDragging() {
-    draggingBookmark = null;
-    if (!bookmarksListEl) return;
-    bookmarksListEl.querySelectorAll(".dragging")
-      .forEach(r => r.classList.remove("dragging"));
-    clearBookmarkDropMarks();
-  }
-
-  /* --- context menu for the bookmark list -------------------------- */
-  /* The item categories follow the canonical order: Open, Create,
-   * Organize, View, Terminal, with a separator between each pair of
-   * adjacent non-empty categories. A bookmark references a single file,
-   * so it shows no Create and no View category (Collapse all folders is
-   * a sidebar action, not a file action). */
-  function bookmarkMenuItems(path) {
-    return [
-      { label: "Open", handler: () => openFile(path) },
-      { separator: true },
-      { label: "Export…", handler: () => doExport(path) },
-      // Rename / Move mirrors the tree row's menu shape so the user's
-      // mental model is the same: both menus on a file path are
-      // identical. doRename() re-keys the bookmark on the file:moved
-      // event (see below) so the row follows the file to its new path.
-      { label: "Rename / Move…", handler: () => doRename({ path, type: "file" }) },
-      { label: "Copy…", handler: () => doCopy({ path, type: "file" }) },
-      { label: "Copy path", handler: () => NB.app.copyPath(path) },
-      { label: "Copy link", handler: () => NB.app.copyLink(path) },
-      { label: "Remove bookmark", handler: () => toggleBookmark(path) },
-      { separator: true },
-      { label: "Delete", danger: true, handler: () => doDelete({ path, type: "file" }) },
-    ];
-  }
-
-  function openBookmarkMenu(e, path) {
-    NB.menu.open({
-      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
-      items: bookmarkMenuItems(path), focusFirst: true,
-    });
-  }
-
 
   function setSelected(path) {
     selectedPath = path;
@@ -507,12 +229,9 @@
   function vimCursorRows() {
     // Only the rows that are currently visible in the DOM (we don't
     // walk the tree model -- the rendered order is what j/k follows,
-    // matching the user's mental model of the tree). Bookmarks are
-    // included so j/k moves continuously across both sections: the
-    // bookmark list sits above the tree in the rendered DOM, so a
-    // single querySelectorAll in document order naturally interleaves
-    // them.
-    return Array.from(document.querySelectorAll(".tree-row, .bookmark-row"));
+    // matching the user's mental model of the tree). Bookmarks are a
+    // separate side-panel view now, so vim j/k navigates the tree only.
+    return Array.from(document.querySelectorAll(".tree-row"));
   }
   function setVimCursor(path) {
     vimCursorPath = path;
@@ -546,12 +265,6 @@
   }
   function vimCursorOpen() {
     if (!vimCursorPath) return;
-    // Bookmarks are always openable; the row's "collapsed" semantics
-    // only exist for tree folders, so for a bookmark we go straight to
-    // openFile.
-    const bRow = document.querySelector('.bookmark-row[data-path="' +
-      cssEscape(vimCursorPath) + '"]');
-    if (bRow) { openFile(vimCursorPath); return; }
     const row = document.querySelector('.tree-row[data-path="' +
       cssEscape(vimCursorPath) + '"]');
     if (!row) return;
@@ -567,19 +280,6 @@
   }
   function vimCursorCollapse() {
     if (!vimCursorPath) return;
-    // A bookmark is a leaf; "h" on a bookmark jumps to its parent
-    // folder the same way it does for a file.
-    const bRow = document.querySelector('.bookmark-row[data-path="' +
-      cssEscape(vimCursorPath) + '"]');
-    if (bRow) {
-      const path = vimCursorPath;
-      const lastSlash = path.lastIndexOf("/");
-      if (lastSlash > 0) {
-        const parent = path.slice(0, lastSlash);
-        setVimCursor(parent);
-      }
-      return;
-    }
     const row = document.querySelector('.tree-row[data-path="' +
       cssEscape(vimCursorPath) + '"]');
     if (!row) return;
@@ -602,11 +302,20 @@
   }
 
   /* Reveal a file in the sidebar tree: expand every ancestor folder on
-   * the path and highlight the file's row. Backs the tab context menu's
-   * "Show in file sidebar" item. Any folder that's collapsed along the
-   * path is opened so the file's location is visible. */
+   * the path and highlight the file's row. Backs the "Show in file
+   * sidebar" item on the tab and bookmark menus. Any folder that's
+   * collapsed along the path is opened so the file's location is visible.
+   *
+   * Both callers open while some side-panel view is active -- the bookmark
+   * menu while Bookmarks is showing, the tab menu perhaps while Search or
+   * AI is. Bring the Explorer view forward (and expand the panel if it was
+   * collapsed) so the revealed tree is actually on screen. */
   function revealFile(path) {
     if (!path) return;
+    if (NB.activity && NB.activity.activate) {
+      NB.activity.activate("explorer", false);
+      if (NB.activity.isCollapsed && NB.activity.isCollapsed()) NB.activity.expand();
+    }
     const parts = path.split("/");
     for (let i = 1; i < parts.length; i++) {
       collapsed.delete(parts.slice(0, i).join("/"));
@@ -635,8 +344,9 @@
       // flips based on the current state so the user always sees the
       // action that the click will perform.
       {
-        label: bookmarks.includes(node.path) ? "Remove bookmark" : "Add bookmark",
-        handler: () => toggleBookmark(node.path),
+        label: (NB.bookmarks && NB.bookmarks.has(node.path))
+          ? "Remove bookmark" : "Add bookmark",
+        handler: () => { if (NB.bookmarks) NB.bookmarks.toggle(node.path); },
       },
     ];
     return withCollapseAndDelete(items, node);
@@ -843,9 +553,8 @@
         markAllCollapsed(treeCache);
       }
       // Prune any bookmarks whose file vanished (delete, rename) BEFORE
-      // render so the row never appears against a missing file. Skipped
-      // when the bookmark list is empty to avoid the no-op work.
-      if (bookmarks.length) pruneBookmarks(treeCache);
+      // render so the row never appears against a missing file.
+      if (NB.bookmarks) NB.bookmarks.prune(treeCache);
       render(treeCache);
       NB.evt.emit("tree:refreshed", treeCache);
     } catch (e) { console.error("tree fetch failed", e); }
@@ -1029,10 +738,11 @@
     collapseAll, revealFile,
     setVimCursor, getVimCursor, vimCursorNext, vimCursorPrev,
     vimCursorOpen, vimCursorCollapse,
-    // Bookmark façade. setBookmarks is called by app.js after a config
-    // load; getBookmarks / toggleBookmark are exposed for tests and
-    // any future external trigger (e.g. a "pin current tab" shortcut).
-    setBookmarks, getBookmarks, toggleBookmark,
+    // Thin back-compat façade over the bookmarks module (NB.bookmarks
+    // owns the state and UI now). tabs.js and app.js call these.
+    setBookmarks: (list) => { if (NB.bookmarks) NB.bookmarks.set(list); },
+    getBookmarks: () => (NB.bookmarks ? NB.bookmarks.get() : []),
+    toggleBookmark: (path) => { if (NB.bookmarks) NB.bookmarks.toggle(path); },
     // File-operation façade. The tab menu runs the same rename / copy /
     // delete actions the tree and bookmark menus run, for the same path.
     renameFile: (path) => doRename({ path, type: "file" }),
@@ -1040,39 +750,14 @@
     deleteFile: (path) => doDelete({ path, type: "file" }),
   };
 
-  // Keep the tree highlight in sync whenever a file is shown, regardless of
-  // how it was opened (tab click, search result, boot). Also drives the
-  // bookmarks "+" button visibility: it shows only when the active file
-  // isn't already bookmarked.
+  // Keep the tree highlight in sync whenever a file is shown, regardless
+  // of how it was opened (tab click, search result, boot).
   NB.evt.on("file:open", (path) => {
-    if (path) {
-      setSelected(path);
-      setActiveFile(path);
-      // Mirror selection into the bookmark list so the same active
-      // file in the tree reads as active in the bookmarks.
-      document.querySelectorAll(".bookmark-row.selected")
-        .forEach(r => r.classList.remove("selected"));
-      if (bookmarks.includes(path)) {
-        const bRow = document.querySelector(
-          '.bookmark-row[data-path="' + cssEscape(path) + '"]');
-        if (bRow) bRow.classList.add("selected");
-      }
-    } else {
-      setActiveFile(null);
-    }
+    if (path) setSelected(path);
   });
 
-  // file:moved (rename via the bookmark menu's Rename / Move…, the
-  // tree menu, or drag-and-drop) re-keys any bookmark pointing at the
-  // old path. Without this the bookmark row would point at a file
-  // that no longer exists, and the next refresh would silently prune
-  // it. Re-keying inline keeps the bookmark across the rename without
-  // a second user action.
-  NB.evt.on("file:moved", ({ from, to }) => {
-    const i = bookmarks.indexOf(from);
-    if (i < 0) return;
-    bookmarks[i] = to;
-    renderBookmarks();
-    persistBookmarks();
-  });
+  // Bookmark list changes -> refresh that file's inline tree star. The
+  // bookmarks module fires this from toggle(); prune re-renders and
+  // persists directly and the next tree refresh redraws the stars.
+  NB.evt.on("bookmarks:changed", ({ path }) => updateTreeStar(path));
 })();

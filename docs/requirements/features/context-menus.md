@@ -140,6 +140,13 @@ separator (451), Remove bookmark (452), Export… (457), Rename / Move… (458),
 Copy… (459), separator if dirs (461), Collapse all folders (462), separator
 (464), Delete (danger, 465).
 
+> Note (2026-10-17): the bookmark menu moved to `static/js/bookmarks.js` when
+> the bookmark list became its own activity-bar view; the line references in
+> this baseline section predate that and refer to `sidebar.js` as it was on
+> 2026-10-13. Item shape and order are unchanged, except that a View-group
+> "Show in file sidebar" item was later added so a bookmark can reveal its file
+> in the Explorer tree (`NB.sidebar.revealFile`).
+
 **Tree root / empty sidebar** (`openRootMenu`, `sidebar.js:664-678`): New file…
 (667), New folder… (668), separator if dirs (670), Collapse all folders (671).
 

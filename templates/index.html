@@ -123,9 +123,9 @@
            --side-panel-width CSS var; individual views never resize
            independently. -->
       <aside id="side-panel"{% if boot.sidebar_collapsed %} class="collapsed"{% endif %}>
-        <!-- Explorer view: the original file tree + bookmarks. Stays in
-             the DOM so its state (collapsed folders, selection, scroll)
-             survives view switches; hidden via [hidden] when inactive. -->
+        <!-- Explorer view: the original file tree. Stays in the DOM so
+             its state (collapsed folders, selection, scroll) survives
+             view switches; hidden via [hidden] when inactive. -->
         <div id="sidebar" class="side-panel-view" data-view="explorer">
           <div class="panel-header">
             <span class="panel-title">Files</span>
@@ -134,16 +134,14 @@
               <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
             </div>
           </div>
-          <div id="bookmarks" class="bookmarks">
-            <div class="bookmarks-header">
-              <span class="bookmarks-title">Bookmarks</span>
-              <button class="bookmarks-add" id="bookmarks-add" title="Bookmark the active file" aria-label="Bookmark the active file" hidden>★</button>
-            </div>
-            <div id="bookmarks-list" class="bookmarks-list"></div>
-          </div>
           <div id="file-tree" class="tree"></div>
           <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
         </div>
+
+        <!-- Bookmarks view: the pinned-files list. bookmarks.js populates
+             this host at load (header + list); it stays in the DOM so list
+             state survives view switches. -->
+        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
 
         <!-- Recent view: quick-open list of recently edited files with a
              fuzzy filter. Mounted lazily by activity.js the first time
@@ -1183,6 +1181,7 @@
   <script src="/static/js/vimnav.js" defer></script>
   <script src="/static/js/ai.js" defer></script>
   <script src="/static/js/activity.js" defer></script>
+  <script src="/static/js/bookmarks.js" defer></script>
   <script src="/static/js/shortcuts.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <script>

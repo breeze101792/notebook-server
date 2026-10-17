@@ -2836,48 +2836,18 @@ body[data-theme="light"] #viewer-content {
 /* ------------------------------------------------------------------ */
 /* Bookmarks                                                           */
 /* ------------------------------------------------------------------ */
-/* The bookmarks section sits at the top of the sidebar, above the file
- * tree. It's a sibling of #file-tree inside #sidebar; both share the
- * pane's vertical space via a column flex layout (see #sidebar's
- * display below), and the tree takes the remaining space. The bookmark
- * list itself scrolls when it gets long. The header echoes the .tree-row
- * look (icon, name) so a bookmarked file reads the same way it does in
- * the tree -- the only differences are the leading ⭐ and the fact
- * that these rows don't have a caret/icon column. */
-.bookmarks {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-  /* The list scrolls; the header stays fixed. Cap the section at ~45%
-   * of the sidebar so a packed bookmark list can't push the tree out
-   * of view. */
-  max-height: 45%;
-  min-height: 0;
-}
-/* Section header: small uppercase label that matches the panel-header
- * font + casing so the bookmarks section reads as a peer of "Files"
- * rather than as a one-off widget. */
-.bookmarks-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px 12px 6px;
-  font-size: .79rem;
-  text-transform: uppercase;
-  letter-spacing: .8px;
-  color: var(--fg-muted);
-  flex: 0 0 auto;
-}
-.bookmarks-title { overflow: hidden; text-overflow: ellipsis; }
+/* The Bookmarks view (#bookmarks-view) hosts the pinned-file list in its
+ * own side-panel view. Its header is a standard .panel-header; the list
+ * below fills the pane and scrolls when it gets long. Rows echo the
+ * .tree-row look (icon, name) so a bookmarked file reads the same way it
+ * does in the tree -- the only differences are the leading ⭐ and the
+ * fact that these rows have no caret/icon column. */
 .bookmarks-add {
   background: none;
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: .93rem;
+  font-size: 1.07rem;
   line-height: 1;
   padding: 2px 4px;
   border-radius: 4px;
@@ -2898,10 +2868,10 @@ body[data-theme="light"] #viewer-content {
   font-style: italic;
 }
 /* A bookmark row uses the same flex layout as .tree-row (icon, name) so
- * it sits visually next to a tree row in the same pane without looking
- * out of place. The leading ⭐ is a real icon (not a column) so the row
- * stays a single horizontal flex line; the .bookmark-pin reserves the
- * same width its counterpart .tree-icon uses in the tree. */
+ * a pinned file reads consistently with its tree row. The leading ⭐ is a
+ * real icon (not a column) so the row stays a single horizontal flex
+ * line; the .bookmark-pin reserves the same width its counterpart
+ * .tree-icon uses in the tree. */
 .bookmark-row {
   display: flex;
   align-items: center;

@@ -239,7 +239,7 @@ lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.j
 htmlpreview.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
 table-view.js → table-select.js → watcher.js → outline.js → sidebar.js →
 search.js → graph.js → tabs.js → windows.js → settings.js → export.js →
-vimnav.js → ai.js → activity.js → shortcuts.js → app.js`.
+vimnav.js → ai.js → activity.js → bookmarks.js → shortcuts.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`, `NB.menu`).
@@ -248,8 +248,8 @@ Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 singleton `#nb-menu` on `document.body`, descriptor-driven items
 (`{label, handler, danger, disabled, title, kbd, submenu, separator}`), measured
 four-edge positioning, one close dispatcher (outside click / outside-scope
-right-click / Esc), and keyboard nav. `sidebar.js`, `tabs.js`, and `hybrid.js`
-each build their own item list and call
+right-click / Esc), and keyboard nav. `sidebar.js`, `bookmarks.js`, `tabs.js`,
+and `hybrid.js` each build their own item list and call
 `NB.menu.open({owner, x, y, scope, items, focusFirst})`; the edit-bar dropdowns
 and table-view popovers are left-click widgets and stay custom.
 
@@ -310,12 +310,24 @@ Module responsibilities:
 - `tabs.js` — top-bar file tabs; owns the ordered open set + active file, coordinates
   with `viewer.js` (per-file content cache so unsaved edits survive tab switches), and
   persists `openFiles`/`activeFile` to config.
-- `sidebar.js` — left file tree + bookmarks, and the tree/folder/bookmark/root menu
-  item sets rendered through `NB.menu` (open, new file/folder, rename/move, copy,
-  delete, Export…, copy path/link, bookmark toggle). The Explorer header's ↻ button
-  re-fetches
+- `sidebar.js` — left file tree, and the tree/folder/root menu item sets rendered
+  through `NB.menu` (open, new file/folder, rename/move, copy, delete, Export…,
+  copy path/link, Add/Remove bookmark). The Explorer header's ↻ button re-fetches
   `/api/tree` on demand, bypassing the watcher's JSON-diff short-circuit, with a
-  one-shot spin animation.
+  one-shot spin animation. Bookmark state itself lives in `bookmarks.js`; the
+  tree's inline ⭐ reads `NB.bookmarks.has()` and toggles through
+  `NB.bookmarks.toggle()`, keeping `setBookmarks`/`getBookmarks`/`toggleBookmark`
+  as thin delegations for `app.js` and `tabs.js`.
+- `bookmarks.js` — the Bookmarks side-panel view (`NB.bookmarks`, 🔖 in the
+  activity bar; host `#bookmarks-view`, built at load and kept in the DOM so list
+  state survives view switches). Owns the ordered list of pinned file paths, the
+  list rendering, the ★ add button, drag-to-reorder, the bookmark context menu
+  (Open | Organize | View | Terminal, rendered through `NB.menu` with scope
+  `#bookmarks-view`; its "Show in file sidebar" reveals the file in the tree),
+  the auto-prune when a file vanishes from the tree, and the rename re-key. It
+  fires `bookmarks:changed` after a toggle so `sidebar.js` updates the tree's
+  star.
+  Replaced the old bookmarks section that used to sit above the file tree.
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
 - `table-view.js` — preview-only table view controls: hover/focus toolbar over a
   GFM table with hide-rows, hide-columns, and a single-column sort, kept per file
