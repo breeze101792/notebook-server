@@ -28,6 +28,12 @@
     openFiles: [],
     activeFile: null,
     pinnedFiles: [],
+    // The active side-panel view id (see NB.activity.register). Persisted
+    // so a reload lands on the same view the user left (Explorer, Bookmarks,
+    // Recent, Search, AI) instead of always snapping back to the file tree.
+    // The server renders this view visible in the shell for first paint;
+    // boot reconciles the once-fetched config against it.
+    activeView: "explorer",
     sidebarWidth: 240,
     outlineWidth: 220,
     sidebarCollapsed: false,
@@ -413,6 +419,12 @@
       NB.evt.on("activity:expanded", () => {
         cfg.sidebarCollapsed = false; applySidebarState(); persistConfig();
       });
+      // Switching the active view persists so a reload restores it. Fired
+      // by activity.js on every activation; guard against the boot
+      // activation of the already-saved view to avoid a redundant save.
+      NB.evt.on("activity:changed", ({ id }) => {
+        if (cfg.activeView !== id) { cfg.activeView = id; persistConfig(); }
+      });
     }
     document.getElementById("outline-collapse").addEventListener("click",
       () => { cfg.outlineCollapsed = true; applyOutlineState(); persistConfig(); });
@@ -590,16 +602,70 @@
     return true;
   }
 
+  /* Panel state the server rendered into the shell, read back from the DOM.
+   * boot() snapshots this before the async config fetch so a failed fetch
+   * restores it instead of repainting the panel with DEFAULTS (which would
+   * reveal the file tree, expand a collapsed panel, and lose the saved
+   * width). The collapsed width reads 0 in the DOM; the saved width is kept
+   * by cfg when the panel is expanded, so 0 is left untouched here. */
+  function shellPanelState() {
+    const px = (name) => parseInt(document.documentElement.style.getPropertyValue(name), 10);
+    return {
+      activeView: (NB.activity.getActive && NB.activity.getActive()) || cfg.activeView,
+      collapsed: !!(sidePanelEl && sidePanelEl.classList.contains("collapsed")),
+      width: px("--side-panel-width"),
+      outlineCollapsed: !!(outlineEl && outlineEl.classList.contains("collapsed")),
+      outlineWidth: px("--outline-width"),
+    };
+  }
+
+  /* Decide whether a successful config fetch should switch the side panel
+   * to a different view. Returns the id to activate, or null to leave the
+   * panel alone. A failed fetch (fetchedView is not a string), a fetch that
+   * names the view already showing, and a user who switched away from the
+   * shell-painted view while the fetch was in flight all return null. */
+  function resolveBootView(currentView, shellView, fetchedView) {
+    if (typeof fetchedView !== "string") return null;
+    if (currentView !== shellView) return null;
+    if (fetchedView === shellView) return null;
+    return fetchedView;
+  }
+
   /* --- boot ---------------------------------------------------------- */
   let booted = false;
   async function boot() {
     if (booted) return;   // idempotent: DOMContentLoaded fires once, but guard anyway
     booted = true;
     wire();
+    // Snapshot the shell-painted panel before the async config fetch so the
+    // failed-fetch path below can restore it intact.
+    const shellPanel = shellPanelState();
+    let serverCfg = null;
     try {
-      const serverCfg = await NB.api.getConfig();
+      serverCfg = await NB.api.getConfig();
       applyConfig(serverCfg);
-    } catch (e) { applyConfig({}); }
+    } catch (e) {
+      applyConfig({});
+      // The shell already painted the saved panel; a failed fetch must not
+      // reset it to DEFAULTS. Restore what applyConfig just overwrote.
+      cfg.sidebarCollapsed = shellPanel.collapsed;
+      cfg.outlineCollapsed = shellPanel.outlineCollapsed;
+      if (shellPanel.width > 0) cfg.sidebarWidth = shellPanel.width;
+      if (shellPanel.outlineWidth > 0) cfg.outlineWidth = shellPanel.outlineWidth;
+      applySidebarState();
+      applyOutlineState();
+    }
+    // Reconcile the fetched view only when it names a different view than
+    // the shell painted AND the user has not switched away while the fetch
+    // was in flight (see resolveBootView). A failed fetch reconciles nothing.
+    const bootView = resolveBootView(
+      NB.activity.getActive(), shellPanel.activeView,
+      serverCfg && serverCfg.activeView);
+    if (bootView) NB.activity.activate(bootView, false);
+    // The panel is the source of truth for the active view -- the failed
+    // path leaves cfg at DEFAULTS -- so mirror it back. Without this a later
+    // unrelated save would persist "explorer" and drop the saved view.
+    if (NB.activity.getActive) cfg.activeView = NB.activity.getActive();
 
     await NB.sidebar.refresh();
     const tree = NB.sidebar.getTree();
@@ -836,5 +902,11 @@
     parseDeepLink,
     openDeepLink,
     save: () => persistConfig(),
+    // Boot helpers. shellPanelState() reads the shell-painted panel back
+    // from the DOM (used by the failed-fetch fallback); resolveBootView()
+    // decides whether a successful fetch should switch the active view.
+    // Exposed for tests.
+    shellPanelState,
+    resolveBootView,
   };
 })();

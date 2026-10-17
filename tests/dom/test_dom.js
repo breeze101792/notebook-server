@@ -13837,6 +13837,47 @@ function check(label, cond, extra) {
   explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
 
+  console.log("== active side-panel view persists ==");
+  // The active view is written to config on every switch so a reload lands
+  // on the same view instead of snapping back to the file tree. Collapsing
+  // the panel on the active icon must NOT clobber it (the icon stays lit).
+  {
+    const bookmarksBtn = window.document.querySelector(
+      '#activity-bar .activity-btn[data-view="bookmarks"]');
+    bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(350);
+    let post = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("active view: switching to bookmarks persists activeView",
+      /"activeView":"bookmarks"/.test(post), post);
+    // Clicking the already-active icon collapses the panel; activeView stays.
+    bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(350);
+    post = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("active view: collapsing on the active icon keeps activeView",
+      /"activeView":"bookmarks"/.test(post), post);
+    // Re-expand and return to Explorer so the blocks below see the tree.
+    bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("active view: back on explorer",
+      window.NB.activity.getActive() === "explorer");
+    // The boot half now lives in activity.js (adoptShellView, driven in
+    // the "activity adopts the shell view" block below); app.js reconciles
+    // the fetched config after applyConfig and no longer paints from it.
+    const appSrc = read("static/js/app.js");
+    check("active view: DEFAULT config declares activeView",
+      /activeView:\s*"explorer"/.test(appSrc));
+    check("active view: boot reconciles the fetched view",
+      /serverCfg\.activeView/.test(appSrc) &&
+      /NB\.activity\.getActive\(\)/.test(appSrc));
+    const applyCfgBody = appSrc.slice(
+      appSrc.indexOf("function applyConfig"),
+      appSrc.indexOf("/* Side panel minimize"));
+    check("active view: applyConfig no longer activates a view",
+      !/NB\.activity\.activate/.test(applyCfgBody), applyCfgBody.slice(0, 120));
+  }
+
   console.log("== side-panel view collapse buttons ==");
   // Every side-panel view (Recent, Search, AI) gets a ‹ collapse button
   // in its header so the user can close the panel from any view. Clicking
@@ -24527,6 +24568,114 @@ function check(label, cond, extra) {
       cssVar("--side-panel-width") === savedWidth + "px",
       "width=" + cssVar("--side-panel-width") + " saved=" + savedWidth);
     // Leave the suite in the state it started (expanded).
+    window.document.documentElement.style.setProperty("--side-panel-width", widthBefore);
+  }
+
+  // --- activity adopts the server-rendered view -----------------------
+  // The server renders exactly one .side-panel-view host without `hidden`;
+  // activity.js adopts that host at load instead of hard-coding Explorer,
+  // so a reload with a saved Bookmarks/Search/AI view never flashes the
+  // file tree. Drive the real adoption seam against a mutated shell.
+  console.log("== activity adopts the shell view ==");
+  {
+    const panel = $("side-panel");
+    const hosts = Array.from(panel.querySelectorAll(".side-panel-view"));
+    const savedHidden = hosts.map(h => h.hidden);
+
+    // 1. The one visible host drives the boot view.
+    hosts.forEach(h => { h.hidden = h.dataset.view !== "bookmarks"; });
+    window.NB.activity.adoptShellView();
+    await tick(10);
+    check("adopt: shell bookmarks becomes the active view",
+      window.NB.activity.getActive() === "bookmarks");
+    check("adopt: #bookmarks-view visible, #sidebar hidden",
+      !$("bookmarks-view").hidden && $("sidebar").hidden);
+
+    // 2. No visible host must never leave a blank panel.
+    hosts.forEach(h => { h.hidden = true; });
+    window.NB.activity.adoptShellView();
+    await tick(10);
+    check("adopt: no visible host falls back to explorer",
+      window.NB.activity.getActive() === "explorer" && !$("sidebar").hidden);
+
+    // 3. An unregistered visible host falls back to Explorer (and shows it,
+    //    never a blank panel) without throwing.
+    hosts.forEach(h => { h.hidden = true; });
+    const fake = window.document.createElement("div");
+    fake.className = "side-panel-view";
+    fake.dataset.view = "gone";
+    panel.appendChild(fake);
+    let threw = false;
+    try { window.NB.activity.adoptShellView(); }
+    catch (e) { threw = true; }
+    await tick(10);
+    check("adopt: an unregistered visible host falls back to explorer, non-blank",
+      !threw && window.NB.activity.getActive() === "explorer" && !$("sidebar").hidden);
+    fake.remove();
+
+    // 4. The registry and the server host set stay in sync.
+    const ids = window.NB.activity.views();
+    check("adopt: views() lists the five ids in registration order",
+      ids.join(",") === "explorer,bookmarks,recent,search,ai", ids.join(","));
+    const tplIds = Array.from(
+      read("templates/index.html").matchAll(
+        /class="side-panel-view"[^>]*data-view="([^"]+)"/g),
+      m => m[1]);
+    check("adopt: registered ids match the template's data-view hosts",
+      tplIds.join(",") === ids.join(","), "tpl=" + tplIds.join(","));
+
+    // 5. The load-time call site must adopt -- a revert to the old hard-coded
+    //    Explorer would otherwise slip through green (the fixture shell
+    //    always shows Explorer, so adoption of it is indistinguishable).
+    const activitySrc = read("static/js/activity.js");
+    check("adopt: activity.js load call site adopts the shell view",
+      /adoptShellView\(\);/.test(activitySrc) &&
+      !/activate\(\s*"explorer"/.test(activitySrc));
+
+    // 6. resolveBootView: only a successful fetch naming a different view,
+    //    and only while the user has not switched, is acted on.
+    const rb = window.NB.app.resolveBootView;
+    check("reconcile: failed fetch (no id) never switches",
+      rb("bookmarks", "bookmarks", undefined) === null);
+    check("reconcile: same view never switches",
+      rb("bookmarks", "bookmarks", "bookmarks") === null);
+    check("reconcile: another tab's different view switches",
+      rb("bookmarks", "bookmarks", "search") === "search");
+    check("reconcile: a slow fetch does not yank the user's switch",
+      rb("search", "bookmarks", "bookmarks") === null);
+
+    // 7. shellPanelState reads the shell-painted panel back from the DOM,
+    //    the failed-fetch restoration source.
+    const sps = window.NB.app.shellPanelState();
+    check("shell state: reads the active view",
+      sps.activeView === window.NB.activity.getActive(),
+      "activeView=" + sps.activeView);
+    panel.classList.add("collapsed");
+    check("shell state: reads the collapsed class",
+      window.NB.app.shellPanelState().collapsed === true);
+    panel.classList.remove("collapsed");
+
+    // Restore the fixture's hidden state before the collapse check.
+    hosts.forEach((h, i) => { h.hidden = savedHidden[i]; });
+    window.NB.activity.activate("explorer", false);
+
+    // 5. The boot adoption must still honour a server-collapsed shell.
+    const widthBefore = cssVar("--side-panel-width");
+    panel.classList.add("collapsed");
+    window.document.documentElement.style.setProperty("--side-panel-width", "0px");
+    const savedWidth = window.NB.app.getSidePanelWidth();
+    window.NB.activity.adoptShellView();
+    await tick(10);
+    check("adopt: boot adoption keeps a collapsed panel collapsed",
+      panel.classList.contains("collapsed") &&
+      cssVar("--side-panel-width") === "0px", cssVar("--side-panel-width"));
+    window.document.querySelector('#activity-bar .activity-btn[data-view="explorer"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("adopt: an icon toggle still expands and restores the saved width",
+      !panel.classList.contains("collapsed") &&
+      cssVar("--side-panel-width") === savedWidth + "px",
+      "width=" + cssVar("--side-panel-width") + " saved=" + savedWidth);
     window.document.documentElement.style.setProperty("--side-panel-width", widthBefore);
   }
 

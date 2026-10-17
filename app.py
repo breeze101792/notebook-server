@@ -716,10 +716,11 @@ def index():
 # First-paint boot state
 # --------------------------------------------------------------------------- #
 # The SPA applies the saved theme, title, font size, pane widths, collapse
-# state, and wallpaper from /api/config -- but that fetch is async, so the
-# browser paints the defaults first and then visibly reflows once the
-# response lands (title changes, icon/text size jumps, panes snap open or
-# shut). To avoid that flash we render the same values into the HTML shell
+# state, active side-panel view, and wallpaper from /api/config -- but that
+# fetch is async, so the browser paints the defaults first and then visibly
+# reflows once the response lands (title changes, icon/text size jumps,
+# panes snap open or shut, the file tree flashes before the saved view).
+# To avoid that flash we render the same values into the HTML shell
 # server-side, so the very first frame already matches the saved config.
 #
 # These defaults must stay in sync with DEFAULTS in static/js/app.js. The
@@ -736,6 +737,11 @@ _MAX_PANE_WIDTH = 2000
 _WALLPAPERS = ("none", "lines", "grid")
 _WALLPAPER_COLORS = ("neutral", "blue", "green", "purple", "amber")
 _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
+# The side-panel views the shell can boot into. Must equal the ids
+# activity.js registers and the data-view hosts templates/index.html
+# ships; tests/test_app.py enforces that. "graph" is an overlay, not a
+# view, so it is deliberately absent.
+_ACTIVE_VIEWS = ("explorer", "bookmarks", "recent", "search", "ai")
 
 
 def _read_public_config():
@@ -795,6 +801,13 @@ def boot_state(cfg=None):
     wallpaper_intensity = _choice("wallpaperIntensity", _WALLPAPER_INTENSITIES, "subtle")
     wallpaper_scroll = _choice("wallpaperScroll", ("scroll", "fixed"), "scroll")
 
+    # Tuple membership compares by ==, so a non-string (int/list/None) is
+    # rejected without raising; anything not exactly a known view id falls
+    # back to Explorer.
+    active_view = cfg.get("activeView")
+    if active_view not in _ACTIVE_VIEWS:
+        active_view = "explorer"
+
     # The viewer-content classes are assembled here so the shell can render
     # them directly; keep them in the same shape app.js applies.
     wallpaper_classes = ["wallpaper-" + wallpaper]
@@ -817,6 +830,7 @@ def boot_state(cfg=None):
         "outline_collapsed": outline_collapsed,
         "topbar_hidden": bool(cfg.get("hideTopbar")),
         "wallpaper_classes": " ".join(wallpaper_classes),
+        "active_view": active_view,
     }
 
 

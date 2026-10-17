@@ -62,27 +62,37 @@ top-bar logout button.
 
 ### First-paint boot state
 
-`boot_state()` (`app.py:737`) renders a sanitized config subset into the
+`boot_state()` (`app.py:742`) renders a sanitized config subset into the
 HTML shell before any script runs, avoiding a visible reflow once the
 async `GET /api/config` lands. The values become an inline style on
-`<html>` (`index.html:2`) and classes on `<body>`/`#viewer-content`.
+`<html>` (`index.html:2`), classes on `<body>`/`#viewer-content`, and the
+`hidden` attribute on every `.side-panel-view` host except the active view.
 
 Only chrome values are embedded: theme, site title, font scale, pane
-widths, collapse state, and wallpaper classes. Notebook content
-(`recentFiles`, `openFiles`, `bookmarks`) is never embedded, because the
-page is served before auth (`app.py:711-713`). When auth is on and no
-session exists, only the theme is embedded and everything else falls back
-to defaults (`app.py:818-825`). The embedded defaults must stay in sync
-with `DEFAULTS` in `app.js:7-87`.
+widths, collapse state, the active side-panel view, and wallpaper classes.
+Notebook content (`recentFiles`, `openFiles`, `bookmarks`) is never embedded,
+because the page is served before auth (`app.py:711-713`). When auth is on
+and no session exists, only the theme is embedded and everything else falls
+back to defaults (`app.py:818-825`). The embedded defaults must stay in sync
+with `DEFAULTS` in `app.js:7-87`. `_ACTIVE_VIEWS`
+(`app.py:744`) must equal the views `activity.js` registers and the
+`data-view` hosts in `index.html`; `tests/test_app.py` enforces the sync.
 
 ### `app.js` — the orchestrator
 
 `app.js` registers a `DOMContentLoaded` listener (`app.js:652`). Its
-`boot()` function (`app.js:595`) wires DOM handlers, applies the server
+`boot()` function (`app.js:644`) wires DOM handlers, applies the server
 config over `DEFAULTS`, refreshes the sidebar tree, enables the vim keymap
 if `cfg.vimMode` is set, restores open tabs filtered to existing files,
 and opens any deep link before stripping it with `history.replaceState`
 (`app.js:630-641`).
+
+`boot()` does not paint the active side-panel view: the shell already
+rendered it and `activity.js` adopts it at load (`adoptShellView`). Boot
+reconciles only if a successful `GET /api/config` names a different view
+and the user has not switched since (`resolveBootView`). On a failed fetch
+it restores the shell-painted panel (`shellPanelState`) instead of
+repainting `DEFAULTS`.
 
 ### Service worker
 
@@ -124,7 +134,7 @@ implemented today.
 | `export.js` | 926 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
 | `vimnav.js` | 564 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
 | `ai.js` | 1227 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; full in-memory transcript; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
-| `activity.js` | 524 | `NB.activity` | Left activity bar and side-panel view switcher. Registers four views: Explorer, Recent (fuzzy quick-open), Search, AI. |
+| `activity.js` | 524 | `NB.activity` | Left activity bar and side-panel view switcher. Registers five views: Explorer, Bookmarks, Recent (fuzzy quick-open), Search, AI. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
 | `shortcuts.js` | 392 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
 | `app.js` | 840 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
 
@@ -208,6 +218,7 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | `outlineWidth` | `220` | |
 | `sidebarCollapsed` | `false` | |
 | `outlineCollapsed` | `false` | |
+| `activeView` | `"explorer"` | Active side-panel view (explorer / bookmarks / recent / search / ai) |
 | `searchCaseSensitive` | `false` | |
 | `graphParticles` | `false` | |
 | `hideTopbar` | `false` | |

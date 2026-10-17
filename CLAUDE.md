@@ -452,8 +452,9 @@ Module responsibilities:
   section is exported.
 
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
-`fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `sidebarWidth`,
-`outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`, `searchCaseSensitive`.
+`fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `activeView`,
+`sidebarWidth`, `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`,
+`searchCaseSensitive`.
 `fontSize` ∈ {`"small"`, `"medium"`, `"large"`, `"xlarge"`} drives the
 `--font-scale` CSS variable (0.9 / 1.0 / 1.15 / 1.3); the resolved value applies
 to the whole app via rem-ified chrome. The code-block syntax theme is **not**

@@ -7,9 +7,11 @@
  * activates that view (mounts it into the panel and shows it); clicking
  * the active icon again collapses the panel so only the strip remains.
  *
- * The bar is intentionally generic: the Explorer view (the file tree)
- * ships here by default, but further views (Bookmarks, Recent, Search,
- * AI, future plugins) register the same way, so adding a new
+ * The bar is intentionally generic: the module adopts whichever
+ * .side-panel-view host the server rendered visible as the boot view
+ * (so a reload shows the saved view with no flash), falling back to
+ * Explorer when none is visible. Further views (Bookmarks, Recent,
+ * Search, AI, future plugins) register the same way, so adding a new
  * side-panel function is a single NB.activity.register() call.
  */
 (function () {
@@ -98,7 +100,7 @@
       return;
     }
     // Only a user toggle (icon click) may expand a collapsed panel. The
-    // boot activation below calls activate("explorer", false) while the
+    // load-time adoptShellView() calls activate(id, false) while the
     // shell is already rendered with the saved collapsed state; expanding
     // here would flash the panel open and (once app.js has wired its
     // activity:expanded listener) persist the wrong sidebarCollapsed.
@@ -151,6 +153,22 @@
     return panelEl && panelEl.classList.contains("collapsed");
   }
 
+  // The boot view is the data-view of the one .side-panel-view host the
+  // server rendered without `hidden`. Returns null when no host is
+  // visible or the visible one is not a registered view, so the caller
+  // can fall back to Explorer instead of showing an empty pane.
+  function shellViewId() {
+    if (!panelEl) return null;
+    const el = panelEl.querySelector(".side-panel-view:not([hidden])");
+    if (!el) return null;
+    const id = el.dataset.view;
+    return views.some(v => v.id === id) ? id : null;
+  }
+
+  function adoptShellView() {
+    activate(shellViewId() || "explorer", false);
+  }
+
   // Build a collapse button for a side-panel view's header. Every view
   // (Explorer, Recent, Search, AI) gets one so the user can close the
   // panel from any of them. Clicking it collapses the whole panel via
@@ -179,6 +197,8 @@
     getActive,
     isCollapsed,
     makeCollapseBtn,
+    views: () => views.map(v => v.id),
+    adoptShellView,
   };
 
   /* --- Recent / Quick open view -------------------------------------- */
@@ -526,7 +546,7 @@
     },
   });
 
-  // Activate Explorer on first load so the file tree is visible without
-  // requiring a click.
-  activate("explorer", false);
+  // Adopt the view the server rendered visible so the first frame is the
+  // saved view; fall back to Explorer when the shell shows none.
+  adoptShellView();
 })();

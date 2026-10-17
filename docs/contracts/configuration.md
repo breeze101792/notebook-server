@@ -118,6 +118,7 @@ into the page shell for first paint.
 | `outlineWidth` | `220` | Outline pane width in pixels (`app.js:32`) |
 | `sidebarCollapsed` | `false` | Collapses the side panel to width 0 (`app.js:33`) |
 | `outlineCollapsed` | `false` | Collapses the outline pane to width 0 (`app.js:34`) |
+| `activeView` | `explorer` | Active side-panel view: `explorer`, `bookmarks`, `recent`, `search`, or `ai`; any other value falls back to `explorer` (`app.js:36`) |
 
 ### Files and tabs
 
@@ -147,10 +148,16 @@ into the page shell for first paint.
 
 ### First-paint subset
 
-`boot_state()` (`app.py:737`) validates and embeds a small subset into the
+`boot_state()` (`app.py:742`) validates and embeds a small subset into the
 HTML shell so the first frame already matches the saved settings. The
 subset is: theme, site title, font scale, pane widths, pane collapse state,
-topbar hidden, and the assembled wallpaper classes (`app.py:790-803`).
+topbar hidden, the active side-panel view, and the assembled wallpaper
+classes (`app.py:795-834`).
+
+The active view is embedded as `hidden` on every `.side-panel-view` host
+except the active one (`_ACTIVE_VIEWS`, `app.py:744`), so the panel's first
+frame is the saved view and never flashes the file tree. The value is
+allowlisted, so a hand-edited id cannot inject markup.
 
 The page is served before auth. Content-bearing keys (`recentFiles`,
 `openFiles`, `bookmarks`) are deliberately excluded, because an

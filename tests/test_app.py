@@ -10,6 +10,7 @@ Run:  .venv_$(hostname)/bin/python -m unittest discover -s tests -v
 
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -49,6 +50,24 @@ class BaseTest(unittest.TestCase):
     def jget(self, path):
         r = self.client.get(path)
         return r.status_code, (r.get_json() if r.is_json else None)
+
+    # --- active side-panel view first-paint helpers ---------------------
+    def view_hidden(self, html, view_id):
+        """True when the .side-panel-view host data-view=view_id is hidden.
+
+        Fails if the shell ships no such host, so a renamed view id is
+        caught rather than silently reported as hidden."""
+        m = re.search(r'data-view="%s"[^>]*>' % re.escape(view_id), html)
+        self.assertIsNotNone(m, "no side-panel host for view id %r" % view_id)
+        return "hidden" in m.group(0)
+
+    def assert_only_view(self, html, active):
+        """Exactly the `active` view host is visible; every other host is
+        hidden. This is the first-paint contract (exactly one host shown)."""
+        for view in nb._ACTIVE_VIEWS:
+            self.assertEqual(
+                self.view_hidden(html, view), view != active,
+                "view %r visibility wrong for active view %r" % (view, active))
 
 
 class TestIndexAndSeed(BaseTest):
@@ -204,6 +223,116 @@ class TestIndexAndSeed(BaseTest):
         html = self.client.get("/README.md").get_data(as_text=True)
         self.assertIn("<title>Deep</title>", html)
         self.assertIn("--font-scale: 1.15", html)
+
+    # --- active side-panel view first paint ------------------------------
+    def test_index_paints_saved_active_view(self):
+        # The saved active view is first-paint chrome: the shell must show
+        # exactly that view and hide the rest, so an authenticated reload
+        # never paints the file tree before the saved view.
+        self.post("/api/config", {"activeView": "bookmarks"})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assert_only_view(html, "bookmarks")
+        self.assertFalse(self.view_hidden(html, "bookmarks"))
+        self.assertTrue(self.view_hidden(html, "explorer"))
+
+    def test_index_paints_explorer_for_default_and_missing(self):
+        # Explicit "explorer" and the no-key case both boot Explorer.
+        self.post("/api/config", {"activeView": "explorer"})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assert_only_view(html, "explorer")
+        self.assertFalse(self.view_hidden(html, "explorer"))
+
+        self.post("/api/config", {})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assert_only_view(html, "explorer")
+
+    def test_index_paints_each_saved_active_view(self):
+        for view in ("recent", "search", "ai"):
+            self.post("/api/config", {"activeView": view})
+            html = self.client.get("/").get_data(as_text=True)
+            self.assert_only_view(html, view)
+            self.assertFalse(self.view_hidden(html, view))
+
+    def test_index_falls_back_to_explorer_for_bad_active_view(self):
+        # Unknown id and non-string values must fall back silently, never
+        # error or leave the panel empty.
+        for bad in ("gone", 42, None):
+            self.post("/api/config", {"activeView": bad})
+            r = self.client.get("/")
+            self.assertEqual(r.status_code, 200)
+            self.assert_only_view(r.get_data(as_text=True), "explorer")
+
+    def test_index_paints_saved_view_in_collapsed_shell(self):
+        # Collapse is orthogonal to the active view: the shell stays
+        # collapsed at width 0 and still shows the saved view inside.
+        self.post("/api/config", {"activeView": "bookmarks",
+                                  "sidebarCollapsed": True})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="side-panel" class="collapsed"', html)
+        self.assertIn("--side-panel-width: 0", html)
+        self.assertFalse(self.view_hidden(html, "bookmarks"))
+        self.assertTrue(self.view_hidden(html, "explorer"))
+
+    def test_spa_catch_all_paints_active_view(self):
+        # The catch-all route renders the same shell, so a deep-link reload
+        # must not flash the file tree either.
+        self.post("/api/config", {"activeView": "search"})
+        root = self.client.get("/").get_data(as_text=True)
+        deep = self.client.get("/Welcome.md").get_data(as_text=True)
+        self.assert_only_view(root, "search")
+        self.assert_only_view(deep, "search")
+
+    def test_active_view_not_leaked_until_authenticated(self):
+        # The shell is served before login, so an unauthenticated request
+        # must select Explorer and never paint the saved view. After a real
+        # login the reload paints the saved view.
+        import bcrypt as _bcrypt
+        self.post("/api/config", {"activeView": "bookmarks"})
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "x" * 64,
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw-secret", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        anon = nb.app.test_client()
+        html = anon.get("/").get_data(as_text=True)
+        self.assert_only_view(html, "explorer")
+        self.assertTrue(self.view_hidden(html, "bookmarks"))
+        client = nb.app.test_client()
+        client.post("/api/login", json={"password": "admin-pw-secret"})
+        authed = client.get("/").get_data(as_text=True)
+        self.assert_only_view(authed, "bookmarks")
+
+    def test_active_view_allowlist_matches_registry_and_dom(self):
+        # boot_state's allowlist must equal the view ids activity.js
+        # registers and the data-view hosts the shell ships; a drift is a
+        # defect. Parsed textually, in the same cross-file-guard style as
+        # the renderer-registry and version-drift tests.
+        with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
+            app_src = f.read()
+        m = re.search(r"_ACTIVE_VIEWS\s*=\s*\(([^)]*)\)", app_src)
+        self.assertIsNotNone(m, "_ACTIVE_VIEWS tuple not found in app.py")
+        allow = set(re.findall(r'"([^"]+)"', m.group(1)))
+
+        with open(os.path.join(ROOT, "static", "js", "activity.js"),
+                  encoding="utf-8") as f:
+            activity_src = f.read()
+        registered = set(re.findall(
+            r'(?:NB\.activity\.)?register\(\{\s*id:\s*"([^"]+)"', activity_src))
+
+        with open(os.path.join(ROOT, "templates", "index.html"),
+                  encoding="utf-8") as f:
+            shell_src = f.read()
+        hosts = set(re.findall(r'data-view="([^"]+)"', shell_src))
+
+        self.assertEqual(
+            allow, registered,
+            "boot_state _ACTIVE_VIEWS and activity.js registry differ "
+            "(missing from registry: %s)" % sorted(allow - registered))
+        self.assertEqual(
+            allow, hosts,
+            "boot_state _ACTIVE_VIEWS and index.html data-view hosts differ "
+            "(missing from shell: %s)" % sorted(allow - hosts))
 
 
     def test_seed_creates_welcome_and_empty_config(self):

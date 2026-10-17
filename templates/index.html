@@ -126,7 +126,7 @@
         <!-- Explorer view: the original file tree. Stays in the DOM so
              its state (collapsed folders, selection, scroll) survives
              view switches; hidden via [hidden] when inactive. -->
-        <div id="sidebar" class="side-panel-view" data-view="explorer">
+        <div id="sidebar" class="side-panel-view" data-view="explorer"{% if boot.active_view != 'explorer' %} hidden{% endif %}>
           <div class="panel-header">
             <span class="panel-title">Files</span>
             <div class="panel-header-actions">
@@ -141,25 +141,25 @@
         <!-- Bookmarks view: the pinned-files list. bookmarks.js populates
              this host at load (header + list); it stays in the DOM so list
              state survives view switches. -->
-        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
+        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks"{% if boot.active_view != 'bookmarks' %} hidden{% endif %}></div>
 
         <!-- Recent view: quick-open list of recently edited files with a
              fuzzy filter. Mounted lazily by activity.js the first time
              the Recent icon is activated. The placeholder below is
              replaced on mount. -->
-        <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
+        <div id="recent-view" class="side-panel-view" data-view="recent"{% if boot.active_view != 'recent' %} hidden{% endif %}></div>
 
         <!-- Search view: a self-contained search panel with its own input
              and results list. Mounted lazily by activity.js. Independent
              from the top-bar search, which keeps its overlay behavior;
              both call the same NB.api.search backend. -->
-        <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
+        <div id="search-view" class="side-panel-view" data-view="search"{% if boot.active_view != 'search' %} hidden{% endif %}></div>
 
         <!-- AI assistant view: chat + reviewable nb-edit proposal cards.
              Mounted lazily by activity.js on first activation. The chat
              streams through POST /api/ai/chat; assistant answers parse
              into cards that apply via the standard /api/edit endpoint. -->
-        <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
+        <div id="ai-view" class="side-panel-view" data-view="ai"{% if boot.active_view != 'ai' %} hidden{% endif %}></div>
 
         <!-- Collapsed-strip affordance removed: the activity bar's icons
              are the re-expand trigger, so the panel hides completely
