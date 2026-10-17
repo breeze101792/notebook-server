@@ -443,7 +443,7 @@
                 rows="8" spellcheck="false"
                 placeholder="# One binding per line. Examples:&#10;# nmap j gj&#10;# imap jj &lt;Esc&gt;&#10;# unmap &lt;leader&gt;w"></textarea>
               <div class="settings-vimrc-actions">
-                <button id="settings-vimrc-save" class="settings-action" type="button">Save</button>
+                <button id="settings-vimrc-save" class="settings-action settings-action--primary" type="button">Save</button>
                 <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
               </div>
             </div>
@@ -452,6 +452,7 @@
           <!-- Appearance: theme, font size, wallpaper (pattern / color / intensity / scroll). -->
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
             <h3>Appearance</h3>
+            <div class="settings-form-title">Interface</div>
             <div class="settings-row">
               <label class="settings-label">Theme</label>
               <div class="settings-control theme-options">
@@ -477,6 +478,7 @@
               <label class="settings-label" for="settings-graph-particles">Graph background particles</label>
               <input type="checkbox" id="settings-graph-particles">
             </div>
+            <div class="settings-form-title">Modal size</div>
             <div class="settings-row">
               <label class="settings-label">Settings modal width</label>
               <div class="settings-control settings-modal-width-options" role="radiogroup" aria-label="Settings modal width">
@@ -493,6 +495,7 @@
                 <label><input type="radio" name="settingsModalHeight" value="wide"> Wide</label>
               </div>
             </div>
+            <div class="settings-form-title">Wallpaper</div>
             <div class="settings-row">
               <label class="settings-label">Wallpaper</label>
               <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
@@ -759,7 +762,7 @@
               </select>
             </div>
             <div class="settings-form-actions">
-              <button id="settings-tokens-create" class="settings-action" disabled>Create token</button>
+              <button id="settings-tokens-create" class="settings-action settings-action--primary" disabled>Create token</button>
             </div>
             <!-- Shown once per successful create; the server never returns
                  the token again, so this is the only chance to copy it. -->
@@ -812,13 +815,13 @@
             <div class="settings-form-actions">
               <button id="settings-ai-cancel" class="settings-action" hidden>Cancel</button>
               <button id="settings-ai-saveas" class="settings-action" hidden>Save as new</button>
-              <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
+              <button id="settings-ai-add" class="settings-action settings-action--primary" disabled>Add provider</button>
             </div>
 
             <!-- Global custom prompt: applies to whichever provider is
                  active. Lives OUTSIDE the add/edit form on purpose --
                  provider profiles only control endpoint + model + key. -->
-            <div class="settings-form-title">Custom prompt</div>
+            <div class="settings-form-title">Assistant instructions</div>
             <div class="settings-row settings-row-column">
               <label class="settings-label" for="settings-ai-custom-prompt">Assistant instructions (all providers)</label>
               <textarea id="settings-ai-custom-prompt" class="auth-input settings-auth-input"
@@ -828,7 +831,7 @@
             </div>
             <div class="settings-form-actions">
               <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
-              <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
+              <button id="settings-ai-prompt-save" class="settings-action settings-action--primary" disabled>Save prompt</button>
             </div>
 
             <!-- Optional SearXNG instance for the assistant's search tool.
@@ -844,7 +847,7 @@
             </div>
             <div class="settings-form-actions">
               <span id="settings-ai-searxng-status" class="settings-hint" hidden></span>
-              <button id="settings-ai-searxng-save" class="settings-action" disabled>Save search URL</button>
+              <button id="settings-ai-searxng-save" class="settings-action settings-action--primary" disabled>Save search URL</button>
             </div>
             <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>

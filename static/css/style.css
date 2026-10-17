@@ -1410,6 +1410,403 @@ kbd.context-menu-kbd {
  * outranks the UA's `[hidden] { display: none }`. Re-assert it explicitly
  * so the overlay starts closed and stays closed. */
 .settings-overlay[hidden] { display: none; }
+
+/* ------------------------------------------------------------------ */
+/* Settings modal — unified design tokens. Scoped to #settings-overlay */
+/* so the Export / Auth / Designer modals are untouched.               */
+/* ------------------------------------------------------------------ */
+#settings-overlay {
+  /* Spacing scale. px, not rem: the modal's rhythm stays constant while
+   * text scales with --font-scale (the file's existing convention). */
+  --stg-space-1: 4px;
+  --stg-space-2: 6px;
+  --stg-space-3: 8px;
+  --stg-space-4: 12px;
+  --stg-space-5: 16px;
+  --stg-space-6: 24px;
+
+  /* Radii. */
+  --stg-radius-sm: 6px;     /* fields, buttons, chips */
+  --stg-radius-md: 8px;     /* card rows, read-only panels */
+  --stg-radius-pill: 999px;
+
+  /* Shared label gutter for every label|control row. */
+  --stg-label-w: 132px;
+
+  /* Field / button padding. */
+  --stg-field-pad-y: 6px;
+  --stg-field-pad-x: 10px;
+  --stg-btn-pad-y: 6px;
+  --stg-btn-pad-x: 14px;
+
+  /* Secondary text. The app default --fg-muted (#8b8d98) is only 4.26:1
+   * on --bg-elev (dark) — under the 4.5:1 bar for normal text. Inside
+   * Settings it is raised to clear 4.5:1 on every surface it lands on.
+   * Scoped, so the rest of the app is unchanged. */
+  --fg-muted: #9799a4;
+
+  /* Status text. Dark --ok / --warn already pass; the light theme values
+   * do not, so light gets darker variants (below). */
+  --stg-ok: var(--ok);
+  --stg-warn: var(--warn);
+
+  /* Switch knob: the app's --accent-fg is dark in the dark theme, so the
+   * knob is taken from --fg there and from --accent-fg in light. */
+  --stg-switch-knob: var(--fg);
+}
+body[data-theme="light"] #settings-overlay {
+  --fg-muted: #5d6470;                    /* 5.13:1 on --bg-elev */
+  --stg-ok: #16703f;                     /* 5.28:1 on --bg-elev */
+  --stg-warn: #8a5a0b;                   /* 5.10:1 on --bg-elev */
+  --stg-switch-knob: var(--accent-fg);   /* = #ffffff in light */
+}
+
+/* Settings -> section + group headings. */
+#settings-overlay .settings-section > h3,
+#settings-overlay .settings-subheading {
+  margin: 0 0 var(--stg-space-3);
+  font-size: .76rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .8px;
+  color: var(--fg-muted);
+}
+#settings-overlay .settings-form-title {
+  margin: var(--stg-space-6) 0 var(--stg-space-3);
+  padding-top: var(--stg-space-5);
+  border-top: 1px solid var(--border);   /* the group separator */
+  font-size: .74rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .7px;
+  color: var(--fg-muted);
+}
+
+/* Settings -> secondary text (help + note share one size; hint is larger). */
+#settings-overlay .settings-help { color: var(--fg-muted); font-size: .86rem; line-height: 1.5; }
+#settings-overlay .settings-note { font-size: .86rem; color: var(--fg-muted); }
+#settings-overlay .settings-hint { font-size: .78rem; color: var(--fg-muted); }
+
+/* Settings -> rows, labels, controls. */
+#settings-overlay .settings-row {
+  display: flex; align-items: center; gap: var(--stg-space-4);
+  padding: var(--stg-space-2) 0; min-width: 0;
+}
+#settings-overlay .settings-label {
+  flex: 0 0 var(--stg-label-w); min-width: 0;
+  color: var(--fg-muted); font-size: .93rem;
+}
+#settings-overlay .settings-control {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-wrap: wrap; gap: var(--stg-space-2);
+}
+#settings-overlay .settings-row-column {
+  flex-direction: column; align-items: stretch; gap: 0;
+}
+#settings-overlay .settings-row-column .settings-label {
+  flex: 0 0 auto; margin-bottom: var(--stg-space-1);
+}
+#settings-overlay .settings-form-actions {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: var(--stg-space-3); padding: var(--stg-space-2) 0;
+}
+/* The vimrc row is a column that predates .settings-row-column; keep its
+ * stacked shape now that the scoped .settings-row rules would centre it. */
+#settings-overlay .settings-vimrc {
+  flex-direction: column; align-items: stretch; gap: var(--stg-space-2);
+}
+#settings-overlay .settings-vimrc .settings-label { flex: 0 0 auto; }
+
+/* Settings -> fields: one look for input / textarea / select. Sans-serif
+ * inside Settings (D3); the Auth modal's .auth-input keeps its mono font
+ * because these overrides are scoped to #settings-overlay. */
+#settings-overlay .auth-input,
+#settings-overlay .settings-text-input,
+#settings-overlay #settings-ai-custom-prompt,
+#settings-overlay .settings-vimrc-area,
+#settings-overlay select {
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-sm);
+  padding: var(--stg-field-pad-y) var(--stg-field-pad-x);
+  font-family: inherit; font-size: .93rem; outline: none;
+  min-width: 0; max-width: none; flex: 1 1 auto;
+}
+#settings-overlay .auth-input:focus,
+#settings-overlay .settings-text-input:focus,
+#settings-overlay #settings-ai-custom-prompt:focus,
+#settings-overlay select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+#settings-overlay .auth-input:disabled,
+#settings-overlay .settings-text-input:disabled,
+#settings-overlay select:disabled { opacity: .55; cursor: not-allowed; }
+#settings-overlay .settings-vimrc-area {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  resize: vertical; width: 100%;
+}
+#settings-overlay #settings-ai-custom-prompt { resize: vertical; width: 100%; }
+
+/* Settings -> buttons: one base + four variants. */
+#settings-overlay .settings-action {
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-sm);
+  padding: var(--stg-btn-pad-y) var(--stg-btn-pad-x);
+  font-family: inherit; font-size: .9rem; line-height: 1.4;
+  cursor: pointer; white-space: nowrap;
+}
+#settings-overlay .settings-action:hover:not(:disabled) {
+  background: var(--accent-soft); border-color: var(--accent);
+}
+#settings-overlay .settings-action:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+#settings-overlay .settings-action:disabled {
+  opacity: .5; cursor: not-allowed;
+  background: var(--bg-elev); border-color: var(--border);
+}
+/* --primary: the one commit action of a group. */
+#settings-overlay .settings-action--primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-fg); font-weight: 600;
+}
+#settings-overlay .settings-action--primary:hover:not(:disabled) {
+  background: var(--accent); border-color: var(--accent); filter: brightness(1.06);
+}
+/* --ghost: quiet row actions. */
+#settings-overlay .settings-ai-test,
+#settings-overlay .settings-ai-edit,
+#settings-overlay .shortcut-change,
+#settings-overlay .shortcut-reset {
+  background: transparent; border-color: transparent;
+  color: var(--fg-muted); padding: 4px 10px; font-size: .85rem;
+}
+#settings-overlay .settings-ai-edit { color: var(--accent); }
+#settings-overlay .settings-ai-test:hover:not(:disabled),
+#settings-overlay .settings-ai-edit:hover:not(:disabled),
+#settings-overlay .shortcut-change:hover:not(:disabled),
+#settings-overlay .shortcut-reset:hover:not(:disabled) {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+/* --danger: destructive row actions. */
+#settings-overlay .settings-ai-remove,
+#settings-overlay .settings-token-revoke,
+#settings-overlay .settings-auth-danger {
+  background: transparent; border-color: transparent; color: var(--danger);
+}
+#settings-overlay .settings-ai-remove:hover:not(:disabled),
+#settings-overlay .settings-token-revoke:hover:not(:disabled),
+#settings-overlay .settings-auth-danger:hover:not(:disabled) {
+  background: var(--danger-soft); border-color: var(--danger);
+}
+
+/* Settings -> toggles: every checkbox is a switch. The native input keeps
+ * its id / label association / keyboard semantics. */
+#settings-overlay input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  position: relative; width: 36px; height: 20px;
+  margin: 0 0 0 auto;               /* push to the row's right edge */
+  flex: 0 0 auto;
+  border-radius: var(--stg-radius-pill); background: var(--border);
+  cursor: pointer; transition: background .15s ease;
+}
+#settings-overlay input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--stg-switch-knob);
+  transition: transform .15s ease;
+}
+#settings-overlay input[type="checkbox"]:checked { background: var(--accent); }
+#settings-overlay input[type="checkbox"]:checked::after { transform: translateX(16px); }
+#settings-overlay input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+#settings-overlay input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  #settings-overlay input[type="checkbox"],
+  #settings-overlay input[type="checkbox"]::after { transition: none; }
+}
+
+/* Settings -> radio chips. The eight Settings groups are named explicitly
+ * (a [class$="-options"] selector would also catch the Export modal's). */
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) {
+  display: flex; flex-wrap: wrap; gap: var(--stg-space-2);
+}
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px;
+  border: 1px solid var(--border); border-radius: var(--stg-radius-pill);
+  background: var(--bg-elev); color: var(--fg-muted); font-size: .86rem;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label:hover {
+  border-color: var(--accent); color: var(--fg);
+}
+/* D4: :has() is the real selector; .is-checked is a harmless fallback. */
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label:has(input:checked),
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label.is-checked {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label:has(input:focus-visible) {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+#settings-overlay :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0;
+}
+
+/* Settings -> card rows (provider + token rows). */
+#settings-overlay .settings-ai-row,
+#settings-overlay .settings-token-row {
+  display: flex; align-items: center; gap: var(--stg-space-3);
+  padding: var(--stg-space-3) var(--stg-space-4);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-md);
+  background: var(--bg-elev); margin: 0 0 var(--stg-space-2);
+}
+#settings-overlay .settings-ai-row .settings-label,
+#settings-overlay .settings-token-row .settings-label {
+  flex: 1 1 auto; min-width: 0;
+  color: var(--fg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#settings-overlay .settings-token-meta {
+  display: inline-flex; align-items: center; gap: var(--stg-space-2);
+  flex-wrap: wrap; min-width: 0;
+}
+#settings-overlay .settings-token-role,
+#settings-overlay .settings-token-created {
+  font-size: .78rem; color: var(--fg-muted);
+}
+
+/* Settings -> status (dot + word) and tag. Colour is never the only signal. */
+#settings-overlay .stg-status,
+#settings-overlay .settings-watch-status {
+  display: inline-flex; align-items: center; gap: var(--stg-space-2);
+  font-size: .82rem; font-weight: 600; color: var(--fg);
+}
+#settings-overlay .stg-status::before,
+#settings-overlay .settings-watch-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  flex: 0 0 auto; background: var(--fg-muted);
+}
+/* The watch dot follows its own text colour; settings.js only toggles the
+ * watch-on / watch-off class, so this keeps the green/amber dot. */
+#settings-overlay .settings-watch-status::before { background: currentColor; }
+#settings-overlay .stg-status--ok { color: var(--stg-ok); }
+#settings-overlay .stg-status--ok::before { background: var(--stg-ok); }
+#settings-overlay .stg-status--warn { color: var(--stg-warn); }
+#settings-overlay .stg-status--warn::before { background: var(--stg-warn); }
+#settings-overlay .stg-status--danger { color: var(--danger); }
+#settings-overlay .stg-status--danger::before { background: var(--danger); }
+#settings-overlay .stg-status--accent { color: var(--accent); }
+#settings-overlay .stg-status--accent::before { background: var(--accent); }
+#settings-overlay .settings-watch-status.watch-on { color: var(--stg-ok); }
+#settings-overlay .settings-watch-status.watch-off { color: var(--stg-warn); }
+#settings-overlay .stg-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 8px; border: 1px solid var(--border);
+  border-radius: var(--stg-radius-pill); background: var(--bg-elev);
+  color: var(--fg-muted); font-size: .68rem; font-weight: 700;
+  letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
+}
+#settings-overlay .stg-tag--accent {
+  color: var(--accent); border-color: var(--accent); background: var(--accent-soft);
+}
+#settings-overlay .stg-tag--ok     { color: var(--stg-ok);     border-color: var(--stg-ok); }
+#settings-overlay .stg-tag--danger { color: var(--danger);     border-color: var(--danger); }
+
+/* Settings -> status text roles. The vimrc status keeps its ok/error class
+ * names (settings.js toggles them) but takes the accessible role colours. */
+#settings-overlay .settings-vimrc-status { font-size: .82rem; }
+#settings-overlay .settings-vimrc-status.ok    { color: var(--stg-ok); }
+#settings-overlay .settings-vimrc-status.error { color: var(--stg-warn); }
+#settings-overlay .auth-status-text { font-size: .82rem; }
+
+/* Settings -> clear selected state on the nav rail. */
+#settings-overlay .settings-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Settings -> ACP read-only panel (config/acp.json is hand-edited on the
+ * server; this block only reports status). */
+#settings-overlay .settings-ai-acp-row,
+#settings-overlay .settings-ai-acp-info {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--stg-radius-md);
+  padding: var(--stg-space-4);
+  margin: var(--stg-space-2) 0 var(--stg-space-3);
+}
+#settings-overlay .settings-ai-acp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--stg-space-3); margin: 0 0 var(--stg-space-3);
+}
+#settings-overlay .settings-ai-acp-title {
+  margin: 0; font-size: .74rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .7px; color: var(--fg-muted);
+}
+#settings-overlay .settings-ai-acp-profile {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--stg-space-2);
+  padding: var(--stg-space-3);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--stg-radius-sm);
+  background: var(--bg);
+  margin: 0 0 var(--stg-space-3);
+}
+#settings-overlay .settings-ai-acp-profile-name { font-weight: 600; font-size: .93rem; color: var(--fg); }
+#settings-overlay .settings-ai-acp-profile-meta {
+  flex: 1 1 100%; font-size: .78rem; color: var(--fg-muted);
+}
+#settings-overlay .settings-ai-acp-agents {
+  display: flex; flex-direction: column; gap: var(--stg-space-2);
+}
+#settings-overlay .settings-ai-acp-agent {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--stg-space-2) var(--stg-space-3);
+  padding: var(--stg-space-2) var(--stg-space-3);
+  border-radius: var(--stg-radius-sm);
+}
+#settings-overlay .settings-ai-acp-agent[data-selected="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+#settings-overlay .settings-ai-acp-agent-name { flex: 0 0 auto; font-weight: 600; font-size: .93rem; color: var(--fg); }
+#settings-overlay .settings-ai-acp-agent-status { flex: 0 0 auto; }
+#settings-overlay .settings-ai-acp-key {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .76rem; color: var(--fg-muted);
+}
+#settings-overlay .settings-ai-acp-hint {
+  flex: 1 1 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .74rem; color: var(--stg-warn); overflow-wrap: anywhere;
+}
+#settings-overlay .settings-ai-acp-note { margin: var(--stg-space-3) 0 0; }
+
 .settings-modal {
   /* The modal is its own positioned window on the viewport, not a flex
    * item. `--settings-modal-width / --settings-modal-height` (set on
@@ -4253,8 +4650,7 @@ body[data-theme="light"] #viewer-content {
 /* AI section: provider fields + the prompt textarea span the full
  * available width (the shared .settings-auth-input caps at 260px for
  * the password forms; that is not what we want here). Fields still
- * sit beside their 130px labels; the prompt column label hugs its
- * textarea with no gap. */
+ * sit beside their labels. */
 #settings-section-ai .settings-auth-input {
   max-width: none;
   width: 100%;
@@ -4262,17 +4658,9 @@ body[data-theme="light"] #viewer-content {
   flex: 1 1 auto;
   min-width: 0;
 }
-#settings-section-ai .settings-row-column {
-  gap: 0;
-}
-#settings-section-ai .settings-row-column .settings-label {
-  /* In a column row the shared 130px flex-basis would set the label's
-   * HEIGHT (column main axis), not its width -- which is exactly the
-   * big gap between the text and the textarea. Reset it to auto so the
-   * label hugs its content. */
-  flex: 0 0 auto;
-  margin-bottom: 0;
-}
+/* The AI column rows use the scoped #settings-overlay .settings-row-column
+ * rules above (which fold in the old AI-specific overrides): label
+ * flex-basis resets to auto, label gutter uses --stg-space-1, gap 0. */
 /* The list dims + shrinks while a row is being edited so the form reads
    as a modal-ish focus. The edited row gets a highlight border. */
 #settings-ai-list.ai-editing .settings-ai-row { opacity: .55; }

@@ -1013,6 +1013,14 @@
   // CLIs are installed. Display-only, like aiAcpProfile — never part of any
   // save payload.
   let aiAcpAgents = [];
+  // The panel hides every known agent the server reports except these three
+  // and any agent actually installed on the host (a.available). The probe
+  // still lists all of them; this is a display filter only.
+  const CORE_ACP_AGENT_KEYS = ["opencode", "claude", "codex"];
+  function isAcpAgentShown(a) {
+    if (!a) return false;
+    return CORE_ACP_AGENT_KEYS.indexOf(a.key) !== -1 || a.available === true;
+  }
   // Global custom prompt: snapshot at modal open + dirty flag for the
   // prompt's own Save button (independent from provider add/edit).
   let aiPromptSaved = "";
@@ -1078,16 +1086,21 @@
     const meta = document.createElement("span");
     meta.className = "settings-token-meta";
 
-    const defaultTag = document.createElement("button");
-    defaultTag.type = "button";
-    defaultTag.className = "settings-action settings-ai-default";
-    defaultTag.textContent = s.name === aiDefaultName
-      ? "default" : "make default";
-    defaultTag.disabled = s.name === aiDefaultName;
-    defaultTag.addEventListener("click", async () => {
-      aiDefaultName = s.name;
-      await commitAiProviders("Default provider set to " + s.name);
-    });
+    const defaultTag = document.createElement(s.name === aiDefaultName
+      ? "span" : "button");
+    if (s.name === aiDefaultName) {
+      // The active default is a static accent tag, not a disabled button.
+      defaultTag.className = "stg-tag stg-tag--accent";
+      defaultTag.textContent = "Default";
+    } else {
+      defaultTag.type = "button";
+      defaultTag.className = "settings-action settings-ai-default";
+      defaultTag.textContent = "Make default";
+      defaultTag.addEventListener("click", async () => {
+        aiDefaultName = s.name;
+        await commitAiProviders("Default provider set to " + s.name);
+      });
+    }
 
     const model = document.createElement("code");
     model.className = "settings-token-role";
@@ -1099,7 +1112,7 @@
 
     const testBtn = document.createElement("button");
     testBtn.type = "button";
-    testBtn.className = "settings-action";
+    testBtn.className = "settings-action settings-ai-test";
     testBtn.textContent = "Test";
     testBtn.addEventListener("click", async () => {
       testBtn.disabled = true;
@@ -1123,7 +1136,7 @@
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
-    removeBtn.className = "settings-action settings-token-revoke";
+    removeBtn.className = "settings-action settings-ai-remove";
     removeBtn.textContent = "Remove";
     removeBtn.addEventListener("click", async () => {
       const ok = window.confirm(
@@ -1291,82 +1304,194 @@
     }
   }
 
-  /* One compact help-text line per detected ACP agent: label + status.
-   * `available` means the executable was found on the server's PATH;
-   * `adapterMissing` (with the server's `hint`) means the wrapping CLI is
-   * installed but its ACP adapter binary is not, so the agent cannot run
-   * yet. Absent/empty fields are skipped rather than rendered blank. */
+  /* The read-only panel header: "ACP agents" + a non-interactive
+   * "Read-only" tag. Shared by the profile panel and the info panel. */
+  function buildAcpPanelHead() {
+    const head = document.createElement("div");
+    head.className = "settings-ai-acp-head";
+
+    const title = document.createElement("span");
+    title.className = "settings-ai-acp-title";
+    title.textContent = "ACP agents";
+
+    // Non-interactive affordance: the word carries the message, the lock
+    // glyph is decoration.
+    const tag = document.createElement("span");
+    tag.className = "stg-tag";
+    tag.title = "Configured by editing config/acp.json on the server";
+    const lock = document.createElement("span");
+    lock.setAttribute("aria-hidden", "true");
+    lock.textContent = "🔒";
+    tag.append(lock, document.createTextNode(" Read-only"));
+
+    head.append(title, tag);
+    return head;
+  }
+
+  /* One row per shown ACP agent: name, a dot + word state, the allowlist
+   * key, and (adapter-missing only) the server's fix hint. `available`
+   * means the executable was found on the server's PATH; `adapterMissing`
+   * means the wrapping CLI is installed but its ACP adapter binary is not,
+   * so the agent cannot run yet. Only the three core agents and any agent
+   * actually installed are listed (isAcpAgentShown); the rest of the probe
+   * is hidden as noise. Absent/empty fields are skipped. */
   function buildAcpAgentLines(agents) {
     const box = document.createElement("div");
     box.className = "settings-ai-acp-agents";
     for (const a of agents) {
+      if (!isAcpAgentShown(a)) continue;
       const label = (a && (a.label || a.key)) || "";
       if (!label) continue;
       const line = document.createElement("div");
       line.className = "settings-ai-acp-agent";
       line.dataset.acpKey = (a && a.key) || "";
+
+      const nameEl = document.createElement("span");
+      nameEl.className = "settings-ai-acp-agent-name";
+      nameEl.textContent = label;
+
       const statusEl = document.createElement("span");
-      statusEl.className = "settings-ai-acp-agent-status";
+      statusEl.className = "settings-ai-acp-agent-status stg-status";
       if (a.available) {
-        statusEl.textContent = "installed";
+        statusEl.classList.add("stg-status--ok");
+        statusEl.textContent = "Installed";
+        line.dataset.state = "installed";
       } else if (a.adapterMissing) {
-        statusEl.textContent = a.hint
-          ? "installed — ACP adapter missing (" + a.hint + ")"
-          : "installed — ACP adapter missing";
+        statusEl.classList.add("stg-status--warn");
+        statusEl.textContent = "Adapter missing";
+        line.dataset.state = "adapter-missing";
       } else {
-        statusEl.textContent = "not installed";
+        statusEl.textContent = "Not installed";
+        line.dataset.state = "not-installed";
       }
-      line.textContent = label + " — ";
-      line.appendChild(statusEl);
+
+      line.append(nameEl, statusEl);
+
+      const keyEl = document.createElement("code");
+      keyEl.className = "settings-ai-acp-key";
+      keyEl.textContent = (a && a.key) || "";
+      line.appendChild(keyEl);
+
+      if (a.adapterMissing && a.hint) {
+        const hint = document.createElement("span");
+        hint.className = "settings-ai-acp-hint";
+        hint.textContent = a.hint;
+        line.appendChild(hint);
+      }
+
+      // The agent the configured profile selects gets an accent rail.
+      if (aiAcpProfile && aiAcpProfile.agent &&
+          a.key === aiAcpProfile.agent) {
+        line.dataset.selected = "true";
+      }
       box.appendChild(line);
     }
     return box;
   }
 
-  /* Read-only ACP row, rendered straight from cfg.acp and never pushed into
-   * aiProviders (so a provider save cannot re-send or overwrite it). Uses a
-   * distinct class, not .settings-ai-row, so it is not mistaken for an
-   * editable provider. */
+  /* Read-only ACP panel, rendered straight from cfg.acp and never pushed
+   * into aiProviders (so a provider save cannot re-send or overwrite it).
+   * Uses .settings-ai-acp-row, not .settings-ai-row, so it is not mistaken
+   * for an editable provider. */
   function buildAiAcpRow(acp, agents) {
     const row = document.createElement("div");
-    row.className = "settings-ai-acp-row settings-help";
+    row.className = "settings-ai-acp-row";
     row.dataset.acpName = acp.name;
 
-    const title = document.createElement("div");
-    title.textContent = "ACP agent: " + acp.name + " — local agent over the " +
-      "Agent Client Protocol; configured in config/acp.json on the server " +
-      "(not editable here).";
-    row.appendChild(title);
+    row.appendChild(buildAcpPanelHead());
 
-    // Which allowlist key the profile selects. An empty key is legitimate:
-    // the profile then carries an explicit `command` instead.
-    const selected = document.createElement("div");
-    selected.className = "settings-ai-acp-selected";
-    selected.textContent = acp.agent
-      ? "Selected agent key: " + acp.agent
-      : "Selected agent key: none — this profile uses an explicit " +
-        "\"command\" instead of an allowlist key.";
-    row.appendChild(selected);
+    const help = document.createElement("p");
+    help.className = "settings-help";
+    help.append(document.createTextNode(
+      "Local coding agents the assistant can drive over the Agent Client " +
+      "Protocol. Configured by editing "));
+    const cfgCode = document.createElement("code");
+    cfgCode.textContent = "config/acp.json";
+    help.append(cfgCode,
+      document.createTextNode(" on the server (not editable here)."));
+    row.appendChild(help);
 
+    // Configured profile: name + Selected (+ Default) + the allowlist key.
+    // An empty key is legitimate -- the profile then carries an explicit
+    // `command` instead.
+    const profile = document.createElement("div");
+    profile.className = "settings-ai-acp-profile";
+    const nameEl = document.createElement("span");
+    nameEl.className = "settings-ai-acp-profile-name";
+    nameEl.textContent = acp.name;
+    profile.appendChild(nameEl);
+    const selTag = document.createElement("span");
+    selTag.className = "stg-tag stg-tag--accent";
+    selTag.textContent = "Selected";
+    profile.appendChild(selTag);
+    if (acp.default) {
+      const defTag = document.createElement("span");
+      defTag.className = "stg-tag stg-tag--accent";
+      defTag.textContent = "Default";
+      profile.appendChild(defTag);
+    }
+    const meta = document.createElement("span");
+    meta.className = "settings-ai-acp-profile-meta";
+    if (acp.agent) {
+      meta.append(document.createTextNode("allowlist key "));
+      const keyEl = document.createElement("code");
+      keyEl.className = "settings-ai-acp-key";
+      keyEl.textContent = acp.agent;
+      meta.appendChild(keyEl);
+    } else {
+      meta.textContent = "This profile uses an explicit \"command\" instead " +
+        "of an allowlist key.";
+    }
+    profile.appendChild(meta);
+    row.appendChild(profile);
+
+    // "Detected agents" is only shown when at least one row actually
+    // renders (an entry with no label/key is skipped): no orphan heading.
     const lines = buildAcpAgentLines(agents || []);
-    if (lines.childElementCount) row.appendChild(lines);
+    if (lines.childElementCount) {
+      const sub = document.createElement("span");
+      sub.className = "settings-ai-acp-title";
+      sub.textContent = "Detected agents";
+      row.append(sub, lines);
+    }
     return row;
   }
 
   /* Shown when config/acp.json has no profile but the server detected at
    * least one usable agent. Read-only: it only names the allowlist key the
-   * user could add by hand. Rendered as help text under the provider list. */
+   * user could add by hand. Same panel shell as the profile panel. */
   function buildAiAcpInfoRow(agents) {
     const row = document.createElement("div");
-    row.className = "settings-ai-acp-info settings-help";
+    row.className = "settings-ai-acp-info";
 
-    const title = document.createElement("div");
-    title.textContent = "ACP agents were detected on this server, but none " +
-      "is configured. Enable one by adding \"agent\": \"<key>\" (or a " +
-      "\"command\") to config/acp.json on the server (not editable here).";
-    row.appendChild(title);
+    row.appendChild(buildAcpPanelHead());
 
-    row.appendChild(buildAcpAgentLines(agents));
+    const note = document.createElement("p");
+    note.className = "settings-ai-acp-note settings-help";
+    note.append(document.createTextNode(
+      "ACP agents were detected on this server, but none is configured. " +
+      "Enable one by adding "));
+    const agentCode = document.createElement("code");
+    agentCode.textContent = "\"agent\": \"<key>\"";
+    note.append(agentCode, document.createTextNode(" (or a "));
+    const cmdCode = document.createElement("code");
+    cmdCode.textContent = "\"command\"";
+    note.append(cmdCode, document.createTextNode(") to "));
+    const cfgCode = document.createElement("code");
+    cfgCode.textContent = "config/acp.json";
+    note.append(cfgCode,
+      document.createTextNode(" on the server (not editable here)."));
+    row.appendChild(note);
+
+    // Same rendered-row guard as the profile panel: no heading over an
+    // empty list.
+    const lines = buildAcpAgentLines(agents || []);
+    if (lines.childElementCount) {
+      const sub = document.createElement("span");
+      sub.className = "settings-ai-acp-title";
+      sub.textContent = "Detected agents";
+      row.append(sub, lines);
+    }
     return row;
   }
 
@@ -1377,9 +1502,10 @@
     for (const p of aiProviders) aiListEl.appendChild(buildAiRow(p));
     if (aiAcpProfile && aiAcpProfile.name) {
       aiListEl.appendChild(buildAiAcpRow(aiAcpProfile, aiAcpAgents));
-    } else if (aiAcpAgents.some(a => a && (a.available || a.adapterMissing))) {
-      // No profile, but a usable agent exists: say so rather than render
-      // nothing. If nothing was detected at all, stay silent.
+    } else if (aiAcpAgents.some(
+        a => isAcpAgentShown(a) && (a.available || a.adapterMissing))) {
+      // No profile, but a shown, usable agent exists: say so rather than
+      // render nothing. If nothing shown was detected, stay silent.
       aiListEl.appendChild(buildAiAcpInfoRow(aiAcpAgents));
     }
   }

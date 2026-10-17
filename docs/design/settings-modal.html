@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings Modal — reference mockup</title>
+<style>
+/* ------------------------------------------------------------------ *
+ * Token sets — inlined from static/css/style.css.
+ * `.theme-dark` mirrors :root; `.theme-light` mirrors
+ * body[data-theme="light"]. In the app these live on :root / body; here
+ * they are scoped classes so both themes render side by side.
+ * ------------------------------------------------------------------ */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --accent-fg: #14151a;
+}
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #2faa66;
+  --warn: #c9831d;
+  --accent-fg: #ffffff;
+}
+
+/* ================================================================== *
+ * DESIGN UNDER TEST — scoped to .mock (the stand-in for
+ * #settings-overlay). This is what web-engineer ports into
+ * static/css/style.css, with `.mock` replaced by `#settings-overlay`.
+ * ================================================================== */
+.mock {
+  /* spacing */
+  --stg-space-1: 4px;
+  --stg-space-2: 6px;
+  --stg-space-3: 8px;
+  --stg-space-4: 12px;
+  --stg-space-5: 16px;
+  --stg-space-6: 24px;
+  /* radii */
+  --stg-radius-sm: 6px;
+  --stg-radius-md: 8px;
+  --stg-radius-pill: 999px;
+  /* shared label gutter */
+  --stg-label-w: 132px;
+  /* field/button padding */
+  --stg-field-pad-y: 6px;
+  --stg-field-pad-x: 10px;
+  --stg-btn-pad-y: 6px;
+  --stg-btn-pad-x: 14px;
+
+  /* Secondary text: raised from the app's #8b8d98 so it clears 4.5:1 on
+   * --bg-elev (dark). Scoped; overridden for light below. */
+  --fg-muted: #9799a4;
+  /* Status text: dark --ok / --warn pass; light values do not. */
+  --stg-ok: var(--ok);
+  --stg-warn: var(--warn);
+  /* Switch knob: --accent-fg is dark in the dark theme. */
+  --stg-switch-knob: var(--fg);
+}
+.theme-light .mock {
+  --fg-muted: #5d6470;
+  --stg-ok: #16703f;
+  --stg-warn: #8a5a0b;
+  --stg-switch-knob: var(--accent-fg);
+}
+
+/* --- modal shell -------------------------------------------------- */
+.mock-modal {
+  display: flex; flex-direction: column;
+  width: 880px; height: 560px; max-width: 100%;
+  background: var(--bg-panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5); overflow: hidden;
+  font-size: calc(14px * var(--font-scale, 1));
+}
+.mock-modal .settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.mock-modal .settings-header h2 { margin: 0; font-size: 1.14rem; font-weight: 600; letter-spacing: .3px; }
+.mock-modal .icon-btn {
+  background: transparent; color: var(--fg-muted); border: none;
+  font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px;
+}
+.mock-modal .icon-btn:hover { background: var(--accent-soft); color: var(--fg); }
+.mock-modal .settings-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.mock-modal .settings-nav {
+  flex: 0 0 180px; padding: 8px 6px; display: flex; flex-direction: column; gap: 2px;
+  overflow-y: auto; background: var(--bg); border-right: 1px solid var(--border);
+}
+.mock-modal .settings-nav-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px;
+  background: transparent; border: none; border-radius: 6px;
+  color: var(--fg-muted); font-size: .93rem; text-align: left; cursor: pointer; white-space: nowrap;
+}
+.mock-modal .settings-nav-item:hover { background: var(--accent-soft); color: var(--fg); }
+.mock-modal .settings-nav-item.active {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.mock-modal .nav-icon { display: inline-block; min-width: 1.4em; text-align: center; flex: 0 0 auto; line-height: 1; }
+.mock-modal .settings-sections { flex: 1 1 auto; overflow-y: auto; padding: 4px 18px 18px; min-width: 0; }
+.mock-modal .settings-section { padding: 14px 0; }
+.mock-modal .settings-footer {
+  display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px;
+  border-top: 1px solid var(--border); background: var(--bg-panel); flex-shrink: 0;
+}
+
+/* --- headings ----------------------------------------------------- */
+.mock .settings-section > h3,
+.mock .settings-subheading {
+  margin: 0 0 var(--stg-space-3);
+  font-size: .76rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted);
+}
+.mock .settings-form-title {
+  margin: var(--stg-space-6) 0 var(--stg-space-3);
+  padding-top: var(--stg-space-5); border-top: 1px solid var(--border);
+  font-size: .74rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--fg-muted);
+}
+
+/* --- secondary text ---------------------------------------------- */
+.mock .settings-help { color: var(--fg-muted); font-size: .86rem; line-height: 1.5; margin: 0 0 10px; }
+.mock .settings-note { color: var(--fg-muted); font-size: .86rem; margin-top: 4px; }
+.mock .settings-hint { color: var(--fg-muted); font-size: .78rem; margin-top: 4px; }
+.mock .settings-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .86rem; background: var(--bg-elev); padding: 3px 8px;
+  border-radius: 4px; word-break: break-all;
+}
+.mock code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; }
+
+/* --- rows / labels / controls ------------------------------------ */
+.mock .settings-row { display: flex; align-items: center; gap: var(--stg-space-4); padding: var(--stg-space-2) 0; min-width: 0; }
+.mock .settings-label { flex: 0 0 var(--stg-label-w); color: var(--fg-muted); font-size: .93rem; }
+.mock .settings-control { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--stg-space-2); }
+.mock .settings-row-column { flex-direction: column; align-items: stretch; gap: 0; }
+.mock .settings-row-column .settings-label { flex: 0 0 auto; margin-bottom: var(--stg-space-1); }
+.mock .settings-value { color: var(--fg); font-size: .93rem; }
+.mock .settings-form-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--stg-space-3); padding: var(--stg-space-2) 0; }
+
+/* --- fields ------------------------------------------------------- */
+.mock .auth-input, .mock .settings-text-input,
+.mock #settings-ai-custom-prompt, .mock .settings-vimrc-area, .mock select {
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-sm);
+  padding: var(--stg-field-pad-y) var(--stg-field-pad-x);
+  font-family: inherit; font-size: .93rem; outline: none; min-width: 0; flex: 1 1 auto;
+}
+.mock .settings-vimrc-area { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; resize: vertical; width: 100%; }
+.mock #settings-ai-custom-prompt { resize: vertical; width: 100%; }
+.mock .settings-auth-input { max-width: 320px; }
+.mock #settings-section-ai .settings-auth-input { max-width: none; width: 100%; flex: 1 1 auto; }
+.mock .demo-focus .auth-input { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* --- buttons ------------------------------------------------------ */
+.mock .settings-action {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: var(--stg-radius-sm); padding: var(--stg-btn-pad-y) var(--stg-btn-pad-x);
+  font-family: inherit; font-size: .9rem; line-height: 1.4; cursor: pointer; white-space: nowrap;
+}
+.mock .settings-action:hover { background: var(--accent-soft); border-color: var(--accent); }
+.mock .settings-action:disabled { opacity: .5; cursor: not-allowed; background: var(--bg-elev); border-color: var(--border); }
+.mock .settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.mock .settings-ai-test, .mock .settings-ai-edit, .mock .shortcut-change, .mock .shortcut-reset {
+  background: transparent; border-color: transparent; color: var(--fg-muted); padding: 4px 10px; font-size: .85rem;
+}
+.mock .settings-ai-edit { color: var(--accent); }
+.mock .settings-ai-remove, .mock .settings-token-revoke, .mock .settings-auth-danger {
+  background: transparent; border-color: transparent; color: var(--danger);
+}
+.mock .settings-ai-remove:hover, .mock .settings-token-revoke:hover, .mock .settings-auth-danger:hover {
+  background: var(--danger-soft); border-color: var(--danger);
+}
+
+/* --- toggle switch ------------------------------------------------ */
+.mock input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; position: relative;
+  width: 36px; height: 20px; margin: 0 0 0 auto; flex: 0 0 auto;
+  border-radius: var(--stg-radius-pill); background: var(--border); cursor: pointer;
+}
+.mock input[type="checkbox"]::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--stg-switch-knob); transition: transform .15s ease;
+}
+.mock input[type="checkbox"]:checked { background: var(--accent); }
+.mock input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.mock input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
+
+/* --- radio chips (the 8 Settings groups, listed explicitly) ------ */
+.mock :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) {
+  display: flex; flex-wrap: wrap; gap: var(--stg-space-2);
+}
+.mock :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 11px;
+  border: 1px solid var(--border); border-radius: var(--stg-radius-pill);
+  background: var(--bg-elev); color: var(--fg-muted); font-size: .86rem; cursor: pointer;
+}
+.mock :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label:hover {
+  border-color: var(--accent); color: var(--fg);
+}
+/* :has() is the real selector; .is-checked is the fallback (D4). */
+.mock :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) label:has(input:checked),
+.mock label.is-checked {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
+}
+.mock :is(.theme-options, .font-size-options,
+  .settings-modal-width-options, .settings-modal-height-options,
+  .wallpaper-options, .wallpaper-scroll-options,
+  .wallpaper-color-options, .wallpaper-intensity-options) input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0;
+}
+
+/* --- card rows ---------------------------------------------------- */
+.mock .settings-ai-row, .mock .settings-token-row {
+  display: flex; align-items: center; gap: var(--stg-space-3);
+  padding: var(--stg-space-3) var(--stg-space-4);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-md);
+  background: var(--bg-elev); margin: 0 0 var(--stg-space-2);
+}
+.mock .settings-ai-row .settings-label, .mock .settings-token-row .settings-label {
+  flex: 1 1 auto; min-width: 0; color: var(--fg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mock .settings-token-meta { display: inline-flex; align-items: center; gap: var(--stg-space-2); flex-wrap: wrap; min-width: 0; }
+.mock .settings-token-role, .mock .settings-token-created { font-size: .78rem; color: var(--fg-muted); }
+.mock .settings-ai-edit { color: var(--accent); }
+
+/* --- status + tag ------------------------------------------------- */
+.mock .stg-status, .mock .settings-watch-status {
+  display: inline-flex; align-items: center; gap: var(--stg-space-2);
+  font-size: .82rem; font-weight: 600; color: var(--fg);
+}
+.mock .stg-status::before, .mock .settings-watch-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--fg-muted);
+}
+/* the watch dot follows its text colour (settings.js only toggles the class) */
+.mock .settings-watch-status::before { background: currentColor; }
+.mock .stg-status--ok { color: var(--stg-ok); }       .mock .stg-status--ok::before { background: var(--stg-ok); }
+.mock .stg-status--warn { color: var(--stg-warn); }   .mock .stg-status--warn::before { background: var(--stg-warn); }
+.mock .stg-status--danger { color: var(--danger); }.mock .stg-status--danger::before { background: var(--danger); }
+.mock .stg-status--accent { color: var(--accent); }.mock .stg-status--accent::before { background: var(--accent); }
+.mock .settings-watch-status.watch-on { color: var(--stg-ok); }
+.mock .settings-watch-status.watch-off { color: var(--stg-warn); }
+.mock .stg-tag {
+  display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px;
+  border: 1px solid var(--border); border-radius: var(--stg-radius-pill);
+  background: var(--bg-elev); color: var(--fg-muted);
+  font-size: .68rem; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
+}
+.mock .stg-tag--accent { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.mock .stg-tag--ok { color: var(--stg-ok); border-color: var(--stg-ok); }
+.mock .stg-tag--danger { color: var(--danger); border-color: var(--danger); }
+
+/* --- ACP read-only panel ----------------------------------------- */
+.mock .settings-ai-acp-row, .mock .settings-ai-acp-info {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--stg-radius-md); padding: var(--stg-space-4);
+  margin: var(--stg-space-2) 0 var(--stg-space-3);
+}
+.mock .settings-ai-acp-head { display: flex; align-items: center; justify-content: space-between; gap: var(--stg-space-3); margin: 0 0 var(--stg-space-3); }
+.mock .settings-ai-acp-title {
+  margin: 0; font-size: .74rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--fg-muted);
+}
+.mock .settings-ai-acp-profile {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--stg-space-2);
+  padding: var(--stg-space-3); border: 1px solid var(--border); border-left: 2px solid var(--accent);
+  border-radius: var(--stg-radius-sm); background: var(--bg); margin: 0 0 var(--stg-space-3);
+}
+.mock .settings-ai-acp-profile-name { font-weight: 600; color: var(--fg); }
+.mock .settings-ai-acp-profile-meta { flex: 1 1 100%; font-size: .78rem; color: var(--fg-muted); }
+.mock .settings-ai-acp-agents { display: flex; flex-direction: column; gap: var(--stg-space-2); }
+.mock .settings-ai-acp-agent {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--stg-space-2) var(--stg-space-3);
+  padding: var(--stg-space-2) var(--stg-space-3); border-radius: var(--stg-radius-sm);
+}
+.mock .settings-ai-acp-agent[data-selected="true"] { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.mock .settings-ai-acp-agent-name { flex: 0 0 auto; font-weight: 600; color: var(--fg); }
+.mock .settings-ai-acp-agent-status { flex: 0 0 auto; }
+.mock .settings-ai-acp-key { margin-left: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .76rem; color: var(--fg-muted); }
+.mock .settings-ai-acp-hint { flex: 1 1 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .74rem; color: var(--stg-warn); overflow-wrap: anywhere; }
+.mock .settings-ai-acp-note { margin: var(--stg-space-3) 0 0; }
+
+/* --- shortcuts / tokens / auth ----------------------------------- */
+.mock .shortcuts-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 14px; }
+.mock .shortcut-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--stg-radius-md); background: var(--bg-elev);
+}
+.mock .shortcut-label { flex: 1 1 auto; min-width: 0; color: var(--fg); font-size: .93rem; }
+.mock .shortcut-binding-wrap { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.mock .shortcut-binding {
+  font: .9rem/1 ui-monospace, monospace; padding: 3px 8px; border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 4px; background: var(--bg); color: var(--fg);
+  min-width: 70px; text-align: center; display: inline-block;
+}
+.mock .shortcut-row-static { padding: 6px 12px; background: transparent; border-style: dashed; }
+.mock .auth-error { color: var(--danger); font-size: .82rem; }
+
+/* --- page chrome (not part of the deliverable) -------------------- */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 28px; background: #101116; color: #c9ccd6;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+h1 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+.lead { margin: 0 0 24px; color: #8b8d98; max-width: 900px; }
+.grid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame-wrap { display: flex; flex-direction: column; gap: 8px; }
+.frame-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #8b8d98; }
+.frame { border: 1px solid #2a2b34; border-radius: 12px; overflow: hidden; }
+.before-box { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: .86rem; color: var(--fg-muted); line-height: 1.6; }
+</style>
+</head>
+<body>
+  <h1>Settings Modal — unified redesign</h1>
+  <p class="lead">
+    One visual system across all six tabs, plus the AI tab's read-only ACP
+    agent status panel. Tokens are inlined from
+    <code>static/css/style.css</code>; the CSS block marked
+    “DESIGN UNDER TEST” is what <code>web-engineer</code> ports into the app
+    (with <code>.mock</code> → <code>#settings-overlay</code>).
+  </p>
+
+  <div class="grid">
+
+    <!-- ============ 1. AI tab · dark (headline) ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · AI tab — providers, groups, ACP status</div>
+      <div class="frame theme-dark">
+        <div class="mock mock-modal">
+          <div class="settings-header">
+            <h2>Settings</h2>
+            <button class="icon-btn" aria-label="Close">×</button>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item active">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>AI assistant</h3>
+                <p class="settings-help">Providers for the AI assistant in the left activity bar (✨). Any OpenAI-compatible <code>/v1/chat/completions</code> endpoint works. API keys are stored server-side and never sent to the browser.</p>
+                <div class="settings-note">Providers: 1</div>
+
+                <!-- provider card rows -->
+                <div class="settings-ai-row">
+                  <span class="settings-label">openai</span>
+                  <span class="settings-token-meta">
+                    <span class="stg-tag stg-tag--accent">Default</span>
+                    <code class="settings-token-role">gpt-4o-mini</code>
+                    <span class="settings-token-created">key stored</span>
+                    <button class="settings-action settings-ai-test">Test</button>
+                    <button class="settings-action settings-ai-edit">Edit</button>
+                    <button class="settings-action settings-ai-remove">Remove</button>
+                  </span>
+                </div>
+
+                <!-- The ACP panel is appended by renderAiList() to
+                     #settings-ai-list, so it sits above the add form. -->
+                <div class="settings-ai-acp-row" data-acp-name="opencode">
+                  <div class="settings-ai-acp-head">
+                    <span class="settings-ai-acp-title">ACP agents</span>
+                    <span class="stg-tag" title="Configured by editing config/acp.json on the server"><span aria-hidden="true">🔒</span> Read-only</span>
+                  </div>
+                  <p class="settings-help">Local coding agents the assistant can drive over the Agent Client Protocol. Configured by editing <code>config/acp.json</code> on the server (not editable here).</p>
+
+                  <div class="settings-ai-acp-profile">
+                    <span class="settings-ai-acp-profile-name">opencode</span>
+                    <span class="stg-tag stg-tag--accent">Selected</span>
+                    <span class="stg-tag stg-tag--accent">Default</span>
+                    <span class="settings-ai-acp-profile-meta">allowlist key <code class="settings-ai-acp-key">opencode</code></span>
+                  </div>
+
+                  <span class="settings-ai-acp-title">Detected agents</span>
+                  <div class="settings-ai-acp-agents">
+                    <div class="settings-ai-acp-agent" data-acp-key="opencode" data-state="installed" data-selected="true">
+                      <span class="settings-ai-acp-agent-name">opencode</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                      <code class="settings-ai-acp-key">opencode</code>
+                    </div>
+                    <div class="settings-ai-acp-agent" data-acp-key="claude" data-state="adapter-missing">
+                      <span class="settings-ai-acp-agent-name">Claude Code</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                      <code class="settings-ai-acp-key">claude</code>
+                      <span class="settings-ai-acp-hint">npm install -g @agentclientprotocol/claude-agent-acp</span>
+                    </div>
+                    <div class="settings-ai-acp-agent" data-acp-key="codex" data-state="not-installed">
+                      <span class="settings-ai-acp-agent-name">Codex</span>
+                      <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                      <code class="settings-ai-acp-key">codex</code>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- add/edit form -->
+                <div class="settings-form-title">Add a provider</div>
+                <div class="settings-row"><label class="settings-label">Profile name</label><input class="auth-input settings-auth-input" placeholder="e.g. openai or ollama-lan"></div>
+                <div class="settings-row"><label class="settings-label">Base URL</label><input class="auth-input settings-auth-input" placeholder="https://api.openai.com  (a trailing /v1 is optional)"></div>
+                <div class="settings-row"><label class="settings-label">Model</label><input class="auth-input settings-auth-input" placeholder="e.g. gpt-4o-mini or llama3"></div>
+                <div class="settings-row"><label class="settings-label">API key</label><input class="auth-input settings-auth-input" type="password" placeholder="Empty = keep stored key (when editing)"></div>
+                <div class="settings-form-actions"><button class="settings-action">Cancel</button><button class="settings-action">Save as new</button><button class="settings-action settings-action--primary">Add provider</button></div>
+
+                <!-- custom prompt -->
+                <div class="settings-form-title">Assistant instructions</div>
+                <div class="settings-row settings-row-column">
+                  <label class="settings-label">Assistant instructions (all providers)</label>
+                  <textarea id="settings-ai-custom-prompt" rows="3" placeholder="Extra instructions for the AI assistant…"></textarea>
+                  <span class="settings-hint">Appended to the assistant's instructions regardless of provider. The built-in tool rules always win.</span>
+                </div>
+                <div class="settings-form-actions"><span class="stg-status stg-status--ok">Saved</span><button class="settings-action settings-action--primary">Save prompt</button></div>
+
+                <!-- web search -->
+                <div class="settings-form-title">Web search</div>
+                <div class="settings-row settings-row-column">
+                  <label class="settings-label">SearXNG instance URL</label>
+                  <input class="auth-input settings-auth-input" placeholder="https://searxng.example.com  (blank = search tool disabled)">
+                  <span class="settings-hint">Lets the assistant search the web. Leave blank to disable the search tool.</span>
+                </div>
+                <div class="settings-form-actions"><button class="settings-action settings-action--primary">Save search URL</button></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 2. AI tab · light ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Light · AI tab — same content</div>
+      <div class="frame theme-light">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item active">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>AI assistant</h3>
+                <p class="settings-help">Providers for the AI assistant in the left activity bar (✨). Any OpenAI-compatible <code>/v1/chat/completions</code> endpoint works.</p>
+                <div class="settings-note">Providers: 1</div>
+                <div class="settings-ai-row">
+                  <span class="settings-label">openai</span>
+                  <span class="settings-token-meta">
+                    <span class="stg-tag stg-tag--accent">Default</span>
+                    <code class="settings-token-role">gpt-4o-mini</code>
+                    <span class="settings-token-created">key stored</span>
+                    <button class="settings-action settings-ai-test">Test</button>
+                    <button class="settings-action settings-ai-edit">Edit</button>
+                    <button class="settings-action settings-ai-remove">Remove</button>
+                  </span>
+                </div>
+                <div class="settings-ai-acp-row" data-acp-name="opencode">
+                  <div class="settings-ai-acp-head">
+                    <span class="settings-ai-acp-title">ACP agents</span>
+                    <span class="stg-tag"><span aria-hidden="true">🔒</span> Read-only</span>
+                  </div>
+                  <p class="settings-help">Configured by editing <code>config/acp.json</code> on the server (not editable here).</p>
+                  <div class="settings-ai-acp-profile">
+                    <span class="settings-ai-acp-profile-name">opencode</span>
+                    <span class="stg-tag stg-tag--accent">Selected</span>
+                    <span class="settings-ai-acp-profile-meta">allowlist key <code class="settings-ai-acp-key">opencode</code></span>
+                  </div>
+                  <span class="settings-ai-acp-title">Detected agents</span>
+                  <div class="settings-ai-acp-agents">
+                    <div class="settings-ai-acp-agent" data-selected="true">
+                      <span class="settings-ai-acp-agent-name">opencode</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                      <code class="settings-ai-acp-key">opencode</code>
+                    </div>
+                    <div class="settings-ai-acp-agent">
+                      <span class="settings-ai-acp-agent-name">Claude Code</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                      <code class="settings-ai-acp-key">claude</code>
+                      <span class="settings-ai-acp-hint">npm install -g @agentclientprotocol/claude-agent-acp</span>
+                    </div>
+                    <div class="settings-ai-acp-agent">
+                      <span class="settings-ai-acp-agent-name">Codex</span>
+                      <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                      <code class="settings-ai-acp-key">codex</code>
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-form-title">Assistant instructions</div>
+                <div class="settings-row settings-row-column demo-focus">
+                  <label class="settings-label">Assistant instructions (all providers)</label>
+                  <textarea id="settings-ai-custom-prompt" rows="2" placeholder="Extra instructions…"></textarea>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 3. ACP before / after ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">ACP block — before / after</div>
+      <div class="frame theme-dark" style="width:640px">
+        <div class="mock" style="padding:16px;background:var(--bg-panel)">
+          <div class="before-box">
+            ACP agent: opencode — local agent over the Agent Client Protocol; configured in config/acp.json on the server (not editable here).<br>
+            Selected agent key: opencode<br>
+            opencode — installed<br>
+            Claude Code — installed — ACP adapter missing (npm install -g @agentclientprotocol/claude-agent-acp)<br>
+            Codex — not installed
+          </div>
+          <div style="height:14px"></div>
+          <div class="settings-ai-acp-row" data-acp-name="opencode" style="margin:0">
+            <div class="settings-ai-acp-head">
+              <span class="settings-ai-acp-title">ACP agents</span>
+              <span class="stg-tag"><span aria-hidden="true">🔒</span> Read-only</span>
+            </div>
+            <p class="settings-help">Local coding agents the assistant can drive over the Agent Client Protocol. Configured by editing <code>config/acp.json</code> on the server (not editable here).</p>
+            <div class="settings-ai-acp-profile">
+              <span class="settings-ai-acp-profile-name">opencode</span>
+              <span class="stg-tag stg-tag--accent">Selected</span>
+              <span class="stg-tag stg-tag--accent">Default</span>
+              <span class="settings-ai-acp-profile-meta">allowlist key <code class="settings-ai-acp-key">opencode</code></span>
+            </div>
+            <span class="settings-ai-acp-title">Detected agents</span>
+            <div class="settings-ai-acp-agents">
+              <div class="settings-ai-acp-agent" data-selected="true">
+                <span class="settings-ai-acp-agent-name">opencode</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                <code class="settings-ai-acp-key">opencode</code>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Claude Code</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                <code class="settings-ai-acp-key">claude</code>
+                <span class="settings-ai-acp-hint">npm install -g @agentclientprotocol/claude-agent-acp</span>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Codex</span>
+                <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                <code class="settings-ai-acp-key">codex</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 4. General · dark ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · General tab</div>
+      <div class="frame theme-dark">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item active">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Site</h3>
+                <div class="settings-row"><label class="settings-label">Site title</label><input class="settings-text-input" placeholder="Notebook"></div>
+
+                <h3>File watching</h3>
+                <p class="settings-help">Get notified when files in your notebook are changed by another program. Detection runs by default using a 5-second poll. Click <em>Enable</em> to upgrade to the native folder observer.</p>
+                <div class="settings-row"><span class="settings-label">Status</span><span class="settings-watch-status watch-on">Watching (poll)</span></div>
+                <div class="settings-row"><span class="settings-label">Native observer</span><button class="settings-action">Enable</button></div>
+                <div class="settings-row"><label class="settings-label">Autosave (WYSIWYG)</label><input type="checkbox" checked></div>
+
+                <h3>Keyboard</h3>
+                <p class="settings-help">Enable VIM-style keybindings. When on, the sidebar, outline, and editor act as three vim “windows”.</p>
+                <div class="settings-row"><label class="settings-label">VIM mode</label><input type="checkbox"></div>
+                <div class="settings-row settings-row-column">
+                  <label class="settings-label">VIM initial script</label>
+                  <textarea class="settings-vimrc-area" rows="3" placeholder="# nmap j gj&#10;# imap jj <Esc>"></textarea>
+                </div>
+                <div class="settings-form-actions"><span class="stg-status stg-status--ok">Saved</span><button class="settings-action settings-action--primary">Save</button></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 5. Appearance · dark ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · Appearance tab — chips, switches, groups</div>
+      <div class="frame theme-dark">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item active">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Appearance</h3>
+                <div class="settings-row"><label class="settings-label">Theme</label>
+                  <div class="settings-control theme-options">
+                    <label class="is-checked"><input type="radio" name="theme" checked> Auto</label>
+                    <label><input type="radio" name="theme"> Dark</label>
+                    <label><input type="radio" name="theme"> Light</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Font size</label>
+                  <div class="settings-control font-size-options">
+                    <label><input type="radio" name="fs"> S</label>
+                    <label class="is-checked"><input type="radio" name="fs" checked> M</label>
+                    <label><input type="radio" name="fs"> L</label>
+                    <label><input type="radio" name="fs"> XL</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Hide top bar</label><input type="checkbox"></div>
+                <div class="settings-row"><label class="settings-label">Graph background particles</label><input type="checkbox" checked></div>
+
+                <div class="settings-form-title">Modal size</div>
+                <div class="settings-row"><label class="settings-label">Width</label>
+                  <div class="settings-control settings-modal-width-options">
+                    <label><input type="radio" name="mw"> Compact</label>
+                    <label class="is-checked"><input type="radio" name="mw" checked> Medium</label>
+                    <label><input type="radio" name="mw"> Wide</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Height</label>
+                  <div class="settings-control settings-modal-height-options">
+                    <label><input type="radio" name="mh"> Compact</label>
+                    <label class="is-checked"><input type="radio" name="mh" checked> Medium</label>
+                    <label><input type="radio" name="mh"> Wide</label>
+                  </div>
+                </div>
+
+                <div class="settings-form-title">Wallpaper</div>
+                <div class="settings-row"><label class="settings-label">Pattern</label>
+                  <div class="settings-control wallpaper-options">
+                    <label class="is-checked"><input type="radio" name="wp" checked> None</label>
+                    <label><input type="radio" name="wp"> Lines</label>
+                    <label><input type="radio" name="wp"> Grid</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Scroll</label>
+                  <div class="settings-control wallpaper-scroll-options">
+                    <label class="is-checked"><input type="radio" name="ws" checked> Scroll with content</label>
+                    <label><input type="radio" name="ws"> Fixed in viewport</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Color</label>
+                  <div class="settings-control wallpaper-color-options">
+                    <label class="is-checked"><input type="radio" name="wc" checked> Neutral</label>
+                    <label><input type="radio" name="wc"> Blue</label>
+                    <label><input type="radio" name="wc"> Green</label>
+                    <label><input type="radio" name="wc"> Purple</label>
+                    <label><input type="radio" name="wc"> Amber</label>
+                  </div>
+                </div>
+                <div class="settings-row"><label class="settings-label">Intensity</label>
+                  <div class="settings-control wallpaper-intensity-options">
+                    <label><input type="radio" name="wi"> Subtle</label>
+                    <label class="is-checked"><input type="radio" name="wi" checked> Medium</label>
+                    <label><input type="radio" name="wi"> Bold</label>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 6. Shortcuts · dark ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · Shortcuts tab</div>
+      <div class="frame theme-dark">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item active">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Shortcuts</h3>
+                <p class="settings-help">Customize the app's keyboard shortcuts. These bindings are active when VIM mode is off.</p>
+                <div class="shortcuts-list">
+                  <div class="shortcut-row"><span class="shortcut-label">Open file</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+O</kbd>
+                      <button class="settings-action shortcut-change">Change…</button>
+                      <button class="settings-action shortcut-reset" hidden>Reset</button>
+                    </span>
+                  </div>
+                  <div class="shortcut-row"><span class="shortcut-label">Search in files</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+Shift+F</kbd>
+                      <button class="settings-action shortcut-change">Change…</button>
+                      <button class="settings-action shortcut-reset">Reset</button>
+                    </span>
+                  </div>
+                  <div class="shortcut-row"><span class="shortcut-label">Toggle sidebar</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+B</kbd>
+                      <button class="settings-action shortcut-change">Change…</button>
+                    </span>
+                  </div>
+                </div>
+                <div class="settings-form-actions"><button class="settings-action">Reset all to defaults</button></div>
+
+                <div class="settings-subheading">Hybrid editor (WYSIWYG) shortcuts</div>
+                <p class="settings-help">Available while editing in hybrid mode. These bindings are fixed (not remappable).</p>
+                <div class="shortcuts-list">
+                  <div class="shortcut-row shortcut-row-static"><span class="shortcut-label">Bold (toggle selection)</span><span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+B</kbd></span></div>
+                  <div class="shortcut-row shortcut-row-static"><span class="shortcut-label">Italic (toggle selection)</span><span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+I</kbd></span></div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 7. Security · dark ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · Security tab</div>
+      <div class="frame theme-dark">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item active">🔒 Security</button>
+              <button class="settings-nav-item">✨ AI</button>
+              <button class="settings-nav-item">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Passwords</h3>
+                <div class="settings-row"><span class="settings-label">Admin password</span><span class="stg-status stg-status--ok">Set</span></div>
+                <div class="settings-form-actions">
+                  <button class="settings-action settings-auth-danger">Remove admin password</button>
+                  <button class="settings-action settings-action--primary">Change admin password…</button>
+                </div>
+                <div class="settings-row"><span class="settings-label">Viewer password</span><span class="stg-status">Not set</span></div>
+                <div class="settings-row"><label class="settings-label">Require a password to read</label><input type="checkbox"></div>
+
+                <h3>API tokens</h3>
+                <p class="settings-help">Bearer tokens let agents and scripts call the API without a browser session. See the <a href="/agent.md">agent guide</a>.</p>
+                <div class="settings-note">API tokens: 1</div>
+                <div class="settings-token-row">
+                  <span class="settings-label">opencode</span>
+                  <span class="settings-token-meta">
+                    <code class="settings-token-role">admin</code>
+                    <span class="settings-token-created">2026-10-14</span>
+                    <button class="settings-action settings-token-revoke">Revoke</button>
+                  </span>
+                </div>
+                <div class="settings-row"><label class="settings-label">New token name</label><input class="auth-input settings-auth-input" placeholder="e.g. opencode"></div>
+                <div class="settings-row"><label class="settings-label">Role</label><select><option>viewer — read only</option><option>admin — read + write</option></select></div>
+                <div class="settings-form-actions"><button class="settings-action settings-action--primary">Create token</button></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 8. About · light ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Light · About tab</div>
+      <div class="frame theme-light">
+        <div class="mock mock-modal">
+          <div class="settings-header"><h2>Settings</h2><button class="icon-btn" aria-label="Close">×</button></div>
+          <div class="settings-body">
+            <nav class="settings-nav">
+              <button class="settings-nav-item">⚙ General</button>
+              <button class="settings-nav-item">🎨 Appearance</button>
+              <button class="settings-nav-item">⌨ Shortcuts</button>
+              <button class="settings-nav-item">🔒 Security</button>
+              <button class="settings-nav-item">✨ AI</button>
+              <button class="settings-nav-item active">ℹ About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>About</h3>
+                <div class="settings-row"><span class="settings-label">Data folder</span><code class="settings-mono">/home/user/notebook</code></div>
+                <div class="settings-row"><span class="settings-label">Config folder</span><code class="settings-mono">/home/user/.config/notebook-server</code></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action">Close</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 9. XL font scale · ACP panel ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · XL font scale (1.3) · ACP panel</div>
+      <div class="frame theme-dark">
+        <div class="mock" style="--font-scale:1.3; width:640px; padding:16px; background:var(--bg-panel); border-radius:12px">
+          <div class="settings-ai-acp-row" data-acp-name="opencode" style="margin:0">
+            <div class="settings-ai-acp-head">
+              <span class="settings-ai-acp-title">ACP agents</span>
+              <span class="stg-tag"><span aria-hidden="true">🔒</span> Read-only</span>
+            </div>
+            <div class="settings-ai-acp-profile">
+              <span class="settings-ai-acp-profile-name">opencode</span>
+              <span class="stg-tag stg-tag--accent">Selected</span>
+              <span class="stg-tag stg-tag--accent">Default</span>
+              <span class="settings-ai-acp-profile-meta">allowlist key <code class="settings-ai-acp-key">opencode</code></span>
+            </div>
+            <span class="settings-ai-acp-title">Detected agents</span>
+            <div class="settings-ai-acp-agents">
+              <div class="settings-ai-acp-agent" data-selected="true">
+                <span class="settings-ai-acp-agent-name">opencode</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                <code class="settings-ai-acp-key">opencode</code>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Claude Code</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                <code class="settings-ai-acp-key">claude</code>
+                <span class="settings-ai-acp-hint">npm install -g @agentclientprotocol/claude-agent-acp</span>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Codex</span>
+                <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                <code class="settings-ai-acp-key">codex</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 10. No profile, agents detected ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">Dark · ACP panel — no profile configured</div>
+      <div class="frame theme-dark">
+        <div class="mock" style="width:640px; padding:16px; background:var(--bg-panel); border-radius:12px">
+          <div class="settings-ai-acp-info" style="margin:0">
+            <div class="settings-ai-acp-head">
+              <span class="settings-ai-acp-title">ACP agents</span>
+              <span class="stg-tag"><span aria-hidden="true">🔒</span> Read-only</span>
+            </div>
+            <p class="settings-help">Local coding agents the assistant can drive over the Agent Client Protocol. Configured by editing <code>config/acp.json</code> on the server (not editable here).</p>
+            <span class="settings-ai-acp-title">Detected agents</span>
+            <div class="settings-ai-acp-agents">
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">opencode</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                <code class="settings-ai-acp-key">opencode</code>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Claude Code</span>
+                <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                <code class="settings-ai-acp-key">claude</code>
+                <span class="settings-ai-acp-hint">npm install -g @agentclientprotocol/claude-agent-acp</span>
+              </div>
+              <div class="settings-ai-acp-agent">
+                <span class="settings-ai-acp-agent-name">Codex</span>
+                <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                <code class="settings-ai-acp-key">codex</code>
+              </div>
+            </div>
+            <p class="settings-ai-acp-note settings-help">ACP agents were detected on this server, but none is configured. Enable one by adding <code>"agent": "&lt;key&gt;"</code> (or a <code>"command"</code>) to <code>config/acp.json</code> on the server (not editable here).</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

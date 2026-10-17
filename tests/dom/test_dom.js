@@ -393,13 +393,14 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-vimrc">VIM initial script</label>
               <textarea id="settings-vimrc" class="settings-vimrc-area" rows="8" spellcheck="false" placeholder="# One binding per line. Examples:&#10;# nmap j gj&#10;# imap jj &lt;Esc&gt;&#10;# unmap &lt;leader&gt;w"></textarea>
               <div class="settings-vimrc-actions">
-                <button id="settings-vimrc-save" class="settings-action" type="button">Save</button>
+                <button id="settings-vimrc-save" class="settings-action settings-action--primary" type="button">Save</button>
                 <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
               </div>
             </div>
           </section>
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
             <h3>Appearance</h3>
+            <div class="settings-form-title">Interface</div>
             <div class="settings-row">
               <span class="settings-label">Theme</span>
               <div class="settings-control theme-options">
@@ -421,6 +422,7 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
               <input type="checkbox" id="settings-hide-topbar">
             </div>
+            <div class="settings-form-title">Modal size</div>
             <div class="settings-row">
               <span class="settings-label">Settings modal width</span>
               <div class="settings-control settings-modal-width-options" role="radiogroup" aria-label="Settings modal width">
@@ -437,6 +439,7 @@ const html = `<!DOCTYPE html><html><head>
                 <label><input type="radio" name="settingsModalHeight" value="wide"> Wide</label>
               </div>
             </div>
+            <div class="settings-form-title">Wallpaper</div>
             <div class="settings-row">
               <span class="settings-label">Wallpaper</span>
               <div class="settings-control wallpaper-options" role="radiogroup" aria-label="Wallpaper">
@@ -638,7 +641,7 @@ const html = `<!DOCTYPE html><html><head>
               </select>
             </div>
             <div class="settings-form-actions">
-              <button id="settings-tokens-create" class="settings-action" disabled>Create token</button>
+              <button id="settings-tokens-create" class="settings-action settings-action--primary" disabled>Create token</button>
             </div>
             <div id="settings-tokens-issued" class="settings-auth-admin-form" hidden>
               <div class="settings-note">Token created — copy it now, it will not be shown again:</div>
@@ -647,7 +650,8 @@ const html = `<!DOCTYPE html><html><head>
             <div id="settings-tokens-error" class="auth-error settings-auth-error" role="alert" hidden></div>
           </section>
 
-          <!-- AI providers (mirrors index.html; wired by settings.js). -->
+          <!-- AI providers (abbreviated copy of index.html's AI section;
+               the ACP panel is rendered by settings.js). -->
           <section class="settings-section" data-section="ai" id="settings-section-ai" hidden>
             <h3>AI assistant</h3>
             <p id="settings-ai-help" class="settings-help"></p>
@@ -672,13 +676,13 @@ const html = `<!DOCTYPE html><html><head>
             </div>
             <div class="settings-form-actions">
               <button id="settings-ai-cancel" class="settings-action" hidden>Cancel</button>
-              <button id="settings-ai-add" class="settings-action" disabled>Add provider</button>
+              <button id="settings-ai-add" class="settings-action settings-action--primary" disabled>Add provider</button>
             </div>
             <div id="settings-ai-error" class="auth-error settings-auth-error" role="alert" hidden></div>
 
             <!-- Global prompt: outside the provider form; applies to
                  whichever provider is active. Own Save button. -->
-            <div class="settings-form-title">Custom prompt</div>
+            <div class="settings-form-title">Assistant instructions</div>
             <div class="settings-row settings-row-column">
               <label class="settings-label" for="settings-ai-custom-prompt">Assistant instructions</label>
               <textarea id="settings-ai-custom-prompt" class="auth-input settings-auth-input"
@@ -687,7 +691,7 @@ const html = `<!DOCTYPE html><html><head>
             </div>
             <div class="settings-form-actions">
               <span id="settings-ai-prompt-status" class="settings-hint" hidden></span>
-              <button id="settings-ai-prompt-save" class="settings-action" disabled>Save prompt</button>
+              <button id="settings-ai-prompt-save" class="settings-action settings-action--primary" disabled>Save prompt</button>
             </div>
 
             <!-- Optional SearXNG instance for the assistant's search tool. -->
@@ -701,7 +705,7 @@ const html = `<!DOCTYPE html><html><head>
             </div>
             <div class="settings-form-actions">
               <span id="settings-ai-searxng-status" class="settings-hint" hidden></span>
-              <button id="settings-ai-searxng-save" class="settings-action" disabled>Save search URL</button>
+              <button id="settings-ai-searxng-save" class="settings-action settings-action--primary" disabled>Save search URL</button>
             </div>
           </section>
           <section class="settings-section" data-section="about" id="settings-section-about" hidden>
@@ -23287,37 +23291,46 @@ function check(label, cond, extra) {
     // providers.
     const acpRow = window.document.querySelector(
       "#settings-ai-list .settings-ai-acp-row");
+    const acpProfile = acpRow &&
+      acpRow.querySelector(".settings-ai-acp-profile");
+    const acpProfileKey = acpRow &&
+      acpRow.querySelector(".settings-ai-acp-profile .settings-ai-acp-key");
     check("acp: settings AI tab renders a read-only ACP row",
       !!acpRow && acpRow.dataset.acpName === ACP.name &&
-      /ACP agent: acp-agent/.test(acpRow.textContent) &&
+      !!acpProfile && /acp-agent/.test(acpProfile.textContent) &&
+      /Selected/.test(acpProfile.textContent) &&
+      !!acpProfileKey && acpProfileKey.textContent === "opencode" &&
       /config\/acp\.json/.test(acpRow.textContent) &&
       /not editable here/.test(acpRow.textContent),
-      acpRow ? acpRow.textContent.slice(0, 70) : "missing");
+      acpRow ? acpRow.textContent.slice(0, 90) : "missing");
 
-    // Detected agents, one compact help line each: label + status. An
-    // installed agent reads "installed", an adapter-missing one surfaces
-    // the server's fix hint, and anything else reads "not installed".
+    // Detected agents, one status row each: name + a dot/word state + the
+    // allowlist key. An installed agent reads "Installed", an
+    // adapter-missing one surfaces the server's fix hint, and anything
+    // else reads "Not installed".
     const acpAgentLine = (key) => acpRow.querySelector(
       ".settings-ai-acp-agent[data-acp-key='" + key + "']");
-    check("acp agents: one help line per detected agent",
+    const acpAgentText = (key) => (acpAgentLine(key) || {}).textContent || "";
+    check("acp agents: one status row per detected agent",
       acpRow.querySelectorAll(".settings-ai-acp-agent").length === 3,
-      "lines=" + acpRow.querySelectorAll(".settings-ai-acp-agent").length);
-    check("acp agents: an installed agent reads 'installed'",
-      /^opencode — installed$/.test(
-        (acpAgentLine("opencode") || {}).textContent || ""),
-      (acpAgentLine("opencode") || {}).textContent || "missing");
+      "rows=" + acpRow.querySelectorAll(".settings-ai-acp-agent").length);
+    check("acp agents: an installed agent reads 'Installed'",
+      /opencode/.test(acpAgentText("opencode")) &&
+      /Installed/.test(acpAgentText("opencode")),
+      acpAgentText("opencode") || "missing");
     check("acp agents: an adapter-missing agent shows its install hint",
-      (acpAgentLine("claude") || {}).textContent === "Claude Code — " +
-        "installed — ACP adapter missing (npm install -g " +
-        "@agentclientprotocol/claude-agent-acp)",
-      (acpAgentLine("claude") || {}).textContent || "missing");
-    check("acp agents: a missing agent reads 'not installed'",
-      /^Codex — not installed$/.test(
-        (acpAgentLine("codex") || {}).textContent || ""),
-      (acpAgentLine("codex") || {}).textContent || "missing");
-    check("acp agents: the currently selected allowlist key is shown",
-      /Selected agent key: opencode/.test(acpRow.textContent),
-      acpRow ? acpRow.textContent.slice(0, 110) : "missing");
+      acpAgentText("claude").includes("Claude Code") &&
+      acpAgentText("claude").includes("Adapter missing") &&
+      acpAgentText("claude").includes(
+        "npm install -g @agentclientprotocol/claude-agent-acp"),
+      acpAgentText("claude") || "missing");
+    check("acp agents: a missing agent reads 'Not installed'",
+      acpAgentText("codex").includes("Codex") &&
+      acpAgentText("codex").includes("Not installed"),
+      acpAgentText("codex") || "missing");
+    check("acp agents: the profile card shows the selected allowlist key",
+      !!acpProfileKey && acpProfileKey.textContent === "opencode",
+      acpProfileKey ? acpProfileKey.textContent : "missing");
 
     // A provider save must never carry the ACP entry back to the server.
     // The prompt Save posts the provider list (aiProviders) + prompt; the
@@ -23385,6 +23398,24 @@ function check(label, cond, extra) {
         "#settings-ai-list .settings-ai-acp-row") === null,
       "info=" + !!window.document.querySelector(
         "#settings-ai-list .settings-ai-acp-info"));
+
+    // Display filter: the server's PATH probe lists every known agent, but
+    // the panel shows only the three core agents plus any agent actually
+    // installed on the host; uninstalled non-core agents are hidden.
+    await renderAcpTab(ACP, ACP_AGENTS.concat([
+      { key: "gemini", label: "Gemini CLI", available: true },
+      { key: "goose", label: "Goose", available: false },
+    ]));
+    const acpFilteredRow = window.document.querySelector(
+      "#settings-ai-list .settings-ai-acp-row");
+    const acpShownKeys = acpFilteredRow
+      ? Array.from(acpFilteredRow.querySelectorAll(".settings-ai-acp-agent"))
+          .map(el => el.dataset.acpKey)
+      : [];
+    check("acp filter: only core agents + installed agents are listed",
+      !!acpFilteredRow && acpShownKeys.length === 4 &&
+      acpShownKeys.includes("gemini") && !acpShownKeys.includes("goose"),
+      "shown=" + acpShownKeys.join(","));
 
     authEnabled = false; authHasAdmin = false; authRole = null;
     await window.NB.settings.close(); await tick(20);
