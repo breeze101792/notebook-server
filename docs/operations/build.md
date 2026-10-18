@@ -148,15 +148,16 @@ its own `<style>` element at runtime — so there is no `visimer.css`.
 
 `static/sw.js` is hand-maintained. It is not generated and has no build step.
 
-**`CACHE` version.** `const CACHE = "notebook-v6"`. Bumping this string makes
+**`CACHE` version.** `const CACHE = "notebook-v11"`. Bumping this string makes
 every installed worker re-run `install` (re-precache the current assets) and
 `activate` (delete every cache whose name is not the current `CACHE`). Bump it
 whenever a precached asset changes or a file is added to `PRECACHE`. Without a
 bump, an installed browser keeps serving assets from its old cache.
 
-**`PRECACHE`.** A hand-written list of **41 entries**: the app shell (`/`), the
-manifest, the favicon, the three PNG icons, the two stylesheets, the four
-vendor libs needed to boot, and all 29 `static/js/` modules. The heavy
+**`PRECACHE`.** A hand-written list of **48 entries**: the app shell (`/`), the
+manifest, the favicon, the three precached icons (apple-touch 180, 192, 512 —
+the 1024 is manifest-only), the two stylesheets, the four vendor libs needed to
+boot, and all 29 `static/js/` modules. The heavy
 on-demand renderer bundles (Mermaid, Graphviz/Viz, CodeMirror, KaTeX, WaveDrom
 — about 6.8 MB) are deliberately excluded; precaching them at install would
 slow the first load. They are fetched on first use and cached on the way

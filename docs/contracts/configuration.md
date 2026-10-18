@@ -375,9 +375,9 @@ IndexedDB.
 
 ### PWA cache
 
-`static/manifest.json` declares the app name "Notebook" and
-`display: standalone`. `static/sw.js` caches the app shell under the cache
-version `notebook-v6` (`sw.js:16`). Bump that version whenever a precached
-asset changes. The service worker strategy: non-GET requests pass through,
+`static/manifest.json` declares the app name "Notebook",
+`display: standalone`, and the icon set. `static/sw.js` caches the app shell
+under the cache version `notebook-v11` (`sw.js:21`). Bump that version whenever
+a precached asset changes. The service worker strategy: non-GET requests pass through,
 `/api/*` is network-only and returns a 503 JSON error when offline, and
 everything else is network-first with a cache fallback (`sw.js:81-118`).

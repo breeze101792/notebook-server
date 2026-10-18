@@ -107,6 +107,16 @@
 
   let cfg = { ...DEFAULTS };
   let saveTimer = null;
+  let pendingConfigKeys = new Set();
+  // One serial GET->POST chain for phone config writes. Overlapping
+  // flushes would otherwise each read the same old blob and clobber the
+  // other's key.
+  let configFlushQueue = Promise.resolve();
+
+  // Phone mode is decided by CSS (--ui-mode) and mirrored by mobile.js.
+  function isPhoneMode() {
+    return !!(NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
+  }
 
   const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
@@ -348,6 +358,7 @@
    * click -> NB.activity.activate(id, true) -> collapse()/expand() and
    * is persisted by the listener below. */
   function applySidebarState() {
+    if (isPhoneMode()) return;
     if (cfg.sidebarCollapsed) {
       document.documentElement.style.setProperty("--side-panel-width", PANEL_COLLAPSED_W + "px");
       sidePanelEl.classList.add("collapsed");
@@ -357,6 +368,7 @@
     }
   }
   function applyOutlineState() {
+    if (isPhoneMode()) return;
     if (cfg.outlineCollapsed) {
       document.documentElement.style.setProperty("--outline-width", OUTLINE_COLLAPSED_W + "px");
       outlineEl.classList.add("collapsed");
@@ -366,17 +378,58 @@
     }
   }
 
-  function persistConfig() {
+  /* Persist config. `keys` names the only keys a caller may change.
+   *
+   * Desktop keeps its single whole-blob POST. On a phone a keyless call is
+   * a no-op (nothing is safe to write from the phone shell), and a keyed
+   * call does a read-merge-write: fetch the current server blob, copy the
+   * named keys from cfg, then POST the complete merged object. The POST
+   * replaces the file verbatim, so a partial body would drop every other
+   * key the desktop owns (open tabs, pane widths, ...). */
+  function persistConfig(keys) {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      NB.api.saveConfig(cfg).catch(e => console.warn("config save failed", e));
+    if (Array.isArray(keys)) keys.forEach(k => pendingConfigKeys.add(k));
+    saveTimer = setTimeout(flushConfig, 250);
+  }
+
+  function flushConfig() {
+    const keyList = [...pendingConfigKeys];
+    pendingConfigKeys.clear();
+    const run = () => {
+      if (isPhoneMode()) {
+        // Keyless-only calls (desktop-only settings) write nothing on a
+        // phone. Pending keyed calls are never dropped by a later keyless
+        // one, so theme + fontSize + recentFiles can share a debounce.
+        if (!keyList.length) return Promise.resolve();
+        return NB.api.getConfig().then((fresh) => {
+          const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
+          for (const key of keyList) {
+            if (cfg[key] === undefined) delete merged[key];
+            else merged[key] = cfg[key];
+          }
+          return NB.api.saveConfig(merged);
+        }).catch(e => console.warn("config save failed", e));
+      }
+      return NB.api.saveConfig(cfg).catch(e => console.warn("config save failed", e));
+    };
+    configFlushQueue = configFlushQueue.then(run, run).then(() => {
       NB.evt.emit("config:changed", cfg);
-    }, 250);
+      // Keys that arrived while this flush was in flight get one more
+      // serialized pass immediately.
+      if (pendingConfigKeys.size) {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushConfig, 0);
+      }
+    });
   }
 
   function updateRecent(path) {
     if (!path) return;
     cfg.recentFiles = [path, ...cfg.recentFiles.filter(p => p !== path)].slice(0, 20);
+    if (isPhoneMode()) {
+      persistConfig(["recentFiles"]);
+      return;
+    }
     cfg.lastFile = path;
     persistConfig();
   }
@@ -394,6 +447,7 @@
 
     // tab set changed -> persist open files + active file + pinned files
     NB.evt.on("tabs:changed", ({ openFiles, activeFile, pinnedFiles }) => {
+      if (isPhoneMode()) return;   // phone tabs are one note and never persist
       cfg.openFiles = openFiles;
       cfg.activeFile = activeFile;
       if (pinnedFiles) cfg.pinnedFiles = pinnedFiles;
@@ -417,32 +471,45 @@
     // icons (clicking any icon expands the panel and shows that view),
     // so there's no separate expand button on the panel itself.
     document.getElementById("sidebar-collapse").addEventListener("click",
-      () => { cfg.sidebarCollapsed = true; applySidebarState(); persistConfig(); });
+      () => {
+        if (isPhoneMode()) {
+          if (NB.mobile && NB.mobile.closeDrawer) NB.mobile.closeDrawer();
+          return;
+        }
+        cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
+      });
     // The activity-bar icon toggle path: clicking the active icon
     // collapses the panel via NB.activity; persist that state so a
     // reload lands on the same shape. Activating a different icon from
     // a collapsed panel expands it -- persist that too.
     if (NB.evt) {
       NB.evt.on("activity:collapsed", () => {
+        if (isPhoneMode()) return;
         cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
       });
       NB.evt.on("activity:expanded", () => {
+        if (isPhoneMode()) return;
         cfg.sidebarCollapsed = false; applySidebarState(); persistConfig();
       });
       // Switching the active view persists so a reload restores it. Fired
       // by activity.js on every activation; guard against the boot
       // activation of the already-saved view to avoid a redundant save.
       NB.evt.on("activity:changed", ({ id }) => {
+        if (isPhoneMode()) return;
         if (cfg.activeView !== id) { cfg.activeView = id; persistConfig(); }
       });
     }
     document.getElementById("outline-collapse").addEventListener("click",
-      () => { cfg.outlineCollapsed = true; applyOutlineState(); persistConfig(); });
+      () => {
+        if (isPhoneMode()) return;
+        cfg.outlineCollapsed = true; applyOutlineState(); persistConfig();
+      });
     // Tab-bar icon toggles the right outline pane on/off (collapse =
     // hide the pane completely to 0 width; there's no thin strip to
     // re-expand it). Mirrors how the activity-bar icon toggles the left
     // side panel, giving both panes one persistent visibility control.
     document.getElementById("outline-toggle").addEventListener("click", () => {
+      if (isPhoneMode()) return;
       cfg.outlineCollapsed = !cfg.outlineCollapsed;
       applyOutlineState();
       persistConfig();
@@ -481,7 +548,19 @@
     document.getElementById("activity-settings-btn").addEventListener("click",
       () => NB.settings && NB.settings.open());
 
-    // resizable sidebars (drag the inner edge)
+    // resizable sidebars (drag the inner edge). Installed only on the
+    // desktop shell; a later phone->desktop mode flip re-runs this.
+    ensureResizeHandles();
+    NB.evt.on("mobile:mode", ({ mode }) => {
+      if (mode !== "desktop") return;
+      applySidebarState();
+      applyOutlineState();
+      ensureResizeHandles();
+    });
+  }
+
+  function ensureResizeHandles() {
+    if (isPhoneMode()) return;
     // The sidebar may be dragged up to half the viewport width; the
     // outline is capped to a fixed 520px so it stays a minimap.
     setupResize("side-panel", "--side-panel-width", "right", { max: () => window.innerWidth / 2 });
@@ -490,6 +569,7 @@
 
   function setupResize(id, cssVar, edge, opts) {
     const pane = document.getElementById(id);
+    if (pane.querySelector(".resize-handle")) return;
     // Max may be a fixed number (default 520) or a function evaluated
     // live on each drag tick (e.g. half the current viewport width), so
     // a window resize mid-drag keeps working.
@@ -504,7 +584,6 @@
     const bar = document.createElement("div");
     bar.className = "resize-handle-bar";
     handle.appendChild(bar);
-    pane.style.position = "relative";
     pane.appendChild(handle);
 
     function endDrag() {
@@ -597,6 +676,10 @@
   async function openDeepLink({ file, heading }) {
     const tree = NB.sidebar.getTree();
     if (!treeHas(tree, file)) {
+      if (NB.mobile && NB.mobile.isOn && NB.mobile.isOn() &&
+          NB.mobile.showNotFound) {
+        NB.mobile.showNotFound(file);
+      }
       console.warn("Deep link target not in tree:", file);
       return false;
     }
@@ -668,10 +751,15 @@
     // Reconcile the fetched view only when it names a different view than
     // the shell painted AND the user has not switched away while the fetch
     // was in flight (see resolveBootView). A failed fetch reconciles nothing.
-    const bootView = resolveBootView(
+    const bootView = isPhoneMode() ? null : resolveBootView(
       NB.activity.getActive(), shellPanel.activeView,
       serverCfg && serverCfg.activeView);
     if (bootView) NB.activity.activate(bootView, false);
+    // Phone has no AI view; a saved desktop activeView of "ai" must not
+    // leave the drawer showing a hidden host.
+    if (isPhoneMode() && NB.activity.getActive && NB.activity.getActive() === "ai") {
+      NB.activity.activate("explorer", false);
+    }
     // The panel is the source of truth for the active view -- the failed
     // path leaves cfg at DEFAULTS -- so mirror it back. Without this a later
     // unrelated save would persist "explorer" and drop the saved view.
@@ -694,26 +782,57 @@
     const lastFile = cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile : null;
     const fallback = lastFile || firstFilePath(tree) || null;
     const pinnedFiles = (cfg.pinnedFiles || []).filter(p => openFiles.includes(p));
-    try { await NB.tabs.restore(openFiles, activeFile, fallback, pinnedFiles); }
-    catch (e) { console.warn("restore tabs failed", e); }
-
-    // Deep link: if the URL requested a specific file (and optional
-    // heading), override the restored active tab with it. Runs AFTER
-    // restore so session tabs are preserved in the background while
-    // the deep-linked file becomes the visible view. Auth (if any)
-    // reloads the page on success, so this code path is only reached
-    // with a valid session.
+    // Read the incoming link BEFORE restoring anything: a phone boot must
+    // not let a resume note rewrite the URL (mobile.js suppresses its
+    // history entries for the whole boot window) or replace the requested
+    // note.
     const deepLink = parseDeepLink();
-    if (deepLink) {
-      try {
-        await openDeepLink(deepLink);
-        // Strip the URL (replaceState, NOT push) so a refresh doesn't
-        // re-apply the deep link and the back button doesn't see this
-        // as a navigation. Boot is a fresh entry point, not a history
-        // event. file:// / restricted env: harmless to skip.
-        try { history.replaceState(null, "", window.location.pathname); }
-        catch (_) {}
-      } catch (e) { console.warn("deep link failed", e); }
+    // Phone: one reader, one tab, no desktop session restore. A deep link
+    // wins over the device-local resume fallback; with neither, boot lands
+    // on Home. The desktop path below is unchanged.
+    let restoreOpen = openFiles;
+    let restoreActive = activeFile;
+    let restoreFallback = fallback;
+    let restorePinned = pinnedFiles;
+    if (isPhoneMode()) {
+      restoreOpen = [];
+      restoreActive = null;
+      restorePinned = [];
+      if (deepLink) {
+        restoreFallback = treeHas(tree, deepLink.file) ? deepLink.file : null;
+      } else {
+        const resume = (NB.mobile && NB.mobile.resumePath) ? NB.mobile.resumePath() : null;
+        restoreFallback = (resume && treeHas(tree, resume)) ? resume : null;
+      }
+    }
+    if (NB.mobile && NB.mobile.beginBoot) NB.mobile.beginBoot();
+    try {
+      try { await NB.tabs.restore(restoreOpen, restoreActive, restoreFallback, restorePinned); }
+      catch (e) { console.warn("restore tabs failed", e); }
+
+      // Deep link: if the URL requested a specific file (and optional
+      // heading), override the restored active tab with it. Runs AFTER
+      // restore so session tabs are preserved in the background while
+      // the deep-linked file becomes the visible view. Auth (if any)
+      // reloads the page on success, so this code path is only reached
+      // with a valid session.
+      if (deepLink) {
+        try {
+          const opened = await openDeepLink(deepLink);
+          // Strip the URL (replaceState, NOT push) so a refresh doesn't
+          // re-apply the deep link and the back button doesn't see this
+          // as a navigation. Boot is a fresh entry point, not a history
+          // event. file:// / restricted env: harmless to skip. On a phone
+          // a bad target keeps its address so "Note not found" stays
+          // shareable/retryable.
+          if (!isPhoneMode()) {
+            try { history.replaceState(null, "", window.location.pathname); }
+            catch (_) {}
+          }
+        } catch (e) { console.warn("deep link failed", e); }
+      }
+    } finally {
+      if (NB.mobile && NB.mobile.endBoot) NB.mobile.endBoot();
     }
   }
 
@@ -831,8 +950,11 @@
     // Clipboard-API-with-fallback writer; copyPath()/copyLink() are the
     // file-menu clipboard actions.
     notify, copyToClipboard, copyPath, copyLink,
-    setTheme: (pref) => { applyTheme(pref); persistConfig(); },
-    setFontSize: (name) => { applyFontSize(name); persistConfig(); },
+    // The active shell mode (read from mobile.js, which reads the CSS token).
+    getMode: () => (isPhoneMode() ? "phone" : "desktop"),
+    isMobile: isPhoneMode,
+    setTheme: (pref) => { applyTheme(pref); persistConfig(["theme"]); },
+    setFontSize: (name) => { applyFontSize(name); persistConfig(["fontSize"]); },
     getFontSize: () => cfg.fontSize || "medium",
     setSettingsModalWidth: (name) => { applySettingsModalWidth(name); persistConfig(); },
     getSettingsModalWidth: () => cfg.settingsModalWidth || "medium",

@@ -89,9 +89,40 @@
       '.side-panel-view[data-view="' + id + '"]');
   }
 
+  function isPhone() {
+    return !!(window.NB && NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
+  }
+
   function activate(id, toggle) {
     const v = views.find(x => x.id === id);
     if (!v) return;
+    // Phone: the panel is a drawer. Tapping the active rail icon closes
+    // it; activating any view opens it. Neither path touches the desktop
+    // .collapsed state, the width var, or activity:collapsed/expanded.
+    if (isPhone()) {
+      if (toggle && activeId === id && NB.mobile && NB.mobile.isDrawerOpen &&
+          NB.mobile.isDrawerOpen()) {
+        NB.mobile.closeDrawer();
+        return;
+      }
+      if (panelEl) {
+        panelEl.querySelectorAll(".side-panel-view").forEach(el => {
+          el.hidden = el.dataset.view !== id;
+        });
+      }
+      activeId = id;
+      if (!mounted.has(id)) {
+        const host = hostEl(id);
+        if (host && v.mount) {
+          try { v.mount(host); } catch (e) { console.error("view mount failed", id, e); }
+        }
+        mounted.add(id);
+      }
+      syncActiveClass();
+      NB.evt.emit("activity:changed", { id });
+      if (toggle && NB.mobile && NB.mobile.openDrawer) NB.mobile.openDrawer();
+      return;
+    }
     // Clicking the already-active icon toggles the panel collapsed /
     // expanded (VS Code behavior). The active view is preserved across
     // the toggle so re-expanding returns to the same view.
@@ -124,6 +155,10 @@
   }
 
   function collapse() {
+    if (isPhone()) {
+      if (NB.mobile && NB.mobile.closeDrawer) NB.mobile.closeDrawer();
+      return;
+    }
     if (!panelEl) return;
     panelEl.classList.add("collapsed");
     document.documentElement.style.setProperty(
@@ -135,6 +170,10 @@
   }
 
   function expand() {
+    if (isPhone()) {
+      if (NB.mobile && NB.mobile.openDrawer) NB.mobile.openDrawer();
+      return;
+    }
     if (!panelEl) return;
     panelEl.classList.remove("collapsed");
     // Restore the saved width. app.js owns the canonical width value;
@@ -178,9 +217,10 @@
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "collapse-btn";
-    btn.title = "Collapse panel";
-    btn.setAttribute("aria-label", "Collapse panel");
-    btn.textContent = "‹";
+    const phone = isPhone();
+    btn.title = phone ? "Close panel" : "Collapse panel";
+    btn.setAttribute("aria-label", phone ? "Close panel" : "Collapse panel");
+    btn.textContent = phone ? "×" : "‹";
     btn.addEventListener("click", () => collapse());
     return btn;
   }
@@ -383,6 +423,7 @@
     async function runSearch() {
       const q = input.value.trim();
       if (!q) {
+        summary.classList.remove("error");
         summary.textContent = "";
         list.innerHTML = "";
         currentMatches = [];
@@ -393,10 +434,28 @@
       try {
         data = await NB.api.search(q, caseSensitive);
       } catch (e) {
-        summary.textContent = "Search error: " + e.message;
+        showSearchError(e.message);
         return;
       }
+      summary.classList.remove("error");
       renderResults(data, q, caseSensitive);
+    }
+
+    /* Failure keeps the query and any results already on screen; Retry
+     * re-runs the same query once. */
+    function showSearchError(message) {
+      summary.classList.add("error");
+      summary.textContent = "Search error: " + message + " ";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "search-panel-retry";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", () => {
+        summary.classList.remove("error");
+        summary.textContent = "";
+        runSearch();
+      });
+      summary.appendChild(retry);
     }
 
     function renderResults(data, q, caseSensitive) {

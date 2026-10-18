@@ -57,6 +57,10 @@
   let selectedPath = null;
   let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
 
+  function isPhone() {
+    return !!(window.NB && NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
+  }
+
   /* --- render -------------------------------------------------------- */
   function render(tree) {
     treeEl.innerHTML = "";
@@ -103,8 +107,27 @@
     const row = document.createElement("div");
     row.className = "tree-row";
     row.dataset.path = node.path;
-    row.draggable = true;
+    row.draggable = !isPhone();
     row.appendChild(renderGuide(ancestors, isLast, isRoot));
+    // Phone-only row action button (CSS-hidden on desktop). It reuses the
+    // shared menu module; stopPropagation + preventDefault keeps the row's
+    // own open/toggle click and drag from firing.
+    function appendMore() {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "tree-more";
+      more.textContent = "\u22EF";
+      more.title = node.name + " actions";
+      more.setAttribute("aria-label", node.name + " actions");
+      more.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        openRowMenu(more, node);
+      });
+      more.addEventListener("mousedown", (e) => e.stopPropagation());
+      more.addEventListener("dragstart", (e) => e.preventDefault());
+      row.appendChild(more);
+    }
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
@@ -128,9 +151,12 @@
       pin.addEventListener("mousedown", (e) => e.stopPropagation());
       pin.addEventListener("dragstart", (e) => e.preventDefault());
       row.append(icon, name, pin);
+      appendMore();
       row.addEventListener("click", () => toggleDir(node));
       row.addEventListener("contextmenu", (e) => {
-        e.preventDefault(); openMenu(e, node);
+        e.preventDefault();
+        if (isPhone()) return;   // the phone uses the … button only
+        openMenu(e, node);
       });
       wrap.appendChild(row);
       const childWrap = document.createElement("div");
@@ -168,10 +194,13 @@
       star.addEventListener("mousedown", (e) => e.stopPropagation());
       star.addEventListener("dragstart", (e) => e.preventDefault());
       row.append(icon, name, star);
+      appendMore();
       if (node.path === selectedPath) row.classList.add("selected");
       row.addEventListener("click", () => openFile(node.path));
       row.addEventListener("contextmenu", (e) => {
-        e.preventDefault(); openMenu(e, node);
+        e.preventDefault();
+        if (isPhone()) return;
+        openMenu(e, node);
       });
       wrap.appendChild(row);
     }
@@ -382,6 +411,7 @@
     row.addEventListener("click", () => togglePinExpand(path));
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
+      if (isPhone()) return;
       openPinMenu(e, path);
     });
     return row;
@@ -434,6 +464,7 @@
     }
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
+      if (isPhone()) return;
       openMenu(e, node);
     });
     if (node.type === "dir" && pinExpanded.has(node.path) && node.children) {
@@ -758,6 +789,38 @@
     });
   }
 
+  /* Phone row menu: read-only v1 items only (Open / Copy link / Copy
+   * path). Anchored to the row's `…` button; menu.js clamps to the
+   * viewport. */
+  function openRowMenu(button, node) {
+    const rect = button.getBoundingClientRect();
+    const items = node.type === "dir" ? [
+      { label: "Open", handler: () => toggleDir(node) },
+      { label: "Copy link", handler: () => NB.app.copyLink(node.path) },
+      { label: "Copy path", handler: () => NB.app.copyPath(node.path) },
+    ] : [
+      { label: "Open", handler: () => openFile(node.path) },
+      { label: "Copy link", handler: () => NB.app.copyLink(node.path) },
+      { label: "Copy path", handler: () => NB.app.copyPath(node.path) },
+    ];
+    NB.menu.open({
+      owner: "sidebar", x: rect.left, y: rect.bottom + 4, scope: sidebarEl,
+      items, focusFirst: true,
+    });
+    // Return focus to the row's trigger when the menu closes (selection,
+    // outside click, or Esc). menu.js has no close callback; watch its
+    // hidden attribute.
+    const menu = document.getElementById("nb-menu");
+    if (menu && window.MutationObserver) {
+      const obs = new MutationObserver(() => {
+        if (!menu.hidden) return;
+        obs.disconnect();
+        try { button.focus({ preventScroll: true }); } catch (_) {}
+      });
+      obs.observe(menu, { attributes: true, attributeFilter: ["hidden"] });
+    }
+  }
+
   /* Right-clicking the empty sidebar area (or an empty folder region)
    * offers root-level New file / New folder, so there's always a way to
    * create the first file without top-bar buttons. */
@@ -778,6 +841,7 @@
   treeEl.addEventListener("contextmenu", (e) => {
     if (e.target.closest(".tree-row")) return;   // a file/folder row handles itself
     e.preventDefault();
+    if (isPhone()) return;
     openRootMenu(e);
   });
 
@@ -975,6 +1039,7 @@
   }
 
   async function performMove(from, target) {
+    if (isPhone()) return;   // phone Browse is read-only
     let to;
     if (target.insertBefore) {
       const { parent, path, before } = target.insertBefore;
@@ -1023,6 +1088,7 @@
   }
 
   treeEl.addEventListener("dragstart", (e) => {
+    if (isPhone()) { e.preventDefault(); return; }
     const row = e.target.closest && e.target.closest(".tree-row");
     if (!row || !row.dataset.path) { e.preventDefault(); return; }
     const node = findNode(treeCache, row.dataset.path);
@@ -1036,7 +1102,7 @@
   });
 
   treeEl.addEventListener("dragover", (e) => {
-    if (!draggingNode) return;
+    if (isPhone() || !draggingNode) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     clearDropMarks();
@@ -1060,7 +1126,7 @@
   });
 
   treeEl.addEventListener("drop", async (e) => {
-    if (!draggingNode) return;
+    if (isPhone() || !draggingNode) return;
     e.preventDefault();
     const row = e.target.closest && e.target.closest(".tree-row");
     const target = row ? resolveDropTarget(row, e.clientX)
@@ -1141,6 +1207,7 @@
     pinsEl.addEventListener("contextmenu", (e) => {
       if (e.target.closest && e.target.closest(".pin-row,.pin-child")) return;
       e.preventDefault();
+      if (isPhone()) return;
       openPinsRootMenu(e);
     });
   }
@@ -1164,6 +1231,15 @@
   // bookmarks module fires this from toggle(); prune re-renders and
   // persists directly and the next tree refresh redraws the stars.
   NB.evt.on("bookmarks:changed", ({ path }) => updateTreeStar(path));
+
+  // Mode flips must update already-rendered rows: draggable=false on
+  // phone, and restored for a phone->desktop flip without a reload.
+  NB.evt.on("mobile:mode", () => {
+    const draggable = !isPhone();
+    treeEl.querySelectorAll(".tree-row").forEach((r) => {
+      r.draggable = draggable;
+    });
+  });
 
   // A rename / move re-keys pinned folders whose path IS the moved folder
   // or lives inside it (prefix form -- moving a parent renames descendants).

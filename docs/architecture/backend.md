@@ -346,7 +346,7 @@ notebook-server/
   templates/index.html    the single SPA shell (983 lines)
   static/
     manifest.json         PWA manifest
-    sw.js                 service worker, cache notebook-v6 (120 lines)
+    sw.js                 service worker, cache notebook-v11
     css/ icons/ vendor/   styles, PWA icons, vendored libraries
     js/                   30 app modules sharing window.NB
   tests/

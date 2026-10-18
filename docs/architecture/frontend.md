@@ -253,9 +253,14 @@ The AI transcript is in-memory only (`ai.js`) and is lost on reload. The
 ## 6. PWA and offline
 
 `static/manifest.json` declares `display: "standalone"`, name
-`"Notebook"`, `start_url` `/`, and three PNG icons (180, 192, 512).
+`"Notebook"`, `start_url` `/`, and the icon set (192, 512, 1024, all opaque
+PNG). The phone Home Screen icon is `/static/icons/apple-touch-icon-v2.png`
+(180 px); the root `/apple-touch-icon.png` and
+`/apple-touch-icon-precomposed.png` routes serve the same file because iOS
+probes those paths. Without them the SPA catch-all answered with HTML and iOS
+cached a broken icon.
 
-`static/sw.js` uses cache version `notebook-v6` (`sw.js:16`) with three
+`static/sw.js` uses cache version `notebook-v11` (`sw.js:21`) with three
 strategies:
 
 - **Pages and static assets**: network-first. A successful response is
@@ -268,7 +273,7 @@ strategies:
 
 `install` precaches the list and calls `skipWaiting`; `activate` deletes
 every cache whose name differs from the current one (`sw.js:73-78`). The
-precache list is 41 entries (`sw.js:23-65`): the shell, manifest, icons,
+precache list is 48 entries (`sw.js:28-77`): the shell, manifest, icons,
 both stylesheets, the four vendored base libraries, and every app module
 (12 boot assets + all 29 `static/js/` modules).
 

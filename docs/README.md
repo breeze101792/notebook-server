@@ -28,7 +28,16 @@ is no database and no runtime build step.
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the five special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, the six tools, the tool loop, and reviewing edits. |
+| [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation plan: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
 | [`architecture/design/`](architecture/design/tab-equalization.md) | Tab-bar design notes and the reference mockup. |
+
+## Product, design, research
+
+| Guide | Covers |
+| --- | --- |
+| [`product/mobile.md`](product/mobile.md) | Mobile v1 product definition: ranked jobs, flows, edge cases, acceptance criteria, and the v2 boundary. |
+| [`design/mobile-shell.md`](design/mobile-shell.md) | Mobile shell design handoff: breakpoints, anatomy, component states, tokens, and the file-by-file change list. Reference mockup: [`design/mobile-shell.html`](design/mobile-shell.html). |
+| [`research/mobile-support.md`](research/mobile-support.md) | Mobile fact pack: measured layout failures, touch gaps, PWA/service-worker scope, auth and storage facts, with citations. |
 
 ## Contracts
 

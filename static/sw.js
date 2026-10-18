@@ -16,7 +16,9 @@
 /* Bumped v7 -> v8: the newly precached copy-image.js must reach already
  * installed workers, which only re-run install when CACHE changes. */
 /* Bumped v8 -> v9: the newly precached bookmarks.js must reach already installed workers. */
-const CACHE = "notebook-v9";
+/* Bumped v9 -> v10: mobile.js joins the precache. */
+/* Bumped v10 -> v11: the opaque v2 icon set replaces the transparent icons. */
+const CACHE = "notebook-v11";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -27,9 +29,9 @@ const PRECACHE = [
   "/",
   "/static/manifest.json",
   "/static/favicon.svg",
-  "/static/icons/icon-192.png",
-  "/static/icons/icon-512.png",
-  "/static/icons/apple-touch-icon.png",
+  "/static/icons/icon-192-v2.png",
+  "/static/icons/icon-512-v2.png",
+  "/static/icons/apple-touch-icon-v2.png",
   "/static/css/style.css",
   "/static/css/vimnav.css",
   "/static/vendor/marked.min.js",
@@ -67,6 +69,7 @@ const PRECACHE = [
   "/static/js/ai.js",
   "/static/js/activity.js",
   "/static/js/bookmarks.js",
+  "/static/js/mobile.js",
   "/static/js/graph.js",
   "/static/js/vimnav.js",
   "/static/js/shortcuts.js",

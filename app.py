@@ -24,7 +24,7 @@ import urllib.parse
 import urllib.request
 
 import bcrypt
-from flask import Flask, Response, jsonify, render_template, request, session
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory, session
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
@@ -710,6 +710,19 @@ def read_login_required(view):
 @app.route("/")
 def index():
     return _render_index()
+
+
+# iOS probes these two paths when it creates a Home Screen web clip, even
+# with an <link rel="apple-touch-icon"> present. Without explicit routes the
+# SPA catch-all answers with HTML, which iOS caches as a broken icon.
+@app.route("/apple-touch-icon.png")
+@app.route("/apple-touch-icon-precomposed.png")
+def apple_touch_icon():
+    return send_from_directory(
+        os.path.join(BASE_DIR, "static", "icons"),
+        "apple-touch-icon-v2.png",
+        mimetype="image/png",
+    )
 
 
 # --------------------------------------------------------------------------- #

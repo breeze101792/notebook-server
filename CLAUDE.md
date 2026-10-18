@@ -458,6 +458,33 @@ Module responsibilities:
   up to the next heading of the same or higher level, so only that
   section is exported.
 
+**Mobile shell (v1: read + capture).** `static/js/mobile.js` adds a phone
+layout on top of the same app: one CSS media query
+(`max-width: 860px` or `(pointer: coarse) and (max-width: 1023px)`) sets
+`--ui-mode: phone`, and JS reads that token (mirrored to
+`html[data-ui-mode]`) rather than repeating the query. The four-column grid
+becomes a reader column with a fixed bottom activity rail; `#side-panel`
+becomes an off-canvas drawer (`body.drawer-open`) and the tab strip, outline,
+`#brand`, `.search-wrap` and `#edit-toggle` are hidden, never removed. Phone
+mode zeroes the desktop body padding and gives each edge layer its own
+safe-area inset (`--topbar-h` includes the top inset; the rail includes the
+bottom), so the shell is edge-to-edge.
+Browser history is the single navigator: boot seeds `nbHome`/`nbFile`, each
+open pushes a note entry, Home replaces it with `{nbHome:true}`, and both the
+back button and Android back go through `history.back()` → `popstate`; the
+viewer's own `popstate` handler is gated off in phone mode. Phone config
+writes are keyed read-merge-writes (never `openFiles`/`activeFile`/`lastFile`/
+`sidebarCollapsed`), so a phone cannot clobber the desktop. Continue/scroll
+live in `localStorage["nb:mobileResume"]`; quick capture appends one block to
+`Inbox.md` via `/api/file/append {create:true}` and keeps
+`localStorage["nb:captureDraft"]` across a 401. Editing, tabs, TOC, AI, export,
+offline and PWA install are out of v1 (plain HTTP is not a secure context).
+The Home Screen icon is `static/icons/apple-touch-icon-v2.png`; the root
+`/apple-touch-icon.png` and `/apple-touch-icon-precomposed.png` routes serve it
+because iOS probes those paths, and the SPA catch-all used to answer with HTML.
+Docs: `docs/architecture/mobile.md`, `docs/design/mobile-shell.md`,
+`docs/product/mobile.md`.
+
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `activeView`,
 `sidebarWidth`, `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`,

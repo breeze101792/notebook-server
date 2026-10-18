@@ -22,6 +22,9 @@
     try {
       resp = await fetch(url, opts);
     } catch (e) {
+      // Only a transport failure (fetch rejected) is "unreachable"; HTTP
+      // error statuses below stay ordinary request errors.
+      NB.evt.emit("api:network-error", { url, message: e && e.message });
       throw new Error("Network error: " + e.message);
     }
     let data = null;
@@ -48,6 +51,8 @@
     getTree:       () => request("GET",  "/api/tree").then(r => r.tree),
     getFile:       (path)     => request("GET",  "/api/file?path=" + encodeURIComponent(path)),
     saveFile:      (path, content) => request("POST", "/api/file", { path, content }),
+    appendFile:    (path, content, create) =>
+      request("POST", "/api/file/append", { path, content, create: !!create }),
     createItem:    (path, type, content) =>
       request("POST", "/api/create", Object.assign(
         { path, type }, content !== undefined ? { content } : {})),

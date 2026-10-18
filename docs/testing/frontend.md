@@ -192,6 +192,30 @@ row that Visimer does not ship: hidden until ready, Select/Connect call
 delegate to `editor.undo()/redo()` and track `canUndo`/`canRedo`, and the row
 is reset on close and hidden in the non-editable state.
 
+### Mobile v1 (`== mobile ==`)
+
+The phone shell (`static/js/mobile.js`) is covered at the end of the jsdom
+suite. Tests set `document.documentElement.dataset.uiMode = "phone"` before
+driving the real modules, then restore `desktop` in the same block. Covered:
+the mode mirror, Home order, device-local Continue, drawer/scrim lifecycle,
+tree `…` menus (read-only items, no row open), folder expansion and file
+selection, back order (`popstate` closes a drawer/sheet first, then note
+history), capture (empty/in-flight/double-tap/draft/failure/Retry), deep
+links, debounced search and hit marking, the phone config gate (merged
+`recentFiles` only; no `openFiles`/`activeFile`/`lastFile`/
+`sidebarCollapsed` writes), settings (theme/text size are server-wide,
+excluded surfaces, sign out only with auth), and `canWrite()` across auth
+off / no session / viewer / admin.
+
+The jsdom mobile block is green, including the acceptance checks for search
+Retry, the desktop-only Bookmarks empty state, deleted-Continue Home
+fallback, and the unreachable-server screen. `api:network-error` is asserted
+to fire on a fetch rejection only, never on HTTP 4xx/5xx, so a 401 produces
+`auth:required` instead. `tests/browser/test_mobile_browser.js` covers the
+phone boot path (a `?file=` deep link wins over resume; a bad link keeps its
+address) and the history invariant: cold-boot deep link and resume both back
+to Home, and A → B → back shows A with A's URL.
+
 ## The Playwright browser suite
 
 `tests/browser/test_hybrid_browser.js` (1381 lines) boots the real Flask app
@@ -210,12 +234,22 @@ with untouched lines byte-identical, one `Ctrl+Z` restores the previous
 fence, `Ctrl+Z` inside the modal never touches the note, Esc closes only the
 modal, and the canvas follows `body[data-theme]`.
 
+`tests/browser/test_mobile_browser.js` boots the same temp-notebook app and
+checks the real layout: a 1280x800 desktop regression (four grid columns,
+visible tab strip, mobile chrome hidden), 390x844 portrait and 932x430
+landscape phones (CSS token and `data-ui-mode`, non-zero reader, no
+horizontal overflow, hidden tabs/outline, fixed bottom rail, 44 px targets,
+Home rows, drawer open/scrim close, browser back closing the drawer first,
+the note `…` menu), and a real capture append to `Inbox.md` on disk.
+
 Run the hybrid suite with `npm run test:browser` (chromium) or
 `npm run test:browser:firefox`; run the designer suite with
-`node tests/browser/test_designer_browser.js`. `BROWSER` selects the engine;
-`CHROMIUM_PATH` / `FIREFOX_PATH` override the binary (on NixOS the bundled
-build cannot start, so point at a nix-provided browser); `PORT` overrides
-the default (`5099` hybrid, `5098` designer). Both use the same
+`node tests/browser/test_designer_browser.js` and the mobile suite with
+`node tests/browser/test_mobile_browser.js` (Chromium only — its phone
+contexts use Playwright's `isMobile`). `BROWSER` selects the engine for the
+hybrid suite; `CHROMIUM_PATH` / `FIREFOX_PATH` override the binary (on NixOS
+the bundled build cannot start, so point at a nix-provided browser); `PORT` overrides
+the default (`5099` hybrid and mobile, `5098` designer). All use the same
 `check(name, cond, detail)` counter and report `PASS` / `FAIL` with
 `process.exitCode = 1` on failure, printing the server log tail when a run
 fails.

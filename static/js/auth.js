@@ -113,6 +113,13 @@
 
   async function tryLogout() {
     try { await NB.api.logout(); } catch (e) { /* ignore */ }
+    // Explicit sign-out clears device-local phone state. A 401/lock must
+    // not do this (the draft is recoverable after signing in).
+    if (NB.mobile && NB.mobile.onSignOut) NB.mobile.onSignOut();
+    try {
+      localStorage.removeItem("nb:captureDraft");
+      localStorage.removeItem("nb:mobileResume");
+    } catch (e) { /* storage unavailable */ }
     // The session is gone; drop the cached role so a synchronous caller
     // (the designer menu gate) stops treating us as an admin.
     if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
@@ -133,7 +140,14 @@
 
     // api.js fires "auth:required" on any 401. Show the modal again
     // (no-op if it's already up) so a stale tab re-prompts.
-    NB.evt.on("auth:required", () => { showModal(); });
+    NB.evt.on("auth:required", () => {
+      // A 401 means the cached role is no longer trustworthy. Drop it so
+      // synchronous gates (canWrite) stop allowing writes, and let the
+      // phone shell close its write surfaces.
+      if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
+      showModal();
+      if (NB.mobile && NB.mobile.onAuthRequired) NB.mobile.onAuthRequired();
+    });
   }
 
   let booted = false;
@@ -150,6 +164,7 @@
       return;
     }
     authStatus = status;
+    NB.evt.emit("auth:status", status);
     if (status && status.enabled) {
       // Auth is on. If a role is already in the session, the logout
       // button is meaningful; if not, the login modal needs to come up.
@@ -173,6 +188,14 @@
     // auth is off or the signed-in role is admin.
     status:   () => authStatus,
     isAdmin:  () => !!(authStatus && authStatus.enabled && authStatus.role === "admin"),
+    // Writes are allowed when auth is off, or when the signed-in session is
+    // an admin. Unlike isAdmin(), this is true on an open server.
+    // Default-deny until /api/auth resolves: no capture/draft UI may
+    // appear for a role that has not been established yet.
+    canWrite: () => {
+      const s = authStatus;
+      return !!s && (!s.enabled || s.role === "admin");
+    },
   };
 
   // Boot immediately, NOT on DOMContentLoaded. The scripts sit at the end

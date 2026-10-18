@@ -562,6 +562,7 @@
       if (t.editMode) { NB.cmEditor.setValue(t.content); showEditor(); }
       else { showViewer(); render(); }
       NB.evt.emit("file:open", path);
+      if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(path);
       return t.content;
     },
 
@@ -584,7 +585,10 @@
      * "Open Welcome.md" action panel. The Open-Welcome button is only
      * revealed when Welcome.md actually exists in the tree, so a power
      * user who deleted it doesn't see a dead link. */
-    clear() { showWelcome(); },
+    clear() {
+      showWelcome();
+      if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(null);
+    },
     /* Re-enter the empty state (e.g. after a test close). Alias for
      * clear(); exposed under its own name so callers (and tests) can
      * be explicit about intent. */
@@ -1025,6 +1029,7 @@
       const preScroll = viewerContentEl.scrollTop;
       const slug = decodeURIComponent(url.hash.replace(/^#/, ""));
       pushNav({ type: "in-page", file: currentPath, scroll: preScroll });
+      if (NB.mobile && NB.mobile.noteInPage) NB.mobile.noteInPage(currentPath);
       NB.viewer.scrollToHeading(slug);
       return;
     }
@@ -1161,7 +1166,14 @@
   }
 
   if (backBtn) {
-    backBtn.addEventListener("click", () => goBack());
+    backBtn.addEventListener("click", () => {
+      if (NB.mobile && NB.mobile.isOn && NB.mobile.isOn() &&
+          NB.mobile.back) {
+        NB.mobile.back();
+        return;
+      }
+      goBack();
+    });
   }
 
   // The brand doubles as the manual reload control (the reload button was
@@ -1234,6 +1246,9 @@
   // reload that started with a clean state), this listener is a
   // no-op and the browser handles the nav as it normally would.
   window.addEventListener("popstate", () => {
+    // Phone mode owns history layering in mobile.js (drawer/sheet first,
+    // then viewer.goBack); this handler must not double-pop navStack.
+    if (NB.mobile && NB.mobile.isOn && NB.mobile.isOn()) return;
     if (navStack.length === 0) return;
     const entry = popNav();
     applyNavEntry(entry);

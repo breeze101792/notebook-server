@@ -188,6 +188,9 @@ const html = `<!DOCTYPE html><html><head>
       <input id="search-input" type="search">
       <input type="checkbox" id="search-case">
       <button id="back-btn" class="icon-btn" disabled>←</button>
+      <button id="mobile-title" class="mobile-title" aria-label="Browse notes"></button>
+      <button id="mobile-capture" class="icon-btn" title="Quick capture" aria-label="Quick capture" hidden>＋</button>
+      <button id="mobile-more" class="icon-btn" title="Note menu" aria-label="Note menu">⋯</button>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG edit mode" hidden>✎</button>
       <button id="edit-toggle" class="icon-btn" title="Edit Markdown source (Ctrl/Cmd+E)" aria-label="Edit Markdown source">📝</button>
     </header>
@@ -935,6 +938,20 @@ const html = `<!DOCTYPE html><html><head>
       <button id="vizlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
+  <div id="mobile-home" hidden></div>
+  <div id="mobile-scrim" hidden></div>
+  <section id="capture-sheet" role="dialog" aria-modal="true" aria-labelledby="capture-title" hidden>
+    <div class="capture-grabber" aria-hidden="true"></div>
+    <div class="capture-head">
+      <h2 id="capture-title">Quick capture</h2>
+      <button id="capture-close" class="mobile-sheet-close" aria-label="Close capture">×</button>
+    </div>
+    <textarea id="capture-input" rows="4" placeholder="Jot something down…"></textarea>
+    <div id="capture-status" class="capture-status" role="status" aria-live="polite"></div>
+    <div class="capture-foot"><button id="capture-send" disabled>Send</button></div>
+  </section>
+  <section id="mobile-settings" role="dialog" aria-modal="true" aria-labelledby="mobile-settings-title" hidden></section>
+  <div id="mobile-state" hidden></div>
 </body></html>`;
 
 const dom = new JSDOM(html, {
@@ -1363,6 +1380,21 @@ window.fetch = async (url, opts) => {
       TREE.push({ name: d.path.split("/").pop(), type: "file", path: d.path });
       body = { path: d.path, existed: false };
     }
+  } else if (p === "/api/file/append") {
+    const d = JSON.parse(opts.body || "{}");
+    if (FILES[d.path] === undefined) {
+      if (!d.create) {
+        return { ok: false, status: 404,
+          text: async () => JSON.stringify({ error: "File not found" }),
+          json: async () => ({ error: "File not found" }) };
+      }
+      FILES[d.path] = "";
+      MTIMES[d.path] = 1;
+      TREE.push({ name: d.path.split("/").pop(), type: "file", path: d.path });
+    }
+    FILES[d.path] += (d.content || "");
+    MTIMES[d.path] = (MTIMES[d.path] || 0) + 1;
+    body = { path: d.path, size: FILES[d.path].length, appended: (d.content || "").length };
   } else if (p === "/api/move" || p === "/api/copy" || p === "/api/delete") {
     body = JSON.parse(opts.body || "{}");
   } else if (p === "/api/edit") {
@@ -1660,6 +1692,7 @@ evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/bookmarks.js"));
 evalIn(read("static/js/shortcuts.js"));
+evalIn(read("static/js/mobile.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
@@ -13643,8 +13676,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v9",
-      /const CACHE = "notebook-v9"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v11",
+      /const CACHE = "notebook-v11"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -25971,6 +26004,794 @@ function check(label, cond, extra) {
     window.Visimer = origVisimer;
     await window.NB.hybrid.exit(false);
     await tick(30);
+  }
+
+  console.log("\n== mobile ==");
+  {
+    const root = window.document.documentElement;
+    const ls = window.localStorage;
+    const MOBILE_KEYS = ["nb:captureDraft", "nb:mobileResume"];
+    const clearMobileStorage = () => MOBILE_KEYS.forEach((k) => ls.removeItem(k));
+    clearMobileStorage();
+
+    const setMode = async (mode) => {
+      root.dataset.uiMode = mode;
+      window.NB.mobile.refreshMode();
+      await tick(40);
+    };
+    const homeLabels = () => Array.from($("mobile-home").querySelectorAll(".mhr-label"))
+      .map((el) => el.textContent);
+    const homeRow = (label) => Array.from(
+      $("mobile-home").querySelectorAll(".mobile-home-row"))
+      .find((b) => (b.querySelector(".mhr-label") || {}).textContent === label);
+    const cfgPosts = () => fetchLog.filter((x) => x.startsWith("POST /api/config"));
+    const lastCfg = () => {
+      const line = cfgPosts().pop();
+      if (!line) return null;
+      const i = line.indexOf("{");
+      try { return JSON.parse(line.slice(i)); } catch (_) { return null; }
+    };
+    const appendCount = () => fetchLog.filter(
+      (x) => x.startsWith("POST /api/file/append")).length;
+    const searchGets = () => fetchLog.filter(
+      (x) => x.startsWith("GET /api/search")).length;
+
+    await setMode("phone");
+    check("mobile: mode mirror sets data-ui-mode=phone",
+      root.dataset.uiMode === "phone", root.dataset.uiMode);
+    check("mobile: isOn() reads the mirrored token", window.NB.mobile.isOn() === true);
+    const mobileIndex = read("templates/index.html");
+    check("mobile: index.html loads mobile.js before app.js",
+      mobileIndex.indexOf("/static/js/mobile.js") !== -1 &&
+      mobileIndex.indexOf("/static/js/mobile.js") <
+        mobileIndex.indexOf("/static/js/app.js"));
+    check("mobile: sw.js precaches mobile.js",
+      read("static/sw.js").indexOf("/static/js/mobile.js") !== -1);
+
+    // --- Home, Continue, and device-local resume ---------------------
+    window.NB.tabs.clearAll();
+    await tick(60);
+    check("mobile: Home is visible with no open note", !$("mobile-home").hidden);
+    check("mobile: Home order is Search / Bookmarks / Recent / Browse / Settings",
+      homeLabels().join("|") === "Search|Bookmarks|Recent|Browse|Settings",
+      homeLabels().join(","));
+    check("mobile: Continue is absent with no device history",
+      !homeLabels().includes("Continue"));
+
+    ls.setItem("nb:mobileResume",
+      JSON.stringify({ v: 1, path: "notes/a.md", scroll: 0 }));
+    window.NB.tabs.clearAll();
+    window.NB.mobile.refreshMode();   // re-render Home from storage
+    await tick(60);
+    check("mobile: Home shows Continue with device history",
+      homeLabels()[1] === "Continue" &&
+      (homeRow("Continue").querySelector(".mhr-meta") || {}).textContent === "a.md",
+      homeLabels().join(","));
+    const continueRow = homeRow("Continue");
+    if (continueRow) {
+      continueRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(140);
+    }
+    check("mobile: Continue opens the last note read on this device",
+      window.NB.tabs.getActive() === "notes/a.md", window.NB.tabs.getActive());
+    check("mobile: Continue leaves Home for the reader", $("mobile-home").hidden);
+    check("mobile: the title shows the note basename",
+      $("mobile-title").textContent === "a.md", $("mobile-title").textContent);
+
+    // --- Drawer: open, scrim, tree … menu, close --------------------
+    window.NB.mobile.openDrawer("explorer");
+    await tick(60);
+    check("mobile: openDrawer sets body.drawer-open",
+      window.document.body.classList.contains("drawer-open"));
+    check("mobile: openDrawer shows the scrim", !$("mobile-scrim").hidden);
+    check("mobile: openDrawer records the active view",
+      window.document.body.dataset.drawerView === "explorer",
+      window.document.body.dataset.drawerView);
+
+    const rowMore = window.document.querySelector("#file-tree .tree-more");
+    check("mobile: tree rows render a … button", !!rowMore);
+    const beforeOpen = window.NB.tabs.getActive();
+    if (rowMore) {
+      rowMore.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      check("mobile: … opens the shared menu", !$("nb-menu").hidden);
+      check("mobile: … does not open the row",
+        window.NB.tabs.getActive() === beforeOpen);
+      const menuLabels = Array.from($("nb-menu").querySelectorAll("button"))
+        .map((b) => b.textContent.trim());
+      check("mobile: tree … menu offers only read-only v1 items",
+        menuLabels.join("|") === "Open|Copy link|Copy path",
+        menuLabels.join(","));
+      window.NB.menu.close();
+    }
+
+    $("mobile-scrim").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("mobile: scrim tap closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+    check("mobile: scrim hides with the drawer", $("mobile-scrim").hidden);
+
+    // --- Browse: folder expansion, file open, drawer close -----------
+    window.NB.mobile.openDrawer("explorer");
+    await tick(60);
+    let dirRow = window.document.querySelector(
+      '#file-tree .tree-row[data-path="notes"]');
+    check("mobile: Browse tree has the notes folder", !!dirRow);
+    if (dirRow && !dirRow.classList.contains("collapsed")) {
+      dirRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(70);
+      dirRow = window.document.querySelector(
+        '#file-tree .tree-row[data-path="notes"]');
+    }
+    if (dirRow) {
+      dirRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(90);
+      dirRow = window.document.querySelector(
+        '#file-tree .tree-row[data-path="notes"]');
+    }
+    check("mobile: Browse expands one folder on tap",
+      !!dirRow && !dirRow.classList.contains("collapsed"));
+    const childWrap = dirRow && dirRow.parentElement.querySelector(".tree-children");
+    check("mobile: an expanded folder reveals its children",
+      !!childWrap && childWrap.style.display !== "none");
+    const browseFile = window.document.querySelector(
+      '#file-tree .tree-row[data-path="notes/b.md"]');
+    check("mobile: Browse exposes the file row", !!browseFile);
+    if (browseFile) {
+      browseFile.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(160);
+    }
+    check("mobile: choosing a file opens it",
+      window.NB.tabs.getActive() === "notes/b.md", window.NB.tabs.getActive());
+    check("mobile: choosing a file closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+
+    // The drawer header's close control (the desktop collapse button,
+    // relabelled × on phone) must close the drawer too.
+    window.NB.mobile.openDrawer("explorer");
+    await tick(60);
+    click("sidebar-collapse");
+    await tick(90);
+    check("mobile: the drawer header close control closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+
+    // --- Back order: drawer/sheet first, then note history -----------
+    window.NB.mobile.openDrawer("explorer");
+    await tick(60);
+    const backActive = window.NB.tabs.getActive();
+    window.dispatchEvent(new window.PopStateEvent("popstate", { state: null }));
+    await tick(90);
+    check("mobile: back closes an open drawer before the note",
+      !window.document.body.classList.contains("drawer-open") &&
+      window.NB.tabs.getActive() === backActive);
+
+    window.NB.mobile.openCapture();
+    await tick(60);
+    window.dispatchEvent(new window.PopStateEvent("popstate", { state: null }));
+    await tick(90);
+    check("mobile: back closes the capture sheet before the note",
+      $("capture-sheet").hidden && window.NB.tabs.getActive() === backActive);
+
+    await window.NB.tabs.open("notes/a.md");
+    await tick(80);
+    await window.NB.tabs.open("notes/b.md");
+    await tick(80);
+    window.dispatchEvent(new window.PopStateEvent("popstate",
+      { state: { nbFile: "notes/a.md" } }));
+    await tick(160);
+    check("mobile: back returns to the previous note",
+      window.NB.tabs.getActive() === "notes/a.md", window.NB.tabs.getActive());
+
+    // --- Capture: empty/in-flight/draft/failure ---------------------
+    window.NB.mobile.openCapture();
+    await tick(60);
+    check("mobile: capture sheet opens", !$("capture-sheet").hidden);
+    check("mobile: Send is disabled while empty", $("capture-send").disabled);
+    const capInput = $("capture-input");
+    capInput.value = "hello phone";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    check("mobile: Send enables once the draft is non-empty",
+      !$("capture-send").disabled);
+    const inboxExisted = FILES["Inbox.md"] !== undefined;
+    const appendBefore = appendCount();
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(140);
+    const appendPosts = fetchLog.filter(
+      (x) => x.startsWith("POST /api/file/append"));
+    check("mobile: capture posts exactly one append",
+      appendPosts.length === appendBefore + 1,
+      "count=" + appendPosts.length);
+    check("mobile: append created Inbox.md (create:true accepted)",
+      !inboxExisted && FILES["Inbox.md"] !== undefined,
+      "existed=" + inboxExisted);
+    check("mobile: Inbox.md gained one blank-line-separated block",
+      (FILES["Inbox.md"] || "").endsWith("\n\nhello phone\n"),
+      JSON.stringify((FILES["Inbox.md"] || "").slice(-40)));
+    check("mobile: capture draft cleared after success",
+      ls.getItem("nb:captureDraft") === null);
+
+    // In-flight: a delayed append must disable Send and absorb a double
+    // tap into one request.
+    const realFetch = window.fetch;
+    let flightAppends = 0;
+    window.fetch = (url, opts) => {
+      if (String(url).indexOf("/api/file/append") !== -1) {
+        flightAppends++;
+        return new Promise((resolve, reject) => {
+          setTimeout(() => realFetch(url, opts).then(resolve, reject), 120);
+        });
+      }
+      return realFetch(url, opts);
+    };
+    window.NB.mobile.openCapture();
+    await tick(60);
+    capInput.value = "flight block";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const flightBefore = appendCount();
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("mobile: Send is disabled in flight",
+      $("capture-send").disabled &&
+      $("capture-send").textContent === "Sending\u2026",
+      $("capture-send").textContent);
+    check("mobile: the field is read-only in flight", capInput.readOnly);
+    check("mobile: a double tap issues exactly one append",
+      flightAppends === 1, "requests=" + flightAppends);
+    await tick(240);
+    check("mobile: the in-flight capture completes once",
+      appendCount() === flightBefore + 1);
+    check("mobile: each capture adds exactly one block",
+      (FILES["Inbox.md"] || "").endsWith("\n\nflight block\n"),
+      JSON.stringify((FILES["Inbox.md"] || "").slice(-40)));
+    window.fetch = realFetch;
+
+    // Draft save / restore / explicit clear.
+    window.NB.mobile.openCapture();
+    await tick(60);
+    capInput.value = "draft survives a reload";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(360);
+    check("mobile: the draft is saved on this device",
+      ls.getItem("nb:captureDraft") === "draft survives a reload",
+      ls.getItem("nb:captureDraft"));
+    click("capture-close");
+    await tick(90);
+    check("mobile: close hides the capture sheet", $("capture-sheet").hidden);
+    window.NB.mobile.openCapture();
+    await tick(60);
+    check("mobile: reopening restores the draft",
+      capInput.value === "draft survives a reload", capInput.value);
+    capInput.value = "";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(360);
+    check("mobile: clearing the field clears the stored draft",
+      ls.getItem("nb:captureDraft") === null);
+    click("capture-close");
+    await tick(90);
+
+    // Failure keeps sheet + draft and turns Send into Retry.
+    window.NB.mobile.openCapture();
+    await tick(60);
+    capInput.value = "retry me";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(340);
+    const realFetch2 = window.fetch;
+    let failedAppends = 0;
+    window.fetch = (url, opts) => {
+      if (String(url).indexOf("/api/file/append") !== -1) {
+        failedAppends++;
+        return Promise.resolve({
+          ok: false, status: 500, statusText: "Server Error",
+          text: async () => JSON.stringify({ error: "append failed" }),
+          json: async () => ({ error: "append failed" }),
+        });
+      }
+      return realFetch2(url, opts);
+    };
+    const retryBefore = appendCount();
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(90);
+    check("mobile: a failed capture keeps the sheet open",
+      !$("capture-sheet").hidden);
+    check("mobile: a failed capture keeps the draft",
+      capInput.value === "retry me" && ls.getItem("nb:captureDraft") === "retry me",
+      capInput.value);
+    check("mobile: a failed capture turns Send into Retry",
+      $("capture-send").textContent === "Retry" && !$("capture-send").disabled,
+      $("capture-send").textContent);
+    check("mobile: the failure is shown inline",
+      /append failed/.test($("capture-status").textContent),
+      $("capture-status").textContent);
+    check("mobile: a failed attempt sends no request through the stub",
+      failedAppends === 1, "attempts=" + failedAppends);
+    window.fetch = realFetch2;
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(240);
+    check("mobile: Retry sends the same block exactly once",
+      appendCount() === retryBefore + 1, "delta=" + (appendCount() - retryBefore));
+    check("mobile: Retry success clears the draft",
+      ls.getItem("nb:captureDraft") === null);
+
+    // --- Deep links ------------------------------------------------
+    const unknownOpened = await window.NB.app.openDeepLink({ file: "missing.md" });
+    await tick(50);
+    const stateText = $("mobile-state").textContent;
+    check("mobile: an unknown deep link returns false", unknownOpened === false);
+    check("mobile: an unknown deep link shows Note not found with Browse and Home",
+      !$("mobile-state").hidden && /Note not found/.test(stateText) &&
+      /missing\.md/.test(stateText) &&
+      Array.from($("mobile-state").querySelectorAll("button"))
+        .map((b) => b.textContent).join("|") === "Browse|Home",
+      stateText);
+    window.NB.mobile.hideState();
+    const knownOpened = await window.NB.app.openDeepLink({ file: "notes/b.md" });
+    await tick(120);
+    check("mobile: a known deep link opens that note",
+      knownOpened === true && window.NB.tabs.getActive() === "notes/b.md",
+      window.NB.tabs.getActive());
+
+    // --- Search: debounce, empty query, hit tap, failure ------------
+    window.NB.mobile.openDrawer("search");
+    await tick(80);
+    const searchInput = () => window.document.querySelector(
+      "#search-view .search-panel-input");
+    check("mobile: Search opens in the drawer with its field",
+      !!searchInput() && window.document.body.dataset.drawerView === "search");
+    const si = searchInput();
+    const searchBefore = searchGets();
+    if (si) {
+      si.value = "f";
+      si.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(120);
+    }
+    check("mobile: no search request before the debounce",
+      searchGets() === searchBefore, "delta=" + (searchGets() - searchBefore));
+    if (si) {
+      si.value = "fix";
+      si.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(120);
+    }
+    check("mobile: a subsequent keystroke restarts the debounce",
+      searchGets() === searchBefore, "delta=" + (searchGets() - searchBefore));
+    await tick(180);
+    check("mobile: one search request per debounce interval",
+      searchGets() === searchBefore + 1,
+      "delta=" + (searchGets() - searchBefore));
+
+    const emptyBefore = searchGets();
+    if (si) {
+      si.value = "";
+      si.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(340);
+    }
+    check("mobile: an empty query issues no search request",
+      searchGets() === emptyBefore);
+
+    if (si) {
+      si.value = "fix this";
+      si.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(340);
+    }
+    const searchHits = Array.from(
+      $("search-view").querySelectorAll(".search-panel-hit"));
+    check("mobile: search results are grouped by file",
+      searchHits.length > 0 &&
+      searchHits.every((h) => !!h.querySelector(".sp-file") &&
+        !!h.querySelector(".search-panel-hit-snippet")),
+      "hits=" + searchHits.length);
+    const aHit = searchHits.find((h) =>
+      (h.querySelector(".sp-file") || {}).textContent === "notes/a.md");
+    check("mobile: the notes/a.md hit is listed", !!aHit);
+    if (aHit) {
+      aHit.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(180);
+    }
+    check("mobile: tapping a hit opens that note",
+      window.NB.tabs.getActive() === "notes/a.md", window.NB.tabs.getActive());
+    check("mobile: tapping a hit closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+    check("mobile: tapping a hit marks and scrolls to the match",
+      !!window.document.querySelector("#viewer-content mark.search-highlight"));
+
+    // Acceptance [D] #10: a failed search keeps the query and offers Retry.
+    const realFetch3 = window.fetch;
+    window.fetch = (url, opts) => {
+      if (String(url).indexOf("/api/search") !== -1) {
+        return Promise.resolve({
+          ok: false, status: 500, statusText: "Server Error",
+          text: async () => JSON.stringify({ error: "search down" }),
+          json: async () => ({ error: "search down" }),
+        });
+      }
+      return realFetch3(url, opts);
+    };
+    window.NB.mobile.openDrawer("search");
+    await tick(80);
+    const si2 = searchInput();
+    if (si2) {
+      si2.value = "fix";
+      si2.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(340);
+    }
+    const retrySearch = Array.from(
+      $("search-view").querySelectorAll("button"))
+      .find((b) => /retry/i.test(b.textContent));
+    check("mobile acceptance: a failed search keeps the query and offers Retry",
+      !!si2 && si2.value === "fix" && !!retrySearch,
+      "query=" + (si2 && si2.value) + " retry=" + !!retrySearch);
+    window.fetch = realFetch3;
+    if (si2) {
+      si2.value = "";
+      si2.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(340);
+    }
+    window.NB.mobile.closeDrawer();
+    await tick(90);
+
+    // Acceptance [D] #5: bookmarks keep saved order and explain desktop
+    // when empty; the phone view is read-only.
+    const savedBookmarks = window.NB.bookmarks.get();
+    window.NB.bookmarks.set(["notes/b.md", "notes/a.md"]);
+    window.NB.mobile.openDrawer("bookmarks");
+    await tick(90);
+    const bookmarkOrder = Array.from(
+      $("bookmarks-view").querySelectorAll(".bookmark-row"))
+      .map((r) => r.dataset.path);
+    check("mobile: bookmarks keep the saved order",
+      bookmarkOrder.join("|") === "notes/b.md|notes/a.md",
+      bookmarkOrder.join(","));
+    window.NB.bookmarks.set([]);
+    await tick(30);
+    const emptyBookmarkText = $("bookmarks-view").textContent;
+    check("mobile acceptance: empty bookmarks explain how to add them on desktop",
+      /desktop/i.test(emptyBookmarkText), emptyBookmarkText);
+    window.NB.mobile.closeDrawer();
+    await tick(90);
+    window.NB.bookmarks.set(savedBookmarks);
+
+    // Acceptance [D] #19: a deleted Continue target falls back to Home
+    // with a one-line notice rather than a not-found screen.
+    ls.setItem("nb:mobileResume",
+      JSON.stringify({ v: 1, path: "gone.md", scroll: 0 }));
+    window.NB.tabs.clearAll();
+    window.NB.mobile.refreshMode();   // re-render Home from storage
+    await tick(70);
+    const goneRow = homeRow("Continue");
+    if (goneRow) goneRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(100);
+    const goneNotice = Array.from(window.document.querySelectorAll(".toast"))
+      .map((t) => t.textContent).join(" ");
+    check("mobile acceptance: a deleted Continue target falls back to Home with a notice",
+      !$("mobile-home").hidden && $("mobile-state").hidden &&
+      /no longer|not found|could not/i.test(goneNotice),
+      "home=" + !$("mobile-home").hidden + " state=" + !$("mobile-state").hidden +
+      " toast=" + goneNotice);
+    window.NB.mobile.hideState();
+    clearMobileStorage();
+    window.NB.tabs.clearAll();
+    await tick(60);
+
+    // Acceptance [D] #20: a network failure shows the unreachable state
+    // with Retry, and says nothing is cached.
+    const realFetch4 = window.fetch;
+    window.fetch = () => Promise.reject(new TypeError("Failed to fetch"));
+    try { await window.NB.tabs.open("notes/a.md"); } catch (_) {}
+    await tick(120);
+    const unreachableText = $("mobile-state").textContent;
+    const unreachableRetry = Array.from(
+      $("mobile-state").querySelectorAll("button"))
+      .find((b) => /retry/i.test(b.textContent));
+    check("mobile acceptance: a network failure shows Can't reach the server with Retry and a no-cache statement",
+      !$("mobile-state").hidden && /can't reach the server/i.test(unreachableText) &&
+      !!unreachableRetry && /cached/i.test(unreachableText),
+      unreachableText);
+    window.fetch = realFetch4;
+    window.NB.mobile.hideState();
+    $("mobile-state").innerHTML = "";
+    window.NB.tabs.clearAll();
+    await tick(60);
+
+    // --- Config gate: phone writes never clobber desktop keys -------
+    config = {
+      openFiles: ["desktop.md"], activeFile: "desktop.md", lastFile: "desktop.md",
+      sidebarCollapsed: false, outlineCollapsed: false,
+      sidebarWidth: 300, outlineWidth: 220, theme: "dark", fontSize: "medium",
+      recentFiles: ["old.md"], pinnedFiles: ["desktop.md"],
+    };
+    const cfgBefore = cfgPosts().length;
+    window.NB.app.getCfg().recentFiles = ["old.md"];
+    window.NB.evt.emit("file:open", "Welcome.md");
+    await tick(420);
+    const cfgBody = lastCfg();
+    check("mobile: phone file:open issues one merged config POST",
+      cfgPosts().length === cfgBefore + 1,
+      "delta=" + (cfgPosts().length - cfgBefore));
+    check("mobile: phone config POST keeps desktop openFiles and activeFile",
+      !!cfgBody && cfgBody.openFiles.join(",") === "desktop.md" &&
+      cfgBody.activeFile === "desktop.md",
+      cfgBody && cfgBody.openFiles && cfgBody.openFiles.join(","));
+    check("mobile: phone config POST never writes lastFile",
+      !!cfgBody && cfgBody.lastFile === "desktop.md",
+      cfgBody && cfgBody.lastFile);
+    check("mobile: phone config POST keeps sidebarCollapsed and pane widths",
+      !!cfgBody && cfgBody.sidebarCollapsed === false &&
+      cfgBody.sidebarWidth === 300 && cfgBody.outlineWidth === 220,
+      cfgBody && JSON.stringify({
+        c: cfgBody.sidebarCollapsed, sw: cfgBody.sidebarWidth,
+        ow: cfgBody.outlineWidth,
+      }));
+    check("mobile: phone config POST merges only recentFiles",
+      !!cfgBody && cfgBody.recentFiles[0] === "Welcome.md" &&
+      cfgBody.recentFiles.includes("old.md"),
+      cfgBody && cfgBody.recentFiles);
+
+    // Activity taps and the drawer close control never persist a
+    // collapse or activeView change from the phone.
+    config = {
+      openFiles: ["desktop.md"], activeFile: "desktop.md", lastFile: "desktop.md",
+      sidebarCollapsed: false, outlineCollapsed: false,
+      sidebarWidth: 300, outlineWidth: 220, theme: "dark", fontSize: "medium",
+      recentFiles: ["old.md"], activeView: "explorer",
+    };
+    await tick(360);
+    const activityBefore = cfgPosts().length;
+    window.NB.mobile.openDrawer("explorer");
+    await tick(70);
+    window.NB.activity.activate("explorer", true);
+    await tick(90);
+    check("mobile: tapping the active rail icon closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+    await tick(360);
+    check("mobile: activity taps do not persist collapse",
+      cfgPosts().length === activityBefore,
+      "delta=" + (cfgPosts().length - activityBefore));
+
+    const headerBefore = cfgPosts().length;
+    window.NB.mobile.openDrawer("explorer");
+    await tick(70);
+    click("sidebar-collapse");
+    await tick(90);
+    check("mobile: the drawer close control does not persist sidebarCollapsed",
+      !window.document.body.classList.contains("drawer-open"));
+    await tick(360);
+    check("mobile: the drawer close control writes no config",
+      cfgPosts().length === headerBefore,
+      "delta=" + (cfgPosts().length - headerBefore));
+
+    const keylessBefore = cfgPosts().length;
+    window.NB.app.setSettingsModalWidth("large");
+    await tick(360);
+    check("mobile: a keyless persist is a no-op",
+      cfgPosts().length === keylessBefore,
+      "delta=" + (cfgPosts().length - keylessBefore));
+
+    // --- Mobile settings (M6) --------------------------------------
+    config = {
+      theme: "dark", fontSize: "medium", openFiles: ["desktop.md"],
+      activeFile: "desktop.md", sidebarWidth: 300, outlineWidth: 220,
+      recentFiles: [], lastFile: "desktop.md",
+    };
+    window.NB.mobile.openSettings();
+    await tick(70);
+    check("mobile: the settings sheet opens", !$("mobile-settings").hidden);
+    const settingsText = $("mobile-settings").textContent;
+    check("mobile: settings states theme and text size are server-wide",
+      /every device/i.test(settingsText) && /server/i.test(settingsText),
+      settingsText.slice(0, 120));
+    const settingsButtons = () => Array.from(
+      $("mobile-settings").querySelectorAll("button"));
+    check("mobile: settings omits AI, export, graph, admin, and token surfaces",
+      !settingsButtons().some((b) =>
+        /AI|Export|Graph|Token|Admin/i.test(b.textContent)) &&
+      $("mobile-settings").querySelectorAll("input").length === 0,
+      settingsButtons().map((b) => b.textContent).join(","));
+    check("mobile: sign out is absent when auth is off",
+      !$("mobile-settings").querySelector(".mobile-signout"));
+
+    const lightBtn = settingsButtons().find((b) => b.textContent === "Light");
+    if (lightBtn) {
+      lightBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(360);
+    }
+    check("mobile: theme applies immediately",
+      window.document.body.dataset.theme === "light",
+      window.document.body.dataset.theme);
+    const themeCfg = lastCfg();
+    check("mobile: theme persists through a merged blob without dropping desktop keys",
+      !!themeCfg && themeCfg.theme === "light" &&
+      themeCfg.openFiles.join(",") === "desktop.md" &&
+      themeCfg.activeFile === "desktop.md",
+      themeCfg && JSON.stringify({ t: themeCfg.theme, o: themeCfg.openFiles }));
+
+    const xlBtn = settingsButtons().find((b) => b.textContent === "XL");
+    if (xlBtn) {
+      xlBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(360);
+    }
+    check("mobile: text size applies immediately",
+      cssVar("--font-scale") === "1.3", cssVar("--font-scale"));
+    const sizeCfg = lastCfg();
+    check("mobile: text size persists through a merged blob",
+      !!sizeCfg && sizeCfg.fontSize === "xlarge" && sizeCfg.theme === "light",
+      sizeCfg && JSON.stringify({ f: sizeCfg.fontSize, t: sizeCfg.theme }));
+
+    $("mobile-settings").querySelector(".mobile-sheet-close")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(90);
+    check("mobile: the settings close control closes the sheet",
+      $("mobile-settings").hidden);
+
+    // --- canWrite() in all four auth states ------------------------
+    // auth.js keeps the role in a private closure set by its boot fetch,
+    // so each state is simulated by re-evaluating the real module with the
+    // fetch stub reporting that state (auth.js boot is idempotent by design).
+    const reauth = async (enabled, role) => {
+      authEnabled = enabled;
+      authHasAdmin = enabled;
+      authHasViewer = role === "viewer";
+      authRole = role;
+      evalIn(read("static/js/auth.js"));
+      await tick(100);
+      if (!$("auth-overlay").hidden) window.NB.auth.hideModal();
+    };
+
+    await reauth(false, null);
+    check("mobile: canWrite() is true when auth is off",
+      window.NB.auth.canWrite() === true);
+    check("mobile: capture is offered when auth is off",
+      $("mobile-capture").hidden === false);
+
+    await reauth(true, null);
+    check("mobile: canWrite() is false with auth on and no session",
+      window.NB.auth.canWrite() === false);
+    check("mobile: capture is absent with auth on and no session",
+      $("mobile-capture").hidden === true);
+    window.NB.auth.hideModal();
+
+    await reauth(true, "viewer");
+    check("mobile: canWrite() is false for a viewer",
+      window.NB.auth.canWrite() === false);
+    check("mobile: capture is absent for a viewer",
+      $("mobile-capture").hidden === true);
+    window.NB.mobile.openCapture();
+    await tick(60);
+    check("mobile: a viewer cannot open the capture sheet",
+      $("capture-sheet").hidden);
+    window.NB.mobile.openSettings();
+    await tick(50);
+    check("mobile: sign out is present with auth on",
+      !!$("mobile-settings").querySelector(".mobile-signout"));
+    $("mobile-settings").querySelector(".mobile-sheet-close")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(90);
+
+    // A direct write attempt (sheet forced open) is refused with the role
+    // message and issues no append.
+    $("capture-sheet").hidden = false;
+    window.document.body.classList.add("capture-open");
+    capInput.value = "viewer write";
+    capInput.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const refuseBefore = appendCount();
+    $("capture-send").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("mobile: a viewer direct write is refused, never a false success",
+      $("capture-status").textContent === "Not allowed for this role" &&
+      appendCount() === refuseBefore,
+      $("capture-status").textContent);
+    $("capture-sheet").hidden = true;
+    window.document.body.classList.remove("capture-open");
+    capInput.value = "";
+    $("capture-status").textContent = "";
+    ls.removeItem("nb:captureDraft");
+
+    await reauth(true, "admin");
+    check("mobile: canWrite() is true for an admin",
+      window.NB.auth.canWrite() === true);
+    check("mobile: capture is offered to an admin",
+      $("mobile-capture").hidden === false);
+    window.NB.mobile.openSettings();
+    await tick(50);
+    check("mobile: sign out is present for an admin",
+      !!$("mobile-settings").querySelector(".mobile-signout"));
+    $("mobile-settings").querySelector(".mobile-sheet-close")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(90);
+
+    await reauth(false, null);
+
+    // --- api:network-error fires on transport failure only ----------
+    // A fetch rejection is "unreachable"; an HTTP 4xx/5xx is an ordinary
+    // request error (a 401 must show sign-in, never the unreachable screen).
+    const netEvents = [];
+    const onNetwork = (info) => netEvents.push(info);
+    const authEvents = [];
+    const onAuthReq = () => authEvents.push(1);
+    window.NB.evt.on("api:network-error", onNetwork);
+    window.NB.evt.on("auth:required", onAuthReq);
+    const realFetch5 = window.fetch;
+
+    window.fetch = () => Promise.reject(new TypeError("connection refused"));
+    let rejected = false;
+    try { await window.NB.api.getFile("notes/a.md"); } catch (_) { rejected = true; }
+    check("mobile: api:network-error fires once on a fetch rejection",
+      rejected && netEvents.length === 1 &&
+      /connection refused/.test(netEvents[0].message || ""),
+      "events=" + netEvents.length);
+
+    window.fetch = () => Promise.resolve({
+      ok: false, status: 500, statusText: "Server Error",
+      text: async () => JSON.stringify({ error: "boom" }),
+      json: async () => ({ error: "boom" }),
+    });
+    try { await window.NB.api.getFile("notes/a.md"); } catch (_) {}
+    check("mobile: api:network-error does not fire on HTTP 5xx",
+      netEvents.length === 1, "events=" + netEvents.length);
+
+    window.fetch = () => Promise.resolve({
+      ok: false, status: 401, statusText: "Unauthorized",
+      text: async () => JSON.stringify({ error: "Unauthorized" }),
+      json: async () => ({ error: "Unauthorized" }),
+    });
+    try { await window.NB.api.getFile("notes/a.md"); } catch (_) {}
+    check("mobile: a 401 emits auth:required, not api:network-error",
+      authEvents.length === 1 && netEvents.length === 1,
+      "auth=" + authEvents.length + " network=" + netEvents.length);
+    window.fetch = realFetch5;
+    window.NB.evt.off("api:network-error", onNetwork);
+    window.NB.evt.off("auth:required", onAuthReq);
+    window.NB.auth.hideModal();
+    window.NB.mobile.hideState();
+    $("mobile-state").innerHTML = "";
+
+    // A lock/401 must not overwrite a saved draft with an empty field.
+    window.NB.mobile.refreshMode();
+    await tick(40);
+    ls.setItem("nb:captureDraft", "keep me through 401");
+    window.NB.mobile.openCapture();
+    await tick(60);
+    $("capture-input").value = "";       // sheet open, field empty
+    window.NB.evt.emit("auth:locked");
+    await tick(80);
+    check("mobile: a 401/lock keeps a saved draft",
+      ls.getItem("nb:captureDraft") === "keep me through 401" &&
+      $("capture-sheet").hidden,
+      "draft=" + ls.getItem("nb:captureDraft"));
+    ls.removeItem("nb:captureDraft");
+    window.NB.mobile.refreshMode();
+    await tick(40);
+
+    // A desktop boot that later enters phone mode seeds the visible note.
+    await setMode("desktop");
+    window.NB.tabs.clearAll();
+    await tick(40);
+    await window.NB.tabs.open("notes/a.md");
+    await tick(80);
+    window.history.replaceState(null, "", window.location.pathname);
+    await setMode("phone");
+    await tick(60);
+    check("mobile: entering phone mode seeds the visible note",
+      !!window.history.state && window.history.state.nbFile === "notes/a.md" &&
+      window.location.search.indexOf("file=notes%2Fa.md") !== -1,
+      JSON.stringify(window.history.state) + " " + window.location.search);
+
+    // Home after a missing note replaces the stale entry and URL.
+    window.NB.mobile.showNotFound("gone.md");
+    await tick(40);
+    const stateHome = Array.from($("mobile-state").querySelectorAll("button"))
+      .find((b) => b.textContent === "Home");
+    if (stateHome) stateHome.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("mobile: missing-note Home clears ?file=",
+      !$("mobile-home").hidden && window.location.search === "",
+      "search=" + window.location.search);
+    check("mobile: missing-note Home entry is nbHome",
+      !!window.history.state && window.history.state.nbHome === true,
+      JSON.stringify(window.history.state));
+
+    clearMobileStorage();
+    await setMode("desktop");
+    check("mobile: desktop mode hides Home", $("mobile-home").hidden);
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

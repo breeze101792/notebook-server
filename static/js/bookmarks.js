@@ -33,6 +33,10 @@
   let listEl = null;
   let addBtn = null;
 
+  function isPhone() {
+    return !!(window.NB && NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
+  }
+
   /* --- view construction --------------------------------------------- */
   /* Build the header + list once, at load. The host stays in the DOM
    * across view switches, so the list state survives. */
@@ -85,7 +89,7 @@
     if (!bookmarks.length) {
       const empty = document.createElement("div");
       empty.className = "bookmarks-empty";
-      empty.textContent = "No bookmarks yet. Right-click a file to pin it.";
+      empty.textContent = "No bookmarks yet. Add them from a desktop browser.";
       listEl.appendChild(empty);
       return;
     }
@@ -98,7 +102,7 @@
     const row = document.createElement("div");
     row.className = "bookmark-row";
     row.dataset.path = path;
-    row.draggable = true;
+    row.draggable = !isPhone();
     // The leading ⭐ reserves the same width the tree uses for its icon so
     // the file name aligns across the two lists.
     const pin = document.createElement("span");
@@ -114,6 +118,7 @@
     row.addEventListener("click", () => NB.evt.emit("file:open-request", path));
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
+      if (isPhone()) return;   // read-only on the phone
       openBookmarkMenu(e, path);
     });
     return row;
@@ -135,7 +140,8 @@
    * place so every call site (star click, context-menu item, + button,
    * drag-reorder drop, prune) is consistent. */
   function toggle(path) {
-    if (!path) return;
+    if (!path || isPhone()) return;   // phone list is read-only
+
     const i = bookmarks.indexOf(path);
     if (i >= 0) {
       bookmarks.splice(i, 1);
@@ -153,7 +159,7 @@
    * changes. */
   function updateAddBtn() {
     if (!addBtn) return;
-    const show = activeFile && !bookmarks.includes(activeFile);
+    const show = !isPhone() && activeFile && !bookmarks.includes(activeFile);
     addBtn.hidden = !show;
   }
 
@@ -194,6 +200,7 @@
   function wireListDnD() {
     if (!listEl) return;
     listEl.addEventListener("dragstart", (e) => {
+      if (isPhone()) { e.preventDefault(); return; }
       const row = e.target.closest && e.target.closest(".bookmark-row");
       if (!row || !row.dataset.path) { e.preventDefault(); return; }
       draggingBookmark = row.dataset.path;
@@ -205,7 +212,7 @@
       }
     });
     listEl.addEventListener("dragover", (e) => {
-      if (!draggingBookmark) return;
+      if (isPhone() || !draggingBookmark) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
       clearBookmarkDropMarks();
@@ -221,7 +228,7 @@
       row.classList.add(before ? "drop-before" : "drop-after");
     });
     listEl.addEventListener("drop", (e) => {
-      if (!draggingBookmark) return;
+      if (isPhone() || !draggingBookmark) return;
       e.preventDefault();
       const row = e.target.closest && e.target.closest(".bookmark-row");
       let targetPath = null, before = true;
@@ -300,6 +307,7 @@
   }
 
   function openBookmarkMenu(e, path) {
+    if (isPhone()) return;
     NB.menu.open({
       owner: "bookmarks", x: e.clientX, y: e.clientY, scope: viewEl,
       items: bookmarkMenuItems(path), focusFirst: true,
@@ -315,6 +323,8 @@
     if (window.CSS && CSS.escape) return CSS.escape(s);
     return String(s).replace(/["\\]/g, "\\$&");
   }
+
+  NB.evt.on("mobile:mode", () => { render(); updateAddBtn(); });
 
   NB.bookmarks = { set, get, has, toggle, prune };
 

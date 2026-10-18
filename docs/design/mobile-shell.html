@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile shell — reference mockup</title>
+<style>
+/* Tokens inlined from static/css/style.css :root and body[data-theme="light"].
+   body.light mirrors the light theme; no new colours are introduced. */
+:root {
+  --bg:#1a1b1f; --bg-panel:#22232a; --bg-elev:#2a2b34; --fg:#e6e6ea;
+  --fg-muted:#8b8d98; --accent:#7c9cff; --accent-soft:rgba(124,156,255,.18);
+  --border:#383a45; --code-bg:#14151a; --danger:#ff6b6b; --ok:#5fd49a;
+  --warn:#f3b454; --accent-fg:#14151a;
+  --m-hit:44px; --m-topbar-h:52px; --m-rail-h:56px; --m-scrim:rgba(0,0,0,.45);
+}
+body.light {
+  --bg:#fff; --bg-panel:#f6f7f9; --bg-elev:#eceef2; --fg:#1f2330;
+  --fg-muted:#5d6470; --accent:#2f5fd0; --accent-soft:rgba(47,95,208,.12);
+  --border:#d8dde4; --code-bg:#f0f2f5; --danger:#c0392b; --ok:#16703f;
+  --warn:#8a5a0b; --accent-fg:#fff;
+}
+* { box-sizing:border-box; }
+body { margin:0; padding:28px; background:#101116; color:#c9ccd6;
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+body.light { background:#e9ecf1; color:#3a4050; }
+h1 { font-size:16px; margin:0 0 4px; color:#fff; }
+body.light h1 { color:#1f2330; }
+.lead { margin:0 0 18px; color:#8b8d98; max-width:760px; }
+.toolbar { display:flex; align-items:center; gap:12px; margin:0 0 14px; flex-wrap:wrap; }
+.caption { color:#8b8d98; font-size:12px; }
+.seg { display:inline-flex; border:1px solid #383a45; border-radius:8px; overflow:hidden; }
+.seg button { min-height:36px; padding:0 13px; background:#1a1b1f; color:#c9ccd6;
+  border:0; border-right:1px solid #383a45; font:inherit; font-size:13px; cursor:pointer; }
+.seg button:last-child { border-right:0; }
+.seg button.on { background:#2f5fd0; color:#fff; }
+.seg button:focus-visible,.ghost:focus-visible { outline:2px solid #7c9cff; outline-offset:2px; }
+.ghost { background:none; border:1px solid #383a45; color:#c9ccd6; border-radius:8px;
+  padding:7px 12px; font:inherit; cursor:pointer; }
+
+/* ---------------- phone frame (presentation only) ---------------- */
+.phone { width:390px; height:820px; border-radius:44px; background:#000;
+  box-shadow:0 24px 70px rgba(0,0,0,.55); position:relative; }
+.screen { position:absolute; inset:0; border-radius:44px; overflow:hidden;
+  background:var(--bg); color:var(--fg); display:flex; flex-direction:column; }
+.statusbar { flex:0 0 44px; display:flex; align-items:flex-end; justify-content:space-between;
+  padding:0 22px 6px; font-size:13px; font-weight:600; color:var(--fg);
+  position:relative; z-index:500; }
+.statusbar .glyphs { letter-spacing:2px; font-size:11px; color:var(--fg-muted); }
+.home-ind { flex:0 0 34px; display:flex; align-items:center; justify-content:center; background:var(--bg-panel); }
+.home-ind i { width:134px; height:5px; border-radius:3px; background:var(--fg); opacity:.5; }
+
+/* ---------------- top bar ---------------- */
+.topbar { flex:0 0 var(--m-topbar-h); display:flex; align-items:center; gap:4px;
+  padding:0 4px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+  position:relative; z-index:100; }
+.icon { width:var(--m-hit); height:var(--m-hit); flex:0 0 var(--m-hit);
+  display:flex; align-items:center; justify-content:center; background:none; border:0;
+  border-radius:8px; color:var(--fg); font-size:20px; line-height:1; cursor:pointer; }
+.icon:active { background:var(--accent-soft); }
+.icon[disabled] { color:var(--fg-muted); opacity:.4; }
+.title { flex:1 1 auto; min-width:0; height:var(--m-hit); padding:0 4px; background:none;
+  border:0; border-radius:8px; color:var(--fg); font:600 16px/1.25 inherit; text-align:left;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.title:active { background:var(--accent-soft); }
+
+/* ---------------- stage / reader ---------------- */
+.stage { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; }
+.view { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
+.view[hidden] { display:none; }
+.reader { max-width:680px; margin:0 auto; padding:16px 20px calc(var(--m-rail-h) + 24px);
+  font-size:16px; line-height:1.65; }
+.meta { font-size:13px; color:var(--fg-muted); margin:0 0 6px; }
+.reader h1 { font-size:1.7em; line-height:1.2; margin:0 0 .45em; padding-bottom:.2em;
+  border-bottom:1px solid var(--border); }
+.reader h2 { font-size:1.4em; line-height:1.25; margin:1.4em 0 .4em; }
+.reader p { margin:.85em 0; }
+.reader a { color:var(--accent); text-underline-offset:2px; }
+.reader table { border-collapse:collapse; display:block; max-width:100%; overflow-x:auto;
+  overscroll-behavior-x:contain; margin:.7em 0; }
+.reader th,.reader td { border:1px solid var(--border); padding:8px 10px; white-space:nowrap; font-size:14px; }
+.reader th { background:var(--bg-panel); text-align:left; }
+.reader pre { background:var(--code-bg); border:1px solid var(--border); border-radius:8px;
+  padding:12px 14px; margin:.7em 0; overflow-x:auto; overscroll-behavior-x:contain;
+  font:13px/1.55 "SFMono-Regular",Menlo,Consolas,monospace; white-space:pre; }
+.diagram { background:var(--bg-panel); border:1px solid var(--border); border-radius:8px;
+  padding:12px; margin:.7em 0; overflow-x:auto; overscroll-behavior-x:contain; }
+.diagram svg { display:block; }
+.note { font-size:13px; color:var(--fg-muted); }
+
+/* ---------------- bottom rail ---------------- */
+.rail { flex:0 0 var(--m-rail-h); display:flex; align-items:stretch;
+  background:var(--bg-panel); border-top:1px solid var(--border); position:relative; z-index:150; }
+.rail button { flex:1 1 0; min-width:var(--m-hit); min-height:var(--m-hit);
+  display:flex; align-items:center; justify-content:center; background:none; border:0;
+  color:var(--fg-muted); font-size:22px; cursor:pointer; position:relative; }
+.rail button:active { background:var(--accent-soft); }
+.rail button.active { color:var(--fg); background:var(--accent-soft); }
+.rail button.active::before { content:""; position:absolute; top:0; left:24%; right:24%;
+  height:2px; border-radius:1px; background:var(--accent); }
+
+/* ---------------- scrim, drawer ---------------- */
+.scrim { position:absolute; inset:0; background:var(--m-scrim); z-index:400;
+  opacity:0; visibility:hidden; transition:opacity .16s ease,visibility 0s linear .16s; }
+.screen.drawer-open .scrim,.screen.sheet-open .scrim { opacity:1; visibility:visible;
+  transition:opacity .16s ease; }
+.drawer { position:absolute; top:0; bottom:0; left:0; width:min(86%,340px); z-index:410;
+  background:var(--bg-panel); border-right:1px solid var(--border);
+  box-shadow:0 12px 40px rgba(0,0,0,.45); padding-top:44px; padding-bottom:34px;
+  display:flex; flex-direction:column; transform:translateX(-100%); visibility:hidden;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s linear .22s; }
+.screen.drawer-open .drawer { transform:none; visibility:visible;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1); }
+.drawer-head { flex:0 0 52px; display:flex; align-items:center; gap:4px;
+  padding:0 4px 0 16px; border-bottom:1px solid var(--border); }
+.drawer-head .label { flex:1; font-size:12px; font-weight:600; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--fg-muted); }
+.drawer-body { flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch; padding:6px 4px; }
+.drawer-foot { flex:0 0 44px; display:flex; align-items:center; gap:8px; padding:0 14px;
+  border-top:1px solid var(--border); font-size:12px; color:var(--fg-muted); }
+.dot { width:8px; height:8px; border-radius:50%; flex:0 0 8px; background:var(--ok); }
+.row { min-height:var(--m-hit); display:flex; align-items:center; gap:6px; padding:0 0 0 4px;
+  border-radius:8px; color:var(--fg); cursor:pointer; font-size:15px; white-space:nowrap; }
+.row:active { background:var(--accent-soft); }
+.row.selected { background:var(--accent-soft); box-shadow:inset 3px 0 0 var(--accent); }
+.row .chev { width:20px; flex:0 0 20px; text-align:center; color:var(--fg-muted); font-size:11px; }
+.row .ficon { width:18px; flex:0 0 18px; text-align:center; font-size:14px; }
+.row .name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.row.child { padding-left:30px; }
+.row-more { width:var(--m-hit); height:var(--m-hit); flex:0 0 var(--m-hit);
+  display:flex; align-items:center; justify-content:center; background:none; border:0;
+  border-radius:8px; color:var(--fg-muted); font-size:18px; cursor:pointer; }
+.row-more:active { background:var(--bg-elev); color:var(--fg); }
+
+/* ---------------- menu ---------------- */
+.menu { position:absolute; top:100px; right:8px; width:196px; z-index:1000;
+  background:var(--bg-elev); border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 6px 24px rgba(0,0,0,.45); padding:4px; }
+.menu[hidden] { display:none; }
+.menu button { display:flex; width:100%; min-height:48px; align-items:center; padding:0 14px;
+  background:none; border:0; border-radius:8px; color:var(--fg); font:15px/1.2 inherit;
+  text-align:left; cursor:pointer; }
+.menu button:active { background:var(--accent-soft); }
+
+/* ---------------- capture sheet ---------------- */
+.sheet { position:absolute; left:0; right:0; bottom:0; z-index:600;
+  max-height:min(72dvh,560px); display:flex; flex-direction:column;
+  background:var(--bg-panel); border-top:1px solid var(--border);
+  border-radius:16px 16px 0 0; padding-bottom:46px;
+  transform:translateY(102%); visibility:hidden;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s linear .22s; }
+.screen.sheet-open .sheet { transform:none; visibility:visible;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1); }
+.grabber { width:36px; height:4px; border-radius:2px; background:var(--border); margin:8px auto 4px; }
+.sheet-head { flex:0 0 52px; display:flex; align-items:center; padding:0 6px 0 16px; }
+.sheet-head h2 { flex:1; margin:0; font-size:16px; font-weight:600; }
+.sheet textarea { margin:0 16px; padding:12px; min-height:96px; max-height:40dvh;
+  background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:10px;
+  font:16px/1.45 inherit; resize:none; outline:none; }
+.sheet textarea:focus { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+.sheet-status { min-height:20px; padding:4px 18px 0; font-size:13px; color:var(--fg-muted); }
+.sheet-foot { padding:8px 16px 0; }
+.send { width:100%; min-height:var(--m-hit); border:1px solid var(--accent);
+  border-radius:10px; background:var(--accent); color:var(--accent-fg);
+  font:600 15px/1 inherit; cursor:pointer; }
+.send[disabled] { opacity:.5; cursor:default; }
+
+/* ---------------- unreachable ---------------- */
+.down { display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:10px; padding:32px 28px; text-align:center; }
+.down .glyph { font-size:40px; }
+.down h2 { margin:0; font-size:20px; }
+.down p { margin:0; color:var(--fg-muted); font-size:14px; max-width:300px; }
+.down code { font:13px "SFMono-Regular",Menlo,monospace; color:var(--fg);
+  background:var(--code-bg); padding:3px 6px; border-radius:6px; }
+.primary { min-height:var(--m-hit); padding:0 22px; border:1px solid var(--accent);
+  border-radius:10px; background:var(--accent); color:var(--accent-fg);
+  font:600 15px inherit; cursor:pointer; }
+
+/* ---------------- toast ---------------- */
+.toast { position:absolute; left:16px; right:16px; bottom:calc(var(--m-rail-h) + 34px + 12px);
+  z-index:3000; min-height:44px; display:flex; align-items:center; padding:10px 14px;
+  border-radius:10px; background:var(--bg-elev); border:1px solid var(--border);
+  color:var(--fg); font-size:14px; opacity:0; visibility:hidden;
+  transition:opacity .15s ease; }
+.toast.show { opacity:1; visibility:visible; }
+.screen[data-screen="down"] .rail { display:none; }
+@media (prefers-reduced-motion:reduce) { .scrim,.drawer,.sheet,.toast { transition:none; } }
+</style>
+</head>
+<body>
+<h1>Mobile shell — reference mockup</h1>
+<p class="lead">
+  iPhone-first reading shell. The note is the page; drawer, menu, capture and
+  failure state are layers over it. All colours and sizes are the app's tokens;
+  the block above is what <code>web-engineer</code> ports into
+  <code>style.css</code> under the phone media query.
+</p>
+
+<div class="toolbar">
+  <div class="seg" role="group" aria-label="Mockup screen">
+    <button data-screen="read" class="on">Read</button>
+    <button data-screen="drawer">Drawer</button>
+    <button data-screen="capture">Capture</button>
+    <button data-screen="down">Unreachable</button>
+  </div>
+  <button class="ghost" id="theme">Light</button>
+  <span class="caption">390 × 820 · dark default · tap <b>…</b></span>
+</div>
+
+<div class="phone">
+  <div class="screen" id="screen" data-screen="read">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ ▰</span></div>
+
+    <header class="topbar">
+      <button class="icon" aria-label="Back">←</button>
+      <button class="title" id="title" aria-label="Browse notes">Reading on a phone</button>
+      <button class="icon" id="capture-btn" aria-label="Quick capture">＋</button>
+      <button class="icon" id="more" aria-label="Note menu" aria-haspopup="menu" aria-expanded="false">⋯</button>
+    </header>
+
+    <main class="stage">
+      <div class="view view-read">
+        <article class="reader">
+          <p class="meta">Notes · 4 min read</p>
+          <h1>Reading on a phone</h1>
+          <p>One column, 20&nbsp;px gutters, a 680&nbsp;px cap. The page never
+            scrolls sideways; only a code line, a table, or a diagram scrolls
+            inside its own block. <a href="#">An internal link</a> opens in place.</p>
+
+          <h2>A wide table</h2>
+          <p>Six columns overflow the column and scroll inside the table box.</p>
+          <table>
+            <thead><tr><th>Note</th><th>Updated</th><th>Words</th><th>Links</th><th>Folder</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>Welcome.md</td><td>2026-10-18</td><td>214</td><td>6</td><td>root</td><td>read</td></tr>
+              <tr><td>Mobile shell.md</td><td>2026-10-18</td><td>1,840</td><td>22</td><td>notes/mobile</td><td>draft</td></tr>
+              <tr><td>Inbox.md</td><td>2026-10-17</td><td>96</td><td>1</td><td>root</td><td>capture</td></tr>
+            </tbody>
+          </table>
+
+          <h2>A long code line</h2>
+          <pre><code>const mode = getComputedStyle(document.documentElement).getPropertyValue("--ui-mode").trim();</code></pre>
+          <p class="note">The line scrolls inside the block; alignment is preserved.</p>
+
+          <h2>Diagram</h2>
+          <div class="diagram">
+            <svg width="560" height="170" viewBox="0 0 560 170" role="img" aria-label="Diagram placeholder">
+              <g font-family="-apple-system,Segoe UI,sans-serif" font-size="13">
+                <rect x="8" y="55" width="120" height="52" rx="8" fill="none" stroke="currentColor" opacity=".55"/>
+                <text x="68" y="86" text-anchor="middle" fill="currentColor">Top bar</text>
+                <rect x="200" y="20" width="150" height="52" rx="8" fill="none" stroke="currentColor" opacity=".55"/>
+                <text x="275" y="51" text-anchor="middle" fill="currentColor">Reader column</text>
+                <rect x="200" y="100" width="150" height="52" rx="8" fill="none" stroke="currentColor" opacity=".55"/>
+                <text x="275" y="131" text-anchor="middle" fill="currentColor">Drawer layer</text>
+                <rect x="420" y="55" width="130" height="52" rx="8" fill="none" stroke="currentColor" opacity=".55"/>
+                <text x="485" y="86" text-anchor="middle" fill="currentColor">Bottom rail</text>
+                <path d="M128 81h62M350 46l70 22M350 116l70-22" stroke="currentColor" stroke-width="1.5" opacity=".55" fill="none"/>
+              </g>
+            </svg>
+          </div>
+          <p class="note">Over-wide diagrams scroll inside the block. Tap-to-zoom is not offered in v1.</p>
+        </article>
+      </div>
+
+      <div class="view view-down down" hidden>
+        <div class="glyph" aria-hidden="true">⚠</div>
+        <h2>Can't reach the server</h2>
+        <p><code>http://192.168.1.20:5000</code></p>
+        <p>Nothing is cached on this phone. Retry re-issues the request and restores the note you were reading.</p>
+        <button class="primary" id="retry">Retry</button>
+      </div>
+    </main>
+
+    <nav class="rail" aria-label="Activity bar">
+      <button class="active" aria-label="Files" aria-pressed="true">🗂</button>
+      <button aria-label="Bookmarks">🔖</button>
+      <button aria-label="Recent">🕘</button>
+      <button aria-label="Search">🔍</button>
+    </nav>
+
+    <div class="home-ind"><i></i></div>
+
+    <div class="scrim" id="scrim"></div>
+    <aside class="drawer" aria-label="Browse notes">
+      <div class="drawer-head">
+        <span class="label">Files</span>
+        <button class="icon" id="drawer-close" aria-label="Close files">×</button>
+      </div>
+      <div class="drawer-body">
+        <div class="row"><span class="chev">▾</span><span class="ficon">📁</span><span class="name">Notes</span><button class="row-more" aria-label="Notes actions">⋯</button></div>
+        <div class="row child selected"><span class="ficon">📄</span><span class="name">Welcome.md</span><button class="row-more" aria-label="Welcome.md actions">⋯</button></div>
+        <div class="row child"><span class="ficon">📄</span><span class="name">Mobile shell.md</span><button class="row-more" aria-label="Mobile shell.md actions">⋯</button></div>
+        <div class="row"><span class="chev">▸</span><span class="ficon">📁</span><span class="name">Projects</span><button class="row-more" aria-label="Projects actions">⋯</button></div>
+        <div class="row"><span class="ficon">📄</span><span class="name">Inbox.md</span><button class="row-more" aria-label="Inbox.md actions">⋯</button></div>
+      </div>
+      <div class="drawer-foot"><span class="dot"></span><span>192.168.1.20:5000 · Online</span></div>
+    </aside>
+
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <h2 id="sheet-title">Quick capture</h2>
+        <button class="icon" id="sheet-close" aria-label="Close capture">×</button>
+      </div>
+      <textarea id="capture-input" rows="4" placeholder="Jot something down…"></textarea>
+      <div class="sheet-status" id="sheet-status"></div>
+      <div class="sheet-foot"><button class="send" id="send" disabled>Send</button></div>
+    </section>
+
+    <div class="menu" id="menu" role="menu" hidden>
+      <button role="menuitem">Reload</button>
+      <button role="menuitem">Copy link</button>
+      <button role="menuitem">Show in Browse</button>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var screen = document.getElementById("screen");
+  var menu = document.getElementById("menu");
+  var more = document.getElementById("more");
+  var input = document.getElementById("capture-input");
+  var send = document.getElementById("send");
+  var status = document.getElementById("sheet-status");
+  var toastEl = document.getElementById("toast");
+  var toastTimer = 0, sending = false;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.remove("show"); }, 2400);
+  }
+  function closeMenu() {
+    menu.hidden = true;
+    more.setAttribute("aria-expanded", "false");
+  }
+  function setScreen(name) {
+    screen.dataset.screen = name;
+    screen.classList.toggle("drawer-open", name === "drawer");
+    screen.classList.toggle("sheet-open", name === "capture");
+    document.querySelectorAll(".seg button").forEach(function (b) {
+      b.classList.toggle("on", b.dataset.screen === name);
+    });
+    document.querySelector(".view-read").hidden = name === "down";
+    document.querySelector(".view-down").hidden = name !== "down";
+    closeMenu();
+    if (name !== "capture") {
+      status.textContent = "";
+      send.textContent = "Send";
+      send.disabled = !input.value.trim();
+    } else {
+      setTimeout(function () { input.focus(); }, 80);
+    }
+  }
+  function updateSend() {
+    if (sending) return;
+    send.disabled = !input.value.trim();
+    status.textContent = "";
+  }
+
+  document.querySelectorAll(".seg button").forEach(function (b) {
+    b.addEventListener("click", function () { setScreen(b.dataset.screen); });
+  });
+  document.getElementById("theme").addEventListener("click", function (e) {
+    document.body.classList.toggle("light");
+    e.currentTarget.textContent = document.body.classList.contains("light") ? "Dark" : "Light";
+  });
+
+  more.addEventListener("click", function (e) {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    more.setAttribute("aria-expanded", String(!menu.hidden));
+  });
+  menu.querySelectorAll("button").forEach(function (b) {
+    b.addEventListener("click", function () { toast(b.textContent + " — v1 read action"); closeMenu(); });
+  });
+  document.addEventListener("click", function (e) {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== more) closeMenu();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    closeMenu();
+    if (screen.dataset.screen !== "read") setScreen("read");
+  });
+
+  document.getElementById("drawer-close").addEventListener("click", function () { setScreen("read"); });
+  document.getElementById("scrim").addEventListener("click", function () { setScreen("read"); });
+  document.querySelectorAll(".drawer-body .row").forEach(function (r) {
+    r.addEventListener("click", function (e) {
+      if (e.target.closest(".row-more")) { toast("Open · Copy link · Copy path"); return; }
+      var name = r.querySelector(".name").textContent;
+      setScreen("read");
+      toast("Opened " + name);
+    });
+  });
+
+  document.getElementById("capture-btn").addEventListener("click", function () { setScreen("capture"); });
+  document.getElementById("title").addEventListener("click", function () { setScreen("drawer"); });
+  document.getElementById("sheet-close").addEventListener("click", function () { setScreen("read"); });
+  document.getElementById("retry").addEventListener("click", function () {
+    setScreen("read");
+    toast("Retrying…");
+  });
+
+  input.addEventListener("input", updateSend);
+  send.addEventListener("click", function () {
+    if (sending || !input.value.trim()) return;
+    sending = true;
+    send.disabled = true;
+    send.textContent = "Sending…";
+    status.textContent = "One block will be appended to Inbox.md.";
+    setTimeout(function () {
+      sending = false;
+      input.value = "";
+      send.textContent = "Send";
+      send.disabled = true;
+      status.textContent = "";
+      setScreen("read");
+      toast("Saved to Inbox.md");
+    }, 900);
+  });
+})();
+</script>
+</body>
+</html>

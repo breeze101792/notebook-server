@@ -477,6 +477,49 @@ class TestSpaCatchAll(BaseTest):
         self.assertTrue(r.is_json)
 
 
+class TestWebAppManifest(BaseTest):
+    # iOS builds a Home Screen web clip from the apple-touch-icon link and
+    # also probes the two root paths directly. Both must answer with a PNG;
+    # the SPA catch-all used to answer with HTML and iOS cached that.
+
+    PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+    def test_apple_touch_icon_route_serves_png(self):
+        for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+            r = self.client.get(path)
+            self.assertEqual(r.status_code, 200, path)
+            self.assertEqual(r.mimetype, "image/png", path)
+            self.assertTrue(r.get_data().startswith(self.PNG_MAGIC), path)
+            r.close()
+
+    def test_v2_icons_are_served(self):
+        for name in ("apple-touch-icon-v2.png", "icon-192-v2.png",
+                     "icon-512-v2.png", "icon-1024-v2.png"):
+            r = self.client.get("/static/icons/" + name)
+            self.assertEqual(r.status_code, 200, name)
+            self.assertEqual(r.mimetype, "image/png", name)
+            self.assertTrue(r.get_data().startswith(self.PNG_MAGIC), name)
+            r.close()
+
+    def test_index_links_the_v2_icon_and_theme_colour(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('rel="apple-touch-icon"', body)
+        self.assertIn("/static/icons/apple-touch-icon-v2.png", body)
+        self.assertIn('name="theme-color"', body)
+
+    def test_manifest_declares_the_v2_icons(self):
+        r = self.client.get("/static/manifest.json")
+        self.assertEqual(r.status_code, 200)
+        m = json.loads(r.get_data(as_text=True))
+        self.assertEqual(m["start_url"], "/")
+        self.assertEqual(m["scope"], "/")
+        self.assertEqual(m["display"], "standalone")
+        sizes = {i["sizes"] for i in m["icons"]}
+        self.assertIn("192x192", sizes)
+        self.assertIn("512x512", sizes)
+        self.assertTrue(all(i["src"].endswith("-v2.png") for i in m["icons"]))
+
+
 class TestFileRead(BaseTest):
     def test_read_existing(self):
         code, data = self.jget("/api/file?path=Welcome.md")

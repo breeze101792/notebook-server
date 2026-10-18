@@ -2,11 +2,12 @@
 <html lang="en" style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="{{ boot.site_title }}">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#22232a">
   <title>{{ boot.site_title }}</title>
   <!-- First-paint boot state. The values above come from the saved config
        (see boot_state() in app.py) and are applied as an inline style on
@@ -23,8 +24,11 @@
        <body>, where document.body exists. -->
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
-  <link rel="apple-touch-icon-precomposed" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192-v2.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-v2.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-v2.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-v2.png">
+  <link rel="apple-touch-icon-precomposed" href="/static/icons/apple-touch-icon-v2.png">
   <link rel="stylesheet" href="/static/css/style.css">
   <link rel="stylesheet" href="/static/css/vimnav.css">
   <!-- KaTeX stylesheet + its woff2 fonts (vendored, works offline). The
@@ -95,6 +99,9 @@
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
         <button id="back-btn" class="icon-btn" title="Back" aria-label="Back" disabled>←</button>
+        <button id="mobile-title" class="mobile-title" type="button" aria-label="Browse notes"></button>
+        <button id="mobile-capture" class="icon-btn mobile-icon" type="button" title="Quick capture" aria-label="Quick capture" aria-haspopup="dialog" hidden>＋</button>
+        <button id="mobile-more" class="icon-btn mobile-icon" type="button" title="Note menu" aria-label="Note menu" aria-haspopup="menu" aria-expanded="false">⋯</button>
         <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode (edit rendered markdown directly)" aria-label="WYSIWYG edit mode" hidden>✎</button>
         <button id="edit-toggle" class="icon-btn" title="Edit Markdown source (Ctrl/Cmd+E)" aria-label="Edit Markdown source">📝</button>
       </div>
@@ -296,6 +303,9 @@
               </ul>
             </div>
           </div>
+          <!-- Phone Home: the no-note / first-run landing. Built by
+               mobile.js; hidden on desktop (and while a note is open). -->
+          <div id="mobile-home" class="mobile-home" hidden></div>
           <!-- Graph view: a force-directed graph of how notes link to each
                other (Obsidian-style "graph view"). Opened as a special tab
                (§graph) by the 🕸 button in the activity bar. Lives as a
@@ -1091,7 +1101,31 @@
         <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
       </div>
     </div>
+
   </div>
+
+    <!-- Phone layers. All hidden on desktop; mobile.js owns their state. -->
+    <div id="mobile-scrim" hidden></div>
+
+    <section id="capture-sheet" class="nb-capture-sheet" role="dialog"
+             aria-modal="true" aria-labelledby="capture-title" hidden>
+      <div class="capture-grabber" aria-hidden="true"></div>
+      <div class="capture-head">
+        <h2 id="capture-title">Quick capture</h2>
+        <button id="capture-close" class="mobile-sheet-close" type="button"
+                aria-label="Close capture">×</button>
+      </div>
+      <textarea id="capture-input" rows="4" placeholder="Jot something down…"></textarea>
+      <div id="capture-status" class="capture-status" role="status" aria-live="polite"></div>
+      <div class="capture-foot">
+        <button id="capture-send" type="button" disabled>Send</button>
+      </div>
+    </section>
+
+    <section id="mobile-settings" class="nb-settings-sheet" role="dialog"
+             aria-modal="true" aria-labelledby="mobile-settings-title" hidden></section>
+
+    <div id="mobile-state" hidden></div>
 
   <!-- Mermaid lightbox overlay: borderless full-screen backdrop with zoom
        controls. The SVG is cloned into #mermaid-lightbox-body on click;
@@ -1187,6 +1221,7 @@
   <script src="/static/js/activity.js" defer></script>
   <script src="/static/js/bookmarks.js" defer></script>
   <script src="/static/js/shortcuts.js" defer></script>
+  <script src="/static/js/mobile.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {
