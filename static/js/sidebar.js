@@ -16,6 +16,7 @@
   const DIR_ICON = "folder";
   const DIR_ICON_OPEN = "folder-open";
   const FILE_ICON = "file";
+  const PIN_ICON = "pin";
   const STAR_ON = "★";
   const STAR_OFF = "☆";
   // Well-known note names get a distinct icon. Keyed by the basename stem
@@ -35,9 +36,24 @@
   };
 
   const collapsed = new Set();      // collapsed dir paths (relative)
+  // Pinned folders: an ordered list of folder paths pinned to the top of
+  // the Explorer view. Each pin expands in place to show its subtree,
+  // independently of the main tree (pinExpanded is a separate set). Source
+  // of truth on disk is config.json (pinnedFolders); this is the in-memory
+  // view.
+  let pinnedFolders = [];
+  // Folder paths expanded inside the Pinned section. Deliberately NOT the
+  // main tree's `collapsed` set -- the Pinned area's expand state is its
+  // own concern and must never affect the tree.
+  const pinExpanded = new Set();
+  // The pin row being dragged (only one at a time). Module scope so the
+  // list-level dragover handler sees it without a closure.
+  let draggingPin = null;
   // Top-header manual reload button. A user-driven refresh bypasses the
   // watcher's cheap JSON compare so the button always re-fetches.
   const refreshBtn = document.getElementById("sidebar-refresh");
+  // The Pinned section host, above the tree. Built by renderPins().
+  const pinsEl = document.getElementById("pinned-folders");
   let selectedPath = null;
   let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
 
@@ -61,15 +77,11 @@
    * branching below) plus one last cell with the row's own corner
    * ("├──" branch / "└── end). The verticals are CSS-drawn 1px lines
    * that overlap rows' padding, so consecutive rows read as one
-   * unbroken stroke (text glyphs like │ leave a gap between rows).
+   * unbroken stroke (text glyphs like │ leave a gap between them).
    * ancestors[] holds one boolean per ancestor level, set true when the
-   * pipe must continue past this row. */
-  function renderNode(node, isLast, ancestors, isRoot) {
-    const wrap = document.createElement("div");
-    const row = document.createElement("div");
-    row.className = "tree-row";
-    row.dataset.path = node.path;
-    row.draggable = true;
+   * pipe must continue past this row. Shared by the main tree and the
+   * Pinned section so both read identically. */
+  function renderGuide(ancestors, isLast, isRoot) {
     const guide = document.createElement("span");
     guide.className = "tree-guide";
     for (const pipe of ancestors) {
@@ -83,7 +95,16 @@
       corner.className = "tcell" + (isLast ? " cnr-last" : " cnr");
       guide.appendChild(corner);
     }
-    row.appendChild(guide);
+    return guide;
+  }
+
+  function renderNode(node, isLast, ancestors, isRoot) {
+    const wrap = document.createElement("div");
+    const row = document.createElement("div");
+    row.className = "tree-row";
+    row.dataset.path = node.path;
+    row.draggable = true;
+    row.appendChild(renderGuide(ancestors, isLast, isRoot));
     if (node.type === "dir") {
       const isCollapsed = collapsed.has(node.path);
       if (isCollapsed) row.classList.add("collapsed");
@@ -91,7 +112,22 @@
       const name = document.createElement("span");
       name.className = "tree-name";
       name.textContent = node.name;
-      row.append(icon, name);
+      // Inline pin toggle, mirroring the file row's ⭐. Hidden by default
+      // (CSS); shown on row hover, always shown (lit) when the folder is
+      // pinned. Click toggles the pin and stops propagation so the row's
+      // own expand/collapse click doesn't also fire.
+      const isPinned = hasPin(node.path);
+      const pin = document.createElement("span");
+      pin.className = "tree-pin" + (isPinned ? " is-pinned" : "");
+      pin.title = isPinned ? "Unpin folder" : "Pin folder";
+      pin.appendChild(iconEl(PIN_ICON));
+      pin.addEventListener("click", (e) => {
+        e.stopPropagation();
+        togglePin(node.path);
+      });
+      pin.addEventListener("mousedown", (e) => e.stopPropagation());
+      pin.addEventListener("dragstart", (e) => e.preventDefault());
+      row.append(icon, name, pin);
       row.addEventListener("click", () => toggleDir(node));
       row.addEventListener("contextmenu", (e) => {
         e.preventDefault(); openMenu(e, node);
@@ -212,6 +248,20 @@
     star.classList.toggle("is-bookmarked", isOn);
   }
 
+  /* Keep a single folder row's pin indicator in sync without a full
+   * re-render (mirrors updateTreeStar). The pin span's state is the
+   * .is-pinned class plus its title -- no text swap is needed. */
+  function updateTreePin(path) {
+    const row = document.querySelector(
+      '.tree-row[data-path="' + cssEscape(path) + '"]');
+    if (!row) return;
+    const pin = row.querySelector(".tree-pin");
+    if (!pin) return;
+    const isOn = hasPin(path);
+    pin.title = isOn ? "Unpin folder" : "Pin folder";
+    pin.classList.toggle("is-pinned", isOn);
+  }
+
   function setSelected(path) {
     selectedPath = path;
     document.querySelectorAll(".tree-row.selected")
@@ -219,6 +269,318 @@
     const row = document.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
+  }
+
+  /* --- pinned folders ------------------------------------------------- */
+  /* The Pinned section sits above the tree inside the Explorer view. A
+   * pinned folder is a folder path; clicking its row expands it in place
+   * to show its subtree (and collapses it again), independently of the
+   * main tree. State is persisted as cfg.pinnedFolders (see app.js). */
+  function setPinnedFolders(list) {
+    pinnedFolders = Array.isArray(list) ? list.slice() : [];
+    renderPins();
+  }
+
+  function getPinnedFolders() { return pinnedFolders.slice(); }
+
+  function hasPin(path) { return pinnedFolders.includes(path); }
+
+  /* Drop any pinExpanded entry that is no longer a pinned folder or a
+   * descendant of one (a removed pin, or a folder moved away). */
+  function prunePinExpanded() {
+    for (const p of [...pinExpanded]) {
+      if (!pinnedFolders.some(pin => p === pin || p.startsWith(pin + "/"))) {
+        pinExpanded.delete(p);
+      }
+    }
+  }
+
+  /* Add or remove a folder pin. The mutation -- render pins + persist --
+   * stays in one place so the tree's inline pin, the context menu, the
+   * pin-row menu, and prune are all consistent. The main tree is updated
+   * in place (updateTreePin), never re-rendered. */
+  function togglePin(path) {
+    if (!path) return;
+    const i = pinnedFolders.indexOf(path);
+    if (i >= 0) {
+      pinnedFolders.splice(i, 1);
+      pinExpanded.delete(path);
+    } else {
+      pinnedFolders.push(path);
+    }
+    prunePinExpanded();
+    renderPins();
+    updateTreePin(path);
+    persistPins();
+  }
+
+  function persistPins() {
+    if (NB.app && NB.app.setPinnedFolders) NB.app.setPinnedFolders(getPinnedFolders());
+  }
+
+  /* Rebuild the Pinned section from scratch. Hidden entirely when there
+   * are no pins; otherwise a header row ("Pinned") followed by one
+   * expandable row per pin, each showing its subtree when expanded. */
+  function renderPins() {
+    if (!pinsEl) return;
+    pinsEl.innerHTML = "";
+    if (!pinnedFolders.length) {
+      pinsEl.hidden = true;
+      return;
+    }
+    pinsEl.hidden = false;
+    const header = document.createElement("div");
+    header.className = "pinned-header";
+    const title = document.createElement("span");
+    title.className = "pinned-title";
+    title.textContent = "Pinned";
+    header.appendChild(title);
+    pinsEl.appendChild(header);
+    for (const path of pinnedFolders) {
+      pinsEl.appendChild(renderPinRow(path));
+      if (pinExpanded.has(path)) {
+        const node = findNode(treeCache, path);
+        // A pin whose folder vanished simply renders no children until the
+        // next prune removes it.
+        if (node && node.children) {
+          node.children.forEach((child, i) => {
+            for (const el of renderPinChild(child, i === node.children.length - 1, [])) {
+              pinsEl.appendChild(el);
+            }
+          });
+        }
+      }
+    }
+  }
+
+  /* A pinned root row, drawn exactly like a tree root row: flat (no guide
+   * cells), folder icon flipping open/closed with expansion, name. The lit
+   * pin at the right matches a pinned folder's tree row and unpins on click. */
+  function renderPinRow(path) {
+    const row = document.createElement("div");
+    row.className = "pin-row";
+    row.dataset.path = path;
+    row.draggable = true;
+    row.appendChild(renderGuide([], true, true));
+    const icon = iconEl(pinExpanded.has(path) ? DIR_ICON_OPEN : DIR_ICON);
+    const name = document.createElement("span");
+    name.className = "tree-name";
+    // Show just the base name; the full path is recoverable from data-path.
+    name.textContent = baseName(path);
+    name.title = path;
+    const pin = document.createElement("span");
+    pin.className = "tree-pin is-pinned";
+    pin.title = "Unpin folder";
+    pin.appendChild(iconEl(PIN_ICON));
+    pin.addEventListener("click", (e) => {
+      e.stopPropagation();
+      togglePin(path);
+    });
+    pin.addEventListener("mousedown", (e) => e.stopPropagation());
+    pin.addEventListener("dragstart", (e) => e.preventDefault());
+    row.append(icon, name, pin);
+    row.addEventListener("click", () => togglePinExpand(path));
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openPinMenu(e, path);
+    });
+    return row;
+  }
+
+  /* Toggle one folder's expansion inside the Pinned section. Only the
+   * pins area re-renders -- the main tree is never touched. */
+  function togglePinExpand(path) {
+    if (pinExpanded.has(path)) pinExpanded.delete(path);
+    else pinExpanded.add(path);
+    renderPins();
+  }
+
+  /* Fold every expanded pin back to a single row. Backs the Pinned area's
+   * "Collapse all pinned folders" menu item; only the pins area re-renders. */
+  function collapseAllPins() {
+    if (!pinExpanded.size) return;
+    pinExpanded.clear();
+    renderPins();
+  }
+
+  /* A descendant row inside an expanded pin, drawn exactly like a tree row
+   * (guide cells + icon + name). Returns the row plus any expanded
+   * descendants so the caller can append them linearly. Uses .pin-child
+   * (never .pin-row / .tree-row) so the pin-reorder drag handlers, the
+   * main-tree drag handlers, and the vim cursor ignore it. */
+  function renderPinChild(node, isLast, ancestors) {
+    const row = document.createElement("div");
+    row.className = "pin-child";
+    row.dataset.path = node.path;
+    row.appendChild(renderGuide(ancestors, isLast, false));
+    if (node.type === "dir") {
+      const expanded = pinExpanded.has(node.path);
+      const icon = iconEl(expanded ? DIR_ICON_OPEN : DIR_ICON);
+      const name = document.createElement("span");
+      name.className = "tree-name";
+      name.textContent = node.name;
+      name.title = node.path;
+      row.append(icon, name);
+      row.addEventListener("click", () => togglePinExpand(node.path));
+    } else {
+      const icon = iconEl(fileIconId(node.name));
+      const name = document.createElement("span");
+      name.className = "tree-name";
+      name.textContent = node.name;
+      name.title = node.path;
+      row.append(icon, name);
+      if (node.path === selectedPath) row.classList.add("selected");
+      row.addEventListener("click", () => openFile(node.path));
+    }
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      openMenu(e, node);
+    });
+    if (node.type === "dir" && pinExpanded.has(node.path) && node.children) {
+      const out = [row];
+      const childAncestors = ancestors.concat(!isLast);
+      node.children.forEach((child, i) => {
+        for (const el of renderPinChild(child, i === node.children.length - 1, childAncestors)) {
+          out.push(el);
+        }
+      });
+      return out;
+    }
+    return [row];
+  }
+
+  /* A pinned row's context menu groups the pin-specific actions together at
+   * the top (expand/collapse, collapse all, unpin), then shows the SAME menu
+   * the file browser shows for a folder row minus its redundant pin toggle. */
+  function openPinMenu(e, path) {
+    const node = findNode(treeCache, path) || { path, type: "dir", name: baseName(path) };
+    const items = [
+      {
+        label: pinExpanded.has(path) ? "Collapse" : "Expand",
+        handler: () => togglePinExpand(path),
+      },
+      { label: "Collapse all pinned folders", handler: collapseAllPins },
+      { label: "Unpin folder", handler: () => togglePin(path) },
+      { separator: true },
+    ].concat(treeFolderMenuItems(node, { skipPin: true }));
+    NB.menu.open({
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      items, focusFirst: true,
+    });
+  }
+
+  /* Right-clicking the empty Pinned area offers the pinned-section
+   * counterpart of the tree's "Collapse all folders": one item that folds
+   * every expanded pin. Disabled while nothing is expanded. */
+  function openPinsRootMenu(e) {
+    NB.menu.open({
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      items: [
+        {
+          label: "Collapse all pinned folders",
+          handler: collapseAllPins,
+          disabled: pinExpanded.size === 0,
+        },
+      ],
+      focusFirst: true,
+    });
+  }
+
+  /* Drop any pin whose folder isn't in the current tree (delete / rename).
+   * Persists only if something changed. */
+  function prunePins(tree) {
+    if (!pinnedFolders.length) return;
+    const before = pinnedFolders.length;
+    pinnedFolders = pinnedFolders.filter(p => treeHasPath(tree, p));
+    if (pinnedFolders.length !== before) {
+      prunePinExpanded();
+      renderPins();
+      persistPins();
+    }
+  }
+
+  function treeHasPath(tree, path) { return !!findNode(tree, path); }
+
+  /* --- pin drag-to-reorder -------------------------------------------- */
+  /* Mirror the bookmarks list: handlers live on the section element so the
+   * empty area still accepts a drop (which lands the row at the end). */
+  function wirePinsDnD() {
+    if (!pinsEl) return;
+    pinsEl.addEventListener("dragstart", (e) => {
+      const row = e.target.closest && e.target.closest(".pin-row");
+      if (!row || !row.dataset.path) { e.preventDefault(); return; }
+      draggingPin = row.dataset.path;
+      row.classList.add("dragging");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", "pin:" + row.dataset.path); }
+        catch (_) {}
+      }
+    });
+    pinsEl.addEventListener("dragover", (e) => {
+      if (!draggingPin) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      clearPinDropMarks();
+      const row = e.target.closest && e.target.closest(".pin-row");
+      if (!row || row.dataset.path === draggingPin) {
+        pinsEl.classList.add("drop-empty");
+        return;
+      }
+      const rect = row.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      row.classList.add(before ? "drop-before" : "drop-after");
+    });
+    pinsEl.addEventListener("drop", (e) => {
+      if (!draggingPin) return;
+      e.preventDefault();
+      const row = e.target.closest && e.target.closest(".pin-row");
+      // Dropping a row on itself is a no-op (not an append-to-end).
+      if (row && row.dataset.path === draggingPin) { clearPinDragging(); return; }
+      let targetPath = null, before = true;
+      if (row && row.dataset.path && row.dataset.path !== draggingPin) {
+        const rect = row.getBoundingClientRect();
+        targetPath = row.dataset.path;
+        before = e.clientY < rect.top + rect.height / 2;
+      }
+      const from = draggingPin;
+      clearPinDragging();
+      try { reorderPin(from, targetPath, before); }
+      catch (err) { console.error("pin reorder failed", err); }
+    });
+    pinsEl.addEventListener("dragend", clearPinDragging);
+  }
+
+  function reorderPin(fromPath, toPath, before) {
+    const fromIdx = pinnedFolders.indexOf(fromPath);
+    if (fromIdx < 0) return;
+    const [moved] = pinnedFolders.splice(fromIdx, 1);
+    if (!toPath) {
+      pinnedFolders.push(moved);
+    } else {
+      const toIdx = pinnedFolders.indexOf(toPath);
+      if (toIdx < 0) {
+        pinnedFolders.push(moved);
+      } else {
+        pinnedFolders.splice(before ? toIdx : toIdx + 1, 0, moved);
+      }
+    }
+    renderPins();
+    persistPins();
+  }
+
+  function clearPinDropMarks() {
+    if (!pinsEl) return;
+    pinsEl.querySelectorAll(".drop-before,.drop-after")
+      .forEach(r => r.classList.remove("drop-before", "drop-after"));
+    pinsEl.classList.remove("drop-empty");
+  }
+  function clearPinDragging() {
+    draggingPin = null;
+    if (!pinsEl) return;
+    pinsEl.querySelectorAll(".dragging")
+      .forEach(r => r.classList.remove("dragging"));
+    clearPinDropMarks();
   }
 
   /* --- vim-mode cursor (NB.vimnav drives this) ------------------- */
@@ -353,8 +715,10 @@
   }
 
   /* Tree folder row: Create | Organize | View | Terminal. No Open, no
-   * Export, and no bookmark toggle (guarded to files). */
-  function treeFolderMenuItems(node) {
+   * Export, no bookmark toggle (guarded to files). `opts.skipPin` drops the
+   * Pin/Unpin item when the caller renders the pin-specific actions itself
+   * (the pinned row's menu groups them at the top). */
+  function treeFolderMenuItems(node, opts) {
     const items = [
       { label: "New file…", handler: () => doNewFile(node, true) },
       { label: "New folder…", handler: () => doNewFolder(node, true) },
@@ -362,6 +726,14 @@
       { label: "Rename / Move…", handler: () => doRename(node) },
       { label: "Copy…", handler: () => doCopy(node) },
     ];
+    if (!(opts && opts.skipPin)) {
+      // Pin toggle for folders. The label flips on the current state so
+      // the user always sees the action that the click will perform.
+      items.push({
+        label: hasPin(node.path) ? "Unpin folder" : "Pin folder",
+        handler: () => togglePin(node.path),
+      });
+    }
     return withCollapseAndDelete(items, node);
   }
 
@@ -555,7 +927,12 @@
       // Prune any bookmarks whose file vanished (delete, rename) BEFORE
       // render so the row never appears against a missing file.
       if (NB.bookmarks) NB.bookmarks.prune(treeCache);
+      // Same for pinned folders, so a pin never points at a missing folder.
+      prunePins(treeCache);
       render(treeCache);
+      // The Pinned section lives above the tree; refresh it after render
+      // so its rows reflect the tree we just built.
+      renderPins();
       NB.evt.emit("tree:refreshed", treeCache);
     } catch (e) { console.error("tree fetch failed", e); }
   }
@@ -743,6 +1120,9 @@
     setBookmarks: (list) => { if (NB.bookmarks) NB.bookmarks.set(list); },
     getBookmarks: () => (NB.bookmarks ? NB.bookmarks.get() : []),
     toggleBookmark: (path) => { if (NB.bookmarks) NB.bookmarks.toggle(path); },
+    // Pinned folders: the section above the tree is part of the Explorer
+    // view, so its state and UI live here (not in a separate module).
+    setPinnedFolders, getPinnedFolders, togglePin, hasPin,
     // File-operation façade. The tab menu runs the same rename / copy /
     // delete actions the tree and bookmark menus run, for the same path.
     renameFile: (path) => doRename({ path, type: "file" }),
@@ -750,14 +1130,68 @@
     deleteFile: (path) => doDelete({ path, type: "file" }),
   };
 
+  // Wire the pin list's drag-to-reorder + paint the (initially empty)
+  // section. setPinnedFolders() re-renders it again once config loads.
+  wirePinsDnD();
+  renderPins();
+
+  // Right-clicking the empty Pinned area (not a pin row) opens the
+  // pinned-section menu; rows handle their own contextmenu.
+  if (pinsEl) {
+    pinsEl.addEventListener("contextmenu", (e) => {
+      if (e.target.closest && e.target.closest(".pin-row,.pin-child")) return;
+      e.preventDefault();
+      openPinsRootMenu(e);
+    });
+  }
+
   // Keep the tree highlight in sync whenever a file is shown, regardless
-  // of how it was opened (tab click, search result, boot).
+  // of how it was opened (tab click, search result, boot). Mirror the
+  // active file into the Pinned section's child rows too, so their
+  // .selected never goes stale.
   NB.evt.on("file:open", (path) => {
     if (path) setSelected(path);
+    if (!pinsEl) return;
+    pinsEl.querySelectorAll(".pin-child.selected")
+      .forEach(r => r.classList.remove("selected"));
+    if (!path) return;
+    const row = pinsEl.querySelector('.pin-child[data-path="' +
+      cssEscape(path) + '"]');
+    if (row) row.classList.add("selected");
   });
 
   // Bookmark list changes -> refresh that file's inline tree star. The
   // bookmarks module fires this from toggle(); prune re-renders and
   // persists directly and the next tree refresh redraws the stars.
   NB.evt.on("bookmarks:changed", ({ path }) => updateTreeStar(path));
+
+  // A rename / move re-keys pinned folders whose path IS the moved folder
+  // or lives inside it (prefix form -- moving a parent renames descendants).
+  // Expanded pins follow the same remap so they stay open across a move.
+  NB.evt.on("file:moved", ({ from, to }) => {
+    if (!from || !to) return;
+    const prefix = from + "/";
+    const rekey = (p) => {
+      if (p === from) return to;
+      if (p.startsWith(prefix)) return to + p.slice(from.length);
+      return null;
+    };
+    let changed = false;
+    pinnedFolders = pinnedFolders.map(p => {
+      const mapped = rekey(p);
+      if (mapped !== null) { changed = true; return mapped; }
+      return p;
+    });
+    const remappedExpanded = [];
+    for (const p of pinExpanded) {
+      const mapped = rekey(p);
+      remappedExpanded.push(mapped !== null ? mapped : p);
+    }
+    pinExpanded.clear();
+    for (const p of remappedExpanded) pinExpanded.add(p);
+    if (!changed) return;
+    prunePinExpanded();
+    renderPins();
+    persistPins();
+  });
 })();

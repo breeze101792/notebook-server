@@ -2834,6 +2834,56 @@ body[data-theme="light"] #viewer-content {
 .tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
+/* Pinned folders                                                      */
+/* ------------------------------------------------------------------ */
+/* The Pinned section sits above the file tree inside the Explorer view.
+ * renderPins() rebuilds it; with no pins it carries [hidden]. Its rows use
+ * the tree's own markup (.tree-guide cells, .tree-icon, .tree-name) so a
+ * pinned folder and its subtree read identically to the file browser. */
+.pinned-folders {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 4px;
+  margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.pinned-folders[hidden] { display: none; }
+.pinned-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 2px;
+}
+.pinned-title {
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+/* Pin rows reuse the tree row's exact box model. The class differs from
+ * .tree-row only so the tree's drag handlers and the vim cursor skip them. */
+.pin-row,
+.pin-child {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.pin-row:hover,
+.pin-child:hover { background: var(--accent-soft); }
+.pin-row.selected,
+.pin-child.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.pin-row.dragging { opacity: .4; }
+.pin-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+.pin-row.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
+.pinned-folders.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+
+/* ------------------------------------------------------------------ */
 /* Bookmarks                                                           */
 /* ------------------------------------------------------------------ */
 /* The Bookmarks view (#bookmarks-view) hosts the pinned-file list in its
@@ -2916,6 +2966,24 @@ body[data-theme="light"] #viewer-content {
   color: var(--warn);
 }
 .tree-row .tree-star:hover { color: var(--warn); }
+/* The inline pin toggle on folder rows, mirroring .tree-star: hidden
+ * unless the row is hovered, always shown (lit) when the folder is
+ * pinned so the state is visible at a glance. */
+.tree-pin {
+  display: none;
+  width: 14px;
+  text-align: center;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.tree-row:hover .tree-pin { display: inline-block; }
+.tree-row .tree-pin.is-pinned {
+  display: inline-block;
+  color: var(--warn);
+}
+.tree-row .tree-pin:hover { color: var(--warn); }
+.tree-pin svg { width: 13px; height: 13px; flex: 0 0 13px; }
 
 /* ------------------------------------------------------------------ */
 /* Context menu                                                        */

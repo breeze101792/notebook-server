@@ -4,8 +4,9 @@
  * modules into a jsdom window, stubs fetch, and drives the app the way the
  * browser would (dispatch DOMContentLoaded, click buttons, type in search).
  * Verifies: tree render, file open + heading ids + outline + code highlight,
- * keyword search, edit/save, empty-tree right-click create, and sidebar
- * collapse/expand (minimize) for both sidebars.
+ * keyword search, edit/save, empty-tree right-click create, sidebar
+ * collapse/expand (minimize) for both sidebars, bookmarks, and pinned
+ * folders (the Pinned section above the tree).
  *
  * Run:  npm install   then   npm test
  *   (or: node tests/dom/test_dom.js with jsdom resolvable)
@@ -165,6 +166,22 @@ const html = `<!DOCTYPE html><html><head>
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github-dark.css" id="hljs-dark">
   <link rel="stylesheet" href="/static/vendor/highlight-styles/github.css" id="hljs-light" disabled>
 </head><body data-theme="dark">
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="nb-icon-folder" viewBox="0 0 16 16">
+        <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h4.3A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#EFA93B"/>
+      </symbol>
+      <symbol id="nb-icon-folder-open" viewBox="0 0 16 16">
+        <path d="M2.4 8.2h11.5a.9.9 0 0 1 .87 1.16l-.9 3.1A1.5 1.5 0 0 1 12.1 13H3.9a1.5 1.5 0 0 1-1.44-1.13l-.9-3.1A.9.9 0 0 1 2.4 8.2z" fill="#F7C15C"/>
+      </symbol>
+      <symbol id="nb-icon-file" viewBox="0 0 16 16">
+        <path d="M4 1.8h4.7L13 6.1V14a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V2.6A.8.8 0 0 1 4 1.8z" fill="#DCE6FF" stroke="#6C9CFF" stroke-width="1" stroke-linejoin="round"/>
+      </symbol>
+      <symbol id="nb-icon-pin" viewBox="0 0 16 16">
+        <path fill-rule="evenodd" d="M8 1.5A4.5 4.5 0 0 0 3.5 6c0 3.1 4.5 8.5 4.5 8.5S12.5 9.1 12.5 6 10.49 1.5 8 1.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
+      </symbol>
+    </defs>
+  </svg>
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">📓 Notebook</button>
@@ -188,6 +205,7 @@ const html = `<!DOCTYPE html><html><head>
               <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
               <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button>
             </div></div>
+          <div id="pinned-folders" class="pinned-folders" hidden></div>
           <div id="file-tree" class="tree"></div>
         </div>
         <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
@@ -15222,6 +15240,272 @@ function check(label, cond, extra) {
   // following tests have a known active tab.
   await window.NB.tabs.activate("notes/a.md");
   await tick(20);
+
+  console.log("== pinned folders ==");
+  // The Pinned section sits above the tree inside the Explorer view. Each
+  // pin expands IN PLACE to show its subtree; the main file tree is never
+  // affected. Pin state persists as cfg.pinnedFolders.
+  {
+    // Structural: the markup, the config default, and the export are wired.
+    check("pinned folders: index.html ships #pinned-folders",
+      read("templates/index.html").indexOf('id="pinned-folders"') !== -1);
+    check("pinned folders: app.js DEFAULTS declares pinnedFolders",
+      read("static/js/app.js").indexOf("pinnedFolders: []") !== -1);
+    check("pinned folders: sidebar export includes togglePin",
+      typeof window.NB.sidebar.togglePin === "function");
+
+    // Use a tree with a nested subfolder so depth expansion can be
+    // exercised; restore the canonical fixture afterwards.
+    const savedTree = JSON.parse(JSON.stringify(TREE));
+    TREE.length = 0;
+    TREE.push(
+      { name: "notes", type: "dir", path: "notes", children: [
+        { name: "a.md", type: "file", path: "notes/a.md" },
+        { name: "archive", type: "dir", path: "notes/archive", children: [
+          { name: "old.md", type: "file", path: "notes/archive/old.md" },
+        ]},
+        { name: "b.md", type: "file", path: "notes/b.md" },
+      ]},
+      { name: "Welcome.md", type: "file", path: "Welcome.md" },
+    );
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    window.NB.sidebar.setPinnedFolders([]);
+    await tick(20);
+    const pinsEl = () => $("pinned-folders");
+    const pinRows = () => window.document.querySelectorAll("#pinned-folders .pin-row");
+    const pinChildren = () => window.document.querySelectorAll("#pinned-folders .pin-child");
+    const treePaths = () =>
+      Array.from(window.document.querySelectorAll("#file-tree .tree-row"))
+        .map(r => r.dataset.path);
+    check("pinned folders: section hidden when there are no pins",
+      pinsEl().hidden && pinRows().length === 0,
+      "hidden=" + pinsEl().hidden + " rows=" + pinRows().length);
+
+    // (a) pin the "notes" folder -> a .pin-row appears + config persists.
+    // Capture a main-tree row NODE first: pin/unpin must update it in
+    // place, never re-render #file-tree (identity, not just path strings).
+    const stableRow = window.document.querySelector('.tree-row[data-path="notes"]');
+    window.NB.sidebar.togglePin("notes");
+    await tick(20);
+    check("pinned folders: togglePin adds a .pin-row",
+      !pinsEl().hidden && pinRows().length === 1 &&
+      pinRows()[0].dataset.path === "notes",
+      "rows=" + pinRows().length);
+    check("pinned folders: the pin row shows the base name + full-path title",
+      pinRows()[0].querySelector(".tree-name").textContent === "notes" &&
+      pinRows()[0].querySelector(".tree-name").title === "notes");
+    await tick(350);
+    const pinCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("pinned folders: pin persisted to cfg",
+      /"pinnedFolders":\["notes"\]/.test(pinCfgPost), pinCfgPost);
+    check("pinned folders: pinning does not re-render the main tree (node identity)",
+      !!stableRow && stableRow.isConnected &&
+      window.document.querySelector('.tree-row[data-path="notes"]') === stableRow);
+    check("pinned folders: the tree row's inline pin lights up in place",
+      !!stableRow && !!stableRow.querySelector(".tree-pin.is-pinned"));
+
+    // (b) collapsed by default -> no child rows, a collapsed caret.
+    check("pinned folders: a fresh pin is collapsed (no child rows)",
+      pinChildren().length === 0 &&
+      pinRows()[0].querySelector(".tree-icon").dataset.icon === "folder",
+      "children=" + pinChildren().length);
+
+    // (c) click the pin row -> its subtree appears as .pin-child rows, in
+    // tree order (a.md, archive, b.md). The main tree must not change.
+    const treeBefore = treePaths();
+    pinRows()[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("pinned folders: clicking a pin expands it in place",
+      pinChildren().length === 3 &&
+      pinRows()[0].querySelector(".tree-icon").dataset.icon === "folder-open",
+      "children=" + pinChildren().length);
+    check("pinned folders: child rows are the subtree in depth-first order",
+      Array.from(pinChildren()).map(r => r.dataset.path).join(",") ===
+        "notes/a.md,notes/archive,notes/b.md",
+      Array.from(pinChildren()).map(r => r.dataset.path).join(","));
+    check("pinned folders: rows use the file browser's guide + icon markup",
+      !!pinRows()[0].querySelector(".tree-guide") &&
+      !pinRows()[0].querySelector(".pin-caret") &&
+      !!pinChildren()[0].querySelector(".tree-guide .tcell.cnr") &&
+      !!pinChildren()[0].querySelector(".tree-icon") &&
+      !!pinChildren()[0].querySelector(".tree-name"));
+    check("pinned folders: the main tree is unchanged by the expansion",
+      treePaths().join(",") === treeBefore.join(","),
+      treePaths().join(","));
+
+    // (d) expand the nested folder inside the pin -> one level deeper.
+    const archiveRow = window.document.querySelector(
+      '#pinned-folders .pin-child[data-path="notes/archive"]');
+    const baseGuideCells =
+      pinChildren()[0].querySelectorAll(".tree-guide .tcell").length;
+    archiveRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    let deeper = window.document.querySelector(
+      '#pinned-folders .pin-child[data-path="notes/archive/old.md"]');
+    check("pinned folders: expanding a nested folder shows its child",
+      !!deeper, "deep row=" + !!deeper);
+    const deeperGuideCells = deeper
+      ? deeper.querySelectorAll(".tree-guide .tcell").length : 0;
+    check("pinned folders: the deeper row is indented further (guide cells)",
+      deeperGuideCells === baseGuideCells + 1,
+      "base=" + baseGuideCells + " deeper=" + deeperGuideCells);
+
+    // (d2) collapse-all lives in the right-click menu (like the file
+    // browser's "Collapse all folders"): both the pin row's menu and the
+    // empty Pinned area's menu offer it. A pin row's menu is the folder
+    // menu plus the pin-specific items.
+    const menuLabels = () =>
+      Array.from($("nb-menu").querySelectorAll("button")).map(b => b.textContent);
+    pinRows()[0].dispatchEvent(new window.MouseEvent("contextmenu",
+      { bubbles: true, clientX: 30, clientY: 30 }));
+    await tick(10);
+    check("pinned folders: pin row menu mirrors the folder menu + pin items",
+      menuLabels().includes("Collapse") &&
+      menuLabels().includes("Collapse all pinned folders") &&
+      menuLabels().includes("Unpin folder") &&
+      menuLabels().includes("Rename / Move…") &&
+      menuLabels().includes("Delete"),
+      menuLabels().join(" / "));
+    check("pinned folders: pin actions are grouped together at the top",
+      menuLabels().slice(0, 3).join("|") ===
+        "Collapse|Collapse all pinned folders|Unpin folder" &&
+      menuLabels().filter(l => l === "Unpin folder").length === 1,
+      menuLabels().join(" / "));
+    const collapseItem = Array.from($("nb-menu").querySelectorAll("button"))
+      .find(b => b.textContent === "Collapse all pinned folders");
+    collapseItem.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("pinned folders: menu collapse-all folds every expanded pin at once",
+      pinChildren().length === 0 &&
+      pinRows()[0].querySelector(".tree-icon").dataset.icon === "folder",
+      "children=" + pinChildren().length);
+
+    // The empty Pinned area opens the same action (disabled when nothing is
+    // expanded).
+    pinsEl().dispatchEvent(new window.MouseEvent("contextmenu",
+      { bubbles: true, clientX: 5, clientY: 5 }));
+    await tick(10);
+    const pinsRootBtn = Array.from($("nb-menu").querySelectorAll("button"))
+      .find(b => b.textContent === "Collapse all pinned folders");
+    check("pinned folders: empty Pinned area offers collapse-all",
+      !!pinsRootBtn && pinsRootBtn.disabled === true);
+    window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+
+    // Re-expand both levels so the child-file click below has a target.
+    pinRows()[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    window.document.querySelector(
+      '#pinned-folders .pin-child[data-path="notes/archive"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    deeper = window.document.querySelector(
+      '#pinned-folders .pin-child[data-path="notes/archive/old.md"]');
+
+    // (e) clicking a child file row opens the file (a tab becomes active).
+    deeper.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("pinned folders: clicking a child file opens it",
+      activeTabPath() === "notes/archive/old.md" ||
+      window.NB.tabs.getActive() === "notes/archive/old.md",
+      "active=" + activeTabPath());
+    check("pinned folders: the opened child row is marked selected",
+      deeper.classList.contains("selected"));
+    if (window.NB.tabs.isOpen && window.NB.tabs.isOpen("notes/archive/old.md")) {
+      await window.NB.tabs.close("notes/archive/old.md", { force: true });
+      await tick(20);
+    }
+
+    // (f) collapse the pin again -> child rows are gone; main tree intact.
+    pinRows()[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("pinned folders: collapsing the pin removes the child rows",
+      pinChildren().length === 0 &&
+      pinRows()[0].querySelector(".tree-icon").dataset.icon === "folder",
+      "children=" + pinChildren().length);
+    check("pinned folders: the main tree is still unchanged after collapse",
+      treePaths().join(",") === treeBefore.join(","),
+      treePaths().join(","));
+
+    // (g) unpin -> the row and the persisted entry are gone.
+    window.NB.sidebar.togglePin("notes");
+    await tick(20);
+    check("pinned folders: togglePin again removes the row",
+      pinsEl().hidden && pinRows().length === 0);
+    check("pinned folders: unpinning does not re-render the main tree (node identity)",
+      !!stableRow && stableRow.isConnected &&
+      window.document.querySelector('.tree-row[data-path="notes"]') === stableRow);
+    await tick(350);
+    const unpinCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("pinned folders: unpin persisted (empty list)",
+      /"pinnedFolders":\[\]/.test(unpinCfgPost), unpinCfgPost);
+
+    // (h) prune: a pinned folder removed from the tree is dropped on refresh.
+    TREE.push({ name: "tmp", type: "dir", path: "tmp", children: [] });
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    window.NB.sidebar.togglePin("tmp");
+    await tick(20);
+    check("pinned folders: prune setup pins the temp folder",
+      window.NB.sidebar.getPinnedFolders().includes("tmp") && pinRows().length === 1,
+      "pins=" + window.NB.sidebar.getPinnedFolders().join(","));
+    TREE.pop();                       // drop the folder from the served tree
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    check("pinned folders: a folder removed from the tree is pruned",
+      !window.NB.sidebar.getPinnedFolders().includes("tmp") && pinRows().length === 0,
+      "pins=" + window.NB.sidebar.getPinnedFolders().join(",") + " rows=" + pinRows().length);
+    await tick(350);
+    const prunePinPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("pinned folders: prune persisted (empty list)",
+      /"pinnedFolders":\[\]/.test(prunePinPost), prunePinPost);
+
+    // (i) re-key: moving a parent renames a pinned descendant (prefix form)
+    // AND keeps an expanded pin open. Mirror the backend by renaming the
+    // subtree in the fixture before refreshing.
+    window.NB.sidebar.togglePin("notes/archive");
+    await tick(20);
+    check("pinned folders: re-key setup pins the nested path",
+      window.NB.sidebar.getPinnedFolders().includes("notes/archive") && pinRows().length === 1,
+      "pins=" + window.NB.sidebar.getPinnedFolders().join(","));
+    pinRows()[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("pinned folders: re-key setup expands the pin",
+      !!window.document.querySelector('#pinned-folders .pin-child[data-path="notes/archive/old.md"]'));
+    window.NB.evt.emit("file:moved", { from: "notes", to: "renamed" });
+    const renameSubtree = (node, from, to) => {
+      if (node.path === from || node.path.startsWith(from + "/")) {
+        node.path = to + node.path.slice(from.length);
+        node.name = node.path.split("/").pop();
+      }
+      for (const c of node.children || []) renameSubtree(c, from, to);
+    };
+    for (const n of TREE) renameSubtree(n, "notes", "renamed");
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    const rekeyPins = window.NB.sidebar.getPinnedFolders();
+    check("pinned folders: moving a parent re-keys a nested pin (prefix form)",
+      rekeyPins.includes("renamed/archive") && !rekeyPins.includes("notes/archive"),
+      rekeyPins.join(","));
+    check("pinned folders: an expanded pin stays expanded across a move",
+      !!pinRows()[0] && pinRows()[0].dataset.path === "renamed/archive" &&
+      pinRows()[0].querySelector(".tree-icon").dataset.icon === "folder-open" &&
+      !!window.document.querySelector('#pinned-folders .pin-child[data-path="renamed/archive/old.md"]'),
+      "pin=" + (pinRows()[0] && pinRows()[0].dataset.path) + " children=" + pinChildren().length);
+    window.NB.sidebar.togglePin("renamed/archive");
+    await tick(20);
+    check("pinned folders: re-key cleanup leaves no pins",
+      window.NB.sidebar.getPinnedFolders().length === 0 && pinRows().length === 0);
+
+    // Restore the canonical tree for the rest of the suite.
+    TREE.length = 0;
+    for (const n of savedTree) TREE.push(n);
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    window.NB.sidebar.setPinnedFolders([]);
+    await tick(20);
+  }
 
   console.log("== tabs: close active ==");
   const beforeCount = tabs().length;

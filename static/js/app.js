@@ -56,6 +56,11 @@
     // them via drag-and-drop. Missing files (e.g. after a delete) are
     // pruned silently on the next tree refresh.
     bookmarks: [],
+    // Pinned folders: an ordered array of folder paths the user has
+    // pinned to the top of the Explorer view. Insertion order; the
+    // sidebar reorders them via drag-and-drop. Folders that vanish from
+    // the tree (e.g. after a delete) are pruned on the next refresh.
+    pinnedFolders: [],
     // User-supplied vimrc: lines of VIM initial script applied to the
     // editor's vim plugin (cm-bridge.compileVimrc). Empty by default;
     // populated via the Settings modal's VIM script pane. Stored as
@@ -327,6 +332,11 @@
     // tests) goes through the same path.
     if (NB.bookmarks && NB.bookmarks.set) {
       NB.bookmarks.set(cfg.bookmarks || []);
+    }
+    // Same for pinned folders: hand the loaded list to the sidebar so the
+    // Pinned section renders before the first tree refresh arrives.
+    if (NB.sidebar && NB.sidebar.setPinnedFolders) {
+      NB.sidebar.setPinnedFolders(cfg.pinnedFolders || []);
     }
   }
 
@@ -885,6 +895,17 @@
       cfg.bookmarks = Array.isArray(list) ? list.slice() : [];
       persistConfig();
     },
+    // Replace the full pinned-folder list. The sidebar is the only
+    // caller on the user-mutation path; the config load path goes via
+    // NB.sidebar.setPinnedFolders directly (applyConfig). Persists +
+    // emits config:changed so any listener can react.
+    setPinnedFolders: (list) => {
+      cfg.pinnedFolders = Array.isArray(list) ? list.slice() : [];
+      persistConfig();
+    },
+    // Read the pinned-folder list (a copy) so callers can snapshot it
+    // before a mutation or during a test.
+    getPinnedFolders: () => (cfg.pinnedFolders || []).slice(),
     // Update the user's vimrc. The Settings modal calls this on save;
     // applyConfig already pulls cfg.vimrc into the editor when the
     // view is created (and when setVimMode(true) re-creates the
