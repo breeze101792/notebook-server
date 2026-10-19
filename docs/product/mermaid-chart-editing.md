@@ -367,7 +367,9 @@ or the real-browser harness (`tests/browser/`).
 
 ### Open question for the owner
 
-Pie title: the visual model has no title and no title operation. Should v1 add a targeted title-line edit outside the visual model, or keep title editing in the source editor?
+Pie title: resolved in v2. The visual model still has no title, so the modal
+edits the `pie` header line directly. The source editor remains the fallback
+for headers the targeted rewrite cannot preserve safely.
 
 ## 10. V2 backlog (recorded 2026-10-19)
 
@@ -391,3 +393,17 @@ are deliberately deferred and are the input for a later v2 scope:
 A sensible v2 slice is pie title plus sequence structural edits plus inspector
 parity for the other editable families. Do not expand v2 to layout, colors, or
 a second editor.
+
+### V2 status (implemented 2026-10-19)
+
+Implemented: pie title and `showData` header edits; sequence fragment wrapping
+and no-alias participant id editing; flowchart node/edge colors; and inspector
+parity for `state`, `class`, and `er`. The v1 acceptance criteria above are
+unchanged.
+
+V3 or vendor-blocked: pie slice reorder; sequence activation/deactivation and
+participant reorder; flowchart subgraph creation, edge animation/curve, and
+`classDef`/`style`/`linkStyle`/`click` authoring; gantt/journey/timeline/
+line-item inspectors; `st.moveToComposite`; create-from-scratch; preview-mode
+entry; full keyboard traversal. Real-browser coverage of the v2 controls
+remains unverified on this host.

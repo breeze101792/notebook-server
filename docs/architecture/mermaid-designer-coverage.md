@@ -33,13 +33,13 @@ for the entity prefixes `node:` / `state:` / `class:` / `entity:` **[scan]**.
 
 | Type (id) | Core capability | Canvas interaction | Add-sidebar action |
 | --- | --- | --- | --- |
-| `flowchart` / `graph` | edit | select/edit/delete; drag-connect **yes** (`node:`); add | **14-shape grid** → `view.addNode(shape)` **[scan][impl]** |
-| `sequence` | edit | select/edit/delete; drag-connect no — lifeline **+** buttons add messages/events **[scan]**; add | **Add participant** → `{type:'seq.addParticipant', name}` **[scan][bundle][impl]** |
-| `class` | edit | select/edit/delete; drag-connect **yes** (`class:`); add | **Add class** → `{type:'cl.addClass', name}` **[scan][bundle][impl]** |
-| `state` | edit | select/edit/delete; drag-connect **yes** (`state:`); add | **Add state** → `{type:'st.addState', label}` **[scan][bundle][impl]** |
-| `er` | edit | select/edit/delete; drag-connect **yes** (`entity:`); add | **Add entity** → `{type:'er.addEntity', name}` **[scan][bundle][impl]** |
+| `flowchart` / `graph` | edit | select/edit/delete; drag-connect **yes** (`node:`); add | **Node/Edge tabs** → `addNode` / `connect`; inspector + colors **[scan][bundle][impl]** |
+| `sequence` | edit | select/edit/delete; drag-connect no — lifeline **+** buttons add messages/events **[scan]**; add | **Participant/Message/Note tabs**; inspector includes id, wrap **[scan][bundle][impl]** |
+| `class` | edit | select/edit/delete; drag-connect **yes** (`class:`); add | **Class/Relation tabs**; full inspector **[scan][bundle][impl]** |
+| `state` | edit | select/edit/delete; drag-connect **yes** (`state:`); add | **State/Transition tabs**; full inspector **[scan][bundle][impl]** |
+| `er` | edit | select/edit/delete; drag-connect **yes** (`entity:`); add | **Entity/Relation tabs**; full inspector **[scan][bundle][impl]** |
 | `gantt` | edit | select/edit/delete; drag-connect no; add | **Add task** → `{type:'gantt.addTask', section, name, meta}` **[scan][bundle][impl]** |
-| `pie` | edit | select/edit/delete; drag-connect no; add | **Add slice** → `{type:'pie.addSlice', label, value}` **[scan][bundle][impl]** |
+| `pie` | edit | select/edit/delete; drag-connect no; add | **Slice tab**; slice inspector + Chart title/showData **[scan][bundle][impl]** |
 | `journey` | edit | select/edit/delete; drag-connect no; add | **Add line** → `{type:'li.addItem'}` **[scan][bundle][impl]** |
 | `quadrant` | edit | select/edit/delete; drag-connect no; add | **Add line** → `{type:'li.addItem'}` **[scan][bundle][impl]** |
 | `requirement` | edit | select/edit/delete; drag-connect no; add | **Add line** → `{type:'li.addItem'}` **[scan][bundle][impl]** |
@@ -68,18 +68,18 @@ its controls moved here. Connect stays hidden for families the canvas cannot
 drag-connect (only `flowchart` / `state` / `class` / `er`); Select is always
 shown.
 
-For `flowchart` / `sequence` / `pie` the Add section is a tabbed form
-(`#designer-add-tabs`, `#designer-add-form`) and the body gains the
-`#designer-inspector`. Every other editable family keeps the old single
+For `flowchart` / `sequence` / `pie` / `state` / `class` / `er` the Add section
+is a tabbed form (`#designer-add-tabs`, `#designer-add-form`) and the body gains
+the `#designer-inspector`. Every other editable family keeps the old single
 `editor.dispatch()` add button in `#designer-palette` and has no inspector.
 At ≤960px the scoped families get a horizontal build strip and a bottom-sheet
 inspector with a 44px grabber; at ≤720px the other families keep the old
 horizontal strip. **[impl]**
 
-## Scoped families: named controls (v1)
+## Scoped families: named controls (v1 + v2)
 
-The product §4 required edits map to these named controls in the inspector or
-the Add forms **[impl]**:
+The product §4 required edits and the v2 scope map to these named controls in
+the inspector or the Add forms **[impl]**:
 
 | Family | Edit | Control |
 | --- | --- | --- |
@@ -92,31 +92,82 @@ the Add forms **[impl]**:
 | flowchart | arrowheads | Inspector → Arrows (`setEdgeStyle.arrowStart/arrowEnd`) |
 | flowchart | reverse edge | Inspector → Reverse direction (`reverseEdge`) |
 | flowchart | direction | Chart → TD/TB/BT/LR/RL chips (`setDirection`) |
+| flowchart | node colors | Inspector → Fill / Stroke / Text (`setNodeColor`) + Clear |
+| flowchart | edge color | Inspector → Stroke (`setEdgeColor`) + Clear |
 | sequence | rename participant | Inspector → Display name (`seq.renameParticipant`) |
+| sequence | participant id (no alias) | Inspector → Id (`seq.renameParticipant` with the new id) |
 | sequence | participant type | Inspector → Type (`seq.setParticipantType`) |
 | sequence | add/delete participant | Add → Participant form; Inspector → Delete participant |
 | sequence | edit message/note text | Inspector → Text (`seq.setEventText`) |
 | sequence | add message/note | Add → Message/Note form (`seq.addMessage`/`seq.addNote`) |
 | sequence | delete message/note | Inspector → Delete message/note (`seq.deleteEvent`) |
 | sequence | reorder messages | Inspector → Move up / Move down (`seq.moveEvent`) |
+| sequence | wrap in fragment | Inspector → Wrap in (`seq.wrapInFragment`) |
 | sequence | arrow type | Inspector → Arrow (`seq.setMessageOp`) |
 | sequence | reverse message | Inspector → Reverse direction (`seq.reverseMessage`) |
 | sequence | autonumber | Chart → Autonumber switch (`seq.toggleAutonumber`) |
 | pie | edit label/value | Inspector → Label / Value (`pie.setLabel`/`pie.setValue`) |
 | pie | add slice | Add → Slice form (`pie.addSlice` with entered label/value) |
 | pie | delete slice | Inspector → Delete slice (`pie.deleteSlice`) |
+| pie | title | Chart → Title (header line via `setCode(..., "ui")`) |
+| pie | show data values | Chart → Show data values switch (header line) |
+| state | state label/type | Inspector → Label (`st.setStateLabel`) / Type (`st.setStateType`) |
+| state | add note | Inspector → Add note left/right (`st.addStateNote`) |
+| state | connect/delete state | Inspector → Connect from this state (Add → Transition); Delete state (`st.deleteState`) |
+| state | transition label/reverse/delete | Inspector → Label (`st.setTransitionLabel`), Reverse (`st.reverseTransition`), Delete (`st.deleteTransition`) |
+| state | add state/transition | Add → State (label, type); Transition (from, to, label) |
+| state | direction | Chart → TD/TB/BT/LR/RL chips (`st.setDirection`) |
+| class | class name/annotation | Inspector → Name (`cl.renameClass`) / Annotation (`cl.setAnnotation`) |
+| class | members | Inspector → member rows (`cl.setMemberText`/`cl.deleteMember`) + Add member (`cl.addMember`) |
+| class | note/delete class | Inspector → Add note (`cl.addNoteFor`); Delete class (`cl.deleteClass`) |
+| class | relation type/label/cardinality | Inspector → Type (exact `RelationOp`), Label, Source/Target (`cl.setRelationType`/`setRelationLabel`/`setCardinality`) |
+| class | reverse/delete relation | Inspector → Reverse direction (`cl.reverseRelation`); Delete relation (`cl.deleteRelation`) |
+| class | add class/relation | Add → Class (name); Relation (from, to, op, label) |
+| class | direction | Chart → TD/TB/BT/LR/RL chips (`cl.setDirection`) |
+| er | entity name/attributes | Inspector → Name (`er.renameEntity`); attribute rows (`er.setAttributeText`) + Add attribute (`er.addAttribute`) |
+| er | delete entity | Inspector → Delete entity (`er.deleteEntity`) |
+| er | relation cardinalities | Inspector → Left/Right (exact `ErCardinality`) (`er.setCardinality`) |
+| er | identifying/label | Inspector → Identifying (`er.setIdentifying`) / Label (`er.setRelationLabel`) |
+| er | delete relation | Inspector → Delete relation (`er.deleteRelation`) |
+| er | add entity/relation | Add → Entity (name); Relation (from, to, label) |
 
 The sequence position select maps to the library's `afterEvent`: End omits it,
 Start passes `null`, and `After: <event>` passes the event id read at submit
 time. The pie Add form validates the value as finite and ≥ 0 before dispatch;
 the slice inspector disables label/value when another slice label is equal or a
-prefix, so the library's label correlation cannot edit the wrong slice.
+prefix, so the library's label correlation cannot edit the wrong slice. The pie
+Chart section edits the header line directly: `pie title <text>`,
+`pie showData title <text>`, or no title; an empty title removes the token and
+an unchanged header is a no-op (no `setCode`, no undo entry). CRLF and a
+trailing `%%` comment are preserved; an unrecognized header token disables the
+fields rather than dropping text. A title containing the word `title` parses
+correctly.
 
-**Still deferred (source editing):** pie title, pie slice reorder, pie
-show/hide values, activation/deactivation, participant reorder and id editing,
-fragment wrappers, layout/colors/themes, other Mermaid families, and a Source
-mode inside the modal. The flowchart canvas type badge and full keyboard
-traversal of diagram elements are not part of v1.
+Flowchart color values are read only from a single-id `style` line (node) or a
+single-index `linkStyle` line (edge); `classDef` is not resolved. Quoted values
+are unquoted before the hex check; a non-hex value disables the control instead
+of becoming black. A `style` line with multiple ids disables the node color
+controls, and a multi-index `linkStyle` (`linkStyle 0,1 stroke:...`) disables
+the edge color control with a source-edit note; writes never append a second
+`linkStyle <n>` line.
+
+**Vendor limitation guards.** A class rename is refused when the class has a
+`note for <id>` line or an annotation, because `cl.renameClass` does not update
+notes and corrupts annotations containing the id as a substring. Class delete
+is refused with a note, and state delete is refused with a `note left/right of
+<id>` line. The controls point at source editing and dispatch nothing. A block
+class disables the annotation field because the op writes inside the block and
+the parser reads it as a member. A no-alias participant id that collides with
+another participant is rejected before `seq.renameParticipant`.
+
+**Still deferred / vendor-blocked (v3):** pie slice reorder; sequence
+activation/deactivation and participant reorder; flowchart subgraph creation,
+edge animation/curve, and `classDef`/`style`/`linkStyle`/`click` authoring;
+gantt/journey/timeline/line-item inspectors (line-item has only raw text);
+`st.moveToComposite`; a create-from-scratch type picker; preview-mode entry;
+full keyboard traversal. `setFlowCurve` clobbers rich init directives, edge
+animation renders only in the designer, `classDef`/`click` have no ops, and
+subgraph membership is positional.
 
 ## Flowchart shape grid
 
@@ -185,4 +236,12 @@ is optional to the library **[bundle]**.
 - `node /tmp/opencode/verify-designer-glyphs.js` (throwaway): the 14
   `SHAPE_GLYPHS` inner markups are pairwise distinct and each flow-button id
   maps to `view.addNode(<same id>)`.
+- `node /tmp/opencode/verify-v2-core.mjs` (throwaway, real `@visimer/core`
+  1.1.2): 23/23 v2 op payloads compile — state add/type/connect/label/note/
+  direction/reverse, class add/annotation/member/relation/cardinality/
+  direction, ER add/cardinality/identifying/attribute, sequence wrap/rename,
+  and single-id `setNodeColor`. The multi-id `style` case leaves the shared
+  line untouched; the UI disables its controls instead.
 - `node --check static/js/mermaid-designer.js`: pass.
+- `npm test`: 3458 ok, 0 failed (jsdom, fake canvas).
+- Real-browser v2 interaction remains unverified on this host.

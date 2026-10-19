@@ -874,6 +874,21 @@ const html = `<!DOCTYPE html><html><head>
                 <span class="designer-switch-track" aria-hidden="true"></span>
               </span>
             </label>
+            <div class="designer-field-row" id="designer-pie-title-row" hidden>
+              <label class="designer-field-label" for="designer-pie-title">Title</label>
+              <input id="designer-pie-title" class="designer-field" type="text"
+                     placeholder="Chart title" autocomplete="off">
+            </div>
+            <label class="designer-switch-row" id="designer-pie-showdata" hidden>
+              <span class="designer-switch-label">Show data values</span>
+              <span class="designer-switch-word" id="designer-pie-showdata-word">Off</span>
+              <span class="designer-switch">
+                <input type="checkbox" id="designer-pie-showdata-input"
+                       class="designer-switch-input">
+                <span class="designer-switch-track" aria-hidden="true"></span>
+              </span>
+            </label>
+            <p class="designer-scope-note" id="designer-pie-header-note" hidden></p>
           </section>
 
           <div class="designer-divider" aria-hidden="true"></div>
@@ -25454,6 +25469,7 @@ function check(label, cond, extra) {
       model: null,
       modelFamily: null,
       next: 1,
+      setCodes: [],
     };
 
     function newFlowModel() {
@@ -25465,8 +25481,64 @@ function check(label, cond, extra) {
           { entityId: "node:B", id: "B", label: "B", shape: "rect" },
         ],
         edges: [
-          { entityId: "edge:A->B#0", source: "A", target: "B", label: null,
+          { entityId: "edge:A->B#0", source: "A", target: "B", label: null, order: 0,
             seg: { line: "solid", arrowStart: "open", arrowEnd: "arrow" } },
+        ],
+      };
+    }
+    function newStateModel() {
+      return {
+        family: "state",
+        direction: null,
+        states: [
+          { entityId: "state:A", id: "A", label: "Idle", stereotype: null,
+            isComposite: false, decl: null, declLines: [1], typeDeclLine: null,
+            firstRefLine: 1 },
+          { entityId: "state:B", id: "B", label: "Done", stereotype: null,
+            isComposite: false, decl: null, declLines: [2], typeDeclLine: null,
+            firstRefLine: 2 },
+        ],
+        transitions: [
+          { entityId: "trans:A->B#0", source: "A", target: "B", label: "go",
+            lineIndex: 3, order: 0, stmt: { source: "A", target: "B" } },
+        ],
+      };
+    }
+    function newClassModel() {
+      return {
+        family: "class",
+        direction: null,
+        annotations: {},
+        classes: [
+          { entityId: "class:A", id: "A", label: "A", decl: null, block: null,
+            members: [{ lineIndex: 2, text: "+int x" }], extraLines: [],
+            refLines: [1], firstRefLine: 1 },
+          { entityId: "class:B", id: "B", label: "B", decl: null, block: null,
+            members: [], extraLines: [], refLines: [1], firstRefLine: 1 },
+        ],
+        relations: [
+          { entityId: "rel:A->B#0", source: "A", target: "B", label: "uses",
+            lineIndex: 4, order: 0,
+            stmt: { source: "A", target: "B", op: "-->",
+              sourceCard: null, targetCard: null } },
+        ],
+      };
+    }
+    function newErModel() {
+      return {
+        family: "er",
+        entities: [
+          { entityId: "entity:USER", id: "USER", label: "USER", decl: null,
+            block: null, attributes: [{ lineIndex: 2, text: "string id" }],
+            refLines: [1], firstRefLine: 1 },
+          { entityId: "entity:ORDER", id: "ORDER", label: "ORDER", decl: null,
+            block: null, attributes: [], refLines: [1], firstRefLine: 1 },
+        ],
+        relations: [
+          { entityId: "erel:USER->ORDER#0", source: "USER", target: "ORDER",
+            label: "places", lineIndex: 4, order: 0,
+            stmt: { source: "USER", target: "ORDER",
+              leftCard: "||", rightCard: "o{", line: "--" } },
         ],
       };
     }
@@ -25508,23 +25580,56 @@ function check(label, cond, extra) {
       if (family === "flowchart") __visimer.model = newFlowModel();
       else if (family === "sequence") __visimer.model = newSeqModel();
       else if (family === "pie") __visimer.model = newPieModel();
+      else if (family === "state") __visimer.model = newStateModel();
+      else if (family === "class") __visimer.model = newClassModel();
+      else if (family === "er") __visimer.model = newErModel();
       else __visimer.model = { family: family };
       return __visimer.model;
     }
     function idSeq(prefix) { return prefix + (__visimer.next++); }
 
+    function fakeCodeLines(code) {
+      const out = [];
+      let start = 0;
+      const text = String(code == null ? "" : code);
+      for (let index = 0; ; index++) {
+        let nl = text.indexOf("\n", start);
+        if (nl < 0) nl = text.length;
+        const lineText = text.slice(start, nl);
+        const im = /^[ \t]*/.exec(lineText);
+        out.push({ index: index, kind: "statement", text: lineText,
+          start: start, end: nl, indent: im ? im[0] : "" });
+        if (nl === text.length) break;
+        start = nl + 1;
+      }
+      return out;
+    }
+
     // Build the editor's parsed model for the current __visimer.family.
-    function fakeResult() {
+    function fakeResult(code) {
       const empty = __visimer.emptyModel;
       const family = __visimer.family;
       const m = ensureModel(family);
-      const r = { typeInfo: { capability: __visimer.capability, id: __visimer.typeId } };
+      const lines = fakeCodeLines(code);
+      const r = { typeInfo: { capability: __visimer.capability, id: __visimer.typeId },
+        code: code || "", lines: lines, headerIndex: 0 };
       if (family === "flowchart") {
         const nodes = empty ? [] : m.nodes;
+        const statements = new Map();
+        lines.forEach((line, li) => {
+          const t = line.text.trim();
+          if (/^style\s+\S+/.test(t)) {
+            const mStyle = /^style\s+(\S+)/.exec(t);
+            statements.set(li, { kind: "style", ids: [mStyle[1].split(",")[0]] });
+          } else if (/^linkStyle\b/.test(t)) {
+            statements.set(li, { kind: "linkStyle", ids: [] });
+          }
+        });
         r.flowchart = {
           nodes: nodes,
           edges: empty ? [] : m.edges,
           direction: m.direction,
+          statements: statements,
           nodeById: new Map(nodes.map((n) => [n.id, n])),
         };
       } else if (family === "sequence") {
@@ -25537,13 +25642,35 @@ function check(label, cond, extra) {
           participantById: new Map(participants.map((p) => [p.id, p])),
         };
       } else if (family === "pie") {
-        r.pie = { slices: empty ? [] : m.slices };
+        r.pie = { slices: empty ? [] : m.slices, showData: false };
       } else if (family === "state") {
-        r.state = { states: empty ? [] : [{}], transitions: [] };
+        const states = empty ? [] : m.states;
+        r.state = {
+          states: states,
+          transitions: empty ? [] : m.transitions,
+          stateById: new Map(states.map((s) => [s.id, s])),
+          direction: m.direction,
+        };
       } else if (family === "class") {
-        r.classGraph = { classes: empty ? [] : [{}], relations: [] };
+        const classes = empty ? [] : m.classes;
+        const statements = new Map();
+        Object.keys(m.annotations || {}).forEach((li) => {
+          statements.set(Number(li), { kind: "annotation", parts: [m.annotations[li], "A"] });
+        });
+        r.classGraph = {
+          classes: classes,
+          relations: empty ? [] : m.relations,
+          classById: new Map(classes.map((c) => [c.id, c])),
+          statements: statements,
+          direction: m.direction,
+        };
       } else if (family === "er") {
-        r.er = { entities: empty ? [] : [{}], relations: [] };
+        const entities = empty ? [] : m.entities;
+        r.er = {
+          entities: entities,
+          relations: empty ? [] : m.relations,
+          entityById: new Map(entities.map((e) => [e.id, e])),
+        };
       } else if (family === "gantt") {
         r.gantt = { tasks: empty ? [] : [{}] };
       } else if (family === "lineitem") {
@@ -25562,6 +25689,18 @@ function check(label, cond, extra) {
         if (id.indexOf("event:") === 0) return r.sequence.events.some((e) => e.entityId === id);
       }
       if (r.pie) return r.pie.slices.some((s) => s.entityId === id);
+      if (r.state) {
+        if (id.indexOf("state:") === 0) return r.state.states.some((s) => s.entityId === id);
+        if (id.indexOf("trans:") === 0) return r.state.transitions.some((t) => t.entityId === id);
+      }
+      if (r.classGraph) {
+        if (id.indexOf("class:") === 0) return r.classGraph.classes.some((c) => c.entityId === id);
+        if (id.indexOf("rel:") === 0) return r.classGraph.relations.some((x) => x.entityId === id);
+      }
+      if (r.er) {
+        if (id.indexOf("entity:") === 0) return r.er.entities.some((e) => e.entityId === id);
+        if (id.indexOf("erel:") === 0) return r.er.relations.some((x) => x.entityId === id);
+      }
       return false;
     }
     function reindexSeq(m) {
@@ -25716,6 +25855,168 @@ function check(label, cond, extra) {
       } else if (op.type === "pie.deleteSlice" && m.slices) {
         m.slices = m.slices.filter((x) => x.entityId !== op.sliceId);
         __visimer.model.slices = m.slices;
+      } else if (op.type === "st.addState" && m.states) {
+        const id = idSeq("s");
+        const state = { entityId: "state:" + id, id: id, label: op.label || id,
+          stereotype: null, isComposite: false, decl: null, declLines: [], typeDeclLine: null };
+        m.states.push(state);
+        created.push(state.entityId);
+      } else if (op.type === "st.setStateLabel" && m.states) {
+        const s = m.states.find((x) => x.id === op.id);
+        if (s) s.label = op.label;
+      } else if (op.type === "st.setStateType" && m.states) {
+        const s = m.states.find((x) => x.id === op.id);
+        if (s) s.stereotype = op.stype === "state" ? null : op.stype;
+      } else if (op.type === "st.addStateNote") {
+        created.length = created.length;
+      } else if (op.type === "st.connect" && m.transitions) {
+        const id = "trans:" + op.source + "->" + op.target + "#0";
+        m.transitions.push({ entityId: id, source: op.source, target: op.target,
+          label: op.label || null, lineIndex: 3 + m.transitions.length,
+          stmt: { source: op.source, target: op.target } });
+        created.push(id);
+      } else if (op.type === "st.setTransitionLabel" && m.transitions) {
+        const t = m.transitions.find((x) => x.entityId === op.transId);
+        if (t) t.label = op.label;
+      } else if (op.type === "st.reverseTransition" && m.transitions) {
+        const t = m.transitions.find((x) => x.entityId === op.transId);
+        if (t) { const s = t.source; t.source = t.target; t.target = s; }
+      } else if (op.type === "st.deleteTransition" && m.transitions) {
+        m.transitions = m.transitions.filter((x) => x.entityId !== op.transId);
+        __visimer.model.transitions = m.transitions;
+      } else if (op.type === "st.deleteState" && m.states) {
+        m.states = m.states.filter((x) => x.id !== op.id);
+        m.transitions = m.transitions.filter((t) => t.source !== op.id && t.target !== op.id);
+        __visimer.model.states = m.states;
+        __visimer.model.transitions = m.transitions;
+      } else if (op.type === "st.setDirection") {
+        m.direction = { value: op.direction, lineIndex: 1 };
+      } else if (op.type === "cl.addClass" && m.classes) {
+        const id = op.name || idSeq("Class");
+        const cls = { entityId: "class:" + id, id: id, label: id, decl: null,
+          block: null, members: [], extraLines: [], refLines: [], firstRefLine: 1 };
+        m.classes.push(cls);
+        created.push(cls.entityId);
+      } else if (op.type === "cl.renameClass" && m.classes) {
+        const c = m.classes.find((x) => x.id === op.id);
+        if (c) {
+          const old = c.id;
+          const next = op.name.trim().replace(/[^\w.~]/g, "");
+          c.id = next; c.entityId = "class:" + next; c.label = next;
+          (m.relations || []).forEach((rel) => {
+            if (rel.source === old) rel.source = next;
+            if (rel.target === old) rel.target = next;
+            rel.entityId = "rel:" + rel.source + "->" + rel.target + "#0";
+          });
+        }
+      } else if (op.type === "cl.setAnnotation" && m.classes) {
+        const c = m.classes.find((x) => x.id === op.id);
+        if (c) {
+          m.annotations = m.annotations || {};
+          if (op.annotation == null) delete m.annotations["2"];
+          else m.annotations["2"] = op.annotation;
+        }
+      } else if (op.type === "cl.addMember" && m.classes) {
+        const c = m.classes.find((x) => x.id === op.id);
+        if (c) c.members.push({ lineIndex: 2 + c.members.length, text: op.text || "+attribute" });
+      } else if (op.type === "cl.setMemberText" && m.classes) {
+        const c = m.classes.find((x) => x.id === op.id);
+        const mem = c && c.members.find((x) => x.lineIndex === op.memberLine);
+        if (mem) {
+          if (op.text) mem.text = op.text;
+          else c.members = c.members.filter((x) => x !== mem);
+        }
+      } else if (op.type === "cl.deleteMember" && m.classes) {
+        const c = m.classes.find((x) => x.id === op.id);
+        if (c) c.members = c.members.filter((x) => x.lineIndex !== op.memberLine);
+      } else if (op.type === "cl.addNoteFor") {
+        created.length = created.length;
+      } else if (op.type === "cl.deleteClass" && m.classes) {
+        m.classes = m.classes.filter((x) => x.id !== op.id);
+        m.relations = (m.relations || []).filter((r2) => r2.source !== op.id && r2.target !== op.id);
+        __visimer.model.classes = m.classes;
+        __visimer.model.relations = m.relations;
+      } else if (op.type === "cl.connect" && m.relations) {
+        const id = "rel:" + op.source + "->" + op.target + "#0";
+        m.relations.push({ entityId: id, source: op.source, target: op.target,
+          label: op.label || null, lineIndex: 4 + m.relations.length, order: m.relations.length,
+          stmt: { source: op.source, target: op.target, op: op.op || "-->",
+            sourceCard: null, targetCard: null } });
+        created.push(id);
+      } else if (op.type === "cl.setRelationType" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) rel.stmt.op = op.op;
+      } else if (op.type === "cl.setRelationLabel" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) rel.label = op.label;
+      } else if (op.type === "cl.setCardinality" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) rel.stmt[op.side + "Card"] = op.value;
+      } else if (op.type === "cl.reverseRelation" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) { const s = rel.source; rel.source = rel.target; rel.target = s; }
+      } else if (op.type === "cl.deleteRelation" && m.relations) {
+        m.relations = m.relations.filter((x) => x.entityId !== op.relId);
+        __visimer.model.relations = m.relations;
+      } else if (op.type === "cl.setDirection") {
+        m.direction = { value: op.direction, lineIndex: 1 };
+      } else if (op.type === "er.addEntity" && m.entities) {
+        const id = op.name || idSeq("ENTITY");
+        const ent = { entityId: "entity:" + id, id: id, label: id, decl: null,
+          block: null, attributes: [], refLines: [], firstRefLine: 1 };
+        m.entities.push(ent);
+        created.push(ent.entityId);
+      } else if (op.type === "er.renameEntity" && m.entities) {
+        const e = m.entities.find((x) => x.id === op.id);
+        if (e) {
+          const old = e.id;
+          const next = op.name.trim().replace(/[^\w-]/g, "");
+          e.id = next; e.entityId = "entity:" + next; e.label = next;
+          (m.relations || []).forEach((rel) => {
+            if (rel.source === old) rel.source = next;
+            if (rel.target === old) rel.target = next;
+            rel.entityId = "erel:" + rel.source + "->" + rel.target + "#0";
+          });
+        }
+      } else if (op.type === "er.addAttribute" && m.entities) {
+        const e = m.entities.find((x) => x.id === op.id);
+        if (e) e.attributes.push({ lineIndex: 2 + e.attributes.length, text: op.text || "string attribute" });
+      } else if (op.type === "er.setAttributeText" && m.entities) {
+        const e = m.entities.find((x) => x.id === op.id);
+        const attr = e && e.attributes.find((x) => x.lineIndex === op.attrLine);
+        if (attr) {
+          if (op.text) attr.text = op.text;
+          else e.attributes = e.attributes.filter((x) => x !== attr);
+        }
+      } else if (op.type === "er.deleteEntity" && m.entities) {
+        m.entities = m.entities.filter((x) => x.id !== op.id);
+        m.relations = (m.relations || []).filter((r2) => r2.source !== op.id && r2.target !== op.id);
+        __visimer.model.entities = m.entities;
+        __visimer.model.relations = m.relations;
+      } else if (op.type === "er.connect" && m.relations) {
+        const id = "erel:" + op.source + "->" + op.target + "#0";
+        m.relations.push({ entityId: id, source: op.source, target: op.target,
+          label: op.label || "relates", lineIndex: 4 + m.relations.length, order: m.relations.length,
+          stmt: { source: op.source, target: op.target, leftCard: "||", rightCard: "o{", line: "--" } });
+        created.push(id);
+      } else if (op.type === "er.setCardinality" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) {
+          const glyphs = { "zero-or-one": { left: "|o", right: "o|" },
+            "exactly-one": { left: "||", right: "||" },
+            "zero-or-more": { left: "}o", right: "o{" },
+            "one-or-more": { left: "}|", right: "|{" } };
+          rel.stmt[op.side + "Card"] = glyphs[op.card][op.side];
+        }
+      } else if (op.type === "er.setIdentifying" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) rel.stmt.line = op.identifying ? "--" : "..";
+      } else if (op.type === "er.setRelationLabel" && m.relations) {
+        const rel = m.relations.find((x) => x.entityId === op.relId);
+        if (rel) rel.label = op.label;
+      } else if (op.type === "er.deleteRelation" && m.relations) {
+        m.relations = m.relations.filter((x) => x.entityId !== op.relId);
+        __visimer.model.relations = m.relations;
       }
       void r;
       return created;
@@ -25729,7 +26030,7 @@ function check(label, cond, extra) {
       __visimer.model = null;
       __visimer.modelFamily = null;
       __visimer.rejectNext = null;
-      this.result = fakeResult();
+      this.result = fakeResult(this.code);
       this._handlers = {};
       __visimer.editors.push(this);
     }
@@ -25766,10 +26067,20 @@ function check(label, cond, extra) {
       // Keep the no-op / dirty contract real: any successful dispatch makes
       // the fake source differ from the open-time baseline.
       this.code = this.code + "\n%% " + op.type;
-      this.result = fakeResult();
+      this.result = fakeResult(this.code);
       this._emit("change", { code: this.code, edits: [], origin: "canvas" });
       if (created.length) this.setSelection(created, "canvas");
       return { ok: true, code: this.code, created: created };
+    };
+    FakeEditor.prototype.setCode = function (next, origin) {
+      if (next === this.code) return;
+      __visimer.setCodes.push({ code: next, origin: origin || "code" });
+      this.code = next;
+      this.result = fakeResult(this.code);
+      this._emit("change", { code: this.code, edits: [], origin: origin || "code" });
+    };
+    FakeEditor.prototype.reparse = function () {
+      this.result = fakeResult(this.code);
     };
     Object.defineProperty(FakeEditor.prototype, "canUndo", {
       get: function () { return !!__visimer.canUndo; },
@@ -26492,12 +26803,6 @@ function check(label, cond, extra) {
         await tick(20);
 
         const ADD_MATRIX = [
-          { family: "state", label: "Add state", connect: true,
-            op: { type: "st.addState", label: "New state" } },
-          { family: "class", label: "Add class", connect: true,
-            op: { type: "cl.addClass", name: "NewClass" } },
-          { family: "er", label: "Add entity", connect: true,
-            op: { type: "er.addEntity", name: "NewEntity" } },
           { family: "gantt", label: "Add task", connect: false,
             op: { type: "gantt.addTask", section: "", name: "New task", meta: "1d" } },
           { family: "lineitem", label: "Add line", connect: false,
@@ -26531,7 +26836,7 @@ function check(label, cond, extra) {
               JSON.stringify(lastOp(null)) === JSON.stringify(fam.op),
               JSON.stringify(lastOp(null)));
           }
-          if (fam.family === "state") {
+          if (fam.family === "gantt") {
             check("designer edit UI: non-scoped families carry no hint aria-describedby",
               !$("designer-overlay").querySelector(".settings-modal")
                 .hasAttribute("aria-describedby"));
@@ -26903,6 +27208,701 @@ function check(label, cond, extra) {
         await tick(20);
       }
 
+      // --- (5b) sequence v2: fragments + participant id ------------
+      {
+        const f = await openFamily("sequence");
+        if (f.c) {
+          f.view.select("event:2");
+          const wrap = $("designer-message-wrap");
+          check("designer v2: message inspector has a Wrap in control", !!wrap);
+          wrap.value = "opt";
+          changeEv(wrap);
+          let op = lastOp("seq.wrapInFragment");
+          check("designer v2: Wrap in dispatches seq.wrapInFragment for the event",
+            !!op && op.eventId === "event:2" && op.kind === "opt", JSON.stringify(op));
+          check("designer v2: a structural wrap clears the selection",
+            inspectorKind.textContent === "Nothing selected" &&
+            f.ed.selection.length === 0,
+            inspectorKind.textContent + " / " + JSON.stringify(f.ed.selection));
+
+          f.view.select("event:4");
+          const noteWrap = $("designer-note-wrap");
+          noteWrap.value = "loop";
+          changeEv(noteWrap);
+          op = lastOp("seq.wrapInFragment");
+          check("designer v2: a note can be wrapped in a fragment",
+            !!op && op.eventId === "event:4" && op.kind === "loop", JSON.stringify(op));
+
+          f.view.select("participant:A");
+          const aliasId = $("designer-participant-id");
+          check("designer v2: an aliased participant disables the Id field",
+            !!aliasId && aliasId.disabled === true,
+            aliasId ? "disabled=" + aliasId.disabled : "missing");
+          check("designer v2: the aliased Id field explains why it is disabled",
+            /uses an alias/.test(inspectorBody.textContent));
+
+          f.view.select("participant:B");
+          const pid = $("designer-participant-id");
+          check("designer v2: a no-alias participant exposes an editable Id",
+            !!pid && pid.disabled === false && pid.value === "B",
+            pid ? "disabled=" + pid.disabled + " value=" + pid.value : "missing");
+          __visimer.dispatches.length = 0;
+          setVal(pid, "Bobby");
+          op = lastOp("seq.renameParticipant");
+          check("designer v2: Id rename dispatches seq.renameParticipant {id,name}",
+            !!op && op.id === "B" && op.name === "Bobby", JSON.stringify(op));
+          check("designer v2: Id rename re-keys the selection",
+            f.ed.selection[0] === "participant:Bobby" &&
+            $("designer-inspector-meta").textContent === "Bobby",
+            JSON.stringify(f.ed.selection) + " / " + $("designer-inspector-meta").textContent);
+          __visimer.dispatches.length = 0;
+          const idNow = $("designer-participant-id");
+          idNow.focus();
+          setVal(idNow, "Bad name");
+          check("designer v2: an unsafe participant id is rejected inline",
+            !lastOp("seq.renameParticipant") &&
+            idNow.getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-participant-id-error").hidden === false,
+            JSON.stringify(__visimer.dispatches));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5c) pie header: title + showData exact bytes -----------
+      {
+        const f = await openFamily("pie");
+        if (f.c) {
+          const BASE = "  pie showData title Where the bytes go\n  \"Search\" : 40\n  \"Mail\" : 60\n";
+          f.ed.code = BASE;
+          f.ed.reparse();
+          f.ed._emit("change");
+          check("designer v2: pie title is read from the header line",
+            $("designer-pie-title").value === "Where the bytes go",
+            JSON.stringify($("designer-pie-title").value));
+          check("designer v2: pie showData is read from the header line",
+            $("designer-pie-showdata-input").checked === true);
+
+          __visimer.setCodes.length = 0;
+          setVal($("designer-pie-title"), "New title");
+          let set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer v2: pie title edit replaces only the header line",
+            !!set && set.code === "  pie showData title New title\n  \"Search\" : 40\n  \"Mail\" : 60\n" &&
+            set.origin === "ui", set ? JSON.stringify(set) : "no setCode");
+          check("designer v2: pie header edits do not dispatch a model op",
+            !lastOp("pie.setLabel") && !lastOp("pie.setValue"), "dispatched");
+
+          __visimer.setCodes.length = 0;
+          setVal($("designer-pie-title"), "");
+          set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer v2: an empty title removes the title token",
+            !!set && set.code === "  pie showData\n  \"Search\" : 40\n  \"Mail\" : 60\n",
+            set ? JSON.stringify(set.code) : "no setCode");
+
+          __visimer.setCodes.length = 0;
+          $("designer-pie-showdata-input").checked = false;
+          changeEv($("designer-pie-showdata-input"));
+          set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer v2: showData off removes the token and keeps every other line",
+            !!set && set.code === "  pie\n  \"Search\" : 40\n  \"Mail\" : 60\n",
+            set ? JSON.stringify(set.code) : "no setCode");
+
+          __visimer.setCodes.length = 0;
+          $("designer-pie-showdata-input").checked = true;
+          changeEv($("designer-pie-showdata-input"));
+          set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer v2: showData on adds the token in the header only",
+            !!set && set.code === "  pie showData\n  \"Search\" : 40\n  \"Mail\" : 60\n",
+            set ? JSON.stringify(set.code) : "no setCode");
+
+          __visimer.setCodes.length = 0;
+          setVal($("designer-pie-title"), "");
+          $("designer-pie-showdata-input").checked = true;
+          changeEv($("designer-pie-showdata-input"));
+          check("designer v2: an unchanged pie header is a no-op",
+            __visimer.setCodes.length === 0,
+            "setCodes=" + JSON.stringify(__visimer.setCodes));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5d) flowchart node/edge colors + multi-id guard --------
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          f.view.select("node:A");
+          __visimer.dispatches.length = 0;
+          const fill = $("designer-node-fill");
+          fill.value = "#ff0000";
+          changeEv(fill);
+          let op = lastOp("setNodeColor");
+          check("designer v2: node fill dispatches setNodeColor {id,prop,value}",
+            !!op && op.id === "A" && op.prop === "fill" && op.value === "#ff0000",
+            JSON.stringify(op));
+          clickEv($("designer-node-fill-clear"));
+          op = lastOp("setNodeColor");
+          check("designer v2: Clear dispatches setNodeColor with a null value",
+            !!op && op.id === "A" && op.prop === "fill" && op.value === null,
+            JSON.stringify(op));
+
+          f.view.select("edge:A->B#0");
+          __visimer.dispatches.length = 0;
+          const stroke = $("designer-edge-stroke");
+          stroke.value = "#00ff00";
+          changeEv(stroke);
+          op = lastOp("setEdgeColor");
+          check("designer v2: edge stroke dispatches setEdgeColor {edgeId,value}",
+            !!op && op.edgeId === "edge:A->B#0" && op.value === "#00ff00",
+            JSON.stringify(op));
+          clickEv($("designer-edge-stroke-clear"));
+          op = lastOp("setEdgeColor");
+          check("designer v2: edge Clear dispatches setEdgeColor null",
+            !!op && op.edgeId === "edge:A->B#0" && op.value === null, JSON.stringify(op));
+
+          f.ed.code = "graph TD\n  A\n  B\n  style A,B fill:#ff0000\n";
+          f.ed.reparse();
+          f.ed._emit("change");
+          f.view.select("node:A");
+          check("designer v2: a multi-id style line disables node color controls",
+            $("designer-node-fill").disabled === true &&
+            $("designer-node-stroke").disabled === true &&
+            $("designer-node-color").disabled === true);
+          check("designer v2: the multi-id guard names source editing",
+            /shares a style line/.test(inspectorBody.textContent));
+
+          f.ed.code = "graph TD\n  A\n  B\n  style A fill:#ff0000,stroke:#00ff00,color:#0000ff\n";
+          f.ed.reparse();
+          f.ed._emit("change");
+          f.view.select("node:A");
+          check("designer v2: a single-id style line shows its direct colors",
+            $("designer-node-fill").value === "#ff0000" &&
+            $("designer-node-stroke").value === "#00ff00" &&
+            $("designer-node-color").value === "#0000ff",
+            [$("designer-node-fill").value, $("designer-node-stroke").value,
+              $("designer-node-color").value].join(","));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5e) state inspector + add forms + direction ------------
+      {
+        const f = await openFamily("state");
+        if (f.c) {
+          check("designer v2: state is a scoped family with the state badge",
+            $("designer-type").textContent === "state" &&
+            inspector.hidden === false && sidebar.hidden === false,
+            $("designer-type").textContent + " / inspector=" + inspector.hidden);
+          f.view.select("state:A");
+          check("designer v2: state inspector renders",
+            inspectorKind.textContent === "State" &&
+            $("designer-inspector-meta").textContent === "A",
+            inspectorKind.textContent + " / " + $("designer-inspector-meta").textContent);
+          setVal($("designer-state-label"), "Ready");
+          let op = lastOp("st.setStateLabel");
+          check("designer v2: state label dispatches st.setStateLabel",
+            !!op && op.id === "A" && op.label === "Ready", JSON.stringify(op));
+          setVal($("designer-state-type"), "choice");
+          op = lastOp("st.setStateType");
+          check("designer v2: state type dispatches st.setStateType",
+            !!op && op.id === "A" && op.stype === "choice", JSON.stringify(op));
+          clickEv($("designer-state-note-left"));
+          op = lastOp("st.addStateNote");
+          check("designer v2: Add note left dispatches st.addStateNote",
+            !!op && op.id === "A" && op.side === "left", JSON.stringify(op));
+          clickEv($("designer-state-connect"));
+          check("designer v2: Connect pre-fills the Transition add tab",
+            $("designer-add-tabs").querySelector('[data-tab="transition"]')
+              .getAttribute("aria-selected") === "true" &&
+            $("designer-add-from").value === "A",
+            $("designer-add-from").value);
+
+          tab("state");
+          setVal($("designer-add-label"), "Busy");
+          setVal($("designer-add-stype"), "fork");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          const addState = __visimer.dispatches.find((x) => x.type === "st.addState");
+          const setType = __visimer.dispatches.find((x) => x.type === "st.setStateType");
+          check("designer v2: Add state dispatches st.addState then st.setStateType",
+            !!addState && addState.label === "Busy" &&
+            !!setType && setType.stype === "fork",
+            JSON.stringify(__visimer.dispatches));
+          check("designer v2: the created state is selected",
+            inspectorKind.textContent === "State", inspectorKind.textContent);
+
+          tab("transition");
+          setVal($("designer-add-from"), "A");
+          setVal($("designer-add-to"), "B");
+          setVal($("designer-add-label"), "next");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          op = lastOp("st.connect");
+          check("designer v2: Add transition dispatches st.connect",
+            !!op && op.source === "A" && op.target === "B" && op.label === "next",
+            JSON.stringify(op));
+
+          const dir = $("designer-direction").querySelector('input[value="LR"]');
+          dir.checked = true;
+          changeEv(dir);
+          op = lastOp("st.setDirection");
+          check("designer v2: state direction chips dispatch st.setDirection",
+            !!op && op.direction === "LR", JSON.stringify(op));
+
+          const tid = f.ed.result.state.transitions[0].entityId;
+          f.view.select(tid);
+          check("designer v2: transition inspector renders",
+            inspectorKind.textContent === "Transition", inspectorKind.textContent);
+          setVal($("designer-transition-label"), "continue");
+          op = lastOp("st.setTransitionLabel");
+          check("designer v2: transition label dispatches st.setTransitionLabel",
+            !!op && op.transId === tid && op.label === "continue", JSON.stringify(op));
+          clickEv($("designer-transition-reverse"));
+          op = lastOp("st.reverseTransition");
+          check("designer v2: transition reverse dispatches st.reverseTransition",
+            !!op && op.transId === tid, JSON.stringify(op));
+          const delId = f.ed.result.state.transitions[0].entityId;
+          f.view.select(delId);
+          clickEv($("designer-transition-delete"));
+          op = lastOp("st.deleteTransition");
+          check("designer v2: transition delete dispatches st.deleteTransition",
+            !!op && op.transId === delId, JSON.stringify(op));
+
+          f.view.select("state:A");
+          clickEv($("designer-state-delete"));
+          op = lastOp("st.deleteState");
+          check("designer v2: Delete state dispatches st.deleteState and clears",
+            !!op && op.id === "A" &&
+            inspectorKind.textContent === "Nothing selected",
+            JSON.stringify(op));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5f) class inspector + add forms + direction ------------
+      {
+        const f = await openFamily("class");
+        if (f.c) {
+          check("designer v2: class is a scoped family with the class badge",
+            $("designer-type").textContent === "class" && inspector.hidden === false,
+            $("designer-type").textContent);
+          f.view.select("class:A");
+          check("designer v2: class inspector renders",
+            inspectorKind.textContent === "Class", inspectorKind.textContent);
+          setVal($("designer-class-name"), "Order");
+          let op = lastOp("cl.renameClass");
+          check("designer v2: class name dispatches cl.renameClass",
+            !!op && op.id === "A" && op.name === "Order", JSON.stringify(op));
+          check("designer v2: a class rename re-keys the selection",
+            f.ed.selection[0] === "class:Order",
+            JSON.stringify(f.ed.selection));
+          setVal($("designer-class-annotation"), "Entity");
+          op = lastOp("cl.setAnnotation");
+          check("designer v2: annotation dispatches cl.setAnnotation",
+            !!op && op.id === "Order" && op.annotation === "Entity", JSON.stringify(op));
+          setVal($("designer-class-member-2"), "+int y");
+          op = lastOp("cl.setMemberText");
+          check("designer v2: member edit dispatches cl.setMemberText",
+            !!op && op.id === "Order" && op.memberLine === 2 && op.text === "+int y",
+            JSON.stringify(op));
+          setVal($("designer-class-member-new"), "+String name");
+          clickEv($("designer-class-member-add"));
+          op = lastOp("cl.addMember");
+          check("designer v2: member add dispatches cl.addMember",
+            !!op && op.id === "Order" && op.text === "+String name", JSON.stringify(op));
+          clickEv($("designer-class-member-delete-2"));
+          op = lastOp("cl.deleteMember");
+          check("designer v2: member delete dispatches cl.deleteMember",
+            !!op && op.id === "Order" && op.memberLine === 2, JSON.stringify(op));
+          clickEv($("designer-class-note"));
+          op = lastOp("cl.addNoteFor");
+          check("designer v2: Add note dispatches cl.addNoteFor",
+            !!op && op.id === "Order", JSON.stringify(op));
+
+          const relId = f.ed.result.classGraph.relations[0].entityId;
+          f.view.select(relId);
+          check("designer v2: class relation inspector renders",
+            inspectorKind.textContent === "Relation", inspectorKind.textContent);
+          setVal($("designer-relation-type"), "o--");
+          op = lastOp("cl.setRelationType");
+          check("designer v2: relation type uses an exact RelationOp",
+            !!op && op.relId === relId && op.op === "o--", JSON.stringify(op));
+          setVal($("designer-relation-label"), "owns");
+          op = lastOp("cl.setRelationLabel");
+          check("designer v2: relation label dispatches cl.setRelationLabel",
+            !!op && op.relId === relId && op.label === "owns", JSON.stringify(op));
+          setVal($("designer-relation-source-card"), "1");
+          op = lastOp("cl.setCardinality");
+          check("designer v2: source cardinality dispatches cl.setCardinality",
+            !!op && op.side === "source" && op.value === "1", JSON.stringify(op));
+          setVal($("designer-relation-target-card"), "0..*");
+          op = lastOp("cl.setCardinality");
+          check("designer v2: target cardinality dispatches cl.setCardinality",
+            !!op && op.side === "target" && op.value === "0..*", JSON.stringify(op));
+
+          tab("class");
+          setVal($("designer-add-name"), "Invoice");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          op = lastOp("cl.addClass");
+          check("designer v2: Add class dispatches cl.addClass",
+            !!op && op.name === "Invoice", JSON.stringify(op));
+
+          tab("relation");
+          setVal($("designer-add-from"), "Order");
+          setVal($("designer-add-to"), "Invoice");
+          setVal($("designer-add-op"), "o--");
+          setVal($("designer-add-label"), "has");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          op = lastOp("cl.connect");
+          check("designer v2: Add relation dispatches cl.connect with the chosen op",
+            !!op && op.source === "Order" && op.target === "Invoice" &&
+            op.op === "o--" && op.label === "has", JSON.stringify(op));
+
+          const dir = $("designer-direction").querySelector('input[value="RL"]');
+          dir.checked = true;
+          changeEv(dir);
+          op = lastOp("cl.setDirection");
+          check("designer v2: class direction chips dispatch cl.setDirection",
+            !!op && op.direction === "RL", JSON.stringify(op));
+
+          f.view.select(relId);
+          clickEv($("designer-relation-reverse"));
+          op = lastOp("cl.reverseRelation");
+          check("designer v2: relation reverse dispatches cl.reverseRelation",
+            !!op && op.relId === relId, JSON.stringify(op));
+          f.view.select(f.ed.result.classGraph.relations[0].entityId);
+          clickEv($("designer-relation-delete"));
+          op = lastOp("cl.deleteRelation");
+          check("designer v2: relation delete dispatches cl.deleteRelation",
+            !!op, JSON.stringify(op));
+          f.view.select("class:Order");
+          clickEv($("designer-class-delete"));
+          op = lastOp("cl.deleteClass");
+          check("designer v2: Delete class dispatches cl.deleteClass and clears",
+            !!op && op.id === "Order" &&
+            inspectorKind.textContent === "Nothing selected", JSON.stringify(op));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5g) ER inspector + add forms ---------------------------
+      {
+        const f = await openFamily("er");
+        if (f.c) {
+          check("designer v2: er is a scoped family with the er badge",
+            $("designer-type").textContent === "er" && inspector.hidden === false,
+            $("designer-type").textContent);
+          f.view.select("entity:USER");
+          check("designer v2: entity inspector renders",
+            inspectorKind.textContent === "Entity", inspectorKind.textContent);
+          setVal($("designer-entity-name"), "CUSTOMER");
+          let op = lastOp("er.renameEntity");
+          check("designer v2: entity name dispatches er.renameEntity",
+            !!op && op.id === "USER" && op.name === "CUSTOMER", JSON.stringify(op));
+          check("designer v2: an entity rename re-keys the selection",
+            f.ed.selection[0] === "entity:CUSTOMER",
+            JSON.stringify(f.ed.selection));
+          setVal($("designer-entity-attr-2"), "uuid id");
+          op = lastOp("er.setAttributeText");
+          check("designer v2: attribute edit dispatches er.setAttributeText",
+            !!op && op.id === "CUSTOMER" && op.attrLine === 2 && op.text === "uuid id",
+            JSON.stringify(op));
+          setVal($("designer-entity-attr-new"), "string email");
+          clickEv($("designer-entity-attr-add"));
+          op = lastOp("er.addAttribute");
+          check("designer v2: attribute add dispatches er.addAttribute",
+            !!op && op.id === "CUSTOMER" && op.text === "string email",
+            JSON.stringify(op));
+
+          const relId = f.ed.result.er.relations[0].entityId;
+          f.view.select(relId);
+          check("designer v2: ER relation inspector renders",
+            inspectorKind.textContent === "Relation", inspectorKind.textContent);
+          setVal($("designer-er-left-card"), "one-or-more");
+          op = lastOp("er.setCardinality");
+          check("designer v2: left cardinality uses an exact ErCardinality",
+            !!op && op.relId === relId && op.side === "left" &&
+            op.card === "one-or-more", JSON.stringify(op));
+          setVal($("designer-er-right-card"), "zero-or-one");
+          op = lastOp("er.setCardinality");
+          check("designer v2: right cardinality uses an exact ErCardinality",
+            !!op && op.side === "right" && op.card === "zero-or-one",
+            JSON.stringify(op));
+          const identifying = $("designer-er-identifying");
+          identifying.checked = false;
+          changeEv(identifying);
+          op = lastOp("er.setIdentifying");
+          check("designer v2: identifying toggle dispatches er.setIdentifying",
+            !!op && op.relId === relId && op.identifying === false,
+            JSON.stringify(op));
+          setVal($("designer-er-relation-label"), "ships");
+          op = lastOp("er.setRelationLabel");
+          check("designer v2: ER relation label dispatches er.setRelationLabel",
+            !!op && op.relId === relId && op.label === "ships", JSON.stringify(op));
+
+          tab("entity");
+          setVal($("designer-add-name"), "INVOICE");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          op = lastOp("er.addEntity");
+          check("designer v2: Add entity dispatches er.addEntity",
+            !!op && op.name === "INVOICE", JSON.stringify(op));
+
+          tab("relation");
+          const ids = Array.from($("designer-add-from").options).map((o) => o.value);
+          setVal($("designer-add-from"), "CUSTOMER");
+          setVal($("designer-add-to"), "INVOICE");
+          setVal($("designer-add-label"), "pays");
+          __visimer.dispatches.length = 0;
+          submitAdd();
+          op = lastOp("er.connect");
+          check("designer v2: Add relation dispatches er.connect",
+            !!op && op.source === "CUSTOMER" && op.target === "INVOICE" &&
+            op.label === "pays", JSON.stringify(op));
+          void ids;
+
+          f.view.select("entity:CUSTOMER");
+          clickEv($("designer-entity-delete"));
+          op = lastOp("er.deleteEntity");
+          check("designer v2: Delete entity dispatches er.deleteEntity and clears",
+            !!op && op.id === "CUSTOMER" &&
+            inspectorKind.textContent === "Nothing selected", JSON.stringify(op));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5h) review regressions: collisions and guards ----------
+      {
+        const f = await openFamily("sequence");
+        if (f.c) {
+          const a = f.ed.result.sequence.participants.find((p) => p.id === "A");
+          a.decl = null;   // exercise the no-alias id field
+          f.ed.reparse();
+          f.view.select("participant:A");
+          const pid = $("designer-participant-id");
+          __visimer.dispatches.length = 0;
+          setVal(pid, "B");   // B already exists
+          check("designer review: a participant id collision is rejected inline",
+            !lastOp("seq.renameParticipant") &&
+            pid.value === "A" &&
+            pid.getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-participant-id-error").hidden === false &&
+            /already in use/.test(window.document.getElementById("designer-participant-id-error").textContent),
+            JSON.stringify(__visimer.dispatches) + " value=" + pid.value);
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("class");
+        if (f.c) {
+          f.ed.code = "classDiagram\n  class A\n  note for A \"remember\"\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.select("class:A");
+          __visimer.dispatches.length = 0;
+          setVal($("designer-class-name"), "B");
+          check("designer review: class rename refuses a class with a note for it",
+            !lastOp("cl.renameClass") &&
+            $("designer-class-name").value === "A" &&
+            /source/.test(window.document.getElementById("designer-class-name-error").textContent),
+            JSON.stringify(__visimer.dispatches));
+
+          f.ed.code = "classDiagram\n  class A\n";
+          f.ed.reparse();
+          const model = __visimer.model;
+          model.annotations = { "2": "Abstract" };
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("class:A");
+          __visimer.dispatches.length = 0;
+          setVal($("designer-class-name"), "B");
+          check("designer review: class rename refuses an annotation substring",
+            !lastOp("cl.renameClass") && $("designer-class-name").value === "A",
+            JSON.stringify(__visimer.dispatches));
+
+          f.ed.code = "classDiagram\n  class A\n  note for A \"remember\"\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("class:A");
+          __visimer.dispatches.length = 0;
+          clickEv($("designer-class-delete"));
+          check("designer review: class delete refuses a class with a note for it",
+            !lastOp("cl.deleteClass") && /can.t update/.test($("designer-alert-msg").textContent),
+            JSON.stringify(__visimer.dispatches));
+
+          f.ed.code = "classDiagram\n  class A\n";
+          model.annotations = {};
+          model.classes[0].block = { open: 1, close: 2 };
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("class:A");
+          check("designer review: annotation is disabled for a block class",
+            $("designer-class-annotation").disabled === true &&
+            /block/.test(inspectorBody.textContent));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("state");
+        if (f.c) {
+          f.ed.code = "stateDiagram-v2\n  state A\n  note left of A: remember\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.select("state:A");
+          __visimer.dispatches.length = 0;
+          clickEv($("designer-state-delete"));
+          check("designer review: state delete refuses a state with a note for it",
+            !lastOp("st.deleteState") && /can.t update/.test($("designer-alert-msg").textContent),
+            JSON.stringify(__visimer.dispatches));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          f.ed.code = "graph TD\n  A\n  B\n  linkStyle 0,1 stroke:#ff0000\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.select("edge:A->B#0");
+          check("designer review: a multi-index linkStyle disables edge color",
+            $("designer-edge-stroke").disabled === true &&
+            /shares a linkStyle/.test(inspectorBody.textContent));
+
+          f.ed.code = "graph TD\n  A\n  B\n  linkStyle 0 stroke:#00ff00\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("edge:A->B#0");
+          check("designer review: a single-index linkStyle reads its stroke",
+            $("designer-edge-stroke").disabled === false &&
+            $("designer-edge-stroke").value === "#00ff00",
+            $("designer-edge-stroke").value);
+          __visimer.dispatches.length = 0;
+          $("designer-edge-stroke").value = "#0000ff";
+          changeEv($("designer-edge-stroke"));
+          const op = lastOp("setEdgeColor");
+          check("designer review: a single-index linkStyle still writes",
+            !!op && op.value === "#0000ff", JSON.stringify(op));
+
+          f.ed.code = "graph TD\n  A\n  B\n  style A fill:\"#f00\"\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("node:A");
+          check("designer review: a quoted color is read as hex",
+            $("designer-node-fill").value === "#ff0000",
+            $("designer-node-fill").value);
+          const clearLabels = [
+            $("designer-node-fill-clear").getAttribute("aria-label"),
+            $("designer-node-stroke-clear").getAttribute("aria-label"),
+            $("designer-node-color-clear").getAttribute("aria-label"),
+          ];
+          check("designer review: node Clear buttons have unique accessible names",
+            clearLabels.every(Boolean) && new Set(clearLabels).size === 3,
+            clearLabels.join(" / "));
+          f.view.select("edge:A->B#0");
+          check("designer review: edge Clear has its own accessible name",
+            $("designer-edge-stroke-clear").getAttribute("aria-label") === "Clear edge stroke",
+            $("designer-edge-stroke-clear").getAttribute("aria-label"));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          f.ed.code = "graph TD\n  A\n  B\n  style A fill:rgb(255,0,0),stroke:#000\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.select("node:A");
+          __visimer.dispatches.length = 0;
+          __visimer.setCodes.length = 0;
+          $("designer-node-stroke").value = "#00ff00";
+          changeEv($("designer-node-stroke"));
+          let set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer review: a top-level comma keeps fill:rgb(...) byte-identical",
+            !!set && set.code.indexOf("style A fill:rgb(255,0,0),stroke:#00ff00,stroke-width:2px") !== -1 &&
+            !lastOp("setNodeColor"),
+            set ? JSON.stringify(set.code) : "no setCode");
+
+          f.ed.code = "graph TD\n  A\n  B\n  style A fill:\"rgb(255,0,0)\",stroke:#000\n";
+          f.ed.reparse(); f.ed._emit("change");
+          f.view.clearSelection();
+          f.view.select("node:A");
+          __visimer.setCodes.length = 0;
+          $("designer-node-stroke").value = "#0000ff";
+          changeEv($("designer-node-stroke"));
+          set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer review: a quoted comma value is preserved exactly",
+            !!set && set.code.indexOf('style A fill:"rgb(255,0,0)",stroke:#0000ff,stroke-width:2px') !== -1,
+            set ? JSON.stringify(set.code) : "no setCode");
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("pie");
+        if (f.c) {
+          const BASE = "pie showData title My title page %% keep\r\n  \"A\" : 1\r\n";
+          f.ed.code = BASE;
+          f.ed.reparse(); f.ed._emit("change");
+          check("designer review: pie title containing 'title' is read",
+            $("designer-pie-title").value === "My title page",
+            JSON.stringify($("designer-pie-title").value));
+          __visimer.setCodes.length = 0;
+          setVal($("designer-pie-title"), "Another title");
+          let set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer review: pie title rewrite preserves CRLF and a %% comment",
+            !!set && set.code === "pie showData title Another title %% keep\r\n  \"A\" : 1\r\n",
+            set ? JSON.stringify(set.code) : "no setCode");
+          __visimer.setCodes.length = 0;
+          $("designer-pie-showdata-input").checked = false;
+          changeEv($("designer-pie-showdata-input"));
+          set = __visimer.setCodes[__visimer.setCodes.length - 1];
+          check("designer review: showData toggle preserves CRLF and the comment",
+            !!set && set.code === "pie title Another title %% keep\r\n  \"A\" : 1\r\n",
+            set ? JSON.stringify(set.code) : "no setCode");
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("class");
+        if (f.c) {
+          f.view.select("class:A");
+          check("designer review: class member rows have real labels",
+            !!inspectorBody.querySelector('label[for="designer-class-member-2"]') &&
+            /Member 1/.test(inspectorBody.querySelector('label[for="designer-class-member-2"]').textContent) &&
+            !!inspectorBody.querySelector('label[for="designer-class-member-new"]'),
+            inspectorBody.textContent.slice(0, 80));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      {
+        const f = await openFamily("er");
+        if (f.c) {
+          f.view.select("entity:USER");
+          check("designer review: ER attribute rows have real labels",
+            !!inspectorBody.querySelector('label[for="designer-entity-attr-2"]') &&
+            /Attribute 1/.test(inspectorBody.querySelector('label[for="designer-entity-attr-2"]').textContent) &&
+            !!inspectorBody.querySelector('label[for="designer-entity-attr-new"]'),
+            inspectorBody.textContent.slice(0, 80));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
       // --- (6) apply validation failure uses the banner ------------
       {
         const f = await openFamily("flowchart");
@@ -27024,6 +28024,61 @@ function check(label, cond, extra) {
             window.confirm = realConfirm;
           }
         }
+      }
+
+      // --- (7b) state Apply writes one fence, others byte-identical -
+      {
+        const MULTI = "# Multi\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n" +
+          "Middle.\n\n```mermaid\nstateDiagram-v2\n  [*] --> A\n  A --> [*]\n```\n\nEnd.\n";
+        FILES["notes/designer-multi.md"] = MULTI;
+        if (dNotes && !dNotes.children.some((c) => c.path === "notes/designer-multi.md")) {
+          dNotes.children.push({ name: "designer-multi.md", type: "file",
+            path: "notes/designer-multi.md" });
+        }
+        if (window.NB.mermaidDesign.isOpen()) window.NB.mermaidDesign.close();
+        await window.NB.hybrid.exit(false);
+        await tick(40);
+        await window.NB.sidebar.refresh();
+        await tick(30);
+        window.NB.viewer.close("notes/designer-multi.md");
+        await window.NB.tabs.open("notes/designer-multi.md");
+        let cs = [];
+        for (let i = 0; i < 30 && cs.length < 2; i++) {
+          await tick(25); cs = Array.from(vc.querySelectorAll(".mermaid-container"));
+        }
+        check("designer v2 apply: two mermaid blocks render (precondition)", cs.length >= 2,
+          "containers=" + cs.length);
+        if (cs.length >= 2) {
+          await window.NB.hybrid.enter();
+          await tick(20);
+          cs = Array.from(vc.querySelectorAll(".mermaid-container"));
+          __visimer.family = "state";
+          __visimer.typeId = "state";
+          __visimer.capability = "edit";
+          window.NB.mermaidDesign.open(window.NB.hybrid.codeBlockAt(cs[1]));
+          await tick(80);
+          const ed = __visimer.editors[__visimer.editors.length - 1];
+          const NEW = "stateDiagram-v2\n  [*] --> A\n  A --> Done\n";
+          ed.code = NEW;
+          clickEv($("designer-apply"));
+          await tick(120);
+          check("designer v2 apply: the state fence is written", window.NB.mermaidDesign.isOpen() === false);
+          const md = window.NB.hybrid.domToMarkdown();
+          check("designer v2 apply: the untouched flowchart fence is byte-identical",
+            md.indexOf("```mermaid\ngraph TD\n  A --> B\n```") !== -1,
+            JSON.stringify(md.slice(0, 220)));
+          check("designer v2 apply: the state fence carries the new source",
+            md.indexOf("```mermaid\n" + NEW + "```") !== -1,
+            JSON.stringify(md.slice(0, 320)));
+          check("designer v2 apply: prose outside the fences is preserved",
+            md.indexOf("Middle.") !== -1 && md.indexOf("End.") !== -1);
+          window.NB.hybrid.flushPendingSnapshot();
+          await window.NB.hybrid.exit(false);
+          await tick(30);
+        }
+        __visimer.family = "flowchart";
+        __visimer.typeId = "flowchart";
+        __visimer.capability = "edit";
       }
 
       // --- (8) structural change clears a line-index selection -----

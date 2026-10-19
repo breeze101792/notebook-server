@@ -178,13 +178,14 @@ edit the source instead") with one button that closes the modal and calls
 `editPluginSource(hit)` (`hybrid.js:5007`). On load failure, `.catch` on
 `NB.lazyload.script` and close with a toast; no polling.
 
-### Edit UI: inspector, selection, add forms (v1)
+### Edit UI: inspector, selection, add forms (v1 + v2)
 
-The three scoped families (`flowchart`/`graph`, `sequenceDiagram`, `pie`) get a
-three-region body: the existing build sidebar (236px), the canvas stage, and a
-contextual inspector (296px). Every other editable family keeps the old
-add-only sidebar and shows no inspector. The vendor `.mw-popover` is hidden
-inside `#designer-canvas`; inline label editing stays as an accelerator.
+Six scoped families (`flowchart`/`graph`, `sequenceDiagram`, `pie`, `state`,
+`class`, `er`) get a three-region body: the existing build sidebar (236px), the
+canvas stage, and a contextual inspector (296px). Every other editable family
+keeps the old add-only sidebar and shows no inspector. The vendor `.mw-popover`
+is hidden inside `#designer-canvas`; inline label editing stays as an
+accelerator.
 
 **Selection model.** `mermaid-designer.js` subscribes to
 `editor.on("selectionChange")`. The event carries `entityIds` (a `string[]`);
@@ -195,6 +196,9 @@ the module resolves the first id against `editor.result`:
 | flowchart | `node:<id>`, `edge:<src>-><tgt>#<n>` | Node, Edge |
 | sequence | `participant:<id>`, `event:<lineIndex>` | Participant, Message, Note |
 | pie | `slice:<lineIndex>` | Slice |
+| state | `state:<id>`, `trans:<src>-><tgt>#<n>` | State, Transition |
+| class | `class:<id>`, `rel:<src>-><tgt>#<n>` | Class, Relation |
+| er | `entity:<id>`, `erel:<src>-><tgt>#<n>` | Entity, Relation |
 
 The inspector renders a fixed header (type, read-only id/meta, clear button)
 and a scrolling body. It writes on `change` (blur/Enter) for text fields and on
@@ -216,21 +220,32 @@ note targets, or slice line + label). After every model change:
 - Renaming a participant with an alias keeps the id. Renaming one without an
   alias rewrites the id at every reference, so the module computes the new
   sanitized id and selects `participant:<newId>`; if it does not exist the
-  selection clears. A stale id is never left in the inspector.
+  selection clears. The participant inspector shows a separate `Id` field only
+  for a no-alias participant; an aliased participant's id field is disabled
+  with "This participant uses an alias; edit the display name." A stale id is
+  never left in the inspector.
+- Renaming a class or ER entity rewrites every reference and re-keys the
+  selection to `class:<newName>` / `entity:<newName>`. A transition/relation
+  identity signature includes its line index, so a structural change that
+  moves it clears the selection rather than editing the wrong row.
 - On an **external** change (canvas inline edit, drag-connect, popover action)
   the module re-resolves the stored id and compares its identity signature. A
   line-index id that now refers to a different message/note/slice clears the
   selection instead of editing the wrong entity.
-- Undo/redo clears the selection for sequence and pie, because their ids are
-  line-index based. Flowchart undo re-resolves; reverse-edge clears because the
-  edge id changes.
+- Undo/redo clears the selection for sequence, pie, state, class, and er,
+  because their ids or anchor lines can drift. Flowchart undo re-resolves;
+  reverse-edge/reverse-relation clears because the id changes.
+- A `seq.wrapInFragment` is structural and clears the selection. A later
+  delete or move may leave an empty fragment; the editor accepts it and leaves
+  repair to the source view.
 
 **Add forms.** The sidebar Add section is tabbed per family
-(`node`/`edge`, `participant`/`message`/`note`, `slice`). Forms are real
-`<form>`s; Enter submits. Add buttons disable until required fields are
-present, and the reason appears in `#designer-add-note`. Draft text survives a
-tab switch; a successful add clears text fields but keeps the chosen
-shape/type/line/arrow defaults.
+(`node`/`edge`, `participant`/`message`/`note`, `slice`, `state`/`transition`,
+`class`/`relation`, `entity`/`relation`). Forms are real `<form>`s; Enter
+submits. Add buttons disable until required fields are present, and the reason
+appears in `#designer-add-note`. Draft text survives a tab switch; a
+successful add clears text fields but keeps the chosen shape/type/line/arrow
+defaults.
 
 - Flowchart node: shape grid + label. Dispatch `addNode {shape,label}` (not
   `view.addNode`), then select `created[0]`.
@@ -245,11 +260,73 @@ shape/type/line/arrow defaults.
   no longer exists.
 - Pie slice: label + value. The value is validated as finite and ≥ 0 before
   dispatch; a negative or non-numeric value shows an inline error and never
-  reaches `pie.addSlice`. The title stays deferred (quiet sidebar note, no
-  control).
-- Chart controls: flowchart direction chips dispatch `setDirection` and
-  preserve the source token; the sequence autonumber switch dispatches
-  `seq.toggleAutonumber` and reflects `result.sequence.autonumber.enabled`.
+  reaches `pie.addSlice`.
+- State: label + type on the State tab; `st.addState` then `st.setStateType`
+  when the type is not `state`. Transition: From/To (including `[*]`) + label;
+  `st.connect`.
+- Class: name on the Class tab (`cl.addClass`). Relation: From/To, an exact
+  `RelationOp` from `core/class/ops.ts`, optional label; `cl.connect`.
+- ER: name on the Entity tab (`er.addEntity`). Relation: From/To + label;
+  `er.connect`.
+- Chart controls: flowchart/state/class direction chips dispatch
+  `setDirection` / `st.setDirection` / `cl.setDirection`; the sequence
+  autonumber switch dispatches `seq.toggleAutonumber` and reflects
+  `result.sequence.autonumber.enabled`. The Pie Chart section edits the header
+  line directly (below).
+
+**Pie header (v2).** `PieGraph` exposes `showData` but no title and has no title
+operation. The Chart section therefore edits the `pie` header line as text:
+`pie title <text>`, `pie showData title <text>`, or `pie`/`pie showData` with no
+title. A commit reads the current line, reconstructs the header from its
+indentation plus `pie`, `showData`, and `title`, and calls
+`editor.setCode(nextCode, "ui")` with only that line replaced; every other byte
+is untouched. CRLF and a trailing `%%` comment are preserved (the comment gap is
+kept verbatim); an unrecognized token after `pie` disables the fields with a
+source-edit note rather than dropping text. An empty title removes the `title`
+token. A no-op returns without calling `setCode`, so it creates no undo entry
+and no dispatch.
+
+**Sequence fragments and id (v2).** A selected message or note has a `Wrap in`
+select (`loop`, `alt`, `opt`, `par`, `critical`, `break`, `rect`) that dispatches
+`seq.wrapInFragment {eventId, kind}` and clears the selection. The participant
+inspector adds an `Id` field for a participant with no alias; it validates
+`[A-Za-z0-9_-]+` (no spaces or `,;:`) and dispatches
+`seq.renameParticipant {id, name: newId}`, then re-keys the selection. A new id
+that already belongs to another participant is rejected inline before dispatch,
+so lifelines are never merged. An aliased participant disables the field.
+Activation/deactivation is not exposed.
+
+**Flowchart colors (v2).** The node inspector has `Fill`, `Stroke`, and `Text`
+color inputs with a per-property `Clear`; each dispatches
+`setNodeColor {id, prop, value | null}`. The edge inspector has a `Stroke` input
+and `Clear` dispatching `setEdgeColor {edgeId, value | null}`. Current values
+are read from a single-id `style` line (node) or a single-index `linkStyle`
+line (edge); `classDef` is never resolved and quoted values are unquoted before
+the hex check. A non-hex value is not turned into black; its control is disabled
+with a source-edit note. A `style` line with more than one id
+(`style A,B fill:...`) disables the node color controls with "This node shares
+a style line; edit it in the source." because `setNodeColor` only handles one
+id and would rewrite the line for the first id. A multi-index `linkStyle`
+(`linkStyle 0,1 stroke:...`) disables the edge color control for the same
+reason; writing never appends a second `linkStyle <n>` line.
+
+**State / class / ER inspectors (v2).** Each entity and relation gets a named
+control for every op listed in `docs/architecture/mermaid-designer-coverage.md`.
+State transitions and class/ER relations include delete and the reverse action
+where the model has one. Class members and ER attributes render as editable
+rows with add and delete (class) or add/edit/delete-by-empty (ER). `cl.setAnnotation`
+takes an empty string as `null` (clear); a block class disables the annotation
+field because the vendor op writes inside the block and the parser then reads
+it as a member.
+
+**Vendor limitation guards.** `cl.renameClass`, `cl.deleteClass`, and
+`st.deleteState` do not update `note for <id>` / `note ... <id>` lines, and
+`cl.renameClass` corrupts an annotation whose text contains the id as a
+substring. The UI therefore scans the source before dispatch and refuses a
+class rename when the class has a note or an annotation, a class delete when it
+has a note, and a state delete when it has a note. Each refusal shows a
+source-editor explanation and dispatches nothing. The vendor ops are not
+rewritten. `st.moveToComposite` is deliberately not exposed (deferred).
 
 **Apply error vs open error.** Open-time load/render/parse failures keep the
 full-canvas `#designer-error` state with Retry / Edit source. An **Apply
@@ -401,3 +478,26 @@ Relative to `docs/requirements/features/mermaid-visual-editor.md`:
 
 Preview hover icon; server write route; `ai.js` / `agent.md` changes; freeform
 shape drawing; position persistence beyond the library's model.
+
+## V2 implemented / V3 blocked
+
+Implemented in v2 (see the inspector sections above):
+
+- Pie title and `showData` header edits.
+- Sequence fragment wrapping and no-alias participant id editing.
+- Flowchart node/edge colors with the multi-id `style` guard.
+- Inspector parity for `state`, `class`, and `er`.
+
+Deferred to v3 or blocked by the vendored library (recorded so the gap is not
+rediscovered):
+
+- **Pie:** slice reorder.
+- **Sequence:** activation/deactivation, participant reorder.
+- **Flowchart:** subgraph creation, edge animation/curve, and
+  `classDef`/`style`/`linkStyle`/`click` authoring. `setFlowCurve` clobbers
+  rich init directives; animation renders only in the designer; no ops exist
+  for `classDef`/`click`; subgraph membership is positional.
+- **Other families:** gantt/journey/timeline/line-item inspectors (the
+  line-item family exposes only raw text); a create-from-scratch type picker;
+  preview-mode entry; full keyboard traversal.
+- **State:** `st.moveToComposite` (positional composite membership).

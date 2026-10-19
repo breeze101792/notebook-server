@@ -4910,6 +4910,22 @@ body[data-theme="light"] #designer-overlay {
   padding: 3px 7px; min-height: 26px;
 }
 .designer-btn--ghost:hover { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.designer-btn--small {
+  flex: 0 0 auto; min-height: 26px; padding: 2px 7px; font-size: .74rem;
+}
+.designer-color-control { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.designer-color-control input[type="color"] {
+  width: 46px; height: var(--designer-field-h); padding: 2px;
+  border: 1px solid var(--border); border-radius: var(--designer-radius-sm);
+  background: var(--code-bg);
+}
+.designer-member-list { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.designer-member-row { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.designer-member-row .designer-field { flex: 1 1 auto; }
+.designer-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 /* Add tabs + fields (design §5.2–5.3). */
 .designer-add-tabs {
