@@ -270,7 +270,7 @@ test in `tests/dom/test_dom.js` checks index.html / sw.js / the ai.js prompt
 **Hybrid write-back contract.** A save that changes nothing writes nothing:
 `isNoOpMarkdown` compares the serialized DOM against the form captured at
 `enter()` and skips `POST /api/file` in every save caller (`save`, `onClose`,
-`onSaveExit`, `commitForTabSwitch`, `flushAutosave`, `exit`). Empty headings and
+`commitForTabSwitch`, `flushAutosave`, `exit`). Empty headings and
 empty list items keep their markers; whitespace-only inline code runs are
 carried through a clone with sentinels (a NUL-prefixed token for code spaces,
 because a private-use char occurs in real notes). Tables are always emitted as

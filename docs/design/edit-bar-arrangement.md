@@ -32,7 +32,7 @@ Left to right, as shipped today:
 | — separator | | :241 |
 | History | `undo` `redo` | :242-243 |
 | Overflow | `⋯` More menu (`more`) holding exactly `hr`, `h5`, `h6`, `clear` | :244-253 |
-| Spacer + actions | `.eb-spacer`, then right-aligned `Preview`, `Save` (hidden), `Save & Exit` (hidden), `Close` (dirty dot) | :254-261 |
+| Spacer + actions | `.eb-spacer`, then right-aligned `Preview`, `Save` (hidden), `Close` (dirty dot) | :254-261 |
 
 The More menu is the only *hide* menu: a control behind `⋯` is invisible until
 opened. The `▦` and `☰` menus are *action* menus — they group a family of
@@ -68,7 +68,7 @@ Target, left to right:
 | Table | `▦` table menu | Its own family of operations (14 items); kept as one visible trigger. |
 | — separator | | |
 | Reset | `clear` | Whole-line reset that strips the block prefixes (heading/list/quote/task) and the inline emphasis, i.e. it undoes groups 2-4. Rare, so it lives at the trailing edge of the formatting cluster, not in the hot zone. |
-| Spacer + actions | `Preview`, `Save` (hidden unless dirty), `Save & Exit` (hidden), `Close` | Unchanged, right-aligned. |
+| Spacer + actions | `Preview`, `Save` (hidden unless dirty), `Close` | Unchanged, right-aligned. In hybrid mode `Save` and `Close` render icon-only (💾 and ✕). |
 
 What actually moved:
 
@@ -213,10 +213,12 @@ No new `data-act` keys are introduced; none are renamed; `more` is removed.
 - The `▦` table menu: same 14 items, same order (`table` first), same behavior.
 - The `☰` list menu: same 2 items, same enable/disable-when-not-in-a-list rule.
 - The emoji panel: same toggle, search, categories, and insert behavior.
-- The right-aligned mode actions `Preview`, `Save`, `Save & Exit`, `Close`:
-  same labels, same hidden/dirty-dot behavior.
+- The right-aligned mode actions `Preview`, `Save`, `Close`: same
+  hidden/dirty-dot behavior. Hybrid mode uses icon-only Save (💾) and exit
+  (✕) labels.
 - Vim-mode visibility of the whole bar (`editbar.js` `refresh()`): unchanged.
-- Labels, glyphs, tooltips, and button sizes: unchanged.
+- Labels, glyphs, tooltips, and button sizes: unchanged, except the
+  hybrid-mode Save and exit icons.
 
 ---
 

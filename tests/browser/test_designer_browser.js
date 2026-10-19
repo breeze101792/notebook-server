@@ -85,6 +85,13 @@ function stripFence(s) {
   return s.replace(/```mermaid\n[\s\S]*?\n```/, "```mermaid\n<SRC>\n```");
 }
 
+// Save the hybrid DOM, then exit hybrid mode. The edit bar no longer
+// has a combined Save & Exit button, so tests drive the two actions.
+async function saveAndExit(page) {
+  await page.evaluate(() => window.NB.hybrid.save());
+  await page.click("#close-edit-btn");
+}
+
 async function waitForServer(child) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -207,7 +214,7 @@ async function main() {
         JSON.stringify(code));
       await page.click("#designer-apply");
       await closeDesigner();
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const after = readNote(NOTE);
       check("designer browser: the note now holds a mermaid fence with the new diagram",
@@ -242,7 +249,7 @@ async function main() {
       await page.click("#viewer-content", { position: { x: 5, y: 5 } }).catch(() => {});
       await page.keyboard.press("Control+z");
       await page.waitForTimeout(200);
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       check("designer browser: one Ctrl+Z restores the previous fence bytes",
         readNote(NOTE) === before, JSON.stringify(readNote(NOTE)));
@@ -327,7 +334,7 @@ async function main() {
 
       await page.click("#designer-apply");
       await closeDesigner();
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const saved = readNote(FLOW);
       check("designer browser: the double-headed edge lands in the saved fence",
@@ -446,7 +453,7 @@ async function main() {
 
       await page.click("#designer-apply");
       await closeDesigner();
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const seqSaved = readNote(SEQ);
       check("designer browser: sequence edits land in the saved fence",

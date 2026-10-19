@@ -356,7 +356,7 @@ every caret position, the invariants, and the open questions — is
 - A save that changes nothing writes nothing. Entering hybrid mode and
   saving without typing issues no `POST /api/file` at all: the saved form
   of the entered DOM is captured at `enter()` and compared before every
-  write, in `save`, `onClose`, `onSaveExit`, `commitForTabSwitch`,
+  write, in `save`, `onClose`, `commitForTabSwitch`,
   `flushAutosave`, and `exit(true)` (`isNoOpMarkdown`, `hybrid.js:3426`).
   This matters because a whole-DOM serialization canonicalizes some
   constructs (a trailing blank line, a `*` bullet to `-`); regenerating

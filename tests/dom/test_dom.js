@@ -287,7 +287,6 @@ const html = `<!DOCTYPE html><html><head>
           <span class="eb-actions">
             <button id="preview-btn" class="eb">Preview</button>
             <button id="save-btn" class="eb eb-primary" hidden>Save</button>
-            <button id="save-exit-btn" class="eb eb-primary" hidden>Save &amp; Exit</button>
             <button id="close-edit-btn" class="eb">Close</button>
           </span>
         </div>
@@ -7508,24 +7507,36 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(50);
 
-    // --- hybrid Save & Exit flow ---
-    // The Save&Exit button is visible in hybrid mode, saves, then exits.
+    // --- hybrid Save then exit flow ---
+    // Save and exit are separate icon actions; the old combined
+    // Save & Exit button is gone.
     await window.NB.hybrid.enter();
     await tick(20);
-    const sexBtn = $("save-exit-btn");
-    check("hybrid: Save&Exit button visible when dirty", !sexBtn.hidden);
-    // Edit then click Save&Exit.
+    check("hybrid: no combined Save & Exit button",
+      !$("save-exit-btn"), "save-exit-btn present");
+    check("hybrid: Save and exit use icons",
+      $("save-btn").textContent === "💾" &&
+      $("close-edit-btn").textContent === "✕",
+      "save=" + JSON.stringify($("save-btn").textContent) +
+      " exit=" + JSON.stringify($("close-edit-btn").textContent));
+    // Edit then Save, then exit.
     vc.innerHTML += "<p>save-exit test</p>";
     vc.dispatchEvent(new window.Event("input", { bubbles: true }));
     await tick(100);
     const saveExitBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-    sexBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(60);
     const saveExitAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-    check("hybrid: Save&Exit saves", saveExitAfter - saveExitBefore === 1,
+    check("hybrid: Save+exit saves", saveExitAfter - saveExitBefore === 1,
       "delta=" + (saveExitAfter - saveExitBefore));
-    check("hybrid: Save&Exit exits hybrid mode", !window.NB.hybrid.isActive());
-    check("hybrid: Save&Exit hides its button", sexBtn.hidden);
+    $("close-edit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    check("hybrid: Save+exit exits hybrid mode", !window.NB.hybrid.isActive());
+    check("hybrid: exit restores the buttons' text labels",
+      $("save-btn").textContent === "Save" &&
+      $("close-edit-btn").textContent === "Close",
+      "save=" + JSON.stringify($("save-btn").textContent) +
+      " exit=" + JSON.stringify($("close-edit-btn").textContent));
 
     // --- hybrid keyboard-save delegation ---
     // NB.viewer.save() delegates to NB.hybrid.save() while hybrid is
@@ -9742,13 +9753,12 @@ function check(label, cond, extra) {
     cancelCfg.autosaveDelay = cancelDelayWas;
 
     // --- autosave write race ------------------------------------------
-    // An autosave POST that is still in flight when the user hits
-    // Save & Exit must not land AFTER the explicit save: over a slow
-    // link the older body would otherwise be the last write, leaving
-    // the file with stale content while the viewer cache holds the
-    // newer markdown. Gate the first POST so the autosave is stuck
-    // mid-flight, then click Save & Exit and assert the LAST write to
-    // the file holds the newest text.
+    // An autosave POST that is still in flight when the user hits Save
+    // must not land AFTER the explicit save: over a slow link the older
+    // body would otherwise be the last write, leaving the file with stale
+    // content while the viewer cache holds the newer markdown. Gate the
+    // first POST so the autosave is stuck mid-flight, then Save and assert
+    // the LAST write to the file holds the newest text.
     FILES["notes/a.md"] = "# File A\n\nbody\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
@@ -9776,12 +9786,12 @@ function check(label, cond, extra) {
       await tick(1200);
       check("hybrid autosave-race: the autosave is in flight", typeof releaseFirst === "function",
         "releaseFirst=" + typeof releaseFirst);
-      // Now edit more and click Save & Exit. The explicit save must wait
+      // Now edit more and click Save. The explicit save must wait
       // for the stalled flush and be the LAST write.
       $("viewer-content").innerHTML += "<p>explicit body</p>";
       $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
       await tick(100);
-      $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+      $("save-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
       await tick(50);
       if (releaseFirst) releaseFirst();
       window.NB.api.saveFile = realSave;
@@ -9968,17 +9978,17 @@ function check(label, cond, extra) {
       check("hybrid no-op: dirty cleared after the write",
         !window.NB.hybrid.isDirty());
 
-      // A clean Save & Exit must also write nothing (and still exit).
+      // A clean Close must also write nothing (and still exit).
       const cleanExitBefore =
         fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-      $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+      $("close-edit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
       await tick(60);
       const cleanExitAfter =
         fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-      check("hybrid no-op: clean Save&Exit issues zero POST /api/file",
+      check("hybrid no-op: clean Close issues zero POST /api/file",
         cleanExitAfter - cleanExitBefore === 0,
         "delta=" + (cleanExitAfter - cleanExitBefore));
-      check("hybrid no-op: clean Save&Exit still exits",
+      check("hybrid no-op: clean Close still exits",
         !window.NB.hybrid.isActive());
     }
 
@@ -12435,7 +12445,8 @@ function check(label, cond, extra) {
         { verb: "enter+save", run: async () => { await window.NB.hybrid.save(); } },
         { verb: "enter+exit", run: async () => { await window.NB.hybrid.exit(false); } },
         { verb: "save+exit", run: async () => {
-          $("save-exit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+          await window.NB.hybrid.save();
+          $("close-edit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
           await tick(80);
         } },
       ];

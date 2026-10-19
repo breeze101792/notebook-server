@@ -120,7 +120,7 @@ the headerless-table path so a table serializes as GFM or is refused, never
 ### No-op is a non-write
 
 Compare the spliced result to `S0`. If equal, skip `doSave` in every caller:
-`save`, `onClose`, `onSaveExit`, `commitForTabSwitch`, `flushAutosave`
+`save`, `onClose`, `commitForTabSwitch`, `flushAutosave`
 (`static/js/hybrid.js:2385`, `:2403`, `:2419`, `:2449`, `:2068`).
 
 ## Implementation order

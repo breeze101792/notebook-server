@@ -232,7 +232,7 @@ I2. **No format lost unintentionally.** A construct the user did not touch keeps
     serialized form (Appendix A).
 I3. **A no-op writes nothing.** If `domToMarkdown()` equals the session baseline,
     every save caller skips `POST /api/file` (`isNoOpMarkdown` at `hybrid.js:3426`;
-    callers `save` `:3497`, `onClose` `:3528`, `onSaveExit` `:3545`,
+    callers `save` `:3497`, `onClose` `:3528`,
     `commitForTabSwitch` `:3576`, `flushAutosave` `:3114`, `exit` `:3354`).
 I4. **Output is always plain Markdown, never HTML.** No `<tag>` may reach a file
     outside a fence (`PLAN.md:116-118`). Turndown's unknown-markup default unwraps

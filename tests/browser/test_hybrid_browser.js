@@ -81,6 +81,13 @@ async function caretInBlock(page, selector, index) {
   }, { selector, index });
 }
 
+// Save the hybrid DOM, then exit hybrid mode. The edit bar no longer
+// has a combined Save & Exit button, so tests drive the two actions.
+async function saveAndExit(page) {
+  await page.evaluate(() => window.NB.hybrid.save());
+  await page.click("#close-edit-btn");
+}
+
 async function waitForServer(child) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -147,17 +154,17 @@ async function main() {
     check("real browser: clean enter+exit preserves the file bytes",
       readNote(NOTE) === SOURCE, JSON.stringify(readNote(NOTE)));
 
-    // --- no-op: clean Save+Exit issues no write --------------------
+    // --- no-op: clean Save then exit issues no write --------------------
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
       () => document.getElementById("viewer-content")
         .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
     const mtimeBefore = fs.statSync(p).mtimeMs;
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     await new Promise((r) => setTimeout(r, 400));
-    check("real browser: clean Save+Exit leaves the file untouched",
+    check("real browser: clean Save then exit leaves the file untouched",
       readNote(NOTE) === SOURCE && fs.statSync(p).mtimeMs === mtimeBefore,
       JSON.stringify(readNote(NOTE)));
 
@@ -173,7 +180,7 @@ async function main() {
     await caretInBlock(page, "#viewer-content p", -1);
     await page.keyboard.press("End");
     await page.keyboard.type(" Now.");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     const afterType = readNote(NOTE);
@@ -194,7 +201,7 @@ async function main() {
     await caretInBlock(page, "#viewer-content h2", 0);
     await page.keyboard.press("End");
     await page.keyboard.type(" today");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     const afterPara = readNote(NOTE);
@@ -224,7 +231,7 @@ async function main() {
     await caretInBlock(page, "#viewer-content p", -1);
     await page.keyboard.press("End");
     await page.keyboard.type(" EDITED");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     const localityOut = readNote("notes/locality.md");
@@ -261,7 +268,7 @@ async function main() {
         box.height > 0, "height=" + box.height);
       await page.mouse.click(box.x, box.y);
       await page.keyboard.type("Overview");
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const eh = readNote("notes/emptyhead.md");
@@ -285,7 +292,7 @@ async function main() {
         .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
     await caretInBlock(page, "#viewer-content li", 0);
     await page.keyboard.press("Enter");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -309,7 +316,7 @@ async function main() {
       p.textContent = "";
       p.dispatchEvent(new window.Event("input", { bubbles: true }));
     });
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -336,7 +343,7 @@ async function main() {
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     await page.keyboard.type("newpara");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -427,7 +434,7 @@ async function main() {
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     await page.keyboard.type("gamma");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -456,7 +463,7 @@ async function main() {
     await page.keyboard.press("End");
     await page.keyboard.press("Shift+Enter");
     await page.keyboard.type("next");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -486,7 +493,7 @@ async function main() {
     await caretInBlock(page, "#viewer-content p", 0);
     await page.keyboard.press("End");
     await page.keyboard.press("Shift+Enter");
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     {
@@ -894,7 +901,7 @@ async function main() {
         "html=" + (await page.evaluate(
           () => document.getElementById("viewer-content").innerHTML)));
       await page.keyboard.type("Title");
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const nn = readNote("notes/newnote.md");
@@ -960,10 +967,10 @@ async function main() {
       check("real browser task: a second checkbox click unchecks it",
         afterSecond === false, "checked=" + afterSecond);
 
-      // One more click leaves it checked, then Save+Exit must write [x].
+      // One more click leaves it checked, then Save then exit must write [x].
       await page.click('#viewer-content input[type="checkbox"]');
       await page.waitForTimeout(80);
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const savedChecked = readNote("notes/tasktoggle.md");
@@ -975,7 +982,7 @@ async function main() {
         !/<\/?[a-zA-Z][^>]*>/.test(savedChecked), JSON.stringify(savedChecked));
 
       // Re-enter: the checkbox renders checked from the saved [x]; one
-      // click unchecks it and one Save+Exit must write [ ] back.
+      // click unchecks it and one Save then exit must write [ ] back.
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
         () => document.getElementById("viewer-content")
@@ -986,7 +993,7 @@ async function main() {
         rechecked === true, "checked=" + rechecked);
       await page.click('#viewer-content input[type="checkbox"]');
       await page.waitForTimeout(80);
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const savedUnchecked = readNote("notes/tasktoggle.md");
@@ -1243,7 +1250,7 @@ async function main() {
 
     // The persisted bytes: the leading text is still the list marker form,
     // never a bare checkbox with no marker or a doubled "- -".
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     await page.waitForTimeout(300);
@@ -1329,7 +1336,7 @@ async function main() {
       await page.waitForTimeout(100);
       const dom = await listShape();
       if (dom !== expect) modelBad.push(src + "+" + act + "=" + dom);
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       // Re-render the saved bytes and confirm the shape round-trips.
@@ -1356,7 +1363,7 @@ async function main() {
     await page.waitForTimeout(100);
     check("real browser list model: a mid-list item becomes a task in place",
       (await listShape()) === "ul+task", "got=" + (await listShape()));
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
@@ -1572,7 +1579,7 @@ async function main() {
       check("real browser list drag: a completed drag reorders the list",
         JSON.stringify(await ownOrder()) === JSON.stringify(["a", "b", "d", "c"]),
         JSON.stringify(await ownOrder()));
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       check("real browser list drag: the reordered list saves canonical bytes",
@@ -1605,7 +1612,7 @@ async function main() {
           return !!child && child.children.length === 1 &&
             child.children[0].textContent.trim() === "c";
         }));
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       check("real browser list drag: the nested drop saves nested Markdown",
@@ -1705,7 +1712,7 @@ async function main() {
             Array.from(nested.children).map((x) => x.textContent.trim())
               .join(",") === "a1,a2";
         }));
-      await page.click("#save-exit-btn");
+      await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       check("real browser list drag: the subtree drag saves intact Markdown",
@@ -1928,7 +1935,7 @@ async function main() {
       JSON.stringify(listState));
     check("real browser chords: no uncaught page errors",
       pageErrors.length === 0, pageErrors.join(" | "));
-    await page.click("#save-exit-btn");
+    await saveAndExit(page);
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     check("real browser chords: the list chord saves valid Markdown",

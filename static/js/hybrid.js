@@ -39,9 +39,12 @@
   const editBar        = document.getElementById("edit-bar");
   const hybridBtn      = document.getElementById("hybrid-toggle");
   const saveBtn        = document.getElementById("save-btn");
-  const saveExitBtn    = document.getElementById("save-exit-btn");
   const closeEditBtn   = document.getElementById("close-edit-btn");
   const topbar         = document.getElementById("topbar");
+  // Hybrid mode replaces the text labels with icons so the two mode
+  // actions read at a glance next to the formatting buttons.
+  const HYBRID_SAVE_ICON = "💾";
+  const HYBRID_EXIT_ICON = "✕";
   // The emoji picker panel, owned by editbar.js; hybrid only listens for
   // the click that chooses an emoji (that panel lives outside the editable
   // region, so the insertion is done here, not by editbar.js).
@@ -4797,19 +4800,22 @@
     // context keeps the bar visible even when VIM mode is on (vim governs
     // the CM6 source editor, not WYSIWYG).
     if (NB.editbar) NB.editbar.show("hybrid");
-    // Hide the Preview button (it's for CM6 split mode) and the
-    // Close button text should say "Exit WYSIWYG".
+    // Hide the Preview button (it's for CM6 split mode). Save and exit
+    // become icon-only actions in hybrid mode.
     const previewBtn = document.getElementById("preview-btn");
     if (previewBtn) previewBtn.hidden = true;
     if (closeEditBtn) {
       closeEditBtn.hidden = false;
-      closeEditBtn.textContent = "Exit";
+      closeEditBtn.textContent = HYBRID_EXIT_ICON;
+      closeEditBtn.title = "Exit WYSIWYG mode";
+      closeEditBtn.setAttribute("aria-label", "Exit WYSIWYG mode");
     }
-    if (saveBtn) saveBtn.hidden = true;
-    // The hybrid flow adds Save+Exit as its primary affordance (Save
-    // alone is the CM6-mode button). Save+Exit is always visible while
-    // hybrid-editing; the plain Save only appears once dirty.
-    if (saveExitBtn) saveExitBtn.hidden = false;
+    if (saveBtn) {
+      saveBtn.hidden = true;
+      saveBtn.textContent = HYBRID_SAVE_ICON;
+      saveBtn.title = "Save current file";
+      saveBtn.setAttribute("aria-label", "Save current file");
+    }
 
     // Focus the content.
     viewerContentEl.focus();
@@ -4855,7 +4861,6 @@
     editBar.addEventListener("click", onEditBarClick, true);
     if (emojiPanelEl) emojiPanelEl.addEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
-    if (saveExitBtn) saveExitBtn.addEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.addEventListener("click", onClose, true);
 
     NB.evt.emit("hybrid:entered", activePath);
@@ -4893,7 +4898,6 @@
     editBar.removeEventListener("click", onEditBarClick, true);
     if (emojiPanelEl) emojiPanelEl.removeEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
-    if (saveExitBtn) saveExitBtn.removeEventListener("click", onSaveExit, true);
     if (closeEditBtn) closeEditBtn.removeEventListener("click", onClose, true);
     NB.menu.close("hybrid");
 
@@ -4914,8 +4918,14 @@
     if (previewBtn) previewBtn.hidden = false;
     if (closeEditBtn) {
       closeEditBtn.textContent = "Close";
+      closeEditBtn.title = "Exit edit mode";
+      closeEditBtn.setAttribute("aria-label", "Exit edit mode");
     }
-    if (saveExitBtn) saveExitBtn.hidden = true;
+    if (saveBtn) {
+      saveBtn.textContent = "Save";
+      saveBtn.title = "Save current file";
+      saveBtn.setAttribute("aria-label", "Save current file");
+    }
 
     active = false;
     const path = activePath;
@@ -5066,21 +5076,6 @@
       }
     }
     await exit(false);
-  }
-
-  async function onSaveExit(e) {
-    if (e) { e.stopPropagation(); e.preventDefault(); }
-    if (!active) return;
-    try {
-      await awaitPendingAutosave();
-      const md = domToMarkdown();
-      if (isNoOpMarkdown(md)) resetDirty();
-      else await doSave(md);
-      if (NB.app && NB.app.notify) NB.app.notify("Saved");
-      await exit(false);
-    } catch (err) {
-      alert("Save failed: " + (err && err.message ? err.message : err));
-    }
   }
 
   async function toggle() {
