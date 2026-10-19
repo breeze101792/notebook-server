@@ -418,3 +418,15 @@ diagram types" given the engine's constraints.
    primary entry in preview versus a modifier-click or a container context menu,
    given click already opens the lightbox. Owner: `ui-designer` (interaction),
    product (behavior).
+
+---
+
+## Amendment 2026-10-19
+
+The three-block in-place editing scope (flowchart, sequence, pie in
+`notebook/Syntax.md`) is now governed by
+[`docs/product/mermaid-chart-editing.md`](../../product/mermaid-chart-editing.md).
+That document defines the verified current gaps, required vs deferred edits,
+flows, and acceptance criteria for existing rendered blocks. This document
+remains the original broad product definition; where the two differ on the
+three-block scope, the new document wins.

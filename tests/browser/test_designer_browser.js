@@ -58,6 +58,13 @@ const SRC = "# Diagram\n\nBefore paragraph.\n\n" +
   "```mermaid\ngraph TD; A-->B; B-->C;\n```\n\nAfter paragraph.\n";
 const ORIGINAL_CODE = "graph TD; A-->B; B-->C;";
 
+// A line-based flowchart for the inspector checks. The semicolon form above
+// keeps the older add/undo tests stable; Visimer's semantic parser only
+// builds nodes for the line-per-statement form, which a real note uses.
+const FLOW = "notes/designer-flow.md";
+const FLOWSRC = "# Flow\n\n```mermaid\ngraph TD\n" +
+  "  A[Start] --> B[Mid]\n  B --> C[End]\n```\n";
+
 let passed = 0;
 let failed = 0;
 function check(name, cond, detail) {
@@ -271,6 +278,193 @@ async function main() {
       check("designer browser: Esc writes nothing",
         readNote(NOTE) === before, JSON.stringify(readNote(NOTE)));
     }
+
+    // --- inspector selection, focus retention, double edge --------
+    {
+      writeNote(FLOW, FLOWSRC);
+      await page.goto(BASE + "/?file=" + encodeURIComponent(FLOW));
+      await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await openDesigner();
+
+      await page.locator('#designer-canvas [data-mw-entity^="node:"]').first().click();
+      await page.waitForFunction(() => {
+        const i = document.getElementById("designer-inspector");
+        return i && !i.hidden &&
+          document.getElementById("designer-inspector-kind").textContent === "Node";
+      }, null, { timeout: 5000 });
+      check("designer browser: a real canvas click opens the node inspector",
+        await page.evaluate(() => !document.getElementById("designer-inspector").hidden));
+
+      const label = page.locator("#designer-node-label");
+      await label.click();
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type("Renamed");
+      check("designer browser: typing in the inspector keeps focus",
+        await page.evaluate(() => document.activeElement &&
+          document.activeElement.id === "designer-node-label"));
+      await page.keyboard.press("Tab");
+      await page.waitForFunction(() => {
+        const ed = window.__designerEditor;
+        return ed && ed.result.flowchart &&
+          ed.result.flowchart.nodes[0].label === "Renamed";
+      }, null, { timeout: 5000 });
+      check("designer browser: the inspector commits the label on blur",
+        await page.evaluate(() => window.__designerEditor.result.flowchart.nodes[0].label === "Renamed"));
+
+      await page.locator("#designer-add-tab-edge").click();
+      await page.selectOption("#designer-add-from", { index: 1 });
+      await page.selectOption("#designer-add-to", { index: 2 });
+      await page.selectOption("#designer-add-arrow", "double");
+      await page.click("#designer-add-submit");
+      const doubleCode = await page.evaluate(() =>
+        window.__designerEditor ? window.__designerEditor.code : "");
+      check("designer browser: Add edge with a double arrow writes <-->",
+        doubleCode.indexOf("<-->") !== -1, JSON.stringify(doubleCode));
+
+      await page.click("#designer-apply");
+      await closeDesigner();
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const saved = readNote(FLOW);
+      check("designer browser: the double-headed edge lands in the saved fence",
+        saved.indexOf("<-->") !== -1 && saved.indexOf("Renamed") !== -1,
+        JSON.stringify(saved));
+    }
+
+    // --- compact layout at 1280 / 1024 / 800 ----------------------
+    {
+      for (const width of [1280, 1024, 800]) {
+        await page.setViewportSize({ width: width, height: 900 });
+        await page.goto(BASE + "/?file=" + encodeURIComponent(FLOW));
+        await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(
+          () => document.getElementById("viewer-content")
+            .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+        await openDesigner();
+        const layout = await page.evaluate(() => {
+          const sidebar = document.getElementById("designer-sidebar");
+          const grabber = document.getElementById("designer-inspector-grabber");
+          const footer = document.querySelector("#designer-overlay .designer-footer");
+          return {
+            dir: getComputedStyle(sidebar).flexDirection,
+            grabber: getComputedStyle(grabber).display,
+            footerH: footer.getBoundingClientRect().height,
+            overflowX: document.documentElement.scrollWidth >
+              document.documentElement.clientWidth + 1,
+          };
+        });
+        if (width >= 1024) {
+          check("designer browser(" + width + "): wide layout keeps a column sidebar",
+            layout.dir === "column" && layout.grabber === "none",
+            JSON.stringify(layout));
+        } else {
+          check("designer browser(" + width + "): compact layout uses a strip + sheet",
+            layout.dir === "row" && layout.grabber === "flex",
+            JSON.stringify(layout));
+        }
+        check("designer browser(" + width + "): footer stays visible",
+          layout.footerH > 0, JSON.stringify(layout));
+        check("designer browser(" + width + "): no horizontal page overflow",
+          layout.overflowX === false, JSON.stringify(layout));
+        await page.keyboard.press("Escape");
+        await closeDesigner();
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
+
+    // --- sequence: selection, autonumber, add positions, apply ----
+    {
+      const SEQ = "notes/designer-seq.md";
+      writeNote(SEQ,
+        "# Sequence\n\n```mermaid\nsequenceDiagram\n" +
+        "  participant A as Alice\n  participant B as Bob\n" +
+        "  A->>B: Hello\n  B-->>A: Hi\n```\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent(SEQ));
+      await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await openDesigner();
+
+      await page.locator('#designer-canvas [data-mw-entity^="event:"]').first().click();
+      await page.waitForFunction(() => {
+        const k = document.getElementById("designer-inspector-kind");
+        return k && k.textContent === "Message";
+      }, null, { timeout: 5000 });
+      check("designer browser: a real click selects a sequence message",
+        await page.evaluate(() =>
+          document.getElementById("designer-inspector-kind").textContent === "Message"));
+
+      await page.locator("#designer-autonumber-input").check({ force: true });
+      await page.waitForFunction(
+        () => window.__designerEditor &&
+          /autonumber/.test(window.__designerEditor.code), null, { timeout: 5000 });
+      check("designer browser: the autonumber switch writes the directive",
+        await page.evaluate(() => /autonumber/.test(window.__designerEditor.code)));
+
+      await page.locator('#designer-canvas [data-mw-entity^="event:"]').first().click();
+      await page.locator("#designer-message-text").fill("Updated");
+      await page.locator("#designer-message-text").press("Tab");
+      await page.waitForFunction(
+        () => window.__designerEditor.code.indexOf("Updated") !== -1,
+        null, { timeout: 5000 });
+      check("designer browser: editing a selected message updates the model",
+        await page.evaluate(() => window.__designerEditor.code.indexOf("Updated") !== -1));
+
+      await page.locator("#designer-add-tab-message").click();
+      await page.selectOption("#designer-add-from", "A");
+      await page.selectOption("#designer-add-to", "B");
+      await page.fill("#designer-add-text", "First");
+      await page.selectOption("#designer-add-position", "start");
+      await page.click("#designer-add-submit");
+      await page.waitForFunction(
+        () => window.__designerEditor.code.indexOf("First") !== -1,
+        null, { timeout: 5000 });
+      const startCode = await page.evaluate(() => window.__designerEditor.code);
+      check("designer browser: Add message at Start inserts before the first event",
+        startCode.indexOf("First") < startCode.indexOf("Hello"),
+        JSON.stringify(startCode));
+
+      const eventId = await page.evaluate(() =>
+        window.__designerEditor.result.sequence.events[0].entityId);
+      await page.selectOption("#designer-add-position", "after:" + eventId);
+      await page.fill("#designer-add-text", "Second");
+      await page.click("#designer-add-submit");
+      await page.waitForFunction(
+        () => window.__designerEditor.code.indexOf("Second") !== -1,
+        null, { timeout: 5000 });
+      check("designer browser: Add message After X inserts after the chosen event",
+        await page.evaluate(() =>
+          window.__designerEditor.code.indexOf("Second") <
+          window.__designerEditor.code.indexOf("Updated")));
+
+      await page.click("#designer-apply");
+      await closeDesigner();
+      await page.click("#save-exit-btn");
+      await page.waitForFunction(() => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const seqSaved = readNote(SEQ);
+      check("designer browser: sequence edits land in the saved fence",
+        seqSaved.indexOf("autonumber") !== -1 &&
+        seqSaved.indexOf("First") !== -1 &&
+        seqSaved.indexOf("Second") !== -1 &&
+        seqSaved.indexOf("Updated") !== -1,
+        JSON.stringify(seqSaved));
+    }
+
+    // The sequence test saved and exited hybrid; restore it for the theme
+    // check, which opens the designer through the hybrid menu.
+    await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
 
     // --- (10) the canvas follows body[data-theme] -------------------
     {

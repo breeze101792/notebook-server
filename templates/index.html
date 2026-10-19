@@ -988,11 +988,11 @@
         <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
       </div>
       <div class="settings-body designer-body">
-        <!-- Designer sidebar, filled/shown by mermaid-designer.js:
-             Tools (Select/Connect) - divider - Add palette - divider -
-             History (Undo/Redo). Flowchart gets a shape grid (view.addNode);
-             the other editable families get one dispatch()-backed button.
-             Hidden until ready and for types with no add action. -->
+        <!-- Designer sidebar, filled/shown by mermaid-designer.js.
+             Scoped families (flowchart, sequence, pie) get tabbed add forms
+             and chart controls; every other editable family keeps the
+             dispatch()-backed palette. Hidden until ready and for types
+             with no add action. -->
         <aside class="designer-sidebar" id="designer-sidebar" hidden
                aria-labelledby="designer-add-title">
           <section class="designer-section designer-section--tools"
@@ -1025,7 +1025,34 @@
           <section class="designer-section designer-section--add"
                    aria-labelledby="designer-add-title">
             <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
+            <div class="designer-add-tabs" id="designer-add-tabs" role="tablist"
+                 aria-label="Add an element" hidden></div>
+            <form class="designer-add-form" id="designer-add-form" hidden
+                  role="tabpanel" novalidate>
+              <div class="designer-fields" id="designer-add-fields"></div>
+              <p class="designer-field-error" id="designer-add-error" role="alert" hidden></p>
+              <p class="designer-scope-note" id="designer-add-note" hidden></p>
+              <button id="designer-add-submit" type="submit"
+                      class="designer-btn designer-btn--commit" disabled>Add</button>
+            </form>
             <div class="designer-palette" id="designer-palette"></div>
+          </section>
+
+          <div class="designer-divider" id="designer-chart-divider" hidden aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--chart" id="designer-chart"
+                   aria-labelledby="designer-chart-title" hidden>
+            <h3 class="designer-sidebar-title" id="designer-chart-title">Chart</h3>
+            <div class="designer-direction" id="designer-direction" role="radiogroup"
+                 aria-label="Flowchart direction" hidden></div>
+            <label class="designer-switch-row" id="designer-autonumber" hidden>
+              <span class="designer-switch-label">Autonumber messages</span>
+              <span class="designer-switch-word" id="designer-autonumber-word">Off</span>
+              <span class="designer-switch">
+                <input type="checkbox" id="designer-autonumber-input" class="designer-switch-input">
+                <span class="designer-switch-track" aria-hidden="true"></span>
+              </span>
+            </label>
           </section>
 
           <div class="designer-divider" aria-hidden="true"></div>
@@ -1057,6 +1084,14 @@
         </aside>
 
         <div class="designer-stage" id="designer-stage">
+          <!-- Apply / live-preview failure banner: non-blocking, the canvas
+               and inspector stay usable. Open failures use #designer-error. -->
+          <div class="designer-alert" id="designer-alert" role="alert" hidden>
+            <span class="designer-alert-msg" id="designer-alert-msg"></span>
+            <button id="designer-alert-dismiss" class="designer-alert-dismiss" type="button"
+                    title="Dismiss" aria-label="Dismiss error">×</button>
+          </div>
+
           <!-- the library mounts MermaidCanvasView in here -->
           <div class="designer-canvas" id="designer-canvas" tabindex="0"
                role="application" aria-label="Diagram canvas"></div>
@@ -1095,10 +1130,33 @@
               Close this window to edit the source instead.</p>
           </div>
 
-          <p class="designer-hint" id="designer-hint" hidden>
-            Add from the palette · Connect (or Alt+drag a node) · click a node for shape, color and arrow options
-          </p>
+          <p class="designer-hint" id="designer-hint" hidden></p>
         </div>
+
+        <!-- Contextual inspector: the named path for every edit on the three
+             scoped families. In compact layouts this becomes a bottom sheet. -->
+        <aside class="designer-inspector" id="designer-inspector" hidden
+               aria-labelledby="designer-inspector-kind">
+          <button type="button" class="designer-inspector-grabber"
+                  id="designer-inspector-grabber" aria-expanded="true" hidden>
+            <span class="designer-grabber-bar" aria-hidden="true"></span>
+            <span class="designer-grabber-label" id="designer-inspector-grabber-label">Inspector</span>
+            <span class="designer-grabber-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div class="designer-inspector-head" id="designer-inspector-head"
+               aria-live="polite">
+            <span class="designer-inspector-glyph" id="designer-inspector-glyph"
+                  aria-hidden="true">◇</span>
+            <div class="designer-inspector-titles">
+              <h4 class="designer-inspector-kind" id="designer-inspector-kind">Nothing selected</h4>
+              <span class="designer-inspector-meta" id="designer-inspector-meta"></span>
+            </div>
+            <button id="designer-inspector-clear" class="designer-btn designer-btn--ghost"
+                    type="button" title="Clear selection"
+                    aria-label="Clear selection" hidden>×</button>
+          </div>
+          <div class="designer-inspector-body" id="designer-inspector-body"></div>
+        </aside>
       </div>
       <div class="settings-footer designer-footer">
         <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>

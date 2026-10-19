@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mermaid editor — UI mockup</title>
+<style>
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #9799a4;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --accent-fg: #14151a;
+    --border: #383a45;
+    --code-bg: #14151a;
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, .15);
+    --ok: #48b97a;
+    --warn: #e0a33e;
+    --designer-canvas-bg: #14151a;
+    --designer-grid: rgba(124, 156, 255, .12);
+    --designer-grid-size: 24px;
+    --designer-sidebar-w: 236px;
+    --designer-inspector-w: 296px;
+    --designer-field-h: 32px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --pill: 999px;
+  }
+  body.light {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --accent-fg: #ffffff;
+    --border: #d8dde4;
+    --code-bg: #f0f2f5;
+    --danger: #c0392b;
+    --danger-soft: rgba(192, 57, 43, .12);
+    --ok: #16703f;
+    --warn: #8a5a0b;
+    --designer-canvas-bg: #f7f8fb;
+    --designer-grid: rgba(47, 95, 208, .14);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .mock-page { padding: 28px 24px 64px; max-width: 1440px; margin: 0 auto; }
+  .mock-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .mock-head h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+  .mock-head p { margin: 0; color: var(--fg-muted); font-size: .82rem; }
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 8px; margin: 14px 0 26px;
+    color: var(--fg-muted); font-size: .8rem; cursor: pointer; user-select: none;
+  }
+  .theme-toggle input { accent-color: var(--accent); }
+  .mock-label {
+    margin: 34px 0 8px; color: var(--fg-muted); font-size: .72rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .mock-note { margin: 0 0 12px; color: var(--fg-muted); font-size: .8rem; }
+
+  /* Modal shell */
+  .settings-overlay.is-static {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .18); border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+  }
+  .settings-modal.designer-modal {
+    display: flex; flex-direction: column;
+    width: min(1320px, 100%); height: min(620px, 78vh); min-height: 540px;
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 18px 60px rgba(0, 0, 0, .32); overflow: hidden;
+  }
+  .settings-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg-panel); flex: 0 0 auto;
+  }
+  .designer-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .designer-heading h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  .type-badge {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: var(--pill);
+    color: var(--fg-muted); font-size: .66rem; font-weight: 600;
+    letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
+  }
+  .icon-btn {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-elev); color: var(--fg); font-size: 16px; line-height: 1; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+
+  /* Body layout */
+  .settings-body.designer-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+
+  /* Build sidebar */
+  .designer-sidebar {
+    flex: 0 0 var(--designer-sidebar-w); width: var(--designer-sidebar-w);
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 10px; overflow-y: auto; min-height: 0;
+    background: var(--bg-elev); border-right: 1px solid var(--border);
+  }
+  .designer-section { display: flex; flex-direction: column; gap: 8px; }
+  .designer-sidebar-title {
+    margin: 0; color: var(--fg-muted); font-size: .7rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .designer-tools, .designer-history { display: flex; gap: 6px; flex-wrap: wrap; }
+  .designer-iconbtn {
+    width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--fg); cursor: pointer;
+  }
+  .designer-iconbtn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .designer-iconbtn:disabled { opacity: .45; cursor: default; }
+  .designer-divider { height: 1px; background: var(--border); }
+
+  /* Tabs */
+  .designer-tabs {
+    display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg);
+  }
+  .designer-tab {
+    flex: 1 1 0; min-width: 0; padding: 6px 4px; border: 0; border-radius: 4px;
+    background: transparent; color: var(--fg-muted); font: inherit; font-size: .76rem;
+    cursor: pointer; white-space: nowrap;
+  }
+  .designer-tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  /* Fields */
+  .designer-field-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .designer-label { color: var(--fg-muted); font-size: .74rem; }
+  .designer-field, .designer-select {
+    width: 100%; height: var(--designer-field-h); padding: 0 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--code-bg); color: var(--fg); font: inherit; font-size: .82rem;
+  }
+  .designer-select { cursor: pointer; }
+  .designer-field:focus, .designer-select:focus {
+    outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  /* Shape grid */
+  .designer-shapes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+  .designer-shapes--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .designer-shape {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; min-height: 38px; padding: 4px 2px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--fg); cursor: pointer;
+  }
+  .designer-shape svg { width: 16px; height: 16px; }
+  .designer-shape span { font-size: .64rem; color: var(--fg-muted); line-height: 1; }
+  .designer-shape:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .designer-shape[aria-pressed="true"] {
+    border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .designer-shape[aria-pressed="true"] span { color: var(--accent); font-weight: 600; }
+
+  /* Buttons */
+  .designer-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 30px; padding: 5px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-elev); color: var(--fg);
+    font: inherit; font-size: .8rem; cursor: pointer;
+  }
+  .designer-btn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .designer-btn--commit {
+    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
+  }
+  .designer-btn--commit:hover { background: var(--accent); color: var(--accent-fg); }
+  .designer-btn--danger { border-color: transparent; background: transparent; color: var(--danger); }
+  .designer-btn--danger:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); }
+  .designer-btn--block { width: 100%; }
+  .designer-btn:disabled { opacity: .45; cursor: default; }
+  .designer-consequence { margin: -2px 0 0; color: var(--fg-muted); font-size: .7rem; }
+
+  /* Chips and switch */
+  .designer-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .designer-chip {
+    min-height: 26px; padding: 0 8px; border: 1px solid var(--border);
+    border-radius: var(--pill); background: var(--bg); color: var(--fg-muted);
+    font: inherit; font-size: .7rem; font-weight: 600; cursor: pointer;
+  }
+  .designer-chip[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .designer-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .designer-switch-label { color: var(--fg); font-size: .78rem; }
+  .designer-switch { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-muted); font-size: .7rem; }
+  .designer-switch-track {
+    width: 34px; height: 18px; border-radius: var(--pill); background: var(--border);
+    position: relative; flex: 0 0 auto;
+  }
+  .designer-switch-track::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    border-radius: 50%; background: var(--fg); transition: left .15s ease;
+  }
+  .designer-switch-track[aria-checked="true"] { background: var(--accent); }
+  .designer-switch-track[aria-checked="true"]::after { left: 18px; background: var(--accent-fg); }
+  .designer-scope-note {
+    margin: 0; padding: 7px 8px; border: 1px dashed var(--border);
+    border-radius: var(--radius-sm); color: var(--fg-muted); font-size: .7rem;
+  }
+  .designer-history { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
+
+  /* Stage */
+  .designer-stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+  .designer-canvas {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background-color: var(--designer-canvas-bg);
+    background-image: radial-gradient(var(--designer-grid) 1px, transparent 1px);
+    background-size: var(--designer-grid-size) var(--designer-grid-size);
+    overflow: hidden;
+  }
+  .designer-hint {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    max-width: calc(100% - 32px); padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: var(--pill); background: var(--bg-panel); color: var(--fg-muted);
+    font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .diagram { max-width: 92%; max-height: 86%; }
+  .diagram text { font-family: inherit; font-size: 11px; fill: var(--fg); }
+  .diagram .node { fill: var(--bg-elev); stroke: var(--border); stroke-width: 1.2; }
+  .diagram .node-sel { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+  .diagram .edge { fill: none; stroke: var(--fg-muted); stroke-width: 1.2; }
+  .diagram .lifeline { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 4; }
+  .diagram .part { fill: var(--bg-elev); stroke: var(--border); stroke-width: 1.2; }
+  .diagram .part-sel { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2; }
+  .diagram .msg { stroke: var(--fg-muted); stroke-width: 1.2; }
+  .diagram .msg-sel { stroke: var(--accent); stroke-width: 2; }
+  .diagram .slice { stroke: var(--bg-panel); stroke-width: 2; }
+  .diagram .slice-sel { stroke: var(--accent); stroke-width: 3; }
+  .sel-badge {
+    position: absolute; display: inline-flex; align-items: center; height: 18px; padding: 0 7px;
+    border: 1px solid var(--accent); border-radius: var(--pill);
+    background: var(--bg-panel); color: var(--accent); font-size: .62rem; font-weight: 600;
+    letter-spacing: .4px; text-transform: uppercase; pointer-events: none;
+  }
+
+  /* Inspector */
+  .designer-inspector {
+    flex: 0 0 var(--designer-inspector-w); width: var(--designer-inspector-w);
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--bg-elev); border-left: 1px solid var(--border);
+  }
+  .designer-inspector-head {
+    display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .designer-inspector-head .glyph {
+    width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg);
+    color: var(--accent); flex: 0 0 auto;
+  }
+  .designer-inspector-head h4 { margin: 0; font-size: .86rem; font-weight: 600; }
+  .designer-inspector-meta { color: var(--fg-muted); font-size: .68rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .designer-inspector-clear { margin-left: auto; }
+  .designer-inspector-body { padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .designer-group { display: flex; flex-direction: column; gap: 7px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .designer-group:first-child { padding-top: 0; border-top: 0; }
+  .designer-group-title {
+    margin: 0; color: var(--fg-muted); font-size: .68rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+
+  /* Footer */
+  .settings-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-panel);
+    flex: 0 0 auto;
+  }
+  .designer-status { color: var(--fg-muted); font-size: .76rem; }
+  .designer-status--ok { color: var(--ok); }
+  .settings-actions { display: flex; gap: 8px; }
+  .settings-action {
+    min-height: 30px; padding: 5px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-elev); color: var(--fg);
+    font: inherit; font-size: .8rem; cursor: pointer;
+  }
+  .settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+
+  /* Compact layout preview */
+  .compact .designer-body { flex-direction: column; }
+  .compact .designer-sidebar {
+    flex: 0 0 48px; width: 100%; flex-direction: row; align-items: center; gap: 6px;
+    padding: 6px 10px; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto;
+  }
+  .compact .designer-sidebar .designer-section { flex-direction: row; align-items: center; }
+  .compact .designer-sidebar-title, .compact .designer-divider, .compact .designer-tabs,
+  .compact .designer-field-wrap, .compact .designer-shapes, .compact .designer-scope-note,
+  .compact .designer-chips, .compact .designer-switch-row, .compact .designer-btn--block { display: none; }
+  .compact .designer-history { margin: 0; padding: 0; border: 0; }
+  .compact .designer-stage { min-height: 0; }
+  .compact-sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+    border-top: 1px solid var(--border); border-radius: 10px 10px 0 0;
+    background: var(--bg-elev); box-shadow: 0 -10px 30px rgba(0, 0, 0, .25);
+  }
+  .compact-grabber {
+    display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px;
+    color: var(--fg); font-size: .78rem;
+  }
+  .compact-grabber::before {
+    content: ""; width: 34px; height: 4px; border-radius: var(--pill); background: var(--border);
+  }
+  .compact-grabber .meta { color: var(--fg-muted); font-size: .7rem; }
+  .compact-grabber .close { margin-left: auto; color: var(--fg-muted); }
+  .compact-sheet-body { padding: 0 12px 12px; max-height: 220px; overflow-y: auto; }
+  .compact .designer-modal { height: 560px; }
+  .compact .designer-canvas { align-items: flex-start; padding-top: 24px; }
+  .compact .sel-badge { top: 8px; left: 8px; }
+
+  @media (max-width: 860px) {
+    .mock-page { padding: 18px 10px 40px; }
+    .settings-overlay.is-static { padding: 8px; }
+    .settings-modal.designer-modal { height: 620px; }
+  }
+</style>
+</head>
+<body>
+<div class="mock-page">
+  <div class="mock-head">
+    <h1>Mermaid editor — mockup</h1>
+    <p>Static reference for `web-engineer`. Not wired to the app.</p>
+  </div>
+  <label class="theme-toggle"><input type="checkbox" onchange="document.body.classList.toggle('light', this.checked)"> Light theme</label>
+
+  <!-- ============================================================ -->
+  <p class="mock-label">1 · Flowchart — node selected</p>
+  <p class="mock-note">Build sidebar on the left, canvas in the middle, contextual inspector on the right. The selected node is outlined; the badge names its type.</p>
+  <div class="settings-overlay is-static">
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-label="Design diagram — flowchart">
+      <div class="settings-header">
+        <div class="designer-heading">
+          <h2>Design diagram</h2>
+          <span class="type-badge">Flowchart</span>
+        </div>
+        <button class="icon-btn" title="Close" aria-label="Close">&times;</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar">
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Tools</h3>
+            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
+              <button class="designer-iconbtn" aria-pressed="true" title="Select" aria-label="Select">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2l9 5.5-4 1-2 4L3 2z"/></svg>
+              </button>
+              <button class="designer-iconbtn" aria-pressed="false" title="Connect nodes" aria-label="Connect nodes">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="3.5" cy="12.5" r="2"/><circle cx="12.5" cy="3.5" r="2"/><path d="M5 11l6-6"/></svg>
+              </button>
+            </div>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Add</h3>
+            <div class="designer-tabs" role="tablist" aria-label="Add type">
+              <button class="designer-tab" role="tab" aria-selected="true">Node</button>
+              <button class="designer-tab" role="tab" aria-selected="false">Edge</button>
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="fc-label">Label</label>
+              <input class="designer-field" id="fc-label" value="Validate input" placeholder="e.g. Validate input">
+            </div>
+            <div class="designer-shapes" role="group" aria-label="Node shape">
+              <button class="designer-shape" aria-pressed="true" title="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1"/></svg><span>Rect</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Rounded rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="4"/></svg><span>Round</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Stadium"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="4.5" width="13" height="7" rx="3.5"/></svg><span>Stadium</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Subroutine"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8"/><path d="M4 4v8M12 4v8"/></svg><span>Subrtn</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Cylinder"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="4.5" rx="5" ry="1.8"/><path d="M3 4.5v7c0 1 2.2 1.8 5 1.8s5-.8 5-1.8v-7"/></svg><span>Cylinder</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Circle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/></svg><span>Circle</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Decision"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6 6-6 6-6-6 6-6z"/></svg><span>Decision</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Hexagon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 3h7L15 8l-3.5 5h-7L1 8l3.5-5z"/></svg><span>Hexagon</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Lean right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h9l-1 8H3l1-8z"/></svg><span>Lean R</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Lean left"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h9l1 8H4L3 4z"/></svg><span>Lean L</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Trapezoid top"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12l-2 8H4L2 4z"/></svg><span>Trap T</span></button>
+              <button class="designer-shape" aria-pressed="false" title="Trapezoid bottom"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h8l2 8H2l2-8z"/></svg><span>Trap B</span></button>
+            </div>
+            <button class="designer-btn designer-btn--commit designer-btn--block">Add node</button>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Chart</h3>
+            <div class="designer-chips" role="radiogroup" aria-label="Diagram direction">
+              <button class="designer-chip" role="radio" aria-checked="true" aria-label="Top-down (TD)">TD</button>
+              <button class="designer-chip" role="radio" aria-checked="false" aria-label="Top-bottom (TB)">TB</button>
+              <button class="designer-chip" role="radio" aria-checked="false" aria-label="Bottom-top (BT)">BT</button>
+              <button class="designer-chip" role="radio" aria-checked="false" aria-label="Left-right (LR)">LR</button>
+              <button class="designer-chip" role="radio" aria-checked="false" aria-label="Right-left (RL)">RL</button>
+            </div>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section designer-history">
+            <h3 class="designer-sidebar-title">History</h3>
+            <div class="designer-history" role="toolbar" aria-label="History">
+              <button class="designer-iconbtn" title="Undo" aria-label="Undo">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4L2 8l4 4M2 8h7a4 4 0 0 1 0 8"/></svg>
+              </button>
+              <button class="designer-iconbtn" title="Redo" aria-label="Redo" disabled>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4l4 4-4 4M14 8H7a4 4 0 0 0 0 8"/></svg>
+              </button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="Diagram canvas">
+            <svg class="diagram" width="470" height="330" viewBox="0 0 470 330" aria-label="Flowchart preview">
+              <defs>
+                <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0 0L10 5L0 10z" fill="var(--fg-muted)"></path>
+                </marker>
+              </defs>
+              <rect class="node" x="160" y="20" width="150" height="38" rx="6"></rect>
+              <text x="235" y="44" text-anchor="middle">Open a .md file</text>
+              <path class="edge" d="M235 58v18" marker-end="url(#arr)"></path>
+              <rect class="node-sel" x="160" y="78" width="150" height="42" rx="6"></rect>
+              <text x="235" y="104" text-anchor="middle">has mermaid?</text>
+              <path class="edge" d="M235 120v18" marker-end="url(#arr)"></path>
+              <rect class="node" x="70" y="140" width="150" height="38" rx="6"></rect>
+              <text x="145" y="164" text-anchor="middle">Render as SVG</text>
+              <rect class="node" x="270" y="140" width="140" height="38" rx="6"></rect>
+              <text x="340" y="164" text-anchor="middle">Render normally</text>
+              <path class="edge" d="M145 178v18M340 178v18" marker-end="url(#arr)"></path>
+              <rect class="node" x="70" y="198" width="150" height="38" rx="6"></rect>
+              <text x="145" y="222" text-anchor="middle">Hover to copy</text>
+              <rect class="node" x="270" y="198" width="140" height="38" rx="6"></rect>
+              <text x="340" y="222" text-anchor="middle">Happy user</text>
+              <path class="edge" d="M145 236v18M340 236v18" marker-end="url(#arr)"></path>
+              <circle class="node" cx="235" cy="292" r="24"></circle>
+              <text x="235" y="296" text-anchor="middle">done</text>
+              <path class="edge" d="M145 254v38h66" marker-end="url(#arr)"></path>
+              <path class="edge" d="M340 254v38h-81" marker-end="url(#arr)"></path>
+            </svg>
+            <span class="sel-badge" style="left:calc(50% - 30px); top:calc(50% - 62px)">Node</span>
+            <div class="designer-hint">Click a node or edge to edit it · double-click to rename</div>
+          </div>
+        </div>
+
+        <aside class="designer-inspector" aria-label="Inspector">
+          <div class="designer-inspector-head">
+            <span class="glyph" aria-hidden="true">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1"/></svg>
+            </span>
+            <div>
+              <h4>Node</h4>
+              <div class="designer-inspector-meta">B · has mermaid?</div>
+            </div>
+            <button class="icon-btn designer-inspector-clear" title="Clear selection" aria-label="Clear selection">&times;</button>
+          </div>
+          <div class="designer-inspector-body">
+            <div class="designer-group">
+              <h5 class="designer-group-title">Label</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="fc-node-label">Node label</label>
+                <input class="designer-field" id="fc-node-label" value="has mermaid?">
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Shape</h5>
+              <div class="designer-shapes designer-shapes--3" role="group" aria-label="Node shape">
+                <button class="designer-shape" aria-pressed="false" title="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="1"/></svg><span>Rect</span></button>
+                <button class="designer-shape" aria-pressed="false" title="Rounded rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="12" height="8" rx="4"/></svg><span>Round</span></button>
+                <button class="designer-shape" aria-pressed="false" title="Stadium"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.5" y="4.5" width="13" height="7" rx="3.5"/></svg><span>Stadium</span></button>
+                <button class="designer-shape" aria-pressed="true" title="Decision"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2l6 6-6 6-6-6 6-6z"/></svg><span>Decision</span></button>
+                <button class="designer-shape" aria-pressed="false" title="Hexagon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.5 3h7L15 8l-3.5 5h-7L1 8l3.5-5z"/></svg><span>Hexagon</span></button>
+                <button class="designer-shape" aria-pressed="false" title="Circle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/></svg><span>Circle</span></button>
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Actions</h5>
+              <button class="designer-btn designer-btn--block">Connect from this node</button>
+              <button class="designer-btn designer-btn--danger designer-btn--block">Delete node</button>
+              <p class="designer-consequence">Its edges are removed too. Undo restores.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action">Cancel</button>
+          <button class="settings-action settings-action--primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <p class="mock-label">2 · Sequence — message selected</p>
+  <p class="mock-note">The Add section switches to Participant / Message / Note tabs. The inspector names the message and exposes text, arrow, order, reverse, and delete.</p>
+  <div class="settings-overlay is-static">
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-label="Design diagram — sequence">
+      <div class="settings-header">
+        <div class="designer-heading">
+          <h2>Design diagram</h2>
+          <span class="type-badge">Sequence</span>
+        </div>
+        <button class="icon-btn" title="Close" aria-label="Close">&times;</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar">
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Add</h3>
+            <div class="designer-tabs" role="tablist" aria-label="Add type">
+              <button class="designer-tab" role="tab" aria-selected="false">Participant</button>
+              <button class="designer-tab" role="tab" aria-selected="true">Message</button>
+              <button class="designer-tab" role="tab" aria-selected="false">Note</button>
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="seq-from">From</label>
+              <select class="designer-select" id="seq-from"><option>U · User</option><option>N · Notebook</option><option>M · Mermaid</option></select>
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="seq-to">To</label>
+              <select class="designer-select" id="seq-to"><option>N · Notebook</option><option>M · Mermaid</option><option>U · User</option></select>
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="seq-text">Text</label>
+              <input class="designer-field" id="seq-text" value="render(id, source)">
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="seq-arrow">Arrow</label>
+              <select class="designer-select" id="seq-arrow"><option>Solid arrow</option><option>Dotted arrow</option><option>Solid line</option><option>Dotted line</option><option>Cross</option></select>
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="seq-pos">Position</label>
+              <select class="designer-select" id="seq-pos"><option>End of diagram</option><option>Start</option><option>After: open Syntax.md</option></select>
+            </div>
+            <button class="designer-btn designer-btn--commit designer-btn--block">Add message</button>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Chart</h3>
+            <div class="designer-switch-row">
+              <span class="designer-switch-label">Autonumber messages</span>
+              <span class="designer-switch"><span class="designer-switch-track" role="switch" aria-checked="false" aria-label="Autonumber messages"></span><span>Off</span></span>
+            </div>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section designer-history">
+            <h3 class="designer-sidebar-title">History</h3>
+            <div class="designer-history" role="toolbar" aria-label="History">
+              <button class="designer-iconbtn" title="Undo" aria-label="Undo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4L2 8l4 4M2 8h7a4 4 0 0 1 0 8"/></svg></button>
+              <button class="designer-iconbtn" title="Redo" aria-label="Redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4l4 4-4 4M14 8H7a4 4 0 0 0 0 8"/></svg></button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="Diagram canvas">
+            <svg class="diagram" width="470" height="320" viewBox="0 0 470 320" aria-label="Sequence preview">
+              <defs>
+                <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0 0L10 5L0 10z" fill="var(--fg-muted)"></path>
+                </marker>
+                <marker id="arr2s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M0 0L10 5L0 10z" fill="var(--accent)"></path>
+                </marker>
+              </defs>
+              <rect class="part" x="40" y="18" width="110" height="30" rx="4"></rect>
+              <text x="95" y="37" text-anchor="middle">User</text>
+              <rect class="part" x="180" y="18" width="110" height="30" rx="4"></rect>
+              <text x="235" y="37" text-anchor="middle">Notebook</text>
+              <rect class="part" x="320" y="18" width="110" height="30" rx="4"></rect>
+              <text x="375" y="37" text-anchor="middle">Mermaid</text>
+              <path class="lifeline" d="M95 48v250M235 48v250M375 48v250"></path>
+              <text x="103" y="78" style="font-size:10px; fill:var(--fg-muted)">open Syntax.md</text>
+              <path class="msg" d="M95 86h132" marker-end="url(#arr2)"></path>
+              <text x="243" y="108" style="font-size:10px; fill:var(--fg-muted)">marked.parse(src)</text>
+              <path class="msg" d="M235 116h132" marker-end="url(#arr2)"></path>
+              <text x="243" y="138" style="font-size:10px; fill:var(--fg-muted)">render(id, source)</text>
+              <path class="msg-sel" d="M235 146h132" marker-end="url(#arr2s)"></path>
+              <text x="243" y="168" style="font-size:10px; fill:var(--fg-muted)">{ svg }</text>
+              <path class="msg" d="M375 176h-132" marker-end="url(#arr2)"></path>
+              <text x="103" y="198" style="font-size:10px; fill:var(--fg-muted)">diagram on screen</text>
+              <path class="msg" d="M235 206h-132" marker-end="url(#arr2)"></path>
+            </svg>
+            <span class="sel-badge" style="left:calc(50% - 24px); top:calc(50% - 18px)">Message</span>
+            <div class="designer-hint">Select a participant or message to edit it</div>
+          </div>
+        </div>
+
+        <aside class="designer-inspector" aria-label="Inspector">
+          <div class="designer-inspector-head">
+            <span class="glyph" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 5h12M2 8h12M2 11h12"/></svg></span>
+            <div>
+              <h4>Message</h4>
+              <div class="designer-inspector-meta">3 of 5 · N → M</div>
+            </div>
+            <button class="icon-btn designer-inspector-clear" title="Clear selection" aria-label="Clear selection">&times;</button>
+          </div>
+          <div class="designer-inspector-body">
+            <div class="designer-group">
+              <h5 class="designer-group-title">Text</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="seq-msg-text">Message text</label>
+                <input class="designer-field" id="seq-msg-text" value="render(id, source)">
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Arrow</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="seq-msg-arrow">Arrow type</label>
+                <select class="designer-select" id="seq-msg-arrow"><option>Solid arrow</option><option>Dotted arrow</option><option>Solid line</option><option>Dotted line</option><option>Cross</option><option>Async</option></select>
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Order</h5>
+              <div style="display:flex; gap:6px">
+                <button class="designer-btn" style="flex:1">Move up</button>
+                <button class="designer-btn" style="flex:1">Move down</button>
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Actions</h5>
+              <button class="designer-btn designer-btn--block">Reverse direction</button>
+              <button class="designer-btn designer-btn--danger designer-btn--block">Delete message</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action">Cancel</button>
+          <button class="settings-action settings-action--primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <p class="mock-label">3 · Pie — slice selected</p>
+  <p class="mock-note">The add form collects label and value. The title stays in the source (deferred). The inspector edits the selected slice.</p>
+  <div class="settings-overlay is-static">
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-label="Design diagram — pie">
+      <div class="settings-header">
+        <div class="designer-heading">
+          <h2>Design diagram</h2>
+          <span class="type-badge">Pie</span>
+        </div>
+        <button class="icon-btn" title="Close" aria-label="Close">&times;</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar">
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Add</h3>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="pie-label">Label</label>
+              <input class="designer-field" id="pie-label" value="Documentation" placeholder="e.g. Documentation">
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="pie-value">Value</label>
+              <input class="designer-field" id="pie-value" type="number" min="0" step="any" value="8">
+            </div>
+            <button class="designer-btn designer-btn--commit designer-btn--block">Add slice</button>
+            <p class="designer-scope-note">Title is kept from the source. Editing it visually is deferred.</p>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section designer-history">
+            <h3 class="designer-sidebar-title">History</h3>
+            <div class="designer-history" role="toolbar" aria-label="History">
+              <button class="designer-iconbtn" title="Undo" aria-label="Undo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4L2 8l4 4M2 8h7a4 4 0 0 1 0 8"/></svg></button>
+              <button class="designer-iconbtn" title="Redo" aria-label="Redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4l4 4-4 4M14 8H7a4 4 0 0 0 0 8"/></svg></button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="Diagram canvas">
+            <svg class="diagram" width="470" height="330" viewBox="0 0 470 330" aria-label="Pie preview">
+              <text x="235" y="24" text-anchor="middle" style="font-weight:600">Where the bytes go</text>
+              <g transform="translate(235 180)">
+                <path class="slice" style="fill:#7c9cff" d="M0 0 L0 -110 A110 110 0 0 1 104 -36 Z"></path>
+                <path class="slice" style="fill:#48b97a" d="M0 0 L104 -36 A110 110 0 0 1 42 102 Z"></path>
+                <path class="slice-sel" style="fill:#e0a33e" d="M0 0 L42 102 A110 110 0 0 1 -64 89 Z"></path>
+                <path class="slice" style="fill:#a78bfa" d="M0 0 L-64 89 A110 110 0 0 1 0 -110 Z"></path>
+              </g>
+              <text x="360" y="120" style="font-size:10px">Vendored JS 62</text>
+              <text x="355" y="150" style="font-size:10px">App code 21</text>
+              <text x="330" y="260" style="font-size:10px">Stylesheet 11</text>
+              <text x="55" y="220" style="font-size:10px">Tests 6</text>
+            </svg>
+            <span class="sel-badge" style="left:calc(50% - 18px); top:calc(50% + 56px)">Slice</span>
+            <div class="designer-hint">Select a slice to edit its label and value</div>
+          </div>
+        </div>
+
+        <aside class="designer-inspector" aria-label="Inspector">
+          <div class="designer-inspector-head">
+            <span class="glyph" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 0v6h6"/></svg></span>
+            <div>
+              <h4>Slice</h4>
+              <div class="designer-inspector-meta">Stylesheet</div>
+            </div>
+            <button class="icon-btn designer-inspector-clear" title="Clear selection" aria-label="Clear selection">&times;</button>
+          </div>
+          <div class="designer-inspector-body">
+            <div class="designer-group">
+              <h5 class="designer-group-title">Slice</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="pie-slice-label">Label</label>
+                <input class="designer-field" id="pie-slice-label" value="Stylesheet">
+              </div>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="pie-slice-value">Value</label>
+                <input class="designer-field" id="pie-slice-value" type="number" min="0" step="any" value="11">
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Actions</h5>
+              <button class="designer-btn designer-btn--danger designer-btn--block">Delete slice</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action">Cancel</button>
+          <button class="settings-action settings-action--primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <p class="mock-label">4 · Compact layout (`@container designer (max-width: 960px)`)</p>
+  <p class="mock-note">Build tools collapse to a strip; the inspector becomes a bottom sheet with a grabber that names the current context.</p>
+  <div class="settings-overlay is-static compact">
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-label="Design diagram — compact">
+      <div class="settings-header">
+        <div class="designer-heading">
+          <h2>Design diagram</h2>
+          <span class="type-badge">Flowchart</span>
+        </div>
+        <button class="icon-btn" title="Close" aria-label="Close">&times;</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar">
+          <section class="designer-section">
+            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
+              <button class="designer-iconbtn" aria-pressed="true" title="Select" aria-label="Select"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 2l9 5.5-4 1-2 4L3 2z"/></svg></button>
+              <button class="designer-iconbtn" aria-pressed="false" title="Connect nodes" aria-label="Connect nodes"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="3.5" cy="12.5" r="2"/><circle cx="12.5" cy="3.5" r="2"/><path d="M5 11l6-6"/></svg></button>
+            </div>
+          </section>
+          <div class="designer-divider"></div>
+          <section class="designer-section">
+            <div class="designer-tabs">
+              <button class="designer-tab" aria-selected="true">Node</button>
+              <button class="designer-tab" aria-selected="false">Edge</button>
+            </div>
+          </section>
+          <section class="designer-section designer-history">
+            <div class="designer-history">
+              <button class="designer-iconbtn" title="Undo" aria-label="Undo"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4L2 8l4 4M2 8h7a4 4 0 0 1 0 8"/></svg></button>
+              <button class="designer-iconbtn" title="Redo" aria-label="Redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4l4 4-4 4M14 8H7a4 4 0 0 0 0 8"/></svg></button>
+            </div>
+          </section>
+        </aside>
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="Diagram canvas">
+            <svg class="diagram" width="360" height="250" viewBox="0 0 470 330" aria-label="Flowchart preview">
+              <rect class="node" x="160" y="20" width="150" height="38" rx="6"></rect>
+              <text x="235" y="44" text-anchor="middle">Open a .md file</text>
+              <path class="edge" d="M235 58v18"></path>
+              <rect class="node-sel" x="160" y="78" width="150" height="42" rx="6"></rect>
+              <text x="235" y="104" text-anchor="middle">has mermaid?</text>
+              <path class="edge" d="M235 120v18"></path>
+              <rect class="node" x="70" y="140" width="150" height="38" rx="6"></rect>
+              <text x="145" y="164" text-anchor="middle">Render as SVG</text>
+              <rect class="node" x="270" y="140" width="140" height="38" rx="6"></rect>
+              <text x="340" y="164" text-anchor="middle">Render normally</text>
+            </svg>
+            <div class="compact-sheet">
+              <div class="compact-grabber">
+                <span>Node</span>
+                <span class="meta">B · has mermaid?</span>
+                <span class="close" aria-hidden="true">&times;</span>
+              </div>
+              <div class="compact-sheet-body">
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="cmp-label">Node label</label>
+                  <input class="designer-field" id="cmp-label" value="has mermaid?">
+                </div>
+                <div class="designer-chips" style="margin-top:8px" role="radiogroup" aria-label="Diagram direction">
+                  <button class="designer-chip" role="radio" aria-checked="true">TD</button>
+                  <button class="designer-chip" role="radio" aria-checked="false">TB</button>
+                  <button class="designer-chip" role="radio" aria-checked="false">BT</button>
+                  <button class="designer-chip" role="radio" aria-checked="false">LR</button>
+                  <button class="designer-chip" role="radio" aria-checked="false">RL</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action">Cancel</button>
+          <button class="settings-action settings-action--primary">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

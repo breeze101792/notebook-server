@@ -100,8 +100,11 @@ ai.js/agent.md completeness requirements (`tests/dom/test_dom.js:3131-3142`).
 
 ### Write-back (hybrid DOM path) — fixed order
 
+0. **No-op check:** if `editor.code === baselineSource`, close and write
+   nothing (no parse, no history step).
 1. **Validate:** `await window.mermaid.parse(editor.code)`; on failure keep the
-   modal open and show the error (F5).
+   modal open, show the non-blocking `#designer-alert` banner, and write
+   nothing (F5).
 2. **Guard mode:** abort visibly if `!NB.hybrid.isActive()` (external edits can
    exit hybrid while the modal is open) (F3).
 3. **Re-resolve the target** — a held element does not survive a re-render. At
@@ -175,6 +178,103 @@ edit the source instead") with one button that closes the modal and calls
 `editPluginSource(hit)` (`hybrid.js:5007`). On load failure, `.catch` on
 `NB.lazyload.script` and close with a toast; no polling.
 
+### Edit UI: inspector, selection, add forms (v1)
+
+The three scoped families (`flowchart`/`graph`, `sequenceDiagram`, `pie`) get a
+three-region body: the existing build sidebar (236px), the canvas stage, and a
+contextual inspector (296px). Every other editable family keeps the old
+add-only sidebar and shows no inspector. The vendor `.mw-popover` is hidden
+inside `#designer-canvas`; inline label editing stays as an accelerator.
+
+**Selection model.** `mermaid-designer.js` subscribes to
+`editor.on("selectionChange")`. The event carries `entityIds` (a `string[]`);
+the module resolves the first id against `editor.result`:
+
+| Family | Entity ids | Inspector |
+| --- | --- | --- |
+| flowchart | `node:<id>`, `edge:<src>-><tgt>#<n>` | Node, Edge |
+| sequence | `participant:<id>`, `event:<lineIndex>` | Participant, Message, Note |
+| pie | `slice:<lineIndex>` | Slice |
+
+The inspector renders a fixed header (type, read-only id/meta, clear button)
+and a scrolling body. It writes on `change` (blur/Enter) for text fields and on
+`change` for selects, never on every keystroke, so the focused field is not
+rewritten and the caret does not jump. A rejected dispatch (`null`) restores
+the field from the model and shows an inline error. The rest state names the
+selected element's available edits.
+
+**Safe re-resolution rule.** A selection stores `{id, kind, entity}` plus an
+identity signature (node id, edge id, participant id, message source/target,
+note targets, or slice line + label). After every model change:
+
+- A **structural** dispatch (add, delete, reorder, autonumber, participant add)
+  clears the selection, unless the dispatch returned `created[0]`; that id is
+  selected and the inspector re-resolves it. `seq.moveEvent` selects its
+  `created` event id.
+- A **label/value/style** edit keeps the selection and re-resolves it. If the
+  id no longer exists, the selection clears.
+- Renaming a participant with an alias keeps the id. Renaming one without an
+  alias rewrites the id at every reference, so the module computes the new
+  sanitized id and selects `participant:<newId>`; if it does not exist the
+  selection clears. A stale id is never left in the inspector.
+- On an **external** change (canvas inline edit, drag-connect, popover action)
+  the module re-resolves the stored id and compares its identity signature. A
+  line-index id that now refers to a different message/note/slice clears the
+  selection instead of editing the wrong entity.
+- Undo/redo clears the selection for sequence and pie, because their ids are
+  line-index based. Flowchart undo re-resolves; reverse-edge clears because the
+  edge id changes.
+
+**Add forms.** The sidebar Add section is tabbed per family
+(`node`/`edge`, `participant`/`message`/`note`, `slice`). Forms are real
+`<form>`s; Enter submits. Add buttons disable until required fields are
+present, and the reason appears in `#designer-add-note`. Draft text survives a
+tab switch; a successful add clears text fields but keeps the chosen
+shape/type/line/arrow defaults.
+
+- Flowchart node: shape grid + label. Dispatch `addNode {shape,label}` (not
+  `view.addNode`), then select `created[0]`.
+- Flowchart edge: From/To selects, optional label, line, arrow. `connect` only
+  accepts `arrowEnd`; when the chosen head also has a source head (double,
+  cross/dot pairs), the module dispatches `setEdgeStyle` on the created edge
+  with the exact `arrowStart`/`arrowEnd`.
+- Sequence message/note: From/To or participant, text, arrow/placement, and a
+  position select (`End of diagram`, `Start`, `After: <event>`). The module
+  maps that to `afterEvent`: omit for End, `null` for Start, the event entity id
+  for After. It reads the id at submit time and refuses a position whose event
+  no longer exists.
+- Pie slice: label + value. The value is validated as finite and ≥ 0 before
+  dispatch; a negative or non-numeric value shows an inline error and never
+  reaches `pie.addSlice`. The title stays deferred (quiet sidebar note, no
+  control).
+- Chart controls: flowchart direction chips dispatch `setDirection` and
+  preserve the source token; the sequence autonumber switch dispatches
+  `seq.toggleAutonumber` and reflects `result.sequence.autonumber.enabled`.
+
+**Apply error vs open error.** Open-time load/render/parse failures keep the
+full-canvas `#designer-error` state with Retry / Edit source. An **Apply
+validation** failure keeps the modal open, does not replace the canvas, writes
+nothing, and shows the non-blocking `#designer-alert` banner plus a footer
+status. A live-preview render failure after an edit shows the same banner and
+keeps the last good canvas; Apply still validates. Dismissing the banner leaves
+the modal usable.
+
+**Dirty close.** Only user-initiated closes (Cancel, Esc, backdrop, header ×)
+run the guard: if `editor.code !== baselineSource`, a native `confirm()` asks to
+discard. Apply success, no-op Apply, load error, retry, and the
+`editSourceFallback` path close with `force` and never prompt.
+
+**Compact layout.** At a viewport/container width of 960px or less the scoped
+families switch to a horizontal build strip above the stage and the inspector
+becomes a bottom sheet with a 44px grabber that names the current selection
+(`Node · A`, or `Inspector` at rest). The grabber collapses/expands the sheet;
+a selection auto-expands it. The footer stays outside the stage. The
+implementation uses the permitted `@media (max-width: 960px)` fallback rather
+than a container query; the old 720px rule is scoped to
+`:not([data-designer-family])` so the two cannot fight. All four font scales
+and both themes are px-spaced/rem-typed with scrolling panels rather than
+horizontal overflow.
+
 ## Built artifact: `static/vendor/visimer.bundle.js`
 
 Built at **dev time** with esbuild (already a devDependency); committed like
@@ -205,9 +305,12 @@ with MIT attribution, version, and source URL (F10).
 `docs/architecture/design/mermaid-designer-mockup.html`.
 
 - Shell reuses `.settings-overlay` / `.settings-modal`; `.designer-modal` sizes
-  to 1200px × 85vh (`96vw`/`92vh` clamps).
+  to 1320px × 85vh (`96vw`/`92vh` clamps) and carries a three-region body
+  (236px build sidebar, flexible stage, 296px inspector) for the scoped
+  families.
 - Canvas states: loading / empty / error / preview-only (`readOnly:true`) /
-  ready — mutually exclusive.
+  ready — mutually exclusive. Apply failures use the banner, not the error
+  state.
 - New tokens: `--designer-canvas-bg`, `--designer-grid`, `--designer-grid-size`,
   `--designer-modal-w`, `--designer-modal-h`, `--accent-fg`.
 - Ctrl+Z is captured on the overlay and gated so it never reaches the note; the

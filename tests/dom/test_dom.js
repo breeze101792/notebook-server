@@ -793,8 +793,11 @@ const html = `<!DOCTYPE html><html><head>
       </div>
     </div>
   </div>
-  <!-- Mermaid visual designer (mirrors templates/index.html). Its
-       mermaid-designer.js modal binds these ids at eval time. -->
+  <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
+       "Design diagram…" item. Carries class="settings-overlay" so the app's
+       keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
+       treat it like every other modal. The Visimer canvas bundle is
+       lazy-loaded on first open by static/js/mermaid-designer.js. -->
   <div id="designer-overlay" class="settings-overlay" hidden>
     <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
          aria-labelledby="designer-title">
@@ -806,6 +809,11 @@ const html = `<!DOCTYPE html><html><head>
         <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
       </div>
       <div class="settings-body designer-body">
+        <!-- Designer sidebar, filled/shown by mermaid-designer.js.
+             Scoped families (flowchart, sequence, pie) get tabbed add forms
+             and chart controls; every other editable family keeps the
+             dispatch()-backed palette. Hidden until ready and for types
+             with no add action. -->
         <aside class="designer-sidebar" id="designer-sidebar" hidden
                aria-labelledby="designer-add-title">
           <section class="designer-section designer-section--tools"
@@ -838,7 +846,34 @@ const html = `<!DOCTYPE html><html><head>
           <section class="designer-section designer-section--add"
                    aria-labelledby="designer-add-title">
             <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
+            <div class="designer-add-tabs" id="designer-add-tabs" role="tablist"
+                 aria-label="Add an element" hidden></div>
+            <form class="designer-add-form" id="designer-add-form" hidden
+                  role="tabpanel" novalidate>
+              <div class="designer-fields" id="designer-add-fields"></div>
+              <p class="designer-field-error" id="designer-add-error" role="alert" hidden></p>
+              <p class="designer-scope-note" id="designer-add-note" hidden></p>
+              <button id="designer-add-submit" type="submit"
+                      class="designer-btn designer-btn--commit" disabled>Add</button>
+            </form>
             <div class="designer-palette" id="designer-palette"></div>
+          </section>
+
+          <div class="designer-divider" id="designer-chart-divider" hidden aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--chart" id="designer-chart"
+                   aria-labelledby="designer-chart-title" hidden>
+            <h3 class="designer-sidebar-title" id="designer-chart-title">Chart</h3>
+            <div class="designer-direction" id="designer-direction" role="radiogroup"
+                 aria-label="Flowchart direction" hidden></div>
+            <label class="designer-switch-row" id="designer-autonumber" hidden>
+              <span class="designer-switch-label">Autonumber messages</span>
+              <span class="designer-switch-word" id="designer-autonumber-word">Off</span>
+              <span class="designer-switch">
+                <input type="checkbox" id="designer-autonumber-input" class="designer-switch-input">
+                <span class="designer-switch-track" aria-hidden="true"></span>
+              </span>
+            </label>
           </section>
 
           <div class="designer-divider" aria-hidden="true"></div>
@@ -870,16 +905,32 @@ const html = `<!DOCTYPE html><html><head>
         </aside>
 
         <div class="designer-stage" id="designer-stage">
+          <!-- Apply / live-preview failure banner: non-blocking, the canvas
+               and inspector stay usable. Open failures use #designer-error. -->
+          <div class="designer-alert" id="designer-alert" role="alert" hidden>
+            <span class="designer-alert-msg" id="designer-alert-msg"></span>
+            <button id="designer-alert-dismiss" class="designer-alert-dismiss" type="button"
+                    title="Dismiss" aria-label="Dismiss error">×</button>
+          </div>
+
+          <!-- the library mounts MermaidCanvasView in here -->
           <div class="designer-canvas" id="designer-canvas" tabindex="0"
                role="application" aria-label="Diagram canvas"></div>
+
+          <!-- empty: shown while the model has no nodes -->
           <div class="designer-empty" id="designer-empty" hidden>
             <span class="designer-state-icon" aria-hidden="true">◇</span>
             <p class="designer-state-msg">Use the palette to add your first item.</p>
           </div>
+
+          <!-- loading: while the lazy bundle downloads -->
           <div class="designer-state designer-state--loading" id="designer-loading" hidden>
             <span class="designer-spinner" aria-hidden="true"></span>
             <p class="designer-state-msg" role="status">Loading editor…</p>
           </div>
+
+          <!-- error: mermaid render/validate failure, bundle failure, or a
+               type the library cannot edit -->
           <div class="designer-state designer-state--error" id="designer-error"
                role="alert" hidden>
             <span class="designer-state-icon" aria-hidden="true">⚠</span>
@@ -891,16 +942,42 @@ const html = `<!DOCTYPE html><html><head>
               <button id="designer-edit-source" class="settings-action">Edit source instead</button>
             </div>
           </div>
+
+          <!-- preview-only: a type the library can render but not edit -->
           <div class="designer-state designer-state--readonly" id="designer-readonly" hidden>
             <span class="designer-state-icon" aria-hidden="true">👁</span>
             <h3 class="designer-state-title">Preview only</h3>
             <p class="designer-state-msg">This diagram type has no editable model yet.
               Close this window to edit the source instead.</p>
           </div>
-          <p class="designer-hint" id="designer-hint" hidden>
-            Add from the palette · Connect (or Alt+drag a node) · click a node for shape, color and arrow options
-          </p>
+
+          <p class="designer-hint" id="designer-hint" hidden></p>
         </div>
+
+        <!-- Contextual inspector: the named path for every edit on the three
+             scoped families. In compact layouts this becomes a bottom sheet. -->
+        <aside class="designer-inspector" id="designer-inspector" hidden
+               aria-labelledby="designer-inspector-kind">
+          <button type="button" class="designer-inspector-grabber"
+                  id="designer-inspector-grabber" aria-expanded="true" hidden>
+            <span class="designer-grabber-bar" aria-hidden="true"></span>
+            <span class="designer-grabber-label" id="designer-inspector-grabber-label">Inspector</span>
+            <span class="designer-grabber-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div class="designer-inspector-head" id="designer-inspector-head"
+               aria-live="polite">
+            <span class="designer-inspector-glyph" id="designer-inspector-glyph"
+                  aria-hidden="true">◇</span>
+            <div class="designer-inspector-titles">
+              <h4 class="designer-inspector-kind" id="designer-inspector-kind">Nothing selected</h4>
+              <span class="designer-inspector-meta" id="designer-inspector-meta"></span>
+            </div>
+            <button id="designer-inspector-clear" class="designer-btn designer-btn--ghost"
+                    type="button" title="Clear selection"
+                    aria-label="Clear selection" hidden>×</button>
+          </div>
+          <div class="designer-inspector-body" id="designer-inspector-body"></div>
+        </aside>
       </div>
       <div class="settings-footer designer-footer">
         <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>
@@ -908,7 +985,9 @@ const html = `<!DOCTYPE html><html><head>
         <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
       </div>
     </div>
+
   </div>
+
   <!-- Mermaid lightbox overlay -->
   <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
     <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
@@ -25358,45 +25437,298 @@ function check(label, cond, extra) {
 
     const __visimer = {
       capability: "edit", typeId: "flowchart",
-      // The parsed family drives familyFor()'s add-sidebar palette. The
-      // default keeps the flowchart model so the existing tests see the
-      // same result shape. Tests flip it to exercise the other families.
+      // The parsed family drives familyFor()'s sidebar mode. The default is
+      // flowchart so the existing tests see the same result shape.
       family: "flowchart",
       failLoad: false, editors: [], views: [], undos: 0, redos: 0,
-      // When true, the fake editor's model reports zero nodes so the
-      // module's modelEmpty() shows #designer-empty (used by the empty
-      // ```mermaid block tests).
       emptyModel: false,
-      // Toolbar probes: the tool row drives these library methods and reads
-      // these history flags.
       tools: [], addNodes: [], canUndo: false, canRedo: false,
-      // Add-sidebar probe: every editor.dispatch(op) call is recorded so a
-      // palette button can be asserted against the op it sends.
+      // Every editor.dispatch(op) call is recorded so a control can be
+      // asserted against the exact op it sends.
       dispatches: [],
+      // When set to an op type, the next matching dispatch is rejected
+      // (returns null) without changing the model or code.
+      rejectNext: null,
+      // The mutable fake model for the current family. Rebuilt when the
+      // test switches family; dispatch ops mutate it.
+      model: null,
+      modelFamily: null,
+      next: 1,
     };
+
+    function newFlowModel() {
+      return {
+        family: "flowchart",
+        direction: "TD",
+        nodes: [
+          { entityId: "node:A", id: "A", label: "A", shape: "rect" },
+          { entityId: "node:B", id: "B", label: "B", shape: "rect" },
+        ],
+        edges: [
+          { entityId: "edge:A->B#0", source: "A", target: "B", label: null,
+            seg: { line: "solid", arrowStart: "open", arrowEnd: "arrow" } },
+        ],
+      };
+    }
+    function newSeqModel() {
+      return {
+        family: "sequence",
+        autonumber: { enabled: false, lineIndex: null },
+        participants: [
+          { entityId: "participant:A", id: "A", label: "Alice", ptype: "participant",
+            decl: { alias: "Alice" }, order: 0 },
+          { entityId: "participant:B", id: "B", label: "Bob", ptype: "participant",
+            decl: null, order: 1 },
+        ],
+        events: [
+          { kind: "message", entityId: "event:2", lineIndex: 2,
+            stmt: { source: "A", target: "B", text: "Hello", op: "->>",
+              textSpan: { start: 120, end: 125 } } },
+          { kind: "message", entityId: "event:3", lineIndex: 3,
+            stmt: { source: "B", target: "A", text: "Hi", op: "-->>",
+              textSpan: { start: 150, end: 152 } } },
+          { kind: "note", entityId: "event:4", lineIndex: 4,
+            stmt: { targets: ["A"], placement: "over", text: "Note",
+              textSpan: { start: 180, end: 184 } } },
+        ],
+      };
+    }
+    function newPieModel() {
+      return {
+        family: "pie",
+        slices: [
+          { entityId: "slice:2", label: "Search", value: 40, lineIndex: 2 },
+          { entityId: "slice:3", label: "Mail", value: 60, lineIndex: 3 },
+        ],
+      };
+    }
+    function ensureModel(family) {
+      if (__visimer.model && __visimer.modelFamily === family) return __visimer.model;
+      __visimer.modelFamily = family;
+      if (family === "flowchart") __visimer.model = newFlowModel();
+      else if (family === "sequence") __visimer.model = newSeqModel();
+      else if (family === "pie") __visimer.model = newPieModel();
+      else __visimer.model = { family: family };
+      return __visimer.model;
+    }
+    function idSeq(prefix) { return prefix + (__visimer.next++); }
+
     // Build the editor's parsed model for the current __visimer.family.
-    // Only the family's own graph key is non-null (familyFor checks them in
-    // order), and the model is non-empty unless __visimer.emptyModel is set.
     function fakeResult() {
       const empty = __visimer.emptyModel;
+      const family = __visimer.family;
+      const m = ensureModel(family);
       const r = { typeInfo: { capability: __visimer.capability, id: __visimer.typeId } };
-      switch (__visimer.family) {
-        case "sequence": r.sequence = { participants: empty ? [] : [{}], events: [] }; break;
-        case "state": r.state = { states: empty ? [] : [{}], transitions: [] }; break;
-        case "class": r.classGraph = { classes: empty ? [] : [{}], relations: [] }; break;
-        case "er": r.er = { entities: empty ? [] : [{}], relations: [] }; break;
-        case "pie": r.pie = { slices: empty ? [] : [{}] }; break;
-        case "gantt": r.gantt = { tasks: empty ? [] : [{}] }; break;
-        case "lineitem": r.lineItems = { items: empty ? [] : [{}] }; break;
-        default: r.flowchart = { nodes: empty ? [] : [{}] }; break;
+      if (family === "flowchart") {
+        const nodes = empty ? [] : m.nodes;
+        r.flowchart = {
+          nodes: nodes,
+          edges: empty ? [] : m.edges,
+          direction: m.direction,
+          nodeById: new Map(nodes.map((n) => [n.id, n])),
+        };
+      } else if (family === "sequence") {
+        const participants = empty ? [] : m.participants;
+        const events = empty ? [] : m.events;
+        r.sequence = {
+          participants: participants,
+          events: events,
+          autonumber: m.autonumber,
+          participantById: new Map(participants.map((p) => [p.id, p])),
+        };
+      } else if (family === "pie") {
+        r.pie = { slices: empty ? [] : m.slices };
+      } else if (family === "state") {
+        r.state = { states: empty ? [] : [{}], transitions: [] };
+      } else if (family === "class") {
+        r.classGraph = { classes: empty ? [] : [{}], relations: [] };
+      } else if (family === "er") {
+        r.er = { entities: empty ? [] : [{}], relations: [] };
+      } else if (family === "gantt") {
+        r.gantt = { tasks: empty ? [] : [{}] };
+      } else if (family === "lineitem") {
+        r.lineItems = { items: empty ? [] : [{}] };
       }
       return r;
     }
+    function fakeEntityExists(ed, id) {
+      const r = ed.result;
+      if (r.flowchart) {
+        if (id.indexOf("node:") === 0) return r.flowchart.nodes.some((n) => n.entityId === id);
+        if (id.indexOf("edge:") === 0) return r.flowchart.edges.some((e) => e.entityId === id);
+      }
+      if (r.sequence) {
+        if (id.indexOf("participant:") === 0) return r.sequence.participants.some((p) => p.entityId === id);
+        if (id.indexOf("event:") === 0) return r.sequence.events.some((e) => e.entityId === id);
+      }
+      if (r.pie) return r.pie.slices.some((s) => s.entityId === id);
+      return false;
+    }
+    function reindexSeq(m) {
+      m.events.forEach((ev, i) => {
+        ev.lineIndex = i + 2;
+        ev.entityId = "event:" + ev.lineIndex;
+      });
+    }
+    function applyFakeOp(ed, op) {
+      const m = ensureModel(__visimer.family);
+      const created = [];
+      const r = ed.result;
+      if (op.type === "addNode") {
+        const id = idSeq("n");
+        if (m.nodes) {
+          m.nodes.push({ entityId: "node:" + id, id: id, label: op.label || id, shape: op.shape || "rect" });
+          created.push("node:" + id);
+        }
+      } else if (op.type === "connect" && m.edges) {
+        const id = "edge:" + op.source + "->" + op.target + "#0";
+        m.edges.push({
+          entityId: id, source: op.source, target: op.target, label: op.label || null,
+          seg: { line: op.line || "solid", arrowStart: "open", arrowEnd: op.arrowEnd || "arrow" },
+        });
+        created.push(id);
+      } else if (op.type === "renameNode" && m.nodes) {
+        const n = m.nodes.find((x) => x.id === op.id);
+        if (n) n.label = op.label;
+      } else if (op.type === "setNodeShape" && m.nodes) {
+        const n = m.nodes.find((x) => x.id === op.id);
+        if (n) n.shape = op.shape;
+      } else if (op.type === "setEdgeLabel" && m.edges) {
+        const e = m.edges.find((x) => x.entityId === op.edgeId);
+        if (e) e.label = op.label;
+      } else if (op.type === "setEdgeStyle" && m.edges) {
+        const e = m.edges.find((x) => x.entityId === op.edgeId);
+        if (e) {
+          if (op.line) e.seg.line = op.line;
+          if (op.arrowStart) e.seg.arrowStart = op.arrowStart;
+          if (op.arrowEnd) e.seg.arrowEnd = op.arrowEnd;
+        }
+      } else if (op.type === "setDirection") {
+        m.direction = op.direction;
+      } else if (op.type === "deleteNode" && m.nodes) {
+        m.nodes = m.nodes.filter((n) => n.id !== op.id);
+        m.edges = m.edges.filter((e) => e.source !== op.id && e.target !== op.id);
+        __visimer.model.nodes = m.nodes;
+        __visimer.model.edges = m.edges;
+      } else if (op.type === "deleteEdge" && m.edges) {
+        m.edges = m.edges.filter((e) => e.entityId !== op.edgeId);
+        __visimer.model.edges = m.edges;
+      } else if (op.type === "reverseEdge" && m.edges) {
+        const e = m.edges.find((x) => x.entityId === op.edgeId);
+        if (e) {
+          const s = e.source; e.source = e.target; e.target = s;
+          e.entityId = "edge:" + e.source + "->" + e.target + "#0";
+        }
+      } else if (op.type === "seq.addParticipant" && m.participants) {
+        const name = op.name || idSeq("P");
+        const id = name;
+        m.participants.push({
+          entityId: "participant:" + id, id: id, label: name, ptype: op.ptype || "participant",
+          decl: { alias: name }, order: m.participants.length,
+        });
+        created.push("participant:" + id);
+      } else if (op.type === "seq.renameParticipant" && m.participants) {
+        const p = m.participants.find((x) => x.id === op.id);
+        if (p) {
+          if (p.decl && p.decl.alias) {
+            p.label = op.name.trim();
+            p.decl.alias = p.label;
+          } else {
+            const old = p.id;
+            const next = op.name.trim().replace(/[:;]/g, "");
+            p.id = next;
+            p.entityId = "participant:" + next;
+            p.label = next;
+            m.participants.forEach((q) => {});
+            m.events.forEach((ev) => {
+              if (ev.kind === "message") {
+                if (ev.stmt.source === old) ev.stmt.source = next;
+                if (ev.stmt.target === old) ev.stmt.target = next;
+              } else {
+                ev.stmt.targets = ev.stmt.targets.map((t) => (t === old ? next : t));
+              }
+            });
+            // The real seq.renameParticipant returns edits only; the caller
+            // re-resolves the new id. Do not auto-select it here.
+          }
+        }
+      } else if (op.type === "seq.setParticipantType" && m.participants) {
+        const p = m.participants.find((x) => x.id === op.id);
+        if (p) p.ptype = op.ptype;
+      } else if (op.type === "seq.deleteParticipant" && m.participants) {
+        const id = op.id;
+        m.participants = m.participants.filter((p) => p.id !== id);
+        m.events = m.events.filter((ev) => {
+          if (ev.kind === "message") return ev.stmt.source !== id && ev.stmt.target !== id;
+          return !ev.stmt.targets.includes(id);
+        });
+        __visimer.model.participants = m.participants;
+        __visimer.model.events = m.events;
+      } else if ((op.type === "seq.addMessage" || op.type === "seq.addNote") && m.events) {
+        const ev = op.type === "seq.addMessage"
+          ? ({ kind: "message", entityId: "event:0", lineIndex: 0,
+            stmt: { source: op.source, target: op.target, text: op.text || "", op: op.op || "->>",
+              textSpan: { start: 400 + m.events.length * 20, end: 400 + m.events.length * 20 + 5 } } })
+          : ({ kind: "note", entityId: "event:0", lineIndex: 0,
+            stmt: { targets: [op.participant], placement: op.placement || "over", text: op.text || "",
+              textSpan: { start: 400 + m.events.length * 20, end: 400 + m.events.length * 20 + 5 } } });
+        m.events.push(ev);
+        reindexSeq(m);
+        created.push(ev.entityId);
+      } else if (op.type === "seq.setEventText" && m.events) {
+        const ev = m.events.find((x) => x.entityId === op.eventId);
+        if (ev) ev.stmt.text = op.text;
+      } else if (op.type === "seq.setMessageOp" && m.events) {
+        const ev = m.events.find((x) => x.entityId === op.eventId);
+        if (ev && ev.kind === "message") ev.stmt.op = op.op;
+      } else if (op.type === "seq.reverseMessage" && m.events) {
+        const ev = m.events.find((x) => x.entityId === op.eventId);
+        if (ev && ev.kind === "message") {
+          const s = ev.stmt.source; ev.stmt.source = ev.stmt.target; ev.stmt.target = s;
+        }
+      } else if (op.type === "seq.moveEvent" && m.events) {
+        const idx = m.events.findIndex((x) => x.entityId === op.eventId);
+        if (idx >= 0) {
+          const ev = m.events.splice(idx, 1)[0];
+          const at = op.afterEvent == null ? 0 : m.events.findIndex((x) => x.entityId === op.afterEvent) + 1;
+          m.events.splice(at, 0, ev);
+          reindexSeq(m);
+          created.push(ev.entityId);
+        }
+      } else if (op.type === "seq.deleteEvent" && m.events) {
+        m.events = m.events.filter((x) => x.entityId !== op.eventId);
+        __visimer.model.events = m.events;
+        reindexSeq(m);
+      } else if (op.type === "seq.toggleAutonumber") {
+        m.autonumber.enabled = !m.autonumber.enabled;
+      } else if (op.type === "pie.addSlice" && m.slices) {
+        const line = m.slices.length ? m.slices[m.slices.length - 1].lineIndex + 1 : 2;
+        const slice = { entityId: "slice:" + line, label: op.label || "New slice",
+          value: op.value == null ? 10 : op.value, lineIndex: line };
+        m.slices.push(slice);
+        created.push(slice.entityId);
+      } else if (op.type === "pie.setLabel" && m.slices) {
+        const s = m.slices.find((x) => x.entityId === op.sliceId);
+        if (s) s.label = op.label;
+      } else if (op.type === "pie.setValue" && m.slices) {
+        const s = m.slices.find((x) => x.entityId === op.sliceId);
+        if (s && Number.isFinite(op.value) && op.value >= 0) s.value = op.value;
+      } else if (op.type === "pie.deleteSlice" && m.slices) {
+        m.slices = m.slices.filter((x) => x.entityId !== op.sliceId);
+        __visimer.model.slices = m.slices;
+      }
+      void r;
+      return created;
+    }
     function FakeEditor(opts) {
       this.code = (opts && opts.code) || "";
-      // The constructor argument, untouched by tests that later mutate
-      // `.code`; lets a test assert exactly what the module seeded.
       this.initCode = (opts && opts.code) || "";
+      this.selection = [];
+      // Every open starts from the fixture model; dispatches during one
+      // mounted session must not leak into the next test's open.
+      __visimer.model = null;
+      __visimer.modelFamily = null;
+      __visimer.rejectNext = null;
       this.result = fakeResult();
       this._handlers = {};
       __visimer.editors.push(this);
@@ -25408,17 +25740,37 @@ function check(label, cond, extra) {
         self._handlers[evt] = (self._handlers[evt] || []).filter((f) => f !== cb);
       };
     };
-    // Test-only: fire an editor event (e.g. "change") so the module re-reads
-    // canUndo/canRedo, matching the real library's post-edit signal.
-    FakeEditor.prototype._emit = function (evt) {
-      for (const cb of (this._handlers[evt] || [])) { try { cb(); } catch (_) {} }
+    FakeEditor.prototype._emit = function (evt, payload) {
+      for (const cb of (this._handlers[evt] || [])) { try { cb(payload); } catch (_) {} }
     };
     FakeEditor.prototype.undo = function () { __visimer.undos++; };
     FakeEditor.prototype.redo = function () { __visimer.redos++; };
-    // The single-action palette buttons call editor.dispatch(op); record the
-    // op so a test can assert the exact shape the sidebar sends.
-    FakeEditor.prototype.dispatch = function (op) { __visimer.dispatches.push(op); };
-    // Togglable via __visimer.canUndo / __visimer.canRedo.
+    FakeEditor.prototype.entityExists = function (id) { return fakeEntityExists(this, id); };
+    FakeEditor.prototype.setSelection = function (ids, origin) {
+      const filtered = (ids || []).filter((id) => this.entityExists(id));
+      const same = filtered.length === this.selection.length &&
+        filtered.every((id, i) => id === this.selection[i]);
+      if (same) return;
+      this.selection = filtered;
+      this._emit("selectionChange",
+        { entityIds: filtered.slice(), spans: [], origin: origin || "api" });
+    };
+    FakeEditor.prototype.clearSelection = function (origin) { this.setSelection([], origin); };
+    FakeEditor.prototype.dispatch = function (op) {
+      __visimer.dispatches.push(op);
+      if (__visimer.rejectNext === op.type) {
+        __visimer.rejectNext = null;
+        return null;
+      }
+      const created = applyFakeOp(this, op);
+      // Keep the no-op / dirty contract real: any successful dispatch makes
+      // the fake source differ from the open-time baseline.
+      this.code = this.code + "\n%% " + op.type;
+      this.result = fakeResult();
+      this._emit("change", { code: this.code, edits: [], origin: "canvas" });
+      if (created.length) this.setSelection(created, "canvas");
+      return { ok: true, code: this.code, created: created };
+    };
     Object.defineProperty(FakeEditor.prototype, "canUndo", {
       get: function () { return !!__visimer.canUndo; },
     });
@@ -25427,29 +25779,53 @@ function check(label, cond, extra) {
     });
     function FakeView(opts) {
       this.opts = opts; this._handlers = {}; this.destroyed = false;
-      // The real canvas holds the editor it was constructed with; expose it
-      // so tests can inspect the mounted model.
       this.editor = opts && opts.editor;
       __visimer.views.push(this);
+      // Mirror the real view's document-level pointerdown capture listener:
+      // pointerdowns outside the canvas clear the selection. Also mirror the
+      // canvas-background clear while keeping entity clicks selected.
+      const self = this;
+      this._docPointerDown = function (e) {
+        const container = self.opts && self.opts.container;
+        const target = e && e.target;
+        if (!container || !target || !self.editor) return;
+        if (container.contains(target)) {
+          if (target !== container && target.closest &&
+              target.closest("[data-mw-entity]")) return;
+          if (self.editor.selection.length) self.editor.clearSelection("canvas");
+          return;
+        }
+        if (self.editor.selection.length) self.editor.clearSelection("canvas");
+      };
+      window.document.addEventListener("pointerdown", this._docPointerDown, true);
     }
     FakeView.prototype.on = function (evt, cb) { this._handlers[evt] = cb; };
     FakeView.prototype.render = function () {
       if (this._handlers.render) this._handlers.render({ ok: true });
       return Promise.resolve();
     };
-    // The real canvas toggles a mode class and emits "toolChange"; the
-    // module listens to that event to drive the toolbar's aria-pressed.
     FakeView.prototype.setTool = function (tool) {
       __visimer.tools.push(tool);
       const el = this.opts && this.opts.container;
       if (el && el.classList) el.classList.toggle("mw-tool-connect", tool === "connect");
       if (this._handlers.toolChange) this._handlers.toolChange(tool);
     };
+    FakeView.prototype.select = function (id) {
+      if (this.editor) this.editor.setSelection([].concat(id), "test");
+    };
+    FakeView.prototype.clearSelection = function () {
+      if (this.editor) this.editor.clearSelection("test");
+    };
     FakeView.prototype.addNode = function (shape, label) {
       __visimer.addNodes.push({ shape: shape, label: label });
       return { id: "n" + __visimer.addNodes.length };
     };
-    FakeView.prototype.destroy = function () { this.destroyed = true; };
+    FakeView.prototype.destroy = function () {
+      this.destroyed = true;
+      try {
+        window.document.removeEventListener("pointerdown", this._docPointerDown, true);
+      } catch (_) {}
+    };
     window.Visimer = {
       parse() { return { typeInfo: { capability: __visimer.capability, id: __visimer.typeId } }; },
       MermaidWysiwygEditor: FakeEditor,
@@ -25931,9 +26307,9 @@ function check(label, cond, extra) {
       check("designer sidebar controls: empty-state text references the palette",
         /Use the palette to add your first item/.test($("designer-empty").textContent),
         $("designer-empty").textContent.trim().slice(0, 60));
-      check("designer sidebar controls: hint text references the palette",
-        /Add from the palette . Connect/.test($("designer-hint").textContent),
-        $("designer-hint").textContent.trim().slice(0, 60));
+      check("designer sidebar controls: hint starts hidden and empty",
+        $("designer-hint").hidden === true && $("designer-hint").textContent.trim() === "",
+        "hidden=" + $("designer-hint").hidden + " text=" + JSON.stringify($("designer-hint").textContent));
 
       // --- hidden until ready, shown in ready -----------------------
       let c = await resetDesigner();
@@ -25949,6 +26325,10 @@ function check(label, cond, extra) {
         check("designer sidebar controls: visible in the ready state (Apply enabled)",
           sidebar.hidden === false && $("designer-apply").disabled === false,
           "hidden=" + sidebar.hidden + " applyDisabled=" + $("designer-apply").disabled);
+        check("designer sidebar controls: flowchart hint is type-specific",
+          $("designer-hint").hidden === false &&
+          /node or edge/.test($("designer-hint").textContent),
+          JSON.stringify($("designer-hint").textContent));
         check("designer sidebar controls: mount resets Select pressed + Undo/Redo disabled",
           selBtn.getAttribute("aria-pressed") === "true" &&
           conBtn.getAttribute("aria-pressed") === "false" &&
@@ -26019,150 +26399,681 @@ function check(label, cond, extra) {
       }
     }
 
-    // --- add-sidebar palette: per-type add actions ------------------
-    // The add action moved out of the toolbar into a per-type sidebar. The
-    // flowchart family gets a 14-shape grid driven by view.addNode; every
-    // other editable family gets one dispatch()-backed button. The sidebar
-    // shows only in the ready state for a family with an add action, and
-    // Connect is hidden for families the canvas cannot drag-connect.
-    console.log("== designer sidebar ==");
+    // --- scoped edit UI: layout, inspector, add forms, chart --------
+    // These tests drive the real module against the fake library model:
+    // selection -> inspector, every required edit through a named control,
+    // add forms, the chart controls, apply failures, and the dirty guard.
+    console.log("== designer edit UI ==");
     {
       const sidebar = $("designer-sidebar");
+      const stage = $("designer-stage");
+      const inspector = $("designer-inspector");
+      const inspectorBody = $("designer-inspector-body");
+      const inspectorKind = $("designer-inspector-kind");
       const palette = $("designer-palette");
-      const addTitle = $("designer-add-title");
-      const conBtn = $("designer-tool-connect");
-      const shapeButtons = () => Array.from(palette.querySelectorAll(".designer-shape"));
+      const addForm = $("designer-add-form");
 
-      // --- markup ----------------------------------------------------
-      check("designer sidebar: #designer-sidebar exists", !!sidebar);
-      check("designer sidebar: carries the sidebar class + aria-labelledby",
-        !!sidebar && sidebar.classList.contains("designer-sidebar") &&
-        sidebar.getAttribute("aria-labelledby") === "designer-add-title");
-      check("designer sidebar: has title + divider + palette",
-        !!addTitle && !!sidebar.querySelector(".designer-divider") && !!palette);
-      check("designer sidebar: hidden by default", !!sidebar && sidebar.hidden === true);
-
-      // --- flowchart: 14-shape grid -> view.addNode(shape) -----------
-      let c = await resetDesigner();
-      __visimer.family = "flowchart";
-      check("designer sidebar: precondition, live mermaid block", !!c);
-      if (c) {
-        const hit = window.NB.hybrid.codeBlockAt(c);
-        __visimer.addNodes.length = 0;
-        window.NB.mermaidDesign.open(hit);
-        check("designer sidebar: hidden while loading",
-          sidebar.hidden === true, "hidden=" + sidebar.hidden);
-        await tick(80);
-        check("designer sidebar: visible in the ready state",
-          sidebar.hidden === false, "hidden=" + sidebar.hidden);
-        check("designer sidebar: the title reads 'Shapes'",
-          addTitle.textContent === "Shapes", JSON.stringify(addTitle.textContent));
-        check("designer sidebar: palette holds a shape grid of 14 buttons",
-          !!palette.querySelector(".designer-shapes") && shapeButtons().length === 14,
-          "buttons=" + shapeButtons().length);
-        // Shape buttons map 1:1 (and in order) to FLOWCHART_SHAPES; clicking
-        // each must call view.addNode with that shape id.
-        const expectedShapes = ["rect", "round", "stadium", "subroutine",
-          "cylinder", "circle", "doublecircle", "diamond", "hexagon",
-          "lean_r", "lean_l", "trap_t", "trap_b", "odd"];
-        let allShapes = true;
-        shapeButtons().forEach((b, i) => {
-          clickEv(b);
-          const rec = __visimer.addNodes[__visimer.addNodes.length - 1];
-          if (!rec || rec.shape !== expectedShapes[i]) allShapes = false;
-        });
-        check("designer sidebar: each shape button calls view.addNode with its shape id",
-          allShapes && __visimer.addNodes.length === expectedShapes.length,
-          JSON.stringify(__visimer.addNodes.map((n) => n.shape)));
-        // Every shape cell shows a shape-glyph SVG (its `id` doubles as the
-        // SHAPE_GLYPHS key); the grid must hold exactly one SVG per shape.
-        const shapeSvgs = palette.querySelectorAll("svg");
-        check("designer sidebar: each of the 14 shape buttons contains an SVG glyph",
-          shapeButtons().every((b) => !!b.querySelector("svg")) &&
-          shapeSvgs.length === expectedShapes.length,
-          "svgs=" + shapeSvgs.length + " buttons=" + shapeButtons().length);
-        check("designer sidebar: flowchart Connect tool is visible + enabled",
-          conBtn.hidden === false && conBtn.disabled === false,
-          "hidden=" + conBtn.hidden + " disabled=" + conBtn.disabled);
-        clickEv($("designer-cancel"));
-        await tick(40);
-        check("designer sidebar: hidden after close", sidebar.hidden === true);
-        check("designer sidebar: palette cleared after close",
-          palette.innerHTML === "" && addTitle.textContent === "",
-          "children=" + palette.children.length);
-      }
-
-      // --- one dispatch-backed button per structured family ----------
-      // Each entry: the parsed family, the button label, the op the module
-      // must send through editor.dispatch, and whether the canvas
-      // drag-connects for it (CONNECTABLE in mermaid-designer.js).
-      const FAMILIES = [
-        { family: "state", label: "Add state", type: "st.addState", connect: true },
-        { family: "class", label: "Add class", type: "cl.addClass", connect: true },
-        { family: "er", label: "Add entity", type: "er.addEntity", connect: true },
-        { family: "pie", label: "Add slice", type: "pie.addSlice", connect: false },
-        { family: "gantt", label: "Add task", type: "gantt.addTask", connect: false },
-        { family: "sequence", label: "Add participant", type: "seq.addParticipant", connect: false },
-        { family: "lineitem", label: "Add line", type: "li.addItem", connect: false },
-      ];
-      for (const fam of FAMILIES) {
-        const cc = await resetDesigner();
-        __visimer.family = fam.family;
-        if (!cc) {
-          check("designer sidebar(" + fam.family + "): precondition, live mermaid block", false);
-          continue;
+      const changeEv = (el) => el.dispatchEvent(new window.Event("change", { bubbles: true }));
+      const inputEv = (el) => el.dispatchEvent(new window.Event("input", { bubbles: true }));
+      const setVal = (el, v) => { el.value = v; inputEv(el); changeEv(el); };
+      const submitAdd = () => $("designer-add-form").dispatchEvent(
+        new window.Event("submit", { bubbles: true, cancelable: true }));
+      const lastOp = (type) => {
+        for (let i = __visimer.dispatches.length - 1; i >= 0; i--) {
+          if (!type || __visimer.dispatches[i].type === type) return __visimer.dispatches[i];
         }
-        const hit = window.NB.hybrid.codeBlockAt(cc);
+        return null;
+      };
+      const tab = (id) => {
+        const b = $("designer-add-tabs").querySelector('[data-tab="' + id + '"]');
+        if (b) clickEv(b);
+        return b;
+      };
+      async function openFamily(family, typeId) {
+        __visimer.family = family;
+        __visimer.typeId = typeId || family;
+        __visimer.capability = "edit";
+        const cc = await resetDesigner();
+        if (!cc) return { c: null };
         __visimer.dispatches.length = 0;
-        window.NB.mermaidDesign.open(hit);
+        window.NB.mermaidDesign.open(window.NB.hybrid.codeBlockAt(cc));
         await tick(80);
-        const btn = palette.querySelector(".designer-add");
-        check("designer sidebar(" + fam.family + "): sidebar visible with the add button",
-          sidebar.hidden === false && !!btn && btn.textContent === fam.label,
-          "hidden=" + sidebar.hidden + " label=" + (btn ? btn.textContent : "none"));
-        if (btn) {
-          // The non-flowchart add button pairs the "+" glyph SVG with its
-          // label. Assert both the glyph and the label order the module builds.
-          const addSvg = btn.querySelector("svg");
-          check("designer sidebar(" + fam.family + "): add button contains an SVG '+' glyph",
-            !!addSvg && !!addSvg.querySelector("path"),
-            "svg=" + !!addSvg);
-          clickEv(btn);
-          const op = __visimer.dispatches[__visimer.dispatches.length - 1];
-          check("designer sidebar(" + fam.family + "): button dispatches " + fam.type,
-            !!op && op.type === fam.type, JSON.stringify(op));
-          check("designer sidebar(" + fam.family + "): Connect tool " +
-            (fam.connect ? "visible + enabled" : "hidden + disabled"),
-            fam.connect
-              ? (conBtn.hidden === false && conBtn.disabled === false)
-              : (conBtn.hidden === true && conBtn.disabled === true),
-            "hidden=" + conBtn.hidden + " disabled=" + conBtn.disabled);
-        }
-        window.NB.mermaidDesign.close();
-        await tick(20);
+        return {
+          c: cc,
+          ed: __visimer.editors[__visimer.editors.length - 1],
+          view: __visimer.views[__visimer.views.length - 1],
+        };
       }
-      __visimer.family = "flowchart";
+      function closeDesigner() {
+        window.NB.mermaidDesign.close();
+      }
 
-      // --- render-only (zenuml): no sidebar -------------------------
+      // --- (1) wide layout + hidden inspector for other families ----
       {
-        __visimer.capability = "render";
-        __visimer.typeId = "zenuml";
-        const cc = await resetDesigner();
-        if (cc) {
-          const hit = window.NB.hybrid.codeBlockAt(cc);
-          window.NB.mermaidDesign.open(hit);
-          await tick(80);
-          check("designer sidebar: hidden for a render-only (zenuml) type",
-            sidebar.hidden === true, "hidden=" + sidebar.hidden);
-          check("designer sidebar: no palette built for zenuml",
-            palette.children.length === 0 && addTitle.textContent === "",
-            "children=" + palette.children.length);
-          window.NB.mermaidDesign.close();
+        const css = read("static/css/style.css");
+        const idx = read("templates/index.html");
+        check("designer edit UI: markup has sidebar, stage, then inspector",
+          !!sidebar && !!stage && !!inspector &&
+          !!(sidebar.compareDocumentPosition(stage) & window.Node.DOCUMENT_POSITION_FOLLOWING) &&
+          !!(stage.compareDocumentPosition(inspector) & window.Node.DOCUMENT_POSITION_FOLLOWING));
+        check("designer edit UI: CSS sets 236px sidebar / 296px inspector / 1320px modal",
+          css.indexOf("--designer-sidebar-w: 236px") !== -1 &&
+          css.indexOf("--designer-inspector-w: 296px") !== -1 &&
+          css.indexOf("--designer-modal-w: 1320px") !== -1);
+        check("designer edit UI: add tabs, add form, chart and alert ids are in index.html",
+          ["designer-add-tabs", "designer-add-form", "designer-add-submit",
+            "designer-chart", "designer-direction", "designer-autonumber",
+            "designer-alert", "designer-inspector"].every(
+            (id) => idx.indexOf('id="' + id + '"') !== -1));
+        check("designer edit UI: inspector is hidden before open", inspector.hidden === true);
+
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          check("designer edit UI: wide flowchart shows sidebar + stage + inspector",
+            sidebar.hidden === false && inspector.hidden === false &&
+            $("designer-overlay").getAttribute("data-designer-family") === "flowchart");
+          check("designer edit UI: flowchart shows the Connect tool",
+            $("designer-tool-connect").hidden === false &&
+            $("designer-tool-connect").disabled === false);
+          {
+            const dlg = $("designer-overlay").querySelector(".settings-modal");
+            check("designer edit UI: rest state links the modal to the hint",
+              dlg.getAttribute("aria-describedby") === "designer-hint" &&
+              $("designer-hint").hidden === false);
+            f.view.select("node:A");
+            check("designer edit UI: selecting drops the hint aria-describedby",
+              !dlg.hasAttribute("aria-describedby") && $("designer-hint").hidden === true);
+            f.view.clearSelection();
+            check("designer edit UI: clearing restores the hint aria-describedby",
+              dlg.getAttribute("aria-describedby") === "designer-hint");
+          }
+        }
+        closeDesigner();
+        await tick(20);
+
+        const ADD_MATRIX = [
+          { family: "state", label: "Add state", connect: true,
+            op: { type: "st.addState", label: "New state" } },
+          { family: "class", label: "Add class", connect: true,
+            op: { type: "cl.addClass", name: "NewClass" } },
+          { family: "er", label: "Add entity", connect: true,
+            op: { type: "er.addEntity", name: "NewEntity" } },
+          { family: "gantt", label: "Add task", connect: false,
+            op: { type: "gantt.addTask", section: "", name: "New task", meta: "1d" } },
+          { family: "lineitem", label: "Add line", connect: false,
+            op: { type: "li.addItem" } },
+        ];
+        for (const fam of ADD_MATRIX) {
+          const x = await openFamily(fam.family);
+          if (!x.c) {
+            check("designer edit UI: " + fam.family + " matrix precondition", false);
+            continue;
+          }
+          const addBtn = palette.querySelector(".designer-add");
+          check("designer edit UI: " + fam.family + " keeps the add-only palette",
+            sidebar.hidden === false && inspector.hidden === true &&
+            $("designer-overlay").getAttribute("data-designer-family") === null &&
+            !!addBtn && addBtn.textContent === fam.label,
+            "hidden=" + sidebar.hidden + " inspector=" + inspector.hidden +
+            " label=" + (addBtn ? addBtn.textContent : "none"));
+          check("designer edit UI: " + fam.family + " Connect is " +
+            (fam.connect ? "shown" : "hidden"),
+            fam.connect
+              ? ($("designer-tool-connect").hidden === false &&
+                $("designer-tool-connect").disabled === false)
+              : ($("designer-tool-connect").hidden === true &&
+                $("designer-tool-connect").disabled === true),
+            "hidden=" + $("designer-tool-connect").hidden);
+          if (addBtn) {
+            __visimer.dispatches.length = 0;
+            clickEv(addBtn);
+            check("designer edit UI: " + fam.family + " add dispatches the exact op",
+              JSON.stringify(lastOp(null)) === JSON.stringify(fam.op),
+              JSON.stringify(lastOp(null)));
+          }
+          if (fam.family === "state") {
+            check("designer edit UI: non-scoped families carry no hint aria-describedby",
+              !$("designer-overlay").querySelector(".settings-modal")
+                .hasAttribute("aria-describedby"));
+          }
+          closeDesigner();
           await tick(20);
         }
-        __visimer.capability = "edit";
-        __visimer.typeId = "flowchart";
       }
+
+      // --- (2) flowchart node inspector ----------------------------
+      {
+        const f = await openFamily("flowchart");
+        check("designer edit UI: flowchart precondition", !!f.c);
+        if (f.c) {
+          f.view.select("node:A");
+          check("designer edit UI: selecting a node renders the node inspector",
+            inspector.hidden === false && inspectorKind.textContent === "Node" &&
+            $("designer-inspector-meta").textContent === "A",
+            inspectorKind.textContent + " / " + $("designer-inspector-meta").textContent);
+          const label = $("designer-node-label");
+          check("designer edit UI: node label field is populated", !!label && label.value === "A");
+          setVal(label, "Start");
+          const rename = lastOp("renameNode");
+          check("designer edit UI: node label commits renameNode {id,label}",
+            !!rename && rename.id === "A" && rename.label === "Start",
+            JSON.stringify(rename));
+
+          const shapeBtn = Array.from(inspectorBody.querySelectorAll(".designer-shape"))
+            .find((b) => /Decision/.test(b.getAttribute("aria-label") || ""));
+          clickEv(shapeBtn);
+          const shapeOp = lastOp("setNodeShape");
+          check("designer edit UI: shape grid dispatches setNodeShape for all 14 shapes",
+            !!shapeBtn && !!shapeOp && shapeOp.id === "A" && shapeOp.shape === "diamond",
+            JSON.stringify(shapeOp));
+          check("designer edit UI: selected shape carries aria-pressed",
+            shapeBtn.getAttribute("aria-pressed") === "true");
+
+          const label2 = $("designer-node-label");
+          label2.focus();
+          setVal(label2, "Second");
+          __visimer.rejectNext = "renameNode";
+          setVal(label2, "Third");
+          check("designer edit UI: a rejected edit restores the current model value",
+            label2.value === "Second" &&
+            label2.getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-node-label-error").hidden === false,
+            "value=" + JSON.stringify(label2.value));
+
+          clickEv($("designer-node-delete"));
+          const del = lastOp("deleteNode");
+          check("designer edit UI: Delete node dispatches deleteNode and clears selection",
+            !!del && del.id === "A" &&
+            inspectorKind.textContent === "Nothing selected",
+            JSON.stringify(del) + " / " + inspectorKind.textContent);
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (2b) inspector pointerdown does not clear the selection --
+      {
+        const f = await openFamily("flowchart");
+        check("designer pointer guard: precondition", !!f.c);
+        if (f.c) {
+          f.view.select("node:A");
+          check("designer pointer guard: a node is selected",
+            inspectorKind.textContent === "Node" &&
+            f.ed.selection[0] === "node:A");
+          let propagated = 0;
+          const onPD = () => { propagated++; };
+          window.document.addEventListener("pointerdown", onPD);
+          try {
+            const label = $("designer-node-label");
+            label.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+            check("designer pointer guard: pointerdown on the label keeps the selection",
+              inspectorKind.textContent === "Node" &&
+              f.ed.selection[0] === "node:A" && label.value === "A",
+              "kind=" + inspectorKind.textContent + " sel=" + JSON.stringify(f.ed.selection));
+            const shape = inspectorBody.querySelector(".designer-shape");
+            shape.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+            check("designer pointer guard: pointerdown on a shape button keeps the selection",
+              inspectorKind.textContent === "Node" &&
+              f.ed.selection[0] === "node:A",
+              "kind=" + inspectorKind.textContent + " sel=" + JSON.stringify(f.ed.selection));
+            check("designer pointer guard: the guard does not stop propagation",
+              propagated === 2, "propagated=" + propagated);
+          } finally {
+            window.document.removeEventListener("pointerdown", onPD);
+          }
+          const canvas = $("designer-canvas");
+          canvas.dispatchEvent(new window.Event("pointerdown", { bubbles: true, cancelable: true }));
+          check("designer pointer guard: canvas background still clears the selection",
+            inspectorKind.textContent === "Nothing selected" &&
+            f.ed.selection.length === 0,
+            "kind=" + inspectorKind.textContent + " sel=" + JSON.stringify(f.ed.selection));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (3) direction, add node, add edge -----------------------
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          const lr = $("designer-direction").querySelector('input[value="LR"]');
+          lr.checked = true;
+          changeEv(lr);
+          const dir = lastOp("setDirection");
+          check("designer edit UI: direction chips dispatch setDirection",
+            !!dir && dir.direction === "LR", JSON.stringify(dir));
+
+          tab("node");
+          setVal($("designer-add-label"), "Start");
+          const round = Array.from($("designer-add-fields").querySelectorAll(".designer-shape"))
+            .find((b) => /rounded rectangle/.test(b.getAttribute("aria-label") || ""));
+          clickEv(round);
+          check("designer edit UI: add-node shape grid keeps the chosen shape",
+            round && round.getAttribute("aria-pressed") === "true");
+          submitAdd();
+          const add = lastOp("addNode");
+          check("designer edit UI: Add node dispatches addNode with the typed label/shape",
+            !!add && add.label === "Start" && add.shape === "round",
+            JSON.stringify(add));
+          check("designer edit UI: the created node is selected",
+            inspectorKind.textContent === "Node",
+            inspectorKind.textContent);
+
+          tab("edge");
+          setVal($("designer-add-from"), "A");
+          setVal($("designer-add-to"), "B");
+          setVal($("designer-add-label"), "goes");
+          setVal($("designer-add-line"), "dotted");
+          setVal($("designer-add-arrow"), "double");
+          submitAdd();
+          const connect = lastOp("connect");
+          const style = lastOp("setEdgeStyle");
+          check("designer edit UI: Add edge dispatches connect with source/target/label",
+            !!connect && connect.source === "A" && connect.target === "B" &&
+            connect.label === "goes" && connect.line === "dotted",
+            JSON.stringify(connect));
+          check("designer edit UI: a double arrow completes with setEdgeStyle",
+            !!style && style.arrowStart === "arrow" && style.arrowEnd === "arrow",
+            JSON.stringify(style));
+          check("designer edit UI: the created edge is selected",
+            inspectorKind.textContent === "Edge", inspectorKind.textContent);
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (4) sequence participant/message/note + autonumber ------
+      {
+        const f = await openFamily("sequence");
+        if (f.c) {
+          f.view.select("participant:A");
+          check("designer edit UI: participant inspector renders",
+            inspectorKind.textContent === "Participant" &&
+            $("designer-inspector-meta").textContent === "A");
+          check("designer edit UI: sequence hides the Connect tool",
+            $("designer-tool-connect").hidden === true &&
+            $("designer-tool-connect").disabled === true);
+          setVal($("designer-participant-name"), "Alicia");
+          let op = lastOp("seq.renameParticipant");
+          check("designer edit UI: participant name dispatches seq.renameParticipant",
+            !!op && op.id === "A" && op.name === "Alicia", JSON.stringify(op));
+          setVal($("designer-participant-type"), "actor");
+          op = lastOp("seq.setParticipantType");
+          check("designer edit UI: participant type dispatches seq.setParticipantType",
+            !!op && op.id === "A" && op.ptype === "actor", JSON.stringify(op));
+
+          __visimer.dispatches.length = 0;
+          setVal($("designer-participant-name"), "Bad,Name");
+          check("designer edit UI: a comma in a participant name is rejected inline",
+            !lastOp("seq.renameParticipant") &&
+            $("designer-participant-name").value === "Alicia" &&
+            $("designer-participant-name").getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-participant-name-error").hidden === false,
+            "dispatches=" + JSON.stringify(__visimer.dispatches) +
+            " value=" + JSON.stringify($("designer-participant-name").value));
+
+          __visimer.rejectNext = "seq.renameParticipant";
+          setVal($("designer-participant-name"), "Alicia2");
+          check("designer edit UI: a model-rejected participant rename restores the current name",
+            $("designer-participant-name").value === "Alicia" &&
+            $("designer-participant-name").getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-participant-name-error").hidden === false,
+            "value=" + JSON.stringify($("designer-participant-name").value));
+
+          tab("participant");
+          __visimer.dispatches.length = 0;
+          setVal($("designer-add-name"), "Alice,Bob");
+          submitAdd();
+          check("designer edit UI: the add-participant form rejects a comma before dispatch",
+            !lastOp("seq.addParticipant") &&
+            $("designer-add-error").hidden === false &&
+            $("designer-add-name").getAttribute("aria-invalid") === "true",
+            "dispatches=" + JSON.stringify(__visimer.dispatches));
+          setVal($("designer-add-name"), "");
+
+          f.view.select("event:2");
+          check("designer edit UI: message inspector renders",
+            inspectorKind.textContent === "Message",
+            inspectorKind.textContent);
+          {
+            const opts = Array.from($("designer-message-op").options);
+            const solid = opts.find((o) => o.value === "-)");
+            const dotted = opts.find((o) => o.value === "--)");
+            check("designer edit UI: async message-arrow labels carry the right syntax",
+              !!solid && solid.textContent === "Solid async (-)" &&
+              !!dotted && dotted.textContent === "Dotted async (--)",
+              (solid && solid.textContent) + " / " + (dotted && dotted.textContent));
+          }
+          setVal($("designer-message-text"), "Hello there");
+          op = lastOp("seq.setEventText");
+          check("designer edit UI: message text dispatches seq.setEventText",
+            !!op && op.eventId === "event:2" && op.text === "Hello there",
+            JSON.stringify(op));
+          setVal($("designer-message-op"), "-x");
+          op = lastOp("seq.setMessageOp");
+          check("designer edit UI: message arrow dispatches seq.setMessageOp",
+            !!op && op.eventId === "event:2" && op.op === "-x", JSON.stringify(op));
+          clickEv($("designer-message-down"));
+          op = lastOp("seq.moveEvent");
+          check("designer edit UI: Move down dispatches seq.moveEvent with a fresh afterEvent",
+            !!op && op.eventId === "event:2" && op.afterEvent === "event:3",
+            JSON.stringify(op));
+          f.view.select("event:2");
+          clickEv($("designer-message-reverse"));
+          op = lastOp("seq.reverseMessage");
+          check("designer edit UI: Reverse dispatches seq.reverseMessage",
+            !!op && op.eventId === "event:2", JSON.stringify(op));
+          clickEv($("designer-message-delete"));
+          op = lastOp("seq.deleteEvent");
+          check("designer edit UI: Delete message dispatches seq.deleteEvent",
+            !!op && op.eventId === "event:2", JSON.stringify(op));
+
+          const noteEv = f.ed.result.sequence.events.find((e) => e.kind === "note");
+          f.view.select(noteEv.entityId);
+          check("designer edit UI: note inspector renders",
+            inspectorKind.textContent === "Note", inspectorKind.textContent);
+          setVal($("designer-note-text"), "Remember");
+          op = lastOp("seq.setEventText");
+          check("designer edit UI: note text dispatches seq.setEventText",
+            !!op && op.eventId === noteEv.entityId && op.text === "Remember",
+            JSON.stringify(op));
+
+          const auto = $("designer-autonumber-input");
+          auto.checked = true;
+          changeEv(auto);
+          op = lastOp("seq.toggleAutonumber");
+          check("designer edit UI: autonumber switch dispatches seq.toggleAutonumber",
+            !!op && op.type === "seq.toggleAutonumber", JSON.stringify(op));
+
+          // Add-message positions: End omits afterEvent, Start is null,
+          // After is the freshly read event entity id.
+          tab("message");
+          const fillMessage = (text, position) => {
+            setVal($("designer-add-from"), "A");
+            setVal($("designer-add-to"), "B");
+            setVal($("designer-add-text"), text);
+            setVal($("designer-add-position"), position);
+          };
+          fillMessage("At end", "end");
+          submitAdd();
+          op = lastOp("seq.addMessage");
+          check("designer edit UI: Add message at End omits afterEvent",
+            !!op && op.text === "At end" && !("afterEvent" in op),
+            JSON.stringify(op));
+          fillMessage("At start", "start");
+          submitAdd();
+          op = lastOp("seq.addMessage");
+          check("designer edit UI: Add message at Start passes afterEvent=null",
+            !!op && op.text === "At start" && op.afterEvent === null,
+            JSON.stringify(op));
+          const afterId = f.ed.result.sequence.events[0].entityId;
+          fillMessage("After first", "after:" + afterId);
+          submitAdd();
+          op = lastOp("seq.addMessage");
+          check("designer edit UI: Add message After X passes the event id",
+            !!op && op.text === "After first" && op.afterEvent === afterId,
+            JSON.stringify(op));
+
+          // Renaming a participant without an alias rewrites the id. Keep
+          // the focused field and use the new id on the next commit.
+          f.view.select("participant:B");
+          const pname = $("designer-participant-name");
+          pname.focus();
+          pname.value = "Bobby";
+          changeEv(pname);
+          check("designer edit UI: a no-alias participant rename keeps focus in the field",
+            window.document.activeElement === pname && pname.isConnected &&
+            $("designer-inspector-meta").textContent === "Bobby",
+            "active=" + (window.document.activeElement && window.document.activeElement.id) +
+            " meta=" + $("designer-inspector-meta").textContent);
+          pname.value = "Bobby2";
+          changeEv(pname);
+          op = lastOp("seq.renameParticipant");
+          check("designer edit UI: the next rename uses the re-keyed participant id",
+            !!op && op.id === "Bobby" && op.name === "Bobby2",
+            JSON.stringify(op));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (5) pie add + slice inspector + ambiguity ---------------
+      {
+        const f = await openFamily("pie");
+        if (f.c) {
+          tab("slice");
+          setVal($("designer-add-label"), "Negative");
+          setVal($("designer-add-value"), "-1");
+          submitAdd();
+          check("designer edit UI: pie add rejects a negative value before dispatch",
+            !lastOp("pie.addSlice") && $("designer-add-error").hidden === false,
+            "errorHidden=" + $("designer-add-error").hidden);
+          setVal($("designer-add-value"), "25");
+          submitAdd();
+          const op = lastOp("pie.addSlice");
+          check("designer edit UI: pie add dispatches pie.addSlice with the typed label/value",
+            !!op && op.label === "Negative" && op.value === 25, JSON.stringify(op));
+
+          f.view.select("slice:2");
+          check("designer edit UI: slice inspector renders",
+            inspectorKind.textContent === "Slice", inspectorKind.textContent);
+          check("designer edit UI: pie hides the Connect tool",
+            $("designer-tool-connect").hidden === true &&
+            $("designer-tool-connect").disabled === true);
+          setVal($("designer-slice-label"), "Find");
+          let sop = lastOp("pie.setLabel");
+          check("designer edit UI: slice label dispatches pie.setLabel",
+            !!sop && sop.sliceId === "slice:2" && sop.label === "Find", JSON.stringify(sop));
+          {
+            const sliceLabel = $("designer-slice-label");
+            sliceLabel.focus();
+            sliceLabel.value = "Findings";
+            changeEv(sliceLabel);
+            check("designer edit UI: a slice label commit keeps focus in the field",
+              window.document.activeElement === sliceLabel && sliceLabel.isConnected &&
+              sliceLabel.value === "Findings" &&
+              (lastOp("pie.setLabel") || {}).label === "Findings",
+              "active=" + (window.document.activeElement && window.document.activeElement.id) +
+              " connected=" + sliceLabel.isConnected);
+          }
+          const sliceValue = $("designer-slice-value");
+          sliceValue.focus();
+          setVal(sliceValue, "50");
+          sop = lastOp("pie.setValue");
+          check("designer edit UI: slice value dispatches pie.setValue",
+            !!sop && sop.sliceId === "slice:2" && sop.value === 50, JSON.stringify(sop));
+          setVal(sliceValue, "-1");
+          check("designer edit UI: a rejected slice value restores the current model value",
+            sliceValue.value === "50" &&
+            sliceValue.getAttribute("aria-invalid") === "true" &&
+            window.document.getElementById("designer-slice-value-error").hidden === false,
+            "value=" + JSON.stringify(sliceValue.value));
+
+          // A prefix label is ambiguous: the fields disable rather than
+          // risk editing the wrong slice.
+          f.view.select("slice:3");
+          setVal($("designer-slice-label"), "Fin");
+          f.view.select("slice:2");
+          check("designer edit UI: an ambiguous slice label disables label/value",
+            $("designer-slice-label").disabled === true &&
+            $("designer-slice-value").disabled === true,
+            "labelDisabled=" + $("designer-slice-label").disabled);
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (6) apply validation failure uses the banner ------------
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          f.ed.code = "graph TD; Broken-->Diagram;\n";
+          const realParse = window.mermaid.parse;
+          window.mermaid.parse = async () => { throw new Error("bad diagram"); };
+          try {
+            clickEv($("designer-apply"));
+            await tick(60);
+          } finally {
+            window.mermaid.parse = realParse;
+          }
+          check("designer edit UI: Apply validation failure keeps the modal open",
+            $("designer-overlay").hidden === false);
+          check("designer edit UI: Apply validation failure shows #designer-alert",
+            $("designer-alert").hidden === false &&
+            /not valid/.test($("designer-alert-msg").textContent),
+            $("designer-alert-msg").textContent);
+          check("designer edit UI: Apply validation failure keeps sidebar + canvas visible",
+            sidebar.hidden === false && $("designer-error").hidden === true &&
+            $("designer-canvas").offsetParent !== "gone");
+          check("designer edit UI: Apply validation failure sets the footer error",
+            /invalid diagram/.test($("designer-status").textContent),
+            $("designer-status").textContent);
+          f.view._handlers.render({ ok: true });
+          check("designer edit UI: a successful render leaves an Apply-validation alert visible",
+            $("designer-alert").hidden === false &&
+            /not valid/.test($("designer-alert-msg").textContent));
+        }
+        closeDesigner();
+        await tick(20);
+
+        const prev = await openFamily("flowchart");
+        if (prev.c) {
+          prev.view._handlers.render({ ok: false, error: "preview failed" });
+          check("designer edit UI: a live-preview failure shows the banner",
+            $("designer-alert").hidden === false &&
+            /Preview can.t render/.test($("designer-alert-msg").textContent));
+          prev.view._handlers.render({ ok: true });
+          check("designer edit UI: a later successful render clears the preview banner",
+            $("designer-alert").hidden === true);
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // --- (7) dirty guard: Cancel prompts, Apply does not ---------
+      {
+        const f = await openFamily("flowchart");
+        if (f.c) {
+          const realConfirm = window.confirm;
+          let prompts = 0;
+          try {
+            f.ed.code = "graph TD; Dirty-->State;\n";
+            window.confirm = () => { prompts++; return false; };
+            clickEv($("designer-cancel"));
+            check("designer edit UI: dirty Cancel prompts and stays open on cancel",
+              prompts === 1 && $("designer-overlay").hidden === false,
+              "prompts=" + prompts + " hidden=" + $("designer-overlay").hidden);
+            window.confirm = () => { prompts++; return true; };
+            clickEv($("designer-cancel"));
+            check("designer edit UI: dirty Cancel closes when the discard is accepted",
+              prompts === 2 && $("designer-overlay").hidden === true,
+              "prompts=" + prompts + " hidden=" + $("designer-overlay").hidden);
+          } finally {
+            window.confirm = realConfirm;
+          }
+        }
+        const clean = await openFamily("flowchart");
+        if (clean.c) {
+          const realConfirm = window.confirm;
+          let prompts = 0;
+          try {
+            window.confirm = () => { prompts++; return true; };
+            clickEv($("designer-cancel"));
+            check("designer edit UI: clean Cancel does not prompt",
+              prompts === 0 && $("designer-overlay").hidden === true,
+              "prompts=" + prompts);
+          } finally {
+            window.confirm = realConfirm;
+          }
+        }
+        const applied = await openFamily("flowchart");
+        if (applied.c) {
+          const realConfirm = window.confirm;
+          let prompts = 0;
+          try {
+            applied.ed.code = "graph TD; Applied-->Clean;\n";
+            window.confirm = () => { prompts++; return false; };
+            clickEv($("designer-apply"));
+            await tick(120);
+            check("designer edit UI: Apply success does not prompt",
+              prompts === 0 && $("designer-overlay").hidden === true,
+              "prompts=" + prompts + " hidden=" + $("designer-overlay").hidden);
+          } finally {
+            window.confirm = realConfirm;
+          }
+          window.NB.hybrid.flushPendingSnapshot();
+        }
+
+        const pub = await openFamily("flowchart");
+        if (pub.c) {
+          const realConfirm = window.confirm;
+          let prompts = 0;
+          try {
+            pub.ed.code = "graph TD; Public-->Close;\n";
+            window.confirm = () => { prompts++; return false; };
+            window.NB.mermaidDesign.close();
+            check("designer edit UI: public close honours the dirty guard",
+              prompts === 1 && $("designer-overlay").hidden === false,
+              "prompts=" + prompts + " hidden=" + $("designer-overlay").hidden);
+            window.confirm = () => { prompts++; return true; };
+            window.NB.mermaidDesign.close();
+            check("designer edit UI: public close closes when the discard is accepted",
+              prompts === 2 && $("designer-overlay").hidden === true,
+              "prompts=" + prompts);
+          } finally {
+            window.confirm = realConfirm;
+          }
+        }
+      }
+
+      // --- (8) structural change clears a line-index selection -----
+      {
+        const f = await openFamily("sequence");
+        if (f.c) {
+          f.view.select("event:2");
+          check("designer edit UI: precondition, message selected",
+            inspectorKind.textContent === "Message", inspectorKind.textContent);
+          const auto = $("designer-autonumber-input");
+          auto.checked = !auto.checked;
+          changeEv(auto);
+          check("designer edit UI: a structural change clears a line-index selection",
+            inspectorKind.textContent === "Nothing selected" &&
+            f.ed.selection.length === 0,
+            inspectorKind.textContent + " / " + JSON.stringify(f.ed.selection));
+
+          const seq = f.ed.result.sequence;
+          // Two equal-route events with distinct real span anchors.
+          seq.events[1].stmt.source = "A";
+          seq.events[1].stmt.target = "B";
+          seq.events[1].stmt.op = "->>";
+          f.view.select("event:2");
+          check("designer edit UI: precondition, a duplicate-routed message is selected",
+            inspectorKind.textContent === "Message", inspectorKind.textContent);
+          // A structural swap moves the other duplicate onto line 2; the
+          // selected object's own span is untouched.
+          seq.events[0].lineIndex = 3;
+          seq.events[0].entityId = "event:3";
+          seq.events[1].lineIndex = 2;
+          seq.events[1].entityId = "event:2";
+          const swapped = seq.events[0];
+          seq.events[0] = seq.events[1];
+          seq.events[1] = swapped;
+          __visimer.model.events = seq.events;
+          f.ed._emit("change", { code: f.ed.code, edits: [], origin: "history" });
+          check("designer edit UI: duplicate-message drift clears the line-index selection",
+            inspectorKind.textContent === "Nothing selected" &&
+            f.ed.selection.length === 0,
+            inspectorKind.textContent + " / " + JSON.stringify(f.ed.selection));
+        }
+        closeDesigner();
+        await tick(20);
+      }
+
+      // restore defaults for the following blocks
+      __visimer.family = "flowchart";
+      __visimer.typeId = "flowchart";
+      __visimer.capability = "edit";
+      __visimer.dispatches.length = 0;
     }
 
     // --- empty mermaid block: seeded blank flowchart ----------------

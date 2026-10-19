@@ -1,6 +1,6 @@
 # Mermaid visual designer — per-type add coverage
 
-Status: current as of 2026-10-10. Owner: `web-engineer`.
+Status: current as of 2026-10-19. Owner: `web-engineer`.
 Scope: what the **add-sidebar** in the visual Mermaid editor
 (`static/js/mermaid-designer.js`, `templates/index.html`,
 `static/css/style.css`) exposes for each of the 23 diagram types the
@@ -59,17 +59,64 @@ for the entity prefixes `node:` / `state:` / `class:` / `entity:` **[scan]**.
 
 ## Sidebar layout
 
-The add-sidebar (`#designer-sidebar`) is a column of three sections with
-dividers **[impl]**: **Tools** (Select / Connect icon buttons, `aria-pressed`
-from the canvas `toolChange` event) → divider → **Add** (the palette, title
-`#designer-add-title`) → divider → **History** (Undo / Redo icon buttons,
-`disabled` from `canUndo`/`canRedo`). The top-of-canvas `#designer-toolbar` was
-removed; its controls moved here. Tools and History appear with the sidebar,
-i.e. in the ready state for a family with an add action; every editable family
-has one, so there is no ready state that shows Tools/History without the Add
-palette. Connect stays hidden for families the canvas cannot drag-connect
-(only `flowchart` / `state` / `class` / `er`); Select is always shown. Below
-~720px the sidebar collapses to a horizontal scrollable strip.
+The add-sidebar (`#designer-sidebar`) is a column of sections with dividers
+**[impl]**: **Tools** (Select / Connect icon buttons, `aria-pressed` from the
+canvas `toolChange` event) → divider → **Add** → divider → **Chart** (scoped
+families only) → divider → **History** (Undo / Redo icon buttons, `disabled`
+from `canUndo`/`canRedo`). The top-of-canvas `#designer-toolbar` was removed;
+its controls moved here. Connect stays hidden for families the canvas cannot
+drag-connect (only `flowchart` / `state` / `class` / `er`); Select is always
+shown.
+
+For `flowchart` / `sequence` / `pie` the Add section is a tabbed form
+(`#designer-add-tabs`, `#designer-add-form`) and the body gains the
+`#designer-inspector`. Every other editable family keeps the old single
+`editor.dispatch()` add button in `#designer-palette` and has no inspector.
+At ≤960px the scoped families get a horizontal build strip and a bottom-sheet
+inspector with a 44px grabber; at ≤720px the other families keep the old
+horizontal strip. **[impl]**
+
+## Scoped families: named controls (v1)
+
+The product §4 required edits map to these named controls in the inspector or
+the Add forms **[impl]**:
+
+| Family | Edit | Control |
+| --- | --- | --- |
+| flowchart | rename node | Inspector → Label (`renameNode`) |
+| flowchart | shape (14) | Inspector → Shape grid (`setNodeShape`) |
+| flowchart | add/delete node | Add → Node form (`addNode`); Inspector → Delete node (`deleteNode`) |
+| flowchart | add/delete edge | Add → Edge form (`connect`); Inspector → Delete edge (`deleteEdge`) |
+| flowchart | relabel edge | Inspector → Label (`setEdgeLabel`) |
+| flowchart | line style | Inspector → Line (`setEdgeStyle.line`) |
+| flowchart | arrowheads | Inspector → Arrows (`setEdgeStyle.arrowStart/arrowEnd`) |
+| flowchart | reverse edge | Inspector → Reverse direction (`reverseEdge`) |
+| flowchart | direction | Chart → TD/TB/BT/LR/RL chips (`setDirection`) |
+| sequence | rename participant | Inspector → Display name (`seq.renameParticipant`) |
+| sequence | participant type | Inspector → Type (`seq.setParticipantType`) |
+| sequence | add/delete participant | Add → Participant form; Inspector → Delete participant |
+| sequence | edit message/note text | Inspector → Text (`seq.setEventText`) |
+| sequence | add message/note | Add → Message/Note form (`seq.addMessage`/`seq.addNote`) |
+| sequence | delete message/note | Inspector → Delete message/note (`seq.deleteEvent`) |
+| sequence | reorder messages | Inspector → Move up / Move down (`seq.moveEvent`) |
+| sequence | arrow type | Inspector → Arrow (`seq.setMessageOp`) |
+| sequence | reverse message | Inspector → Reverse direction (`seq.reverseMessage`) |
+| sequence | autonumber | Chart → Autonumber switch (`seq.toggleAutonumber`) |
+| pie | edit label/value | Inspector → Label / Value (`pie.setLabel`/`pie.setValue`) |
+| pie | add slice | Add → Slice form (`pie.addSlice` with entered label/value) |
+| pie | delete slice | Inspector → Delete slice (`pie.deleteSlice`) |
+
+The sequence position select maps to the library's `afterEvent`: End omits it,
+Start passes `null`, and `After: <event>` passes the event id read at submit
+time. The pie Add form validates the value as finite and ≥ 0 before dispatch;
+the slice inspector disables label/value when another slice label is equal or a
+prefix, so the library's label correlation cannot edit the wrong slice.
+
+**Still deferred (source editing):** pie title, pie slice reorder, pie
+show/hide values, activation/deactivation, participant reorder and id editing,
+fragment wrappers, layout/colors/themes, other Mermaid families, and a Source
+mode inside the modal. The flowchart canvas type badge and full keyboard
+traversal of diagram elements are not part of v1.
 
 ## Flowchart shape grid
 
@@ -118,10 +165,9 @@ action **[impl]**.
 1. **`zenuml` has no add action.** The library reports `capability:"render"`,
    so the designer shows its non-editable notice and the sidebar stays hidden.
    Use **Edit source instead**. **[scan][impl]**
-2. **Sequence messages are not in the sidebar.** Participants are added from
-   the sidebar (`seq.addParticipant`), but messages/events are added through
-   the library's own lifeline **+** buttons, which the canvas already renders.
-   **[scan]**
+2. **Sequence messages and notes are added from the Add form**, not through
+   the library's lifeline **+** buttons. The **+** path remains an accelerator.
+   **[impl]**
 
 The single-action defaults (`stateLabel`, `className`, `entityName`,
 `sliceLabel`/`sliceValue`, gantt `name`/`meta`, `participantName`) live in
