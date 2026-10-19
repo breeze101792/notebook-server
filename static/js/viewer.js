@@ -912,6 +912,28 @@
       catch (e) { return; } // file gone or unreadable; let the sidebar handle it
     }
     if (fresh.mtime != null) t.mtime = fresh.mtime;
+    // A conditional-GET poll can race our own save: it may read the file
+    // after the write but reach the client after the self-save window
+    // (watcher.js) has expired. The bytes are then identical to what we
+    // already saved, so reloading would only tear down the current
+    // session. Treat it as the echo it is and reseed the mtime baseline.
+    if (fresh.content === t.savedContent) {
+      if (NB.watcher && fresh.mtime != null) {
+        NB.watcher.noteOpened(path, fresh.mtime);
+      }
+      return;
+    }
+    // WYSIWYG mode owns the editable DOM and the edit bar. Update the
+    // cache (so a later exit renders the fresh bytes) but skip
+    // showViewer()/render() here: hybrid.js re-renders the
+    // contenteditable in place, and showViewer() would hide the edit bar
+    // under the still-active session.
+    if (NB.hybrid && typeof NB.hybrid.isActive === "function" &&
+        NB.hybrid.isActive() && path === active) {
+      t.content = fresh.content;
+      t.savedContent = fresh.content;
+      return;
+    }
     const wasActive = (active === path);
     if (viewer.isDirty(path)) {
       const ok = confirm('"' + path + '" changed on disk.\n\n' +

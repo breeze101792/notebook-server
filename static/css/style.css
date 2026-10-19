@@ -1537,6 +1537,10 @@ body[data-theme="light"] #settings-overlay {
 #settings-overlay .auth-input:disabled,
 #settings-overlay .settings-text-input:disabled,
 #settings-overlay select:disabled { opacity: .55; cursor: not-allowed; }
+#settings-overlay .settings-number-input {
+  flex: 0 0 90px;
+  text-align: right;
+}
 #settings-overlay .settings-vimrc-area {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   resize: vertical; width: 100%;

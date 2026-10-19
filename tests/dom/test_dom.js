@@ -399,6 +399,11 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-autosave-toggle">Autosave (WYSIWYG)</label>
               <input type="checkbox" id="settings-autosave-toggle" checked>
             </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-autosave-delay">Autosave delay (s)</label>
+              <input type="number" id="settings-autosave-delay" class="settings-text-input settings-number-input"
+                min="1" max="300" step="1" value="5" inputmode="numeric">
+            </div>
             <h3>Keyboard</h3>
             <div class="settings-row">
               <label class="settings-label" for="settings-vim-toggle">VIM mode</label>
@@ -7888,10 +7893,13 @@ function check(label, cond, extra) {
     }
 
     // --- hybrid tab-switch blocking ---
-    // When hybrid mode has unsaved changes, switching tabs should be
-    // blocked with a confirm prompt. On Cancel, stay in hybrid mode.
-    // On OK, save and switch.
+    // Autosave off: unsaved changes block the switch with a confirm and
+    // Cancel stays in hybrid mode. Autosave on: the switch saves silently
+    // (the user already opted into saves without a prompt).
     {
+      const switchCfg = window.NB.app.getCfg();
+      const switchAutosaveWas = switchCfg.autosave;
+      switchCfg.autosave = false;
       // Open notes/b.md so we have two tabs to switch between.
       await window.NB.tabs.open("notes/b.md");
       await tick(30);
@@ -7942,6 +7950,32 @@ function check(label, cond, extra) {
       check("hybrid tab-block: save POST fired during switch",
         fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock === 1,
         "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock));
+
+      // Autosave on: switching tabs saves silently, no permission ask.
+      switchCfg.autosave = true;
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(30);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      vc.innerHTML += "<p>silent switch edit</p>";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      const silentSaveBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+      let silentConfirm = false;
+      const silentOrigConfirm = window.confirm;
+      window.confirm = () => { silentConfirm = true; return false; };
+      await window.NB.tabs.activate("notes/b.md");
+      await tick(60);
+      window.confirm = silentOrigConfirm;
+      check("hybrid tab-switch: autosave switches without a confirm",
+        !silentConfirm, "confirmCalled=" + silentConfirm);
+      check("hybrid tab-switch: switched to notes/b.md",
+        window.NB.viewer.getPath() === "notes/b.md",
+        "got: " + window.NB.viewer.getPath());
+      check("hybrid tab-switch: silent save POST fired",
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - silentSaveBefore === 1,
+        "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - silentSaveBefore));
+      switchCfg.autosave = switchAutosaveWas;
 
       // Clean: exit hybrid (should be already exited) and switch back.
       if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
@@ -9141,27 +9175,40 @@ function check(label, cond, extra) {
 
   console.log("== hybrid autosave ==");
   {
-    // Autosave is on by default (cfg.autosave=true). Enter hybrid mode,
-    // type, and assert the file saves itself after a debounce without
-    // the user pressing Save -- and that it stays silent (no toast).
+    // Autosave is on by default (cfg.autosave=true). It saves after a
+    // quiet period with no keyboard/mouse activity; the delay is
+    // configurable (default 5 s). Use 1 s here to keep the suite fast.
     await window.NB.tabs.open("notes/notes.md");
     await window.NB.hybrid.enter();
+    const asCfg = window.NB.app.getCfg();
+    const delayWas = asCfg.autosaveDelay;
+    asCfg.autosaveDelay = 1;
     const postsBefore = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
     // Type into the contentEditable (fires 'input' -> onInput marks dirty
-    // via the 50ms debounce, which schedules the autosave).
+    // via the 50ms debounce, which arms the idle timer).
     $("viewer-content").innerHTML += "<p>autosaved text</p>";
     $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
-    await tick(100);            // let the dirty debounce fire
+    await tick(300);            // let the dirty debounce fire, stay inside the quiet period
     check("autosave: pre-autosave dirty flag set", window.NB.hybrid.isDirty());
-    await tick(2500);           // exceed AUTOSAVE_MS (2000)
+    check("autosave: no write inside the quiet period",
+      fetchLog.filter(l => l.startsWith("POST /api/file")).length === postsBefore,
+      "posts=" + (fetchLog.filter(l => l.startsWith("POST /api/file")).length - postsBefore));
+    // Mouse movement is interaction: it restarts the quiet period.
+    window.document.dispatchEvent(new window.Event("mousemove"));
+    await tick(900);
+    check("autosave: activity restarts the quiet period",
+      fetchLog.filter(l => l.startsWith("POST /api/file")).length === postsBefore,
+      "posts=" + (fetchLog.filter(l => l.startsWith("POST /api/file")).length - postsBefore));
+    await tick(400);            // 1.3 s after the move -> fired
     const postsAfter = fetchLog.filter(l => l.startsWith("POST /api/file")).length;
-    check("autosave: dirty edit auto-saved without Save click",
+    check("autosave: quiet period auto-saves without Save click",
       postsAfter > postsBefore,
       "file posts=" + postsAfter + " (before=" + postsBefore + ")");
     check("autosave: save cleared the dirty flag",
       !window.NB.hybrid.isDirty());
     check("autosave: Save button hidden after autosave (clean)",
       $("save-btn").hidden);
+    asCfg.autosaveDelay = delayWas;
     await window.NB.hybrid.exit(false);
   }
 
@@ -9441,12 +9488,16 @@ function check(label, cond, extra) {
     await tick(20);
     const cfg = window.NB.app.getCfg();
     const autosaveWas = cfg.autosave;
+    const offDelayWas = cfg.autosaveDelay;
     cfg.autosave = false;
+    cfg.autosaveDelay = 1;
     const offBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
     $("viewer-content").innerHTML += "<p>no autosave here</p>";
     $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
-    await tick(3000);
-    check("hybrid autosave-off: idle writes nothing",
+    await tick(1500);
+    window.document.dispatchEvent(new window.Event("mousemove"));
+    await tick(1500);
+    check("hybrid autosave-off: idle and activity write nothing",
       fetchLog.filter((l) => l.startsWith("POST /api/file")).length === offBefore,
       "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offBefore));
     const offSaveBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
@@ -9456,26 +9507,31 @@ function check(label, cond, extra) {
       fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offSaveBefore === 1,
       "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - offSaveBefore));
     cfg.autosave = autosaveWas;
+    cfg.autosaveDelay = offDelayWas;
     await window.NB.hybrid.exit(false);
     await tick(20);
 
-    // exit(false) must cancel a pending autosave: a dirty edit followed
-    // immediately by a discard must not write on idle afterwards.
+    // exit(false) must cancel a pending idle autosave: a dirty edit
+    // followed by a discard before the quiet period must not write.
     FILES["notes/a.md"] = "# File A\n\nbody\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
     await tick(20);
     await window.NB.hybrid.enter();
     await tick(20);
+    const cancelCfg = window.NB.app.getCfg();
+    const cancelDelayWas = cancelCfg.autosaveDelay;
+    cancelCfg.autosaveDelay = 1;
     const cancelBefore = fetchLog.filter((l) => l.startsWith("POST /api/file")).length;
     $("viewer-content").innerHTML += "<p>discard me</p>";
     $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
-    await tick(100);
+    await tick(300);            // timer armed, still inside the quiet period
     await window.NB.hybrid.exit(false);
-    await tick(3000);
+    await tick(1500);
     check("hybrid autosave-cancel: exit(discard) cancels the pending write",
       fetchLog.filter((l) => l.startsWith("POST /api/file")).length === cancelBefore,
       "posts=" + (fetchLog.filter((l) => l.startsWith("POST /api/file")).length - cancelBefore));
+    cancelCfg.autosaveDelay = cancelDelayWas;
 
     // --- autosave write race ------------------------------------------
     // An autosave POST that is still in flight when the user hits
@@ -9491,6 +9547,9 @@ function check(label, cond, extra) {
     await tick(20);
     await window.NB.hybrid.enter();
     await tick(20);
+    const raceCfg = window.NB.app.getCfg();
+    const raceDelayWas = raceCfg.autosaveDelay;
+    raceCfg.autosaveDelay = 1;
     {
       const realSave = window.NB.api.saveFile;
       let releaseFirst = null;
@@ -9505,9 +9564,8 @@ function check(label, cond, extra) {
       };
       $("viewer-content").innerHTML += "<p>autosave body</p>";
       $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
-      await tick(100);
-      // Let the autosave timer fire; its POST is now stalled.
-      await tick(2200);
+      // Quiet period elapses; the autosave's POST is now stalled.
+      await tick(1200);
       check("hybrid autosave-race: the autosave is in flight", typeof releaseFirst === "function",
         "releaseFirst=" + typeof releaseFirst);
       // Now edit more and click Save & Exit. The explicit save must wait
@@ -9529,6 +9587,49 @@ function check(label, cond, extra) {
         /explicit body/.test(raced),
         JSON.stringify(raced).slice(-120));
     }
+
+    // --- edits typed during a write stay dirty -----------------------
+    // doSave must not clear the dirty flag when the DOM changed while
+    // its POST was in flight; the newer bytes get their own autosave.
+    FILES["notes/a.md"] = "# File A\n\nbody\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    {
+      const realSave = window.NB.api.saveFile;
+      let release = null;
+      let first = true;
+      window.NB.api.saveFile = async (path, content) => {
+        if (first) {
+          first = false;
+          await new Promise((res) => { release = res; });
+        }
+        return realSave(path, content);
+      };
+      $("viewer-content").innerHTML += "<p>first body</p>";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(1200);
+      check("hybrid autosave-dirty: first write is in flight",
+        typeof release === "function", "release=" + typeof release);
+      $("viewer-content").innerHTML += "<p>second body</p>";
+      $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(100);
+      if (release) release();
+      await tick(300);
+      window.NB.api.saveFile = realSave;
+      check("hybrid autosave-dirty: an edit during the write stays dirty",
+        window.NB.hybrid.isDirty(),
+        "dirty=" + window.NB.hybrid.isDirty());
+      await tick(1500);           // newer bytes get their own quiet period
+      check("hybrid autosave-dirty: the newer edit is written by the next autosave",
+        /second body/.test(FILES["notes/a.md"] || ""),
+        JSON.stringify((FILES["notes/a.md"] || "").slice(-80)));
+      check("hybrid autosave-dirty: clean after the newer write",
+        !window.NB.hybrid.isDirty());
+    }
+    raceCfg.autosaveDelay = raceDelayWas;
     await window.NB.hybrid.exit(false);
     await tick(20);
   }
@@ -10517,6 +10618,38 @@ function check(label, cond, extra) {
       check("hybrid splice: an edit after an external change keeps the external bytes",
         saved === "# File A\n\n* external\n\nbody edited\n",
         JSON.stringify(saved));
+
+      // (10) Our own save comes back through the 5s watcher poll as an
+      // "external" change when the poll request races the 1.5s self-save
+      // window. The bytes are identical, so it must not reload over the
+      // live WYSIWYG session (that used to hide the edit bar while the
+      // mode stayed active).
+      window.NB.evt.emit("file:external-change", {
+        path: "notes/a.md",
+        data: { path: "notes/a.md", content: saved, mtime: 100, size: saved.length },
+      });
+      await tick(60);
+      check("hybrid external-change: own-save echo keeps WYSIWYG active",
+        window.NB.hybrid.isActive(), "active=" + window.NB.hybrid.isActive());
+      check("hybrid external-change: own-save echo keeps the edit bar",
+        !$("edit-bar").hidden, "barHidden=" + $("edit-bar").hidden);
+
+      // A genuine external change is handled by hybrid.js, not by the
+      // viewer's reload path: the bar stays up and the cache takes the
+      // fresh bytes for the next exit render.
+      FILES["notes/a.md"] = "# File A\n\nexternal replace\n";
+      window.NB.evt.emit("file:external-change", {
+        path: "notes/a.md",
+        data: { path: "notes/a.md", content: FILES["notes/a.md"], mtime: 101,
+                size: FILES["notes/a.md"].length },
+      });
+      await tick(120);
+      check("hybrid external-change: genuine change keeps the edit bar",
+        !$("edit-bar").hidden && window.NB.hybrid.isActive(),
+        "barHidden=" + $("edit-bar").hidden + " active=" + window.NB.hybrid.isActive());
+      check("hybrid external-change: cache takes the fresh bytes",
+        window.NB.viewer.getContent() === FILES["notes/a.md"],
+        JSON.stringify(window.NB.viewer.getContent()));
     }
     await window.NB.hybrid.exit(false);
     await tick(20);
@@ -20315,9 +20448,35 @@ function check(label, cond, extra) {
     /"autosave":false/.test(lastAsPost), lastAsPost);
   check("autosave: getAutosave() now false",
     window.NB.app.getAutosave() === false);
+  const asDelay = $("settings-autosave-delay");
+  check("autosave: delay input present in General section", !!asDelay);
+  check("autosave: delay defaults to 5 s", asDelay.value === "5", "value=" + asDelay.value);
+  check("autosave: delay input disabled while autosave is off",
+    asDelay.disabled === true);
+  // The delay is live and clamped to 1..300 s.
+  asDelay.value = "9";
+  asDelay.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(400);
+  const delayPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
+  const lastDelayPost = delayPosts[delayPosts.length - 1] || "";
+  check("autosave: delay change -> config POST has autosaveDelay:9",
+    /"autosaveDelay":9/.test(lastDelayPost), lastDelayPost);
+  check("autosave: getAutosaveDelay() now 9",
+    window.NB.app.getAutosaveDelay() === 9);
+  asDelay.value = "9999";
+  asDelay.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("autosave: delay clamped to 300 s",
+    window.NB.app.getAutosaveDelay() === 300 && asDelay.value === "300",
+    "delay=" + window.NB.app.getAutosaveDelay() + " value=" + asDelay.value);
   // Flip back on so the rest of the suite runs with the shipped default.
   asToggle.checked = true;
   asToggle.dispatchEvent(new window.Event("change", { bubbles: true }));
+  check("autosave: delay input re-enabled with the toggle",
+    asDelay.disabled === false);
+  asDelay.value = "5";
+  asDelay.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(400);
   window.NB.settings.close();
   await tick(10);
 

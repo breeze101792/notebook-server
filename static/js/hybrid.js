@@ -4405,10 +4405,11 @@
   let restoring = false;
   function onContentChange() {
     dirty = true;
+    editGeneration += 1;
     saveBtn.hidden = false;
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
-    scheduleAutosave();
+    armAutosave();
     scheduleSnapshot();
   }
 
@@ -4417,6 +4418,7 @@
   /* Reset dirty after save. */
   function resetDirty() {
     dirty = false;
+    clearAutosaveTimers();
     saveBtn.hidden = true;
     closeEditBtn.classList.remove("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: false });
@@ -4520,76 +4522,120 @@
   }
 
   /* --- autosave --------------------------------------------------
-   * Debounced silent save while hybrid-editing. WYSIWYG is a
-   * word-processor mental model, so the note saves itself shortly
-   * after the user pauses typing. Gated by cfg.autosave (Settings →
-   * General → "Autosave"); on by default.
+   * Silent save once the user stops interacting. WYSIWYG is a
+   * word-processor mental model, so the note saves itself after a quiet
+   * period (cfg.autosaveDelay, default 5 s) with no keyboard or mouse
+   * activity. Typing, moving the mouse, scrolling, or touching anywhere
+   * in the page restarts that quiet period. A 60 s hard cap saves a
+   * continuously dirty note even if the user never goes quiet, and a
+   * hidden tab saves immediately (see flushForHiddenTab).
    *
-   * The debounce is generous (AUTOSAVE_MS) because domToMarkdown()
-   * clones the whole DOM and runs turndown + the mermaid/wavedrom/
-   * katex/viz round-trips, which is not free on a long note. We also
-   * skip when not dirty, so idle time doesn't write. */
-  const AUTOSAVE_MS = 2000;
+   * The timer is armed on the first edit after a clean state, not on
+   * every keystroke; activity only pushes it back while the note is
+   * dirty. Gated by cfg.autosave (Settings → General → "Autosave");
+   * on by default.
+   *
+   * domToMarkdown() clones the whole DOM and runs turndown + the
+   * mermaid/wavedrom/katex/viz round-trips, which is not free on a long
+   * note -- one save per quiet period, not per keystroke. */
+  const AUTOSAVE_DELAY_FALLBACK_S = 5;
+  const AUTOSAVE_MAX_DIRTY_MS = 60000;
+  const AUTOSAVE_ACTIVITY_EVENTS = [
+    "keydown", "mousemove", "mousedown", "pointerdown",
+    "wheel", "touchstart", "touchmove", "scroll",
+  ];
   let autosaveTimer = null;
+  let maxDirtyTimer = null;
   let autosaveInFlight = null;
-  // Session generation for the autosave write race. Bumped on every
-  // enter() and exit(): a flush that was armed (or already mid-write)
-  // under an OLD session must not complete against the NEW state. The
-  // classic race: flushAutosave() fires, awaits doSave(), and the user
-  // exits hybrid mode (or switches tabs) while the write is in flight
-  // -- doSave's continuation then calls resetDirty()/noteSaved() on a
-  // session that no longer exists, resurrecting a save the user just
-  // discarded or clobbering the note that is now displayed. Each flush
-  // captures the generation at start and bails whenever it goes stale.
-  let autosaveGeneration = 0;
+  // Incremented on every content change. doSave() captures it before the
+  // first await and only clears the dirty flag if it has not changed:
+  // edits typed while the POST is in flight stay dirty and are written
+  // by the next autosave instead of being marked clean and skipped.
+  let editGeneration = 0;
 
   function autosaveEnabled() {
     return !!(NB.app && NB.app.getCfg && NB.app.getCfg().autosave);
   }
 
-  function scheduleAutosave() {
-    if (!active || !autosaveEnabled()) return;
+  function autosaveDelayMs() {
+    const seconds = (NB.app && NB.app.getAutosaveDelay)
+      ? NB.app.getAutosaveDelay()
+      : AUTOSAVE_DELAY_FALLBACK_S;
+    return seconds * 1000;
+  }
+
+  function clearAutosaveTimers() {
     clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(flushAutosave, AUTOSAVE_MS);
+    autosaveTimer = null;
+    clearTimeout(maxDirtyTimer);
+    maxDirtyTimer = null;
+  }
+
+  function armAutosave() {
+    if (!active || !dirty || !autosaveEnabled()) return;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(flushAutosave, autosaveDelayMs());
+    // The hard cap is armed once per dirty period and never pushed back
+    // by activity, so a cursor that never stops moving cannot postpone
+    // the save forever.
+    if (!maxDirtyTimer) {
+      maxDirtyTimer = setTimeout(flushAutosave, AUTOSAVE_MAX_DIRTY_MS);
+    }
   }
 
   async function flushAutosave() {
-    autosaveTimer = null;
-    if (!active || !dirty) return;
-    if (autosaveInFlight) return;   // a save is already running; the next keystroke re-arms
-    const generation = autosaveGeneration;
+    clearAutosaveTimers();
+    if (!active || !dirty || !autosaveEnabled()) return;
+    if (autosaveInFlight) return;   // exit()/save() settles this one first
+    let saved = false;
     try {
       const md = domToMarkdown();
       if (isNoOpMarkdown(md)) {
         // The DOM changed but the Markdown did not (a format toggle that
-        // netted out). Nothing to write; clearing dirty stops the timer
-        // re-arming on every idle tick for an unchanged note.
+        // netted out). Nothing to write.
         resetDirty();
         return;
       }
       autosaveInFlight = doSave(md);
       await autosaveInFlight;
+      saved = true;
     } catch (err) {
       // Autosave errors surface on the next manual save / exit; don't
-      // interrupt the user mid-edit with an alert.
+      // interrupt the user mid-edit with an alert. Do not retry on a
+      // timer -- the next interaction re-arms the idle save.
       console.warn("autosave failed:", err && err.message ? err.message : err);
     } finally {
       autosaveInFlight = null;
-      // Re-arm only while the session this flush belonged to is still
-      // current. exit()/cancelAutosave() bump the generation, so a
-      // flush that raced an exit leaves no timer behind -- the note it
-      // was about to save was discarded, not deferred.
-      if (generation === autosaveGeneration) scheduleAutosave();
+      // Edits that landed during the write leave dirty set (doSave's
+      // generation guard). Give those bytes their own quiet period and
+      // hard cap.
+      if (saved && active && dirty) armAutosave();
     }
   }
 
+  /* A hidden tab stops firing input/mouse events. Let any save that is
+   * already in flight settle, then write the newest DOM before the page
+   * can be frozen or closed. */
+  async function flushForHiddenTab() {
+    if (!document.hidden || !active || !dirty || !autosaveEnabled()) return;
+    await awaitPendingAutosave();
+    if (document.hidden && active && dirty && autosaveEnabled()) {
+      await flushAutosave();
+    }
+  }
+
+  document.addEventListener("visibilitychange", () => { void flushForHiddenTab(); });
+
+  // Any keyboard or pointer activity restarts the quiet period. Capture
+  // phase so scrolling inside the viewer's scroll container counts too.
+  for (const type of AUTOSAVE_ACTIVITY_EVENTS) {
+    document.addEventListener(type, armAutosave, { passive: true, capture: true });
+  }
+
   /* Cancel a pending autosave (e.g. on exit / tab switch). Any flush
-   * that is already mid-write is allowed to finish its await, but its
-   * stale generation makes its re-arm a no-op. */
+   * that is already mid-write is allowed to finish its await. */
   function cancelAutosave() {
-    autosaveGeneration += 1;
-    clearTimeout(autosaveTimer);
-    autosaveTimer = null;
+    clearAutosaveTimers();
   }
 
   /* Settle an autosave that is already mid-write before an explicit
@@ -4597,8 +4643,7 @@
    * body can land last (over HTTP/2, or behind a slow first request),
    * leaving the file with stale content while the viewer cache holds
    * the newer markdown. Awaiting the flush here guarantees the explicit
-   * save is the LAST write. cancelAutosave()'s generation bump has
-   * already stopped the flush from re-arming, so this cannot loop. */
+   * save is the LAST write. */
   async function awaitPendingAutosave() {
     if (!autosaveInFlight) return;
     try { await autosaveInFlight; } catch (_) { /* logged by the flush */ }
@@ -4627,6 +4672,10 @@
       // item's marker renders too. Idempotent and cheap.
       addListPlaceholders();
     }, 0);
+    // Typing resumed: restart the quiet period. onContentChange() will
+    // also arm it after its debounce, but a fast typist can generate
+    // several inputs before that fires.
+    armAutosave();
     clearTimeout(inputDebounce);
     inputDebounce = setTimeout(onContentChange, 50);
   }
@@ -4794,10 +4843,6 @@
       ? (NB.viewer.getContent() || "") : "");
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
-    // A fresh session starts a fresh autosave generation: any timer left
-    // over from a previous session (or a flush of it still in flight)
-    // must not fire into this one.
-    autosaveGeneration += 1;
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
@@ -4937,6 +4982,7 @@
     const writtenBlocks = topLevelBlocks(md);
     const writtenAlignment = buildAlignment(writtenBlocks);
     const writtenAux = rootAuxCount();
+    const generation = editGeneration;
     await NB.api.saveFile(activePath, md);
     // Update the viewer's cache so the next activate shows the saved content.
     // We emit file:saved so the watcher etc. stay in sync.
@@ -4960,7 +5006,10 @@
     sourceBlocks = writtenBlocks;
     blockHashes = writtenAlignment;
     rootAuxBaseline = writtenAux;
-    resetDirty();
+    // Only clear dirty when the DOM has not changed since this snapshot.
+    // Edits typed during the write stay dirty so their own autosave (or
+    // an explicit one) writes them; clearing here would mark them saved.
+    if (generation === editGeneration) resetDirty();
   }
 
   async function onSave(e) {
@@ -5063,19 +5112,23 @@
       await exit(false);
       return true;
     }
-    const ok = confirm('Save changes to "' + activePath + '" before switching tabs?');
-    if (ok) {
-      try {
-        await awaitPendingAutosave();
-        const md = domToMarkdown();
-        if (isNoOpMarkdown(md)) resetDirty();
-        else await doSave(md);
-      } catch (err) {
-        alert("Save failed: " + (err && err.message ? err.message : err));
+    // Autosave means the user has opted into saving without a prompt, so
+    // a tab switch writes silently. With autosave off, keep the confirm
+    // so an edit is neither saved nor discarded behind their back.
+    if (!autosaveEnabled()) {
+      const ok = confirm('Save changes to "' + activePath + '" before switching tabs?');
+      if (!ok) {
+        // User cancelled -- stay in hybrid mode, abort the switch.
         return false;
       }
-    } else {
-      // User cancelled -- stay in hybrid mode, abort the switch.
+    }
+    try {
+      await awaitPendingAutosave();
+      const md = domToMarkdown();
+      if (isNoOpMarkdown(md)) resetDirty();
+      else await doSave(md);
+    } catch (err) {
+      alert("Save failed: " + (err && err.message ? err.message : err));
       return false;
     }
     await exit(false);
@@ -6256,6 +6309,10 @@
       try {
         const data = await NB.api.getFile(path);
         if (data && data.content != null) {
+          // An identical re-read is our own save's echo (the watcher poll
+          // can beat its self-save window). Re-rendering would reset the
+          // caret and scroll for bytes that did not change.
+          if (data.content === sessionSource) return;
           renderMarkdown(data.content);
           // Rebase the no-op baseline on the externally written bytes.
           // Without this the next clean save compares against the stale

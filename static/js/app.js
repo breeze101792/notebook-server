@@ -4,6 +4,13 @@
   "use strict";
   window.NB = window.NB || {};
 
+  // Autosave idle-delay bounds and default, in seconds. The delay is
+  // the quiet time after the last keyboard/mouse interaction before a
+  // WYSIWYG session writes itself. Configurable in Settings -> General.
+  const AUTOSAVE_DELAY_MIN_S = 1;
+  const AUTOSAVE_DELAY_MAX_S = 300;
+  const AUTOSAVE_DELAY_DEFAULT_S = 5;
+
   const DEFAULTS = {
     theme: "auto",
     fontSize: "medium",
@@ -85,17 +92,25 @@
     // boot + on every toggle.
     vimMode: false,
     // Autosave (WYSIWYG / hybrid edit mode only). When on, the note
-    // saves itself shortly after the user pauses typing while
-    // hybrid-editing. Vim / CodeMirror edit mode is unaffected. On by
-    // default -- the WYSIWYG editor is expected to behave like a word
-    // processor. Gated in hybrid.js.
+    // saves itself once keyboard/mouse interaction stops for
+    // autosaveDelay seconds (or immediately when the tab is hidden or
+    // the open file changes). Vim / CodeMirror edit mode is unaffected.
+    // On by default -- the WYSIWYG editor is expected to behave like a
+    // word processor. Gated in hybrid.js.
     autosave: true,
+    autosaveDelay: AUTOSAVE_DELAY_DEFAULT_S,
     // Per-action keyboard bindings for the non-vim keymap. See
     // static/js/shortcuts.js for the chord format and the list of
     // actions. Missing keys fall back to that module's DEFAULTS,
     // so a fresh `{}` here means "use the shipped defaults".
     shortcuts: {},
   };
+
+  function clampAutosaveDelay(seconds) {
+    const n = Math.round(Number(seconds));
+    if (!Number.isFinite(n)) return AUTOSAVE_DELAY_DEFAULT_S;
+    return Math.min(AUTOSAVE_DELAY_MAX_S, Math.max(AUTOSAVE_DELAY_MIN_S, n));
+  }
 
   // Width used while the side panel is collapsed. 0 -- the activity
   // bar's icons are the re-expand affordance, so the panel itself hides
@@ -1007,6 +1022,14 @@
       persistConfig();
     },
     getAutosave: () => cfg.autosave !== false,
+    // Idle seconds after the last interaction before WYSIWYG autosave
+    // writes. Clamped so hand-edited config.json cannot disable it or
+    // leave a note unsaved for hours.
+    setAutosaveDelay: (seconds) => {
+      cfg.autosaveDelay = clampAutosaveDelay(seconds);
+      persistConfig();
+    },
+    getAutosaveDelay: () => clampAutosaveDelay(cfg.autosaveDelay),
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
     // Replace the full bookmark list. The bookmarks module is the only
     // caller on the user-mutation path; the config load path also

@@ -42,6 +42,7 @@
   const watchStatusEl = document.getElementById("settings-watch-status");
   const watchToggleBtn = document.getElementById("settings-watch-toggle");
   const autosaveToggleEl = document.getElementById("settings-autosave-toggle");
+  const autosaveDelayEl = document.getElementById("settings-autosave-delay");
   const vimToggleEl = document.getElementById("settings-vim-toggle");
   const vimrcEl     = document.getElementById("settings-vimrc");
   const vimrcSaveEl = document.getElementById("settings-vimrc-save");
@@ -383,11 +384,15 @@
     }
   }
 
-  /* Sync the autosave checkbox from the live cfg. */
+  /* Sync the autosave checkbox + delay from the live cfg. */
   function syncAutosaveToggle() {
     if (!autosaveToggleEl) return;
     if (NB.app && NB.app.getAutosave) {
       autosaveToggleEl.checked = NB.app.getAutosave();
+      if (autosaveDelayEl) {
+        autosaveDelayEl.value = NB.app.getAutosaveDelay();
+        autosaveDelayEl.disabled = !autosaveToggleEl.checked;
+      }
     }
   }
 
@@ -412,11 +417,19 @@
     });
   }
 
-  /* Autosave toggle: live. hybrid.js reads cfg.autosave via getCfg()
-   * on each keystroke, so just persisting the flag is enough. */
+  /* Autosave toggle + delay: live. hybrid.js reads cfg.autosave and
+   * cfg.autosaveDelay through NB.app on each arm, so persisting the
+   * values is enough. */
   if (autosaveToggleEl) {
     autosaveToggleEl.addEventListener("change", () => {
       if (NB.app && NB.app.setAutosave) NB.app.setAutosave(autosaveToggleEl.checked);
+      syncAutosaveToggle();
+    });
+  }
+  if (autosaveDelayEl) {
+    autosaveDelayEl.addEventListener("change", () => {
+      if (NB.app && NB.app.setAutosaveDelay) NB.app.setAutosaveDelay(autosaveDelayEl.value);
+      autosaveDelayEl.value = NB.app.getAutosaveDelay();
     });
   }
 
