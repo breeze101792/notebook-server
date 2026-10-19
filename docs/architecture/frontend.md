@@ -117,7 +117,7 @@ implemented today.
 | `katex.js` | 153 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |
 | `viz.js` | 212 | `NB.viz` | ` ```dot ` / ` ```graphviz ` renderer via WASM `Viz.renderString`. |
 | `htmlpreview.js` | 303 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
-| `svg.js` | 138 | `NB.svg` | ` ```svg ` renderer. Parses the fence as SVG XML, strips script / `foreignObject` / `on*` / external refs, and inlines the result. |
+| `svg.js` | 155 | `NB.svg` | ` ```svg ` renderer. Parses the fence as SVG XML, strips script / `foreignObject` / `on*` / external refs, inlines the result, and opens it in the shared lightbox on click. |
 | `viewer.js` | 1248 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 5789 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |

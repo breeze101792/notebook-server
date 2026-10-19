@@ -1178,6 +1178,21 @@
     </div>
   </div>
 
+  <!-- SVG lightbox overlay: same click-to-inspect + zoom behaviour as
+       the mermaid/wavedrom/graphviz lightboxes, but for rendered
+       ```svg blocks. Reuses the generic .mermaid-lightbox-* / .mlb-*
+       CSS classes; only the element ids differ. -->
+  <div id="svg-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="svg-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="svglb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="svglb-zoom-pct">100%</span>
+      <button id="svglb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+      <button id="svglb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="svglb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+    </div>
+  </div>
+
   <!-- Vendored libs + app modules, all deferred. defer keeps execution
        order (so window.marked / window.TurndownService are set before the
        modules that use them) but downloads every bundle in parallel and,

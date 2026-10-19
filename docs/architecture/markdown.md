@@ -264,8 +264,10 @@ sanitized — `<script>`, `<foreignObject>`, every `on*` attribute, and any
 `href` / `xlink:href` that is not a fragment (`#id`) or a `data:` URI are
 removed — and inlined into a `.svg-container`. A viewBox-only SVG gets
 `width="100%"` plus an `aspect-ratio`, so it scales to the reading
-column; an explicit `width` / `height` from the author wins. The original
-source stays in `dataset.svgSource` for the hybrid round-trip.
+column; an explicit `width` / `height` from the author wins. Clicking the
+card opens it in the shared lightbox (`static/js/lightbox.js`) with zoom,
+fit, and Escape-to-close, exactly like the other diagram renderers. The
+original source stays in `dataset.svgSource` for the hybrid round-trip.
 
 ````markdown
 ```svg

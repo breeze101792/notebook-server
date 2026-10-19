@@ -119,7 +119,29 @@
     }
   }
 
-  NB.svg = { renderAll };
+  /* --- lightbox: click a rendered SVG to see it full-size ------------- */
+  /* The full-screen overlay + zoom controls live in the shared lightbox
+   * module (static/js/lightbox.js). We hand it our element ids and the
+   * container selector; it wires the buttons, backdrop click, wheel,
+   * and Escape / Ctrl++ / Ctrl+- keybindings, and returns the public
+   * methods we re-expose. */
+  const lightbox = NB.lightbox.create({
+    overlayId: "svg-lightbox",
+    bodyId:    "svg-lightbox-body",
+    closeId:   "svglb-close",
+    zoomInId:  "svglb-zoom-in",
+    zoomOutId: "svglb-zoom-out",
+    fitId:     "svglb-fit",
+    pctId:     "svglb-zoom-pct",
+    containerSelector: ".svg-container",
+  });
+
+  NB.svg = { renderAll,
+    openLightbox: lightbox.openLightbox,
+    closeLightbox: lightbox.closeLightbox,
+    zoomIn: lightbox.zoomIn,
+    zoomOut: lightbox.zoomOut,
+    fitToPage: lightbox.fitToPage };
 
   if (NB.blocks) {
     NB.blocks.register({

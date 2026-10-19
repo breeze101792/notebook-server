@@ -943,6 +943,17 @@ const html = `<!DOCTYPE html><html><head>
       <button id="vizlb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
+  <!-- SVG lightbox overlay (mirrors the mermaid one) -->
+  <div id="svg-lightbox" class="mermaid-lightbox-overlay" hidden>
+    <div class="mermaid-lightbox-body" id="svg-lightbox-body"></div>
+    <div class="mermaid-lightbox-controls">
+      <button id="svglb-zoom-out" class="mlb-btn" title="Zoom Out" aria-label="Zoom Out">−</button>
+      <span class="mlb-zoom-pct" id="svglb-zoom-pct">100%</span>
+      <button id="svglb-zoom-in" class="mlb-btn" title="Zoom In" aria-label="Zoom In">+</button>
+      <button id="svglb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+      <button id="svglb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
+    </div>
+  </div>
   <div id="mobile-home" hidden></div>
   <div id="mobile-scrim" hidden></div>
   <section id="capture-sheet" role="dialog" aria-modal="true" aria-labelledby="capture-title" hidden>
@@ -4050,6 +4061,27 @@ function check(label, cond, extra) {
       errs[0] && /<rect>/.test((errs[0].querySelector(".svg-source") || {}).textContent || ""));
     check("svg: the card gets the Copy image button",
       !!cards[0] && !!cards[0].querySelector(".nb-copy-img-btn"));
+
+    // Click-to-inspect: a click on the card opens the shared lightbox
+    // with a clone of the SVG, and close empties it again.
+    const svgOverlay = () => window.document.getElementById("svg-lightbox");
+    const svgBody    = () => window.document.getElementById("svg-lightbox-body");
+    check("svg: lightbox overlay exists", !!svgOverlay());
+    cards[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    await tick(20);
+    check("svg: click opens the lightbox",
+      svgOverlay() && !svgOverlay().hidden,
+      "hidden=" + (svgOverlay() ? svgOverlay().hidden : "n/a"));
+    check("svg: lightbox holds a clone of the SVG",
+      !!svgBody() && !!svgBody().querySelector("svg"));
+    check("svg: the original SVG stays in the viewer container",
+      !!cards[0] && !!cards[0].querySelector("svg"));
+    window.document.getElementById("svglb-close").click();
+    await tick(20);
+    check("svg: close hides the lightbox and empties the body",
+      svgOverlay().hidden && svgBody().innerHTML === "",
+      "hidden=" + svgOverlay().hidden);
+
     await window.NB.tabs.close(SVG_PATH, { force: true });
     await window.NB.tabs.activate("notes/a.md");
     await tick(40);

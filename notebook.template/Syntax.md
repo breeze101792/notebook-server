@@ -265,7 +265,8 @@ The block is sanitized: `<script>`, `<foreignObject>`, `on*` attributes,
 and external `href` / `xlink:href` are removed. Fragment references
 (`url(#id)`) and inline `data:` URIs work; external files do not. For a
 handful of shapes this is simpler than a Mermaid or Graphviz block, and
-it is fully self-contained.
+it is fully self-contained. Click a rendered block to open it full-size
+with zoom.
 
 ### A block diagram
 

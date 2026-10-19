@@ -87,7 +87,8 @@ outline and by `?file=…&heading=…` deep links.
 - **Inline SVG** — a fenced block tagged ` ```svg ` is parsed as SVG and
   rendered in the note. Sanitized (no `<script>`, `<foreignObject>`,
   `on*`, or external refs) and fully self-contained — no image file to
-  manage. Simple diagrams and sketches stay editable as source.
+  manage. Simple diagrams and sketches stay editable as source. Click a
+  block to open it full-size with zoom, like Mermaid and Graphviz.
 - **Live HTML previews** — a fenced block tagged `` html-live `` is
   replaced with a sandboxed iframe that actually runs the markup (CSS /
   SVG animation, inline `` <script> ``, canvas, …). Plain `` ```html ``
