@@ -82,7 +82,7 @@ process.exit(fail === 0 ? 0 : 1);
 So the exit code is `0` only when every assertion passed. The suite has **84
 test sections**, each announced with `console.log("== name ==")`, and 2104
 `check(...)` call sites covering boot, sidebar and tree, theme, viewer and
-outline, the five renderers, the blocks registry, tabs (open/close/reorder/
+outline, the six renderers, the blocks registry, tabs (open/close/reorder/
 pin/ghost animation), search, edit and save, the edit bar, scroll sync,
 hybrid mode and its round-trip guards, table view, empty-tree create,
 collapse/expand, recent files, graph view and interactions, bookmarks,
@@ -115,8 +115,9 @@ assert on `aiChatLog` to see exactly what the loop sent upstream.
 
 The renderer registry is single-source: each renderer module registers a
 descriptor with `NB.blocks`. The `== blocks registry ==` section asserts that
-five renderers are registered (`mermaid`, `wavedrom`, `katex`, `viz`,
-`htmlpreview`) and that `pluginTypes()` derives one table entry per renderer.
+six renderers are registered (`mermaid`, `wavedrom`, `katex`, `viz`,
+`htmlpreview`, `svg`) and that `pluginTypes()` derives one table entry per
+renderer.
 It then runs the **registry-completeness guard**
 (`test_dom.js:3111-3130`): for every descriptor it asserts
 

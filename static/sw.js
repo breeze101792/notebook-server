@@ -49,6 +49,7 @@ const PRECACHE = [
   "/static/js/katex.js",
   "/static/js/viz.js",
   "/static/js/htmlpreview.js",
+  "/static/js/svg.js",
   "/static/js/copy-image.js",
   "/static/js/viewer.js",
   "/static/js/editbar.js",

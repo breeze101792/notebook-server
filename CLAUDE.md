@@ -236,7 +236,7 @@ apply.
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
-htmlpreview.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
+htmlpreview.js → svg.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
 table-view.js → table-select.js → watcher.js → outline.js → sidebar.js →
 search.js → graph.js → tabs.js → windows.js → settings.js → export.js →
 vimnav.js → ai.js → activity.js → bookmarks.js → shortcuts.js → app.js`.
@@ -253,8 +253,8 @@ and `hybrid.js` each build their own item list and call
 `NB.menu.open({owner, x, y, scope, items, focusFirst})`; the edit-bar dropdowns
 and table-view popovers are left-click widgets and stay custom.
 
-The five code-block renderers (`mermaid.js`, `wavedrom.js`, `katex.js`,
-`viz.js`, `htmlpreview.js`) each register a descriptor with `blocks.js` at
+The six code-block renderers (`mermaid.js`, `wavedrom.js`, `katex.js`,
+`viz.js`, `htmlpreview.js`, `svg.js`) each register a descriptor with `blocks.js` at
 load. `NB.blocks` owns the one authoritative renderer list and drives the
 render pipeline (`renderAll`, called by `viewer.js` / `hybrid.js` /
 `export.js`), the hybrid Save round-trip (`restoreForMarkdown`, replacing
@@ -432,7 +432,7 @@ Module responsibilities:
   Exports a note to **PDF** or a self-contained **HTML** file.
   Purely client-side: `renderInto()` re-renders the note from the
   viewer's content cache through the same pipeline the app uses (marked +
-  highlight.js + the mermaid/wavedrom/katex/viz renderers), so the output
+  highlight.js + the mermaid/wavedrom/katex/viz/svg renderers), so the output
   always matches the on-screen rendering. **PDF** paginates the note with
   the vendored Paged.js polyfill: `buildExportDoc` builds the same
   standalone document the Preview uses and loads it into a hidden

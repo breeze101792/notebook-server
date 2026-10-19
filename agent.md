@@ -150,6 +150,7 @@ a **fixed vendored version**; use only syntax that version supports:
 | ```` ```math ```` / ```` ```katex ```` | KaTeX **0.16** LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros). |
 | ```` ```dot ```` / ```` ```graphviz ```` | Graphviz **2.40.1** (Viz.js 2.1.2). Older Graphviz — avoid syntax newer than 2.40. |
 | ```` ```html-live ```` | **Live HTML preview** — the markup is loaded into a sandboxed iframe and runs (CSS / SVG animation, inline `<script>`, canvas). ```` ```html ```` (without `-live`) only shows the source. |
+| ```` ```svg ```` | **Inline SVG** — the block is parsed as SVG XML, sanitized (`<script>`, `<foreignObject>`, `on*` attributes, and external `href` / `xlink:href` removed), and rendered inline in the note. Self-contained: it references no external file. |
 
 The `html-live` iframe is sandboxed with `allow-scripts` **without**
 `allow-same-origin`, so the document gets an opaque origin. Scripts run,

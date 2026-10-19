@@ -42,7 +42,7 @@
 
   const VIEWER_CONTENT_ID = "viewer-content";
   // SVG diagrams: an image button (rasterize the <svg> to PNG).
-  const IMAGE_CONTAINER_SELECTOR = ".mermaid-container, .wavedrom-container, .viz-container";
+  const IMAGE_CONTAINER_SELECTOR = ".mermaid-container, .wavedrom-container, .viz-container, .svg-container";
   // Katex: a text button (copy the stored LaTeX source).
   const KATEX_CONTAINER_SELECTOR = ".katex-container";
   // Live HTML previews: an image button (rasterize the stored source).

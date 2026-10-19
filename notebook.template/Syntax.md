@@ -3,8 +3,9 @@
 A live demo of every feature the notebook supports. Open this file in
 the app and you'll see each section render the way it's meant to —
 code blocks with one-click **Copy** buttons, Mermaid diagrams, WaveDrom
-timing plots, KaTeX math, Graphviz graphs, live HTML previews, syntax
-highlighting, the heading outline, the search field, the sidebar's
+timing plots, KaTeX math, Graphviz graphs, inline SVG, live HTML
+previews, syntax highlighting, the heading outline, the search field,
+the sidebar's
 **Bookmarks** section, and so on. The "how to use" notes under each
 section tell you where to click to exercise the feature.
 
@@ -250,6 +251,66 @@ digraph deps {
 
 A block with a Graphviz syntax error falls back to an inline error box
 (plus a toast) so the source stays visible to correct it.
+
+---
+
+## Inline SVG
+
+A block tagged `svg` is parsed as SVG and rendered inline in the note —
+no image file to copy, move, or lose. The source stays in the note, so
+it survives Save, export, and the hybrid **Edit source** flow. Use
+`currentColor` to follow the theme.
+
+The block is sanitized: `<script>`, `<foreignObject>`, `on*` attributes,
+and external `href` / `xlink:href` are removed. Fragment references
+(`url(#id)`) and inline `data:` URIs work; external files do not. For a
+handful of shapes this is simpler than a Mermaid or Graphviz block, and
+it is fully self-contained.
+
+### A block diagram
+
+```svg
+<svg viewBox="0 0 420 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <style>
+    .box  { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .lbl  { fill: currentColor; font: 13px system-ui, sans-serif;
+            text-anchor: middle; }
+    .wire { stroke: currentColor; stroke-width: 1.5; fill: none;
+            marker-end: url(#arrow); }
+  </style>
+  <rect class="box" x="10" y="35" width="100" height="50" rx="6"/>
+  <text class="lbl" x="60" y="65">sensor</text>
+  <rect class="box" x="160" y="35" width="100" height="50" rx="6"/>
+  <text class="lbl" x="210" y="65">ADC</text>
+  <rect class="box" x="310" y="35" width="100" height="50" rx="6"/>
+  <text class="lbl" x="360" y="65">firmware</text>
+  <line class="wire" x1="110" y1="60" x2="155" y2="60"/>
+  <line class="wire" x1="260" y1="60" x2="305" y2="60"/>
+</svg>
+```
+
+### A quick sketch
+
+```svg
+<svg viewBox="0 0 320 90" xmlns="http://www.w3.org/2000/svg">
+  <polyline points="10,70 60,70 60,20 140,20 140,70 220,70 220,35 310,35"
+    fill="none" stroke="currentColor" stroke-width="2"/>
+  <circle cx="60" cy="20" r="4" fill="currentColor"/>
+  <circle cx="140" cy="70" r="4" fill="currentColor"/>
+  <circle cx="220" cy="35" r="4" fill="currentColor"/>
+  <text x="10" y="86" fill="currentColor"
+    font-family="system-ui, sans-serif" font-size="11">t →</text>
+</svg>
+```
+
+A malformed block (not well-formed XML) falls back to an inline error
+box with the source, so you can correct it in place.
 
 ---
 

@@ -3301,6 +3301,8 @@ body[data-theme="light"] #viewer-content {
 .wavedrom-container:focus-within .code-copy-btn,
 .viz-container:hover .code-copy-btn,
 .viz-container:focus-within .code-copy-btn,
+.svg-container:hover .code-copy-btn,
+.svg-container:focus-within .code-copy-btn,
 .code-copy-btn:focus,
 .code-copy-btn:focus-visible {
   opacity: 1;
@@ -3397,7 +3399,8 @@ body[data-theme="light"] #viewer-content {
 .mermaid-error,
 .wavedrom-error,
 .katex-error,
-.viz-error {
+.viz-error,
+.svg-error {
   margin: .7em 0;
   border: 1px solid var(--warn);
   border-radius: 8px;
@@ -3406,7 +3409,8 @@ body[data-theme="light"] #viewer-content {
 .mermaid-error-head,
 .wavedrom-error-head,
 .katex-error-head,
-.viz-error-head {
+.viz-error-head,
+.svg-error-head {
   background: var(--warn);
   color: var(--bg);
   font-size: .86rem;
@@ -3416,7 +3420,8 @@ body[data-theme="light"] #viewer-content {
 .mermaid-source,
 .wavedrom-source,
 .katex-source,
-.viz-source {
+.viz-source,
+.svg-source {
   margin: 0;
   background: var(--code-bg);
   color: var(--fg);
@@ -3504,6 +3509,27 @@ body[data-theme="light"] #viewer-content {
   cursor: zoom-in;
 }
 
+/* Inline SVG blocks. A ```svg fence wraps the author's own <svg> in a
+ * card matching the other diagram containers. The source is sanitized
+ * and self-contained by svg.js; this only handles presentation. An SVG
+ * with only a viewBox is given width="100%" and an aspect-ratio, so
+ * height:auto scales it to the reading column. */
+.svg-container {
+  margin: .7em 0;
+  padding: 14px 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+  overflow-x: auto;
+}
+.svg-container svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
 /* Copy affordance (copy-image.js). One shared .code-copy-btn sits in the
  * top-right of every rendered code-block variant: the <pre> wrapper, the
  * katex / html-live containers, and the three diagram containers (whose
@@ -3513,7 +3539,8 @@ body[data-theme="light"] #viewer-content {
  * positioning context for the absolutely-positioned button. */
 .mermaid-container,
 .wavedrom-container,
-.viz-container {
+.viz-container,
+.svg-container {
   position: relative;
 }
 /* Icon modifier of the shared .code-copy-btn: square padding and no text
@@ -5320,6 +5347,7 @@ body[data-theme="light"] #viewer-content {
   .mermaid-container,
   .wavedrom-container,
   .viz-container,
+  .svg-container,
   .katex-container {
     max-width: 100%;
     overflow-x: auto;

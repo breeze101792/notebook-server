@@ -71,9 +71,10 @@ codeblock) never shifts the surrounding blocks.
 The same audit covered every other block-level construct marked or raw
 HTML can emit. They now all carry `.7em`:
 
-- The five plugin cards (`.mermaid-container`, `.wavedrom-container`,
-  `.katex-container`, `.viz-container`, `.htmlpreview-card`) and their
-  four error boxes used `12px`, which sat off the rhythm.
+- The six plugin cards (`.mermaid-container`, `.wavedrom-container`,
+  `.katex-container`, `.viz-container`, `.htmlpreview-card`,
+  `.svg-container`) and their five error boxes used `12px`, which sat
+  off the rhythm.
 - `figure`, `dl`, and `details` had no rule and fell back to the `1em`
   browser default.
 - `table` had no margin at all.
@@ -134,7 +135,8 @@ screen's 21px grid.
 
 The export also styles the **plugin cards**. The export renders the same
 `.mermaid-container` / `.wavedrom-container` / `.katex-container` /
-`.viz-container` / `.htmlpreview-card` elements and their error boxes the
+`.viz-container` / `.htmlpreview-card` / `.svg-container` elements and
+their error boxes the
 viewer does, but `exportCss` originally carried no rules for them, so a
 diagram exported as bare content with no card. The export now mirrors the
 container chrome (border, panel background, padding, and the `.7em` rhythm),
@@ -148,7 +150,7 @@ items taller than tight ones. It now uses the same edge-collapse rule.
 
 ## Special fenced blocks
 
-Five fence languages render specially rather than as highlighted source.
+Six fence languages render specially rather than as highlighted source.
 Each is a fixed vendored version, so only syntax that version supports
 works. The renderers are modules that register a descriptor with
 `NB.blocks` (`register()` at `static/js/blocks.js:63`). Registration order
@@ -251,6 +253,30 @@ An optional comment line `<!-- height: 480 -->` sets a minimum height
 so the hint may sit anywhere. The frame still grows to fit taller
 content; the hint is a floor, not a fixed size. It accepts `height: N` or
 `height=N`, optionally prefixed by `//`, `<!--`, or `#`.
+
+### `svg`
+
+An inline SVG, kept in the note as source. No image file is involved, so
+there is nothing to copy, move, or lose. The block is parsed as XML
+rather than HTML: malformed markup falls back to an inline `.svg-error`
+box that keeps the source visible (`svg.js`). A well-formed block is
+sanitized — `<script>`, `<foreignObject>`, every `on*` attribute, and any
+`href` / `xlink:href` that is not a fragment (`#id`) or a `data:` URI are
+removed — and inlined into a `.svg-container`. A viewBox-only SVG gets
+`width="100%"` plus an `aspect-ratio`, so it scales to the reading
+column; an explicit `width` / `height` from the author wins. The original
+source stays in `dataset.svgSource` for the hybrid round-trip.
+
+````markdown
+```svg
+<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg">
+  <rect x="1" y="1" width="118" height="38" rx="6"
+    fill="none" stroke="currentColor"/>
+  <text x="60" y="25" text-anchor="middle"
+    fill="currentColor">inline SVG</text>
+</svg>
+```
+````
 
 ## `html-live` sandbox
 

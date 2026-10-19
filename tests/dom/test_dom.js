@@ -1674,6 +1674,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/katex.js"));
   evalIn(read("static/js/viz.js"));
   evalIn(read("static/js/htmlpreview.js"));
+  evalIn(read("static/js/svg.js"));
   evalIn(read("static/js/copy-image.js"));
   evalIn(read("static/js/viewer.js"));
   evalIn(read("static/js/editbar.js"));
@@ -3241,7 +3242,7 @@ function check(label, cond, extra) {
   // card inside #viewer-content. It skips non-SVG, non-card blocks (katex),
   // is idempotent across re-scans, removes its chrome in hybrid mode, and
   // rasterizes the diagram / HTML snapshot to PNG on click. One combined
-  // note renders all five block types so the selector is exercised in a
+  // note renders all six block types so the selector is exercised in a
   // single pass. Reset the renderer stubs so prior failures don't leak into
   // this render.
   __mermaid.failNext = false;
@@ -3259,6 +3260,9 @@ function check(label, cond, extra) {
     "```dot\ndigraph { a -> b }\n```\n\n" +
     "```math\nE = mc^2\n```\n\n" +
     "```html-live\n<div>hi</div>\n```\n\n" +
+    "```svg\n" +
+    '<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect width="40" height="40"/></svg>\n```\n\n' +
     // A plain code fence gives the hybrid-gating checks a <pre> button to
     // prove it survives while this module strips its own buttons.
     "```js\nconsole.log(1);\n```\n\n" +
@@ -3301,6 +3305,9 @@ function check(label, cond, extra) {
   check("copy image: graphviz container gets exactly one .nb-copy-img-btn",
     containerBtnCount(".viz-container") === 1,
     "count=" + containerBtnCount(".viz-container"));
+  check("copy image: svg container gets exactly one .nb-copy-img-btn",
+    containerBtnCount(".svg-container") === 1,
+    "count=" + containerBtnCount(".svg-container"));
   check("copy image: katex container gets no image button",
     containerBtnCount(".katex-container") === 0,
     "count=" + containerBtnCount(".katex-container"));
@@ -3976,6 +3983,78 @@ function check(label, cond, extra) {
   check("html-live: .htmlpreview-frame style is in style.css",
     /\.htmlpreview-frame\s*\{/.test(hpCssText), "no .htmlpreview-frame rule");
 
+  console.log("== svg blocks ==");
+  // ```svg is parsed as XML and inlined. The sanitizer removes script,
+  // foreignObject, on* attributes, and external hrefs; the original
+  // source stays in dataset.svgSource for the hybrid round-trip.
+  {
+    const SVG_PATH = "notes/svg.md";
+    const SVG_BODY =
+      "# SVG\n\n" +
+      "```svg\n" +
+      '<svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect id="svg-good" width="100" height="50"/>' +
+      "</svg>\n```\n\n" +
+      "```svg\n" +
+      '<svg xmlns="http://www.w3.org/2000/svg" ' +
+      'xmlns:xlink="http://www.w3.org/1999/xlink">' +
+      '<script>window.__svgPwned = 1;</script>' +
+      '<foreignObject><div>x</div></foreignObject>' +
+      '<rect id="svg-evil" onload="window.__svgPwned = 2" ' +
+      'href="http://example.com/x.svg"/>' +
+      '<use href="#svg-good"/><use xlink:href="#svg-good"/>' +
+      "</svg>\n```\n\n" +
+      "```svg\n<svg><rect></svg>\n```\n";
+    FILES[SVG_PATH] = SVG_BODY;
+    const svgNotesDir = TREE.find(n => n.path === "notes");
+    if (svgNotesDir && !svgNotesDir.children.some(c => c.path === SVG_PATH)) {
+      svgNotesDir.children.push({ name: "svg.md", type: "file", path: SVG_PATH });
+    }
+    await window.NB.sidebar.refresh();
+    await tick(40);
+    await window.NB.tabs.open(SVG_PATH);
+    await tick(80);
+
+    const cards = window.document.querySelectorAll("#viewer .svg-container");
+    check("svg: NB.svg module is loaded", !!window.NB.svg);
+    check("svg: two valid blocks produce .svg-container cards", cards.length === 2,
+      "cards=" + cards.length);
+    check("svg: the fence <pre> was replaced",
+      window.document.querySelectorAll("#viewer pre > code.language-svg").length === 0,
+      "remaining=" + window.document.querySelectorAll("#viewer pre > code.language-svg").length);
+    check("svg: the card holds an <svg> in the SVG namespace",
+      !!cards[0] && !!cards[0].querySelector("svg") &&
+      cards[0].querySelector("svg").namespaceURI === "http://www.w3.org/2000/svg");
+    check("svg: a viewBox-only block fills the card width",
+      !!cards[0] && cards[0].querySelector("svg").getAttribute("width") === "100%");
+    check("svg: the card stores the original source for round-trip",
+      !!cards[0] && /<svg viewBox="0 0 100 50"/.test(cards[0].dataset.svgSource || ""),
+      "src=" + (cards[0] && (cards[0].dataset.svgSource || "").slice(0, 40)));
+    check("svg: script elements are removed",
+      !!cards[1] && cards[1].querySelectorAll("script").length === 0);
+    check("svg: foreignObject is removed",
+      !!cards[1] && cards[1].querySelectorAll("foreignObject").length === 0);
+    const evil = cards[1] && cards[1].querySelector("#svg-evil");
+    check("svg: on* attributes are removed", !!evil && !evil.hasAttribute("onload"));
+    check("svg: external href is removed", !!evil && !evil.hasAttribute("href"));
+    const uses = cards[1] ? Array.from(cards[1].querySelectorAll("use")) : [];
+    const hrefs = uses.map(u => u.getAttribute("href") ||
+      u.getAttributeNS("http://www.w3.org/1999/xlink", "href"));
+    check("svg: fragment references are kept",
+      uses.length === 2 && hrefs.every(h => h === "#svg-good"),
+      "hrefs=" + JSON.stringify(hrefs));
+    const errs = window.document.querySelectorAll("#viewer .svg-error");
+    check("svg: malformed XML falls back to one .svg-error box", errs.length === 1,
+      "errors=" + errs.length);
+    check("svg: the error box keeps the source visible",
+      errs[0] && /<rect>/.test((errs[0].querySelector(".svg-source") || {}).textContent || ""));
+    check("svg: the card gets the Copy image button",
+      !!cards[0] && !!cards[0].querySelector(".nb-copy-img-btn"));
+    await window.NB.tabs.close(SVG_PATH, { force: true });
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(40);
+  }
+
   // --- blocks registry: one authoritative list for every renderer ----
   // static/js/blocks.js replaces the hand-copied type lists in viewer.js,
   // hybrid.js (render pipeline + round-trip) and export.js. These checks
@@ -3985,11 +4064,11 @@ function check(label, cond, extra) {
     const blocks = window.NB.blocks;
     check("blocks: NB.blocks module is loaded", !!blocks);
     const reg = blocks.all();
-    check("blocks: five renderers registered",
-      reg.length === 5, "count=" + reg.length);
+    check("blocks: six renderers registered",
+      reg.length === 6, "count=" + reg.length);
     const mods = reg.map(d => d.mod).sort().join(",");
-    check("blocks: registered modules are mermaid,wavedrom,katex,viz,htmlpreview",
-      mods === "htmlpreview,katex,mermaid,viz,wavedrom", "mods=" + mods);
+    check("blocks: registered modules are mermaid,wavedrom,katex,viz,htmlpreview,svg",
+      mods === "htmlpreview,katex,mermaid,svg,viz,wavedrom", "mods=" + mods);
     check("blocks: every descriptor names a fence and containerClass",
       reg.every(d => d.fence && d.containerClass && typeof d.renderAll === "function"),
       "bad=" + JSON.stringify(reg.filter(d => !(d.fence && d.containerClass)).map(d => d.mod)));
@@ -4002,12 +4081,14 @@ function check(label, cond, extra) {
       blocks.forLang("katex") && blocks.forLang("katex").mod === "katex");
     check("blocks: forLang resolves html-live", 
       blocks.forLang("html-live") && blocks.forLang("html-live").mod === "htmlpreview");
+    check("blocks: forLang resolves svg",
+      blocks.forLang("svg") && blocks.forLang("svg").mod === "svg");
     check("blocks: forLang returns null for an unknown language",
       blocks.forLang("python") === null && blocks.forLang("") === null);
     // The hybrid type table is derived from the registry.
     const types = blocks.pluginTypes();
     check("blocks: pluginTypes derives one entry per renderer",
-      types.length === 5, "count=" + types.length);
+      types.length === 6, "count=" + types.length);
     const byLang = {};
     for (const t of types) byLang[t.lang] = t;
     check("blocks: pluginTypes writes math/dot back under their canonical fence",
@@ -4029,6 +4110,7 @@ function check(label, cond, extra) {
       { type: "katex", fence: "math", src: "E = mc^2" },
       { type: "viz", fence: "dot", src: "digraph { a -> b }" },
       { type: "htmlpreview", fence: "html-live", src: "<b>live</b>" },
+      { type: "svg", fence: "svg", src: "<svg><rect/></svg>" },
     ];
     const clone = window.document.createElement("div");
     for (const c of cases) {
@@ -4054,17 +4136,17 @@ function check(label, cond, extra) {
     check("blocks round-trip: no rendered containers remain",
       clone.querySelectorAll(
         ".mermaid-container,.wavedrom-container,.katex-container," +
-        ".viz-container,.htmlpreview-card,.mermaid-error," +
-        ".wavedrom-error,.katex-error,.viz-error").length === 0,
+        ".viz-container,.htmlpreview-card,.svg-container,.mermaid-error," +
+        ".wavedrom-error,.katex-error,.viz-error,.svg-error").length === 0,
       "remaining=" + clone.querySelectorAll(
         ".mermaid-container,.wavedrom-container,.katex-container," +
-        ".viz-container,.htmlpreview-card,.mermaid-error," +
-        ".wavedrom-error,.katex-error,.viz-error").length);
+        ".viz-container,.htmlpreview-card,.svg-container,.mermaid-error," +
+        ".wavedrom-error,.katex-error,.viz-error,.svg-error").length);
     const fences = Array.from(clone.querySelectorAll("pre > code"))
       .map(c => ({ lang: (c.className.match(/language-(\S+)/) || [])[1],
                    text: c.textContent }));
-    check("blocks round-trip: one fence per rendered block (5 containers + 4 error boxes)",
-      fences.length === 9, "count=" + fences.length);
+    check("blocks round-trip: one fence per rendered block (6 containers + 5 error boxes)",
+      fences.length === 11, "count=" + fences.length);
     for (const c of cases) {
       const hit = fences.find(f => f.lang === c.fence && f.text === c.src);
       check("blocks round-trip: " + c.type + " container -> ```" + c.fence + " source preserved",
@@ -18832,7 +18914,8 @@ function check(label, cond, extra) {
     check("export: HTML blob styles the plugin cards",
       /\.markdown-body \.mermaid-container,[^{]*\{[^}]*border:1px solid/.test(htmlText) &&
       /\.htmlpreview-card\{[^}]*border:1px solid/.test(htmlText) &&
-      /\.mermaid-error,[^{]*\{[^}]*border:1px solid/.test(htmlText),
+      /\.mermaid-error,[^{]*\{[^}]*border:1px solid/.test(htmlText) &&
+      /\.svg-container svg\{/.test(htmlText),
       "cards=" + /mermaid-container/.test(htmlText));
 
     // Section scope: the modal lists h1-h3 headings and can export just

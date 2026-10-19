@@ -84,6 +84,10 @@ outline and by `?file=…&heading=…` deep links.
   ` graphviz `) language renders as a Graphviz graph (state machines,
   dependency graphs, …). Compiled to WASM, runs offline. Click a graph
   to open it full-size with zoom in/out. Graphviz 2.40.1 / Viz.js 2.1.2.
+- **Inline SVG** — a fenced block tagged ` ```svg ` is parsed as SVG and
+  rendered in the note. Sanitized (no `<script>`, `<foreignObject>`,
+  `on*`, or external refs) and fully self-contained — no image file to
+  manage. Simple diagrams and sketches stay editable as source.
 - **Live HTML previews** — a fenced block tagged `` html-live `` is
   replaced with a sandboxed iframe that actually runs the markup (CSS /
   SVG animation, inline `` <script> ``, canvas, …). Plain `` ```html ``

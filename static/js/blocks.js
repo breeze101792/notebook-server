@@ -1,9 +1,10 @@
 /* blocks.js -- the registry that unifies the "plugin" code-block renderers.
  *
  * The notebook renders several fenced languages specially: ```mermaid,
- * ```wavedrom, ```math/```katex, ```dot/```graphviz, and ```html-live.
- * Each lives in its own module (mermaid.js, wavedrom.js, katex.js,
- * viz.js, htmlpreview.js) because their rendering cores are genuinely
+ * ```wavedrom, ```math/```katex, ```dot/```graphviz, ```html-live, and
+ * ```svg. Each lives in its own module (mermaid.js, wavedrom.js,
+ * katex.js, viz.js, htmlpreview.js, svg.js) because their rendering
+ * cores are genuinely
  * different library glue. What they DO share is the plumbing:
  *
  *   - the ordered list of renderers the viewer / hybrid / export
@@ -25,11 +26,12 @@
  * (NB.blocks.restoreForMarkdown) then work for every registered type
  * without knowing its internals. Registration order is the render
  * order (script load order: mermaid, wavedrom, katex, viz,
- * htmlpreview).
+ * htmlpreview, svg).
  *
- * Deliberately NOT here: a generic renderOne lifecycle. The five
+ * Deliberately NOT here: a generic renderOne lifecycle. The six
  * renderOne bodies share almost nothing (mermaid theme init, wavedrom
- * JSON dance, katex options, viz WASM, htmlpreview sandbox), so a
+ * JSON dance, katex options, viz WASM, htmlpreview sandbox, svg XML
+ * parse + sanitize), so a
  * lifecycle abstraction would be a framework with one implementation
  * per plugin. Modules keep their own renderAll/renderOne; the registry
  * only orchestrates them and owns the round-trip.

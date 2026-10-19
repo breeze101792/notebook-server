@@ -911,6 +911,7 @@
       "- ```wavedrom — WaveDrom 3.3 timing / waveform diagram. The body is WaveDrom JSON: unquoted keys are allowed (e.g. {signal:[{name:'clk',wave:'p...'}]}), unlike strict JSON.",
       "- ```math or ```katex — KaTeX 0.16 LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros).",
       "- ```dot or ```graphviz — Graphviz 2.40.1 (Viz.js 2.1.2). That is an older Graphviz; avoid syntax newer than 2.40.",
+      "- ```svg — inline SVG rendered in the note. The block is parsed as SVG XML and sanitized: <script>, <foreignObject>, on* attributes, and external href / xlink:href are removed. Use it for self-contained diagrams; do not reference external files.",
       "- ```html-live — a live preview that RUNS the markup (CSS / SVG animation, inline script, canvas). Plain ```html only shows the source. The frame auto-fits its content; an optional first-line comment like <!-- height: 480 --> sets a minimum height.",
       "  html-live restrictions: the preview is a sandboxed iframe with allow-scripts and NOT allow-same-origin, so it has an opaque origin. Scripts run, but these are BLOCKED: cookies, localStorage / sessionStorage (opaque origin throws), the parent page's DOM, the notebook API (/api/*), same-origin fetch, form submission, window.open / popups, file downloads, alert / confirm / prompt, and top-level navigation. External fetch is subject to CORS. Use it for self-contained, offline demos only.",
     ].join("\n") + customPromptSuffix();

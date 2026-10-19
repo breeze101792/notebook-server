@@ -37,13 +37,13 @@ registered already.
 
 ```
 cm-bridge → lightbox → blocks → menu → mermaid → wavedrom → katex → viz →
-htmlpreview → viewer → editbar → hybrid → table-edit → table-view →
+htmlpreview → svg → viewer → editbar → hybrid → table-edit → table-view →
 table-select → watcher → outline → sidebar → search → graph → tabs → windows →
 settings → export → vimnav → ai → activity → shortcuts → app
 ```
 
-Renderer registration order (mermaid, wavedrom, katex, viz, htmlpreview)
-equals script order equals render order. `blocks.js` loads before the
+Renderer registration order (mermaid, wavedrom, katex, viz, htmlpreview,
+svg) equals script order equals render order. `blocks.js` loads before the
 renderers, and every renderer before `viewer.js`.
 
 ## 2. Boot sequence
@@ -117,6 +117,7 @@ implemented today.
 | `katex.js` | 153 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |
 | `viz.js` | 212 | `NB.viz` | ` ```dot ` / ` ```graphviz ` renderer via WASM `Viz.renderString`. |
 | `htmlpreview.js` | 303 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
+| `svg.js` | 138 | `NB.svg` | ` ```svg ` renderer. Parses the fence as SVG XML, strips script / `foreignObject` / `on*` / external refs, and inlines the result. |
 | `viewer.js` | 1248 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension. |
 | `editbar.js` | 401 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 5789 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, undo snapshots, table mutation API. See [hybrid-editing.md](hybrid-editing.md). |
@@ -162,7 +163,7 @@ the single source for three consumers:
 - `pluginTypes()` (`blocks.js:182`) derives the hybrid click-to-edit type
   table, replacing the hard-coded list hybrid.js used to carry.
 
-### The five renderers
+### The six renderers
 
 | Fence | Library | Notes |
 | --- | --- | --- |
@@ -171,6 +172,7 @@ the single source for three consumers:
 | ` ```math ` / ` ```katex ` | KaTeX 0.16 | Display mode. Only KaTeX-supported commands. |
 | ` ```dot ` / ` ```graphviz ` | Graphviz 2.40.1 / Viz.js 2.1.2 | Older Graphviz; avoid syntax newer than 2.40. |
 | ` ```html-live ` | sandboxed iframe | `allow-scripts` without `allow-same-origin`. Opaque origin. |
+| ` ```svg ` | none (native XML parser) | Parsed as SVG XML and sanitized: no `<script>`, `<foreignObject>`, `on*`, or external refs. |
 
 Each renderer owns its own `renderOne` and lazy-load gate. The library
 glue is genuinely different per renderer, so only the plumbing is shared
