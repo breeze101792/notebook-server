@@ -622,6 +622,14 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   left: 0;
   min-width: 170px;
 }
+/* Example-block dropdown: same anchor as the table menu, so the list
+ * opens toward the editing area instead of under the right-hand actions. */
+.edit-bar .eb-example { position: relative; }
+.edit-bar .eb-example .eb-example-menu {
+  right: auto;
+  left: 0;
+  min-width: 170px;
+}
 
 /* Emoji picker: a dropdown panel anchored to the 😀 button. The grid is
  * populated by editbar.js from a curated dataset; emoji are rendered as

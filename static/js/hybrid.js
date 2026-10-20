@@ -4026,7 +4026,7 @@
     "bold", "italic", "strike", "code",
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "quote", "link", "image",
-    "codeblock", "hr", "table", "task",
+    "codeblock", "example-menu", "example-block", "hr", "table", "task",
     "list-menu", "list-move-up", "list-move-down",
     "table-menu", "table-row-up", "table-row-down",
     "table-col-left-move", "table-col-right-move", "table-col-align",
@@ -4100,6 +4100,28 @@
         pre.appendChild(code);
         document.execCommand("insertHTML", false, pre.outerHTML);
         onContentChange();
+        break;
+      }
+      case "example-menu": {
+        // Opening the dropdown moves focus to its toggle, so capture the
+        // caret now for the item click that follows (same reason the
+        // emoji toggle records its range first).
+        const s = window.getSelection();
+        savedRange = (s && s.rangeCount && viewerContentEl.contains(s.anchorNode))
+          ? s.getRangeAt(0).cloneRange() : null;
+        const menu = document.querySelector(".eb-example-menu");
+        if (menu) menu.hidden = !menu.hidden;
+        break;
+      }
+      case "example-block": {
+        // The edit bar's items carry the fence language in data-fence;
+        // the source comes from the shared registry, so the bar and the
+        // context menu always insert the same example.
+        const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
+        const ex = examples.find((item) => item.lang === btn.dataset.fence);
+        if (ex) insertExampleBlock(ex.lang, ex.source);
+        const menu = document.querySelector(".eb-example-menu");
+        if (menu) menu.hidden = true;
         break;
       }
       case "hr": {
@@ -5844,6 +5866,70 @@
     return (NB.blocks && NB.blocks.pluginTypes) ? NB.blocks.pluginTypes() : [];
   }
 
+  /* One menu entry per registered plugin that has an example. The list
+   * comes from the shared blocks registry, so the hybrid menu and the
+   * edit bar offer the same examples and a new renderer only adds its
+   * entry in blocks.js. */
+  function exampleItems() {
+    const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
+    return examples.map((ex) => ({
+      label: ex.label,
+      handler: () => insertExampleBlock(ex.lang, ex.source),
+    }));
+  }
+
+  /* The top-level block holding the caret, or null when the caret is not
+   * inside one (empty document, or the caret sits on #viewer-content). */
+  function caretTopLevelBlock() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    while (node && node.parentNode !== viewerContentEl) node = node.parentNode;
+    return node && node !== viewerContentEl && viewerContentEl.contains(node) ? node : null;
+  }
+
+  function focusBlockStart(el) {
+    viewerContentEl.focus();
+    const r = document.createRange();
+    r.setStart(el, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* Insert a rendered plugin example after the block holding the caret
+   * and leave the caret in a fresh paragraph below it. The fence goes in
+   * first and is handed to its renderer, so the example takes the same
+   * path as an opened note (lazy bundle, theme, error box). */
+  function insertExampleBlock(lang, source) {
+    restoreCaret();
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.className = "language-" + lang;
+    code.textContent = source;
+    pre.appendChild(code);
+    const after = document.createElement("p");
+    after.appendChild(document.createElement("br"));
+    const anchor = caretTopLevelBlock();
+    if (anchor) {
+      viewerContentEl.insertBefore(pre, anchor.nextSibling);
+      viewerContentEl.insertBefore(after, pre.nextSibling);
+    } else {
+      viewerContentEl.appendChild(pre);
+      viewerContentEl.appendChild(after);
+    }
+    const mod = renderModuleFor(lang);
+    const rendered = (mod && mod.renderAll)
+      ? Promise.resolve(mod.renderAll(viewerContentEl))
+      : Promise.resolve();
+    rendered.then(() => {
+      markAtomicBlocks();
+      onContentChange();
+      focusBlockStart(after);
+    }).catch(() => {});
+  }
+
   /* Whether the visual designer ("Design diagram…") may be offered. It is
    * a write path, so it is available when auth is off or the signed-in
    * role is admin (matching the admin-only mutating routes). The role is
@@ -6118,8 +6204,9 @@
       }
     }
 
-    // Insert submenu
-    items.push({ label: "Insert", submenu: [
+    // Insert submenu. Example block appears only for registered plugin
+    // types that carry an example (currently every renderer).
+    const insertSub = [
       { label: "Link…", handler: () => {
         // Restore the caret captured at menu-open, then run the guarded
         // hybrid link flow (same refuse/create/update behavior as Mod+K).
@@ -6141,6 +6228,10 @@
         catch (_) {}
         onContentChange();
       } },
+    ];
+    const examples = exampleItems();
+    if (examples.length) insertSub.push({ label: "Example block", submenu: examples });
+    insertSub.push(
       { label: "Table", handler: () => {
         const html = '<table><thead><tr><th>Column 1</th><th>Column 2</th></tr></thead>' +
           '<tbody><tr><td>cell</td><td>cell</td></tr></tbody></table>';
@@ -6154,7 +6245,8 @@
         catch (_) {}
         onContentChange();
       } },
-    ] });
+    );
+    items.push({ label: "Insert", submenu: insertSub });
 
     items.push({ separator: true });
 

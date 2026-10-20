@@ -32,6 +32,7 @@
   const bar       = document.getElementById("edit-bar");
   const tableMenu = bar.querySelector(".eb-table-menu");
   const listMenu  = bar.querySelector(".eb-list-menu");
+  const exampleMenu = bar.querySelector(".eb-example-menu");
 
   /* --- emoji picker -------------------------------------------------
    * A curated set (not a full Unicode table): enough to cover everyday
@@ -299,6 +300,43 @@
       text: s.text,
       value: NB.cmEditor.getValue(),
     };
+  }
+
+  /* Insert a registry example as a fenced block at the end of the
+   * selection, then leave the caret after it. The label/source pair comes
+   * from NB.blocks, so the bar and the hybrid menu cannot drift. */
+  function insertExampleBlock(lang) {
+    const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
+    const ex = examples.find((item) => item.lang === lang);
+    if (!ex) return;
+    const { end, value } = sel();
+    const insert = "\n```" + ex.lang + "\n" + ex.source + "\n```\n";
+    const newDoc = value.slice(0, end) + insert + value.slice(end);
+    NB.cmEditor.setValue(newDoc);
+    // setValue keeps the vim-shaped buffer (the final newline is a line
+    // terminator, not a caret position), so clamp to the body length.
+    const bodyLen = newDoc.length - (newDoc.endsWith("\n") ? 1 : 0);
+    const cursor = Math.min(end + insert.length, bodyLen);
+    NB.cmEditor.setSelection(cursor, cursor);
+  }
+
+  /* Build the example dropdown from the shared blocks registry. A
+   * renderer without an example is simply absent; the whole toggle hides
+   * when no renderer has one. */
+  function buildExampleMenu() {
+    if (!exampleMenu) return;
+    const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
+    exampleMenu.innerHTML = "";
+    for (const ex of examples) {
+      const b = document.createElement("button");
+      b.className = "eb";
+      b.dataset.act = "example-block";
+      b.dataset.fence = ex.lang;
+      b.textContent = ex.label;
+      exampleMenu.appendChild(b);
+    }
+    const wrap = exampleMenu.closest(".eb-example");
+    if (wrap) wrap.hidden = examples.length === 0;
   }
 
   /* Wrap the selection with `marker` on each side, or insert a
@@ -655,6 +693,12 @@
       NB.cmEditor.replaceSelection(insert, "select");
     },
 
+    /* Example-block dropdown trigger (items are built from the shared
+     * blocks registry at load). */
+    "example-menu"() {
+      if (exampleMenu) exampleMenu.hidden = !exampleMenu.hidden;
+    },
+
     /* Horizontal rule on its own line. */
     hr() {
       const { start, value } = sel();
@@ -680,8 +724,10 @@
       // Insert at the end of the current selection.
       const newDoc = value.slice(0, end) + insert + value.slice(end);
       NB.cmEditor.setValue(newDoc);
-      // Place cursor right after the inserted table.
-      const cursor = end + insert.length;
+      // Place cursor right after the inserted table. The final newline is
+      // a line terminator in the editor's vim-shaped buffer, so clamp.
+      const bodyLen = newDoc.length - (newDoc.endsWith("\n") ? 1 : 0);
+      const cursor = Math.min(end + insert.length, bodyLen);
       NB.cmEditor.setSelection(cursor, cursor);
     },
 
@@ -913,6 +959,7 @@
     if (bar.hidden) {
       if (tableMenu) tableMenu.hidden = true;
       if (listMenu) listMenu.hidden = true;
+      if (exampleMenu) exampleMenu.hidden = true;
       closeEmojiPanel();
     }
   }
@@ -922,6 +969,7 @@
   /* Emoji panel wiring: tabs switch category, the grid emits the chosen
    * emoji, and the search box filters across every category. Buttons are
    * created per render, so the grid is delegated. */
+  buildExampleMenu();
   buildEmojiTabs();
   if (emojiTabs) emojiTabs.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-cat]");
@@ -945,8 +993,14 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
-    const fn = actions[act];
-    if (fn) fn();
+    // Close the example dropdown before acting, so a failed insert cannot
+    // leave the menu stuck open.
+    if (exampleMenu && btn.closest(".eb-example-menu")) exampleMenu.hidden = true;
+    if (act === "example-block") insertExampleBlock(btn.dataset.fence);
+    else {
+      const fn = actions[act];
+      if (fn) fn();
+    }
     if (btn.closest(".eb-table-menu")) tableMenu.hidden = true;
     if (listMenu && btn.closest(".eb-list-menu")) listMenu.hidden = true;
   });
@@ -954,6 +1008,9 @@
   document.addEventListener("click", (e) => {
     if (listMenu && !listMenu.hidden && !e.target.closest(".eb-list")) {
       listMenu.hidden = true;
+    }
+    if (exampleMenu && !exampleMenu.hidden && !e.target.closest(".eb-example")) {
+      exampleMenu.hidden = true;
     }
     if (emojiPanel && !emojiPanel.hidden && !e.target.closest(".eb-emoji-wrap")) {
       closeEmojiPanel();

@@ -68,6 +68,9 @@ MAX_REQUEST_BYTES = 32 * 1024 * 1024  # 32 MiB
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+# Template edits must take effect without a server restart: this process can
+# run for weeks, and a cached index.html hid newly added edit-bar controls.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # Paths whose responses must never be cached by the browser or any
 # intermediary. These are the gated read endpoints (tree, file, search,

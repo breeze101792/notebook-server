@@ -12,7 +12,9 @@
  *   - turning a rendered block (or its error box) back into a fenced
  *     block on the hybrid Save path (domToMarkdown);
  *   - the hybrid click-to-edit type table (selector -> language ->
- *     module -> source extractor).
+ *     module -> source extractor);
+ *   - the fenced examples served to both Insert menus (the hybrid
+ *     right-click menu and the edit bar).
  *
  * Before this module that list was hand-copied into viewer.js,
  * hybrid.js (twice: render pipeline + round-trip) and export.js, and
@@ -42,6 +44,53 @@
 
   // Registered descriptors, in registration (render) order.
   const registry = [];
+
+  /* Fenced examples offered by the Insert menus (the hybrid right-click
+   * menu and the edit bar). `lang` must be a registry fence; a language
+   * may appear more than once, which is how mermaid offers one example
+   * per editable diagram family. */
+  const EXAMPLES = [
+    {
+      lang: "mermaid",
+      label: "Mermaid flowchart",
+      source: "flowchart LR\n  A[Note] --> B{Code block?}\n  B -- yes --> C[Render]\n  B -- no --> D[Text]",
+    },
+    {
+      lang: "mermaid",
+      label: "Mermaid sequence",
+      source: "sequenceDiagram\n  participant U as User\n  participant N as Notebook\n  U->>N: Open note\n  N-->>U: Render Markdown",
+    },
+    {
+      lang: "mermaid",
+      label: "Mermaid pie",
+      source: "pie title Notes by kind\n  \"Ideas\" : 40\n  \"Tasks\" : 35\n  \"Reference\" : 25",
+    },
+    {
+      lang: "wavedrom",
+      label: "WaveDrom timing",
+      source: "{signal: [\n  {name: 'clk', wave: 'p.....|...'},\n  {name: 'data', wave: 'x.345x|=.x', data: ['head', 'body', 'tail']}\n]}",
+    },
+    {
+      lang: "math",
+      label: "Math (KaTeX)",
+      source: "\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}",
+    },
+    {
+      lang: "dot",
+      label: "Graphviz graph",
+      source: "digraph G {\n  Note -> Render;\n  Note -> Text;\n}",
+    },
+    {
+      lang: "html-live",
+      label: "HTML preview",
+      source: "<div class=\"demo\">\n  <strong>Live HTML</strong>\n  <button onclick=\"this.textContent='Clicked!'\">Click me</button>\n</div>",
+    },
+    {
+      lang: "svg",
+      label: "SVG drawing",
+      source: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 120 60\" width=\"120\" height=\"60\">\n  <rect x=\"1\" y=\"1\" width=\"118\" height=\"58\" rx=\"8\" fill=\"none\" stroke=\"currentColor\"/>\n  <circle cx=\"30\" cy=\"30\" r=\"12\" fill=\"currentColor\"/>\n  <text x=\"52\" y=\"36\" font-size=\"14\" fill=\"currentColor\">SVG</text>\n</svg>",
+    },
+  ];
 
   /* register(desc) -- called once per renderer module at load.
    *
@@ -194,6 +243,22 @@
     }));
   }
 
+  /* examples() -- the fenced examples the Insert menus offer, in registry
+   * order (and in EXAMPLES order within one language). Shape: {lang,
+   * label, source}. A renderer with no entry is skipped rather than shown
+   * with an empty block. */
+  function examples() {
+    const out = [];
+    for (const d of registry) {
+      for (const ex of EXAMPLES) {
+        if (ex.lang === d.fence) {
+          out.push({ lang: ex.lang, label: ex.label, source: ex.source });
+        }
+      }
+    }
+    return out;
+  }
+
   NB.blocks = {
     register,
     all,
@@ -204,5 +269,6 @@
     renderAll,
     restoreForMarkdown,
     pluginTypes,
+    examples,
   };
 })();
