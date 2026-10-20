@@ -140,6 +140,69 @@ pie title Where the bytes go
   "Tests" : 6
 ```
 
+### State
+
+```mermaid
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Editing: open file
+  Editing --> Saved: save
+  Saved --> Editing: edit
+  Saved --> [*]: close
+```
+
+### Class
+
+```mermaid
+classDiagram
+  class Note {
+    +String path
+    +open()
+    +save()
+  }
+  class Renderer {
+    +render(md)
+  }
+  Note --> Renderer : uses
+```
+
+### Entity relationship
+
+```mermaid
+erDiagram
+  NOTE ||--o{ TAG : has
+  NOTE {
+    string path PK
+    string title
+  }
+  TAG {
+    string name PK
+  }
+```
+
+### Gantt (project schedule)
+
+```mermaid
+gantt
+  title Notebook release plan
+  dateFormat YYYY-MM-DD
+  section Build
+  Example menus      :done,    a1, 2026-10-01, 3d
+  Syntax note        :active,  a2, after a1, 2d
+  section Test
+  DOM suite          :         a3, after a2, 2d
+```
+
+### Timeline
+
+```mermaid
+timeline
+  title Notebook history
+  2024 : Prototype
+  2025 : Mobile shell
+  2026 : Visual Mermaid editor
+```
+
 ---
 
 ## WaveDrom timing diagrams

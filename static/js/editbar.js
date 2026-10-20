@@ -303,11 +303,11 @@
   }
 
   /* Insert a registry example as a fenced block at the end of the
-   * selection, then leave the caret after it. The label/source pair comes
-   * from NB.blocks, so the bar and the hybrid menu cannot drift. */
-  function insertExampleBlock(lang) {
+   * selection, then leave the caret after it. Items carry the exact
+   * example label (several mermaid examples share one fence). */
+  function insertExampleBlock(label) {
     const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
-    const ex = examples.find((item) => item.lang === lang);
+    const ex = examples.find((item) => item.label === label);
     if (!ex) return;
     const { end, value } = sel();
     const insert = "\n```" + ex.lang + "\n" + ex.source + "\n```\n";
@@ -320,23 +320,58 @@
     NB.cmEditor.setSelection(cursor, cursor);
   }
 
+  function exampleButton(ex) {
+    const b = document.createElement("button");
+    b.className = "eb";
+    b.dataset.act = "example-block";
+    b.dataset.example = ex.label;
+    b.textContent = ex.label;
+    return b;
+  }
+
   /* Build the example dropdown from the shared blocks registry. A
-   * renderer without an example is simply absent; the whole toggle hides
-   * when no renderer has one. */
+   * language with several examples becomes a nested flyout (Mermaid);
+   * the rest stay flat. The whole toggle hides when no renderer has an
+   * example. */
   function buildExampleMenu() {
     if (!exampleMenu) return;
-    const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
+    const groups = (NB.blocks && NB.blocks.exampleGroups) ? NB.blocks.exampleGroups() : [];
     exampleMenu.innerHTML = "";
-    for (const ex of examples) {
-      const b = document.createElement("button");
-      b.className = "eb";
-      b.dataset.act = "example-block";
-      b.dataset.fence = ex.lang;
-      b.textContent = ex.label;
-      exampleMenu.appendChild(b);
+    for (const g of groups) {
+      if (!g.items) {
+        exampleMenu.appendChild(exampleButton(g));
+        continue;
+      }
+      const wrap = document.createElement("span");
+      wrap.className = "eb-submenu";
+      const btn = document.createElement("button");
+      btn.className = "eb eb-submenu-btn";
+      btn.dataset.act = "example-submenu";
+      btn.setAttribute("aria-haspopup", "true");
+      btn.textContent = g.label;
+      const fly = document.createElement("span");
+      fly.className = "eb-menu eb-submenu-menu";
+      fly.hidden = true;
+      for (const ex of g.items) fly.appendChild(exampleButton(ex));
+      wrap.appendChild(btn);
+      wrap.appendChild(fly);
+      exampleMenu.appendChild(wrap);
     }
-    const wrap = exampleMenu.closest(".eb-example");
-    if (wrap) wrap.hidden = examples.length === 0;
+    const outer = exampleMenu.closest(".eb-example");
+    if (outer) outer.hidden = groups.length === 0;
+  }
+
+  function closeExampleSubmenus() {
+    if (!exampleMenu) return;
+    exampleMenu.querySelectorAll(".eb-submenu-menu").forEach((m) => { m.hidden = true; });
+  }
+
+  function toggleExampleSubmenu(btn) {
+    const fly = btn.parentElement && btn.parentElement.querySelector(".eb-submenu-menu");
+    if (!fly) return;
+    const open = fly.hidden;
+    closeExampleSubmenus();
+    fly.hidden = !open;
   }
 
   /* Wrap the selection with `marker` on each side, or insert a
@@ -696,7 +731,9 @@
     /* Example-block dropdown trigger (items are built from the shared
      * blocks registry at load). */
     "example-menu"() {
-      if (exampleMenu) exampleMenu.hidden = !exampleMenu.hidden;
+      if (!exampleMenu) return;
+      exampleMenu.hidden = !exampleMenu.hidden;
+      if (exampleMenu.hidden) closeExampleSubmenus();
     },
 
     /* Horizontal rule on its own line. */
@@ -960,6 +997,7 @@
       if (tableMenu) tableMenu.hidden = true;
       if (listMenu) listMenu.hidden = true;
       if (exampleMenu) exampleMenu.hidden = true;
+      closeExampleSubmenus();
       closeEmojiPanel();
     }
   }
@@ -993,11 +1031,17 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
-    // Close the example dropdown before acting, so a failed insert cannot
-    // leave the menu stuck open.
-    if (exampleMenu && btn.closest(".eb-example-menu")) exampleMenu.hidden = true;
-    if (act === "example-block") insertExampleBlock(btn.dataset.fence);
-    else {
+    // Close the example dropdown and its flyout before acting, so a
+    // failed insert cannot leave the menu stuck open. The submenu toggle
+    // must keep the parent dropdown open.
+    if (act !== "example-submenu" && exampleMenu && btn.closest(".eb-example-menu")) {
+      exampleMenu.hidden = true;
+    }
+    if (act === "example-submenu") toggleExampleSubmenu(btn);
+    else if (act === "example-block") {
+      closeExampleSubmenus();
+      insertExampleBlock(btn.dataset.example);
+    } else {
       const fn = actions[act];
       if (fn) fn();
     }
@@ -1011,6 +1055,7 @@
     }
     if (exampleMenu && !exampleMenu.hidden && !e.target.closest(".eb-example")) {
       exampleMenu.hidden = true;
+      closeExampleSubmenus();
     }
     if (emojiPanel && !emojiPanel.hidden && !e.target.closest(".eb-emoji-wrap")) {
       closeEmojiPanel();

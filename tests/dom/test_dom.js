@@ -5251,7 +5251,7 @@ function check(label, cond, extra) {
   check("edit bar: no More overflow button or menu",
     !window.document.querySelector('#edit-bar [data-act="more"]') &&
     !window.document.querySelector("#edit-bar .eb-overflow-btn") &&
-    !window.document.querySelector("#edit-bar .eb-menu:not(.eb-table-menu):not(.eb-list-menu):not(.eb-example-menu)"));
+    !window.document.querySelector("#edit-bar .eb-menu:not(.eb-table-menu):not(.eb-list-menu):not(.eb-example-menu):not(.eb-submenu-menu)"));
   // Selection-wrap: select "hello", click Bold -> **hello**.
   cmSetValue("hello world"); cmSetSel(0, 5);
   window.document.querySelector('#edit-bar .eb[data-act="bold"]').dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -5361,34 +5361,62 @@ function check(label, cond, extra) {
   check("edit bar: codeblock wraps in fences",
     /```\nprint\(1\)\n```/.test(cmGetValue()),
     "got: " + cmGetValue());
-  // Example block dropdown: built from the shared blocks registry, one
-  // item per renderer; picking one inserts its fenced source.
+  // Examples dropdown: built from the shared blocks registry; a language
+  // with several examples (Mermaid) becomes a nested flyout. Picking one
+  // inserts its fenced source.
   {
     const barEl = $("edit-bar");
     const exMenu = barEl.querySelector(".eb-example-menu");
     const exToggle = barEl.querySelector('[data-act="example-menu"]');
     const exItems = exMenu
       ? Array.from(exMenu.querySelectorAll('button[data-act="example-block"]')) : [];
+    const mermaidBtn = exMenu && exMenu.querySelector('[data-act="example-submenu"]');
+    const mermaidFly = mermaidBtn &&
+      mermaidBtn.parentElement.querySelector(".eb-submenu-menu");
     check("edit bar: example menu lists every code-block extension",
-      exItems.length === 8 &&
-      exItems.filter(b => b.dataset.fence === "mermaid").length === 3 &&
-      exItems.some(b => b.dataset.fence === "wavedrom") &&
-      exItems.some(b => b.dataset.fence === "math") &&
-      exItems.some(b => b.dataset.fence === "dot") &&
-      exItems.some(b => b.dataset.fence === "html-live") &&
-      exItems.some(b => b.dataset.fence === "svg"),
+      exItems.length === 13 &&
+      exMenu.querySelectorAll(".eb-submenu-menu button").length === 8 &&
+      exItems.some(b => b.dataset.example === "Gantt schedule") &&
+      exItems.some(b => b.dataset.example === "WaveDrom timing") &&
+      exItems.some(b => b.dataset.example === "Math (KaTeX)") &&
+      exItems.some(b => b.dataset.example === "Graphviz graph") &&
+      exItems.some(b => b.dataset.example === "HTML preview") &&
+      exItems.some(b => b.dataset.example === "SVG drawing"),
       "count=" + exItems.length);
+    check("edit bar: Mermaid examples live in one submenu",
+      !!mermaidBtn && mermaidBtn.textContent.trim() === "Mermaid" &&
+      !!mermaidFly && mermaidFly.querySelectorAll("button").length === 8,
+      "submenu=" + (mermaidFly ? mermaidFly.querySelectorAll("button").length : "none"));
     cmSetValue(""); cmSetSel(0, 0);
     exToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(10);
     check("edit bar: example toggle opens the menu", !exMenu.hidden);
-    const mmBtn = exItems.find(b => b.dataset.fence === "mermaid");
+    mermaidBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("edit bar: Mermaid submenu opens after a click", !mermaidFly.hidden);
+    const mmBtn = Array.from(mermaidFly.querySelectorAll("button"))
+      .find(b => b.dataset.example === "Flowchart");
     mmBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(10);
     check("edit bar: example inserts a fenced mermaid block",
       /```mermaid\nflowchart LR/.test(cmGetValue()),
       "got: " + JSON.stringify(cmGetValue()));
     check("edit bar: example menu closes after choosing", exMenu.hidden);
+    check("edit bar: nested Mermaid submenu closes with it", mermaidFly.hidden);
+    // A second mermaid entry must insert its own source: the six charts
+    // share one fence, so the item's label is the lookup key.
+    cmSetValue(""); cmSetSel(0, 0);
+    exToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    mermaidBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    const pieBtn = Array.from(mermaidFly.querySelectorAll("button"))
+      .find(b => b.dataset.example === "Pie");
+    pieBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("edit bar: the Mermaid pie example inserts pie source",
+      /```mermaid\npie title/.test(cmGetValue()),
+      "got: " + JSON.stringify(cmGetValue()));
   }
   // Link: select "click", answer prompt.
   cmSetValue("click here"); cmSetSel(0, 5);
@@ -5465,7 +5493,7 @@ function check(label, cond, extra) {
     // The ⋯ More menu is gone; the ▦ table and ☰ list menus are the only
     // menus left under the bar.
     check("edit bar: only the table, list, and example menus remain",
-      !bar.querySelector(".eb-menu:not(.eb-table-menu):not(.eb-list-menu):not(.eb-example-menu)") &&
+      !bar.querySelector(".eb-menu:not(.eb-table-menu):not(.eb-list-menu):not(.eb-example-menu):not(.eb-submenu-menu)") &&
       !bar.querySelector('[data-act="more"]') &&
       !!bar.querySelector(".eb-list-menu"),
       "menus=" + bar.querySelectorAll(".eb-menu").length);
@@ -7678,8 +7706,8 @@ function check(label, cond, extra) {
         flyLabels.includes("Table") &&
         flyLabels.includes("Horizontal rule"),
         flyLabels.join(" / "));
-      // Insert -> Example block offers one example per registered
-      // plugin renderer (mermaid, wavedrom, math, dot, html-live, svg).
+      // Insert offers the registry examples; Mermaid's six charts are one
+      // submenu, the other renderers stay flat.
       // A submenu button's textContent includes its flyout, so match the
       // leading text node (same shape the top-level checks use).
       const leadingLabel = (b) => {
@@ -7687,20 +7715,27 @@ function check(label, cond, extra) {
         for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
         return l.trim();
       };
-      const exampleBtn = Array.from(fly.querySelectorAll("button"))
-        .find(b => leadingLabel(b) === "Example block");
-      const exFly = exampleBtn && exampleBtn.querySelector(".context-menu");
-      const exLabels = exFly ? Array.from(exFly.querySelectorAll("button")).map(b => b.textContent.trim()) : [];
-      check("hybrid menu: Example block lists every code-block extension",
-        exLabels.includes("Mermaid flowchart") &&
-        exLabels.includes("Mermaid sequence") &&
-        exLabels.includes("Mermaid pie") &&
-        exLabels.includes("WaveDrom timing") &&
-        exLabels.includes("Math (KaTeX)") &&
-        exLabels.includes("Graphviz graph") &&
-        exLabels.includes("HTML preview") &&
-        exLabels.includes("SVG drawing"),
+      const mermaidBtn = Array.from(fly.querySelectorAll("button"))
+        .find(b => b.classList.contains("submenu") && leadingLabel(b) === "Mermaid");
+      const mermaidFly = mermaidBtn && mermaidBtn.querySelector(".context-menu");
+      const exLabels = mermaidFly
+        ? Array.from(mermaidFly.querySelectorAll("button")).map(b => b.textContent.trim()) : [];
+      check("hybrid menu: Mermaid is one submenu of chart examples",
+        exLabels.includes("Flowchart") &&
+        exLabels.includes("Sequence") &&
+        exLabels.includes("Pie") &&
+        exLabels.includes("State") &&
+        exLabels.includes("Class") &&
+        exLabels.includes("ER") &&
+        exLabels.includes("Gantt schedule") &&
+        exLabels.includes("Timeline"),
         exLabels.join(" / "));
+      const flatLabels = Array.from(fly.querySelectorAll("button"))
+        .map(b => leadingLabel(b));
+      check("hybrid menu: other extension examples stay flat",
+        ["Gantt schedule", "WaveDrom timing", "Math (KaTeX)", "Graphviz graph",
+         "HTML preview", "SVG drawing"].every((l) => flatLabels.includes(l)),
+        flatLabels.join(" / "));
     }
 
     // Clicking a submenu item should close the menu and apply formatting.
@@ -7723,7 +7758,7 @@ function check(label, cond, extra) {
       check("hybrid menu: bold via submenu (skipped)", true);
     }
 
-    // --- Insert -> Example block: picking one renders it in place -------
+    // --- Insert -> Mermaid -> chart: the example renders in place -------
     // The fenced source goes in at the caret and is handed to its
     // renderer, so the example behaves exactly like an opened note.
     {
@@ -7744,16 +7779,17 @@ function check(label, cond, extra) {
         for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
         return l.trim() === "Insert";
       });
-      const exampleBtn = insertBtn && Array.from(insertBtn.querySelectorAll("button"))
+      const mermaidSub = insertBtn && Array.from(insertBtn.querySelectorAll("button"))
         .find(b => {
+          if (!b.classList.contains("submenu")) return false;
           let l = "";
           for (const n of b.childNodes) { if (n.nodeType === 3) l += n.textContent; else break; }
-          return l.trim() === "Example block";
+          return l.trim() === "Mermaid";
         });
-      const exFly = exampleBtn && exampleBtn.querySelector(".context-menu");
+      const exFly = mermaidSub && mermaidSub.querySelector(".context-menu");
       const mermaidEx = exFly && Array.from(exFly.querySelectorAll("button"))
-        .find(b => b.textContent.trim() === "Mermaid flowchart");
-      check("hybrid insert: Example block is reachable from the Insert submenu",
+        .find(b => b.textContent.trim() === "Flowchart");
+      check("hybrid insert: Mermaid charts are reachable from the Insert submenu",
         !!mermaidEx, "buttons=" + (exFly ? exFly.textContent.trim().slice(0, 80) : "(none)"));
       if (mermaidEx) {
         const before = vc.querySelectorAll(".mermaid-container").length;
@@ -7785,7 +7821,7 @@ function check(label, cond, extra) {
       const exMenu = barEl.querySelector(".eb-example-menu");
       const exToggle = barEl.querySelector('[data-act="example-menu"]');
       const svgBtn = Array.from(exMenu.querySelectorAll("button"))
-        .find(b => b.dataset.fence === "svg");
+        .find(b => b.dataset.example === "SVG drawing");
       // Put the caret in a paragraph so the insert has a block anchor.
       const anchorP = vc.querySelector("p");
       if (anchorP) {
@@ -7809,6 +7845,31 @@ function check(label, cond, extra) {
         "count=" + vc.querySelectorAll(".svg-container").length);
       check("hybrid insert: edit bar example menu closes after choosing",
         exMenu.hidden);
+
+      // Same bar, submenu path: the six mermaid examples share a fence,
+      // so the chosen label must select the right source.
+      exToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      const mmToggle = exMenu.querySelector('[data-act="example-submenu"]');
+      const mmFly = mmToggle && mmToggle.parentElement.querySelector(".eb-submenu-menu");
+      mmToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      check("hybrid insert: edit bar Mermaid submenu opens", !!mmFly && !mmFly.hidden);
+      const pieBtn = mmFly && Array.from(mmFly.querySelectorAll("button"))
+        .find(b => b.dataset.example === "Pie");
+      const beforeM = vc.querySelectorAll(".mermaid-container").length;
+      if (pieBtn) {
+        pieBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+        for (let i = 0; i < 20 &&
+             vc.querySelectorAll(".mermaid-container").length === beforeM; i++) {
+          await tick(25);
+        }
+      }
+      check("hybrid insert: edit bar Mermaid pie inserts pie source",
+        vc.querySelectorAll(".mermaid-container").length === beforeM + 1 &&
+        Array.from(vc.querySelectorAll(".mermaid-container"))
+          .some(c => /pie title/.test(c.dataset.mermaidSource || "")),
+        "count=" + vc.querySelectorAll(".mermaid-container").length);
     }
 
     // Right-clicking outside #viewer-content should close the menu.
@@ -7903,7 +7964,43 @@ function check(label, cond, extra) {
       check("hybrid menu: structural right-click is defaultPrevented",
         evtCell.defaultPrevented === true);
 
-      // Case c: no caret API -> pre-existing custom-menu behavior.
+      // Case c: a text node inside a rendered SVG container follows the
+      // same rule as every other plugin block (custom menu) and the
+      // container is atomic for caret walking.
+      const svgCard = window.document.createElement("div");
+      svgCard.className = "svg-container";
+      svgCard.dataset.svgSource = "<svg><text>hi</text></svg>";
+      const svgEl = window.document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const svgText = window.document.createElementNS("http://www.w3.org/2000/svg", "text");
+      svgText.textContent = "hi";
+      svgEl.appendChild(svgText);
+      svgCard.appendChild(svgEl);
+      vc.appendChild(svgCard);
+      await tick(20);   // let the atomic observer mark it
+      check("hybrid svg: container is atomic like every plugin block",
+        svgCard.getAttribute("contenteditable") === "false",
+        "ce=" + svgCard.getAttribute("contenteditable"));
+      window.document.caretRangeFromPoint = () => {
+        const r = window.document.createRange();
+        r.setStart(svgText.firstChild, 0);
+        r.collapse(true);
+        return r;
+      };
+      const evtSvg = new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 50, clientY: 50 });
+      svgText.dispatchEvent(evtSvg);
+      await tick(10);
+      check("hybrid svg: right-click on SVG text opens the custom menu",
+        !hcm.hidden && evtSvg.defaultPrevented === true);
+      check("hybrid svg: menu offers 'Edit SVG source'",
+        Array.from(hcm.querySelectorAll("button"))
+          .some(b => /Edit SVG source/.test(b.textContent)),
+        "labels=" + hcm.textContent.trim().slice(0, 80));
+      window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      svgCard.remove();
+
+      // Case d: no caret API -> pre-existing custom-menu behavior.
       delete window.document.caretRangeFromPoint;
       const evtNoApi = new window.MouseEvent("contextmenu",
         { bubbles: true, cancelable: true, clientX: 100, clientY: 100 });

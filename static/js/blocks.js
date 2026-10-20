@@ -52,18 +52,43 @@
   const EXAMPLES = [
     {
       lang: "mermaid",
-      label: "Mermaid flowchart",
+      label: "Flowchart",
       source: "flowchart LR\n  A[Note] --> B{Code block?}\n  B -- yes --> C[Render]\n  B -- no --> D[Text]",
     },
     {
       lang: "mermaid",
-      label: "Mermaid sequence",
+      label: "Sequence",
       source: "sequenceDiagram\n  participant U as User\n  participant N as Notebook\n  U->>N: Open note\n  N-->>U: Render Markdown",
     },
     {
       lang: "mermaid",
-      label: "Mermaid pie",
+      label: "Pie",
       source: "pie title Notes by kind\n  \"Ideas\" : 40\n  \"Tasks\" : 35\n  \"Reference\" : 25",
+    },
+    {
+      lang: "mermaid",
+      label: "State",
+      source: "stateDiagram-v2\n  [*] --> Idle\n  Idle --> Editing: open file\n  Editing --> Saved: save\n  Saved --> Editing: edit\n  Saved --> [*]: close",
+    },
+    {
+      lang: "mermaid",
+      label: "Class",
+      source: "classDiagram\n  class Note {\n    +String path\n    +open()\n    +save()\n  }\n  class Renderer {\n    +render(md)\n  }\n  Note --> Renderer : uses",
+    },
+    {
+      lang: "mermaid",
+      label: "ER",
+      source: "erDiagram\n  NOTE ||--o{ TAG : has\n  NOTE {\n    string path PK\n    string title\n  }\n  TAG {\n    string name PK\n  }",
+    },
+    {
+      lang: "mermaid",
+      label: "Gantt schedule",
+      source: "gantt\n  title Notebook release plan\n  dateFormat YYYY-MM-DD\n  section Build\n  Example menus      :done,    a1, 2026-10-01, 3d\n  Syntax note        :active,  a2, after a1, 2d\n  section Test\n  DOM suite          :         a3, after a2, 2d",
+    },
+    {
+      lang: "mermaid",
+      label: "Timeline",
+      source: "timeline\n  title Notebook history\n  2024 : Prototype\n  2025 : Mobile shell\n  2026 : Visual Mermaid editor",
     },
     {
       lang: "wavedrom",
@@ -259,6 +284,37 @@
     return out;
   }
 
+  /* exampleGroups() -- examples grouped for the Insert menus. A language
+   * with more than one example becomes one submenu ({label, items}); a
+   * language with a single example stays a flat entry ({lang, label,
+   * source}). Grouped item labels drop the redundant language prefix
+   * Mermaid is the only language with several examples today. */
+  function exampleGroups() {
+    const byLang = new Map();
+    for (const ex of examples()) {
+      if (!byLang.has(ex.lang)) byLang.set(ex.lang, []);
+      byLang.get(ex.lang).push(ex);
+    }
+    const out = [];
+    for (const [lang, items] of byLang) {
+      if (items.length === 1) {
+        out.push(items[0]);
+        continue;
+      }
+      const desc = registry.find((d) => d.fence === lang);
+      const name = desc ? desc.name : lang;
+      out.push({
+        label: name.charAt(0).toUpperCase() + name.slice(1),
+        items: items.map((ex) => ({
+          lang: ex.lang,
+          label: ex.label,
+          source: ex.source,
+        })),
+      });
+    }
+    return out;
+  }
+
   NB.blocks = {
     register,
     all,
@@ -270,5 +326,6 @@
     restoreForMarkdown,
     pluginTypes,
     examples,
+    exampleGroups,
   };
 })();

@@ -139,25 +139,29 @@
   // highlight and the table-select rectangle classes (table-select.js). One
   // list, so every change-hash strip site cannot drift from the others.
   const CHROME_CLASS_TOKENS = [HR_SELECTED_CLASS, "nb-ts-range", "nb-ts-drag"];
-  // Renderer container classes. Their rendered children change
-  // asynchronously (a lazy bundle swaps an error box for a real
+  // Renderer container classes, derived from the blocks registry so a
+  // new renderer is covered by construction. Their rendered children
+  // change asynchronously (a lazy bundle swaps an error box for a real
   // container, an SVG renders later), so the splice path hashes only the
-  // block's SOURCE, not its rendered subtree. Same list the atomic
-  // selector is built from, so a new renderer is covered by construction.
-  const PLUGIN_CONTAINER_CLASSES = [
-    "htmlpreview-card", "mermaid-container", "wavedrom-container",
-    "katex-container", "viz-container", "mermaid-error", "wavedrom-error",
-    "katex-error", "viz-error",
-  ];
+  // block's SOURCE, not its rendered subtree.
+  const PLUGIN_CONTAINER_CLASSES = [];
+  if (NB.blocks && NB.blocks.all) {
+    for (const d of NB.blocks.all()) {
+      if (d.containerClass) PLUGIN_CONTAINER_CLASSES.push(d.containerClass);
+      if (d.errorClass) PLUGIN_CONTAINER_CLASSES.push(d.errorClass);
+    }
+  }
   const PLUGIN_CONTAINER_SELECTOR =
     PLUGIN_CONTAINER_CLASSES.map((c) => "." + c).join(", ");
   // Structural content whose right-click keeps the custom menu: a
   // native spellcheck menu is only useful on plain prose, and these
-  // elements carry their own editing affordances.
+  // elements carry their own editing affordances. Plugin containers are
+  // part of the list (SVG included), so every rendered block behaves the
+  // same on right-click.
   const NATIVE_MENU_BLOCKED_SELECTOR =
-    "table, thead, tbody, tr, td, th, pre, code, img, .mermaid-container, " +
-    ".mermaid-error, .wavedrom-container, .viz-container, .hybrid-lang-pill, " +
-    "[contenteditable=\"false\"]";
+    "table, thead, tbody, tr, td, th, pre, code, img, .hybrid-lang-pill, " +
+    "[contenteditable=\"false\"]" +
+    (PLUGIN_CONTAINER_SELECTOR ? ", " + PLUGIN_CONTAINER_SELECTOR : "");
 
   let active = false;       // hybrid mode currently on
   let activePath = null;    // path of the file being hybrid-edited
@@ -4110,18 +4114,25 @@
         savedRange = (s && s.rangeCount && viewerContentEl.contains(s.anchorNode))
           ? s.getRangeAt(0).cloneRange() : null;
         const menu = document.querySelector(".eb-example-menu");
-        if (menu) menu.hidden = !menu.hidden;
+        if (menu) {
+          menu.hidden = !menu.hidden;
+          if (menu.hidden) {
+            menu.querySelectorAll(".eb-submenu-menu").forEach((m) => { m.hidden = true; });
+          }
+        }
         break;
       }
       case "example-block": {
-        // The edit bar's items carry the fence language in data-fence;
-        // the source comes from the shared registry, so the bar and the
-        // context menu always insert the same example.
+        // The edit bar's items carry the exact example label in
+        // data-example; several mermaid examples share one fence.
         const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
-        const ex = examples.find((item) => item.lang === btn.dataset.fence);
+        const ex = examples.find((item) => item.label === btn.dataset.example);
         if (ex) insertExampleBlock(ex.lang, ex.source);
         const menu = document.querySelector(".eb-example-menu");
-        if (menu) menu.hidden = true;
+        if (menu) {
+          menu.hidden = true;
+          menu.querySelectorAll(".eb-submenu-menu").forEach((m) => { m.hidden = true; });
+        }
         break;
       }
       case "hr": {
@@ -5866,16 +5877,19 @@
     return (NB.blocks && NB.blocks.pluginTypes) ? NB.blocks.pluginTypes() : [];
   }
 
-  /* One menu entry per registered plugin that has an example. The list
-   * comes from the shared blocks registry, so the hybrid menu and the
-   * edit bar offer the same examples and a new renderer only adds its
-   * entry in blocks.js. */
+  /* Insert-menu entries for the registry examples. A language with several
+   * examples (mermaid) becomes one submenu; single-example languages stay
+   * flat. Both shapes carry the exact label so the item click can recover
+   * the right source (several mermaid entries share one fence). */
   function exampleItems() {
-    const examples = (NB.blocks && NB.blocks.examples) ? NB.blocks.examples() : [];
-    return examples.map((ex) => ({
+    const groups = (NB.blocks && NB.blocks.exampleGroups) ? NB.blocks.exampleGroups() : [];
+    const item = (ex) => ({
       label: ex.label,
       handler: () => insertExampleBlock(ex.lang, ex.source),
-    }));
+    });
+    return groups.map((g) => g.items
+      ? { label: g.label, submenu: g.items.map(item) }
+      : item(g));
   }
 
   /* The top-level block holding the caret, or null when the caret is not
@@ -6204,8 +6218,8 @@
       }
     }
 
-    // Insert submenu. Example block appears only for registered plugin
-    // types that carry an example (currently every renderer).
+    // Insert submenu. Examples sit between the raw code block and the
+    // table; a multi-example language (mermaid) is one submenu.
     const insertSub = [
       { label: "Link…", handler: () => {
         // Restore the caret captured at menu-open, then run the guarded
@@ -6230,7 +6244,7 @@
       } },
     ];
     const examples = exampleItems();
-    if (examples.length) insertSub.push({ label: "Example block", submenu: examples });
+    if (examples.length) insertSub.push({ separator: true }, ...examples, { separator: true });
     insertSub.push(
       { label: "Table", handler: () => {
         const html = '<table><thead><tr><th>Column 1</th><th>Column 2</th></tr></thead>' +
@@ -6304,7 +6318,8 @@
     let anchorX = e.clientX;
     let anchorY = e.clientY;
     if (!anchorX && !anchorY && e.target && e.target.closest) {
-      const block = e.target.closest(".mermaid-container, .mermaid-error");
+      const block = PLUGIN_CONTAINER_SELECTOR
+        ? e.target.closest(PLUGIN_CONTAINER_SELECTOR) : null;
       if (block) {
         const r = block.getBoundingClientRect();
         anchorX = r.left + 8;

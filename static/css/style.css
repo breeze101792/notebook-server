@@ -630,6 +630,23 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   left: 0;
   min-width: 170px;
 }
+/* Nested flyout inside the example dropdown (Mermaid's six charts).
+ * Left-click to open; the ▸ marker signals the extra level. */
+.edit-bar .eb-submenu { position: relative; display: block; }
+.edit-bar .eb-submenu-btn { width: 100%; }
+.edit-bar .eb-submenu-btn::after {
+  content: "▸";
+  margin-left: 8px;
+  font-size: .8em;
+  color: var(--fg-muted);
+}
+.edit-bar .eb-submenu .eb-submenu-menu {
+  top: 0;
+  left: 100%;
+  right: auto;
+  margin: 0 0 0 2px;
+  min-width: 150px;
+}
 
 /* Emoji picker: a dropdown panel anchored to the 😀 button. The grid is
  * populated by editbar.js from a curated dataset; emoji are rendered as
