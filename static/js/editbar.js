@@ -833,11 +833,14 @@
       const lineEnd = lineEndIdx === -1 ? value.length : lineEndIdx;
       const curLine = value.slice(lineStart, lineEnd);
       if (!/^\s*\|.*\|/.test(curLine)) return null;
-      // Walk up to find the first table line.
+      // Walk up to find the first table line. headerStart - 1 is this
+      // line's own leading newline, so the previous line ends there and
+      // starts after the newline before it.
       let headerStart = lineStart;
       while (headerStart > 0) {
-        const p = value.lastIndexOf("\n", headerStart - 1);
-        const prevLine = value.slice(p + 1, headerStart);
+        const prevEnd = headerStart - 1;
+        const p = value.lastIndexOf("\n", prevEnd - 1);
+        const prevLine = value.slice(p + 1, prevEnd);
         if (!/^\s*\|.*\|/.test(prevLine)) break;
         headerStart = p + 1;
       }
@@ -853,10 +856,9 @@
       }
       const block = value.slice(headerStart, tableEnd);
       const lines = block.split("\n");
-      const rowIdx = lines.findIndex((l) => {
-        const ls = value.lastIndexOf("\n", start - 1) + 1;
-        return value.slice(ls, ls + l.length) === l;
-      });
+      // Derive the row from the caret offset: matching the caret line's
+      // text against `lines` picks the first of any duplicate rows.
+      const rowIdx = Math.max(0, value.slice(headerStart, start).split("\n").length - 1);
       // Column index: count pipes before the cursor on the current line.
       const before = value.slice(lineStart, start);
       const colIdx = Math.max(0, (before.match(/\|/g) || []).length - 1);
@@ -882,11 +884,11 @@
     _rewriteTable(newLines) {
       const t = actions._tableAt();
       if (!t) return;
-      const { start, end, value } = sel();
+      const { value } = sel();
       const newBlock = newLines.join("\n");
-      const newDoc = value.slice(0, start) + newBlock + value.slice(end);
+      const newDoc = value.slice(0, t.start) + newBlock + value.slice(t.end);
       NB.cmEditor.setValue(newDoc);
-      NB.cmEditor.setSelection(start, start + newBlock.length);
+      NB.cmEditor.setSelection(t.start, t.start + newBlock.length);
     },
 
     "table-row-above"() {
@@ -971,10 +973,10 @@
     "table-delete"() {
       const t = actions._tableAt();
       if (!t) return;
-      const { start, end, value } = sel();
-      const newDoc = value.slice(0, start) + value.slice(end);
+      const { value } = sel();
+      const newDoc = value.slice(0, t.start) + value.slice(t.end);
       NB.cmEditor.setValue(newDoc);
-      NB.cmEditor.setSelection(start, start);
+      NB.cmEditor.setSelection(t.start, t.start);
     },
   };
 

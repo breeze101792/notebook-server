@@ -458,7 +458,7 @@
     const line = el("div", "nb-drop-line is-row");
     overlay.append(ghost, proxy, line);
     drag = Object.assign(drag, {
-      kind: "row", row, tbody, header, ghost, proxy, line,
+      kind: "row", row, tbody, header, ghost, proxy, line, noop: false,
     });
     moveRowDrag(e);
   }
@@ -514,9 +514,13 @@
     drag.before = rowBoundary(e.clientY);
     if (drag.before === drag.row || drag.before === drag.row.nextElementSibling) {
       drag.before = null;   // no-op drop position: hide the line
+      // null also means "append at the end", so remember the no-op
+      // separately or endDrag would move the row to the bottom.
+      drag.noop = true;
       drag.line.style.display = "none";
       return;
     }
+    drag.noop = false;
     // Span: union of cell rects' left/right at the boundary y.
     const row = drag.before || drag.tbody.lastElementChild;
     if (!row || row.tagName !== "TR") { drag.line.style.display = "none"; return; }
@@ -582,7 +586,7 @@
     try { d.grip.releasePointerCapture(d.pointerId); } catch (_) {}
     if (commit) {
       if (d.kind === "row") {
-        NB.hybrid.moveRow(d.row, d.before);
+        if (!d.noop) NB.hybrid.moveRow(d.row, d.before);
       } else if (d.kind === "col" && d.destIndex !== null &&
                  d.destIndex !== d.srcIndex) {
         NB.hybrid.moveCol(activeTable, d.srcIndex, d.destIndex);

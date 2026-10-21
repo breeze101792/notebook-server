@@ -1367,8 +1367,11 @@ async function main() {
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    // Plain items keep turndown's canonical "-   " padding; the converted
+    // task item serializes compactly ("- [ ] b"), the deliberate contract
+    // (normalizeTaskListSpacing in hybrid.js).
     check("real browser list model: the neighbours survive the save",
-      readNote("notes/lmsplit.md") === "-   a\n-   [ ] b\n-   c\n",
+      readNote("notes/lmsplit.md") === "-   a\n- [ ] b\n-   c\n",
       JSON.stringify(readNote("notes/lmsplit.md")));
 
     // --- list-item drag reorder: pointer/geometry (§4.7.2, AC9-AC17) ---

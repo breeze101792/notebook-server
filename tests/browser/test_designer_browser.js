@@ -56,7 +56,6 @@ fs.writeFileSync(path.join(CONFIG, "config.json"), "{}");
 const NOTE = "notes/designer.md";
 const SRC = "# Diagram\n\nBefore paragraph.\n\n" +
   "```mermaid\ngraph TD; A-->B; B-->C;\n```\n\nAfter paragraph.\n";
-const ORIGINAL_CODE = "graph TD; A-->B; B-->C;";
 
 // A line-based flowchart for the inspector checks. The semicolon form above
 // keeps the older add/undo tests stable; Visimer's semantic parser only
@@ -140,6 +139,37 @@ async function main() {
     const pageErrors = [];
     page.on("pageerror", (e) => pageErrors.push(String(e)));
 
+    // Capture the live Visimer editor instance so the test can drive its
+    // public model API. The bundle's ESM namespace exposes getter-only
+    // exports (configurable: false, no setter), so assigning
+    // `Visimer.MermaidWysiwygEditor = ...` silently does nothing. Hook the
+    // configurable `result` prototype getter instead: mount reads it right
+    // after construction, so every editor instance is captured. The
+    // `Visimer` accessor makes the hook run when the lazy-loaded bundle
+    // assigns the global, which also covers every later page.goto (where
+    // the bundle is loaded afresh).
+    await page.addInitScript(() => {
+      let V;
+      Object.defineProperty(window, "Visimer", {
+        configurable: true,
+        get() { return V; },
+        set(value) {
+          V = value;
+          const Real = value && value.MermaidWysiwygEditor;
+          const proto = Real && Real.prototype;
+          const desc = proto && Object.getOwnPropertyDescriptor(proto, "result");
+          if (!desc || typeof desc.get !== "function" || !desc.configurable) return;
+          Object.defineProperty(proto, "result", {
+            configurable: true,
+            get() {
+              window.__designerEditor = this;
+              return desc.get.call(this);
+            },
+          });
+        },
+      });
+    });
+
     await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
     await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
 
@@ -183,34 +213,30 @@ async function main() {
         readNote(NOTE) === before, JSON.stringify(readNote(NOTE)));
     }
 
-    // Wrap the Visimer editor constructor so the test can drive its
-    // public model API (the same dispatch the gate used). The bundle is
-    // loaded by the first open above; a wrapper installed now is seen by
-    // the next mount.
-    const wrapped = await page.evaluate(() => {
-      const Real = window.Visimer && window.Visimer.MermaidWysiwygEditor;
-      if (!Real) return false;
-      window.Visimer.MermaidWysiwygEditor = function (opts) {
-        const ed = new Real(opts);
-        window.__designerEditor = ed;
-        return ed;
-      };
-      return true;
-    });
+    // The bundle is loaded by the first open above, and the init-script
+    // hook has captured the editor instance from that mount.
+    const wrapped = await page.evaluate(() =>
+      !!(window.Visimer &&
+        typeof window.Visimer.MermaidWysiwygEditor === "function" &&
+        window.__designerEditor));
     check("designer browser: the Visimer bundle loaded in the real browser", wrapped);
 
     // --- (7b) add a node -> Apply -> fence lands, untouched bytes ----
     {
       const before = readNote(NOTE);
       await openDesigner();
+      const beforeCode = await page.evaluate(() =>
+        window.__designerEditor ? window.__designerEditor.code : null);
       const code = await page.evaluate(() => {
         const ed = window.__designerEditor;
         if (!ed) return null;
         if (typeof ed.dispatch === "function") ed.dispatch({ type: "addNode" });
         return ed.code;
       });
+      // addNode appends a node line; the original statement line stays in
+      // place, so compare against the pre-dispatch code, not a substring.
       check("designer browser: the canvas model changed after addNode",
-        !!code && code.indexOf(ORIGINAL_CODE) === -1 && code !== before,
+        !!code && !!beforeCode && code !== beforeCode,
         JSON.stringify(code));
       await page.click("#designer-apply");
       await closeDesigner();
@@ -342,9 +368,12 @@ async function main() {
         JSON.stringify(saved));
     }
 
-    // --- compact layout at 1280 / 1024 / 800 ----------------------
+    // --- compact layout at 1280 / 1024 / 900 ----------------------
+    // 900 keeps the desktop shell (phone mode starts at 860) while sitting
+    // under the designer's 960px compact breakpoint. Widths at or below
+    // 860 hide #hybrid-toggle, the only entry to the designer.
     {
-      for (const width of [1280, 1024, 800]) {
+      for (const width of [1280, 1024, 900]) {
         await page.setViewportSize({ width: width, height: 900 });
         await page.goto(BASE + "/?file=" + encodeURIComponent(FLOW));
         await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
@@ -415,7 +444,20 @@ async function main() {
       check("designer browser: the autonumber switch writes the directive",
         await page.evaluate(() => /autonumber/.test(window.__designerEditor.code)));
 
+      // Autonumber inserted a line, so the old event ids no longer exist
+      // and the selection was cleared. Wait for the canvas to re-render
+      // with the new ids before clicking; clicking the stale SVG element
+      // would select an id that no longer exists and do nothing.
+      await page.waitForFunction(() => {
+        const ed = window.__designerEditor;
+        const first = document.querySelector(
+          '#designer-canvas [data-mw-entity^="event:"]');
+        return ed && ed.result.sequence && first &&
+          first.getAttribute("data-mw-entity") ===
+            ed.result.sequence.events[0].entityId;
+      }, null, { timeout: 5000 });
       await page.locator('#designer-canvas [data-mw-entity^="event:"]').first().click();
+      await page.waitForSelector("#designer-message-text", { timeout: 5000 });
       await page.locator("#designer-message-text").fill("Updated");
       await page.locator("#designer-message-text").press("Tab");
       await page.waitForFunction(
@@ -434,8 +476,11 @@ async function main() {
         () => window.__designerEditor.code.indexOf("First") !== -1,
         null, { timeout: 5000 });
       const startCode = await page.evaluate(() => window.__designerEditor.code);
+      // The first event was renamed to "Updated" above, so compare against
+      // that text rather than the original "Hello".
       check("designer browser: Add message at Start inserts before the first event",
-        startCode.indexOf("First") < startCode.indexOf("Hello"),
+        startCode.indexOf("First") !== -1 &&
+        startCode.indexOf("First") < startCode.indexOf("Updated"),
         JSON.stringify(startCode));
 
       const eventId = await page.evaluate(() =>

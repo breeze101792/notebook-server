@@ -321,9 +321,10 @@
     });
     const sig = Array.from(header.cells)
       .map((c) => headerText(c)).join(SIG_SEP);
-    // The header menu icon is the keyboard path into the controls, so the
-    // header cells themselves carry no tabindex. The icons are view-only
-    // nodes; hybrid's teardown removes them before the DOM can be edited.
+    // The header menu icon is the keyboard path into the controls: it is
+    // tabbable itself (tabindex=0), while the header cells carry no
+    // tabindex. The icons are view-only nodes; hybrid's teardown removes
+    // them before the DOM can be edited.
     Array.from(header.cells).forEach((c) => {
       if (!c.querySelector("." + HEAD_MENU_CLASS)) c.appendChild(buildHeadMenuIcon(c));
     });
@@ -337,6 +338,7 @@
     const icon = el("span", HEAD_MENU_CLASS);
     icon.textContent = HEAD_MENU_GLYPH;
     icon.setAttribute("role", "button");
+    icon.setAttribute("tabindex", "0");
     icon.setAttribute("aria-haspopup", "true");
     icon.setAttribute("aria-expanded", "false");
     icon.setAttribute("aria-label", "Column menu");

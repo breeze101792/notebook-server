@@ -5873,14 +5873,13 @@ function check(label, cond, extra) {
       "up=" + moveUp.disabled + " aria=" + moveUp.getAttribute("aria-disabled"));
     listMenu.hidden = true;
 
-    // Source-mode table helpers. NOTE: the table *actions* are not
-    // tested through a caret position here: editbar.js's _tableAt() stops
-    // its upward scan at the caret's own line (it searches for the newline
-    // at headerStart-1, which is the line's own leading newline), and
-    // _rewriteTable() splices at the selection instead of the discovered
-    // table range. A caret inside a table therefore makes row actions
-    // no-ops and column actions duplicate/corrupt text. Reported as a
-    // source bug; these assertions cover the pure helpers only.
+    // Source-mode table helpers plus the table actions driven through the
+    // real edit-bar path. Regression coverage for three defects:
+    // _tableAt() stopped its upward scan on the caret's own line, it
+    // derived rowIdx by matching line TEXT (so duplicate rows chose the
+    // first match), and _rewriteTable()/table-delete spliced at the
+    // selection instead of the discovered table range. Prose before and
+    // after the table must survive byte-for-byte.
     {
       const acts = window.NB.editbar.actions;
       const cells = acts._splitCells("| a | b |");
@@ -5899,6 +5898,102 @@ function check(label, cond, extra) {
         t.colIdx === 0,
         JSON.stringify(t && { start: t.start, end: t.end, rows: t.lines.length,
           rowIdx: t.rowIdx, colIdx: t.colIdx }));
+
+      // A note whose table has two identical body rows. The caret goes in
+      // the SECOND one, so a text-matching rowIdx would pick the first.
+      const before = "Before prose.";
+      const after = "\n\nAfter prose.";
+      const tbl = "| H1 | H2 |\n| --- | --- |\n| dup | x |\n| dup | x |\n| last | z |";
+      const seed = before + "\n\n" + tbl + after;
+      const nthIndex = (s, needle, n) => {
+        let i = -1;
+        for (let k = 0; k < n; k++) i = s.indexOf(needle, i + 1);
+        if (i < 0) throw new Error("needle not found: " + needle + " #" + n);
+        return i;
+      };
+      const runTableAction = async (act, src, needle, occurrence, delta) => {
+        cmSetValue(src);
+        const at = nthIndex(src, needle, occurrence) + (delta || 0);
+        cmSetSel(at, at);
+        clickEbAction(act);
+        await tick(10);
+        return cmGetValue();
+      };
+
+      cmSetValue(seed);
+      const inDup = nthIndex(seed, "dup", 2) + 1;
+      cmSetSel(inDup, inDup);
+      const pos = acts._tableAt();
+      check("edit bar table actions: _tableAt spans the block from inside a body row",
+        !!pos && pos.start === before.length + 2 &&
+        pos.end === (before + "\n\n" + tbl).length &&
+        pos.lines.length === 5 && pos.rowIdx === 3 && pos.colIdx === 0 &&
+        seed.slice(pos.start, pos.end) === tbl,
+        JSON.stringify(pos && { start: pos.start, end: pos.end,
+          rowIdx: pos.rowIdx, colIdx: pos.colIdx }));
+
+      // Each expected document keeps the prose and rewrites only the block.
+      let got = await runTableAction("table-row-above", seed, "dup", 2, 1);
+      check("edit bar table actions: row above inserts above the second duplicate row",
+        got === before + "\n\n" +
+          "| H1 | H2 |\n| --- | --- |\n| dup | x |\n|cell | cell|\n| dup | x |\n| last | z |" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-row-below", seed, "dup", 2, 1);
+      check("edit bar table actions: row below inserts below the second duplicate row",
+        got === before + "\n\n" +
+          "| H1 | H2 |\n| --- | --- |\n| dup | x |\n| dup | x |\n|cell | cell|\n| last | z |" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-row-delete", seed, "dup", 2, 1);
+      check("edit bar table actions: delete row removes the second duplicate row",
+        got === before + "\n\n" +
+          "| H1 | H2 |\n| --- | --- |\n| dup | x |\n| last | z |" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-col-left", seed, "dup", 2, 1);
+      check("edit bar table actions: column left inserts at the caret column",
+        got === before + "\n\n" +
+          "|cell | H1 | H2|\n| --- | --- |\n|cell | dup | x|\n|cell | dup | x|\n|cell | last | z|" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-col-right", seed, "dup", 2, 1);
+      check("edit bar table actions: column right inserts at caret+1",
+        got === before + "\n\n" +
+          "|H1 | cell | H2|\n| --- | --- |\n|dup | cell | x|\n|dup | cell | x|\n|last | cell | z|" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-col-delete", seed, "dup", 2, 1);
+      check("edit bar table actions: delete column removes the caret column",
+        got === before + "\n\n" +
+          "|H2|\n| --- | --- |\n|x|\n|x|\n|z|" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-header", seed, "dup", 2, 1);
+      check("edit bar table actions: header toggle removes the separator row",
+        got === before + "\n\n" +
+          "| H1 | H2 |\n| dup | x |\n| dup | x |\n| last | z |" +
+          after,
+        "got " + JSON.stringify(got));
+
+      const noSep = before + "\n\n| H1 | H2 |\n| dup | x |" + after;
+      got = await runTableAction("table-header", noSep, "dup", 1, 1);
+      check("edit bar table actions: header toggle adds a separator row",
+        got === before + "\n\n" +
+          "| H1 | H2 |\n| --- | --- |\n| dup | x |" +
+          after,
+        "got " + JSON.stringify(got));
+
+      got = await runTableAction("table-delete", seed, "dup", 2, 1);
+      check("edit bar table actions: delete table removes the whole block only",
+        got === before + "\n\n" + after,
+        "got " + JSON.stringify(got));
     }
 
     // Undo / redo route through CM6's own history.
@@ -9307,6 +9402,8 @@ function check(label, cond, extra) {
             overlayEl2.querySelector(".nb-drag-proxy").textContent);
           check("table-edit drag: a drop on the row itself hides the line",
             overlayEl2.querySelector(".nb-drop-line").style.display === "none");
+          check("table-edit drag: a self-drop sets the no-op flag (null means append)",
+            window.NB.tableEdit.drag && window.NB.tableEdit.drag.noop === true);
           window.NB.tableEdit._endDrag(false);
           check("table-edit drag: cancel removes the chrome and body class",
             !window.NB.tableEdit.drag &&
@@ -9314,11 +9411,29 @@ function check(label, cond, extra) {
             overlayEl2.querySelectorAll(
               ".nb-drag-ghost,.nb-drag-proxy,.nb-drop-line").length === 0);
 
+          // Committing the self-drop must not append the row at the end:
+          // drag.before is null there, which endDrag also reads as "append".
+          const selfOrder = JSON.stringify(order());
+          const selfMd = window.NB.hybrid.domToMarkdown();
+          const selfDirty = window.NB.hybrid.isDirty();
+          window.NB.tableEdit.startRowDrag(dragEv(120, 45), dragTable.rows[2]);
+          const selfUp = new window.MouseEvent("pointerup", { bubbles: true });
+          Object.defineProperty(selfUp, "pointerId", { value: 1 });
+          $("viewer").dispatchEvent(selfUp);
+          check("table-edit drag: committing a self-drop leaves the DOM order unchanged",
+            JSON.stringify(order()) === selfOrder, JSON.stringify(order()));
+          check("table-edit drag: committing a self-drop saves the same markdown",
+            window.NB.hybrid.domToMarkdown() === selfMd);
+          check("table-edit drag: committing a self-drop leaves the dirty flag unchanged",
+            window.NB.hybrid.isDirty() === selfDirty);
+
           // A real move: drop row 3 above row 1, commit through pointerup.
           window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[3]);
           const line = overlayEl2.querySelector(".nb-drop-line");
           check("table-edit drag: the drop line is visible at a real boundary",
             line.style.display !== "none" && parseFloat(line.style.width) > 0);
+          check("table-edit drag: a real boundary clears the no-op flag",
+            window.NB.tableEdit.drag && window.NB.tableEdit.drag.noop === false);
           const up = new window.MouseEvent("pointerup", { bubbles: true });
           Object.defineProperty(up, "pointerId", { value: 1 });
           $("viewer").dispatchEvent(up);
@@ -14421,6 +14536,12 @@ function check(label, cond, extra) {
     check("table view: every icon uses the one fixed chevron glyph",
       hdrCells.every((c) => iconOf(c.cellIndex).textContent === "\u25BE"),
       JSON.stringify(hdrCells.map((c) => iconOf(c.cellIndex).textContent)));
+    check("table view: the menu icon is keyboard reachable (tabindex=0)",
+      hdrCells.every((c) => iconOf(c.cellIndex).getAttribute("tabindex") === "0"),
+      hdrCells.map((c) => iconOf(c.cellIndex).getAttribute("tabindex")).join(","));
+    check("table view: header cells themselves stay out of the tab order",
+      hdrCells.every((c) => c.getAttribute("tabindex") === null),
+      hdrCells.map((c) => c.getAttribute("tabindex")).join(","));
     window.NB.tableView.cycleSort(t0, 1);   // Qty asc
     check("table view: an ascending sort marks its header .nb-tv-sorted",
       hdrCells[1].classList.contains("nb-tv-sorted") &&
@@ -14578,14 +14699,16 @@ function check(label, cond, extra) {
       window.document.dispatchEvent(new window.KeyboardEvent("keydown",
         { key: "Escape", bubbles: true, cancelable: true }));
       await tick(10);
-      // NOTE: the icon is a <span role=button> with no tabindex, so the
-      // documented "focus returns to the anchor" step cannot happen in a
-      // browser either. Reported as an accessibility bug; this asserts the
-      // close + attribute cleanup that do work.
+      // The icon carries tabindex=0, so it is focusable and the documented
+      // "focus returns to the anchor" step works.
       check("table view header menu: Esc closes and clears aria-expanded",
         !$("viewer").querySelector(".nb-tv-pop") &&
         menuIcon(1).getAttribute("aria-expanded") === null,
         "expanded=" + menuIcon(1).getAttribute("aria-expanded"));
+      check("table view header menu: Esc returns focus to the menu icon",
+        window.document.activeElement === menuIcon(1),
+        "active=" + (window.document.activeElement &&
+          window.document.activeElement.className));
 
       // Keyboard path: Enter on the icon opens with focus inside.
       menuIcon(1).focus({ preventScroll: true });
@@ -14600,6 +14723,26 @@ function check(label, cond, extra) {
       await tick(10);
       check("table view header menu: Esc closes the keyboard-opened menu",
         !$("viewer").querySelector(".nb-tv-pop"));
+      check("table view header menu: Esc after Enter returns focus to the icon",
+        window.document.activeElement === menuIcon(1),
+        "active=" + (window.document.activeElement &&
+          window.document.activeElement.className));
+
+      // Space is the other activation key.
+      menuIcon(1).dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: " ", bubbles: true, cancelable: true }));
+      await tick(10);
+      hp = $("viewer").querySelector(".nb-tv-pop");
+      check("table view header menu: Space opens the menu and focuses its first item",
+        !!hp && hp.contains(window.document.activeElement));
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      await tick(10);
+      check("table view header menu: Esc after Space closes and restores focus",
+        !$("viewer").querySelector(".nb-tv-pop") &&
+        window.document.activeElement === menuIcon(1),
+        "active=" + (window.document.activeElement &&
+          window.document.activeElement.className));
 
       // --- hide through the header menu + last-column refusal --------
       window.NB.tableView.reveal(t0);
