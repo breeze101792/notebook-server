@@ -698,6 +698,7 @@ const html = `<!DOCTYPE html><html><head>
               <input id="settings-ai-key" type="password" class="auth-input settings-auth-input" autocomplete="off" disabled>
             </div>
             <div class="settings-form-actions">
+              <button id="settings-ai-saveas" class="settings-action" hidden>Save as new</button>
               <button id="settings-ai-cancel" class="settings-action" hidden>Cancel</button>
               <button id="settings-ai-add" class="settings-action settings-action--primary" disabled>Add provider</button>
             </div>
@@ -2175,6 +2176,67 @@ function check(label, cond, extra) {
     check("menu module: without focusFirst focus is left untouched",
       window.document.activeElement !== menuEl.querySelector("button"),
       window.document.activeElement && window.document.activeElement.textContent);
+
+    // --- keyboard: wrap, activation, non-submenu arrows ---
+    {
+      const key = (node, k, extra) => node.dispatchEvent(new window.KeyboardEvent(
+        "keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, extra || {})));
+      let fired = [];
+      window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: true,
+        items: [
+          { label: "K1", handler: () => fired.push("k1") },
+          { label: "K2", handler: () => fired.push("k2") },
+          { label: "K3", handler: () => fired.push("k3") },
+        ] });
+      const kbtns = Array.from(menuEl.querySelectorAll("button"));
+      check("menu keyboard: focusFirst lands on the first item",
+        window.document.activeElement === kbtns[0]);
+      key(kbtns[0], "ArrowDown");
+      check("menu keyboard: ArrowDown moves to the next item",
+        window.document.activeElement === kbtns[1]);
+      key(kbtns[1], "ArrowUp");
+      check("menu keyboard: ArrowUp moves back",
+        window.document.activeElement === kbtns[0]);
+      kbtns[2].focus({ preventScroll: true });
+      key(kbtns[2], "ArrowDown");
+      check("menu keyboard: ArrowDown wraps from last to first",
+        window.document.activeElement === kbtns[0],
+        window.document.activeElement && window.document.activeElement.textContent);
+      kbtns[0].focus({ preventScroll: true });
+      key(kbtns[0], "ArrowUp");
+      check("menu keyboard: ArrowUp wraps from first to last",
+        window.document.activeElement === kbtns[2],
+        window.document.activeElement && window.document.activeElement.textContent);
+      kbtns[0].focus({ preventScroll: true });
+      key(kbtns[0], "Enter");
+      check("menu keyboard: Enter activates the focused item",
+        fired.join(",") === "k1" && menuEl.hidden,
+        "fired=" + fired.join(","));
+      window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: true,
+        items: [{ label: "Space", handler: () => fired.push("space") }] });
+      key(menuEl.querySelector("button"), " ");
+      check("menu keyboard: Space activates the focused item",
+        fired.join(",") === "k1,space" && menuEl.hidden);
+      window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: true,
+        items: [
+          { label: "A", handler: () => {} },
+          { label: "Off", disabled: true, handler: () => {} },
+          { label: "B", handler: () => {} },
+        ] });
+      const ab = Array.from(menuEl.querySelectorAll("button"));
+      ab[0].focus({ preventScroll: true });
+      key(ab[0], "ArrowDown");
+      check("menu keyboard: disabled items are skipped while walking",
+        window.document.activeElement === ab[2],
+        window.document.activeElement && window.document.activeElement.textContent);
+      key(ab[2], "ArrowRight");
+      check("menu keyboard: ArrowRight on a plain item keeps focus",
+        window.document.activeElement === ab[2]);
+      key(ab[2], "ArrowLeft");
+      check("menu keyboard: ArrowLeft on a plain item keeps focus",
+        window.document.activeElement === ab[2]);
+      window.NB.menu.close();
+    }
 
     // --- structural wiring ---
     const indexHtml = read("templates/index.html");
@@ -5732,6 +5794,125 @@ function check(label, cond, extra) {
   await tick(10);
   check("edit bar: Ctrl+I wraps selection",
     cmGetValue() === "*abc*", "got: " + cmGetValue());
+  // --- source-mode inline + block actions not covered above ----------
+  {
+    const clickEbAction = (act) => window.document
+      .querySelector('#edit-bar .eb[data-act="' + act + '"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    const setCursorIn = (needle, delta) => {
+      const v = cmGetValue();
+      const i = v.indexOf(needle);
+      if (i < 0) throw new Error("needle not found: " + needle);
+      cmSetSel(i + (delta || 0), i + (delta || 0));
+    };
+
+    cmSetValue("abc"); cmSetSel(0, 3);
+    clickEbAction("strike"); await tick(10);
+    check("edit bar: strike wraps selection", cmGetValue() === "~~abc~~",
+      "got: " + cmGetValue());
+    cmSetValue("abc"); cmSetSel(0, 3);
+    clickEbAction("code"); await tick(10);
+    check("edit bar: inline code wraps selection", cmGetValue() === "`abc`",
+      "got: " + cmGetValue());
+
+    const headingCases = [["h1", "# "], ["h3", "### "], ["h4", "#### "]];
+    let headingBad = [];
+    for (const [act, prefix] of headingCases) {
+      cmSetValue("fmt"); cmSetSel(0, 3);
+      clickEbAction(act); await tick(10);
+      if (cmGetValue() !== prefix + "fmt") {
+        headingBad.push(act + "=" + JSON.stringify(cmGetValue()));
+      }
+    }
+    check("edit bar: h1/h3/h4 prefix the line", headingBad.length === 0,
+      headingBad.join(", "));
+
+    cmSetValue("pic"); cmSetSel(0, 3);
+    promptValue = "https://example.com/p.png";
+    window.prompt = () => promptValue;
+    clickEbAction("image"); await tick(10);
+    check("edit bar: image wraps selection with its URL",
+      cmGetValue() === "![pic](https://example.com/p.png)",
+      "got: " + cmGetValue());
+    const beforeCancelImage = cmGetValue();
+    window.prompt = () => null;
+    cmSetSel(0, cmGetValue().length);
+    clickEbAction("image"); await tick(10);
+    check("edit bar: cancelling the image prompt leaves the note unchanged",
+      cmGetValue() === beforeCancelImage);
+    window.prompt = () => promptValue;
+
+    // List menu: move entries enable only on a list line and reorder the
+    // caret item with its nested subtree.
+    const listMenu = $("edit-bar").querySelector(".eb-list-menu");
+    cmSetValue("- a\n- b\n- c"); setCursorIn("b", 0);
+    listMenu.hidden = true;
+    clickEbAction("list-menu"); await tick(10);
+    const moveUp = listMenu.querySelector('[data-act="list-move-up"]');
+    const moveDown = listMenu.querySelector('[data-act="list-move-down"]');
+    check("edit bar list: menu opens with both move entries enabled on a list line",
+      !listMenu.hidden && !moveUp.disabled && !moveDown.disabled,
+      "hidden=" + listMenu.hidden + " up=" + moveUp.disabled + " down=" + moveDown.disabled);
+    moveUp.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("edit bar list: move up reorders the item", cmGetValue() === "- b\n- a\n- c",
+      "got: " + JSON.stringify(cmGetValue()));
+    cmSetValue("- a\n- b\n- c"); setCursorIn("b", 0);
+    clickEbAction("list-menu"); await tick(10);
+    listMenu.querySelector('[data-act="list-move-down"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("edit bar list: move down reorders the item", cmGetValue() === "- a\n- c\n- b",
+      "got: " + JSON.stringify(cmGetValue()));
+    cmSetValue("plain"); cmSetSel(0, 5);
+    listMenu.hidden = true;
+    clickEbAction("list-menu"); await tick(10);
+    check("edit bar list: move entries are disabled off a list line",
+      !listMenu.hidden && moveUp.disabled && moveDown.disabled &&
+      moveUp.getAttribute("aria-disabled") === "true",
+      "up=" + moveUp.disabled + " aria=" + moveUp.getAttribute("aria-disabled"));
+    listMenu.hidden = true;
+
+    // Source-mode table helpers. NOTE: the table *actions* are not
+    // tested through a caret position here: editbar.js's _tableAt() stops
+    // its upward scan at the caret's own line (it searches for the newline
+    // at headerStart-1, which is the line's own leading newline), and
+    // _rewriteTable() splices at the selection instead of the discovered
+    // table range. A caret inside a table therefore makes row actions
+    // no-ops and column actions duplicate/corrupt text. Reported as a
+    // source bug; these assertions cover the pure helpers only.
+    {
+      const acts = window.NB.editbar.actions;
+      const cells = acts._splitCells("| a | b |");
+      check("edit bar table helpers: _splitCells trims and drops outer pipes",
+        JSON.stringify(cells) === JSON.stringify(["a", "b"]),
+        JSON.stringify(cells));
+      const joined = acts._joinCells(["a", "b"], "| a | b |");
+      check("edit bar table helpers: _joinCells preserves the outer pipe style",
+        joined === "|a | b|", JSON.stringify(joined));
+      // From the header line the range discoverer sees the whole table.
+      cmSetValue("| A | B |\n| --- | --- |\n| a1 | b1 |\n");
+      cmSetSel(0, 0);
+      const t = acts._tableAt();
+      check("edit bar table helpers: _tableAt finds the block from the header",
+        !!t && t.start === 0 && t.lines.length === 3 && t.rowIdx === 0 &&
+        t.colIdx === 0,
+        JSON.stringify(t && { start: t.start, end: t.end, rows: t.lines.length,
+          rowIdx: t.rowIdx, colIdx: t.colIdx }));
+    }
+
+    // Undo / redo route through CM6's own history.
+    cmSetValue("undo-one"); await tick(600);
+    cmSetValue("undo-two"); await tick(20);
+    clickEbAction("undo"); await tick(20);
+    const afterUndo = cmGetValue();
+    clickEbAction("redo"); await tick(20);
+    check("edit bar: Undo restores the previous document", afterUndo === "undo-one",
+      "afterUndo=" + JSON.stringify(afterUndo));
+    check("edit bar: Redo reapplies the change", cmGetValue() === "undo-two",
+      "afterRedo=" + JSON.stringify(cmGetValue()));
+  }
+
   // Preview toggles the preview pane but stays in edit mode; bar stays visible.
   click("preview-btn"); await tick(10);
   check("edit bar: still visible after Preview toggle", !$("edit-bar").hidden);
@@ -9049,6 +9230,164 @@ function check(label, cond, extra) {
         tPlus.rows[0].cells.length === colsBefore);
       window.NB.tableEdit.hide();
       tPlus.remove();
+
+      // --- pointer drag state machine (table-edit.js) -----------------
+      // The overlay's geometry is browser-only, but the state machine
+      // (start -> move -> commit/cancel, ghost/proxy/drop-line, pointer
+      // capture) is plain DOM + rect maths. Stub the rects and drive the
+      // exported start hooks and the real pointer listeners on #viewer.
+      {
+        const dragTable = window.document.createElement("table");
+        dragTable.innerHTML =
+          "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+          "<tbody><tr><td>r1a</td><td>r1b</td></tr>" +
+          "<tr><td>r2a</td><td>r2b</td></tr>" +
+          "<tr><td>r3a</td><td>r3b</td></tr></tbody>";
+        vc.appendChild(dragTable);
+        window.NB.hybrid.flattenTheads();
+        const rectFor = (el) => {
+          if (el === dragTable) return { left: 0, top: 0, right: 200, bottom: 80,
+            width: 200, height: 80, x: 0, y: 0, toJSON() {} };
+          if (el === $("viewer")) return { left: 0, top: 0, right: 800, bottom: 600,
+            width: 800, height: 600, x: 0, y: 0, toJSON() {} };
+          if (el.tagName === "TR") {
+            const i = Array.from(dragTable.rows).indexOf(el);
+            return { left: 0, top: i * 20, right: 200, bottom: i * 20 + 20,
+              width: 200, height: 20, x: 0, y: i * 20, toJSON() {} };
+          }
+          if (el.tagName === "TD" || el.tagName === "TH") {
+            const ci = el.cellIndex;
+            const ri = Array.from(el.parentNode.parentNode.rows)
+              .indexOf(el.parentNode);
+            return { left: ci * 100, top: ri * 20, right: ci * 100 + 100,
+              bottom: ri * 20 + 20, width: 100, height: 20,
+              x: ci * 100, y: ri * 20, toJSON() {} };
+          }
+          return { left: 0, top: 0, right: 800, bottom: 600,
+            width: 800, height: 600, x: 0, y: 0, toJSON() {} };
+        };
+        const patched = [];
+        const patchRect = (el) => {
+          if (el.__dragRectPatched) return;
+          el.__dragRectPatched = true;
+          el.getBoundingClientRect = () => rectFor(el);
+          patched.push(el);
+        };
+        patchRect($("viewer"));
+        patchRect(dragTable);
+        Array.from(dragTable.rows).forEach((r) => {
+          patchRect(r);
+          Array.from(r.cells).forEach(patchRect);
+        });
+        const grip = { setPointerCapture() {}, releasePointerCapture() {} };
+        const dragEv = (x, y, id) => ({
+          pointerId: id == null ? 1 : id,
+          clientX: x, clientY: y,
+          preventDefault() {}, stopPropagation() {},
+          currentTarget: grip,
+        });
+        const overlayEl2 = $("viewer").querySelector(".nb-table-overlay");
+        const order = () => Array.from(dragTable.rows).map((r) =>
+          Array.from(r.cells).map((c) => c.textContent).join("|"));
+        try {
+          window.NB.tableEdit.reveal(dragTable);
+          // Start a row drag with the pointer over the row itself: the drop
+          // line must stay hidden (a no-op position).
+          window.NB.tableEdit.startRowDrag(dragEv(120, 45), dragTable.rows[2]);
+          check("table-edit drag: pointerdown starts a row drag with chrome",
+            !!window.NB.tableEdit.drag &&
+            window.NB.tableEdit.drag.kind === "row" &&
+            window.document.body.classList.contains("nb-table-drag") &&
+            overlayEl2.querySelectorAll(".nb-drag-ghost").length === 1 &&
+            overlayEl2.querySelectorAll(".nb-drag-proxy").length === 1,
+            "drag=" + JSON.stringify(window.NB.tableEdit.drag && window.NB.tableEdit.drag.kind));
+          check("table-edit drag: the proxy names the dragged row",
+            overlayEl2.querySelector(".nb-drag-proxy").textContent ===
+            "Row: r2a · r2b",
+            overlayEl2.querySelector(".nb-drag-proxy").textContent);
+          check("table-edit drag: a drop on the row itself hides the line",
+            overlayEl2.querySelector(".nb-drop-line").style.display === "none");
+          window.NB.tableEdit._endDrag(false);
+          check("table-edit drag: cancel removes the chrome and body class",
+            !window.NB.tableEdit.drag &&
+            !window.document.body.classList.contains("nb-table-drag") &&
+            overlayEl2.querySelectorAll(
+              ".nb-drag-ghost,.nb-drag-proxy,.nb-drop-line").length === 0);
+
+          // A real move: drop row 3 above row 1, commit through pointerup.
+          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[3]);
+          const line = overlayEl2.querySelector(".nb-drop-line");
+          check("table-edit drag: the drop line is visible at a real boundary",
+            line.style.display !== "none" && parseFloat(line.style.width) > 0);
+          const up = new window.MouseEvent("pointerup", { bubbles: true });
+          Object.defineProperty(up, "pointerId", { value: 1 });
+          $("viewer").dispatchEvent(up);
+          check("table-edit drag: pointerup commits the row move",
+            JSON.stringify(order()) ===
+              JSON.stringify(["A|B", "r3a|r3b", "r1a|r1b", "r2a|r2b"]),
+            JSON.stringify(order()));
+          check("table-edit drag: a committed move clears the drag state",
+            !window.NB.tableEdit.drag &&
+            !window.document.body.classList.contains("nb-table-drag"));
+
+          // Column drag: x between the two header cells -> destIndex 1.
+          window.NB.tableEdit.reveal(dragTable);
+          window.NB.tableEdit.startColDrag(dragEv(150, 10), 0);
+          check("table-edit drag: a column drag builds a column proxy",
+            !!window.NB.tableEdit.drag &&
+            window.NB.tableEdit.drag.kind === "col" &&
+            window.NB.tableEdit.drag.destIndex === 1 &&
+            /^Column: /.test(overlayEl2.querySelector(".nb-drag-proxy").textContent),
+            "dest=" + (window.NB.tableEdit.drag && window.NB.tableEdit.drag.destIndex));
+          const up2 = new window.MouseEvent("pointerup", { bubbles: true });
+          Object.defineProperty(up2, "pointerId", { value: 1 });
+          $("viewer").dispatchEvent(up2);
+          check("table-edit drag: pointerup commits the column move",
+            order()[0] === "B|A", order()[0]);
+
+          // Escape and pointercancel both cancel without mutating.
+          const beforeCancel = JSON.stringify(order());
+          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[2]);
+          window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "Escape", bubbles: true, cancelable: true }));
+          check("table-edit drag: Esc cancels without mutating",
+            !window.NB.tableEdit.drag && JSON.stringify(order()) === beforeCancel);
+          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[2]);
+          const cancel = new window.MouseEvent("pointercancel", { bubbles: true });
+          Object.defineProperty(cancel, "pointerId", { value: 1 });
+          $("viewer").dispatchEvent(cancel);
+          check("table-edit drag: pointercancel cancels without mutating",
+            !window.NB.tableEdit.drag && JSON.stringify(order()) === beforeCancel);
+          // Hover/reveal/hide: the overlay follows the pointer and hides
+          // after the grace period when the pointer leaves the table.
+          window.NB.tableEdit.reveal(dragTable);
+          dragTable.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
+            "mouseover", { bubbles: true, clientX: 50, clientY: 25 }));
+          await tick(20);
+          check("table-edit hover: a pointer over a cell reveals its grips",
+            overlayEl2.querySelectorAll(".nb-row-grip").length >= 1 &&
+            overlayEl2.querySelectorAll(".nb-col-grip").length >= 1,
+            "rows=" + overlayEl2.querySelectorAll(".nb-row-grip").length +
+            " cols=" + overlayEl2.querySelectorAll(".nb-col-grip").length);
+          window.NB.tableEdit.hide();
+          dragTable.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
+            "mouseover", { bubbles: true, clientX: 50, clientY: 25 }));
+          await tick(20);
+          dragTable.dispatchEvent(new window.MouseEvent("mouseout",
+            { bubbles: true, relatedTarget: $("viewer") }));
+          await tick(150);
+          check("table-edit hover: leaving the table hides the overlay after the grace",
+            overlayEl2.textContent === "",
+            "overlay=" + JSON.stringify(overlayEl2.textContent.slice(0, 40)));
+        } finally {
+          patched.forEach((el) => {
+            delete el.getBoundingClientRect;
+            delete el.__dragRectPatched;
+          });
+          window.NB.tableEdit.hide();
+          dragTable.remove();
+        }
+      }
 
       // --- spatial arrow navigation inside a table -------------------
       // A contentEditable caret engine traverses table cells in DOM
@@ -13438,6 +13777,316 @@ function check(label, cond, extra) {
     }
   }
 
+  console.log("== hybrid: edit bar table + list actions, clipboard ==");
+  // The table/list reorder paths above call hybrid's exported helpers.
+  // The edit bar is a second caller: its [data-act] entries route through
+  // hybrid's internal table/list mutation functions. This block drives
+  // those buttons, plus the context menu's Copy/Paste actions, which are
+  // otherwise only reachable from a real clipboard.
+  {
+    const AH_PATH = "notes/actiontable.md";
+    const vcA = () => $("viewer-content");
+    const clickAct = (act) => {
+      const b = $("edit-bar").querySelector('[data-act="' + act + '"]');
+      check("hybrid actions: edit bar has " + act, !!b);
+      if (b) b.dispatchEvent(new window.Event("click", { bubbles: true }));
+    };
+    const caretIn = (node) => {
+      const r = window.document.createRange();
+      r.selectNodeContents(node);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+    const tableHtml = (headerless) => headerless
+      ? '<table><tbody><tr><td>a</td><td>b</td></tr>' +
+        '<tr><td>c</td><td>d</td></tr></tbody></table>'
+      : '<table><thead><tr><th>A</th><th>B</th></tr></thead>' +
+        '<tbody><tr><td>a1</td><td>b1</td></tr>' +
+        '<tr><td>a2</td><td>b2</td></tr></tbody></table>';
+    const rowText = (t) => Array.from(t.rows).map((r) =>
+      Array.from(r.cells).map((c) => c.textContent).join("|"));
+    const openHybrid = async (src) => {
+      FILES[AH_PATH] = src;
+      if (window.NB.tabs.isOpen(AH_PATH)) window.NB.viewer.close(AH_PATH);
+      await window.NB.tabs.open(AH_PATH);
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+    };
+    const leaveHybrid = async () => {
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    };
+
+    await openHybrid("# T\n");
+    const vc = vcA();
+
+    // --- insert / delete rows ---------------------------------------
+    vc.innerHTML = tableHtml(false);
+    let t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[0]);
+    clickAct("table-row-above");
+    await tick(10);
+    check("hybrid edit bar: Insert row above adds a body row",
+      t.rows.length === 4 && t.rows[1].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
+      rowText(t).join(" / "));
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[0]);
+    clickAct("table-row-below");
+    await tick(10);
+    check("hybrid edit bar: Insert row below adds a body row",
+      t.rows.length === 4 && t.rows[2].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
+      rowText(t).join(" / "));
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[2].cells[0]);
+    clickAct("table-row-delete");
+    await tick(10);
+    check("hybrid edit bar: Delete row removes the caret row",
+      t.rows.length === 2 && t.rows[1].cells[0].textContent === "a1",
+      rowText(t).join(" / "));
+
+    // --- insert / delete / align columns ----------------------------
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[1]);
+    clickAct("table-col-left");
+    await tick(10);
+    check("hybrid edit bar: Insert column left adds a column",
+      t.rows[0].cells.length === 3 &&
+      t.rows[0].cells[1].innerHTML.indexOf("&nbsp;") !== -1,
+      rowText(t).join(" / "));
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[1]);
+    clickAct("table-col-right");
+    await tick(10);
+    check("hybrid edit bar: Insert column right adds a column",
+      t.rows[0].cells.length === 3 &&
+      t.rows[0].cells[2].innerHTML.indexOf("&nbsp;") !== -1,
+      rowText(t).join(" / "));
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[1]);
+    clickAct("table-col-delete");
+    await tick(10);
+    check("hybrid edit bar: Delete column removes the caret column",
+      t.rows[0].cells.length === 1 && t.rows[0].cells[0].textContent === "A",
+      rowText(t).join(" / "));
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[1].cells[1]);
+    clickAct("table-col-align");
+    await tick(10);
+    const align1 = t.rows[1].cells[1].getAttribute("align");
+    clickAct("table-col-align");
+    await tick(10);
+    const align2 = t.rows[1].cells[1].getAttribute("align");
+    clickAct("table-col-align");
+    await tick(10);
+    check("hybrid edit bar: Align column cycles left -> center -> right -> left",
+      align1 === "center" && align2 === "right" &&
+      t.rows[1].cells[1].getAttribute("align") === "left",
+      align1 + " -> " + align2 + " -> " + t.rows[1].cells[1].getAttribute("align"));
+
+    // --- header toggle + delete table ------------------------------
+    vc.innerHTML = tableHtml(true);
+    t = vc.querySelector("table");
+    caretIn(t.rows[0].cells[0]);
+    clickAct("table-header");
+    await tick(10);
+    check("hybrid edit bar: Toggle header promotes the first row to TH",
+      t.rows[0].cells[0].tagName === "TH" && t.rows[0].cells[1].tagName === "TH",
+      t.rows[0].outerHTML);
+    clickAct("table-header");
+    await tick(10);
+    check("hybrid edit bar: Toggle header is a no-op once a header exists",
+      t.rows[0].cells[0].tagName === "TH");
+    caretIn(t.rows[1].cells[0]);
+    clickAct("table-delete");
+    await tick(10);
+    check("hybrid edit bar: Delete table removes the table",
+      !vc.querySelector("table"));
+
+    // --- row / column move (keyboard fallback for the drag overlay) --
+    vc.innerHTML = tableHtml(false);
+    t = vc.querySelector("table");
+    caretIn(t.rows[2].cells[0]);
+    clickAct("table-row-up");
+    await tick(10);
+    check("hybrid edit bar: Move row up reorders the body rows",
+      rowText(t).join("/") === "A|B/a2|b2/a1|b1", rowText(t).join(" / "));
+    caretIn(t.rows[1].cells[0]);
+    clickAct("table-row-down");
+    await tick(10);
+    check("hybrid edit bar: Move row down reorders back",
+      rowText(t).join("/") === "A|B/a1|b1/a2|b2", rowText(t).join(" / "));
+    caretIn(t.rows[1].cells[1]);
+    clickAct("table-col-left-move");
+    await tick(10);
+    check("hybrid edit bar: Move column left swaps the columns",
+      rowText(t)[0] === "B|A", rowText(t).join(" / "));
+    caretIn(t.rows[0].cells[0]);
+    clickAct("table-col-right-move");
+    await tick(10);
+    check("hybrid edit bar: Move column right swaps them back",
+      rowText(t)[0] === "A|B", rowText(t).join(" / "));
+
+    // --- list move -------------------------------------------------
+    vc.innerHTML = "<ul><li>one</li><li>two</li><li>three</li></ul>";
+    const ul = vc.querySelector("ul");
+    const items = () => Array.from(ul.querySelectorAll(":scope > li"))
+      .map((li) => li.textContent);
+    caretIn(ul.children[1]);
+    clickAct("list-menu");
+    await tick(10);
+    let listMenu = $("edit-bar").querySelector(".eb-list-menu");
+    let upBtn = listMenu.querySelector('[data-act="list-move-up"]');
+    let downBtn = listMenu.querySelector('[data-act="list-move-down"]');
+    check("hybrid edit bar list: move entries enable on a list item",
+      !upBtn.disabled && !downBtn.disabled);
+    upBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("hybrid edit bar list: Move item up reorders the list",
+      JSON.stringify(items()) === JSON.stringify(["two", "one", "three"]),
+      JSON.stringify(items()));
+    caretIn(ul.children[0]);
+    clickAct("list-menu");
+    await tick(10);
+    listMenu = $("edit-bar").querySelector(".eb-list-menu");
+    downBtn = listMenu.querySelector('[data-act="list-move-down"]');
+    downBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("hybrid edit bar list: Move item down reorders the list",
+      JSON.stringify(items()) === JSON.stringify(["one", "two", "three"]),
+      JSON.stringify(items()));
+    vc.innerHTML = "<p>plain paragraph</p>";
+    caretIn(vc.querySelector("p").firstChild);
+    clickAct("list-menu");
+    await tick(10);
+    listMenu = $("edit-bar").querySelector(".eb-list-menu");
+    upBtn = listMenu.querySelector('[data-act="list-move-up"]');
+    check("hybrid edit bar list: move entries are disabled off a list",
+      upBtn.disabled && upBtn.getAttribute("aria-disabled") === "true");
+    listMenu.hidden = true;
+
+    // --- context menu Copy / Paste / Paste without formatting -------
+    {
+      const menu = $("nb-menu");
+      const menuBtn = (label) => Array.from(menu.children)
+        .find((b) => b.tagName === "BUTTON" && b.textContent.trim() === label);
+      const openCtx = () => vc.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 100, clientY: 100 }));
+      const realExec = window.document.execCommand;
+      const realReadText = window.navigator.clipboard.readText;
+      try {
+        vc.innerHTML = "<p>Alpha Beta</p>";
+        const p = vc.querySelector("p");
+        const r = window.document.createRange();
+        r.setStart(p.firstChild, 0);
+        r.setEnd(p.firstChild, 5);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        openCtx();
+        await tick(10);
+        check("hybrid clipboard: the context menu exposes Copy/Paste/plain Paste",
+          !!menuBtn("Copy") && !!menuBtn("Paste") &&
+          !!menuBtn("Paste without formatting"));
+        // Focusing the menu can collapse the DOM selection in jsdom; a real
+        // browser keeps it. Re-apply it so Copy sees the same selection.
+        s.removeAllRanges();
+        s.addRange(r);
+        const writesBefore = __clipboard.writes;
+        menuBtn("Copy").dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+        check("hybrid clipboard: Copy writes the selection to the clipboard",
+          __clipboard.writes === writesBefore + 1 &&
+          __clipboard.lastText === "Alpha",
+          "text=" + JSON.stringify(__clipboard.lastText));
+
+        // Paste at the end of the paragraph through the async API.
+        window.navigator.clipboard.readText = async () => __clipboard.lastText || "";
+        const endRange = window.document.createRange();
+        endRange.selectNodeContents(p);
+        endRange.collapse(false);
+        s.removeAllRanges();
+        s.addRange(endRange);
+        openCtx();
+        await tick(10);
+        menuBtn("Paste").dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+        check("hybrid clipboard: Paste inserts the clipboard text at the caret",
+          vc.textContent === "Alpha BetaAlpha",
+          JSON.stringify(vc.textContent));
+
+        // Paste without formatting intercepts the native paste event.
+        let execCalls = [];
+        window.document.execCommand = (cmd) => {
+          execCalls.push(cmd);
+          if (cmd === "paste") {
+            const ev = new window.Event("paste", { bubbles: true, cancelable: true });
+            Object.defineProperty(ev, "clipboardData", {
+              value: { getData: (fmt) => fmt === "text/plain" ? "PlainText" : "<b>rich</b>" },
+            });
+            vc.dispatchEvent(ev);
+            return true;
+          }
+          return true;
+        };
+        openCtx();
+        await tick(10);
+        menuBtn("Paste without formatting")
+          .dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+        check("hybrid clipboard: Paste without formatting inserts only text/plain",
+          execCalls.includes("paste") && /PlainText/.test(vc.textContent) &&
+          !vc.querySelector("b"),
+          "text=" + JSON.stringify(vc.textContent));
+
+        // Copy falls back to execCommand when the async API refuses.
+        const r2 = window.document.createRange();
+        r2.selectNodeContents(p);
+        s.removeAllRanges();
+        s.addRange(r2);
+        window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+        execCalls = [];
+        openCtx();
+        await tick(10);
+        s.removeAllRanges();
+        s.addRange(r2);
+        menuBtn("Copy").dispatchEvent(new window.Event("click", { bubbles: true }));
+        await tick(20);
+        check("hybrid clipboard: Copy falls back to execCommand when the API fails",
+          execCalls.includes("copy"), JSON.stringify(execCalls));
+      } finally {
+        if (realExec === undefined) delete window.document.execCommand;
+        else window.document.execCommand = realExec;
+        if (realReadText === undefined) delete window.navigator.clipboard.readText;
+        else window.navigator.clipboard.readText = realReadText;
+        // The harness clipboard stub has no readText; put writeText back.
+        window.navigator.clipboard.writeText = async (text) => {
+          if (__clipboard.failNext) {
+            __clipboard.failNext = false;
+            throw new Error("clipboard permission denied (stub)");
+          }
+          __clipboard.lastText = text;
+          __clipboard.writes++;
+        };
+        window.NB.menu.close();
+      }
+    }
+
+    await leaveHybrid();
+    if (window.NB.tabs.isOpen(AH_PATH)) window.NB.tabs.close(AH_PATH, { force: true });
+    delete FILES[AH_PATH];
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(20);
+  }
+
   console.log("== table view ==");
   // Preview-only table view controls (static/js/table-view.js): a hover
   // toolbar over a GFM table that hides rows/columns and sorts a single
@@ -13835,6 +14484,161 @@ function check(label, cond, extra) {
       !$("viewer").querySelector(".nb-tv-pop"));
     check("table view: clicking a body cell sets no aria-sort on the header",
       hdrCells.every((c) => c.getAttribute("aria-sort") === null));
+
+    // --- (6d) header title click + keyboard sort ----------------------
+    // The toolbar and cycleSort() are covered above; the real UI path is a
+    // click (or Enter/Space) on the column TITLE, which must toggle
+    // asc -> desc without opening the menu.
+    {
+      const hdr = Array.from(t0.tHead.rows[0].cells);
+      const menuIcon = (i) => hdr[i].querySelector(".nb-tv-head-menu");
+      window.NB.tableView.resetTable(t0);
+      window.NB.tableView.reveal(t0);
+      hdr[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view click: clicking a column title sorts it ascending",
+        hdr[0].getAttribute("aria-sort") === "ascending" &&
+        JSON.stringify(namesOf(t0)) ===
+          JSON.stringify(["alpha", "beta", "delta", "epsilon", "gamma"]),
+        hdr[0].getAttribute("aria-sort"));
+      check("table view click: a title click opens no popover",
+        !$("viewer").querySelector(".nb-tv-pop"));
+      hdr[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view click: clicking the sorted title flips it descending",
+        hdr[0].getAttribute("aria-sort") === "descending" &&
+        JSON.stringify(namesOf(t0)) ===
+          JSON.stringify(["gamma", "epsilon", "delta", "beta", "alpha"]),
+        hdr[0].getAttribute("aria-sort"));
+      hdr[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view click: a different title replaces the sort",
+        hdr[1].getAttribute("aria-sort") === "ascending" &&
+        hdr[0].getAttribute("aria-sort") === null);
+      window.NB.tableView.resetTable(t0);
+      window.NB.tableView.reveal(t0);
+
+      // Enter / Space on the title is the keyboard equivalent.
+      hdr[1].dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(10);
+      check("table view keyboard: Enter on a title sorts ascending",
+        hdr[1].getAttribute("aria-sort") === "ascending");
+      hdr[1].dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: " ", bubbles: true, cancelable: true }));
+      await tick(10);
+      check("table view keyboard: Space on a title flips descending",
+        hdr[1].getAttribute("aria-sort") === "descending");
+      window.NB.tableView.resetTable(t0);
+      window.NB.tableView.reveal(t0);
+
+      // --- menu icon: header popover + radio state --------------------
+      menuIcon(1).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      let hp = $("viewer").querySelector(".nb-tv-pop");
+      check("table view header menu: the icon opens the column menu",
+        !!hp && menuIcon(1).getAttribute("aria-expanded") === "true");
+      const radioLabels = Array.from(hp.querySelectorAll("button"))
+        .map((b) => b.textContent.trim());
+      check("table view header menu: offers asc/desc/clear/hide",
+        radioLabels.includes("Sort ascending") &&
+        radioLabels.includes("Sort descending") &&
+        radioLabels.includes("Clear sort") &&
+        radioLabels.includes("Hide this column"),
+        radioLabels.join(" / "));
+      const descRadio = Array.from(hp.querySelectorAll("button"))
+        .find((b) => b.textContent.trim() === "Sort descending");
+      check("table view header menu: the current sort is unchecked before a sort",
+        descRadio.getAttribute("aria-checked") === "false");
+      descRadio.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view header menu: Sort descending applies and updates the radio",
+        hdr[1].getAttribute("aria-sort") === "descending" &&
+        descRadio.getAttribute("aria-checked") === "true",
+        "aria=" + descRadio.getAttribute("aria-checked"));
+      const clearRadio = Array.from(hp.querySelectorAll("button"))
+        .find((b) => b.textContent.trim() === "Clear sort");
+      clearRadio.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view header menu: Clear sort removes aria-sort",
+        hdr[1].getAttribute("aria-sort") === null);
+      // Close the popover, then verify the icon's own toggle: click opens,
+      // a second click closes.
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      await tick(10);
+      check("table view header menu: Esc closes the menu",
+        !$("viewer").querySelector(".nb-tv-pop"));
+      menuIcon(1).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view header menu: a fresh icon click opens it again",
+        !!$("viewer").querySelector(".nb-tv-pop") &&
+        menuIcon(1).getAttribute("aria-expanded") === "true");
+      // Esc closes an open menu and returns focus to its anchor.
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      await tick(10);
+      // NOTE: the icon is a <span role=button> with no tabindex, so the
+      // documented "focus returns to the anchor" step cannot happen in a
+      // browser either. Reported as an accessibility bug; this asserts the
+      // close + attribute cleanup that do work.
+      check("table view header menu: Esc closes and clears aria-expanded",
+        !$("viewer").querySelector(".nb-tv-pop") &&
+        menuIcon(1).getAttribute("aria-expanded") === null,
+        "expanded=" + menuIcon(1).getAttribute("aria-expanded"));
+
+      // Keyboard path: Enter on the icon opens with focus inside.
+      menuIcon(1).focus({ preventScroll: true });
+      menuIcon(1).dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(10);
+      hp = $("viewer").querySelector(".nb-tv-pop");
+      check("table view header menu: Enter opens the menu and focuses its first item",
+        !!hp && hp.contains(window.document.activeElement));
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      await tick(10);
+      check("table view header menu: Esc closes the keyboard-opened menu",
+        !$("viewer").querySelector(".nb-tv-pop"));
+
+      // --- hide through the header menu + last-column refusal --------
+      window.NB.tableView.reveal(t0);
+      menuIcon(1).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      hp = $("viewer").querySelector(".nb-tv-pop");
+      Array.from(hp.querySelectorAll("button"))
+        .find((b) => b.textContent.trim() === "Hide this column")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view header menu: Hide this column hides it and closes",
+        hdr[1].classList.contains("nb-tv-hide-col") &&
+        !$("viewer").querySelector(".nb-tv-pop"));
+      window.NB.tableView.reveal(t0);
+      menuIcon(0).dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      hp = $("viewer").querySelector(".nb-tv-pop");
+      Array.from(hp.querySelectorAll("button"))
+        .find((b) => b.textContent.trim() === "Hide this column")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(10);
+      check("table view header menu: the last visible column cannot be hidden",
+        !hdr[0].classList.contains("nb-tv-hide-col"));
+      window.NB.tableView.resetTable(t0);
+
+      // --- hover reveal / leave hide ---------------------------------
+      window.NB.tableView.hide();
+      t0.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true }));
+      await tick(10);
+      check("table view hover: moving over the table reveals its controls",
+        !!controlsEl() && !controlsEl().hidden);
+      t0.dispatchEvent(new window.MouseEvent("mouseout",
+        { bubbles: true, relatedTarget: vcTV.querySelector("h1") }));
+      await tick(150);
+      check("table view hover: leaving the table hides the controls after the grace",
+        !controlsEl() || controlsEl().hidden,
+        controlsEl() ? "hidden=" + controlsEl().hidden : "no controls");
+      window.NB.tableView.resetTable(t0);
+    }
 
     // --- (7) persistence: versioned schema + re-apply on activate ------
     window.NB.tableView.reveal(t0);
@@ -15030,6 +15834,49 @@ function check(label, cond, extra) {
       window.NB.graph.pan.x !== panBefore.x || window.NB.graph.pan.y !== panBefore.y,
       "before=" + JSON.stringify(panBefore) + " after=" + JSON.stringify(window.NB.graph.pan));
 
+    // --- touch: one-finger pan + two-finger pinch zoom --------------
+    {
+      const touch = (x, y) => ({ clientX: x, clientY: y });
+      const fireTouch = (type, touches) => {
+        const e = new window.Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(e, "touches", { value: touches });
+        canvasEl.dispatchEvent(e);
+        return e;
+      };
+      const panBeforeTouch = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
+      fireTouch("touchstart", [touch(100, 100)]);
+      const tm = fireTouch("touchmove", [touch(140, 130)]);
+      check("graph touch: one-finger drag pans the view",
+        window.NB.graph.pan.x !== panBeforeTouch.x ||
+        window.NB.graph.pan.y !== panBeforeTouch.y,
+        "before=" + JSON.stringify(panBeforeTouch) +
+        " after=" + JSON.stringify(window.NB.graph.pan));
+      check("graph touch: a one-finger move preventDefaults (no page scroll)",
+        tm.defaultPrevented);
+      fireTouch("touchend", []);
+
+      const scaleBeforePinch = window.NB.graph.scale;
+      fireTouch("touchstart", [touch(100, 100), touch(200, 100)]);
+      const pm = fireTouch("touchmove", [touch(50, 100), touch(250, 100)]);
+      check("graph touch: a spreading pinch zooms in",
+        window.NB.graph.scale > scaleBeforePinch,
+        scaleBeforePinch + " -> " + window.NB.graph.scale);
+      check("graph touch: a pinch move preventDefaults",
+        pm.defaultPrevented);
+      const scaleBeforePinchOut = window.NB.graph.scale;
+      fireTouch("touchmove", [touch(125, 100), touch(175, 100)]);
+      check("graph touch: a closing pinch zooms out",
+        window.NB.graph.scale < scaleBeforePinchOut,
+        scaleBeforePinchOut + " -> " + window.NB.graph.scale);
+      fireTouch("touchend", []);
+      check("graph: the public width/height getters mirror the canvas size",
+        typeof window.NB.graph.width === "number" &&
+        typeof window.NB.graph.height === "number" &&
+        window.NB.graph.width === canvasEl.width &&
+        window.NB.graph.height === canvasEl.height,
+        "w=" + window.NB.graph.width + " h=" + window.NB.graph.height);
+    }
+
     // --- zoom-in button ---
     const scaleBeforeBtn = window.NB.graph.scale;
     $("graph-view-zoom-in").dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -16217,6 +17064,60 @@ function check(label, cond, extra) {
     check("pinned folders: unpin persisted (empty list)",
       /"pinnedFolders":\[\]/.test(unpinCfgPost), unpinCfgPost);
 
+    // (g2) drag-to-reorder the pin rows (mutates only pinnedFolders).
+    {
+      window.NB.sidebar.setPinnedFolders(["notes", "notes/archive"]);
+      await tick(20);
+      const rows = () => Array.from(pinRows());
+      check("pinned folders drag: two pins render in order",
+        rows().map((r) => r.dataset.path).join(",") === "notes,notes/archive",
+        rows().map((r) => r.dataset.path).join(","));
+      // Drag the first pin after the second.
+      rows()[0].dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      check("pinned folders drag: dragstart marks the row",
+        rows()[0].classList.contains("dragging"));
+      const target = rows()[1];
+      const realRect = target.getBoundingClientRect;
+      target.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: 200, bottom: 20, width: 200, height: 20,
+        x: 0, y: 0, toJSON() {},
+      });
+      try {
+        target.dispatchEvent(new window.MouseEvent("dragover",
+          { bubbles: true, clientY: 18 }));
+        check("pinned folders drag: the lower half marks drop-after",
+          target.classList.contains("drop-after"));
+        target.dispatchEvent(new window.MouseEvent("drop",
+          { bubbles: true, clientY: 18 }));
+      } finally {
+        target.getBoundingClientRect = realRect;
+      }
+      await tick(20);
+      check("pinned folders drag: dropping after a row reorders the pins",
+        window.NB.sidebar.getPinnedFolders().join(",") === "notes/archive,notes",
+        window.NB.sidebar.getPinnedFolders().join(","));
+      check("pinned folders drag: the drop clears the drag chrome",
+        !window.document.querySelector("#pinned-folders .dragging") &&
+        !window.document.querySelector("#pinned-folders .drop-after"));
+
+      // Dropping a row on itself is a no-op (not append-to-end).
+      rows()[0].dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      rows()[0].dispatchEvent(new window.MouseEvent("drop", { bubbles: true }));
+      await tick(20);
+      check("pinned folders drag: dropping a row on itself is a no-op",
+        window.NB.sidebar.getPinnedFolders().join(",") === "notes/archive,notes");
+
+      // Dropping on the empty area appends to the end.
+      rows()[0].dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      pinsEl().dispatchEvent(new window.MouseEvent("drop", { bubbles: true }));
+      await tick(20);
+      check("pinned folders drag: dropping on empty space appends",
+        window.NB.sidebar.getPinnedFolders().join(",") === "notes,notes/archive",
+        window.NB.sidebar.getPinnedFolders().join(","));
+      window.NB.sidebar.setPinnedFolders([]);
+      await tick(20);
+    }
+
     // (h) prune: a pinned folder removed from the tree is dropped on refresh.
     TREE.push({ name: "tmp", type: "dir", path: "tmp", children: [] });
     await window.NB.sidebar.refresh();
@@ -17360,6 +18261,207 @@ function check(label, cond, extra) {
     await window.NB.sidebar.refresh();
   }
 
+  console.log("== sidebar: file operations ==");
+  // The tree / folder / root context menus call the create / rename /
+  // copy / delete actions. Drive them through the real menus and assert
+  // the API calls, the tree refresh, and the events other modules use.
+  {
+    const origPrompt = window.prompt;
+    const origConfirm = window.confirm;
+    const origAlert = window.alert;
+    const treeMenu = () => $("nb-menu");
+    const menuItem = (label) => Array.from(treeMenu().querySelectorAll("button"))
+      .find((b) => b.textContent.trim() === label);
+    const openRowMenu = (path) => {
+      const row = window.document.querySelector('.tree-row[data-path="' + path + '"]');
+      if (!row) return false;
+      row.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 20, clientY: 20 }));
+      return true;
+    };
+    const calls = [];
+    const alerts = [];
+    const moved = [];
+    const deleted = [];
+    const onMoved = (e) => moved.push(e);
+    const onDeleted = (e) => deleted.push(e);
+    const real = {
+      createItem: window.NB.api.createItem,
+      moveItem: window.NB.api.moveItem,
+      copyItem: window.NB.api.copyItem,
+      deleteItem: window.NB.api.deleteItem,
+    };
+    window.NB.evt.on("file:moved", onMoved);
+    window.NB.evt.on("file:deleted", onDeleted);
+    window.NB.api.createItem = (path, type) => {
+      calls.push(["create", path, type]);
+      return real.createItem(path, type);
+    };
+    window.NB.api.moveItem = (from, to) => {
+      calls.push(["move", from, to]);
+      return real.moveItem(from, to);
+    };
+    window.NB.api.copyItem = (from, to) => {
+      calls.push(["copy", from, to]);
+      return real.copyItem(from, to);
+    };
+    window.NB.api.deleteItem = (path) => {
+      calls.push(["delete", path]);
+      return real.deleteItem(path);
+    };
+    window.alert = (msg) => alerts.push(String(msg));
+    try {
+      // Root "New file" -> .md enforced, created, opened, and shown.
+      promptValue = "zz-root";
+      window.prompt = () => promptValue;
+      await window.NB.sidebar.createAtRoot("file");
+      await tick(60);
+      check("sidebar files: root New file creates a .md note",
+        calls.some((c) => c[0] === "create" && c[1] === "zz-root.md" && c[2] === "file") &&
+        FILES["zz-root.md"] === "" &&
+        !!window.document.querySelector('.tree-row[data-path="zz-root.md"]'),
+        "calls=" + JSON.stringify(calls));
+      check("sidebar files: a created root note opens in a tab",
+        window.NB.tabs.isOpen("zz-root.md"), window.NB.tabs.getActive());
+      // Root "New folder".
+      promptValue = "zz-folder";
+      await window.NB.sidebar.createAtRoot("dir");
+      await tick(40);
+      check("sidebar files: root New folder creates the directory",
+        calls.some((c) => c[0] === "create" && c[1] === "zz-folder" && c[2] === "dir") &&
+        TREE.some((n) => n.path === "zz-folder"),
+        "calls=" + JSON.stringify(calls));
+
+      // Folder context menu -> New file creates inside the folder and
+      // opens it.
+      check("sidebar files: the notes folder row exists for its menu",
+        openRowMenu("notes"));
+      await tick(10);
+      check("sidebar files: folder menu offers New file/folder",
+        !!menuItem("New file…") && !!menuItem("New folder…"),
+        Array.from(treeMenu().querySelectorAll("button")).map((b) => b.textContent).join("/"));
+      promptValue = "zz-child";
+      window.prompt = () => promptValue;
+      menuItem("New file…").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(80);
+      check("sidebar files: folder New file lands inside that folder",
+        calls.some((c) => c[0] === "create" && c[1] === "notes/zz-child.md") &&
+        FILES["notes/zz-child.md"] === "",
+        "calls=" + JSON.stringify(calls));
+      check("sidebar files: folder New file opens the new note",
+        window.NB.tabs.isOpen("notes/zz-child.md"));
+      // Folder New folder.
+      openRowMenu("notes");
+      await tick(10);
+      promptValue = "zz-sub";
+      menuItem("New folder…").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+      check("sidebar files: folder New folder creates a directory",
+        calls.some((c) => c[0] === "create" && c[1] === "notes/zz-sub" && c[2] === "dir"));
+
+      // Rename / copy / delete through the file row menu.
+      calls.length = 0;
+      moved.length = 0;
+      check("sidebar files: the created note has a tree row", openRowMenu("notes/zz-child.md"));
+      await tick(10);
+      promptValue = "notes/zz-renamed.md";
+      window.prompt = () => promptValue;
+      menuItem("Rename / Move…").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+      check("sidebar files: Rename / Move calls the move API",
+        calls.some((c) => c[0] === "move" && c[1] === "notes/zz-child.md" &&
+          c[2] === "notes/zz-renamed.md"),
+        JSON.stringify(calls));
+      check("sidebar files: Rename emits file:moved for re-keying",
+        moved.length === 1 && moved[0].from === "notes/zz-child.md" &&
+        moved[0].to === "notes/zz-renamed.md", JSON.stringify(moved));
+
+      calls.length = 0;
+      openRowMenu("notes/zz-child.md");
+      await tick(10);
+      promptValue = "notes/zz-copy.md";
+      window.prompt = () => promptValue;
+      menuItem("Copy…").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+      check("sidebar files: Copy… calls the copy API",
+        calls.some((c) => c[0] === "copy" && c[1] === "notes/zz-child.md" &&
+          c[2] === "notes/zz-copy.md"), JSON.stringify(calls));
+
+      calls.length = 0;
+      deleted.length = 0;
+      openRowMenu("notes/zz-child.md");
+      await tick(10);
+      window.confirm = () => true;
+      menuItem("Delete").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+      check("sidebar files: Delete calls the delete API",
+        calls.some((c) => c[0] === "delete" && c[1] === "notes/zz-child.md"),
+        JSON.stringify(calls));
+      check("sidebar files: Delete emits file:deleted",
+        deleted.length === 1 && deleted[0] === "notes/zz-child.md",
+        JSON.stringify(deleted));
+
+      // Cancelled prompts / confirms make no call.
+      calls.length = 0;
+      window.prompt = () => null;
+      await window.NB.sidebar.createAtRoot("file");
+      await tick(20);
+      check("sidebar files: cancelling New file makes no API call",
+        !calls.some((c) => c[0] === "create"), JSON.stringify(calls));
+      openRowMenu("notes/zz-child.md");
+      await tick(10);
+      window.confirm = () => false;
+      menuItem("Delete").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("sidebar files: cancelling Delete makes no API call",
+        !calls.some((c) => c[0] === "delete"), JSON.stringify(calls));
+
+      // A failed create surfaces the error (and does not leave a row).
+      calls.length = 0;
+      alerts.length = 0;
+      window.NB.api.createItem = async () => { throw new Error("disk full"); };
+      promptValue = "zz-fail";
+      window.prompt = () => promptValue;
+      await window.NB.sidebar.createAtRoot("file");
+      await tick(30);
+      check("sidebar files: a failed create shows the error",
+        alerts.length === 1 && /disk full/.test(alerts[0]),
+        JSON.stringify(alerts));
+      check("sidebar files: a failed create adds no row",
+        !window.document.querySelector('.tree-row[data-path="zz-fail.md"]'));
+    } finally {
+      window.prompt = origPrompt;
+      window.confirm = origConfirm;
+      window.alert = origAlert;
+      window.NB.api.createItem = real.createItem;
+      window.NB.api.moveItem = real.moveItem;
+      window.NB.api.copyItem = real.copyItem;
+      window.NB.api.deleteItem = real.deleteItem;
+      window.NB.evt.off("file:moved", onMoved);
+      window.NB.evt.off("file:deleted", onDeleted);
+      // Remove every fixture the stub created, then re-render.
+      ["zz-root.md", "notes/zz-child.md", "notes/zz-renamed.md",
+       "notes/zz-copy.md", "zz-folders"].forEach((p) => {
+        delete FILES[p];
+        delete MTIMES[p];
+      });
+      for (let i = TREE.length - 1; i >= 0; i--) {
+        const n = TREE[i];
+        if (n.path === "zz-root.md" || n.path === "zz-folder" ||
+            n.path === "notes/zz-child.md" || n.path === "notes/zz-sub") {
+          TREE.splice(i, 1);
+        }
+      }
+      ["zz-root.md", "notes/zz-child.md"].forEach((p) => {
+        if (window.NB.tabs.isOpen(p)) window.NB.tabs.close(p, { force: true });
+      });
+      await window.NB.sidebar.refresh();
+      await tick(20);
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+    }
+  }
+
   console.log("== watcher: window focus refreshes the tree ==");
   // Clicking back into the browser after editing a note elsewhere should
   // show the change immediately, not on the next 5s tick. The focus
@@ -17377,6 +18479,180 @@ function check(label, cond, extra) {
       "focused.md row missing");
     TREE.pop();
     await window.NB.sidebar.refresh();
+  }
+
+  console.log("== watcher: native FileSystemObserver ==");
+  // The polling fallback is covered above. The native observer path is
+  // opt-in (a folder picker + FileSystemObserver, neither of which jsdom
+  // ships), so install a fake observer/picker and drive its records. This
+  // covers the enable/disable lifecycle, the .md filter, record dispatch,
+  // the debounced tree refresh, hidden-tab suspension, and both failure
+  // fallbacks.
+  {
+    const treeFetchCount = () =>
+      fetchLog.filter((x) => x === "GET /api/tree").length;
+    const realObserver = window.FileSystemObserver;
+    const realPicker = window.showDirectoryPicker;
+    const realHidden = Object.getOwnPropertyDescriptor(window.document, "hidden");
+    const fakeObservers = [];
+    class FakeObserver {
+      constructor(cb) {
+        this.cb = cb;
+        this.observeCalls = [];
+        this.disconnects = 0;
+        this.rejectNext = false;
+        fakeObservers.push(this);
+      }
+      observe(handle, opts) {
+        this.observeCalls.push({ handle, opts });
+        if (this.rejectNext) {
+          this.rejectNext = false;
+          return Promise.reject(new Error("permission revoked"));
+        }
+        return Promise.resolve();
+      }
+      disconnect() { this.disconnects++; }
+    }
+    const handle = { name: "notebook", kind: "directory" };
+    window.FileSystemObserver = FakeObserver;
+    window.showDirectoryPicker = async () => handle;
+    const external = [];
+    const onExternal = (e) => external.push(e);
+    window.NB.evt.on("file:external-change", onExternal);
+
+    try {
+      window.NB.watcher.disable();
+      check("native watcher: starts off after disable()",
+        window.NB.watcher.state() === "off", window.NB.watcher.state());
+      await window.NB.watcher.enable();
+      const obs = fakeObservers[fakeObservers.length - 1];
+      check("native watcher: enable() starts the observer",
+        window.NB.watcher.isWatching() === true &&
+        window.NB.watcher.state() === "watching",
+        window.NB.watcher.state());
+      check("native watcher: describe() names the watched folder",
+        window.NB.watcher.describe() === "Watching notebook",
+        window.NB.watcher.describe());
+      check("native watcher: observe() is recursive on the granted handle",
+        !!obs && obs.observeCalls.length === 1 &&
+        obs.observeCalls[0].opts.recursive === true &&
+        obs.observeCalls[0].handle === handle);
+      check("native watcher: isActive() true in native mode",
+        window.NB.watcher.isActive() === true);
+
+      // .md records notify the viewer; a structural record also schedules
+      // one debounced sidebar refresh.
+      external.length = 0;
+      TREE.push({ name: "native-new.md", type: "file", path: "native-new.md" });
+      const tf0 = treeFetchCount();
+      obs.cb([{ type: "appeared", relativePathComponents: ["native-new.md"] }]);
+      await tick(360);
+      check("native watcher: an .md appearance refreshes the tree",
+        treeFetchCount() > tf0 &&
+        !!window.document.querySelector('#file-tree .tree-row[data-path="native-new.md"]'),
+        "fetches " + tf0 + " -> " + treeFetchCount());
+      check("native watcher: an .md appearance also notifies the viewer",
+        external.some((e) => e.detail && e.detail.path === "native-new.md") ||
+        external.some((e) => e.path === "native-new.md"),
+        JSON.stringify(external.map((e) => e.detail || e)));
+      TREE.pop();
+      await window.NB.sidebar.refresh();
+
+      // Non-.md, errored, and unknown records are ignored.
+      external.length = 0;
+      const tf1 = treeFetchCount();
+      obs.cb([
+        { type: "appeared", relativePathComponents: ["ignore.txt"] },
+        { type: "errored" },
+        { type: "unknown", relativePathComponents: ["also.md"] },
+      ]);
+      await tick(360);
+      check("native watcher: non-.md, errored, and unknown records are ignored",
+        external.length === 0 && treeFetchCount() === tf1,
+        "external=" + external.length + " fetches=" + (treeFetchCount() - tf1));
+
+      // A changedHandle with no relative components falls back to its name.
+      external.length = 0;
+      obs.cb([{ type: "modified", changedHandle: { name: "direct.md" },
+                relativePathComponents: [] }]);
+      check("native watcher: a changedHandle name is used when no components exist",
+        external.length === 1 &&
+        (external[0].detail || external[0]).path === "direct.md",
+        JSON.stringify(external.map((e) => e.detail || e)));
+
+      // disappeared refreshes the tree only (no viewer notify).
+      external.length = 0;
+      const tf2 = treeFetchCount();
+      obs.cb([{ type: "disappeared", relativePathComponents: ["gone.md"] }]);
+      await tick(360);
+      check("native watcher: a disappearance refreshes the tree, no viewer notify",
+        treeFetchCount() > tf2 && external.length === 0,
+        "fetches " + tf2 + " -> " + treeFetchCount());
+
+      // A burst coalesces into one debounced tree fetch.
+      const tf3 = treeFetchCount();
+      obs.cb([{ type: "appeared", relativePathComponents: ["burst1.md"] }]);
+      obs.cb([{ type: "appeared", relativePathComponents: ["burst2.md"] }]);
+      await tick(360);
+      check("native watcher: a record burst coalesces into one tree fetch",
+        treeFetchCount() - tf3 === 1,
+        "delta=" + (treeFetchCount() - tf3));
+
+      // Hidden tab disconnects the observer; visible re-observes it.
+      Object.defineProperty(window.document, "hidden",
+        { configurable: true, value: true });
+      window.document.dispatchEvent(new window.Event("visibilitychange"));
+      check("native watcher: hiding the tab disconnects the observer",
+        obs.disconnects === 1 && window.NB.watcher.state() === "watching",
+        "disconnects=" + obs.disconnects);
+      Object.defineProperty(window.document, "hidden",
+        { configurable: true, value: false });
+      const beforeReobserve = obs.observeCalls.length;
+      window.document.dispatchEvent(new window.Event("visibilitychange"));
+      await tick(20);
+      check("native watcher: returning re-observes the same handle",
+        obs.observeCalls.length === beforeReobserve + 1 &&
+        obs.observeCalls.at(-1).handle === handle,
+        "observes=" + obs.observeCalls.length);
+
+      // Re-observe rejected (permission revoked) -> polling fallback.
+      obs.rejectNext = true;
+      Object.defineProperty(window.document, "hidden",
+        { configurable: true, value: true });
+      window.document.dispatchEvent(new window.Event("visibilitychange"));
+      Object.defineProperty(window.document, "hidden",
+        { configurable: true, value: false });
+      window.document.dispatchEvent(new window.Event("visibilitychange"));
+      await tick(30);
+      check("native watcher: a revoked handle falls back to polling",
+        window.NB.watcher.state() === "polling",
+        window.NB.watcher.state());
+
+      // Picker cancellation leaves change detection off (no surprise poll).
+      window.NB.watcher.disable();
+      window.showDirectoryPicker = async () => {
+        const e = new Error("cancelled"); e.name = "AbortError"; throw e;
+      };
+      await window.NB.watcher.enable();
+      check("native watcher: a cancelled picker leaves the watcher off",
+        window.NB.watcher.state() === "off", window.NB.watcher.state());
+
+      // Any other picker failure falls back to polling.
+      window.showDirectoryPicker = async () => { throw new Error("denied"); };
+      await window.NB.watcher.enable();
+      await tick(20);
+      check("native watcher: a picker failure falls back to polling",
+        window.NB.watcher.state() === "polling", window.NB.watcher.state());
+    } finally {
+      window.NB.watcher.disable();
+      window.NB.evt.off("file:external-change", onExternal);
+      if (realObserver === undefined) delete window.FileSystemObserver;
+      else window.FileSystemObserver = realObserver;
+      if (realPicker === undefined) delete window.showDirectoryPicker;
+      else window.showDirectoryPicker = realPicker;
+      if (realHidden) Object.defineProperty(window.document, "hidden", realHidden);
+      window.NB.watcher.startPolling();
+    }
   }
 
   console.log("== settings nav ==");
@@ -19298,7 +20574,49 @@ function check(label, cond, extra) {
     }
   }
 
-  console.log("== export ==");
+  console.log("== windows: resize re-applies saved geometry ==");
+  // Windows re-applies the in-memory geometry after a window resize
+  // (debounced 150 ms). The clamp maths is a pure function of the stored
+  // rect and the viewport; this asserts the reapply path end to end from
+  // a real drag. (The clamp's out-of-range branch is not reachable from a
+  // drag, because the drag itself clamps.)
+  {
+    const modal = window.document.querySelector("#settings-overlay .settings-modal");
+    const header = modal.querySelector(".settings-header");
+    const rect = { left: 300, top: 120, width: 400, height: 260,
+      right: 700, bottom: 380, x: 300, y: 120, toJSON() {} };
+    const realRect = modal.getBoundingClientRect;
+    modal.getBoundingClientRect = () => rect;
+    try {
+      header.dispatchEvent(new window.MouseEvent("pointerdown",
+        { bubbles: true, cancelable: true, button: 0, clientX: 300, clientY: 120 }));
+      window.document.dispatchEvent(new window.MouseEvent("pointermove",
+        { bubbles: true, clientX: 300, clientY: 120 }));
+      window.document.dispatchEvent(new window.MouseEvent("pointerup", { bubbles: true }));
+    } finally {
+      modal.getBoundingClientRect = realRect;
+    }
+    modal.style.left = "9999px";
+    modal.style.top = "9999px";
+    modal.style.width = "1px";
+    modal.style.height = "1px";
+    window.dispatchEvent(new window.Event("resize"));
+    await tick(220);
+    check("windows geometry: a resize restores the saved left/top",
+      Math.round(parseFloat(modal.style.left)) === 300 &&
+      Math.round(parseFloat(modal.style.top)) === 120,
+      "left=" + modal.style.left + " top=" + modal.style.top);
+    check("windows geometry: a resize restores the saved width/height",
+      Math.round(parseFloat(modal.style.width)) === 400 &&
+      Math.round(parseFloat(modal.style.height)) === 260,
+      "w=" + modal.style.width + " h=" + modal.style.height);
+    check("windows geometry: the restored window drops the centering transform",
+      modal.style.transform === "none", modal.style.transform);
+    window.localStorage.removeItem("nb:windowGeometry");
+    await tick(10);
+  }
+
+  console.log("== export ==");  console.log("== export ==");
   // Export lives in the file-tree, bookmark, and tab right-click menus
   // (there is no top-bar button). Scope is the active file. We stub
   // window.print and the Blob/URL object-URL APIs above so both the PDF
@@ -19528,6 +20846,40 @@ function check(label, cond, extra) {
     check("export: HTML preview does not load the paginator",
       !/paged\.polyfill\.min\.js/.test(htmlPreview),
       "has pagedjs=" + /paged\.polyfill\.min\.js/.test(htmlPreview));
+
+    // Close paths: header ×, footer Cancel, and the dim backdrop.
+    $("export-close").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("export: the header × closes the modal", overlay.hidden);
+    window.NB.export.open();
+    await tick(10);
+    $("export-close-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("export: the footer Cancel closes the modal", overlay.hidden);
+    window.NB.export.open();
+    await tick(10);
+    overlay.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("export: a backdrop click closes the modal", overlay.hidden);
+
+    // An invalid section selection surfaces the inline error instead of
+    // throwing (the export run catches it and writes #export-error).
+    window.NB.export.open();
+    await tick(20);
+    const scopeSection = window.document.querySelector(
+      'input[name="export-scope"][value="section"]');
+    scopeSection.checked = true;
+    scopeSection.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await tick(20);
+    sectionSelect.innerHTML = "";
+    sectionSelect.value = "";
+    $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("export: an invalid section shows the inline error",
+      !$("export-error").hidden &&
+      /Select a section heading/.test($("export-error").textContent),
+      $("export-error").textContent);
+    currentRadio.checked = true;
+    currentRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    window.NB.export.open();
+    await tick(10);
 
     // Esc closes the modal.
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
@@ -21506,6 +22858,57 @@ function check(label, cond, extra) {
     activeWin() && activeWin().dataset.vimWindow === "editor",
     activeWin() && activeWin().dataset.vimWindow);
 
+  // l/Enter in the outline scrolls the editor to the heading. jsdom has no
+  // layout, so assert the module reports the jump and clears the cursor on
+  // a rebuild (the scroll itself is a scrollIntoView call).
+  {
+    const cur = window.NB.outline.getVimCursor();
+    check("vim outline: cursor is set before the jump", !!cur, "cursor=" + cur);
+    let threw = false;
+    let jumped = false;
+    try { jumped = window.NB.outline.vimCursorScrollTo(); }
+    catch (_) { threw = true; }
+    check("vim outline: vimCursorScrollTo jumps to the cursor heading",
+      jumped === true && threw === false, "jumped=" + jumped);
+    window.NB.outline.vimCursorReset();
+    check("vim outline: reset clears the cursor and its highlight",
+      window.NB.outline.getVimCursor() === null &&
+      window.document.querySelectorAll("#outline .outline-item.vim-cursor").length === 0);
+    check("vim outline: scrollTo is a no-op without a cursor",
+      window.NB.outline.vimCursorScrollTo() === false);
+  }
+
+  // G / gg in the outline jump to the last / first heading cursor.
+  {
+    pressKey("w", { ctrlKey: true });   // editor -> outline
+    pressKey("G");
+    await tick(10);
+    const outlineItems = Array.from(
+      window.document.querySelectorAll("#outline .outline-item"));
+    check("vim: G in outline moves the cursor to the last heading",
+      window.NB.outline.getVimCursor() ===
+        (outlineItems[outlineItems.length - 1] || {}).dataset.id,
+      "cursor=" + window.NB.outline.getVimCursor());
+    pressKey("g"); pressKey("g");
+    await tick(10);
+    check("vim: gg in outline moves the cursor to the first heading",
+      window.NB.outline.getVimCursor() === (outlineItems[0] || {}).dataset.id,
+      "cursor=" + window.NB.outline.getVimCursor());
+    pressKey("w", { ctrlKey: true });   // outline -> sidebar
+    pressKey("w", { ctrlKey: true });   // sidebar -> editor (normalise)
+    const vcScroll = $("viewer-content");
+    Object.defineProperty(vcScroll, "scrollHeight", { value: 500, configurable: true });
+    vcScroll.scrollTop = 100;
+    pressKey("g"); pressKey("g");
+    await tick(10);
+    check("vim: gg in the editor scrolls the viewer to the top",
+      vcScroll.scrollTop === 0, "scrollTop=" + vcScroll.scrollTop);
+    pressKey("G");
+    await tick(10);
+    check("vim: G in the editor scrolls the viewer to the bottom",
+      vcScroll.scrollTop === 500, "scrollTop=" + vcScroll.scrollTop);
+  }
+
   // gg in sidebar scrolls the tree to the top.
   pressKey("w", { ctrlKey: true });   // editor -> outline
   pressKey("w", { ctrlKey: true });   // outline -> sidebar
@@ -22684,6 +24087,65 @@ function check(label, cond, extra) {
     aiConfig.servers[0].name === "renamed" &&
     aiConfig.servers[0].apiKey === "sk-stub",
     "name=" + aiConfig.servers[0].name);
+  // --- Save as new / duplicate guard / Remove ------------------------
+  {
+    const origConfirm = window.confirm;
+    window.confirm = () => true;
+    try {
+      Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"))[0].click();
+      await tick(10);
+      window.document.getElementById("settings-ai-name").value = "copy-prov";
+      window.document.getElementById("settings-ai-url").value = "https://copy.example/v1";
+      window.document.getElementById("settings-ai-model").value = "m-copy";
+      window.document.getElementById("settings-ai-key").value = "sk-copy";
+      window.document.getElementById("settings-ai-name")
+        .dispatchEvent(new window.Event("input", { bubbles: true }));
+      const saveAs = window.document.getElementById("settings-ai-saveas");
+      check("settings: Save as new is visible while editing", !!saveAs && !saveAs.hidden);
+      saveAs.click();
+      await tick(100);
+      const byName = (n) => (aiConfig.servers || []).find((x) => x.name === n);
+      check("settings: Save as new adds a second provider and keeps the original",
+        aiConfig.servers.length === 2 &&
+        byName("copy-prov") && byName("copy-prov").apiKey === "sk-copy" &&
+        byName("renamed") && byName("renamed").apiKey === "sk-stub",
+        JSON.stringify(aiConfig.servers.map((x) => [x.name, x.apiKey])));
+      check("settings: Save as new exits edit mode",
+        window.document.getElementById("settings-ai-add").textContent === "Add provider" &&
+        window.document.getElementById("settings-ai-saveas").hidden);
+
+      // Duplicate name: the form refuses before any POST.
+      Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-edit"))
+        .find((b) => b.closest(".settings-ai-row").dataset.name === "copy-prov").click();
+      await tick(10);
+      window.document.getElementById("settings-ai-name").value = "renamed";
+      window.document.getElementById("settings-ai-name")
+        .dispatchEvent(new window.Event("input", { bubbles: true }));
+      window.document.getElementById("settings-ai-saveas").click();
+      await tick(40);
+      const aiErr = window.document.getElementById("settings-ai-error");
+      check("settings: Save as new refuses a duplicate provider name",
+        !aiErr.hidden && /already exists/.test(aiErr.textContent) &&
+        aiConfig.servers.length === 2,
+        aiErr.textContent);
+      window.document.getElementById("settings-ai-cancel").click();
+      await tick(10);
+
+      // Remove the copied provider (non-default) -> server list shrinks.
+      const copyRow = Array.from(window.document.querySelectorAll("#settings-ai-list .settings-ai-row"))
+        .find((r) => r.dataset.name === "copy-prov");
+      copyRow.querySelector(".settings-ai-remove")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await tick(100);
+      check("settings: Remove deletes the provider from the server list",
+        aiConfig.servers.length === 1 &&
+        !aiConfig.servers.some((x) => x.name === "copy-prov"),
+        JSON.stringify(aiConfig.servers.map((x) => x.name)));
+    } finally {
+      window.confirm = origConfirm;
+    }
+  }
+
   // Assistant picks up the renamed provider as default.
   await window.NB.ai.loadAiConfig();
   check("settings: renamed provider reaches the side panel",
@@ -23606,6 +25068,110 @@ function check(label, cond, extra) {
           window.document.getElementById("ai-chat-log").textContent),
         "chat=" + aiChatLog.length + " conv=" +
         window.NB.ai._getConversationForTests().length);
+    }
+
+    // --- builtin codec: sniff / decode / passthrough / render ----------
+    // The policy tests above inject a codec. Here the real builtin codec
+    // runs with jsdom's image/canvas gaps stubbed, so the MIME sniffer,
+    // base64 encoder, ImageBitmap decode, and the canvas re-encode path
+    // are exercised too.
+    {
+      await clearAtt();
+      window.NB.ai._resetForTests();
+      window.NB.ai._resetImageCodec();
+      const realCIM = window.createImageBitmap;
+      const realGetContext = window.HTMLCanvasElement.prototype.getContext;
+      const realToDataURL = window.HTMLCanvasElement.prototype.toDataURL;
+      let closed = 0;
+      let bmpSize = { w: 200, h: 100 };
+      const pngBytes = (n) => {
+        const b = new Uint8Array(n);
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A].forEach((v, i) => { b[i] = v; });
+        return b;
+      };
+      const imgFile = (name, bytes) => ({
+        name, type: "image/png", size: bytes.length,
+        arrayBuffer: async () => bytes.buffer,
+      });
+      try {
+        window.createImageBitmap = async () => ({
+          width: bmpSize.w, height: bmpSize.h, close() { closed++; },
+        });
+        window.HTMLCanvasElement.prototype.getContext = function (type) {
+          if (type === "2d") return { drawImage() {} };
+          return realGetContext ? realGetContext.call(this, type) : null;
+        };
+        window.HTMLCanvasElement.prototype.toDataURL = function (mime) {
+          return "data:" + (mime || "image/png") + ";base64," +
+            window.btoa("x".repeat(2000));
+        };
+
+        // A small PNG: probe -> decode -> passthrough, bytes unchanged.
+        bmpSize = { w: 200, h: 100 };
+        const png = pngBytes(1000);
+        window.NB.ai._addFilesForTests([imgFile("builtin.png", png)]);
+        await tick(120);
+        const bp = window.NB.ai._getAttachmentsForTests();
+        check("ai codec: a small PNG passes through with the sniffed MIME",
+          bp.length === 1 && bp[0].kind === "image" &&
+          /^data:image\/png;base64,/.test(bp[0].dataUrl) &&
+          bp[0].bytes === png.length && bp[0].mime === "image/png" &&
+          closed === 1,
+          "pending=" + bp.length + " bytes=" + (bp[0] && bp[0].bytes) +
+          " closed=" + closed);
+
+        // JPEG / GIF / WebP magic is sniffed before decoding.
+        await clearAtt();
+        window.NB.ai._resetMemoryForTests();
+        const jpeg = new Uint8Array(80); jpeg[0] = 0xFF; jpeg[1] = 0xD8; jpeg[2] = 0xFF;
+        const gif = new Uint8Array(80);
+        "GIF89a".split("").forEach((c, i) => { gif[i] = c.charCodeAt(0); });
+        const webp = new Uint8Array(80);
+        "RIFF".split("").forEach((c, i) => { webp[i] = c.charCodeAt(0); });
+        "WEBP".split("").forEach((c, i) => { webp[8 + i] = c.charCodeAt(0); });
+        window.NB.ai._addFilesForTests([
+          imgFile("sniff.jpg", jpeg), imgFile("sniff.gif", gif), imgFile("sniff.webp", webp),
+        ]);
+        await tick(160);
+        const sn = window.NB.ai._getAttachmentsForTests();
+        const mimes = sn.map((a) => a.mime).sort().join(",");
+        check("ai codec: JPEG/GIF/WebP magic bytes are sniffed",
+          sn.length === 3 && mimes === "image/gif,image/jpeg,image/webp",
+          mimes);
+
+        // An oversized image takes the canvas render path (max edge 1568).
+        await clearAtt();
+        window.NB.ai._resetMemoryForTests();
+        bmpSize = { w: 3000, h: 1000 };
+        window.NB.ai._addFilesForTests([imgFile("wide-builtin.png", pngBytes(900))]);
+        await tick(160);
+        const wr = window.NB.ai._getAttachmentsForTests();
+        check("ai codec: an oversized image is re-encoded through a canvas",
+          wr.length === 1 && wr[0].width === 3000 && wr[0].height === 1000 &&
+          /^data:image\/png;base64,/.test(wr[0].dataUrl) &&
+          wr[0].bytes > 0 && wr[0].bytes <= 2 * 1024 * 1024,
+          "pending=" + wr.length + " bytes=" + (wr[0] && wr[0].bytes));
+
+        // Non-image bytes are rejected by the sniffer (no decode attempt).
+        await clearAtt();
+        window.NB.ai._resetMemoryForTests();
+        window.NB.ai._addFilesForTests([{
+          name: "notimage.bin", type: "image/png", size: 20,
+          arrayBuffer: async () => new Uint8Array(20).buffer,
+        }]);
+        await tick(120);
+        check("ai codec: bytes without an image signature are rejected",
+          window.NB.ai._getAttachmentsForTests().length === 0 &&
+          /could not be read as an image/.test(
+            window.document.getElementById("ai-view").textContent));
+      } finally {
+        if (realCIM === undefined) delete window.createImageBitmap;
+        else window.createImageBitmap = realCIM;
+        if (realGetContext) window.HTMLCanvasElement.prototype.getContext = realGetContext;
+        else delete window.HTMLCanvasElement.prototype.getContext;
+        if (realToDataURL) window.HTMLCanvasElement.prototype.toDataURL = realToDataURL;
+        else delete window.HTMLCanvasElement.prototype.toDataURL;
+      }
     }
 
     // Restore the real browser codec for any later block.
@@ -31614,6 +33180,86 @@ function check(label, cond, extra) {
     check("mobile: missing-note Home entry is nbHome",
       !!window.history.state && window.history.state.nbHome === true,
       JSON.stringify(window.history.state));
+
+    // --- note menu, resume helpers, back, resize --------------------
+    await window.NB.tabs.open("notes/a.md");
+    await tick(80);
+    check("mobile note menu: opening a note updates the title",
+      $("mobile-title").textContent === "a.md", $("mobile-title").textContent);
+    $("mobile-more").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    let mmMenu = $("nb-menu");
+    let mmLabels = Array.from(mmMenu.querySelectorAll("button"))
+      .map((b) => b.textContent.trim());
+    check("mobile note menu: opens Reload / Copy link / Show in Browse",
+      !mmMenu.hidden && mmLabels.join("|") === "Reload|Copy link|Show in Browse",
+      mmLabels.join(","));
+    check("mobile note menu: the trigger advertises aria-expanded",
+      $("mobile-more").getAttribute("aria-expanded") === "true");
+    Array.from(mmMenu.querySelectorAll("button"))
+      .find((b) => b.textContent.trim() === "Copy link")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("mobile note menu: Copy link copies a ?file= deep link",
+      typeof __clipboard.lastText === "string" &&
+      __clipboard.lastText.indexOf("?file=notes%2Fa.md") !== -1,
+      JSON.stringify(__clipboard.lastText));
+    $("mobile-more").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    mmMenu = $("nb-menu");
+    Array.from(mmMenu.querySelectorAll("button"))
+      .find((b) => b.textContent.trim() === "Show in Browse")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("mobile note menu: Show in Browse opens the drawer on Explorer",
+      window.document.body.classList.contains("drawer-open") &&
+      window.document.body.dataset.drawerView === "explorer");
+    check("mobile note menu: Show in Browse selects the note row",
+      !!window.document.querySelector('#file-tree .tree-row.selected[data-path="notes/a.md"]') ||
+      !!window.document.querySelector('#file-tree .tree-row[data-path="notes/a.md"].selected'));
+    window.NB.mobile.closeDrawer();
+    await tick(40);
+
+    // Home with no active note: the same button opens the settings sheet.
+    window.NB.tabs.clearAll();
+    await tick(60);
+    $("mobile-more").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    check("mobile note menu: on Home the button opens the settings sheet",
+      !!$("mobile-settings") && !$("mobile-settings").hidden);
+    const settingsClose = $("mobile-settings").querySelector(".mobile-sheet-close");
+    if (settingsClose) settingsClose.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+
+    // Resume helpers are device-local and removable.
+    ls.setItem("nb:mobileResume",
+      JSON.stringify({ v: 1, path: "notes/b.md", scroll: 12 }));
+    check("mobile resume: resumePath reads the stored path",
+      window.NB.mobile.resumePath() === "notes/b.md",
+      window.NB.mobile.resumePath());
+    window.NB.mobile.clearResume();
+    check("mobile resume: clearResume removes the stored key",
+      ls.getItem("nb:mobileResume") === null &&
+      window.NB.mobile.resumePath() === null);
+
+    // Back with no open layer falls through to browser history.
+    const realBack = window.history.back;
+    let backCalls = 0;
+    try {
+      window.history.back = () => { backCalls++; };
+      const used = window.NB.mobile.back();
+      check("mobile back: with no layer it calls history.back()",
+        used === true && backCalls === 1, "calls=" + backCalls);
+    } finally {
+      window.history.back = realBack;
+    }
+
+    // A resize re-runs the mode mirror (throttled).
+    root.dataset.uiMode = "phone";
+    window.dispatchEvent(new window.Event("resize"));
+    await tick(200);
+    check("mobile: a resize re-runs the mode mirror",
+      root.dataset.uiMode === "phone" && window.NB.mobile.isOn() === true);
 
     clearMobileStorage();
     await setMode("desktop");

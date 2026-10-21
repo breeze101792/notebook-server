@@ -8,10 +8,15 @@ Run:  .venv_$(hostname)/bin/python -m unittest discover -s tests -v
   or:  .venv_$(hostname)/bin/python -m pytest tests   (if pytest is installed)
 """
 
+import contextlib
+import io
 import json
 import os
+import queue
 import re
+import runpy
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -3826,6 +3831,1102 @@ class TestAcpClient(unittest.TestCase):
         self.assertEqual([e["text"] for e in traces],
                          ["Running a shell command"])
         self.assertEqual(self._terminals(events)[0]["type"], "done")
+
+
+class TestSeedMigration(unittest.TestCase):
+    """seed(): legacy data/ migration and template/bootstrap branches.
+
+    These run against a throw-away BASE_DIR so the real project folders are
+    never touched. The module constants are patched only for the duration of
+    the call and restored by mock.patch.
+    """
+
+    def _layout(self):
+        base = tempfile.mkdtemp(prefix="nbseed_")
+        data = os.path.join(base, "notebook")
+        template = os.path.join(base, "template")
+        config = os.path.join(base, "config")
+        return base, data, template, config
+
+    def test_seed_migrates_legacy_data_and_drops_empty_source(self):
+        base, data, template, config = self._layout()
+        try:
+            os.makedirs(os.path.join(base, "data"))
+            with open(os.path.join(base, "data", "old.md"), "w") as f:
+                f.write("old")
+            os.makedirs(template)
+            with mock.patch.object(nb, "BASE_DIR", base), \
+                    mock.patch.object(nb, "DATA_DIR", data), \
+                    mock.patch.object(nb, "TEMPLATE_DIR", template), \
+                    mock.patch.object(nb, "CONFIG_DIR", config), \
+                    mock.patch.object(nb, "CONFIG_FILE",
+                                      os.path.join(config, "config.json")):
+                notes = nb.seed()
+            self.assertIn("Migrated data/ -> notebook/ (one-time)", notes)
+            self.assertTrue(os.path.isfile(os.path.join(data, "old.md")))
+            self.assertFalse(os.path.isdir(os.path.join(base, "data")))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_seed_leaves_non_empty_legacy_dir_alone(self):
+        # A move that leaves something behind must not rmdir the source.
+        base, data, template, config = self._layout()
+        try:
+            os.makedirs(os.path.join(base, "data"))
+            with open(os.path.join(base, "data", "old.md"), "w") as f:
+                f.write("old")
+            os.makedirs(template)
+            real_copytree = shutil.copytree
+
+            def fake_move(src, dst):
+                real_copytree(src, dst)
+                with open(os.path.join(src, "leftover"), "w") as f:
+                    f.write("stay")
+
+            with mock.patch.object(nb, "BASE_DIR", base), \
+                    mock.patch.object(nb, "DATA_DIR", data), \
+                    mock.patch.object(nb, "TEMPLATE_DIR", template), \
+                    mock.patch.object(nb, "CONFIG_DIR", config), \
+                    mock.patch.object(nb, "CONFIG_FILE",
+                                      os.path.join(config, "config.json")), \
+                    mock.patch.object(nb.shutil, "move", side_effect=fake_move):
+                notes = nb.seed()
+            self.assertIn("Migrated data/ -> notebook/ (one-time)", notes)
+            self.assertTrue(os.path.isdir(os.path.join(base, "data")))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_seed_swallows_rmdir_failure(self):
+        base, data, template, config = self._layout()
+        try:
+            os.makedirs(os.path.join(base, "data"))
+            with open(os.path.join(base, "data", "old.md"), "w") as f:
+                f.write("old")
+            os.makedirs(template)
+            real_copytree = shutil.copytree
+
+            def fake_move(src, dst):
+                # Copy and leave an EMPTY source so the rmdir path runs.
+                real_copytree(src, dst)
+                os.remove(os.path.join(src, "old.md"))
+
+            with mock.patch.object(nb, "BASE_DIR", base), \
+                    mock.patch.object(nb, "DATA_DIR", data), \
+                    mock.patch.object(nb, "TEMPLATE_DIR", template), \
+                    mock.patch.object(nb, "CONFIG_DIR", config), \
+                    mock.patch.object(nb, "CONFIG_FILE",
+                                      os.path.join(config, "config.json")), \
+                    mock.patch.object(nb.shutil, "move", side_effect=fake_move), \
+                    mock.patch.object(nb.os, "rmdir", side_effect=OSError("busy")):
+                notes = nb.seed()
+            self.assertIn("Migrated data/ -> notebook/ (one-time)", notes)
+            self.assertTrue(os.path.isdir(os.path.join(base, "data")))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_seed_creates_empty_data_dir_without_template(self):
+        base, data, template, config = self._layout()
+        try:
+            with mock.patch.object(nb, "BASE_DIR", base), \
+                    mock.patch.object(nb, "DATA_DIR", data), \
+                    mock.patch.object(nb, "TEMPLATE_DIR", template), \
+                    mock.patch.object(nb, "CONFIG_DIR", config), \
+                    mock.patch.object(nb, "CONFIG_FILE",
+                                      os.path.join(config, "config.json")):
+                notes = nb.seed()
+            self.assertEqual(notes, [])
+            self.assertTrue(os.path.isdir(data))
+            self.assertEqual(os.listdir(data), [])
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+    def test_seed_is_idempotent_when_config_exists(self):
+        # BaseTest's temp dirs are already seeded, so a second run is a no-op.
+        self.assertEqual(nb.seed(), [])
+
+
+class TestBackendHelperBranches(BaseTest):
+    """Direct unit coverage for helpers whose error/edge branches the
+    request-level suite does not happen to exercise."""
+
+    def test_safe_path_blank_after_strip(self):
+        self.assertIsNone(nb.safe_path("   "))
+        self.assertIsNone(nb.safe_path(""))
+        self.assertIsNone(nb.safe_path(None))
+        self.assertIsNone(nb.safe_path(123))
+
+    def test_expect_json_rejects_non_object_body(self):
+        # get_json(silent=True) returns a list here; expect_json must reject it
+        # with the generic JSON-object error, not a key error.
+        r = self.client.post("/api/file", json=[1, 2, 3])
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json(),
+                         {"error": "Expected a JSON object body"})
+
+    def test_build_tree_missing_dir_is_empty(self):
+        self.assertEqual(nb.build_tree(os.path.join(nb.DATA_DIR, "nope")), [])
+
+    def test_build_tree_skips_hidden_pycache_non_md_and_nests(self):
+        os.makedirs(os.path.join(nb.DATA_DIR, "sub"))
+        os.makedirs(os.path.join(nb.DATA_DIR, "__pycache__"))
+        for rel in ("sub/b.md", "sub/a.md", "__pycache__/x.md",
+                    ".hidden.md", "pic.png", "z.md"):
+            with open(os.path.join(nb.DATA_DIR, rel), "w") as f:
+                f.write("x")
+        tree = nb.build_tree(nb.DATA_DIR)
+        names = [e["name"] for e in tree]
+        self.assertEqual(names[0], "sub")        # dirs sort first
+        for excluded in (".hidden.md", "pic.png", "__pycache__"):
+            self.assertNotIn(excluded, names)
+        self.assertIn("z.md", names)
+        sub = next(e for e in tree if e["name"] == "sub")
+        self.assertEqual([e["name"] for e in sub["children"]],
+                         ["a.md", "b.md"])
+
+    def test_boot_state_clamps_nan_and_inf_widths(self):
+        for bad in (float("nan"), float("inf"), float("-inf"), "wide"):
+            with self.subTest(bad=bad):
+                state = nb.boot_state({"sidebarWidth": bad,
+                                       "outlineWidth": bad})
+                self.assertEqual(state["side_panel_width"],
+                                 nb._DEFAULT_SIDEBAR_WIDTH)
+                self.assertEqual(state["outline_width"],
+                                 nb._DEFAULT_OUTLINE_WIDTH)
+
+    def test_boot_state_rejects_non_string_or_blank_title(self):
+        self.assertEqual(nb.boot_state({"siteTitle": 42})["site_title"],
+                         "Notebook")
+        self.assertEqual(nb.boot_state({"siteTitle": "   "})["site_title"],
+                         "Notebook")
+
+    def test_read_public_config_corrupt_json_is_empty(self):
+        with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write("{ not json")
+        self.assertEqual(nb._read_public_config(), {})
+        # GET /api/config and the SPA shell both degrade to defaults.
+        code, data = self.jget("/api/config")
+        self.assertEqual((code, data), (200, {}))
+        self.assertEqual(self.client.get("/").status_code, 200)
+
+    def test_chat_url_strips_trailing_v1(self):
+        self.assertEqual(nb._chat_url("http://host/v1"),
+                         "http://host/v1/chat/completions")
+        self.assertEqual(nb._chat_url("http://host/v1/"),
+                         "http://host/v1/chat/completions")
+        self.assertEqual(nb._chat_url(""), "")
+
+    def test_sse_bytes_joins_chunks(self):
+        self.assertEqual(nb._sse_bytes([b"a", b"bc"]), b"abc")
+
+    def test_flatten_acp_prompt_handles_parts_and_unknown_content(self):
+        self.assertEqual(
+            nb._flatten_acp_prompt([
+                {"role": "user",
+                 "content": [{"type": "text", "text": "a"},
+                             {"type": "image_url", "image_url": {"url": "x"}}]},
+                {"role": "assistant", "content": None},
+            ]),
+            "User: a\n\nAssistant: ")
+
+    def test_public_token_omits_missing_created(self):
+        self.assertEqual(nb._public_token({"name": "t", "role": "viewer"}),
+                         {"name": "t", "role": "viewer"})
+
+    def test_load_auth_corrupt_json_is_empty(self):
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            f.write("{ nope")
+        self.assertEqual(nb.load_auth(), {})
+
+    def test_has_viewer_password(self):
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"viewer_password_hash": "hash"}, f)
+        self.assertTrue(nb.has_viewer_password())
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"admin_password_hash": "hash"}, f)
+        self.assertFalse(nb.has_viewer_password())
+
+    def test_check_password_rejects_bad_stored_hashes(self):
+        self.assertFalse(nb._check_password("pw", None))
+        self.assertFalse(nb._check_password("pw", ""))
+        self.assertFalse(nb._check_password("pw", 123))
+        self.assertFalse(nb._check_password("pw", "not-a-bcrypt-hash"))
+
+    def test_ensure_auth_secret_keeps_existing(self):
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"secret": "already-here"}, f)
+        self.assertEqual(nb.ensure_auth_secret()["secret"], "already-here")
+
+    def test_find_token_rejects_non_hex_and_wrong_secret(self):
+        self.assertIsNone(nb._find_token("nbtk_" + "g" * 40))
+        import bcrypt as _bcrypt
+        good = "nbtk_" + "a" * 10 + "b" * 30
+        bad = "nbtk_" + "a" * 10 + "c" * 30
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"tokens": [{
+                "name": "t", "role": "admin", "id": "a" * 10,
+                "hash": _bcrypt.hashpw(good.encode(), _bcrypt.gensalt(4)).decode(),
+            }]}, f)
+        self.assertIsNone(nb._find_token(bad))
+
+    def test_logout_with_auth_off_bypasses_login_required(self):
+        r = self.client.post("/api/logout")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"ok": True})
+
+
+class TestEditValidationBranches(BaseTest):
+    """Every _EditError validation branch in the patch engine, plus the one
+    text-normalisation branch the happy-path edit tests miss."""
+
+    CONTENT = "alpha\nbeta\n"
+
+    def setUp(self):
+        super().setUp()
+        self.post("/api/file", {"path": "patch.md", "content": self.CONTENT})
+
+    def _content(self):
+        return self.jget("/api/file?path=patch.md")[1]["content"]
+
+    def test_bad_edit_payloads_leave_file_untouched(self):
+        bad_edits = [
+            {"op": "append"},                                    # missing text
+            {"op": "append", "text": 1},                         # non-string text
+            {"op": "line_delete"},                               # missing start
+            {"op": "line_delete", "start": True},                # bool not int
+            {"op": "line_delete", "start": 0},                   # lo bound
+            {"op": "find_replace", "find": "a", "replace_with": "b",
+             "count": -1},                                       # bad count
+            {"op": "find_replace", "find": "(", "replace_with": "b",
+             "regex": True},                                     # bad regex
+            {"op": "find_replace", "find": "", "replace_with": "b"},  # empty find
+        ]
+        for edit in bad_edits:
+            with self.subTest(edit=edit):
+                r = self.post("/api/edit",
+                              {"path": "patch.md", "edits": [edit]})
+                self.assertEqual(r.status_code, 400, r.get_data(as_text=True))
+                self.assertEqual(self._content(), self.CONTENT)
+
+    def test_text_to_lines_drops_trailing_empty_part(self):
+        # insert text ending in a newline: split() leaves a trailing "".
+        r = self.post("/api/edit", {"path": "patch.md", "edits": [
+            {"op": "line_insert", "after_line": 0, "text": "top\n"}]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self._content(), "top\nalpha\nbeta\n")
+
+
+class TestConfigAndPasswordErrors(BaseTest):
+    """Config write failure and password endpoint validation branches."""
+
+    def test_set_config_write_failure_is_500(self):
+        # Make CONFIG_FILE a directory so os.replace(tmp, CONFIG_FILE) fails
+        # with a real OSError (no monkeypatching of the write path).
+        os.remove(nb.CONFIG_FILE)
+        os.mkdir(nb.CONFIG_FILE)
+        r = self.post("/api/config", {"theme": "dark"})
+        self.assertEqual(r.status_code, 500)
+        self.assertIn("Could not write config", r.get_json()["error"])
+
+    def test_set_passwords_missing_field(self):
+        r = self.post("/api/auth/passwords", {"admin_password": None})
+        self.assertEqual(r.status_code, 400)
+
+    def test_set_passwords_rejects_non_string_current(self):
+        r = self.post("/api/auth/passwords", {
+            "admin_password": None, "viewer_password": None,
+            "admin_current_password": 123})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("admin_current_password", r.get_json()["error"])
+
+
+class TestAuthLoginValidation(BaseTest):
+    """Login body validation that sits behind the auth-enabled check."""
+
+    def setUp(self):
+        super().setUp()
+        nb._login_failures.clear()
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "test-secret",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"admin-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+
+    def test_login_missing_password_field(self):
+        r = self.client.post("/api/login", json={})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing required field: password",
+                      r.get_json()["error"])
+
+
+class TestAcpConfigBranches(BaseTest):
+    """load_acp_config() defaults for args/cwd/env that the malformed-file
+    table does not cover."""
+
+    def _write(self, obj):
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+
+    def test_args_none_and_cwd_none_default(self):
+        self._write({"name": "x", "command": "/bin/true",
+                     "args": None, "cwd": None})
+        cfg = nb.load_acp_config()
+        self.assertEqual(cfg["args"], [])
+        self.assertEqual(cfg["cwd"], "")
+
+    def test_env_must_be_an_object(self):
+        self._write({"name": "x", "command": "/bin/true", "env": ["A", "b"]})
+        self.assertEqual(nb.load_acp_config(), {})
+
+
+class TestAiConfigErrorPaths(BaseTest):
+    """POST /api/ai/config validation table, save failure, and masked-view
+    filtering."""
+
+    def _post(self, body):
+        return self.post("/api/ai/config", body)
+
+    def test_sanitize_server_rejects_bad_fields(self):
+        bad_servers = [
+            {"name": 123, "baseUrl": "http://x"},
+            {"name": "", "baseUrl": "http://x"},
+            {"name": "x" * 61, "baseUrl": "http://x"},
+            {"name": "ok", "baseUrl": 123},
+            {"name": "ok", "baseUrl": ""},
+            {"name": "ok", "baseUrl": "http://" + "a" * 300},
+            {"name": "ok", "baseUrl": "http://x", "apiKey": 123},
+            {"name": "ok", "baseUrl": "http://x", "apiKey": "k" * 501},
+            {"name": "ok", "baseUrl": "http://x", "model": 123},
+            {"name": "ok", "baseUrl": "http://x", "replaceSecret": True,
+             "replaceSecretFor": "ghost"},
+        ]
+        for server in bad_servers[:-1]:
+            with self.subTest(server=server):
+                r = self._post({"servers": [server]})
+                self.assertEqual(r.status_code, 400,
+                                 r.get_data(as_text=True))
+        # The last one is valid (blank key, no stored match -> empty key).
+        r = self._post({"servers": [bad_servers[-1]]})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["servers"][0]["hasKey"])
+
+    def test_null_optional_fields_default(self):
+        r = self._post({"servers": [{
+            "name": "ok", "baseUrl": "http://x", "apiKey": None,
+            "model": None}]})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()["servers"][0]
+        self.assertFalse(body["hasKey"])
+        self.assertEqual(body["model"], "")
+
+    def test_top_level_validation_errors(self):
+        cases = [
+            ({}, "servers"),                                   # missing
+            ({"servers": "nope"}, "servers must be a list"),
+            ({"servers": [], "default": 1}, "default must be a string"),
+            ({"servers": [], "customPrompt": 1},
+             "customPrompt must be a string"),
+            ({"servers": [], "searxngUrl": 1},
+             "searxngUrl must be a string"),
+            ({"servers": [], "searxngUrl": "http://" + "a" * 300},
+             "searxngUrl is longer than 300 chars"),
+        ]
+        for body, marker in cases:
+            with self.subTest(body=body):
+                r = self._post(body)
+                self.assertEqual(r.status_code, 400)
+                self.assertIn(marker, r.get_json()["error"])
+
+    def test_save_failure_is_500(self):
+        with mock.patch.object(nb, "save_ai_config",
+                               side_effect=OSError("disk full")):
+            r = self._post({"servers": [], "default": ""})
+        self.assertEqual(r.status_code, 500)
+        self.assertIn("Could not write AI config", r.get_json()["error"])
+
+    def test_public_config_skips_non_object_servers(self):
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [
+                {"name": "ok", "base_url": "http://x", "api_key": "k",
+                 "model": "m"},
+                "junk",
+                42,
+            ], "default": "ok"}, f)
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([s["name"] for s in data["servers"]], ["ok"])
+
+    def test_replace_secret_scans_all_stored_servers(self):
+        # Stored list has a non-matching dict and a non-object; both continue
+        # the scan, ending with an empty key (not an error).
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [{"name": "other", "api_key": "k"},
+                                   "junk"]}, f)
+        r = self._post({"servers": [{
+            "name": "new", "baseUrl": "http://x", "apiKey": "",
+            "replaceSecret": True, "replaceSecretFor": "ghost"}]})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()["servers"][0]["hasKey"])
+
+
+def _http_error(code=500):
+    return nb.urllib.error.HTTPError("http://stub", code, "boom", {},
+                                     io.BytesIO(b"boom"))
+
+
+class _FakeHttpResponse:
+    """Minimal urlopen() context manager for stubbing upstream replies."""
+
+    def __init__(self, body=b"", content_type="application/json", status=200):
+        self._body = body
+        self.headers = {"Content-Type": content_type}
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, amt=None):
+        if amt is None or amt < 0:
+            chunk, self._body = self._body, b""
+        else:
+            chunk, self._body = self._body[:amt], self._body[amt:]
+        return chunk
+
+
+class TestAiUpstreamErrorPaths(BaseTest):
+    """Failure paths in probe / fetch / search / chat that the loopback
+    happy-path stubs do not reach."""
+
+    def test_probe_missing_and_empty_base_url(self):
+        self.assertEqual(self.client.get("/api/ai/probe").status_code, 400)
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [{"name": "nobase", "base_url": ""}],
+                       "default": "nobase"}, f)
+        r = self.client.get("/api/ai/probe?server=nobase")
+        self.assertEqual(r.status_code, 400)
+
+    def test_probe_http_error_counts_as_reachable(self):
+        self.post("/api/ai/config", {"servers": [{
+            "name": "p", "baseUrl": "http://host"}], "default": "p"})
+        with mock.patch.object(nb.urllib.request, "urlopen",
+                               side_effect=_http_error(500)):
+            r = self.client.get("/api/ai/probe?server=p")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"ok": True, "status": 500})
+
+    def test_fetch_long_url_and_connection_error(self):
+        r = self.post("/api/ai/fetch", {"url": "http://" + "a" * 2000})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/ai/fetch", {"url": "http://127.0.0.1:1/x"})
+        self.assertEqual(r.status_code, 502)
+
+    def test_search_long_query_and_http_error(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://stub"})
+        r = self.post("/api/ai/search", {"q": "q" * 501})
+        self.assertEqual(r.status_code, 400)
+        with mock.patch.object(nb.urllib.request, "urlopen",
+                               side_effect=_http_error(500)):
+            r = self.post("/api/ai/search", {"q": "x"})
+        self.assertEqual(r.status_code, 502)
+
+    def test_search_connection_error(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://127.0.0.1:1"})
+        r = self.post("/api/ai/search", {"q": "x"})
+        self.assertEqual(r.status_code, 502)
+
+    def test_search_non_json_and_mixed_results(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://stub"})
+        with mock.patch.object(nb.urllib.request, "urlopen",
+                               return_value=_FakeHttpResponse(b"not json")):
+            r = self.post("/api/ai/search", {"q": "x"})
+        self.assertEqual(r.status_code, 502)
+        mixed = json.dumps({"results": [
+            {"title": "a", "url": "u1", "content": "s1"},
+            "junk",
+            {"title": "b", "url": "u2", "content": "s2"},
+        ]}).encode()
+        with mock.patch.object(nb.urllib.request, "urlopen",
+                               return_value=_FakeHttpResponse(mixed)):
+            r = self.post("/api/ai/search", {"q": "x"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([x["title"] for x in r.get_json()["results"]],
+                         ["a", "b"])
+
+    def test_chat_non_object_body_and_empty_base_url(self):
+        r = self.client.post("/api/ai/chat", json=[])
+        self.assertEqual(r.status_code, 400)
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [{"name": "nobase", "base_url": ""}],
+                       "default": "nobase"}, f)
+        r = self.client.post("/api/ai/chat", json={
+            "server": "nobase",
+            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(r.status_code, 400)
+
+    def test_chat_connection_failure_is_sse_error(self):
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump({"servers": [{
+                "name": "dead", "base_url": "http://127.0.0.1:1"}],
+                "default": "dead"}, f)
+        r = self.client.post("/api/ai/chat", json={
+            "server": "dead",
+            "messages": [{"role": "user", "content": "hi"}]})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn('"status": 0', body)
+
+
+class TestAcpChatErrorPaths(BaseTest):
+    """Validation and disconnect paths in the ACP SSE branch."""
+
+    NAME = "acp"
+
+    def setUp(self):
+        super().setUp()
+        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+            json.dump({"name": self.NAME, "command": sys.executable,
+                       "args": ["-c", "raise SystemExit(0)"],
+                       "timeout": 5}, f)
+
+    def _chat(self, body):
+        return self.client.post("/api/ai/chat", json=body)
+
+    def test_invalid_messages_are_rejected(self):
+        r = self._chat({"server": self.NAME, "messages": "nope"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_oversize_prompt_is_rejected(self):
+        with mock.patch.object(nb, "ACP_MAX_PROMPT_BYTES", 20):
+            r = self._chat({"server": self.NAME, "messages": [
+                {"role": "user", "content": "x" * 100}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("ACP prompt exceeds", r.get_json()["error"])
+
+    def test_context_preamble_degrades_on_corrupt_config(self):
+        with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
+            f.write("{ nope")
+        self.assertEqual(nb._acp_context_preamble(), nb.ACP_CONTEXT_PREAMBLE)
+
+    def test_client_disconnect_closes_pump_generator(self):
+        # Drive the SSE pump one frame, then close it. That delivers
+        # GeneratorExit to the yield and must re-raise (cancelling the turn),
+        # not escape as a traceback.
+        import acp_client
+
+        def fake_run_turn(*args, **kwargs):
+            yield {"type": "text", "text": "hi"}
+            yield {"type": "ping"}
+
+        with mock.patch.object(acp_client, "run_turn", fake_run_turn):
+            r = self.client.post("/api/ai/chat", json={
+                "server": self.NAME,
+                "messages": [{"role": "user", "content": "hi"}]},
+                buffered=False)
+            self.assertEqual(r.status_code, 200)
+            iterator = r.response
+            try:
+                first = next(iterator)
+                if isinstance(first, bytes):
+                    first = first.decode()
+                self.assertIn('"content":"hi"', first)
+            finally:
+                iterator.close()
+
+    def test_empty_event_stream_closes_cleanly(self):
+        import acp_client
+
+        def empty_run_turn(*args, **kwargs):
+            return
+            yield  # unreachable; marks the function as a generator
+
+        with mock.patch.object(acp_client, "run_turn", empty_run_turn):
+            r = self.client.post("/api/ai/chat", json={
+                "server": self.NAME,
+                "messages": [{"role": "user", "content": "hi"}]},
+                buffered=False)
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(list(r.response), [])
+
+
+class TestRouteErrorPaths(BaseTest):
+    """OSError / bad-input branches in the file, ls, search and graph routes."""
+
+    def test_ls_listdir_failure_is_500(self):
+        with mock.patch.object(nb.os, "listdir", side_effect=OSError("denied")):
+            r = self.client.get("/api/ls")
+        self.assertEqual(r.status_code, 500)
+
+    def test_ls_skips_entries_that_vanish_before_stat(self):
+        os.symlink(os.path.join(nb.DATA_DIR, "gone"),
+                   os.path.join(nb.DATA_DIR, "broken-link"))
+        r = self.client.get("/api/ls")
+        self.assertEqual(r.status_code, 200)
+        names = [e["name"] for e in r.get_json()["entries"]]
+        self.assertNotIn("broken-link", names)
+
+    def test_file_get_stat_failure_and_read_failure(self):
+        self.post("/api/file", {"path": "a.md", "content": "hi"})
+        with mock.patch.object(nb.os.path, "getmtime",
+                               side_effect=OSError("denied")):
+            r = self.client.get("/api/file?path=a.md")
+        self.assertEqual(r.status_code, 500)
+        with mock.patch("builtins.open", side_effect=OSError("denied")):
+            r = self.client.get("/api/file?path=a.md")
+        self.assertEqual(r.status_code, 500)
+
+    def test_file_get_ignores_bad_if_modified_since(self):
+        self.post("/api/file", {"path": "a.md", "content": "hi"})
+        r = self.client.get("/api/file?path=a.md&ifModifiedSince=nope")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["content"], "hi")
+
+    def test_file_save_rejects_non_string_and_write_failure(self):
+        r = self.post("/api/file", {"path": "a.md", "content": 1})
+        self.assertEqual(r.status_code, 400)
+        with mock.patch.object(nb, "atomic_write", side_effect=OSError("full")):
+            r = self.post("/api/file", {"path": "a.md", "content": "x"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_append_missing_field_and_open_failure(self):
+        r = self.post("/api/file/append", {"path": "a.md"})
+        self.assertEqual(r.status_code, 400)
+        self.post("/api/file", {"path": "a.md", "content": "x"})
+        with mock.patch.object(nb.os, "open", side_effect=OSError("denied")):
+            r = self.post("/api/file/append",
+                          {"path": "a.md", "content": "more"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_edit_read_and_write_failures(self):
+        self.post("/api/file", {"path": "a.md", "content": "one\n"})
+        body = {"path": "a.md", "edits": [{"op": "append", "text": "two"}]}
+        with mock.patch("builtins.open", side_effect=OSError("denied")):
+            r = self.post("/api/edit", body)
+        self.assertEqual(r.status_code, 500)
+        with mock.patch.object(nb, "atomic_write", side_effect=OSError("full")):
+            r = self.post("/api/edit", body)
+        self.assertEqual(r.status_code, 500)
+
+    def test_create_missing_field_non_string_content_and_failure(self):
+        r = self.post("/api/create", {"path": "x"})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/create", {"path": "x", "type": "file",
+                                      "content": 1})
+        self.assertEqual(r.status_code, 400)
+        with mock.patch.object(nb.os, "makedirs",
+                               side_effect=OSError("denied")):
+            r = self.post("/api/create", {"path": "d", "type": "dir"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_agent_guide_missing_file_is_500(self):
+        with mock.patch.object(nb, "AGENT_GUIDE_FILE",
+                               os.path.join(nb.CONFIG_DIR, "missing.md")):
+            r = self.client.get("/agent.md")
+        self.assertEqual(r.status_code, 500)
+
+    def test_search_skips_non_markdown_files(self):
+        with open(os.path.join(nb.DATA_DIR, "notes.txt"), "w") as f:
+            f.write("zz_needle_zz")
+        r = self.client.get("/api/search?q=zz_needle_zz")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["matches"], [])
+
+    def test_search_skips_unreadable_files(self):
+        self.post("/api/file", {"path": "a.md", "content": "needle"})
+        with mock.patch("builtins.open", side_effect=OSError("denied")):
+            r = self.client.get("/api/search?q=needle")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["matches"], [])
+
+    def test_search_mtime_failure_falls_back_to_zero(self):
+        self.post("/api/file", {"path": "a.md", "content": "needle"})
+        with mock.patch.object(nb.os.path, "getmtime",
+                               side_effect=OSError("denied")):
+            r = self.client.get("/api/search?q=needle&order=mtime")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.get_json()["matches"]), 1)
+
+    def test_graph_skips_non_md_and_unresolvable_links(self):
+        # Clear the seeded template so only the links under test contribute.
+        shutil.rmtree(nb.DATA_DIR)
+        os.makedirs(nb.DATA_DIR)
+        self.post("/api/file", {"path": "target.md", "content": "target"})
+        self.post("/api/file", {"path": "links.md", "content": (
+            "[[#frag]]\n"
+            "[[/absolute.md]]\n"
+            "[out](../../escape.md)\n"
+            "[[target]]\n")})
+        with open(os.path.join(nb.DATA_DIR, "attachment.txt"), "w") as f:
+            f.write("not a note")
+        code, data = self.jget("/api/graph")
+        self.assertEqual(code, 200)
+        ids = {n["id"] for n in data["nodes"]}
+        self.assertIn("links.md", ids)
+        self.assertIn("target.md", ids)
+        self.assertNotIn("attachment.txt", ids)
+        self.assertEqual(len(data["edges"]), 1)
+        self.assertEqual({data["edges"][0]["source"],
+                          data["edges"][0]["target"]},
+                         {"links.md", "target.md"})
+
+    def test_graph_unreadable_file_contributes_no_links(self):
+        shutil.rmtree(nb.DATA_DIR)
+        os.makedirs(nb.DATA_DIR)
+        self.post("/api/file", {"path": "a.md", "content": "[[b]]"})
+        self.post("/api/file", {"path": "b.md", "content": "b"})
+        with mock.patch("builtins.open", side_effect=OSError("denied")):
+            r = self.client.get("/api/graph")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["edges"], [])
+
+
+class TestMoveCopyDeleteErrorPaths(BaseTest):
+    """Conflict/race/OSError branches in move, copy and delete."""
+
+    def _file(self, rel, content="x"):
+        self.post("/api/file", {"path": rel, "content": content})
+
+    def test_move_missing_field_and_invalid_paths(self):
+        r = self.post("/api/move", {"from": "a.md"})
+        self.assertEqual(r.status_code, 400)
+        self._file("a.md")
+        r = self.post("/api/move", {"from": "/etc/passwd", "to": "b.md"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_move_overwrite_remove_failure_is_500(self):
+        self._file("a.md")
+        self._file("b.md")
+        with mock.patch.object(nb, "_remove_path", side_effect=OSError("busy")):
+            r = self.post("/api/move", {"from": "a.md", "to": "b.md",
+                                        "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_move_lost_race_is_409(self):
+        self._file("a.md")
+        with mock.patch.object(nb.os, "link",
+                               side_effect=FileExistsError("race")):
+            r = self.post("/api/move", {"from": "a.md", "to": "b.md"})
+        self.assertEqual(r.status_code, 409)
+
+    def test_move_falls_back_to_rename_without_hardlinks(self):
+        self._file("a.md", "moved")
+        with mock.patch.object(nb.os, "link", side_effect=OSError("no links")):
+            r = self.post("/api/move", {"from": "a.md", "to": "b.md"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.jget("/api/file?path=b.md")[1]["content"],
+                         "moved")
+
+    def test_move_rename_failure_is_500(self):
+        os.makedirs(os.path.join(nb.DATA_DIR, "d1"))
+        with mock.patch.object(nb.os, "rename", side_effect=OSError("denied")):
+            r = self.post("/api/move", {"from": "d1", "to": "d2"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_copy_missing_field_invalid_path_and_missing_source(self):
+        r = self.post("/api/copy", {"from": "a.md"})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/copy", {"from": "/etc/passwd", "to": "b.md"})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/copy", {"from": "nope.md", "to": "b.md"})
+        self.assertEqual(r.status_code, 404)
+
+    def test_copy_overwrite_remove_failure_is_500(self):
+        self._file("a.md")
+        self._file("b.md")
+        with mock.patch.object(nb, "_remove_path", side_effect=OSError("busy")):
+            r = self.post("/api/copy", {"from": "a.md", "to": "b.md",
+                                        "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 500)
+
+    def test_copy_lost_race_error_and_skip(self):
+        self._file("a.md")
+        with mock.patch("builtins.open",
+                        side_effect=FileExistsError("race")):
+            r = self.post("/api/copy", {"from": "a.md", "to": "b.md"})
+            self.assertEqual(r.status_code, 409)
+            r = self.post("/api/copy", {"from": "a.md", "to": "b.md",
+                                        "onConflict": "skip"})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json()["skipped"])
+
+    def test_copy_partial_write_cleans_up_and_is_500(self):
+        self._file("a.md")
+        with mock.patch("builtins.open", side_effect=OSError("full")), \
+                mock.patch.object(nb, "_remove_path") as remove:
+            r = self.post("/api/copy", {"from": "a.md", "to": "b.md"})
+        self.assertEqual(r.status_code, 500)
+        remove.assert_called_once()
+
+    def test_delete_missing_field_and_remove_failure(self):
+        r = self.post("/api/delete", {})
+        self.assertEqual(r.status_code, 400)
+        self._file("a.md")
+        with mock.patch.object(nb, "_remove_path", side_effect=OSError("busy")):
+            r = self.post("/api/delete", {"path": "a.md"})
+        self.assertEqual(r.status_code, 500)
+
+
+class TestAcpClientExtra(unittest.TestCase):
+    """Direct unit coverage for acp_client paths the stub-agent tests do not
+    hit: callback filtering, permission choice, capability refusals, queue
+    overflow, generic failures, and cancellation."""
+
+    STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
+
+    def test_session_update_ignores_empty_text_other_kinds_and_bad_titles(self):
+        import asyncio
+        from types import SimpleNamespace
+        import acp_client
+
+        client = acp_client._Client(queue.Queue())
+
+        async def feed(update):
+            await client.session_update("s", update)
+
+        # agent_message_chunk with missing/non-string/empty text -> no event.
+        for content in (None, SimpleNamespace(text=123),
+                        SimpleNamespace(text="")):
+            asyncio.run(feed(SimpleNamespace(
+                session_update="agent_message_chunk", content=content)))
+        # Any other update kind is dropped.
+        asyncio.run(feed(SimpleNamespace(session_update="plan")))
+        # tool_call without a usable title is dropped.
+        for title in (None, "", "   ", 7):
+            asyncio.run(feed(SimpleNamespace(
+                session_update="tool_call", title=title)))
+        self.assertTrue(client.events.empty())
+
+    def test_permission_prefers_allow_once_else_allow_always_else_denies(self):
+        import asyncio
+        from acp import schema
+        import acp_client
+
+        client = acp_client._Client(queue.Queue())
+        once = schema.PermissionOption(optionId="once", name="Once",
+                                       kind="allow_once")
+        always = schema.PermissionOption(optionId="always", name="Always",
+                                         kind="allow_always")
+        result = asyncio.run(client.request_permission(
+            "s", None, [always, once]))
+        self.assertEqual(result.outcome.outcome, "selected")
+        self.assertEqual(result.outcome.option_id, "once")
+        # Only allow_always offered -> use it (covers the elif branch).
+        result = asyncio.run(client.request_permission(
+            "s", None, [always]))
+        self.assertEqual(result.outcome.option_id, "always")
+        # A second allow_always is skipped once one is already chosen.
+        result = asyncio.run(client.request_permission(
+            "s", None, [always, always]))
+        self.assertEqual(result.outcome.option_id, "always")
+        # No allow option at all -> explicit deny, never a fake success.
+        result = asyncio.run(client.request_permission("s", None, []))
+        self.assertEqual(result.outcome.outcome, "cancelled")
+
+    def test_all_capability_overrides_refuse_with_method_not_found(self):
+        import asyncio
+        import acp
+        import acp_client
+
+        client = acp_client._Client(queue.Queue())
+        calls = [
+            (client.read_text_file, ("s", "p")),
+            (client.write_text_file, ("s", "p", "c")),
+            (client.create_terminal, ("s", "cmd")),
+            (client.terminal_output, ("s", "t")),
+            (client.release_terminal, ("s", "t")),
+            (client.wait_for_terminal_exit, ("s", "t")),
+            (client.kill_terminal, ("s", "t")),
+            (client.create_elicitation, ("msg", "form")),
+        ]
+        for fn, args in calls:
+            with self.subTest(method=fn.__name__):
+                with self.assertRaises(acp.RequestError) as ctx:
+                    asyncio.run(fn(*args))
+                self.assertEqual(ctx.exception.code, -32601)
+
+    def test_queue_overflow_flips_the_flag(self):
+        import acp_client
+
+        events = queue.Queue(maxsize=1)
+        events.put_nowait({"type": "text", "text": "fill"})
+        client = acp_client._Client(events)
+        client._enqueue({"type": "text", "text": "overflow"})
+        self.assertTrue(client.overflowed)
+
+    def test_generic_turn_failure_yields_single_error(self):
+        import acp_client
+
+        with self.assertLogs("acp_client", level="WARNING"):
+            with mock.patch.object(acp_client, "spawn_agent_process",
+                                   side_effect=RuntimeError("sdk exploded")):
+                events = list(acp_client.run_turn("/bin/true", prompt="hi"))
+        terminal = [e for e in events
+                    if e.get("type") in ("done", "error")]
+        self.assertEqual(len(terminal), 1)
+        self.assertEqual(terminal[0]["message"], "ACP turn failed")
+
+    def test_overflowed_client_aborts_before_reading_events(self):
+        import acp_client
+
+        class OverflowClient(acp_client._Client):
+            def __init__(self, events):
+                super().__init__(events)
+                self.overflowed = True
+
+        with mock.patch.object(acp_client, "_Client", OverflowClient):
+            events = list(acp_client.run_turn("/nonexistent", prompt="hi"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "error")
+        self.assertIn("overflowed", events[0]["message"])
+
+    def test_turn_finishing_without_terminal_event_reports_error(self):
+        import acp_client
+
+        async def silent_drive(*args, **kwargs):
+            return None
+
+        with mock.patch.object(acp_client, "_drive", silent_drive):
+            events = list(acp_client.run_turn("/nonexistent", prompt="hi"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["type"], "error")
+        self.assertIn("without a result", events[0]["message"])
+
+    def test_generator_close_cancels_the_turn(self):
+        import acp_client
+
+        gen = acp_client.run_turn(
+            sys.executable,
+            args=[self.STUB, "--mode", "hang"],
+            cwd=tempfile.gettempdir(), prompt="hi", timeout=15,
+            keepalive=True)
+        try:
+            next(gen)              # waits one poll interval for a ping
+        finally:
+            gen.close()
+        # Give the cancellation a moment to unwind the event loop task.
+        time.sleep(0.3)
+
+
+class TestCliUnit(unittest.TestCase):
+    """parse_args / reachable_urls / _lan_ipv4_addresses, without running
+    a server."""
+
+    def test_parse_args_defaults_and_flags(self):
+        args = nb.parse_args([])
+        self.assertEqual(args.host, "0.0.0.0")
+        self.assertEqual(args.port, 5000)
+        self.assertFalse(args.debug)
+        args = nb.parse_args(["--host", "127.0.0.1", "--port", "8080",
+                              "--debug"])
+        self.assertEqual((args.host, args.port, args.debug),
+                         ("127.0.0.1", 8080, True))
+
+    def test_reachable_urls_adds_localhost_and_lan_ips(self):
+        with mock.patch.object(nb, "_lan_ipv4_addresses",
+                               return_value=["192.168.1.10", "127.0.0.1",
+                                             "0.0.0.0"]):
+            urls = nb.reachable_urls("0.0.0.0", 5000)
+        self.assertEqual(urls, ["http://0.0.0.0:5000",
+                                "http://localhost:5000",
+                                "http://192.168.1.10:5000"])
+        with mock.patch.object(nb, "_lan_ipv4_addresses", return_value=[]):
+            self.assertEqual(nb.reachable_urls("localhost", 5000),
+                             ["http://localhost:5000"])
+
+    def test_lan_ipv4_addresses_uses_hostname_and_dedupes(self):
+        with mock.patch.object(nb.socket, "gethostbyname_ex",
+                               return_value=("h", [], [
+                                   "192.168.1.5", "127.0.0.1",
+                                   "192.168.1.5", ""])):
+            self.assertEqual(nb._lan_ipv4_addresses(), ["192.168.1.5"])
+
+    def test_lan_ipv4_addresses_falls_back_to_udp_socket(self):
+        class FakeSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def connect(self, addr):
+                pass
+
+            def getsockname(self):
+                return ("10.0.0.7", 1234)
+
+        with mock.patch.object(nb.socket, "gethostbyname_ex",
+                               side_effect=socket.gaierror), \
+                mock.patch.object(nb.socket, "socket", return_value=FakeSocket()):
+            self.assertEqual(nb._lan_ipv4_addresses(), ["10.0.0.7"])
+
+    def test_lan_ipv4_addresses_swallows_socket_errors(self):
+        class BrokenSocket:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def connect(self, addr):
+                raise OSError("no route")
+
+        with mock.patch.object(nb.socket, "gethostbyname_ex",
+                               side_effect=socket.gaierror), \
+                mock.patch.object(nb.socket, "socket",
+                                  return_value=BrokenSocket()):
+            self.assertEqual(nb._lan_ipv4_addresses(), [])
+
+
+class TestMainEntrypoint(unittest.TestCase):
+    """Execute app.py's __main__ block with Flask.run stubbed out.
+
+    This is the only way to cover the entrypoint print/URL logic without
+    starting a real server. DNS is stubbed so nothing leaves the host.
+    """
+
+    def test_main_block_prints_and_runs(self):
+        original_argv = sys.argv
+        try:
+            sys.argv = ["app.py", "--host", "0.0.0.0", "--port", "5123",
+                        "--debug"]
+            with mock.patch("flask.Flask.run") as run, \
+                    mock.patch.object(nb.socket, "gethostbyname_ex",
+                                      return_value=("host", [],
+                                                    ["192.168.1.9"])):
+                # First run: data dir exists -> seed_notes is empty.
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    runpy.run_path(os.path.join(ROOT, "app.py"),
+                                   run_name="__main__")
+                self.assertIn("Markdown notebook server",
+                              buf.getvalue())
+                self.assertTrue(run.called)
+                # Second run: missing data dir -> seed() reports the
+                # template copy, covering the non-empty-notes loop.
+                shutil.rmtree(nb.DATA_DIR, ignore_errors=True)
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    runpy.run_path(os.path.join(ROOT, "app.py"),
+                                   run_name="__main__")
+                self.assertIn("Created notebook/", buf.getvalue())
+                self.assertIn("WARNING:", buf.getvalue())
+                # Third run: loopback/no-debug -> the warning branch is false.
+                sys.argv = ["app.py", "--host", "127.0.0.1",
+                            "--port", "5123"]
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    runpy.run_path(os.path.join(ROOT, "app.py"),
+                                   run_name="__main__")
+                self.assertNotIn("WARNING:", buf.getvalue())
+        finally:
+            sys.argv = original_argv
 
 
 if __name__ == "__main__":
