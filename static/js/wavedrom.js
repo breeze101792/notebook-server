@@ -81,6 +81,80 @@
     return loadPromise;
   }
 
+  /* renderSvgElement(source) -- render one WaveDrom source through the
+   * vendored library and return the responsive <svg>. This is the shared
+   * renderer seam: the note path and the design window's preview/Apply
+   * validation both go through it (docs/architecture/
+   * dot-wavedrom-designer.md §D6). WaveDrom paints errors instead of
+   * throwing, so a host without an <svg> rejects with the painted text. */
+  async function renderSvgElement(source) {
+    if (!(await whenReady())) throw new Error("WaveDrom renderer unavailable");
+    const index = ++idCounter;
+    const output = "Wavedrom_NB__";
+    // WaveDrom looks the target element up by id, so the host must be in
+    // the document while renderWaveForm runs.
+    const host = document.createElement("div");
+    host.id = output + index;
+    host.style.display = "none"; // hidden until replaced, so it never flashes
+    document.body.appendChild(host);
+    try {
+      try {
+        // WaveDrom's canonical notation allows unquoted (JS-style) keys,
+        // e.g. {signal:[{name:"clk",wave:"p.....|..."}]}. Strict
+        // JSON.parse rejects that, so parse leniently, mirroring the
+        // official WaveDrom editor, which does eval("(" + source + ")").
+        // First try strict JSON; only fall back to the lenient path when
+        // that fails. The source is the note owner's own notebook content
+        // (the viewer already renders it unsanitised), so this eval is
+        // no escalation of trust.
+        const data = parseSource(source);
+        window.wavedrom.renderWaveForm(index, data, output, false);
+      } catch (err) {
+        // Malformed source (or a render error). WaveDrom paints a
+        // human-readable error into the host; prefer that over a raw
+        // throw if it exists.
+        if (!host.innerHTML) throw err;
+      }
+      const svg = host.querySelector("svg");
+      if (!svg) {
+        const painted = (host.textContent || "").trim().split(/\r?\n/)[0];
+        throw new Error(painted || "No SVG rendered");
+      }
+      host.removeChild(svg);
+      // Make the SVG responsive, exactly like mermaid.js: keep the
+      // `width` attribute (so the SVG has an intrinsic width for
+      // aspect-ratio to anchor to) and remove only `height`. Pin the
+      // aspect ratio from the viewBox so max-width + max-height both
+      // scale the element uniformly instead of clipping.
+      const vb = svg.getAttribute("viewBox");
+      let vbW = 0, vbH = 0;
+      if (vb) {
+        const parts = vb.split(/\s+/).map(Number);
+        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+          vbW = parts[2];
+          vbH = parts[3];
+        }
+      }
+      if (!vbW || !vbH) {
+        vbW = parseFloat(svg.getAttribute("width")) || 0;
+        vbH = parseFloat(svg.getAttribute("height")) || 0;
+        if (vbW > 0 && vbH > 0) {
+          svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
+        }
+      }
+      svg.removeAttribute("height");
+      if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
+      // Sanitise: WaveDrom's SVG is generated from user JSON by a lib
+      // we control, the same class of trust as mermaid's output, so we
+      // accept it as-is. Strip the id suffix so a block is uniquely
+      // addressable and re-renders are idempotent.
+      svg.removeAttribute("id");
+      return svg;
+    } finally {
+      host.remove();
+    }
+  }
+
   /* renderOne(pre) -- render a single <pre><code class="language-wavedrom">.
    *
    * The block's text comes straight from textContent, already
@@ -101,93 +175,22 @@
     const code = pre.querySelector("code");
     if (!code) return;
     const source = code.textContent;
-    const index = ++idCounter;
-    const output = "Wavedrom_NB__";
-    // WaveDrom renders into / creates an element with id output+index.
-    // We mount a fresh container before the call so the SVG lands inside
-    // the notebook node rather than at the end of <body>.
-    const host = document.createElement("div");
-    host.id = output + index;
-    host.style.display = "none"; // hidden until replaced, so it never flashes
-    pre.insertAdjacentElement("beforebegin", host);
+    if (!(await whenReady())) return; // wavedrom unavailable -> leave source
+    const container = document.createElement("div");
+    container.className = "wavedrom-container";
+    // Focusable so a keyboard user can Tab to the diagram and open the
+    // hybrid context menu with Shift+F10 / the Menu key (and reach the
+    // copy-image button, which is revealed on :focus-within).
+    container.tabIndex = 0;
+    container.dataset.wavedrom = "ok";
+    // Store the original source so hybrid mode's domToMarkdown can
+    // round-trip the diagram back to a ```wavedrom code block instead
+    // of losing it to turndown's SVG-to-text stripping.
+    container.dataset.wavedromSource = source;
     try {
-      if (!(await whenReady())) {
-        host.remove();
-        return; // wavedrom unavailable -> leave the original <pre> in place
-      }
-      let text = "";
-      try {
-        // WaveDrom's canonical notation allows unquoted (JS-style) keys,
-        // e.g. {signal:[{name:"clk",wave:"p.....|..."}]}. Strict
-        // JSON.parse rejects that, so parse leniently, mirroring the
-        // official WaveDrom editor, which does eval("(" + source + ")").
-        // First try strict JSON; only fall back to the lenient path when
-        // that fails. The source is the note owner's own notebook content
-        // (the viewer already renders it unsanitised), so this eval is
-        // no escalation of trust.
-        const data = parseSource(source);
-        window.wavedrom.renderWaveForm(index, data, output, false);
-        text = host.innerHTML;
-      } catch (err) {
-        // Malformed source (or a render error). WaveDrom paints a
-        // human-readable error into the host; prefer that over a raw
-        // throw if it exists.
-        text = host.innerHTML || "";
-        if (!text) throw err;
-      }
-      host.style.display = "";
-      const container = document.createElement("div");
-      container.className = "wavedrom-container";
-      // Focusable so a keyboard user can Tab to the diagram and open the
-      // hybrid context menu with Shift+F10 / the Menu key (and reach the
-      // copy-image button, which is revealed on :focus-within).
-      container.tabIndex = 0;
-      container.dataset.wavedrom = "ok";
-      // Store the original source so hybrid mode's domToMarkdown can
-      // round-trip the diagram back to a ```wavedrom code block instead
-      // of losing it to turndown's SVG-to-text stripping.
-      container.dataset.wavedromSource = source;
-      // WaveDrom emits a single <svg>. Move it out of the temp host and
-      // into the container.
-      const svg = host.querySelector("svg");
-      if (svg) {
-        host.removeChild(svg);
-        container.appendChild(svg);
-        // Make the SVG responsive, exactly like mermaid.js: keep the
-        // `width` attribute (so the SVG has an intrinsic width for
-        // aspect-ratio to anchor to) and remove only `height`. Pin the
-        // aspect ratio from the viewBox so max-width + max-height both
-        // scale the element uniformly instead of clipping.
-        const vb = svg.getAttribute("viewBox");
-        let vbW = 0, vbH = 0;
-        if (vb) {
-          const parts = vb.split(/\s+/).map(Number);
-          if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-            vbW = parts[2];
-            vbH = parts[3];
-          }
-        }
-        if (!vbW || !vbH) {
-          vbW = parseFloat(svg.getAttribute("width")) || 0;
-          vbH = parseFloat(svg.getAttribute("height")) || 0;
-          if (vbW > 0 && vbH > 0) {
-            svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
-          }
-        }
-        svg.removeAttribute("height");
-        if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
-        // Sanitise: WaveDrom's SVG is generated from user JSON by a lib
-        // we control, the same class of trust as mermaid's output, so we
-        // accept it as-is. Strip the id suffix so a block is uniquely
-        // addressable and re-renders are idempotent.
-        svg.removeAttribute("id");
-        pre.replaceWith(container);
-      } else {
-        // No <svg> (blank/empty source). Treat as a render that produced
-        // nothing useful; surface it as an error so the block isn't
-        // silently dropped.
-        throw new Error("No SVG rendered");
-      }
+      const svg = await renderSvgElement(source);
+      container.appendChild(svg);
+      pre.replaceWith(container);
     } catch (err) {
       const msg = (err && err.message) ? String(err.message) : "Render failed";
       const firstLine = msg.split(/\r?\n/)[0].slice(0, 200);
@@ -205,8 +208,6 @@
       wrap.appendChild(head);
       wrap.appendChild(src);
       pre.replaceWith(wrap);
-    } finally {
-      host.remove();
     }
   }
 
@@ -256,7 +257,7 @@
     }
   }
 
-  NB.wavedrom = { renderAll, whenReady };
+  NB.wavedrom = { renderAll, whenReady, parseSource, renderSvgElement };
 
   /* --- lightbox: click a rendered waveform to see it full-size -------- */
   /* The full-screen overlay + zoom controls live in the shared lightbox
@@ -277,7 +278,7 @@
     containerSelector: ".wavedrom-container",
   });
 
-  NB.wavedrom = { renderAll, whenReady,
+  NB.wavedrom = { renderAll, whenReady, parseSource, renderSvgElement,
     openLightbox: lightbox.openLightbox,
     closeLightbox: lightbox.closeLightbox,
     zoomIn: lightbox.zoomIn,
@@ -298,6 +299,7 @@
       datasetKey: "wavedromSource",
       errorClass: "wavedrom-error",
       sourceClass: "wavedrom-source",
+      design: "wavedromDesign",
       renderAll,
     });
   }

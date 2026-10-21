@@ -4826,7 +4826,8 @@ body[data-theme="light"] #viewer-content {
 /* ------------------------------------------------------------------ */
 /* Scoped designer tokens (design doc §4). Spacing stays px so the panel
  * rhythm does not balloon with the app's rem font scale; text stays rem. */
-#designer-overlay {
+#designer-overlay,
+#dw-designer-overlay {
   --designer-space-1: 4px;
   --designer-space-2: 6px;
   --designer-space-3: 8px;
@@ -4843,10 +4844,19 @@ body[data-theme="light"] #viewer-content {
   --designer-ok: var(--ok);
   --designer-warn: var(--warn);
 }
-body[data-theme="light"] #designer-overlay {
+body[data-theme="light"] #designer-overlay,
+body[data-theme="light"] #dw-designer-overlay {
   --fg-muted: #5d6470;
   --designer-ok: #16703f;
   --designer-warn: #8a5a0b;
+}
+
+/* Graphviz / WaveDrom design windows (docs/design/dot-wavedrom-editor.md). */
+#dw-designer-overlay {
+  --dw-edge-hit: 14px;
+  --dw-sel-width: 2px;
+  --dw-hover-ring: color-mix(in srgb, var(--accent) 45%, transparent);
+  --dw-wavedrom-surface: #fff;
 }
 
 .designer-modal {
@@ -5326,6 +5336,343 @@ body[data-theme="light"] #designer-overlay {
     flex-direction: row; align-items: center; gap: 6px;
   }
   .designer-modal:not([data-designer-family]) .designer-add { flex: 0 0 auto; width: auto; }
+}
+
+/* --- Graphviz / WaveDrom design window chrome --------------------- */
+#dw-designer-overlay .designer-stage {
+  display: flex; flex-direction: row; overflow: hidden;
+}
+#dw-designer-overlay .designer-stage-main {
+  position: relative; flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex;
+}
+#dw-designer-overlay .designer-canvas {
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; box-sizing: border-box;
+}
+#dw-designer-overlay .dw-stage-scroll {
+  position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 100%; height: 100%; box-sizing: border-box;
+  padding: 18px; overflow-x: auto; overflow-y: hidden;
+}
+#dw-designer-overlay .dw-card {
+  position: relative; margin: auto;
+  max-width: 90%; max-height: 78%;
+  padding: 14px 16px; overflow: visible;
+  background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+#dw-designer-overlay .dw-card--wavedrom,
+#dw-designer-overlay[data-designer-lang="wavedrom"] .dw-card {
+  /* The note's WaveDrom card is white in both themes: the library's SVG
+   * carries its own light skin. Reproduce the note card, not the grid. */
+  background: var(--dw-wavedrom-surface);
+}
+#dw-designer-overlay .dw-card > svg {
+  display: block; max-width: 100%; max-height: 100%;
+}
+#dw-designer-overlay .dw-overlay {
+  position: absolute; inset: 0; pointer-events: none;
+}
+#dw-designer-overlay .dw-hit {
+  position: absolute; appearance: none; padding: 0; margin: 0;
+  border: 0; background: transparent; cursor: pointer;
+  pointer-events: auto; border-radius: 8px;
+}
+#dw-designer-overlay .dw-hit:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+#dw-designer-overlay .dw-hit.is-selected {
+  box-shadow: 0 0 0 var(--dw-sel-width) var(--accent);
+}
+#dw-designer-overlay .dw-hit.is-hover {
+  box-shadow: 0 0 0 var(--dw-sel-width) var(--dw-hover-ring);
+}
+#dw-designer-overlay .dw-edge-hit-path.is-hover {
+  stroke: var(--accent); opacity: .45;
+}
+#dw-designer-overlay .dw-edge-midpoint { border-radius: 999px; }
+#dw-designer-overlay .dw-edge-hit-path {
+  stroke: transparent; fill: none;
+  stroke-width: var(--dw-edge-hit);
+  pointer-events: stroke; cursor: pointer;
+}
+#dw-designer-overlay .dw-edge-hit-path.is-selected {
+  stroke: var(--accent); stroke-width: 2.5;
+}
+#dw-designer-overlay .dw-wave-hit {
+  left: 0 !important; width: 100% !important; border-radius: 5px;
+}
+#dw-designer-overlay .dw-wave-hit.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+#dw-designer-overlay .dw-slice-ruler {
+  display: flex; gap: 2px; align-items: center;
+  flex: 0 0 auto; width: fit-content; max-width: 100%;
+  margin: 0 0 8px; overflow: visible;
+  padding-bottom: 2px;
+}
+#dw-designer-overlay .dw-slice-cell {
+  flex: 0 0 var(--dw-slice-cell-w, 24px);
+  width: var(--dw-slice-cell-w, 24px); height: 30px;
+  min-width: 24px; min-height: 30px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-panel); color: var(--fg-muted);
+  font: inherit; font-size: .64rem; cursor: pointer;
+}
+#dw-designer-overlay .dw-slice-cell.is-hover {
+  background: var(--dw-hover-ring);
+}
+#dw-designer-overlay .dw-slice-cell.is-selected,
+#dw-designer-overlay .dw-slice-cell[aria-selected="true"] {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-fg);
+}
+#dw-designer-overlay .dw-slice-band {
+  position: absolute; z-index: 1;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  border-right: 1px solid var(--accent);
+  pointer-events: none;
+}
+#dw-designer-overlay .dw-wave-track {
+  display: flex; gap: 2px; align-items: flex-end;
+  width: 100%; overflow-x: auto; overflow-y: hidden;
+  padding: 14px 0 4px;
+}
+#dw-designer-overlay .dw-mini-track {
+  display: flex; gap: 2px; align-items: flex-end;
+  width: 236px; max-width: 100%; overflow-x: auto; overflow-y: hidden;
+  padding: 10px 0 2px;
+}
+#dw-designer-overlay .dw-mini-track-wrap {
+  width: 100%; overflow: hidden;
+}
+#dw-designer-overlay .dw-cell {
+  position: relative; flex: 0 0 24px; width: 24px; height: 34px;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; gap: 2px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-panel); cursor: pointer;
+}
+#dw-designer-overlay .dw-cell.is-selected {
+  border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+#dw-designer-overlay .dw-cell.dw-cell-period {
+  border-left: 1px solid var(--border);
+  margin-left: 2px;
+}
+#dw-designer-overlay .dw-cell-slice {
+  position: absolute; top: 1px; left: 2px;
+  font-size: .5rem; line-height: 1; color: var(--fg-muted);
+}
+#dw-designer-overlay .dw-cell-char {
+  font: .68rem ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1; padding-bottom: 3px;
+}
+#dw-designer-overlay .dw-cell-glyph {
+  width: 12px; height: 8px; display: block; color: var(--fg-muted);
+}
+#dw-designer-overlay .dw-glyph--high { border-top: 2px solid var(--fg); }
+#dw-designer-overlay .dw-glyph--low { border-bottom: 2px solid var(--fg); }
+#dw-designer-overlay .dw-glyph--high.dw-glyph--high { margin-top: 2px; }
+#dw-designer-overlay .dw-glyph--clock {
+  border-left: 2px solid var(--fg); border-bottom: 1px solid var(--fg);
+}
+#dw-designer-overlay .dw-glyph--data {
+  background: var(--accent-soft); border: 1px solid var(--accent);
+}
+#dw-designer-overlay .dw-glyph--gap {
+  background: repeating-linear-gradient(90deg,
+    var(--border) 0 2px, transparent 2px 4px);
+}
+#dw-designer-overlay .dw-glyph--extend { border-top: 1px dotted var(--fg); }
+#dw-designer-overlay .dw-glyph--unknown {
+  background: repeating-linear-gradient(45deg,
+    var(--border) 0 1px, transparent 1px 3px);
+}
+#dw-designer-overlay .dw-glyph-palette {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
+  margin-top: 6px;
+}
+#dw-designer-overlay .dw-glyph-btn {
+  min-height: 28px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-panel); color: var(--fg);
+  font: .72rem ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer;
+}
+#dw-designer-overlay .dw-glyph-btn:hover { border-color: var(--accent); }
+#dw-designer-overlay .dw-readout {
+  margin: 4px 0 0; font-size: .72rem; color: var(--fg-muted);
+}
+#dw-designer-overlay .dw-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#dw-designer-overlay .dw-data-row {
+  display: grid; grid-template-columns: 24px 1fr auto;
+  align-items: center; gap: 4px;
+}
+#dw-designer-overlay .dw-data-index {
+  color: var(--fg-muted); font-size: .68rem; text-align: right;
+}
+#dw-designer-overlay .dw-data-preview {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .74rem;
+}
+#dw-designer-overlay .dw-data-hit { border-radius: 4px; }
+#dw-designer-overlay .dw-data-hit.is-hover { background: var(--dw-hover-ring); }
+#dw-designer-overlay .dw-data-hit.is-selected {
+  box-shadow: 0 0 0 var(--dw-sel-width) var(--accent);
+  background: var(--accent-soft);
+}
+#dw-designer-overlay .designer-sel-badge {
+  position: absolute; left: 2px; top: -18px;
+  padding: 0 7px; height: 18px; line-height: 16px;
+  font-size: .64rem; font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--accent);
+  background: var(--bg-elev); border: 1px solid var(--accent);
+  border-radius: 999px; white-space: nowrap;
+}
+#dw-designer-overlay .dw-compact-nav { display: none; }
+#dw-designer-overlay .dw-compact-sheet { display: none; }
+#dw-designer-overlay .dw-compact-sheet[hidden] { display: none; }
+#dw-designer-overlay .designer-btn--block { width: 100%; }
+#dw-designer-overlay .designer-section--history {
+  margin-top: auto; position: sticky; bottom: 0;
+  padding-bottom: 8px; background: var(--bg-elev);
+}
+#dw-designer-overlay .designer-history-actions {
+  display: flex; gap: 6px;
+}
+#dw-designer-overlay .designer-history-actions .designer-btn { flex: 1 1 0; }
+#dw-designer-overlay .dw-shape-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;
+}
+#dw-designer-overlay .dw-shape-btn {
+  min-height: 34px; padding: 4px 3px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg-panel); color: var(--fg);
+  font: inherit; font-size: .72rem; cursor: pointer;
+}
+#dw-designer-overlay .dw-shape-btn:hover { border-color: var(--accent); }
+#dw-designer-overlay .dw-shape-btn[aria-pressed="true"] {
+  border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+}
+#dw-designer-overlay .dw-shape-btn:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+#dw-designer-overlay .dw-shape-btn:disabled {
+  opacity: .5; cursor: not-allowed;
+}
+#dw-designer-overlay .designer-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 0;
+}
+#dw-designer-overlay .dw-data-row {
+  grid-template-columns: 1fr auto; align-items: center;
+}
+#dw-designer-overlay .dw-source { justify-content: center; }
+#dw-designer-overlay .designer-section--source { gap: 4px; }
+
+#dw-designer-overlay.is-compact .designer-body {
+  flex-direction: column; min-height: 0;
+}
+#dw-designer-overlay.is-compact .designer-stage {
+  flex-direction: column; min-height: 45%;
+}
+#dw-designer-overlay.is-compact .designer-stage-main {
+  flex: 1 1 auto; min-height: 45%;
+}
+#dw-designer-overlay.is-compact .designer-stage {
+  position: relative;
+}
+#dw-designer-overlay.is-compact .designer-inspector.is-sheet-hidden {
+  display: none;
+}
+#dw-designer-overlay.is-compact .designer-inspector {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  width: 100%; max-height: 55%;
+  background: var(--bg-panel);
+  border-left: 0; border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .22);
+}
+#dw-designer-overlay.is-compact .dw-compact-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: flex; flex-direction: column;
+  max-height: 55%; min-height: 120px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .22);
+}
+#dw-designer-overlay .dw-sheet-head {
+  flex: 0 0 36px; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+#dw-designer-overlay .dw-sheet-grabber {
+  width: 38px; height: 4px; border-radius: 999px;
+  background: var(--border); margin: 0 auto;
+}
+#dw-designer-overlay .dw-compact-sheet-body {
+  flex: 1 1 auto; overflow-y: auto; padding: 10px 12px 14px;
+  display: flex; flex-direction: column; gap: var(--designer-space-3);
+}
+#dw-designer-overlay .dw-compact-sheet-body > .designer-section {
+  width: 100%; padding: 0;
+}
+#dw-designer-overlay.is-compact .designer-sidebar {
+  flex: 0 0 auto; width: 100%; height: 48px; min-height: 48px; max-height: 48px;
+  flex-direction: row; flex-wrap: nowrap; align-items: center;
+  gap: var(--designer-space-4);
+  padding: 0 10px;
+  overflow-x: auto; overflow-y: hidden;
+  border-right: 0; border-bottom: 1px solid var(--border);
+}
+#dw-designer-overlay.is-compact .designer-sidebar > .designer-section,
+#dw-designer-overlay.is-compact .designer-sidebar > .designer-divider {
+  display: none;
+}
+#dw-designer-overlay.is-compact .dw-compact-nav {
+  display: flex; flex: 0 0 100%; gap: 4px; overflow-x: auto;
+}
+#dw-designer-overlay.is-compact .dw-compact-nav .designer-btn {
+  flex: 0 0 40px; width: 40px; height: 40px; min-width: 40px;
+  padding: 0; font-size: 1rem;
+}
+#dw-designer-overlay.is-compact .dw-compact-nav {
+  height: 48px; align-items: center;
+}
+#dw-designer-overlay.is-compact .designer-section {
+  flex: 0 0 auto; flex-direction: column;
+}
+#dw-designer-overlay.is-compact .dw-card {
+  max-width: 100%; max-height: 70%;
+}
+#dw-designer-overlay.is-compact .dw-slice-ruler {
+  max-width: 100%; overflow: visible;
+}
+#dw-designer-overlay.is-compact .dw-stage-scroll {
+  overflow-x: auto;
+}
+@media (max-width: 960px) {
+  #dw-designer-overlay .designer-body { flex-direction: column; min-height: 0; }
+  #dw-designer-overlay .designer-sidebar {
+    flex: 0 0 auto; width: 100%; max-height: 32vh;
+    flex-direction: row; align-items: flex-start; gap: var(--designer-space-4);
+    padding: var(--designer-space-3) 10px;
+    overflow-x: auto; overflow-y: auto;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  #dw-designer-overlay .designer-section {
+    flex: 0 0 auto; flex-direction: column;
+  }
+  #dw-designer-overlay .designer-inspector {
+    flex: 0 1 auto; width: 100%; max-height: 55%;
+    border-left: 0; border-top: 1px solid var(--border);
+  }
+  #dw-designer-overlay .dw-card { max-width: 100%; max-height: 70%; }
 }
 
 /* Visimer theme bridge. The library injects its own stylesheet at runtime

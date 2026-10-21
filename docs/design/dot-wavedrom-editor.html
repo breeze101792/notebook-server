@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graphviz and WaveDrom design windows — UI mockup</title>
+<style>
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #9799a4;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --accent-fg: #14151a;
+    --border: #383a45;
+    --code-bg: #14151a;
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, .15);
+    --ok: #48b97a;
+    --warn: #e0a33e;
+    --warn-soft: rgba(224, 163, 62, .15);
+    --designer-canvas-bg: #14151a;
+    --designer-grid: rgba(124, 156, 255, .12);
+    --designer-grid-size: 24px;
+    --designer-sidebar-w: 236px;
+    --designer-inspector-w: 296px;
+    --designer-field-h: 32px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --pill: 999px;
+  }
+  body.light {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --accent-fg: #ffffff;
+    --border: #d8dde4;
+    --code-bg: #f0f2f5;
+    --danger: #c0392b;
+    --danger-soft: rgba(192, 57, 43, .12);
+    --ok: #16703f;
+    --warn: #8a5a0b;
+    --warn-soft: rgba(138, 90, 11, .12);
+    --designer-canvas-bg: #f7f8fb;
+    --designer-grid: rgba(47, 95, 208, .14);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .mock-page { padding: 28px 24px 64px; max-width: 1440px; margin: 0 auto; }
+  .mock-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  .mock-head h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+  .mock-head p { margin: 0; color: var(--fg-muted); font-size: .82rem; }
+  .theme-toggle {
+    display: inline-flex; align-items: center; gap: 8px; margin: 14px 0 26px;
+    color: var(--fg-muted); font-size: .8rem; cursor: pointer; user-select: none;
+  }
+  .theme-toggle input { accent-color: var(--accent); }
+  .mock-label {
+    margin: 34px 0 8px; color: var(--fg-muted); font-size: .72rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .mock-note { margin: 0 0 12px; color: var(--fg-muted); font-size: .8rem; }
+
+  /* --- modal shell (shared with mermaid-editor.html) --- */
+  .settings-overlay.is-static {
+    position: relative; display: flex; align-items: center; justify-content: center;
+    padding: 24px; background: rgba(0, 0, 0, .18); border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+  }
+  .settings-modal.designer-modal {
+    display: flex; flex-direction: column;
+    width: min(1320px, 100%); height: min(620px, 78vh); min-height: 540px;
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 10px; box-shadow: 0 18px 60px rgba(0, 0, 0, .32); overflow: hidden;
+  }
+  .settings-modal.designer-modal:focus-visible { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .settings-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: var(--bg-panel); flex: 0 0 auto;
+  }
+  .designer-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .designer-heading h2 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+  .type-badge {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 8px;
+    border: 1px solid var(--border); border-radius: var(--pill);
+    color: var(--fg-muted); font-size: .66rem; font-weight: 600;
+    letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
+  }
+  .icon-btn {
+    width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--bg-elev); color: var(--fg); font-size: 16px; line-height: 1; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .icon-btn:focus-visible, .settings-action:focus-visible, .designer-btn:focus-visible,
+  .designer-field:focus-visible, .designer-select:focus-visible, .designer-iconbtn:focus-visible {
+    outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent);
+  }
+
+  .settings-body.designer-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+
+  /* --- left sidebar --- */
+  .designer-sidebar {
+    flex: 0 0 var(--designer-sidebar-w); width: var(--designer-sidebar-w);
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 10px; overflow-y: auto; min-height: 0;
+    background: var(--bg-elev); border-right: 1px solid var(--border);
+  }
+  .designer-section { display: flex; flex-direction: column; gap: 8px; }
+  .designer-sidebar-title {
+    margin: 0; color: var(--fg-muted); font-size: .7rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .designer-divider { height: 1px; background: var(--border); }
+  .designer-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 30px; padding: 5px 10px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-elev); color: var(--fg);
+    font: inherit; font-size: .8rem; cursor: pointer;
+  }
+  .designer-btn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .designer-btn--commit { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .designer-btn--commit:hover { background: var(--accent); color: var(--accent-fg); }
+  .designer-btn--block { width: 100%; }
+  .designer-btn:disabled { opacity: .45; cursor: default; }
+  .designer-scope-note {
+    margin: 0; padding: 7px 8px; border: 1px dashed var(--border);
+    border-radius: var(--radius-sm); color: var(--fg-muted); font-size: .7rem;
+  }
+  .designer-field-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .designer-label { color: var(--fg-muted); font-size: .74rem; }
+  .designer-field, .designer-select {
+    width: 100%; height: var(--designer-field-h); padding: 0 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--code-bg); color: var(--fg); font: inherit; font-size: .82rem;
+  }
+  .designer-select { cursor: pointer; }
+  .designer-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .designer-chip {
+    min-height: 26px; padding: 0 8px; border: 1px solid var(--border);
+    border-radius: var(--pill); background: var(--bg); color: var(--fg-muted);
+    font: inherit; font-size: .7rem; font-weight: 600; cursor: pointer;
+  }
+  .designer-chip[aria-checked="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+  /* --- stage --- */
+  .designer-stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+  .designer-canvas {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background-color: var(--designer-canvas-bg);
+    background-image: radial-gradient(var(--designer-grid) 1px, transparent 1px);
+    background-size: var(--designer-grid-size) var(--designer-grid-size);
+    overflow: hidden;
+  }
+  .designer-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+  .designer-hint {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    max-width: calc(100% - 32px); padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: var(--pill); background: var(--bg-panel); color: var(--fg-muted);
+    font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .sel-badge {
+    position: absolute; top: 10px; left: 12px; display: inline-flex; align-items: center;
+    height: 18px; padding: 0 7px; border: 1px solid var(--accent); border-radius: var(--pill);
+    background: var(--bg-panel); color: var(--accent); font-size: .62rem; font-weight: 600;
+    letter-spacing: .4px; text-transform: uppercase; pointer-events: none;
+  }
+
+  .diagram { max-width: 92%; max-height: 86%; }
+  .diagram text { font-family: inherit; font-size: 12px; fill: var(--fg); }
+  .diagram .node { fill: var(--bg-elev); stroke: var(--border); stroke-width: 1.2; }
+  .diagram .node-label { font-weight: 600; }
+  .diagram .edge { fill: none; stroke: var(--fg-muted); stroke-width: 1.2; }
+  .diagram .edge-sel { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+  .diagram .edge-hit { fill: none; stroke: transparent; stroke-width: 12; }
+  .diagram .edge-label { font-size: 10px; fill: var(--fg-muted); }
+  .diagram .edge-label-bg { fill: var(--designer-canvas-bg); }
+  .diagram .grid-rule { stroke: var(--border); stroke-width: 1; }
+  .diagram .grid-text { font-size: 9px; fill: var(--fg-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .diagram .wave-high { stroke: var(--fg-muted); stroke-width: 1.4; fill: none; }
+  .diagram .wave-low { stroke: var(--fg-muted); stroke-width: 1.4; fill: none; }
+  .diagram .wave-bus { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+  .diagram .wave-label { font-size: 11px; fill: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .diagram .slice-hl { fill: var(--accent-soft); opacity: .55; }
+
+  /* --- inspector --- */
+  .designer-inspector {
+    flex: 0 0 var(--designer-inspector-w); width: var(--designer-inspector-w);
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--bg-elev); border-left: 1px solid var(--border);
+  }
+  .designer-inspector-head {
+    display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .designer-inspector-head .glyph {
+    width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg);
+    color: var(--accent); flex: 0 0 auto; font-size: .7rem; font-weight: 700;
+  }
+  .designer-inspector-head h4 { margin: 0; font-size: .86rem; font-weight: 600; }
+  .designer-inspector-meta { color: var(--fg-muted); font-size: .68rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .designer-inspector-clear { margin-left: auto; }
+  .designer-inspector-body { padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+  .designer-group { display: flex; flex-direction: column; gap: 7px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .designer-group:first-child { padding-top: 0; border-top: 0; }
+  .designer-group-title {
+    margin: 0; color: var(--fg-muted); font-size: .68rem; font-weight: 600;
+    letter-spacing: .6px; text-transform: uppercase;
+  }
+  .designer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+  /* --- footer --- */
+  .settings-footer {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-panel);
+    flex: 0 0 auto;
+  }
+  .designer-status { color: var(--fg-muted); font-size: .76rem; }
+  .designer-status--ok { color: var(--ok); }
+  .designer-status--error { color: var(--danger); }
+  .settings-actions { display: flex; gap: 8px; }
+  .settings-action {
+    min-height: 30px; padding: 5px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg-elev); color: var(--fg);
+    font: inherit; font-size: .8rem; cursor: pointer;
+  }
+  .settings-action:hover { border-color: var(--accent); color: var(--accent); }
+  .settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  .settings-action--quiet { border-color: transparent; background: transparent; color: var(--fg-muted); }
+  .settings-action--quiet:hover { background: var(--bg-elev); color: var(--fg); border-color: var(--border); }
+
+  /* --- state cards --- */
+  .state-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .state-card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-panel); overflow: hidden; }
+  .state-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  .state-card-head h3 { margin: 0; font-size: .82rem; font-weight: 600; }
+  .state-card-body { padding: 18px 14px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; min-height: 168px; justify-content: center; }
+  .state-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border); border-radius: 50%; color: var(--fg-muted); font-size: .9rem; }
+  .state-title { margin: 0; font-size: .84rem; font-weight: 600; }
+  .state-msg { margin: 0; color: var(--fg-muted); font-size: .74rem; max-width: 30ch; }
+  .state-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .state-card--warn { border-color: var(--warn); }
+  .state-card--warn .state-icon { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  @media (max-width: 1100px) {
+    .state-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 860px) {
+    .mock-page { padding: 18px 10px 40px; }
+    .settings-overlay.is-static { padding: 8px; }
+    .settings-modal.designer-modal { height: 620px; }
+  }
+</style>
+</head>
+<body>
+<div class="mock-page">
+  <div class="mock-head">
+    <h1>Graphviz and WaveDrom design windows — mockup</h1>
+    <p>Static reference for <code>web-engineer</code>. Not wired to the app.</p>
+  </div>
+  <label class="theme-toggle"><input type="checkbox" onchange="document.body.classList.toggle('light', this.checked)"> Light theme</label>
+
+  <!-- ============ 1. Graphviz ============ -->
+  <p class="mock-label">1 · Graphviz — edge selected</p>
+  <p class="mock-note">The stage is the rendered block, not a freeform canvas. Selection chrome is drawn outside the SVG. Apply rewrites only the selected statement.</p>
+
+  <div class="settings-overlay is-static">
+    <section class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-labelledby="dot-title" tabindex="-1">
+      <header class="settings-header">
+        <div class="designer-heading">
+          <h2 id="dot-title">Design diagram</h2>
+          <span class="type-badge">Graphviz</span>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Close" title="Close">&times;</button>
+      </header>
+
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar" aria-label="Graphviz build tools">
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Add</h3>
+            <button class="designer-btn designer-btn--block" type="button">+ Node</button>
+            <button class="designer-btn designer-btn--block" type="button">+ Edge</button>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Graph</h3>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="dot-dir">Direction</label>
+              <select class="designer-select" id="dot-dir">
+                <option>Top to bottom</option>
+                <option selected>Left to right</option>
+                <option>Bottom to top</option>
+                <option>Right to left</option>
+              </select>
+            </div>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Selection</h3>
+            <p class="designer-scope-note">Select a node or an edge on the stage to edit it. The table below mirrors the graph.</p>
+            <button class="designer-btn designer-btn--block" type="button">Nodes &amp; edges…</button>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Source</h3>
+            <button class="designer-btn designer-btn--block" type="button">Edit source instead</button>
+            <p class="designer-scope-note">Use the plain fence editor for attributes, subgraphs, and comments this window does not edit.</p>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="Graphviz canvas. Use the table in the sidebar to select a node or edge.">
+            <svg class="diagram" viewBox="0 0 560 330" role="img" aria-label="Graph: Note points to Render, Note points to Text, Render points to Text.">
+              <defs>
+                <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+                </marker>
+              </defs>
+              <rect class="node" x="24" y="132" width="120" height="52" rx="8"/>
+              <text class="node-label" x="84" y="163" text-anchor="middle">Note</text>
+              <rect class="node" x="396" y="48" width="130" height="52" rx="8"/>
+              <text class="node-label" x="461" y="79" text-anchor="middle">Render</text>
+              <rect class="node" x="396" y="220" width="130" height="52" rx="8"/>
+              <text class="node-label" x="461" y="251" text-anchor="middle">Text</text>
+
+              <path class="edge" d="M144 150 C 250 150, 290 74, 396 74" marker-end="url(#arrow)" color="var(--fg-muted)"/>
+              <rect class="edge-label-bg" x="236" y="112" width="72" height="16" rx="3"/>
+              <text class="edge-label" x="272" y="124" text-anchor="middle">renders</text>
+
+              <path class="edge-sel" d="M144 166 C 250 166, 290 246, 396 246" marker-end="url(#arrow)" color="var(--accent)"/>
+              <path class="edge-hit" d="M144 166 C 250 166, 290 246, 396 246"/>
+              <rect class="edge-label-bg" x="228" y="214" width="88" height="16" rx="3"/>
+              <text class="edge-label" x="272" y="226" text-anchor="middle" style="fill: var(--accent)">falls back to</text>
+
+              <path class="edge" d="M461 100 L 461 220" marker-end="url(#arrow)" color="var(--fg-muted)"/>
+            </svg>
+            <span class="sel-badge">Edge · Note → Text</span>
+            <p class="designer-hint">Select a node or edge · Graphviz computes the layout</p>
+          </div>
+        </div>
+
+        <aside class="designer-inspector" aria-label="Edge inspector">
+          <div class="designer-inspector-head">
+            <span class="glyph" aria-hidden="true">E</span>
+            <div>
+              <h4>Edge</h4>
+              <div class="designer-inspector-meta">Note → Text</div>
+            </div>
+            <button class="icon-btn designer-inspector-clear" type="button" aria-label="Clear selection" title="Clear selection">&times;</button>
+          </div>
+          <div class="designer-inspector-body">
+            <div class="designer-group">
+              <h5 class="designer-group-title">Endpoints</h5>
+              <div class="designer-row">
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="dot-from">From</label>
+                  <select class="designer-select" id="dot-from"><option selected>Note</option><option>Render</option><option>Text</option></select>
+                </div>
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="dot-to">To</label>
+                  <select class="designer-select" id="dot-to"><option>Note</option><option>Render</option><option selected>Text</option></select>
+                </div>
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Label</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="dot-edge-label">Edge label</label>
+                <input class="designer-field" id="dot-edge-label" value="falls back to">
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Line &amp; arrow</h5>
+              <div class="designer-row">
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="dot-line">Line</label>
+                  <select class="designer-select" id="dot-line"><option selected>Solid</option><option>Dashed</option><option>Dotted</option><option>Bold</option></select>
+                </div>
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="dot-arrow">Arrow</label>
+                  <select class="designer-select" id="dot-arrow"><option>None</option><option selected>Arrow</option><option>Both</option><option>Dot</option></select>
+                </div>
+              </div>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Colour</h5>
+              <div class="designer-chips" role="group" aria-label="Edge colour">
+                <button class="designer-chip" type="button" aria-checked="true">Auto</button>
+                <button class="designer-chip" type="button" aria-checked="false">Accent</button>
+                <button class="designer-chip" type="button" aria-checked="false">Muted</button>
+                <button class="designer-chip" type="button" aria-checked="false">Danger</button>
+              </div>
+            </div>
+            <div class="designer-group">
+              <button class="designer-btn" type="button">Reverse direction</button>
+              <button class="designer-btn" type="button" style="color: var(--danger); border-color: transparent;">Delete edge</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action settings-action--quiet" type="button">Edit source instead</button>
+          <button class="settings-action" type="button">Cancel</button>
+          <button class="settings-action settings-action--primary" type="button">Apply</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ============ 2. WaveDrom ============ -->
+  <p class="mock-label">2 · WaveDrom — slice selected</p>
+  <p class="mock-note">Each row is one signal. The wave field is authoritative; the glyph row previews it. Only the selected signal or slice is rewritten.</p>
+
+  <div class="settings-overlay is-static">
+    <section class="settings-modal designer-modal" role="dialog" aria-modal="true" aria-labelledby="wave-title" tabindex="-1">
+      <header class="settings-header">
+        <div class="designer-heading">
+          <h2 id="wave-title">Design diagram</h2>
+          <span class="type-badge">WaveDrom timing</span>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Close" title="Close">&times;</button>
+      </header>
+
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar" aria-label="WaveDrom build tools">
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Add</h3>
+            <button class="designer-btn designer-btn--block" type="button">+ Signal</button>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Diagram</h3>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="wave-period">Period</label>
+              <input class="designer-field" id="wave-period" value="1">
+            </div>
+            <div class="designer-field-wrap">
+              <label class="designer-label" for="wave-hscale">Horizontal scale</label>
+              <input class="designer-field" id="wave-hscale" value="1">
+            </div>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Signals</h3>
+            <button class="designer-btn designer-btn--block" type="button">clk · p…</button>
+            <button class="designer-btn designer-btn--block" type="button" aria-pressed="true" style="border-color: var(--accent); color: var(--accent);">data · x.345x</button>
+            <button class="designer-btn designer-btn--block" type="button">valid · 0.1…</button>
+          </section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section">
+            <h3 class="designer-sidebar-title">Source</h3>
+            <button class="designer-btn designer-btn--block" type="button">Edit source instead</button>
+            <p class="designer-scope-note">Edges, groups, foot, and unknown keys stay untouched; use the fence editor to change them.</p>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-canvas" tabindex="0" aria-label="WaveDrom canvas. Use the signal list to select a row.">
+            <svg class="diagram" viewBox="0 0 560 320" role="img" aria-label="Timing diagram with clk, data, and valid signals; slice 5 of data is selected.">
+              <rect class="slice-hl" x="300" y="26" width="72" height="220" rx="3"/>
+              <line class="grid-rule" x1="46" y1="272" x2="530" y2="272"/>
+              <text class="grid-text" x="66" y="288">1</text>
+              <text class="grid-text" x="132" y="288">2</text>
+              <text class="grid-text" x="198" y="288">3</text>
+              <text class="grid-text" x="264" y="288">4</text>
+              <text class="grid-text" x="330" y="288">5</text>
+              <text class="grid-text" x="396" y="288">6</text>
+              <text class="grid-text" x="462" y="288">7</text>
+              <text class="grid-text" x="528" y="288">8</text>
+
+              <text class="wave-label" x="14" y="62">clk</text>
+              <path class="wave-low" d="M46 82 L 96 82 L 96 52 L 162 52 L 162 82 L 228 82 L 228 52 L 294 52 L 294 82 L 360 82 L 360 52 L 426 52 L 426 82 L 492 82 L 492 52 L 530 52"/>
+
+              <text class="wave-label" x="14" y="142">data</text>
+              <path class="wave-high" d="M46 160 L 96 160 L 96 128 L 162 128 L 162 160 L 228 160"/>
+              <path class="wave-high" d="M360 160 L 426 160 L 426 128 L 492 128 L 492 160 L 530 160"/>
+              <polygon class="wave-bus" points="96,128 162,128 162,160 96,160"/>
+              <polygon class="wave-bus" points="228,128 294,128 294,160 228,160"/>
+              <polygon class="wave-bus" points="294,128 360,128 360,160 294,160" style="stroke: var(--accent); stroke-width: 2.4;"/>
+              <text class="grid-text" x="126" y="148" text-anchor="middle">head</text>
+              <text class="grid-text" x="261" y="148" text-anchor="middle">body</text>
+              <text class="grid-text" x="327" y="148" text-anchor="middle" style="fill: var(--accent);">tail</text>
+
+              <text class="wave-label" x="14" y="222">valid</text>
+              <path class="wave-low" d="M46 240 L 96 240 L 96 210 L 426 210 L 426 240 L 530 240"/>
+            </svg>
+            <span class="sel-badge">Slice 5 · data</span>
+            <p class="designer-hint">Select a signal or slice · WaveDrom draws the waveform</p>
+          </div>
+        </div>
+
+        <aside class="designer-inspector" aria-label="Slice inspector">
+          <div class="designer-inspector-head">
+            <span class="glyph" aria-hidden="true">S</span>
+            <div>
+              <h4>Slice 5</h4>
+              <div class="designer-inspector-meta">data · index 4</div>
+            </div>
+            <button class="icon-btn designer-inspector-clear" type="button" aria-label="Clear selection" title="Clear selection">&times;</button>
+          </div>
+          <div class="designer-inspector-body">
+            <div class="designer-group">
+              <h5 class="designer-group-title">Signal</h5>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="wave-name">Name</label>
+                <input class="designer-field" id="wave-name" value="data">
+              </div>
+              <div class="designer-field-wrap">
+                <label class="designer-label" for="wave-wave">Wave</label>
+                <input class="designer-field" id="wave-wave" value="x.345x" spellcheck="false">
+              </div>
+              <p class="designer-scope-note">Wave characters: <code>0 1 x z p n . = 2-9</code>. The readout below describes the selected slice.</p>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Selected slice</h5>
+              <div class="designer-row">
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="wave-char">Character</label>
+                  <select class="designer-select" id="wave-char"><option>x</option><option>0</option><option>1</option><option>z</option><option selected>5</option><option>=</option></select>
+                </div>
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="wave-label">Data label</label>
+                  <input class="designer-field" id="wave-label" value="tail">
+                </div>
+              </div>
+              <p class="designer-scope-note">Readout: slice 5 of <strong>data</strong> shows a bus value labelled <strong>tail</strong>.</p>
+            </div>
+            <div class="designer-group">
+              <h5 class="designer-group-title">Signal options</h5>
+              <div class="designer-row">
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="wave-phase">Phase</label>
+                  <input class="designer-field" id="wave-phase" value="0">
+                </div>
+                <div class="designer-field-wrap">
+                  <label class="designer-label" for="wave-period2">Period</label>
+                  <input class="designer-field" id="wave-period2" value="1">
+                </div>
+              </div>
+            </div>
+            <div class="designer-group">
+              <button class="designer-btn" type="button">Duplicate signal</button>
+              <button class="designer-btn" type="button" style="color: var(--danger); border-color: transparent;">Delete signal</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="settings-footer">
+        <span class="designer-status">Unsaved changes</span>
+        <div class="settings-actions">
+          <button class="settings-action settings-action--quiet" type="button">Edit source instead</button>
+          <button class="settings-action" type="button">Cancel</button>
+          <button class="settings-action settings-action--primary" type="button">Apply</button>
+        </div>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ============ 3. States ============ -->
+  <p class="mock-label">3 · Window states</p>
+  <p class="mock-note">Errors and unsupported shapes keep the window usable and always offer the source path. Apply stays disabled until the model is valid.</p>
+
+  <div class="state-grid">
+    <article class="state-card">
+      <div class="state-card-head"><h3>Empty</h3><span class="type-badge">No items</span></div>
+      <div class="state-card-body">
+        <span class="state-icon" aria-hidden="true">+</span>
+        <p class="state-title">Nothing to design yet</p>
+        <p class="state-msg">This block has no nodes or signals. Add an item, or edit the source directly.</p>
+        <div class="state-actions">
+          <button class="settings-action" type="button">Add node</button>
+          <button class="settings-action settings-action--quiet" type="button">Edit source instead</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="state-card state-card--warn">
+      <div class="state-card-head"><h3>Parse error</h3><span class="type-badge">Invalid source</span></div>
+      <div class="state-card-body">
+        <span class="state-icon" aria-hidden="true">!</span>
+        <p class="state-title">Couldn’t read this diagram</p>
+        <p class="state-msg">Line 3: expected “{”. The preview cannot be built until the source parses.</p>
+        <div class="state-actions">
+          <button class="settings-action" type="button">Retry</button>
+          <button class="settings-action settings-action--quiet" type="button">Edit source instead</button>
+        </div>
+      </div>
+    </article>
+
+    <article class="state-card">
+      <div class="state-card-head"><h3>Unsupported construct</h3><span class="type-badge">Source only</span></div>
+      <div class="state-card-body">
+        <span class="state-icon" aria-hidden="true">i</span>
+        <p class="state-title">This block uses a feature the window can’t edit</p>
+        <p class="state-msg">Subgraphs, ports, and default-attribute lines stay on the source path. The rest of the block is unchanged.</p>
+        <div class="state-actions">
+          <button class="settings-action settings-action--primary" type="button">Edit source instead</button>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+</body>
+</html>

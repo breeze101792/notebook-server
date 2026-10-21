@@ -1006,6 +1006,153 @@ const html = `<!DOCTYPE html><html><head>
 
   </div>
 
+  <!-- Graphviz / WaveDrom design window (shared shell). -->
+  <div id="dw-designer-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
+         aria-labelledby="dw-title">
+      <div class="settings-header designer-header">
+        <div class="designer-heading">
+          <h2 id="dw-title">Design diagram</h2>
+          <span class="designer-type" id="dw-type"></span>
+        </div>
+        <button id="dw-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar" id="dw-sidebar" hidden>
+          <div class="dw-compact-nav" aria-label="Design sections">
+            <button type="button" class="designer-btn" data-compact="add"
+                    title="Add" aria-label="Add">+</button>
+            <button type="button" class="designer-btn" data-compact="chart"
+                    title="Chart" aria-label="Chart">▦</button>
+            <button type="button" class="designer-btn" data-compact="source"
+                    title="Source" aria-label="Source">⌨</button>
+            <button type="button" class="designer-btn" data-compact="undo"
+                    title="Undo" aria-label="Undo">↶</button>
+            <button type="button" class="designer-btn" data-compact="redo"
+                    title="Redo" aria-label="Redo">↷</button>
+          </div>
+          <section class="designer-section designer-section--add" id="dw-add-section">
+            <h3 class="designer-sidebar-title" id="dw-add-title">Add</h3>
+            <div class="designer-add-tabs" id="dw-add-tabs" role="tablist"
+                 aria-label="Add an element" hidden></div>
+            <form class="designer-add-form" id="dw-add-form" hidden novalidate>
+              <div class="designer-fields" id="dw-add-fields"></div>
+              <p class="designer-field-error" id="dw-add-error" role="alert" hidden></p>
+              <p class="designer-scope-note" id="dw-add-note" hidden></p>
+              <button id="dw-add-submit" type="submit"
+                      class="designer-btn designer-btn--commit">Add</button>
+            </form>
+          </section>
+          <div class="designer-divider" id="dw-chart-divider" hidden aria-hidden="true"></div>
+          <section class="designer-section designer-section--chart" id="dw-chart"
+                   aria-label="Chart" hidden></section>
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section designer-section--source">
+            <button id="dw-edit-source" class="designer-btn designer-btn--ghost
+                    designer-btn--block dw-source" type="button">
+              Edit source instead
+            </button>
+            <p class="designer-scope-note">Closes this window and opens the block’s Markdown.</p>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section designer-section--history" id="dw-history"
+                   aria-labelledby="dw-history-title">
+            <h3 class="designer-sidebar-title" id="dw-history-title">History</h3>
+            <div class="designer-history-actions">
+              <button id="dw-undo" class="designer-btn designer-btn--ghost"
+                      type="button" title="Undo" aria-label="Undo" disabled>Undo</button>
+              <button id="dw-redo" class="designer-btn designer-btn--ghost"
+                      type="button" title="Redo" aria-label="Redo" disabled>Redo</button>
+            </div>
+          </section>
+        </aside>
+        <div class="designer-stage">
+          <div class="designer-stage-main">
+          <div class="designer-alert" id="dw-alert" role="alert" hidden>
+            <span class="designer-alert-msg" id="dw-alert-msg"></span>
+            <button class="designer-alert-dismiss" type="button"
+                    title="Dismiss" aria-label="Dismiss error">×</button>
+          </div>
+          <div class="designer-canvas dw-stage" id="dw-canvas" tabindex="0"
+               role="application" aria-label="Diagram canvas">
+            <div class="dw-stage-scroll" id="dw-stage-scroll">
+              <div class="dw-slice-ruler" id="dw-slice-ruler" role="listbox"
+                   aria-label="Time slices" aria-orientation="horizontal" hidden></div>
+              <div class="dw-card dw-card--dot" id="dw-diagram-card">
+                <div class="dw-overlay" id="dw-overlay-layer"></div>
+              </div>
+              <div class="dw-slice-band" id="dw-slice-band" hidden
+                   aria-hidden="true"></div>
+            </div>
+            <div class="designer-empty" id="dw-empty" hidden>
+              <span class="designer-state-icon" aria-hidden="true">◇</span>
+              <p class="designer-state-msg dw-empty-msg"></p>
+            </div>
+            <div class="designer-state designer-state--loading" id="dw-loading" hidden>
+              <span class="designer-spinner" aria-hidden="true"></span>
+              <p class="designer-state-msg" role="status">Loading diagram…</p>
+            </div>
+            <div class="designer-state designer-state--error" id="dw-error"
+                 role="alert" hidden>
+              <span class="designer-state-icon" aria-hidden="true">⚠</span>
+              <h3 class="designer-state-title">Couldn’t open this diagram</h3>
+              <p class="designer-state-msg" id="dw-error-msg"></p>
+              <div class="designer-state-actions">
+                <button id="dw-retry" class="settings-action">Retry</button>
+                <button id="dw-error-edit-source" class="settings-action">Edit source instead</button>
+              </div>
+            </div>
+            <div class="designer-state designer-state--readonly" id="dw-readonly"
+                 role="alert" hidden>
+              <span class="designer-state-icon" aria-hidden="true">◌</span>
+              <h3 class="designer-state-title">Read-only diagram</h3>
+              <p class="designer-state-msg" id="dw-readonly-msg"></p>
+              <div class="designer-state-actions">
+                <button id="dw-readonly-edit-source" class="settings-action">Edit source instead</button>
+              </div>
+            </div>
+
+            <p class="designer-hint" id="dw-hint" hidden></p>
+          </div>
+                  </div>
+
+        <div class="dw-compact-sheet" id="dw-compact-sheet" role="dialog"
+             aria-modal="false" aria-label="Build sheet" aria-hidden="true" hidden>
+          <div class="dw-sheet-head">
+            <span class="dw-sheet-grabber" aria-hidden="true"></span>
+            <button id="dw-sheet-close" class="icon-btn" type="button"
+                    title="Close sheet" aria-label="Close sheet">×</button>
+          </div>
+          <div class="dw-compact-sheet-body" id="dw-compact-sheet-body"></div>
+        </div>
+
+        <aside class="designer-inspector" id="dw-inspector" hidden
+               aria-labelledby="dw-inspector-kind">
+          <div class="designer-inspector-head" id="dw-inspector-head"
+               aria-live="polite">
+            <span class="designer-inspector-glyph" aria-hidden="true">◇</span>
+            <div class="designer-inspector-titles">
+              <h4 class="designer-inspector-kind" id="dw-inspector-kind">Nothing selected</h4>
+              <span class="designer-inspector-meta" id="dw-inspector-meta"></span>
+            </div>
+            <button id="dw-inspector-clear" class="designer-btn designer-btn--ghost"
+                    type="button" title="Clear selection"
+                    aria-label="Clear selection" hidden>×</button>
+          </div>
+          <div class="designer-inspector-body" id="dw-inspector-body"></div>
+        </aside>
+</div>
+
+      </div>
+      <div class="settings-footer designer-footer">
+        <span class="designer-status" id="dw-status" role="status" aria-live="polite"></span>
+        <button id="dw-cancel" class="settings-action">Cancel</button>
+        <button id="dw-apply" class="settings-action settings-action--primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mermaid lightbox overlay -->
   <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
     <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
@@ -1801,6 +1948,9 @@ evalIn(read("static/js/windows.js"));
 evalIn(read("static/js/settings.js"));
   evalIn(read("static/js/export.js"));
   evalIn(read("static/js/mermaid-designer.js"));
+  evalIn(read("static/js/designer-shell.js"));
+  evalIn(read("static/js/dot-designer.js"));
+  evalIn(read("static/js/wavedrom-designer.js"));
   evalIn(read("static/js/vimnav.js"));
 evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
@@ -14269,8 +14419,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v11",
-      /const CACHE = "notebook-v11"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v12",
+      /const CACHE = "notebook-v12"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -26423,7 +26573,8 @@ function check(label, cond, extra) {
 
     const hcm = $("nb-menu");
     const menuButtons = () => Array.from(hcm.querySelectorAll("button"));
-    const designBtn = () => menuButtons().find((b) => /^Design diagram/.test(b.textContent));
+    const designBtn = () => menuButtons().find(
+      (b) => /^Design (diagram|graph|timing)/.test(b.textContent));
     const editSourceBtn = () => menuButtons().find((b) => /Edit mermaid source/.test(b.textContent));
     const openBlockMenu = async (el) => { el.dispatchEvent(ctxmenu()); await tick(10); };
 
@@ -26480,8 +26631,10 @@ function check(label, cond, extra) {
     check("designer: a non-mermaid (wavedrom) block is present (precondition)", !!wdContainer);
     if (wdContainer) {
       await openBlockMenu(wdContainer);
-      check("designer menu: item absent for a non-mermaid (wavedrom) block", !designBtn());
-      check("designer menu: non-mermaid block still offers its source editor",
+      check("designer menu: a wavedrom block offers Design timing…",
+        !!designBtn() && /^Design timing/.test(designBtn().textContent),
+        designBtn() ? designBtn().textContent : "no item");
+      check("designer menu: wavedrom block still offers its source editor",
         !!menuButtons().find((b) => /Edit wavedrom source/i.test(b.textContent)));
     }
 
@@ -28495,6 +28648,2187 @@ function check(label, cond, extra) {
     else delete window.mermaid.parse;
     window.Visimer = origVisimer;
     await window.NB.hybrid.exit(false);
+    await tick(30);
+  }
+
+  // ------------------------------------------------------------------
+  // Graphviz / WaveDrom design windows
+  // ------------------------------------------------------------------
+  console.log("== dot/wavedrom designer ==");
+  {
+    const overlay = $("dw-designer-overlay");
+    const vc = $("viewer-content");
+    const ctxmenu = () => new window.MouseEvent("contextmenu",
+      { bubbles: true, cancelable: true, clientX: 100, clientY: 100 });
+    const clickEv = (el) => el.dispatchEvent(new window.Event("click", { bubbles: true }));
+    const inputEv = (el) => el.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const changeEv = (el) => el.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const menuButtons = () => Array.from($("nb-menu").querySelectorAll("button"));
+    const designBtn = () => menuButtons().find(
+      (b) => /^Design (diagram|graph|timing)/.test(b.textContent));
+    const toastText = () => {
+      const t = window.document.querySelector(".toast");
+      return t ? (t.textContent || "") : "";
+    };
+    const filePosts = () => fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    const svgEl = (tag) => window.document.createElementNS("http://www.w3.org/2000/svg", tag);
+
+    function fakeDotStatements(src) {
+      const text = String(src || "");
+      const open = text.indexOf("{");
+      const close = text.lastIndexOf("}");
+      if (open < 0 || close <= open) return [];
+      const body = text.slice(open + 1, close);
+      const out = [];
+      let start = 0;
+      let depth = 0;
+      let inQuote = false;
+      const push = function (end) {
+        const raw = body.slice(start, end).trim();
+        if (raw) out.push(raw);
+        start = end + 1;
+      };
+      for (let i = 0; i < body.length; i++) {
+        const c = body[i];
+        if (inQuote) {
+          if (c === "\\") { i++; continue; }
+          if (c === '"') inQuote = false;
+          continue;
+        }
+        if (c === '"') { inQuote = true; continue; }
+        if (c === "[") { depth++; continue; }
+        if (c === "]") { if (depth > 0) depth--; continue; }
+        if (depth === 0 && (c === ";" || c === "\n" || c === "\r")) push(i);
+      }
+      const tail = body.slice(start).trim();
+      if (tail) out.push(tail);
+      return out;
+    }
+
+    function fakeDotSvg(src) {
+      const svg = svgEl("svg");
+      svg.setAttribute("viewBox", "0 0 300 150");
+      const nodes = [];
+      const edges = [];
+      const idRe = /("(?:[^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_]*|-?\d+(?:\.\d+)?)/;
+      for (const statement of fakeDotStatements(src)) {
+        const t = statement.replace(/\s+/g, " ").trim();
+        if (!t || /^rankdir\b/i.test(t) ||
+            /^(graph|node|edge)\s*\[/i.test(t)) continue;
+        const em = new RegExp("^" + idRe.source + "\\s*(->|--)\\s*" +
+          idRe.source).exec(t);
+        if (em) {
+          const from = em[1].replace(/^"|"$/g, "");
+          const to = em[3].replace(/^"|"$/g, "");
+          edges.push({ from: from, to: to, op: em[2] });
+          if (nodes.indexOf(from) === -1) nodes.push(from);
+          if (nodes.indexOf(to) === -1) nodes.push(to);
+          continue;
+        }
+        const nm = new RegExp("^" + idRe.source).exec(t);
+        if (nm) {
+          const id = nm[1].replace(/^"|"$/g, "");
+          if (nodes.indexOf(id) === -1) nodes.push(id);
+        }
+      }
+      for (const id of nodes) {
+        const g = svgEl("g");
+        g.setAttribute("class", "node");
+        const title = svgEl("title");
+        title.textContent = id;
+        const rect = svgEl("rect");
+        rect.setAttribute("width", "40");
+        rect.setAttribute("height", "20");
+        g.appendChild(title);
+        g.appendChild(rect);
+        svg.appendChild(g);
+      }
+      for (const edge of edges) {
+        const g = svgEl("g");
+        g.setAttribute("class", "edge");
+        const title = svgEl("title");
+        title.textContent = edge.from + edge.op + edge.to;
+        const path = svgEl("path");
+        path.setAttribute("d", "M0 0 L40 0");
+        g.appendChild(title);
+        g.appendChild(path);
+        svg.appendChild(g);
+      }
+      return svg;
+    }
+
+    function waveEntries(obj) {
+      const out = [];
+      function walk(arr) {
+        for (const item of arr) {
+          if (Array.isArray(item)) walk(item.slice(1));
+          else if (item && Object.keys(item).length === 0) out.push({ kind: "gap" });
+          else if (item && typeof item.wave === "string") {
+            out.push({ kind: "signal", signal: item });
+          }
+        }
+      }
+      walk(obj.signal || []);
+      return out;
+    }
+
+    function fakeWaveSvg(src) {
+      const obj = window.NB.wavedrom.parseSource(src);
+      const entries = waveEntries(obj);
+      const svg = svgEl("svg");
+      svg.setAttribute("viewBox", "0 0 480 120");
+      entries.forEach(function (entry, index) {
+        const g = svgEl("g");
+        g.setAttribute("id", "wavelane_" + index + "_0");
+        g.appendChild(svgEl("rect"));
+        svg.appendChild(g);
+        const draw = svgEl("g");
+        draw.setAttribute("id", "wavelane_draw_" + index + "_0");
+        if (entry.kind === "signal" && Array.isArray(entry.signal.data)) {
+          entry.signal.data.forEach(function (label) {
+            const text = svgEl("text");
+            text.textContent = label;
+            draw.appendChild(text);
+          });
+        }
+        svg.appendChild(draw);
+      });
+      return svg;
+    }
+
+    const syntheticBlocks = [];
+    function makeDotBlock(src) {
+      const d = window.document.createElement("div");
+      d.className = "viz-container";
+      d.tabIndex = 0;
+      d.dataset.viz = "ok";
+      d.dataset.vizSource = src;
+      d.appendChild(fakeDotSvg(src));
+      vc.appendChild(d);
+      syntheticBlocks.push(d);
+      return d;
+    }
+    function makeWaveBlock(src) {
+      const d = window.document.createElement("div");
+      d.className = "wavedrom-container";
+      d.tabIndex = 0;
+      d.dataset.wavedrom = "ok";
+      d.dataset.wavedromSource = src;
+      d.appendChild(fakeWaveSvg(src));
+      vc.appendChild(d);
+      syntheticBlocks.push(d);
+      return d;
+    }
+    function dropDotBlock(d) {
+      if (window.NB.designerShell.isOpen()) window.NB.designerShell.close(true);
+      d.remove();
+    }
+
+    const realVizRenderSvg = window.NB.viz.renderSvgElement;
+    const realWaveRenderSvg = window.NB.wavedrom.renderSvgElement;
+    const realOCC2 = window.NB.hybrid.onContentChange;
+    const realAuthStatus2 = window.NB.auth.status;
+    let vizLastSource = null;
+    let vizFail = false;
+    let waveLastSource = null;
+    let dwChanges = 0;
+    window.NB.viz.renderSvgElement = async function (src) {
+      vizLastSource = src;
+      if (vizFail) throw new Error("bad graph (stub)");
+      return fakeDotSvg(src);
+    };
+    window.NB.wavedrom.renderSvgElement = async function (src) {
+      waveLastSource = src;
+      return fakeWaveSvg(src);
+    };
+    window.NB.hybrid.onContentChange = function () {
+      dwChanges++;
+      return realOCC2.apply(this, arguments);
+    };
+
+    // --- markup / wiring completeness ------------------------------
+    {
+      const idx = read("templates/index.html");
+      const sw = read("static/sw.js");
+      const css = read("static/css/style.css");
+      check("dw completeness: #dw-designer-overlay carries settings-overlay",
+        !!overlay && overlay.classList.contains("settings-overlay"));
+      check("dw completeness: #dw-designer-overlay is hidden by default",
+        !!overlay && overlay.hidden === true);
+      {
+        const dlg = overlay && overlay.querySelector(".settings-modal");
+        check("dw completeness: modal carries role=dialog + aria-modal",
+          !!dlg && dlg.getAttribute("role") === "dialog" &&
+          dlg.getAttribute("aria-modal") === "true");
+      }
+      check("dw completeness: index.html loads the three modules after mermaid-designer.js",
+        idx.indexOf("/static/js/mermaid-designer.js") !== -1 &&
+        idx.indexOf("/static/js/designer-shell.js") > idx.indexOf("/static/js/mermaid-designer.js") &&
+        idx.indexOf("/static/js/dot-designer.js") > idx.indexOf("/static/js/designer-shell.js") &&
+        idx.indexOf("/static/js/wavedrom-designer.js") > idx.indexOf("/static/js/dot-designer.js"));
+      for (const f of ["designer-shell.js", "dot-designer.js", "wavedrom-designer.js"]) {
+        check("dw completeness: " + f + " is in sw.js PRECACHE",
+          sw.indexOf("/static/js/" + f) !== -1);
+      }
+      check("dw completeness: sw.js CACHE bumped to notebook-v12",
+        /const CACHE = "notebook-v12"/.test(sw));
+      check("dw completeness: no new vendor bundle is eagerly loaded",
+        idx.indexOf("visimer.bundle.js") === -1 &&
+        sw.indexOf("visimer.bundle.js") === -1);
+      check("dw completeness: CSS designer tokens cover #dw-designer-overlay (dark + light)",
+        /#designer-overlay,\n#dw-designer-overlay\s*\{/.test(css) &&
+        /body\[data-theme="light"\] #designer-overlay,\nbody\[data-theme="light"\] #dw-designer-overlay/.test(css));
+      check("dw completeness: white WaveDrom card token is scoped to the new overlay",
+        /#dw-designer-overlay\s*\{[\s\S]*--dw-wavedrom-surface:\s*#fff/.test(css));
+    }
+
+    // --- capability probes (pure) ----------------------------------
+    const D = window.NB.dotDesign;
+    const W = window.NB.wavedromDesign;
+    check("dw entry: NB.dotDesign + NB.wavedromDesign expose open/capabilityFor",
+      !!D && typeof D.open === "function" && typeof D.capabilityFor === "function" &&
+      !!W && typeof W.open === "function" && typeof W.capabilityFor === "function");
+    {
+      const edit = [
+        ["digraph G { A -> B; }", "single-line digraph"],
+        ["graph G { A -- B; }", "graph --"],
+        ["digraph G {\n  \"a b\" [label=\"say \\\"hi\\\"\"];\n  \"a b\" -> c;\n}", "quoted ids + escapes"],
+        ["digraph G {\n  rankdir=LR;\n  A [label=x, shape=box];\n  A -> B;\n}", "multi-line"],
+        ["digraph G { A [label=\"two\\nlines\"]; }", "backslash-n escape"],
+        ["digraph G {\n  A [label=\"two\nlines\"];\n}", "literal newline (read-only item)"],
+        ["digraph G { }", "empty graph"],
+      ];
+      for (const item of edit) {
+        check("dw capability: dot " + item[1] + " → edit",
+          D.capabilityFor(item[0]) === "edit", D.capabilityFor(item[0]));
+      }
+      const render = [
+        ["", "empty"],
+        ["digraph G { subgraph { A } }", "subgraph"],
+        ["digraph G { A -> B -> C; }", "chain"],
+        ["digraph G { A -> {B C}; }", "grouped endpoint"],
+        ["digraph G { A:ne -> B; }", "port"],
+        ["digraph G { A [label=<b>x</b>]; }", "HTML label"],
+        ["digraph G { A [label=\"a|b\"]; }", "record label"],
+        ["digraph G { A [shape=Mrecord]; }", "Mrecord"],
+        ["digraph G {\n// hi\nA -> B;\n}", "// comment"],
+        ["digraph G {\n# hi\nA -> B;\n}", "# comment"],
+        ["digraph G {\n/* hi */\nA -> B;\n}", "/* */ comment"],
+        ["digraph G { A [rankdir=LR]; }", "rankdir in attrs"],
+        ["digraph G { rankdir=LR; rankdir=TB; A -> B; }", "second rankdir"],
+        ["digraph G { A; A; }", "duplicate node stmt"],
+        ["strict digraph G { A -> B; A -> B; }", "strict duplicate edge"],
+        ["digraph G { \"a->b\" -> c; }", "id containing ->"],
+        ["digraph G { A [label=a+b]; }", "bare token with +"],
+        ["digraph A { } digraph B { }", "two graphs"],
+      ];
+      for (const item of render) {
+        check("dw capability: dot " + item[1] + " → render",
+          D.capabilityFor(item[0]) === "render", D.capabilityFor(item[0]));
+      }
+      check("dw capability: dot render-only title names the source path",
+        /can.t be edited visually/.test(D.disabledTitle) && /Edit source/.test(D.disabledTitle));
+    }
+    {
+      const edit = [
+        ['{signal:[{name:"clk",wave:"p..."}]}', "flat list"],
+        ["{signal: [{name: 'clk', wave: 'p...'}]}", "unquoted keys (eval path)"],
+        ["{signal: [['g', {name: 'a', wave: 'p'}, {name: 'b', wave: 'x'}]]}", "group"],
+        ["{signal: [{}, {name: 'a', wave: 'p'}]}", "gap"],
+        ['{signal:[{name:"x",wave:"p",data:["http://x"]}]}', "URL in a quoted label"],
+      ];
+      for (const item of edit) {
+        check("dw capability: wave " + item[1] + " → edit",
+          W.capabilityFor(item[0]) === "edit", W.capabilityFor(item[0]));
+      }
+      const render = [
+        ["", "empty"],
+        ['{assign:[["out",["clk"]]]}', "no signal/assign"],
+        ['{signal:[{name:"a",wave:""}]}', "empty wave → read-only item"],
+        ['{signal:[{name:"a",wave:"p"}]} // hi', "comment in lenient source"],
+        ['{signal:[{name:"a",wave:"p"}], extra: undefined}', "non-JSON undefined"],
+        ["{signal: [{name: 'a', wave: 'p'} // comment\n]}", "comment after eval"],
+      ];
+      for (const item of render) {
+        const expected = item[1] === "empty wave → read-only item" ? "edit" : "render";
+        check("dw capability: wave " + item[1] + " → " + expected,
+          W.capabilityFor(item[0]) === expected, W.capabilityFor(item[0]));
+      }
+      check("dw capability: wave render-only title names the source path",
+        /waveform/.test(W.disabledTitle) && /Edit source/.test(W.disabledTitle));
+    }
+
+    // --- dot note + entry menu -------------------------------------
+    const DOT_SRC = "# Dot\n\nBefore.\n\n```dot\n" +
+      "digraph G {\n  rankdir=LR;\n" +
+      "  flask [label=\"Flask app\", shape=box, color=red];\n" +
+      "  api [label=\"/api/*\"];\n" +
+      "  flask -> api [label=\"serve\"];\n}\n```\n\nAfter.\n";
+    FILES["notes/dw-dot.md"] = DOT_SRC;
+    const dwNotes = TREE.find((n) => n.path === "notes");
+    if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-dot.md")) {
+      dwNotes.children.push({ name: "dw-dot.md", type: "file", path: "notes/dw-dot.md" });
+    }
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    window.NB.viewer.close("notes/dw-dot.md");
+    await window.NB.tabs.open("notes/dw-dot.md");
+    let dotContainer = null;
+    for (let i = 0; i < 20 && !dotContainer; i++) {
+      await tick(25);
+      dotContainer = vc.querySelector(".viz-container");
+    }
+    await window.NB.hybrid.enter();
+    await tick(20);
+    dotContainer = vc.querySelector(".viz-container");
+    check("dw entry: dot block rendered (precondition)", !!dotContainer);
+
+    if (dotContainer) {
+      dotContainer.dispatchEvent(ctxmenu());
+      await tick(10);
+      {
+        const db = designBtn();
+        const edit = menuButtons().find((b) => /Edit Graphviz source/.test(b.textContent));
+        check("dw entry: Design graph… appears before Edit Graphviz source",
+          !!db && /^Design graph/.test(db.textContent) &&
+          !!edit && menuButtons().indexOf(db) < menuButtons().indexOf(edit),
+          menuButtons().map((b) => b.textContent.trim()).join(" / "));
+      }
+      window.NB.auth.status = () => ({ enabled: true, role: "viewer" });
+      dotContainer.dispatchEvent(ctxmenu());
+      await tick(10);
+      check("dw entry: viewer role hides the dot Design item", !designBtn());
+      window.NB.auth.status = () => ({ enabled: true, role: "admin" });
+      dotContainer.dispatchEvent(ctxmenu());
+      await tick(10);
+      check("dw entry: admin role shows the dot Design item", !!designBtn());
+      window.NB.auth.status = realAuthStatus2;
+      window.NB.menu.close();
+
+      // A `.viz-error` box yields a disabled Design item.
+      {
+        const err = window.document.createElement("div");
+        err.className = "viz-error";
+        const src = window.document.createElement("pre");
+        src.className = "viz-source";
+        src.textContent = "digraph G { subgraph { A } }";
+        err.appendChild(src);
+        dotContainer.parentNode.insertBefore(err, dotContainer);
+        err.dispatchEvent(ctxmenu());
+        await tick(10);
+        const db = designBtn();
+        check("dw entry: .viz-error → disabled Design item with the dot title",
+          !!db && db.disabled === true && db.getAttribute("aria-disabled") === "true" &&
+          /This graph can.t be edited visually/.test(db.title || ""),
+          db ? ("disabled=" + db.disabled + " title=" + db.title) : "no item");
+        window.NB.menu.close();
+        err.remove();
+      }
+
+      // The open-error copy uses the graph noun too.
+      {
+        const err = window.document.createElement("div");
+        err.className = "viz-error";
+        const src = window.document.createElement("pre");
+        src.className = "viz-source";
+        src.textContent = "digraph G { subgraph { A } }";
+        err.appendChild(src);
+        vc.appendChild(err);
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(err));
+        await tick(80);
+        check("dw window: a render-only direct open shows the read-only state",
+          $("dw-readonly").hidden === false &&
+          /Couldn.t open this graph|source-only/.test($("dw-readonly-msg").textContent),
+          $("dw-readonly-msg").textContent);
+        check("dw window: the read-only state disables Apply and hides the inspector",
+          $("dw-apply").disabled === true && $("dw-inspector").hidden === true);
+        window.NB.designerShell.close(true);
+        err.remove();
+      }
+
+      // --- no-op Apply ---------------------------------------------
+      const hit = window.NB.hybrid.codeBlockAt(dotContainer);
+      window.NB.dotDesign.open(hit);
+      await tick(90);
+      check("dw window: dot opens with the Graphviz badge",
+        overlay.hidden === false && $("dw-type").textContent === "Graphviz",
+        $("dw-type").textContent);
+      {
+        const ids = Array.from($("dw-overlay-layer")
+          .querySelectorAll("[data-node-id]"))
+          .map((b) => b.dataset.nodeId).sort();
+        check("dw window: dot open builds the model from the container source",
+          ids.join(",") === "api,flask" &&
+          !!$("dw-overlay-layer").querySelector(".dw-edge-midpoint"),
+          "nodes=" + ids.join(","));
+      }
+      {
+        check("dw window: the dot window title uses the graph noun",
+          $("dw-title").textContent === "Design graph",
+          $("dw-title").textContent);
+        check("dw window: Apply is enabled on a clean open (dot)",
+          $("dw-apply").disabled === false);
+        const before = filePosts();
+        const beforeSrc = dotContainer.dataset.vizSource;
+        dwChanges = 0;
+        clickEv($("dw-apply"));
+        await tick(60);
+        check("dw window: no-edit dot Apply closes the window", overlay.hidden === true);
+        check("dw window: no-edit dot Apply writes nothing and leaves the fence untouched",
+          filePosts() === before && dwChanges === 0 &&
+          dotContainer.dataset.vizSource === beforeSrc,
+          "posts=" + filePosts() + " changes=" + dwChanges);
+        check("dw window: a clean-open Apply writes nothing and closes (dot)",
+          overlay.hidden === true && dwChanges === 0 &&
+          filePosts() === before && dotContainer.dataset.vizSource === beforeSrc &&
+          $("dw-status").textContent === "No changes to apply",
+          "status=" + $("dw-status").textContent);
+      }
+
+      // --- clean Cancel returns focus to the invoking block --------
+      {
+        const live = vc.querySelector(".viz-container");
+        live.focus();
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(live));
+        await tick(90);
+        clickEv($("dw-cancel"));
+        await tick(30);
+        check("dw window: clean Cancel closes and returns focus to the block",
+          overlay.hidden === true && window.document.activeElement === live,
+          "hidden=" + overlay.hidden + " active=" +
+            (window.document.activeElement && window.document.activeElement.className));
+      }
+
+      // --- body is not a usable invoker ----------------------------
+      {
+        const live = vc.querySelector(".viz-container");
+        window.document.body.tabIndex = -1;
+        window.document.body.focus();
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(live));
+        await tick(90);
+        clickEv($("dw-cancel"));
+        await tick(30);
+        check("dw window: a body invoker falls back to the block on close",
+          window.document.activeElement === live,
+          "active=" + (window.document.activeElement &&
+            (window.document.activeElement.className ||
+             window.document.activeElement.tagName)));
+        window.document.body.removeAttribute("tabindex");
+      }
+
+      // --- label edit -> byte-identical untouched lines ------------
+      {
+        const hit2 = window.NB.hybrid.codeBlockAt(dotContainer);
+        window.NB.dotDesign.open(hit2);
+        await tick(90);
+        const nodeHit = $("dw-overlay-layer").querySelector('[data-node-id="flask"]');
+        check("dw editor: node hit targets were built from g.node titles", !!nodeHit);
+        if (nodeHit) {
+          clickEv(nodeHit);
+          check("dw editor: selecting g.node flask opens the Node inspector",
+            $("dw-inspector-kind").textContent === "Node",
+            $("dw-inspector-kind").textContent);
+          vizLastSource = null;
+          const input = $("dw-node-label");
+          input.value = "Flask app v2";
+          inputEv(input);
+          await tick(240);
+          const expected = dotContainer.dataset.vizSource
+            .replace('label="Flask app"', 'label="Flask app v2"');
+          check("dw editor: label edit updates the preview through the real renderer seam",
+            vizLastSource === expected,
+            JSON.stringify((vizLastSource || "").slice(0, 200)));
+          check("dw editor: untouched attrs keep their raw slices",
+            /shape=box, color=red/.test(vizLastSource || "") &&
+            /rankdir=LR;/.test(vizLastSource || ""));
+          dwChanges = 0;
+          clickEv($("dw-apply"));
+          await tick(180);
+          check("dw window: dot label Apply closes and calls onContentChange once",
+            overlay.hidden === true && dwChanges === 1,
+            "hidden=" + overlay.hidden + " changes=" + dwChanges);
+          const md = window.NB.hybrid.domToMarkdown();
+          check("dw window: dot Apply writes a language-dot fence with the new label",
+            md.indexOf("```dot") !== -1 && md.indexOf("Flask app v2") !== -1 &&
+            md.indexOf("shape=box, color=red") !== -1 &&
+            md.indexOf("Before.") !== -1 && md.indexOf("After.") !== -1,
+            JSON.stringify(md.slice(0, 260)));
+          window.NB.hybrid.flushPendingSnapshot();
+        }
+      }
+
+      // --- direction, add/delete, duplicate rejection, dirty guard --
+      {
+        const live = vc.querySelector(".viz-container");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(live));
+        await tick(90);
+        const chip = (value) => Array.from(
+          $("dw-chart").querySelectorAll('input[name="dw-rankdir"]'))
+          .find((r) => r.value === value);
+        const tb = chip("TB");
+        check("dw editor: direction chips render TB/LR/BT/RL/Default", !!tb && !!chip("") &&
+          !!chip("LR") && !!chip("RL") && !!chip("BT"));
+        if (tb) {
+          vizLastSource = null;
+          tb.checked = true;
+          changeEv(tb);
+          await tick(240);
+          check("dw editor: direction TB rewrites the rankdir value",
+            /rankdir=TB;/.test(vizLastSource || "") &&
+            !/rankdir=LR;/.test(vizLastSource || ""),
+            JSON.stringify((vizLastSource || "").slice(0, 120)));
+        }
+        const def = chip("");
+        if (def) {
+          vizLastSource = null;
+          def.checked = true;
+          changeEv(def);
+          await tick(240);
+          check("dw editor: Default removes the standalone rankdir line",
+            !/rankdir=/.test(vizLastSource || ""),
+            JSON.stringify((vizLastSource || "").slice(0, 120)));
+        }
+
+        const idInput = $("dw-add-node-id");
+        const labelInput = $("dw-add-node-label");
+        idInput.value = "db";
+        labelInput.value = "SQLite";
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(100);
+        check("dw editor: add node appends an explicit statement before the closing brace",
+          /  db \[label="SQLite"\];\n}/.test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(-120)));
+
+        const beforeDuplicate = vizLastSource;
+        $("dw-add-node-id").value = "db";
+        $("dw-add-node-label").value = "Again";
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(40);
+        check("dw editor: a duplicate node ID is rejected inline",
+          $("dw-add-error").hidden === false &&
+          /already exists/.test($("dw-add-error").textContent) &&
+          vizLastSource === beforeDuplicate,
+          $("dw-add-error").textContent);
+
+        const dbHit = Array.from($("dw-overlay-layer").querySelectorAll("[data-node-id]"))
+          .find((b) => b.dataset.nodeId === "db");
+        if (dbHit) {
+          clickEv(dbHit);
+          const del = Array.from($("dw-inspector-body").querySelectorAll("button"))
+            .find((b) => /Delete node/.test(b.textContent));
+          if (del) {
+            clickEv(del);
+            await tick(100);
+            check("dw editor: delete node removes its statement",
+              !/^\s*db \[/m.test(vizLastSource || ""),
+              JSON.stringify((vizLastSource || "").slice(-120)));
+          }
+        }
+
+        const flaskHit = Array.from($("dw-overlay-layer").querySelectorAll("[data-node-id]"))
+          .find((b) => b.dataset.nodeId === "flask");
+        if (flaskHit) {
+          clickEv(flaskHit);
+          const del = Array.from($("dw-inspector-body").querySelectorAll("button"))
+            .find((b) => /Delete node/.test(b.textContent));
+          if (del) {
+            clickEv(del);
+            await tick(100);
+            check("dw editor: delete node removes incident edge statements too",
+              !/flask -> api/.test(vizLastSource || "") &&
+              !/^\s*flask \[/m.test(vizLastSource || ""),
+              JSON.stringify((vizLastSource || "").slice(-160)));
+          }
+        }
+
+        // Dirty Cancel confirms; declining keeps the window, accepting closes.
+        const hitNode = Array.from($("dw-overlay-layer").querySelectorAll("[data-node-id]"))[0];
+        if (hitNode) clickEv(hitNode);
+        const label = $("dw-node-label");
+        if (label) {
+          label.value = "Dirty";
+          inputEv(label);
+          await tick(240);
+        }
+        const realConfirm = window.confirm;
+        let prompts = 0;
+        let confirmMsg = "";
+        try {
+          window.confirm = (msg) => { prompts++; confirmMsg = msg; return false; };
+          clickEv($("dw-cancel"));
+          check("dw window: dirty Cancel prompts and stays open on decline",
+            prompts === 1 && overlay.hidden === false,
+            "prompts=" + prompts + " hidden=" + overlay.hidden);
+          check("dw window: the discard copy names the graph, not a diagram",
+            /this graph/.test(confirmMsg) && !/diagram/.test(confirmMsg),
+            confirmMsg);
+          window.confirm = () => { prompts++; return true; };
+          clickEv($("dw-cancel"));
+          check("dw window: dirty Cancel closes when the discard is accepted",
+            prompts === 2 && overlay.hidden === true,
+            "prompts=" + prompts + " hidden=" + overlay.hidden);
+        } finally {
+          window.confirm = realConfirm;
+        }
+        window.NB.hybrid.flushPendingSnapshot();
+      }
+
+      // --- Apply validation failure keeps the window open ----------
+      {
+        const live = vc.querySelector(".viz-container");
+        const hit3 = window.NB.hybrid.codeBlockAt(live);
+        window.NB.dotDesign.open(hit3);
+        await tick(90);
+        const nodeHit = $("dw-overlay-layer").querySelector('[data-node-id="flask"]');
+        if (nodeHit) clickEv(nodeHit);
+        const input = $("dw-node-label");
+        input.value = "Broken preview";
+        inputEv(input);
+        await tick(240);
+        vizFail = true;
+        dwChanges = 0;
+        clickEv($("dw-apply"));
+        await tick(120);
+        check("dw window: dot validation failure keeps the window open",
+          overlay.hidden === false);
+        check("dw window: dot validation failure shows #dw-alert",
+          $("dw-alert").hidden === false && /Couldn.t apply/.test($("dw-alert-msg").textContent),
+          $("dw-alert-msg").textContent);
+        check("dw window: dot validation failure writes nothing", dwChanges === 0);
+        check("dw window: a failed Apply moves focus back into the window",
+          window.document.activeElement === $("dw-node-label") ||
+          window.document.activeElement === $("dw-canvas"),
+          "active=" + (window.document.activeElement &&
+            (window.document.activeElement.id || window.document.activeElement.tagName)));
+
+        // A preview failure alerts; the next successful preview clears it.
+        const previewInput = $("dw-node-label");
+        previewInput.value = "Preview bad";
+        inputEv(previewInput);
+        await tick(240);
+        check("dw window: a preview failure shows the preview alert",
+          $("dw-alert").hidden === false &&
+          /Preview can.t render/.test($("dw-alert-msg").textContent),
+          $("dw-alert-msg").textContent);
+        vizFail = false;
+        const previewInput2 = $("dw-node-label") || previewInput;
+        previewInput2.value = "Preview good";
+        inputEv(previewInput2);
+        await tick(240);
+        check("dw window: a successful preview clears the stale preview alert",
+          $("dw-alert").hidden === true, $("dw-alert-msg").textContent);
+        window.NB.designerShell.close(true);
+        await tick(20);
+      }
+
+      // --- stale target closes with a notice, no write -------------
+      {
+        const live = vc.querySelector(".viz-container");
+        const hit4 = window.NB.hybrid.codeBlockAt(live);
+        window.NB.dotDesign.open(hit4);
+        await tick(90);
+        const nodeHit = $("dw-overlay-layer").querySelector('[data-node-id="flask"]');
+        if (nodeHit) clickEv(nodeHit);
+        const input = $("dw-node-label");
+        input.value = "Detached";
+        inputEv(input);
+        await tick(240);
+        dwChanges = 0;
+        live.remove();
+        clickEv($("dw-apply"));
+        await tick(80);
+        check("dw window: stale dot target closes with a notice and no write",
+          overlay.hidden === true && dwChanges === 0 &&
+          /graph changed/.test(toastText()),
+          "hidden=" + overlay.hidden + " changes=" + dwChanges + " toast=" + toastText());
+      }
+
+      // --- blocker shapes: one-statement-per-line normalization ------
+      {
+        // (1) shared-line label edit must not touch the sibling statement.
+        let d = makeDotBlock("digraph G { A; B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        const aHit = $("dw-overlay-layer").querySelector('[data-node-id="A"]');
+        if (aHit) clickEv(aHit);
+        const label = $("dw-node-label");
+        label.value = "X";
+        inputEv(label);
+        await tick(240);
+        check("dw blocker: shared-line label edit rewrites only A",
+          vizLastSource === "digraph G { A [label=\"X\"]; B; }",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        // (2) shared-line delete removes only the selected statement.
+        d = makeDotBlock("digraph G {\n  A; B;\n}");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const deleteA = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete node/.test(b.textContent));
+        if (deleteA) clickEv(deleteA);
+        await tick(120);
+        check("dw blocker: deleting A from a two-statement line keeps B",
+          /^  B;$/m.test(vizLastSource || "") &&
+          !/^  A;/m.test(vizLastSource || "") &&
+          !/A \[label/.test(vizLastSource || ""),
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        // (3) Default direction on a header-line rankdir must not throw
+        // after splicing the header.
+        d = makeDotBlock("digraph G { rankdir=LR;\n  A -> B;\n}");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        const def = $("dw-chart").querySelector('input[name="dw-rankdir"][value=""]');
+        check("dw blocker: a header-line rankdir stays on its original line",
+          vizLastSource === d.dataset.vizSource,
+          JSON.stringify(vizLastSource));
+        if (def) {
+          def.checked = true;
+          changeEv(def);
+        }
+        await tick(240);
+        check("dw blocker: Default removes a header-line rankdir without throwing",
+          vizLastSource === "digraph G {\n  A -> B;\n}",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        // (4) deleting the only statement on a header line.
+        d = makeDotBlock("digraph G { A;\n}");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const deleteOnly = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete node/.test(b.textContent));
+        if (deleteOnly) clickEv(deleteOnly);
+        await tick(120);
+        check("dw blocker: deleting a header-line statement leaves an empty graph",
+          /^digraph G \{$/m.test(vizLastSource || "") &&
+          /^}$/m.test(vizLastSource || "") &&
+          !/A;/.test(vizLastSource || ""),
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        // (5) a multi-line statement is an item-level read-only item.
+        const MULTI = "digraph G {\n  A [color=red,\n     label=\"x\"];\n" +
+          "  B [label=\"Beta\"];\n  A -> B;\n}";
+        check("dw blocker: a multi-line attribute list is capability edit",
+          window.NB.dotDesign.capabilityFor(MULTI) === "edit");
+        d = makeDotBlock(MULTI);
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        check("dw blocker: a multi-line node is item read-only",
+          /spans multiple lines/.test($("dw-inspector-body").textContent) &&
+          $("dw-node-label").disabled === true &&
+          Array.from($("dw-inspector-body").querySelectorAll(".dw-shape-btn"))
+            .every((b) => b.disabled === true) &&
+          Array.from($("dw-inspector-body").querySelectorAll("button"))
+            .find((b) => /Delete node/.test(b.textContent)).disabled === true);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="B"]'));
+        const multiB = $("dw-node-label");
+        multiB.value = "Beta2";
+        inputEv(multiB);
+        await tick(240);
+        check("dw blocker: another node stays editable beside a multi-line item",
+          vizLastSource === MULTI.replace('B [label="Beta"];',
+            'B [label="Beta2"];'),
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        // A normalized draft with no edits must still close as a no-op.
+        d = makeDotBlock("digraph G { A; B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        check("dw blocker: opening preserves the original lines",
+          vizLastSource === d.dataset.vizSource,
+          JSON.stringify(vizLastSource));
+        const before = filePosts();
+        const beforeSrc = d.dataset.vizSource;
+        dwChanges = 0;
+        clickEv($("dw-apply"));
+        await tick(60);
+        check("dw blocker: a preserved no-op applies nothing",
+          overlay.hidden === true && dwChanges === 0 &&
+          filePosts() === before && d.dataset.vizSource === beforeSrc,
+          "hidden=" + overlay.hidden + " changes=" + dwChanges);
+        dropDotBlock(d);
+
+        // Edge hit targets are path clones, not bbox rectangles.
+        d = makeDotBlock("digraph G { A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        check("dw window: loading copy names Graphviz",
+          $("dw-loading").querySelector(".designer-state-msg").textContent ===
+          "Loading Graphviz\u2026");
+        await tick(90);
+        check("dw editor: Add node is disabled while the label is empty",
+          $("dw-add-submit").disabled === true);
+        $("dw-add-node-id").value = "C";
+        inputEv($("dw-add-node-id"));
+        check("dw editor: Add node stays disabled with only an ID",
+          $("dw-add-submit").disabled === true);
+        $("dw-add-node-label").value = "Node C";
+        inputEv($("dw-add-node-label"));
+        check("dw editor: Add node enables once the label is filled",
+          $("dw-add-submit").disabled === false);
+        const card = $("dw-diagram-card");
+        const hitPaths = card.querySelectorAll("svg .dw-edge-hit-path");
+        check("dw editor: edge hit targets are transparent path clones",
+          hitPaths.length === 1 &&
+          hitPaths[0].getAttribute("stroke") === "transparent" &&
+          !hitPaths[0].style.strokeWidth &&
+          hitPaths[0].style.pointerEvents === "stroke",
+          "paths=" + hitPaths.length +
+          " width=" + JSON.stringify(hitPaths[0] && hitPaths[0].style.strokeWidth));
+        const midpoint = $("dw-overlay-layer").querySelector(".dw-edge-midpoint");
+        if (midpoint) clickEv(midpoint);
+        {
+          const selectedPaths =
+            card.querySelectorAll("svg .dw-edge-hit-path.is-selected");
+          check("dw editor: edge selection follows the path clone, not a bbox",
+            selectedPaths.length === 1 && !selectedPaths[0].style.strokeWidth,
+            "selected=" + selectedPaths.length +
+            " inlineWidth=" + JSON.stringify(selectedPaths[0] &&
+              selectedPaths[0].style.strokeWidth));
+          {
+            const hasRule =
+              /\.dw-edge-hit-path\.is-selected\s*\{[^}]*stroke-width:\s*2\.5/.test(
+                read("static/css/style.css"));
+            check("dw editor: selected edge width is the 2.5px CSS rule, not the 14px hit width",
+              hasRule, "cssRule=" + hasRule);
+          }
+        }
+
+        // Adding a parallel edge selects the new ordinal.
+        const edgeTab = $("dw-add-tabs").querySelector('[data-tab="edge"]');
+        if (edgeTab) clickEv(edgeTab);
+        const addForm = $("dw-add-form");
+        addForm.dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        const selected = card.querySelectorAll("svg .dw-edge-hit-path.is-selected");
+        check("dw editor: adding a parallel edge selects the new ordinal",
+          selected.length === 1 && selected[0].dataset.edgeOrdinal === "1",
+          "selected=" + Array.from(selected)
+            .map((el) => el.dataset.edgeOrdinal).join(","));
+        dropDotBlock(d);
+      }
+
+      // --- source-only label input fails inline, not silently ------
+      {
+        const d = makeDotBlock("digraph G { A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        const beforeInvalid = vizLastSource;
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const nodeLabelInput = $("dw-node-label");
+        nodeLabelInput.value = "A | B";
+        inputEv(nodeLabelInput);
+        await tick(30);
+        let fieldError = $("dw-inspector-body")
+          .querySelector(".designer-field-error:not([hidden])");
+        check("dw blocker: a record label shows an inline error and keeps the text",
+          !!fieldError && /Record labels are source-only/.test(fieldError.textContent) &&
+          nodeLabelInput.value === "A | B" &&
+          vizLastSource === beforeInvalid &&
+          $("dw-apply").disabled === true,
+          fieldError ? fieldError.textContent : "no inline error");
+
+        nodeLabelInput.value = "<3";
+        inputEv(nodeLabelInput);
+        await tick(30);
+        fieldError = $("dw-inspector-body")
+          .querySelector(".designer-field-error:not([hidden])");
+        check("dw blocker: an HTML-like label shows an inline error and keeps the text",
+          !!fieldError && /HTML-like labels are source-only/.test(fieldError.textContent) &&
+          nodeLabelInput.value === "<3" &&
+          vizLastSource === beforeInvalid &&
+          $("dw-apply").disabled === true,
+          fieldError ? fieldError.textContent : "no inline error");
+
+        nodeLabelInput.value = "Good";
+        inputEv(nodeLabelInput);
+        await tick(240);
+        check("dw blocker: a valid label clears the error and re-enables Apply",
+          $("dw-inspector-body")
+            .querySelector(".designer-field-error:not([hidden])") === null &&
+          $("dw-apply").disabled === false,
+          "disabled=" + $("dw-apply").disabled);
+
+        const beforeEdgeInvalid = vizLastSource;
+        clickEv($("dw-overlay-layer").querySelector(".dw-edge-midpoint"));
+        const edgeLabelInput = $("dw-edge-label");
+        edgeLabelInput.value = "<3";
+        inputEv(edgeLabelInput);
+        await tick(30);
+        fieldError = $("dw-inspector-body")
+          .querySelector(".designer-field-error:not([hidden])");
+        check("dw blocker: the edge label wrapper catches the same source-only error",
+          !!fieldError && /HTML-like labels are source-only/.test(fieldError.textContent) &&
+          edgeLabelInput.value === "<3" &&
+          vizLastSource === beforeEdgeInvalid,
+          fieldError ? fieldError.textContent : "no inline error");
+        dropDotBlock(d);
+      }
+
+      // --- full Graphviz inspector + add forms ---------------------
+      {
+        const SRC = "digraph G { A [label=\"Alpha\"]; B [label=\"Beta\"]; " +
+          "A -> B [label=\"serve\"]; }";
+        const d = makeDotBlock(SRC);
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+
+        check("dw graph: edge accessible names use endpoint labels",
+          /^Edge Alpha \u2192 Beta, label serve$/.test(
+            $("dw-overlay-layer").querySelector(".dw-edge-midpoint")
+              .getAttribute("aria-label")),
+          $("dw-overlay-layer").querySelector(".dw-edge-midpoint")
+            .getAttribute("aria-label"));
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const shapeBtn = (shape) => $("dw-inspector-body")
+          .querySelector('.dw-shape-btn[data-shape="' + shape + '"]');
+        clickEv(shapeBtn("ellipse"));
+        await tick(80);
+        check("dw graph: shape grid writes shape on that node only",
+          /A \[label="Alpha", shape=ellipse\];/.test(vizLastSource || "") &&
+          /B \[label="Beta"\];/.test(vizLastSource || ""),
+          JSON.stringify(vizLastSource));
+
+        const style = $("dw-node-style");
+        style.value = "filled";
+        changeEv(style);
+        await tick(80);
+        check("dw graph: node style select writes style and preserves order",
+          /A \[label="Alpha", shape=ellipse, style=filled\];/.test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(0, 160)));
+
+        clickEv($("dw-overlay-layer").querySelector(".dw-edge-midpoint"));
+        const line = $("dw-edge-line");
+        line.value = "dashed";
+        changeEv(line);
+        await tick(80);
+        const arrow = $("dw-edge-arrow");
+        arrow.value = "both";
+        changeEv(arrow);
+        await tick(80);
+        check("dw graph: line and arrow selects write the edge attrs",
+          /A -> B \[label="serve", style=dashed, dir=both, arrowhead=normal\];/
+            .test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(-160)));
+
+        // Node add: ID optional, shaped/styled, auto n1/n2.
+        $("dw-add-node-label").value = "New";
+        inputEv($("dw-add-node-label"));
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        check("dw graph: add node with a blank ID auto-names n1",
+          /^  n1 \[label="New"\];$/m.test(vizLastSource || "") &&
+          $("dw-inspector-kind").textContent === "Node",
+          JSON.stringify((vizLastSource || "").slice(-140)));
+
+        clickEv($("dw-add-tabs").querySelector('[data-tab="node"]'));
+        const addShapeBtn = (shape) => $("dw-add-fields")
+          .querySelector('.dw-shape-btn[data-shape="' + shape + '"]');
+        clickEv(addShapeBtn("ellipse"));
+        const addStyle = $("dw-add-node-style");
+        addStyle.value = "filled";
+        changeEv(addStyle);
+        $("dw-add-node-label").value = "Second";
+        inputEv($("dw-add-node-label"));
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        check("dw graph: add node carries shape and style and auto-names n2",
+          /^  n2 \[label="Second", shape=ellipse, style=filled\];$/m
+            .test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(-180)));
+
+        // Edge add: line + arrow, then disabled equal endpoints.
+        clickEv($("dw-add-tabs").querySelector('[data-tab="edge"]'));
+        const addLine = $("dw-add-edge-line");
+        addLine.value = "dashed";
+        changeEv(addLine);
+        const addArrow = $("dw-add-edge-arrow");
+        addArrow.value = "vee";
+        changeEv(addArrow);
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        check("dw graph: add edge carries line and arrow",
+          /^  A -> B \[style=dashed, arrowhead=vee\];$/m
+            .test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(-180)));
+
+        const from = $("dw-add-edge-from");
+        const to = $("dw-add-edge-to");
+        to.value = from.value;
+        changeEv(to);
+        check("dw graph: equal From/To disables Add edge with a reason",
+          $("dw-add-submit").disabled === true &&
+          /must differ/.test($("dw-add-note").textContent),
+          $("dw-add-note").textContent);
+
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="B"]'));
+        const prefillBtn = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Add edge from this node/.test(b.textContent));
+        check("dw graph: node inspector offers Add edge from this node", !!prefillBtn);
+        if (prefillBtn) {
+          clickEv(prefillBtn);
+          check("dw graph: Add edge from this node switches tabs and prefills From",
+            $("dw-add-tabs").querySelector('[data-tab="edge"]')
+              .getAttribute("aria-selected") === "true" &&
+            $("dw-add-edge-from").value === "B");
+        }
+        dropDotBlock(d);
+      }
+
+      // --- custom Graphviz shape/style/arrow are read-only items ----
+      {
+        const d = makeDotBlock(
+          "digraph G { A [shape=star, style=\"gradient\"]; " +
+          "A -> B [arrowhead=onormal]; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const shapeButtons = Array.from(
+          $("dw-inspector-body").querySelectorAll(".dw-shape-btn"));
+        check("dw graph: a custom shape disables the grid with a note",
+          shapeButtons.length === 8 &&
+          shapeButtons.every((b) => b.disabled === true) &&
+          /source-only/.test($("dw-inspector-body").textContent));
+        check("dw graph: a custom node style disables the select",
+          $("dw-node-style").disabled === true &&
+          /source-only/.test($("dw-inspector-body").textContent));
+        const nodeDelete = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete node/.test(b.textContent));
+        check("dw graph: a read-only node disables Delete node",
+          !!nodeDelete && nodeDelete.disabled === true);
+
+        clickEv($("dw-overlay-layer").querySelector(".dw-edge-midpoint"));
+        check("dw graph: a custom arrow disables the arrow select",
+          $("dw-edge-arrow").disabled === true &&
+          /source-only/.test($("dw-inspector-body").textContent));
+        const edgeDelete = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete edge/.test(b.textContent));
+        check("dw graph: a read-only edge disables Delete edge",
+          !!edgeDelete && edgeDelete.disabled === true);
+        dropDotBlock(d);
+      }
+
+      // --- Add edge requires two nodes ------------------------------
+      {
+        const d = makeDotBlock("digraph G { A [label=\"Only\"]; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-add-tabs").querySelector('[data-tab="edge"]'));
+        check("dw graph: fewer than two nodes disables Add edge with a reason",
+          $("dw-add-submit").disabled === true &&
+          /Add a second node first/.test($("dw-add-note").textContent),
+          $("dw-add-note").textContent);
+        dropDotBlock(d);
+      }
+
+      // --- shared History ------------------------------------------
+      {
+        const d = makeDotBlock("digraph G { A [label=\"Alpha\"]; A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        check("dw history: Undo and Redo start disabled",
+          $("dw-undo").disabled === true && $("dw-redo").disabled === true);
+
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const input = $("dw-node-label");
+        input.value = "Hist";
+        inputEv(input);
+        await tick(80);
+        check("dw history: an edit enables Undo and leaves Redo disabled",
+          $("dw-undo").disabled === false && $("dw-redo").disabled === true);
+
+        clickEv($("dw-undo"));
+        await tick(120);
+        check("dw history: Undo restores the field and re-renders",
+          /A \[label="Alpha"\];/.test(vizLastSource || "") &&
+          $("dw-inspector-kind").textContent === "Nothing selected",
+          "src=" + JSON.stringify(vizLastSource));
+        check("dw history: Undo at the first step disables Undo and enables Redo",
+          $("dw-undo").disabled === true && $("dw-redo").disabled === false);
+
+        clickEv($("dw-redo"));
+        await tick(120);
+        check("dw history: Redo re-applies the edit",
+          /A \[label="Hist"\];/.test(vizLastSource || "") &&
+          $("dw-undo").disabled === false && $("dw-redo").disabled === true,
+          "src=" + JSON.stringify(vizLastSource));
+
+        // A structural add is its own step.
+        $("dw-add-node-label").value = "Temp";
+        inputEv($("dw-add-node-label"));
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        check("dw history: a structural add appears in the source",
+          /^  n1 \[label="Temp"\];$/m.test(vizLastSource || ""));
+        clickEv($("dw-undo"));
+        await tick(120);
+        check("dw history: Undo after a structural add removes it",
+          !/^  n1 \[/m.test(vizLastSource || ""),
+          JSON.stringify((vizLastSource || "").slice(-120)));
+
+        // Ctrl+Z on the canvas performs window undo; in a field it does not.
+        const beforeChord = vizLastSource;
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const input2 = $("dw-node-label");
+        input2.value = "Chord";
+        inputEv(input2);
+        await tick(80);
+        $("dw-canvas").focus();
+        const chord = new window.KeyboardEvent("keydown", {
+          key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+        });
+        $("dw-canvas").dispatchEvent(chord);
+        await tick(120);
+        check("dw history: Ctrl+Z on the canvas undoes the window",
+          chord.defaultPrevented === true &&
+          vizLastSource === beforeChord,
+          "src=" + JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+      }
+
+      // --- Graphviz preserves untouched bytes ---------------------
+      {
+        const SRC = "digraph G {\n\n  A [label=\"Alpha\"];\n\n" +
+          "  B [label=\"Beta\"];\n\n  A -> B [label=\"serve\"];\n}\n";
+        const d = makeDotBlock(SRC);
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const label = $("dw-node-label");
+        label.value = "Alpha2";
+        inputEv(label);
+        await tick(240);
+        check("dw preserve: a label edit leaves blank lines and other statements identical",
+          vizLastSource === SRC.replace('label="Alpha"', 'label="Alpha2"'),
+          JSON.stringify(vizLastSource));
+        clickEv($("dw-inspector-body").querySelector(
+          '.dw-shape-btn[data-shape="ellipse"]'));
+        await tick(120);
+        check("dw preserve: a shape edit touches only that node's attribute list",
+          vizLastSource === SRC
+            .replace('label="Alpha"', 'label="Alpha2"')
+            .replace('A [label="Alpha2"];',
+              'A [label="Alpha2", shape=ellipse];'),
+          JSON.stringify(vizLastSource));
+        dropDotBlock(d);
+
+        const one = makeDotBlock("digraph G { A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(one));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const oneLabel = $("dw-node-label");
+        oneLabel.value = "X";
+        inputEv(oneLabel);
+        await tick(240);
+        check("dw preserve: a single-line graph keeps its header/brace/edge text",
+          vizLastSource === "digraph G { A -> B;\n  A [label=\"X\"];\n}",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(one);
+
+        const shared = makeDotBlock("digraph G {\n  A; B;\n}");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(shared));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="B"]'));
+        const delB = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete node/.test(b.textContent));
+        if (delB) clickEv(delB);
+        await tick(120);
+        check("dw preserve: deleting B from A; B; leaves A; only",
+          vizLastSource === "digraph G {\n  A;\n}",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(shared);
+
+        const addSrc = makeDotBlock("digraph G { A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(addSrc));
+        await tick(90);
+        $("dw-add-node-label").value = "New";
+        inputEv($("dw-add-node-label"));
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(140);
+        check("dw preserve: add node inserts a new line before a shared close brace",
+          vizLastSource ===
+            "digraph G { A -> B;\n  n1 [label=\"New\"];\n}",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(addSrc);
+
+        const edgeSrc = makeDotBlock("digraph G { A -> B [label=\"serve\"]; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(edgeSrc));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector(".dw-edge-midpoint"));
+        const edgeLabel = $("dw-edge-label");
+        edgeLabel.value = "serve2";
+        inputEv(edgeLabel);
+        await tick(240);
+        check("dw preserve: a single-line edge label edit touches only that label",
+          vizLastSource ===
+            "digraph G { A -> B [label=\"serve2\"]; }",
+          JSON.stringify(vizLastSource));
+        dropDotBlock(edgeSrc);
+      }
+
+      // --- Applying makes the sidebar/inspector inert --------------
+      {
+        const d = makeDotBlock("digraph G { A [label=\"Alpha\"]; A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        clickEv($("dw-overlay-layer").querySelector('[data-node-id="A"]'));
+        const input = $("dw-node-label");
+        input.value = "Pending";
+        inputEv(input);
+        await tick(240);
+        const realRender = window.NB.viz.renderSvgElement;
+        let release = null;
+        window.NB.viz.renderSvgElement = function (src) {
+          return new Promise(function (resolve) {
+            release = function () { resolve(fakeDotSvg(src)); };
+          });
+        };
+        clickEv($("dw-apply"));
+        await tick(20);
+        check("dw apply state: sidebar and inspector are inert while applying",
+          $("dw-sidebar").inert === true && $("dw-inspector").inert === true);
+        if (release) release();
+        await tick(160);
+        check("dw apply state: inert clears when Apply finishes",
+          $("dw-sidebar").inert === false && $("dw-inspector").inert === false &&
+          overlay.hidden === true);
+        window.NB.viz.renderSvgElement = realRender;
+        if (window.NB.designerShell.isOpen()) window.NB.designerShell.close(true);
+        d.remove();
+      }
+
+      // --- Graphviz §6.3 hover / double-click / keyboard -----------
+      {
+        const d = makeDotBlock("digraph G { A [label=\"Alpha\"]; A -> B; }");
+        const padStub = window.NB.viz.renderSvgElement;
+        window.NB.viz.renderSvgElement = async function (src) {
+          const svg = fakeDotSvg(src);
+          const nodeGroup = svg.querySelector("g.node");
+          if (nodeGroup) {
+            nodeGroup.getBoundingClientRect = () => ({
+              left: 10, top: 10, width: 40, height: 20,
+            });
+          }
+          return svg;
+        };
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        const hit = $("dw-overlay-layer").querySelector('[data-node-id="A"]');
+        check("dw dot stage: node hits add 4px to the group bbox",
+          hit.style.width === "48px" && hit.style.height === "28px" &&
+          hit.style.left === "6px" && hit.style.top === "6px",
+          hit.style.width + "x" + hit.style.height + " @" +
+            hit.style.left + "," + hit.style.top);
+        hit.dispatchEvent(new window.MouseEvent("mouseenter"));
+        check("dw dot stage: hover adds the 45% ring class",
+          hit.classList.contains("is-hover"));
+        clickEv(hit);
+        check("dw dot stage: only the selected hit is in the tab order",
+          hit.tabIndex === 0 &&
+          Array.from($("dw-overlay-layer").querySelectorAll(".dw-hit"))
+            .filter((b) => b !== hit).every((b) => b.tabIndex === -1));
+        hit.dispatchEvent(new window.MouseEvent("dblclick", { bubbles: true }));
+        await tick(30);
+        check("dw dot stage: double-click focuses the label field",
+          window.document.activeElement === $("dw-node-label"),
+          window.document.activeElement && window.document.activeElement.id);
+
+        $("dw-canvas").focus();
+        $("dw-canvas").dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "End", bubbles: true, cancelable: true }));
+        await tick(20);
+        check("dw dot stage: End selects the last entity (edge)",
+          $("dw-inspector-kind").textContent === "Edge",
+          $("dw-inspector-kind").textContent);
+        $("dw-canvas").dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Home", bubbles: true, cancelable: true }));
+        await tick(20);
+        check("dw dot stage: Home selects the first entity (node)",
+          $("dw-inspector-kind").textContent === "Node",
+          $("dw-inspector-kind").textContent);
+        $("dw-canvas").dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Enter", bubbles: true, cancelable: true }));
+        await tick(20);
+        check("dw dot stage: Enter focuses the inspector field",
+          window.document.activeElement === $("dw-node-label"),
+          window.document.activeElement && window.document.activeElement.id);
+        window.NB.viz.renderSvgElement = padStub;
+        dropDotBlock(d);
+      }
+
+      // --- compact layout class/token ------------------------------
+      {
+        const d = makeDotBlock("digraph G { A -> B; }");
+        window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+        await tick(90);
+        const realMatch = window.matchMedia;
+        try {
+          window.matchMedia = () => ({
+            matches: true, media: "", onchange: null,
+            addListener() {}, removeListener() {},
+            addEventListener() {}, removeEventListener() {},
+            dispatchEvent() { return false; },
+          });
+          window.NB.designerShell.syncCompact();
+        } finally {
+          window.matchMedia = realMatch;
+        }
+        check("dw compact: the overlay gets is-compact at <=960",
+          overlay.classList.contains("is-compact"));
+        check("dw compact: the strip exposes Add/Chart/Source/Undo/Redo",
+          overlay.querySelectorAll(".dw-compact-nav [data-compact]").length === 5);
+
+        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="add"]'));
+        await tick(40);
+        const sheet = $("dw-compact-sheet");
+        const sheetBody = $("dw-compact-sheet-body");
+        check("dw compact: Add opens the build sheet with the Add form",
+          sheet.hidden === false && sheet.getAttribute("aria-hidden") === "false" &&
+          sheetBody.contains($("dw-add-section")) &&
+          sheetBody.contains($("dw-add-form")) &&
+          $("dw-add-form").contains(window.document.activeElement),
+          "hidden=" + sheet.hidden +
+          " aria=" + sheet.getAttribute("aria-hidden") +
+          " active=" + (window.document.activeElement &&
+            window.document.activeElement.id));
+
+        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="chart"]'));
+        await tick(40);
+        check("dw compact: Chart swaps the sheet content and restores Add",
+          sheet.hidden === false && sheetBody.contains($("dw-chart")) &&
+          !sheetBody.contains($("dw-add-section")) &&
+          $("dw-sidebar").contains($("dw-add-section")) &&
+          $("dw-chart").contains(window.document.activeElement),
+          "chartInSheet=" + sheetBody.contains($("dw-chart")));
+
+        clickEv($("dw-sheet-close"));
+        await tick(30);
+        check("dw compact: closing the sheet restores both sections and keeps the window",
+          sheet.hidden === true && sheet.getAttribute("aria-hidden") === "true" &&
+          overlay.hidden === false &&
+          $("dw-sidebar").contains($("dw-chart")) &&
+          $("dw-sidebar").contains($("dw-add-section")));
+
+        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="add"]'));
+        await tick(30);
+        window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Escape", bubbles: true, cancelable: true }));
+        await tick(30);
+        check("dw compact: Esc closes the sheet before the window",
+          sheet.hidden === true && overlay.hidden === false);
+        window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Escape", bubbles: true, cancelable: true }));
+        await tick(30);
+        check("dw compact: the second Esc closes the window",
+          overlay.hidden === true);
+
+        overlay.classList.remove("is-compact");
+        dropDotBlock(d);
+      }
+
+      // --- a graphviz fence is written back as dot -----------------
+      {
+        const GV_SRC = "# GV\n\n```graphviz\ndigraph G {\n  A -> B;\n}\n```\n";
+        FILES["notes/dw-graphviz.md"] = GV_SRC;
+        if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-graphviz.md")) {
+          dwNotes.children.push({ name: "dw-graphviz.md", type: "file", path: "notes/dw-graphviz.md" });
+        }
+        if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+        await window.NB.sidebar.refresh();
+        await tick(30);
+        window.NB.viewer.close("notes/dw-graphviz.md");
+        await window.NB.tabs.open("notes/dw-graphviz.md");
+        let gv = null;
+        for (let i = 0; i < 20 && !gv; i++) {
+          await tick(25);
+          gv = vc.querySelector(".viz-container");
+        }
+        await window.NB.hybrid.enter();
+        await tick(20);
+        gv = vc.querySelector(".viz-container");
+        if (gv) {
+          window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(gv));
+          await tick(90);
+          const nodeHit = $("dw-overlay-layer").querySelector('[data-node-id="A"]');
+          if (nodeHit) clickEv(nodeHit);
+          const input = $("dw-node-label");
+          if (input) {
+            input.value = "Alpha";
+            inputEv(input);
+            await tick(240);
+          }
+          dwChanges = 0;
+          clickEv($("dw-apply"));
+          await tick(180);
+          const md = window.NB.hybrid.domToMarkdown();
+          check("dw window: a graphviz block applies as a dot fence",
+            md.indexOf("```dot") !== -1 &&
+            md.indexOf("```graphviz") === -1 &&
+            md.indexOf('label="Alpha"') !== -1,
+            JSON.stringify(md.slice(0, 160)));
+          window.NB.hybrid.flushPendingSnapshot();
+
+          // Edit source instead: no dirty prompt, closes, opens the
+          // existing inline fence editor for the same block.
+          const live = vc.querySelector(".viz-container");
+          window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(live));
+          await tick(90);
+          const realConfirm2 = window.confirm;
+          let fallbackPrompts = 0;
+          try {
+            window.confirm = () => { fallbackPrompts++; return false; };
+            clickEv($("dw-edit-source"));
+            await tick(40);
+          } finally {
+            window.confirm = realConfirm2;
+          }
+          const raw = vc.querySelector("pre.hybrid-plugin-editing");
+          check("dw window: Edit source instead closes without a prompt and opens the fence editor",
+            overlay.hidden === true && fallbackPrompts === 0 &&
+            !!raw && raw.getAttribute("contenteditable") === "true",
+            "hidden=" + overlay.hidden + " prompts=" + fallbackPrompts +
+            " raw=" + !!raw);
+          window.NB.hybrid.flushPendingSnapshot();
+        }
+      }
+    }
+
+    // --- wavedrom note + window ------------------------------------
+    const WAVE_SRC = "# Wave\n\n```wavedrom\n" +
+      "{signal: [\n  {name: 'clk', wave: 'p.....|...'},\n" +
+      "  {name: 'data', wave: 'x.345x|=.x', data: ['head', 'body', 'tail']}\n], " +
+      "head: {text: 'Bus'}}\n```\n\nEnd.\n";
+    FILES["notes/dw-wave.md"] = WAVE_SRC;
+    if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-wave.md")) {
+      dwNotes.children.push({ name: "dw-wave.md", type: "file", path: "notes/dw-wave.md" });
+    }
+    if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    window.NB.viewer.close("notes/dw-wave.md");
+    await window.NB.tabs.open("notes/dw-wave.md");
+    let waveContainer = null;
+    for (let i = 0; i < 20 && !waveContainer; i++) {
+      await tick(25);
+      waveContainer = vc.querySelector(".wavedrom-container");
+    }
+    await window.NB.hybrid.enter();
+    await tick(20);
+    waveContainer = vc.querySelector(".wavedrom-container");
+    check("dw entry: wavedrom block rendered (precondition)", !!waveContainer);
+
+    if (waveContainer) {
+      waveContainer.dispatchEvent(ctxmenu());
+      await tick(10);
+      {
+        const db = designBtn();
+        const edit = menuButtons().find((b) => /Edit WaveDrom source/.test(b.textContent));
+        check("dw entry: Design timing… appears before Edit WaveDrom source",
+          !!db && /^Design timing/.test(db.textContent) &&
+          !!edit && menuButtons().indexOf(db) < menuButtons().indexOf(edit),
+          menuButtons().map((b) => b.textContent.trim()).join(" / "));
+        window.NB.menu.close();
+      }
+      const hit = window.NB.hybrid.codeBlockAt(waveContainer);
+      window.NB.wavedromDesign.open(hit);
+      await tick(90);
+      check("dw window: wavedrom opens with the WaveDrom badge",
+        overlay.hidden === false && $("dw-type").textContent === "WaveDrom",
+        $("dw-type").textContent);
+      check("dw window: the wave preview renders on the white card",
+        $("dw-diagram-card").classList.contains("dw-card--wavedrom"));
+      {
+        const lanes = $("dw-overlay-layer").querySelectorAll(".dw-wave-hit");
+        check("dw editor: wavelane_i_0 groups map by ordinal; draw groups excluded",
+          lanes.length === 2, "lanes=" + lanes.length);
+        if (lanes.length) {
+          clickEv(lanes[0]);
+          check("dw editor: selecting a lane opens the Signal inspector",
+            $("dw-inspector-kind").textContent === "Signal",
+            $("dw-inspector-kind").textContent);
+          waveLastSource = null;
+          const waveInput = $("dw-wave-wave");
+          waveInput.value = "p......|..";
+          inputEv(waveInput);
+          await tick(240);
+          check("dw editor: wave edit updates the preview",
+            /"wave":\s*"p\.\.\.\.\.\.\|\.\."/.test(waveLastSource || ""),
+            JSON.stringify((waveLastSource || "").slice(0, 220)));
+          check("dw editor: data labels and unknown top-level keys survive the preview",
+            /"head"/.test(waveLastSource || "") && /"body"/.test(waveLastSource || ""));
+          dwChanges = 0;
+          clickEv($("dw-apply"));
+          await tick(180);
+          check("dw window: wave Apply closes and calls onContentChange once",
+            overlay.hidden === true && dwChanges === 1,
+            "hidden=" + overlay.hidden + " changes=" + dwChanges);
+          const md = window.NB.hybrid.domToMarkdown();
+          check("dw window: wave Apply writes strict-JSON on a wavedrom fence",
+            md.indexOf("```wavedrom") !== -1 &&
+            md.indexOf('"wave": "p......|.."') !== -1 &&
+            md.indexOf('"head"') !== -1 &&
+            md.indexOf("End.") !== -1,
+            JSON.stringify(md.slice(0, 300)));
+          window.NB.hybrid.flushPendingSnapshot();
+        }
+      }
+
+      // --- add / delete a flat signal -------------------------------
+      {
+        const live = vc.querySelector(".wavedrom-container");
+        window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(live));
+        await tick(90);
+        const lane = $("dw-overlay-layer").querySelector(".dw-wave-hit");
+        if (lane) clickEv(lane);
+        const signalWave = $("dw-wave-wave");
+        const signalPeriod = $("dw-wave-period");
+        if (signalWave) {
+          signalWave.value = "";
+          inputEv(signalWave);
+          check("dw editor: an empty wave is rejected inline and blocks Apply",
+            /Wave is required/.test($("dw-inspector-body").textContent) &&
+            $("dw-apply").disabled === true &&
+            $("dw-wave-wave").getAttribute("aria-invalid") === "true" &&
+            $("dw-wave-wave").getAttribute("aria-describedby") === "dw-wave-error",
+            "invalid=" + $("dw-wave-wave").getAttribute("aria-invalid"));
+          signalWave.value = "p";
+          inputEv(signalWave);
+        }
+        if (signalPeriod) {
+          signalPeriod.value = "-1";
+          inputEv(signalPeriod);
+          check("dw editor: a non-positive period is rejected inline and blocks Apply",
+            /Use a whole number 1-16/.test($("dw-inspector-body").textContent) &&
+            $("dw-apply").disabled === true &&
+            $("dw-wave-period").getAttribute("aria-invalid") === "true" &&
+            $("dw-wave-period").getAttribute("aria-describedby") === "dw-period-error",
+            "invalid=" + $("dw-wave-period").getAttribute("aria-invalid"));
+          signalPeriod.value = "";
+          inputEv(signalPeriod);
+          check("dw editor: clearing the invalid period re-enables Apply",
+            $("dw-apply").disabled === false);
+        }
+        await tick(20);
+
+        const name = $("dw-wave-add-name");
+        const wave = $("dw-wave-add-wave");
+        const period = $("dw-wave-add-period");
+        check("dw editor: Add signal is disabled while Name/Wave are empty",
+          $("dw-add-submit").disabled === true);
+        name.value = "valid";
+        inputEv(name);
+        wave.value = "0.1.0.";
+        inputEv(wave);
+        period.value = "2";
+        check("dw editor: Add signal is enabled for a flat list once filled",
+          $("dw-add-submit").disabled === false);
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(120);
+        check("dw editor: add signal appends {name, wave, period} at the end",
+          /"name": "valid"/.test(waveLastSource || "") &&
+          /"wave": "0\.1\.0\."/.test(waveLastSource || "") &&
+          /"period": 2/.test(waveLastSource || ""),
+          JSON.stringify((waveLastSource || "").slice(-180)));
+        const del = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete signal/.test(b.textContent));
+        check("dw editor: a flat signal can be deleted", !!del && del.disabled === false);
+        if (del) {
+          clickEv(del);
+          await tick(120);
+          check("dw editor: delete signal splices the array entry",
+            !/"name": "valid"/.test(waveLastSource || ""),
+            JSON.stringify((waveLastSource || "").slice(-160)));
+        }
+        window.NB.designerShell.close(true);
+        await tick(20);
+      }
+    }
+
+    // --- wave read-only cases --------------------------------------
+    {
+      const EDGE_SRC = "```wavedrom\n{signal: [{name: 'a', wave: 'p'}], " +
+        "edge: ['a~>b']}\n```\n";
+      FILES["notes/dw-wave-edge.md"] = EDGE_SRC;
+      if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-wave-edge.md")) {
+        dwNotes.children.push({ name: "dw-wave-edge.md", type: "file", path: "notes/dw-wave-edge.md" });
+      }
+      const GROUP_SRC = "```wavedrom\n{signal: [['grp', {name: 'a', wave: 'p'}, " +
+        "{name: 'b', wave: 'x'}]]}\n```\n";
+      FILES["notes/dw-wave-group.md"] = GROUP_SRC;
+      if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-wave-group.md")) {
+        dwNotes.children.push({ name: "dw-wave-group.md", type: "file", path: "notes/dw-wave-group.md" });
+      }
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await window.NB.sidebar.refresh();
+      await tick(30);
+      window.NB.viewer.close("notes/dw-wave-edge.md");
+      await window.NB.tabs.open("notes/dw-wave-edge.md");
+      let ec = null;
+      for (let i = 0; i < 20 && !ec; i++) {
+        await tick(25);
+        ec = vc.querySelector(".wavedrom-container");
+      }
+      await window.NB.hybrid.enter();
+      await tick(20);
+      ec = vc.querySelector(".wavedrom-container");
+      if (ec) {
+        window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(ec));
+        await tick(90);
+        const lane = $("dw-overlay-layer").querySelector(".dw-wave-hit");
+        if (lane) clickEv(lane);
+        check("dw editor: a non-empty edge array makes Name read-only",
+          $("dw-wave-name") && $("dw-wave-name").readOnly === true);
+        const edgeDelete = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete signal/.test(b.textContent));
+        check("dw editor: arcs make the name read-only and disable Add/Delete",
+          $("dw-wave-name").readOnly === true &&
+          /Arcs stay in the source/.test($("dw-inspector-body").textContent) &&
+          !!edgeDelete && edgeDelete.disabled === true &&
+          $("dw-add-submit").disabled === true &&
+          /Wave groups and arcs stay in the source/.test($("dw-add-note").textContent),
+          $("dw-wave-name").readOnly + " / delete=" +
+            (edgeDelete ? edgeDelete.disabled : "no button") +
+            " addDisabled=" + $("dw-add-submit").disabled);
+        const moveUp = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Move up/.test(b.textContent));
+        check("dw editor: arcs disable Move up/down",
+          !!moveUp && moveUp.disabled === true);
+        let edgePreview = null;
+        try { edgePreview = JSON.parse(waveLastSource); } catch (_) {}
+        check("dw editor: the edge array is preserved in the preview",
+          !!edgePreview && Array.isArray(edgePreview.edge) &&
+          edgePreview.edge.length === 1,
+          JSON.stringify(edgePreview && edgePreview.edge));
+        window.NB.designerShell.close(true);
+        await tick(20);
+      }
+
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+      window.NB.viewer.close("notes/dw-wave-group.md");
+      await window.NB.tabs.open("notes/dw-wave-group.md");
+      let gc = null;
+      for (let i = 0; i < 20 && !gc; i++) {
+        await tick(25);
+        gc = vc.querySelector(".wavedrom-container");
+      }
+      await window.NB.hybrid.enter();
+      await tick(20);
+      gc = vc.querySelector(".wavedrom-container");
+      if (gc) {
+        window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(gc));
+        await tick(90);
+        check("dw editor: groups disable Add signal with a source-edit note",
+          $("dw-add-submit").disabled === true &&
+          /Wave groups and arcs stay in the source/.test($("dw-add-note").textContent),
+          $("dw-add-note").textContent);
+        const lane = $("dw-overlay-layer").querySelector(".dw-wave-hit");
+        if (lane) clickEv(lane);
+        const del = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete signal/.test(b.textContent));
+        check("dw editor: groups disable Delete signal with the group/gap reason",
+          !!del && del.disabled === true && /Wave groups and arcs/.test(del.title || ""),
+          del ? del.title : "no button");
+        check("dw editor: signal fields inside a group stay editable",
+          !!$("dw-wave-wave") && $("dw-wave-wave").readOnly !== true);
+        window.NB.designerShell.close(true);
+        await tick(20);
+      }
+    }
+
+    // --- gap lanes map by entry order ------------------------------
+    {
+      let d = makeWaveBlock("{signal:[{}, {name:'a', wave:'p'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      check("dw window: loading copy names WaveDrom",
+        $("dw-loading").querySelector(".designer-state-msg").textContent ===
+        "Loading WaveDrom\u2026");
+      await tick(90);
+      {
+        const hits = $("dw-overlay-layer").querySelectorAll(".dw-wave-hit");
+        const gaps = $("dw-overlay-layer").querySelectorAll(".dw-wave-gap-hit");
+        const signals = Array.from(hits).filter((b) => b.dataset.signalIndex != null);
+        check("dw editor: a gap lane maps to the gap entry, not to the signal",
+          hits.length === 2 && gaps.length === 1 && signals.length === 1 &&
+          signals[0].dataset.signalIndex === "0",
+          "hits=" + hits.length + " gaps=" + gaps.length +
+          " signals=" + signals.map((b) => b.dataset.signalIndex).join(","));
+      }
+      dropDotBlock(d);
+
+      d = makeWaveBlock("{signal: [['g', {}, {name:'a', wave:'p'}]]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      {
+        const hits = $("dw-overlay-layer").querySelectorAll(".dw-wave-hit");
+        const gaps = $("dw-overlay-layer").querySelectorAll(".dw-wave-gap-hit");
+        const signals = Array.from(hits).filter((b) => b.dataset.signalIndex != null);
+        check("dw editor: a group containing a gap still maps its signal lane",
+          hits.length === 2 && gaps.length === 1 && signals.length === 1 &&
+          signals[0].dataset.signalIndex === "0",
+          "hits=" + hits.length + " gaps=" + gaps.length +
+          " signals=" + signals.map((b) => b.dataset.signalIndex).join(","));
+      }
+      dropDotBlock(d);
+    }
+
+    // --- invalid state clears on selection change; add stays disabled
+    {
+      const d = makeWaveBlock("{signal:[{name:'a',wave:'p'},{name:'b',wave:'x'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      check("dw editor: Add signal is disabled while Name/Wave are empty",
+        $("dw-add-submit").disabled === true);
+      $("dw-wave-add-name").value = "c";
+      inputEv($("dw-wave-add-name"));
+      $("dw-wave-add-wave").value = "0";
+      inputEv($("dw-wave-add-wave"));
+      check("dw editor: Add signal enables once Name/Wave are filled",
+        $("dw-add-submit").disabled === false);
+
+      const lanes = $("dw-overlay-layer").querySelectorAll(".dw-wave-hit");
+      if (lanes.length >= 2) {
+        clickEv(lanes[0]);
+        const wave = $("dw-wave-wave");
+        wave.value = "p.";
+        inputEv(wave);
+        wave.value = "";
+        inputEv(wave);
+        check("dw editor: an empty wave blocks Apply",
+          $("dw-apply").disabled === true);
+        clickEv(lanes[1]);
+        check("dw editor: changing selection clears the invalid block",
+          $("dw-apply").disabled === false &&
+          !/Wave is required/.test($("dw-inspector-body").textContent),
+          "disabled=" + $("dw-apply").disabled);
+
+        const wave2 = $("dw-wave-wave");
+        wave2.value = "";
+        inputEv(wave2);
+        check("dw editor: an invalid wave blocks Apply again",
+          $("dw-apply").disabled === true);
+        $("dw-add-form").dispatchEvent(
+          new window.Event("submit", { bubbles: true, cancelable: true }));
+        await tick(120);
+        check("dw editor: a structural Add clears the invalid block",
+          $("dw-apply").disabled === false,
+          "disabled=" + $("dw-apply").disabled);
+      }
+      dropDotBlock(d);
+    }
+
+    // --- shared History restores WaveDrom too --------------------
+    {
+      const d = makeWaveBlock("{signal:[{name:'clk', wave:'p...'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      const lane = $("dw-overlay-layer").querySelector(".dw-wave-hit");
+      if (lane) clickEv(lane);
+      waveLastSource = null;
+      const wave = $("dw-wave-wave");
+      wave.value = "p..";
+      inputEv(wave);
+      await tick(80);
+      check("dw history: a WaveDrom edit enables Undo",
+        $("dw-undo").disabled === false);
+      clickEv($("dw-undo"));
+      await tick(120);
+      check("dw history: WaveDrom Undo restores the original wave",
+        /"wave": "p\.\.\."/.test(waveLastSource || "") &&
+        $("dw-inspector-kind").textContent === "Nothing selected",
+        JSON.stringify((waveLastSource || "").slice(0, 120)));
+      clickEv($("dw-redo"));
+      await tick(120);
+      check("dw history: WaveDrom Redo re-applies the edit",
+        /"wave": "p\.\."/.test(waveLastSource || ""));
+      dropDotBlock(d);
+    }
+
+    // --- WaveDrom ruler, track, palette, chart --------------------
+    {
+      const SRC = "{signal:[{name:'bus', wave:'0=2.3.4.', " +
+        "data:['a','b','c']}]}";
+      const d = makeWaveBlock(SRC);
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      const ruler = $("dw-slice-ruler");
+      check("dw wave: the slice ruler has one cell per slice",
+        ruler.querySelectorAll(".dw-slice-cell").length === 8 &&
+        ruler.hidden === false &&
+        ruler.getAttribute("aria-orientation") === "horizontal",
+        "cells=" + ruler.querySelectorAll(".dw-slice-cell").length);
+      check("dw wave: ruler cells are labelled Slice i of N and rove",
+        ruler.querySelector('.dw-slice-cell[data-slice="0"]')
+          .getAttribute("aria-label") === "Slice 1 of 8" &&
+        ruler.querySelector('.dw-slice-cell[data-slice="0"]').tabIndex === 0 &&
+        ruler.querySelector('.dw-slice-cell[data-slice="1"]').tabIndex === -1,
+        ruler.querySelector('.dw-slice-cell[data-slice="0"]').getAttribute("aria-label"));
+
+      clickEv(ruler.querySelector('.dw-slice-cell[data-slice="2"]'));
+      await tick(60);
+      check("dw wave: clicking a ruler cell selects that slice",
+        ruler.querySelector('.dw-slice-cell[data-slice="2"]')
+          .getAttribute("aria-selected") === "true" &&
+        /slice 3/.test($("dw-inspector-meta").textContent),
+        $("dw-inspector-meta").textContent);
+      check("dw wave: the slice band is visible for a selected slice",
+        $("dw-slice-band").hidden === false);
+      check("dw wave: slice selection selects the matching character cell",
+        $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index === "2",
+        $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index);
+      check("dw wave: the readout names the cell and attached data label",
+        /Cell 3/.test($("dw-wave-track").parentNode.nextSibling.textContent) &&
+        /data label/.test($("dw-wave-track").parentNode.nextSibling.textContent),
+        $("dw-wave-track").parentNode.nextSibling.textContent);
+      ruler.focus();
+      ruler.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", bubbles: true, cancelable: true }));
+      await tick(60);
+      check("dw wave: ruler Right moves to the next slice",
+        /slice 4/.test($("dw-inspector-meta").textContent),
+        $("dw-inspector-meta").textContent);
+      ruler.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Home", bubbles: true, cancelable: true }));
+      await tick(60);
+      check("dw wave: ruler Home returns to slice 1",
+        /slice 1/.test($("dw-inspector-meta").textContent),
+        $("dw-inspector-meta").textContent);
+      ruler.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(30);
+      check("dw wave: ruler Enter focuses the inspector field",
+        window.document.activeElement === $("dw-wave-name"),
+        window.document.activeElement && window.document.activeElement.id);
+      clickEv(ruler.querySelector('.dw-slice-cell[data-slice="2"]'));
+      await tick(40);
+
+      // Character track + palette replace and advance.
+      const track = $("dw-wave-track");
+      track.focus();
+      track.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "ArrowRight", bubbles: true, cancelable: true }));
+      await tick(30);
+      check("dw wave: right arrow moves the selected character cell",
+        track.querySelector(".dw-cell.is-selected").dataset.index === "3");
+      clickEv($("dw-glyph-palette").querySelector('.dw-glyph-btn[title="High"]'));
+      await tick(220);
+      const parsed = JSON.parse(waveLastSource);
+      check("dw wave: palette replaces the selected cell and advances",
+        parsed.signal[0].wave.charAt(3) === "1" &&
+        $("dw-wave-wave").value === parsed.signal[0].wave &&
+        $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index === "4",
+        parsed.signal[0].wave + " selected=" +
+          $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index);
+
+      track.focus();
+      track.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Backspace", bubbles: true, cancelable: true }));
+      await tick(220);
+      check("dw wave: Backspace deletes the selected cell and syncs the field",
+        JSON.parse(waveLastSource).signal[0].wave ===
+          $("dw-wave-wave").value,
+        $("dw-wave-wave").value);
+
+      const waveInput = $("dw-wave-wave");
+      waveInput.value = "1.0.1.0.";
+      inputEv(waveInput);
+      await tick(220);
+      check("dw wave: the text field rebuilds the character track",
+        $("dw-wave-track").querySelectorAll(".dw-cell").length === 8 &&
+        JSON.parse(waveLastSource).signal[0].wave === "1.0.1.0.",
+        "cells=" + $("dw-wave-track").querySelectorAll(".dw-cell").length);
+
+      // Chart hscale writes and removes config.hscale.
+      check("dw wave: the Chart note is always visible",
+        /Head\/foot text, groups, and arcs stay in the source/.test(
+          $("dw-chart").textContent));
+      const hs = $("dw-hscale");
+      hs.value = "4";
+      changeEv(hs);
+      await tick(80);
+      check("dw wave: Time scale writes config.hscale",
+        JSON.parse(waveLastSource).config &&
+        JSON.parse(waveLastSource).config.hscale === 4,
+        JSON.stringify(JSON.parse(waveLastSource).config));
+      hs.value = "1";
+      changeEv(hs);
+      await tick(80);
+      check("dw wave: Time scale 1 omits config.hscale",
+        !JSON.parse(waveLastSource).config ||
+        JSON.parse(waveLastSource).config.hscale == null);
+      dropDotBlock(d);
+
+      // Palette with no cell selected appends.
+      const d2 = makeWaveBlock("{signal:[{name:'a', wave:'p'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d2));
+      await tick(90);
+      clickEv($("dw-overlay-layer").querySelector('.dw-wave-hit[data-signal-index="0"]'));
+      clickEv($("dw-glyph-palette").querySelector('.dw-glyph-btn[title="Unknown"]'));
+      await tick(220);
+      check("dw wave: palette with no cell selected appends",
+        JSON.parse(waveLastSource).signal[0].wave === "px" &&
+        $("dw-wave-wave").value === "px",
+        JSON.parse(waveLastSource).signal[0].wave);
+      dropDotBlock(d2);
+
+      // Slice ruler with no signal selected selects the first signal.
+      const d3 = makeWaveBlock("{signal:[{name:'bus', wave:'p...'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d3));
+      await tick(90);
+      clickEv($("dw-slice-ruler").querySelector('.dw-slice-cell[data-slice="1"]'));
+      await tick(60);
+      check("dw wave: a ruler click with no selection selects the first signal",
+        $("dw-inspector-kind").textContent === "Signal" &&
+        /slice 2/.test($("dw-inspector-meta").textContent),
+        $("dw-inspector-kind").textContent + " / " + $("dw-inspector-meta").textContent);
+      dropDotBlock(d3);
+
+    }
+
+    // --- WaveDrom move + data label inspector --------------------
+    {
+      const d = makeWaveBlock("{signal:[{name:'a', wave:'p'}, " +
+        "{name:'b', wave:'x', data:['one','two']}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      const lane1 = $("dw-overlay-layer")
+        .querySelector('.dw-wave-hit[data-signal-index="1"]');
+      clickEv(lane1);
+      const up = Array.from($("dw-inspector-body").querySelectorAll("button"))
+        .find((b) => /Move up/.test(b.textContent));
+      check("dw wave: Move up is enabled for the second signal", !!up && up.disabled === false);
+      clickEv(up);
+      await tick(100);
+      const moved = JSON.parse(waveLastSource);
+      check("dw wave: Move up reorders the signal array and clears selection",
+        moved.signal[0].name === "b" && moved.signal[1].name === "a" &&
+        $("dw-inspector-kind").textContent === "Nothing selected",
+        JSON.stringify(moved.signal.map((s) => s.name)));
+
+      const laneB = $("dw-overlay-layer")
+        .querySelector('.dw-wave-hit[data-signal-index="0"]');
+      clickEv(laneB);
+      const dataHit = $("dw-overlay-layer")
+        .querySelector('.dw-data-hit[data-label-index="1"]');
+      check("dw wave: data labels get padded canvas hit boxes", !!dataHit);
+      if (dataHit) {
+        clickEv(dataHit);
+        check("dw wave: selecting a data label opens the Data label inspector",
+          $("dw-inspector-kind").textContent === "Data label" &&
+          /Data glyph 2 of 2/.test($("dw-inspector-body").textContent),
+          $("dw-inspector-kind").textContent);
+        const label = $("dw-data-label");
+        label.value = "TWO";
+        inputEv(label);
+        await tick(220);
+        check("dw wave: the data label field edits data[j]",
+          JSON.parse(waveLastSource).signal[0].data[1] === "TWO");
+        check("dw wave: the data-label pill and accessible name name the signal/slice",
+          $("dw-overlay-layer").querySelector(".dw-data-hit.is-selected")
+            .querySelector(".designer-sel-badge").textContent === "Data label" &&
+          /Data label 2 of 2, signal b, slice/.test(
+            $("dw-overlay-layer").querySelector(".dw-data-hit.is-selected")
+              .getAttribute("aria-label")),
+          $("dw-overlay-layer").querySelector(".dw-data-hit.is-selected")
+            .getAttribute("aria-label"));
+      }
+
+      // Select from the signal inspector's Data list.
+      clickEv($("dw-inspector-body").querySelectorAll("button").length ?
+        $("dw-inspector-clear") : $("dw-inspector-clear"));
+      await tick(30);
+      if ($("dw-inspector-kind").textContent !== "Signal") {
+        clickEv($("dw-inspector-clear"));
+        await tick(30);
+      }
+      const selectBtn = Array.from($("dw-inspector-body").querySelectorAll("button"))
+        .find((b) => /^Select$/.test(b.textContent));
+      check("dw wave: the signal inspector lists data labels with Select",
+        !!selectBtn);
+      if (selectBtn) {
+        clickEv(selectBtn);
+        check("dw wave: Select in the data list opens the Data label inspector",
+          $("dw-inspector-kind").textContent === "Data label");
+        const del = Array.from($("dw-inspector-body").querySelectorAll("button"))
+          .find((b) => /Delete label/.test(b.textContent));
+        if (del) {
+          clickEv(del);
+          await tick(80);
+          check("dw wave: Delete label removes the entry and returns to the signal",
+            JSON.parse(waveLastSource).signal[0].data.length === 1 &&
+            $("dw-inspector-kind").textContent === "Signal");
+        }
+      }
+      dropDotBlock(d);
+    }
+
+    // --- WaveDrom period separators + readout -------------------
+    {
+      const d = makeWaveBlock("{signal:[{name:'bus', wave:'p...', period:2}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      clickEv($("dw-overlay-layer").querySelector('.dw-wave-hit[data-signal-index="0"]'));
+      await tick(40);
+      check("dw wave: selecting a signal with no cell shows the guidance readout",
+        $("dw-wave-track").parentNode.nextSibling.textContent ===
+        "Select a cell to edit it",
+        $("dw-wave-track").parentNode.nextSibling.textContent);
+      check("dw wave: period 2 draws a separator every second cell",
+        $("dw-wave-track").querySelectorAll(".dw-cell-period").length === 2 &&
+        $("dw-wave-track").querySelectorAll(".dw-cell-slice").length === 2);
+      check("dw wave: period separators use slice ordinals, not cell indexes",
+        Array.from($("dw-wave-track").querySelectorAll(".dw-cell-slice"))
+          .map((el) => el.textContent).join(",") === "1,2");
+      check("dw wave: signal meta counts slices by period",
+        /2 slices/.test($("dw-inspector-meta").textContent),
+        $("dw-inspector-meta").textContent);
+      clickEv($("dw-slice-ruler").querySelector('.dw-slice-cell[data-slice="1"]'));
+      await tick(60);
+      check("dw wave: selecting slice 2 selects the first character of that period",
+        $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index === "2",
+        $("dw-wave-track").querySelector(".dw-cell.is-selected").dataset.index);
+      dropDotBlock(d);
+
+      const gapData = makeWaveBlock(
+        "{signal:[{}, {name:'data', wave:'x.345x', data:['a','b']}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(gapData));
+      await tick(90);
+      clickEv($("dw-overlay-layer").querySelector('.dw-wave-gap-hit'));
+      clickEv($("dw-overlay-layer").querySelector('.dw-wave-hit[data-signal-index="0"]'));
+      await tick(40);
+      check("dw wave: data labels after a gap remain clickable",
+        $("dw-overlay-layer").querySelectorAll(".dw-data-hit").length === 2,
+        "hits=" + $("dw-overlay-layer").querySelectorAll(".dw-data-hit").length);
+      const gapLabel = $("dw-overlay-layer").querySelector(".dw-data-hit");
+      if (gapLabel) {
+        clickEv(gapLabel);
+        check("dw wave: a post-gap data label opens the label inspector",
+          $("dw-inspector-kind").textContent === "Data label");
+      }
+      dropDotBlock(gapData);
+    }
+
+    // --- WaveDrom add mini track + read-only ---------------------
+    {
+      const d = makeWaveBlock("{signal:[{name:'a', wave:'p'}]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      check("dw wave: Add signal starts disabled with empty Name/Wave",
+        $("dw-add-submit").disabled === true &&
+        $("dw-wave-add-period").value === "1");
+      const mini = $("dw-add-fields").querySelector(".dw-mini-track");
+      check("dw wave: the add form has a read-only mini track", !!mini);
+      $("dw-wave-add-name").value = "new";
+      inputEv($("dw-wave-add-name"));
+      $("dw-wave-add-wave").value = "p...";
+      inputEv($("dw-wave-add-wave"));
+      await tick(30);
+      check("dw wave: the mini track previews the typed wave",
+        mini.querySelectorAll(".dw-cell").length === 4,
+        "cells=" + mini.querySelectorAll(".dw-cell").length);
+      dropDotBlock(d);
+
+      const ro = makeWaveBlock("{assign:[]}");
+      window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(ro));
+      await tick(80);
+      check("dw wave: a source with no signal array shows the read-only state",
+        $("dw-readonly").hidden === false &&
+        /no signal array/.test($("dw-readonly-msg").textContent) &&
+        $("dw-apply").disabled === true,
+        $("dw-readonly-msg").textContent);
+      window.NB.designerShell.close(true);
+      ro.remove();
+    }
+
+    // --- Ctrl/Cmd+Z is intercepted by the modal --------------------
+    {
+      const d = makeDotBlock("digraph G { A -> B; }");
+      window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
+      await tick(90);
+      const canvasChord = new window.KeyboardEvent("keydown", {
+        key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+      });
+      $("dw-canvas").dispatchEvent(canvasChord);
+      check("dw window: Ctrl+Z on the canvas is prevented",
+        canvasChord.defaultPrevented === true);
+      const fieldChord = new window.KeyboardEvent("keydown", {
+        key: "z", ctrlKey: true, bubbles: true, cancelable: true,
+      });
+      $("dw-add-node-id").dispatchEvent(fieldChord);
+      check("dw window: Ctrl+Z inside a field is not intercepted",
+        fieldChord.defaultPrevented === false);
+      dropDotBlock(d);
+    }
+
+    // --- lenient no-op Apply writes nothing ------------------------
+    {
+      const LENIENT = "```wavedrom\n{signal: [{name: 'clk', wave: 'p...'}]}\n```\n";
+      FILES["notes/dw-lenient.md"] = LENIENT;
+      if (dwNotes && !dwNotes.children.some((c) => c.path === "notes/dw-lenient.md")) {
+        dwNotes.children.push({ name: "dw-lenient.md", type: "file", path: "notes/dw-lenient.md" });
+      }
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await window.NB.sidebar.refresh();
+      await tick(30);
+      window.NB.viewer.close("notes/dw-lenient.md");
+      await window.NB.tabs.open("notes/dw-lenient.md");
+      let lc = null;
+      for (let i = 0; i < 20 && !lc; i++) {
+        await tick(25);
+        lc = vc.querySelector(".wavedrom-container");
+      }
+      await window.NB.hybrid.enter();
+      await tick(20);
+      lc = vc.querySelector(".wavedrom-container");
+      if (lc) {
+        window.NB.wavedromDesign.open(window.NB.hybrid.codeBlockAt(lc));
+        await tick(90);
+        check("dw window: the wave window title uses the timing noun",
+          $("dw-title").textContent === "Design timing",
+          $("dw-title").textContent);
+        check("dw window: Apply is enabled on a clean open (wavedrom)",
+          $("dw-apply").disabled === false);
+        const before = filePosts();
+        const beforeSrc = lc.dataset.wavedromSource;
+        dwChanges = 0;
+        clickEv($("dw-apply"));
+        await tick(60);
+        check("dw window: no-edit Apply writes nothing on a lenient wavedrom source",
+          overlay.hidden === true && filePosts() === before && dwChanges === 0,
+          "hidden=" + overlay.hidden + " posts=" + filePosts() + " changes=" + dwChanges);
+        check("dw window: the lenient fence is untouched after the no-op Apply",
+          lc.isConnected && (lc.dataset.wavedromSource || "").trim() ===
+            "{signal: [{name: 'clk', wave: 'p...'}]}",
+          lc.isConnected ? JSON.stringify(lc.dataset.wavedromSource) : "detached");
+        check("dw window: a clean-open Apply writes nothing and closes (wavedrom)",
+          overlay.hidden === true && dwChanges === 0 &&
+          filePosts() === before && lc.dataset.wavedromSource === beforeSrc);
+      }
+    }
+
+    // --- restore harness globals -----------------------------------
+    window.NB.viz.renderSvgElement = realVizRenderSvg;
+    window.NB.wavedrom.renderSvgElement = realWaveRenderSvg;
+    window.NB.hybrid.onContentChange = realOCC2;
+    window.NB.auth.status = realAuthStatus2;
+    if (window.NB.designerShell.isOpen()) window.NB.designerShell.close(true);
+    if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
     await tick(30);
   }
 

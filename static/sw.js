@@ -18,7 +18,8 @@
 /* Bumped v8 -> v9: the newly precached bookmarks.js must reach already installed workers. */
 /* Bumped v9 -> v10: mobile.js joins the precache. */
 /* Bumped v10 -> v11: the opaque v2 icon set replaces the transparent icons. */
-const CACHE = "notebook-v11";
+/* Bumped v11 -> v12: the Graphviz / WaveDrom designer modules join the precache. */
+const CACHE = "notebook-v12";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -67,6 +68,9 @@ const PRECACHE = [
   "/static/js/settings.js",
   "/static/js/export.js",
   "/static/js/mermaid-designer.js",
+  "/static/js/designer-shell.js",
+  "/static/js/dot-designer.js",
+  "/static/js/wavedrom-designer.js",
   "/static/js/ai.js",
   "/static/js/activity.js",
   "/static/js/bookmarks.js",

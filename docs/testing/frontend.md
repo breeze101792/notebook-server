@@ -4,7 +4,8 @@ The frontend is tested in two places. `tests/dom/test_dom.js` is the primary
 suite: 19225 lines with a hand-rolled harness, no framework, loading the real
 app into jsdom. The Playwright scripts under `tests/browser/`
 (`test_hybrid_browser.js` for the editing engine, `test_designer_browser.js`
-for the Visimer canvas) cover behavior only a real browser can produce.
+for the Visimer canvas, `test_dw_designer_browser.js` for the Graphviz and
+WaveDrom design windows) cover behavior only a real browser can produce.
 
 Run them:
 
@@ -14,6 +15,7 @@ node tests/dom/test_dom.js         # equivalent once jsdom is resolvable
 npm run test:browser               # Playwright, chromium (default)
 npm run test:browser:firefox       # Playwright, firefox
 node tests/browser/test_designer_browser.js   # Playwright, mermaid designer
+node tests/browser/test_dw_designer_browser.js # Playwright, Graphviz + WaveDrom
 ```
 
 ## The jsdom DOM harness
@@ -145,8 +147,8 @@ a `result.typeInfo.capability`, a family-shaped `result` driven by
   modal guards see it), `role="dialog"` + `aria-modal`, and `NB.mermaidDesign`
   is exposed;
 - the `Design diagram…` menu item appears for auth-off/admin, is absent for a
-  viewer, is absent for a non-mermaid (wavedrom) block, and is disabled with
-  `aria-disabled` + `title` for a render-only type;
+  viewer, is absent for a non-mermaid block (which has its own entry), and is
+  disabled with `aria-disabled` + `title` for a render-only type;
 - open → Apply with no edit issues no write and does not call
   `onContentChange`;
 - open → Apply with an edit calls `onContentChange` exactly once, re-renders
@@ -235,6 +237,30 @@ with untouched lines byte-identical, one `Ctrl+Z` restores the previous
 fence, `Ctrl+Z` inside the modal never touches the note, Esc closes only the
 modal, and the canvas follows `body[data-theme]`.
 
+`tests/browser/test_dw_designer_browser.js` is the same harness for the two
+`#dw-designer-overlay` windows. It writes one note with a ```dot fence and one
+with a ```wavedrom fence, enters hybrid, opens each window from its real
+right-click **Design graph…** / **Design timing…** item, checks the
+Graphviz/WaveDrom badge and
+the SVG preview inside `#dw-diagram-card` (including the white WaveDrom card),
+selects a node or signal row on the canvas, edits the inspector field, applies,
+and reads the note back from disk. The Graphviz groups cover the shape grid, style select, edge line/arrow,
+byte-identical untouched lines/blank lines, single-line/shared-line statement
+preservation, item-level multi-line read-only, History undo/redo, hover,
+double-click, Home/End/Enter, and the ≤960 compact strip/sheet layout. The
+compact test opens Add and Chart in `#dw-compact-sheet`, checks the sheet is
+inside the stage and ≤55%, verifies section swap/restore, focus, close, and
+Esc-closes-sheet-before-window. The WaveDrom groups
+cover the slice ruler and band (period-based slices, `i * period` cell
+selection, measured band geometry), character track period ordinals, glyph
+palette, `hscale` Chart, signal reorder, data-label mapping after gaps,
+data-label inspector, mini track, arcs guard, roving tabindex/ARIA invalid
+states, and the read-only state. It also asserts the changed construct lands, the untouched statements
+and prose stay byte-identical, a dirty Cancel/Esc writes nothing, **Edit source
+instead** opens the inline raw fence editor, Ctrl+Z on the canvas undoes the
+window, and Esc closes only the window. The no-op Apply case records whether
+`#dw-apply` is enabled on a clean open.
+
 `tests/browser/test_mobile_browser.js` boots the same temp-notebook app and
 checks the real layout: a 1280x800 desktop regression (four grid columns,
 visible tab strip, mobile chrome hidden), 390x844 portrait and 932x430
@@ -245,12 +271,15 @@ the note `…` menu), and a real capture append to `Inbox.md` on disk.
 
 Run the hybrid suite with `npm run test:browser` (chromium) or
 `npm run test:browser:firefox`; run the designer suite with
-`node tests/browser/test_designer_browser.js` and the mobile suite with
-`node tests/browser/test_mobile_browser.js` (Chromium only — its phone
+`node tests/browser/test_designer_browser.js`, the Graphviz/WaveDrom suite
+with `node tests/browser/test_dw_designer_browser.js`, and the mobile suite
+with `node tests/browser/test_mobile_browser.js` (Chromium only — its phone
 contexts use Playwright's `isMobile`). `BROWSER` selects the engine for the
 hybrid suite; `CHROMIUM_PATH` / `FIREFOX_PATH` override the binary (on NixOS
-the bundled build cannot start, so point at a nix-provided browser); `PORT` overrides
-the default (`5099` hybrid and mobile, `5098` designer). All use the same
+the bundled build cannot start, so point at a nix-provided browser; the
+Graphviz/WaveDrom suite probes bundled and system Chromium when the variable
+is absent); `PORT` overrides the default (`5099` hybrid and mobile, `5098`
+designer, `5096` Graphviz/WaveDrom). All use the same
 `check(name, cond, detail)` counter and report `PASS` / `FAIL` with
 `process.exitCode = 1` on failure, printing the server log tail when a run
 fails.

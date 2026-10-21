@@ -1185,6 +1185,168 @@
 
   </div>
 
+  <!-- Graphviz / WaveDrom design windows. One shared sibling overlay owned
+       by static/js/designer-shell.js; the language modules
+       (dot-designer.js, wavedrom-designer.js) own the model, preview, and
+       sidebar/inspector/canvas UI. Carries class="settings-overlay" so the
+       app's keyboard-modal guards treat it like every other modal. -->
+  <div id="dw-designer-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
+         aria-labelledby="dw-title">
+      <div class="settings-header designer-header">
+        <div class="designer-heading">
+          <h2 id="dw-title">Design diagram</h2>
+          <span class="designer-type" id="dw-type"></span>
+        </div>
+        <button id="dw-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="settings-body designer-body">
+        <aside class="designer-sidebar" id="dw-sidebar" hidden>
+          <div class="dw-compact-nav" aria-label="Design sections">
+            <button type="button" class="designer-btn" data-compact="add"
+                    title="Add" aria-label="Add">+</button>
+            <button type="button" class="designer-btn" data-compact="chart"
+                    title="Chart" aria-label="Chart">▦</button>
+            <button type="button" class="designer-btn" data-compact="source"
+                    title="Source" aria-label="Source">⌨</button>
+            <button type="button" class="designer-btn" data-compact="undo"
+                    title="Undo" aria-label="Undo">↶</button>
+            <button type="button" class="designer-btn" data-compact="redo"
+                    title="Redo" aria-label="Redo">↷</button>
+          </div>
+          <section class="designer-section designer-section--add" id="dw-add-section">
+            <h3 class="designer-sidebar-title" id="dw-add-title">Add</h3>
+            <div class="designer-add-tabs" id="dw-add-tabs" role="tablist"
+                 aria-label="Add an element" hidden></div>
+            <form class="designer-add-form" id="dw-add-form" hidden novalidate>
+              <div class="designer-fields" id="dw-add-fields"></div>
+              <p class="designer-field-error" id="dw-add-error" role="alert" hidden></p>
+              <p class="designer-scope-note" id="dw-add-note" hidden></p>
+              <button id="dw-add-submit" type="submit"
+                      class="designer-btn designer-btn--commit">Add</button>
+            </form>
+          </section>
+
+          <div class="designer-divider" id="dw-chart-divider" hidden aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--chart" id="dw-chart"
+                   aria-label="Chart" hidden></section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+
+          <section class="designer-section designer-section--source">
+            <button id="dw-edit-source" class="designer-btn designer-btn--ghost
+                    designer-btn--block dw-source" type="button">
+              Edit source instead
+            </button>
+            <p class="designer-scope-note">Closes this window and opens the block’s Markdown.</p>
+          </section>
+
+          <div class="designer-divider" aria-hidden="true"></div>
+          <section class="designer-section designer-section--history" id="dw-history"
+                   aria-labelledby="dw-history-title">
+            <h3 class="designer-sidebar-title" id="dw-history-title">History</h3>
+            <div class="designer-history-actions">
+              <button id="dw-undo" class="designer-btn designer-btn--ghost"
+                      type="button" title="Undo" aria-label="Undo" disabled>Undo</button>
+              <button id="dw-redo" class="designer-btn designer-btn--ghost"
+                      type="button" title="Redo" aria-label="Redo" disabled>Redo</button>
+            </div>
+          </section>
+        </aside>
+
+        <div class="designer-stage">
+          <div class="designer-stage-main">
+          <div class="designer-alert" id="dw-alert" role="alert" hidden>
+            <span class="designer-alert-msg" id="dw-alert-msg"></span>
+            <button class="designer-alert-dismiss" type="button"
+                    title="Dismiss" aria-label="Dismiss error">×</button>
+          </div>
+
+          <div class="designer-canvas dw-stage" id="dw-canvas" tabindex="0"
+               role="application" aria-label="Diagram canvas">
+            <div class="dw-stage-scroll" id="dw-stage-scroll">
+              <div class="dw-slice-ruler" id="dw-slice-ruler" role="listbox"
+                   aria-label="Time slices" aria-orientation="horizontal" hidden></div>
+              <div class="dw-card dw-card--dot" id="dw-diagram-card">
+                <div class="dw-overlay" id="dw-overlay-layer"></div>
+              </div>
+              <div class="dw-slice-band" id="dw-slice-band" hidden
+                   aria-hidden="true"></div>
+            </div>
+
+            <div class="designer-empty" id="dw-empty" hidden>
+              <span class="designer-state-icon" aria-hidden="true">◇</span>
+              <p class="designer-state-msg dw-empty-msg"></p>
+            </div>
+
+            <div class="designer-state designer-state--loading" id="dw-loading" hidden>
+              <span class="designer-spinner" aria-hidden="true"></span>
+              <p class="designer-state-msg" role="status">Loading diagram…</p>
+            </div>
+
+            <div class="designer-state designer-state--error" id="dw-error"
+                 role="alert" hidden>
+              <span class="designer-state-icon" aria-hidden="true">⚠</span>
+              <h3 class="designer-state-title">Couldn’t open this diagram</h3>
+              <p class="designer-state-msg" id="dw-error-msg"></p>
+              <div class="designer-state-actions">
+                <button id="dw-retry" class="settings-action">Retry</button>
+                <button id="dw-error-edit-source" class="settings-action">Edit source instead</button>
+              </div>
+            </div>
+
+            <div class="designer-state designer-state--readonly" id="dw-readonly"
+                 role="alert" hidden>
+              <span class="designer-state-icon" aria-hidden="true">◌</span>
+              <h3 class="designer-state-title">Read-only diagram</h3>
+              <p class="designer-state-msg" id="dw-readonly-msg"></p>
+              <div class="designer-state-actions">
+                <button id="dw-readonly-edit-source" class="settings-action">Edit source instead</button>
+              </div>
+            </div>
+
+            <p class="designer-hint" id="dw-hint" hidden></p>
+          </div>
+                  </div>
+
+        <div class="dw-compact-sheet" id="dw-compact-sheet" role="dialog"
+             aria-modal="false" aria-label="Build sheet" aria-hidden="true" hidden>
+          <div class="dw-sheet-head">
+            <span class="dw-sheet-grabber" aria-hidden="true"></span>
+            <button id="dw-sheet-close" class="icon-btn" type="button"
+                    title="Close sheet" aria-label="Close sheet">×</button>
+          </div>
+          <div class="dw-compact-sheet-body" id="dw-compact-sheet-body"></div>
+        </div>
+
+        <aside class="designer-inspector" id="dw-inspector" hidden
+               aria-labelledby="dw-inspector-kind">
+          <div class="designer-inspector-head" id="dw-inspector-head"
+               aria-live="polite">
+            <span class="designer-inspector-glyph" aria-hidden="true">◇</span>
+            <div class="designer-inspector-titles">
+              <h4 class="designer-inspector-kind" id="dw-inspector-kind">Nothing selected</h4>
+              <span class="designer-inspector-meta" id="dw-inspector-meta"></span>
+            </div>
+            <button id="dw-inspector-clear" class="designer-btn designer-btn--ghost"
+                    type="button" title="Clear selection"
+                    aria-label="Clear selection" hidden>×</button>
+          </div>
+          <div class="designer-inspector-body" id="dw-inspector-body"></div>
+        </aside>
+</div>
+
+
+      </div>
+      <div class="settings-footer designer-footer">
+        <span class="designer-status" id="dw-status" role="status" aria-live="polite"></span>
+        <button id="dw-cancel" class="settings-action">Cancel</button>
+        <button id="dw-apply" class="settings-action settings-action--primary">Apply</button>
+      </div>
+    </div>
+  </div>
+
     <!-- Phone layers. All hidden on desktop; mobile.js owns their state. -->
     <div id="mobile-scrim" hidden></div>
 
@@ -1313,6 +1475,9 @@
   <script src="/static/js/settings.js" defer></script>
   <script src="/static/js/export.js" defer></script>
   <script src="/static/js/mermaid-designer.js" defer></script>
+  <script src="/static/js/designer-shell.js" defer></script>
+  <script src="/static/js/dot-designer.js" defer></script>
+  <script src="/static/js/wavedrom-designer.js" defer></script>
   <script src="/static/js/vimnav.js" defer></script>
   <script src="/static/js/ai.js" defer></script>
   <script src="/static/js/activity.js" defer></script>

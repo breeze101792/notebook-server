@@ -6203,11 +6203,13 @@
         const cap = (typeof designMod.capabilityFor === "function")
           ? designMod.capabilityFor(blockHit.plugin.src(blockHit.el) || "")
           : null;
+        const designLabel = designMod.menuLabel || "Design diagram…";
         if (cap === "render") {
-          items.push({ label: "Design diagram…", disabled: true,
-            title: "No visual editor for this diagram type — use Edit source" });
+          items.push({ label: designLabel, disabled: true,
+            title: designMod.disabledTitle ||
+              "No visual editor for this diagram type — use Edit source" });
         } else {
-          items.push({ label: "Design diagram…", handler: () => designMod.open(blockHit) });
+          items.push({ label: designLabel, handler: () => designMod.open(blockHit) });
         }
       }
       if (blockHit.plugin) {

@@ -84,6 +84,43 @@
     return vizInstance;
   }
 
+  /* renderSvgElement(source) -- render dot/graphviz source through the
+   * vendored Graphviz build and return a responsive <svg>. This is the
+   * single renderer seam shared by the note path and the design window
+   * (docs/architecture/dot-wavedrom-designer.md §D6): the preview and the
+   * Apply-time validation never introduce a second parser. */
+  async function renderSvgElement(source) {
+    if (!(await whenReady())) throw new Error("Graphviz renderer unavailable");
+    const svgText = await getViz().renderString(source, { format: "svg" });
+    // renderString returns a full SVG document; extract the <svg>.
+    const tmp = document.createElement("div");
+    tmp.innerHTML = svgText;
+    const svg = tmp.querySelector("svg");
+    if (!svg) throw new Error("No SVG rendered");
+    // Make the SVG responsive, exactly like mermaid.js: keep the
+    // `width` attribute (so the SVG has an intrinsic width for
+    // aspect-ratio to anchor to) and remove only `height`. Pin the
+    // aspect ratio from the viewBox so max-width + max-height both
+    // scale the element uniformly instead of clipping.
+    const vb = svg.getAttribute("viewBox");
+    let vbW = 0, vbH = 0;
+    if (vb) {
+      const parts = vb.split(/\s+/).map(Number);
+      if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
+        vbW = parts[2];
+        vbH = parts[3];
+      }
+    }
+    if (!vbW || !vbH) {
+      vbW = parseFloat(svg.getAttribute("width")) || 0;
+      vbH = parseFloat(svg.getAttribute("height")) || 0;
+      if (vbW > 0 && vbH > 0) svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
+    }
+    svg.removeAttribute("height");
+    if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
+    return svg;
+  }
+
   /* renderOne(pre) -- render a single <pre><code class="language-dot">
    * (or language-graphviz) into a .viz-container holding the SVG. The
    * source is code.textContent, already entity-decoded by the DOM;
@@ -102,33 +139,7 @@
     container.dataset.viz = "ok";
     container.dataset.vizSource = source;
     try {
-      const svgText = await getViz().renderString(source, { format: "svg" });
-      // renderString returns a full SVG document; extract the <svg>.
-      const tmp = document.createElement("div");
-      tmp.innerHTML = svgText;
-      const svg = tmp.querySelector("svg");
-      if (!svg) throw new Error("No SVG rendered");
-      // Make the SVG responsive, exactly like mermaid.js: keep the
-      // `width` attribute (so the SVG has an intrinsic width for
-      // aspect-ratio to anchor to) and remove only `height`. Pin the
-      // aspect ratio from the viewBox so max-width + max-height both
-      // scale the element uniformly instead of clipping.
-      const vb = svg.getAttribute("viewBox");
-      let vbW = 0, vbH = 0;
-      if (vb) {
-        const parts = vb.split(/\s+/).map(Number);
-        if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-          vbW = parts[2];
-          vbH = parts[3];
-        }
-      }
-      if (!vbW || !vbH) {
-        vbW = parseFloat(svg.getAttribute("width")) || 0;
-        vbH = parseFloat(svg.getAttribute("height")) || 0;
-        if (vbW > 0 && vbH > 0) svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
-      }
-      svg.removeAttribute("height");
-      if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
+      const svg = await renderSvgElement(source);
       container.appendChild(svg);
       pre.replaceWith(container);
     } catch (err) {
@@ -189,7 +200,7 @@
     containerSelector: ".viz-container",
   });
 
-  NB.viz = { renderAll, whenReady,
+  NB.viz = { renderAll, whenReady, renderSvgElement,
     openLightbox: lightbox.openLightbox,
     closeLightbox: lightbox.closeLightbox,
     zoomIn: lightbox.zoomIn,
@@ -210,6 +221,7 @@
       datasetKey: "vizSource",
       errorClass: "viz-error",
       sourceClass: "viz-source",
+      design: "dotDesign",
       renderAll,
     });
   }
