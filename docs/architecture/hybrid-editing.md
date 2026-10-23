@@ -808,7 +808,8 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 | any | inline pairs `**x**` | ` ```\n**x**\n``` ` | delimiters **preserved** | ✅ `applyInlineRules` bails in `pre` `:1650-1651`, test `7172` |
 | E | ⇧↵ | ` ```python\nprint(1)\n``` ` | fence unchanged; `<p>` **after** the block | ✅ test `4893-4933` |
 | (editing) | ↵ | inside the editable `<pre>` | native newline inside the source | ✅ comment `:2376-2378` |
-| — | D (empty the fence) | ` ```\nx\n``` ` | ` ``` \n\n ``` ` (blank fence body) | ⚠ `vendor:209-213` emits a blank line |
+| — | D (empty the fence) | ` ```\nx\n``` ` | fence **dropped** from the note; the live view keeps an empty `<pre>` until the note is re-rendered | ✅ turndown's blank rule (`vendor:664`); the serializer never writes a blank fence |
+| (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | top-level block **removed**, caret at the previous/next block edge, undoable; a fence nested in a list/quote is left in place (the key is claimed so the native merge cannot destroy its `<code>`) | ✅ `removeEmptyCodeBlock` (`hybrid.js:2423`); `test_block_edit_browser.js` |
 | — | language chip | ` ```shell ` | change to `python` → ` ```python `; empty clears; `my lang` is refused | ✅ `addLanguagePill` (real `<input>` so Ctrl+A selects the chip, not the note), tests `test_block_edit_browser.js` |
 | — | bare fence touched | ` ```\ntext\n``` ` | stays bare; highlight.js's auto-detected language is never written | ✅ `captureFenceLanguages`; test `test_block_edit_browser.js` |
 | — | `~~~` fence | `~~~js\ntext\n~~~` | untouched byte-identical; touched canonicalizes to backticks | ✅ corpus + `test_block_edit_browser.js` (§6 Q13) |

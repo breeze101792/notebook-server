@@ -2367,6 +2367,114 @@
     return node.closest("pre.hybrid-plugin-editing");
   }
 
+  /* The leaf of a top-level block that can hold a text caret at its
+   * start/end. Lists and quotes are containers, so their carets belong
+   * to the first/last item; a rule, table, fence or atomic plugin block
+   * has no text caret and is refused. */
+  function edgeCaretHost(node, atEnd) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (node.matches("hr,table,pre")) return null;
+    if (node.matches(PLUGIN_CONTAINER_SELECTOR)) return null;
+    if (node.getAttribute(ATOMIC_BLOCK_MARKER) === "1") return null;
+    if (node.tagName === "UL" || node.tagName === "OL") {
+      const items = Array.prototype.filter.call(
+        node.children, (c) => c.tagName === "LI");
+      return edgeCaretHost(atEnd ? items[items.length - 1] : items[0], atEnd);
+    }
+    if (node.tagName === "BLOCKQUOTE") {
+      const kids = Array.prototype.filter.call(
+        node.children, (c) => c.tagName !== "HR");
+      return edgeCaretHost(atEnd ? kids[kids.length - 1] : kids[0], atEnd);
+    }
+    if (node.tagName === "LI") {
+      const blocks = Array.prototype.filter.call(node.children,
+        (c) => c.tagName !== "UL" && c.tagName !== "OL" && c.tagName !== "HR");
+      if (blocks.length) {
+        return edgeCaretHost(atEnd ? blocks[blocks.length - 1] : blocks[0], atEnd);
+      }
+      const lists = Array.prototype.filter.call(node.children,
+        (c) => c.tagName === "UL" || c.tagName === "OL");
+      if (lists.length) {
+        return edgeCaretHost(atEnd ? lists[lists.length - 1] : lists[0], atEnd);
+      }
+    }
+    return CARET_HOST_TAGS.indexOf(node.tagName) === -1 ? null : node;
+  }
+
+  /* The nearest top-level block beside `pre` that can take a caret in
+   * direction `dir` (+1 after, -1 before). */
+  function caretHostBeside(pre, dir) {
+    let node = dir > 0 ? pre.nextElementSibling : pre.previousElementSibling;
+    while (node) {
+      const host = edgeCaretHost(node, dir < 0);
+      if (host) return host;
+      node = dir > 0 ? node.nextElementSibling : node.previousElementSibling;
+    }
+    return null;
+  }
+
+  /* An emptied in-place fence (all source deleted) is removed by the
+   * next Backspace/Delete, like an empty block: the block is a container
+   * the user cannot clear with a text edit, and the native merge would
+   * instead join the empty <pre> into the previous block. The caret
+   * moves to the block edge in the key's direction. The serializer drops
+   * an empty fence anyway, so removing it here makes the live view match
+   * what would be saved. Returns true when the key was claimed. */
+  function removeEmptyCodeBlock(pre, key) {
+    if (!pre || !pre.classList.contains("hybrid-plugin-editing")) return false;
+    const code = pre.querySelector("code");
+    if (!code) return false;
+    // Cheap test first: a non-empty fence is an ordinary edit, so never
+    // touch its DOM here.
+    if (code.textContent.replace(/\u200B/g, "").trim()) return false;
+    // Text the browser parked between </code> and the Copy button is
+    // still source. Fold it into <code> before deciding, or removing
+    // the block would destroy it.
+    absorbFenceStrayText(pre);
+    if (code.textContent.replace(/\u200B/g, "").trim()) return false;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return false;
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed || !code.contains(range.startContainer)) return false;
+    const back = key === "Backspace";
+    // The key must act at the block's edge. A caret mid-way through a
+    // whitespace-only fence is still an ordinary character delete; the
+    // trailing newline of an empty fence body does not count as text.
+    const side = document.createRange();
+    side.selectNodeContents(code);
+    if (back) side.setEnd(range.startContainer, range.startOffset);
+    else side.setStart(range.startContainer, range.startOffset);
+    if (side.toString().replace(/\u200B|[\n\r]/g, "") !== "") return false;
+    // A fence nested in a list item or quote cannot be lifted out
+    // without tearing its container open, but the native merge would
+    // destroy its <code> element: claim the key and leave the empty
+    // fence for the serializer to drop.
+    if (pre.parentElement !== viewerContentEl) return true;
+    const prevHost = caretHostBeside(pre, -1);
+    const nextHost = caretHostBeside(pre, 1);
+    const host = back ? (prevHost || nextHost) : (nextHost || prevHost);
+    const atEnd = back ? !!prevHost : !nextHost;
+    const parent = pre.parentNode;
+    const anchor = pre.nextSibling;
+    // Leave edit mode before detaching: removing the focused editor
+    // fires a focusout, and the contenteditable attribute is the commit
+    // guard, so it must change first.
+    pre.setAttribute("contenteditable", "false");
+    pre.remove();
+    let target = host;
+    if (!target) {
+      // Replace the block where it stood (not at the end of the note),
+      // and mark the empty line so it is dropped on save.
+      target = document.createElement("p");
+      target.setAttribute("data-hybrid-caret", "1");
+      parent.insertBefore(target, anchor);
+    }
+    viewerContentEl.focus();
+    caretToEdge(target, atEnd);
+    onContentChange();
+    return true;
+  }
+
   /* Text from the block's start up to the caret. */
   function textBeforeCaret(blockEl, range) {
     const r = document.createRange();
@@ -3948,6 +4056,15 @@
     // keydown target is the editing host, not the <pre>.
     const editingPre = codeEditorAtSelection();
     if (editingPre) {
+      // An emptied fence is removed by the next Backspace/Delete instead
+      // of being merged into the neighbouring block by the native engine.
+      if ((e.key === "Backspace" || e.key === "Delete") &&
+          !e.altKey && !e.ctrlKey && !e.metaKey &&
+          removeEmptyCodeBlock(editingPre, e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
@@ -4765,14 +4882,36 @@
     viewerContentEl.innerHTML = state.html;
     enableCheckboxes();
     addListPlaceholders();
+    // A snapshot may have been taken while a fence was being edited.
+    // innerHTML rebuilds the <pre> without its listeners and pill, so
+    // re-wire it here: without this, undo restores an editable-looking
+    // fence that can never commit (blur and Esc both no-op).
+    viewerContentEl.querySelectorAll("pre.hybrid-plugin-editing").forEach((pre) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      pre.setAttribute("contenteditable", "true");
+      wireCommit(pre);
+      // innerHTML carries the pill's value ATTRIBUTE, but the chip's
+      // value is a property, so the restored chip is blank and its
+      // listeners are gone. Rebuild it from the stored language.
+      const oldPill = pre.querySelector(".hybrid-lang-pill");
+      if (oldPill) oldPill.remove();
+      addLanguagePill(pre, code);
+    });
     const child = state.caret ? viewerContentEl.children[state.caret.index] : null;
     if (child) {
-      const r = document.createRange();
-      r.selectNodeContents(child);
-      r.collapse(false);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
+      const code = child.matches("pre.hybrid-plugin-editing")
+        ? child.querySelector("code") : null;
+      if (code) {
+        focusCodeEnd(child, code);
+      } else {
+        const r = document.createRange();
+        r.selectNodeContents(child);
+        r.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
     }
     // Mark dirty but do NOT schedule a new snapshot: the state we just
     // restored is already in the history, and pushing it again would

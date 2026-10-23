@@ -19,7 +19,7 @@ No hardware step is involved.
 | AI / ACP / source editor | `tests/browser/test_ai_editor_browser.js` | 35 |
 | Hybrid (existing) | `tests/browser/test_hybrid_browser.js` | 137 |
 | Hybrid blocks | `tests/browser/test_hybrid_blocks_browser.js` | 28 |
-| Fence editor | `tests/browser/test_block_edit_browser.js` | 40 |
+| Fence editor | `tests/browser/test_block_edit_browser.js` | 61 |
 | Mobile (existing) | `tests/browser/test_mobile_browser.js` | 76 |
 | Mermaid designer (existing) | `tests/browser/test_designer_browser.js` | 36 |
 | Dot / WaveDrom designer (existing) | `tests/browser/test_dw_designer_browser.js` | 67 |
@@ -67,7 +67,8 @@ a tab switch, and wikilink navigation.
 One group per interaction: open, language chip, clear, invalid input,
 Esc, bare fence, alias (`js` not `javascript`), rich paste, Tab,
 Shift+Tab, native undo, save mid-edit, Esc on the source, re-enter,
-`~~~` fence, plugin fence re-render, Copy button. This suite pins the
+`~~~` fence, plugin fence re-render, Copy button, emptied-block removal
+(Backspace/Delete), and undo of that removal. This suite pins the
 regressions below.
 
 ## Defects found and fixed
@@ -97,6 +98,7 @@ regressions below.
 | 21 | Enter on an empty quote line never left the blockquote | no analogue of the empty-list-item rule | Enter on a trailing empty quote line exits to a paragraph | hybrid blocks: blockquote |
 | 22 | A table view (hidden rows/sort) could apply to a different table with the same header | identity was header text + positional index only | store a full-cell hash and a same-header ordinal; apply only when all three match, otherwise fail closed | DOM table-view tests + core UI |
 | 23 | A dirty tab switch forced a save or lost the edit | the tab guard prompted save/cancel | the buffer is stashed; the tab stays dirty and a Recover bar reopens it (source mode is Ctrl+Z undoable), Discard reloads saved | core UI + AI/editor + hybrid blocks |
+| 24 | Emptying a fence then pressing Backspace merged the empty `<pre>` into the previous block and deleted its last character | the native editable `<pre>` had no empty-block removal rule | Backspace/Delete in an emptied top-level in-place fence removes the block, moves the caret to the neighbour edge in the key's direction, and is undoable; a nested fence claims the key so its `<code>` is not destroyed | fence editor: emptied block |
 
 ## Known issues left unchanged
 

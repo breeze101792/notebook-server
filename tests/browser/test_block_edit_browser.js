@@ -120,7 +120,7 @@ async function main() {
     const boot = async (src) => {
       writeNote(src);
       await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
-      await page.waitForSelector("#viewer-content h1", { timeout: 15000 });
+      await page.waitForSelector("#viewer-content h1, #viewer-content pre", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
         () => document.getElementById("viewer-content")
@@ -464,6 +464,181 @@ async function main() {
       /print\("hello"\)/.test(copied), JSON.stringify(copied));
     s = await state();
     check("copy: the block stays in edit mode", s.editing, JSON.stringify(s));
+
+    // --- 17. an emptied fence is removed by Backspace/Delete ----------
+    console.log("\n== fence editor: emptied block ==");
+    const EMPTY_NOTE = "# Empty\n\n```js\nconst x = 1;\n```\n\nafter\n";
+    const selectCode = async () => page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    const putCaret = (offset) => page.evaluate((off) => {
+      const code = document.querySelector("#viewer-content pre code");
+      let node = code.firstChild;
+      if (!node || node.nodeType !== Node.TEXT_NODE) {
+        node = document.createTextNode("");
+        code.insertBefore(node, code.firstChild);
+      }
+      const r = document.createRange();
+      r.setStart(node, Math.min(off, node.nodeValue.length));
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }, offset);
+    const blockCount = () => page.evaluate(
+      () => document.querySelectorAll("#viewer-content pre").length);
+    const caretInfo = () => page.evaluate(() => {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      const r = sel.getRangeAt(0);
+      const root = document.getElementById("viewer-content");
+      let node = r.startContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      while (node && node.parentElement !== root) node = node.parentElement;
+      if (!node) return null;
+      const before = document.createRange();
+      before.selectNodeContents(node);
+      before.setEnd(r.startContainer, r.startOffset);
+      const after = document.createRange();
+      after.selectNodeContents(node);
+      after.setStart(r.startContainer, r.startOffset);
+      return { block: node.tagName, atStart: before.toString() === "",
+        atEnd: after.toString() === "" };
+    });
+
+    await boot(EMPTY_NOTE);
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");   // deletes the source, keeps the block
+    check("empty: the block survives the text deletion", (await blockCount()) === 1);
+
+    await page.keyboard.press("Backspace");   // removes the empty block
+    await sleep(200);
+    check("empty: the next Backspace removes the block", (await blockCount()) === 0);
+    let ci = await caretInfo();
+    check("empty: the caret lands at the previous block's end",
+      ci && ci.block === "H1" && ci.atEnd, "caret=" + JSON.stringify(ci));
+    await page.keyboard.press("Control+s");
+    check("empty: save writes the note without the fence",
+      await waitForFile((md) => md === "# Empty\n\nafter\n"), JSON.stringify(readNote()));
+
+    await page.keyboard.press("Control+z");
+    await sleep(300);
+    check("empty: undo restores the removed block", (await blockCount()) === 1);
+    check("empty: undo restores the fence source",
+      /const x = 1;/.test(await page.evaluate(
+        () => document.querySelector("#viewer-content pre code").textContent)));
+
+    await boot(EMPTY_NOTE);
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Delete");
+    await sleep(200);
+    check("empty: Delete removes the block too", (await blockCount()) === 0);
+    ci = await caretInfo();
+    check("empty: Delete leaves the caret at the next block's start",
+      ci && ci.block === "P" && ci.atStart, "caret=" + JSON.stringify(ci));
+    await page.keyboard.press("Control+s");
+    check("empty: the Delete path saves the same note",
+      await waitForFile((md) => md === "# Empty\n\nafter\n"), JSON.stringify(readNote()));
+
+    // Undo can land on a snapshot taken while the emptied fence was
+    // still in edit mode; that restored editor must keep its commit path.
+    await boot(EMPTY_NOTE);
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");
+    await sleep(600);                          // snapshot the emptied editor
+    await page.keyboard.press("Backspace");    // remove the block
+    await sleep(200);
+    await page.keyboard.press("Control+z");
+    await sleep(300);
+    check("empty: undo can restore the emptied fence",
+      (await blockCount()) === 1);
+    await page.keyboard.press("Escape");
+    await sleep(200);
+    check("empty: Esc commits a restored editing fence and keeps its language",
+      (await page.evaluate(() => {
+        const pre = document.querySelector("#viewer-content pre");
+        return !!pre && pre.getAttribute("contenteditable") !== "true" &&
+          pre.getAttribute("data-fence-lang") === "js";
+      })) === true);
+
+    // A caret in the middle of a whitespace-only fence is a character
+    // delete, not a block removal.
+    await boot("# W\n\n```js\n   \n```\n\nafter\n");
+    await openBlock();
+    await putCaret(2);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("empty: a mid-fence Backspace keeps a whitespace-only block",
+      (await blockCount()) === 1);
+    check("empty: the mid-fence Backspace deletes one character",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content pre code").textContent)) === "  \n");
+    await putCaret(0);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("empty: the edge Backspace then removes the block",
+      (await blockCount()) === 0);
+
+    // Text parked between </code> and the Copy button is still source.
+    await boot("# S\n\n```js\n\n```\n\nafter\n");
+    await openBlock();
+    await page.evaluate(() => {
+      const pre = document.querySelector("#viewer-content pre");
+      const code = pre.querySelector("code");
+      pre.insertBefore(document.createTextNode("hello"), code.nextSibling);
+      const r = document.createRange();
+      r.setStart(code.firstChild || code, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("empty: stray fence text is not removed with the block",
+      (await blockCount()) === 1);
+    check("empty: stray fence text is absorbed into the code",
+      /hello/.test(await page.evaluate(
+        () => document.querySelector("#viewer-content pre code").textContent)));
+
+    // A fence nested in a list cannot be lifted out; the key is claimed
+    // so the native merge cannot destroy its <code> element.
+    await boot("# L\n\n- item\n\n  ```js\n  x\n  ```\n\nafter\n");
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("empty: a nested fence is not removed", (await blockCount()) === 1);
+    check("empty: a nested fence keeps its <code> element",
+      (await page.evaluate(
+        () => !!document.querySelector("#viewer-content pre code"))) === true);
+
+    // No neighbour at all: a fresh caret line takes the block's place.
+    await boot("```js\nx\n```\n");
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("empty: the only block is removed", (await blockCount()) === 0);
+    check("empty: a fallback caret line replaces it",
+      (await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p[data-hybrid-caret]");
+        return !!p && !p.textContent.trim();
+      })) === true);
+    ci = await caretInfo();
+    check("empty: the fallback line takes the caret",
+      ci && ci.block === "P" && ci.atStart, "caret=" + JSON.stringify(ci));
 
     check("no uncaught page errors", pageErrors.length === 0, pageErrors.join(" | "));
     await page.screenshot({ path: path.join(tmp, "block-edit.png") });
