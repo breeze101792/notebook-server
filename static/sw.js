@@ -19,7 +19,8 @@
 /* Bumped v9 -> v10: mobile.js joins the precache. */
 /* Bumped v10 -> v11: the opaque v2 icon set replaces the transparent icons. */
 /* Bumped v11 -> v12: the Graphviz / WaveDrom designer modules join the precache. */
-const CACHE = "notebook-v12";
+/* Bumped v12 -> v13: navigation requests fall back to the cached app shell. */
+const CACHE = "notebook-v13";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -129,7 +130,11 @@ async function networkFirst(req) {
     }
     return fresh;
   } catch {
-    const cached = await cache.match(req);
+    let cached = await cache.match(req);
+    // Any in-app URL (a deep link, or a reload that kept ?file=...) is
+    // served by the same SPA shell. Only "/" is precached, so a navigation
+    // needs that fallback to boot offline.
+    if (!cached && req.mode === "navigate") cached = await cache.match("/");
     if (cached) return cached;
     return new Response("Offline", { status: 503 });
   }

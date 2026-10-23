@@ -299,6 +299,11 @@ const html = `<!DOCTYPE html><html><head>
           <div id="viewer">
             <div id="viewer-content" class="markdown-body"></div>
           </div>
+          <div id="draft-bar" hidden>
+            <span id="draft-bar-msg"></span>
+            <button id="draft-recover" type="button">Recover</button>
+            <button id="draft-discard" type="button">Discard</button>
+          </div>
           <div id="welcome" class="welcome" hidden>
             <div class="welcome-inner">
               <div class="welcome-icon">📓</div>
@@ -8591,8 +8596,8 @@ function check(label, cond, extra) {
         await tick(20);
         const pill = plainPre.querySelector(".hybrid-lang-pill");
         check("plain code click-to-edit: language chip rendered",
-          !!pill && pill.textContent === "python",
-          "pill=" + (pill && pill.textContent));
+          !!pill && pill.value === "python",
+          "pill=" + (pill && pill.value));
         check("plain code click-to-edit: block is contenteditable",
           plainPre.getAttribute("contenteditable") === "true",
           "ce=" + plainPre.getAttribute("contenteditable"));
@@ -8636,28 +8641,30 @@ function check(label, cond, extra) {
           await tick(20);
           const pill = pre.querySelector(".hybrid-lang-pill");
           check("code block edit: language chip rendered on the block",
-            !!pill && pill.textContent === "shell",
-            "pill=" + (pill && pill.textContent));
+            !!pill && pill.value === "shell",
+            "pill=" + (pill && pill.value));
           check("code block edit: block is contenteditable",
             pre.getAttribute("contenteditable") === "true",
             "ce=" + pre.getAttribute("contenteditable"));
           if (pill) {
             // Inline editing: type "python" + Enter -- no prompt window.
             const typePill = (txt) => {
-              pill.textContent = txt;
+              pill.value = txt;
+              pill.dispatchEvent(new window.Event("input", { bubbles: true }));
               pill.dispatchEvent(new window.KeyboardEvent("keydown",
                 { key: "Enter", bubbles: true, cancelable: true }));
             };
             typePill("python");
             await tick(20);
             check("code block edit: chip edits shell to python inline",
-              code.className === "language-python" && code.textContent === "echo hello",
+              /(?:^|\s)language-python(?:\s|$)/.test(code.className) &&
+                code.textContent === "echo hello",
               "cls=" + code.className);
             // python -> mermaid via the chip.
             typePill("mermaid");
             await tick(20);
             check("code block edit: chip edits python to mermaid",
-              code.className === "language-mermaid",
+              /(?:^|\s)language-mermaid(?:\s|$)/.test(code.className),
               "cls=" + code.className);
             // Blur the block: restore render mode -> mermaid container.
             pre.dispatchEvent(new window.FocusEvent("focusout", { relatedTarget: null }));
@@ -8671,7 +8678,7 @@ function check(label, cond, extra) {
             check("code block edit: blur restores render mode (mermaid container)",
               !!reRendered &&
                 pre.querySelector(".hybrid-lang-pill") === null &&
-                pre.getAttribute("contenteditable") === null,
+                pre.getAttribute("contenteditable") === "false",
               "rendered=" + !!reRendered +
                 " pill=" + (pre.querySelector(".hybrid-lang-pill") !== null));
           }
@@ -8778,64 +8785,67 @@ function check(label, cond, extra) {
       await tick(30);
     }
 
-    // --- hybrid tab-switch blocking ---
-    // Autosave off: unsaved changes block the switch with a confirm and
-    // Cancel stays in hybrid mode. Autosave on: the switch saves silently
-    // (the user already opted into saves without a prompt).
+    // --- hybrid tab-switch: keep the buffer, recover on return ---
+    // Autosave off: the switch is never blocked. The WYSIWYG buffer is
+    // stashed, the tab stays dirty, and a Recover bar appears when the
+    // tab is opened again. Autosave on still saves silently.
     {
       const switchCfg = window.NB.app.getCfg();
       const switchAutosaveWas = switchCfg.autosave;
       switchCfg.autosave = false;
-      // Open notes/b.md so we have two tabs to switch between.
       await window.NB.tabs.open("notes/b.md");
       await tick(30);
-      // The active tab is now notes/b.md. Switch back to notes/a.md.
       await window.NB.tabs.activate("notes/a.md");
       await tick(30);
       const pathA = "notes/a.md";
-      check("hybrid tab-block: active file is notes/a.md",
+      check("hybrid switch: active file is notes/a.md",
         window.NB.viewer.getPath() === pathA,
         "got: " + window.NB.viewer.getPath());
 
-      // Enter hybrid mode and make a change (dirty).
       await window.NB.hybrid.enter();
       await tick(20);
       vc.innerHTML += "<p>unsaved hybrid edit</p>";
       vc.dispatchEvent(new window.Event("input", { bubbles: true }));
       await tick(100);
-      check("hybrid tab-block: dirty before switch", window.NB.hybrid.isDirty());
+      check("hybrid switch: dirty before switch", window.NB.hybrid.isDirty());
 
-      // Try to switch tabs -- confirm() returns false (Cancel).
-      // The switch should be blocked.
+      const saveBeforeBlock = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
       const origConfirm = window.confirm;
       let confirmCalled = false;
       window.confirm = () => { confirmCalled = true; return false; };
       await window.NB.tabs.activate("notes/b.md");
-      await tick(30);
-      check("hybrid tab-block: confirm prompted on switch", confirmCalled);
-      check("hybrid tab-block: still on notes/a.md after Cancel",
-        window.NB.viewer.getPath() === pathA,
-        "got: " + window.NB.viewer.getPath());
-      check("hybrid tab-block: hybrid still active after Cancel",
-        window.NB.hybrid.isActive());
+      await tick(40);
       window.confirm = origConfirm;
-
-      // Now switch with confirm() returning true (Save). The switch
-      // should proceed: hybrid exits, the file saves, and the tab
-      // changes to notes/b.md.
-      const saveBeforeBlock = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-      window.confirm = () => true;
-      await window.NB.tabs.activate("notes/b.md");
-      await tick(50);
-      window.confirm = origConfirm;
-      check("hybrid tab-block: hybrid not active after Save+switch",
-        !window.NB.hybrid.isActive());
-      check("hybrid tab-block: switched to notes/b.md",
+      check("hybrid switch: no confirm prompt", confirmCalled === false);
+      check("hybrid switch: switched to notes/b.md",
         window.NB.viewer.getPath() === "notes/b.md",
         "got: " + window.NB.viewer.getPath());
-      check("hybrid tab-block: save POST fired during switch",
-        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock === 1,
+      check("hybrid switch: hybrid exited", !window.NB.hybrid.isActive());
+      check("hybrid switch: no save POST fired",
+        fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock === 0,
         "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeBlock));
+      check("hybrid switch: the draft is retained",
+        !!window.NB.viewer.getDraft(pathA),
+        JSON.stringify(window.NB.viewer.getDraft(pathA)));
+      check("hybrid switch: the tab stays marked dirty",
+        window.document.querySelector('.tab[data-path="notes/a.md"]').classList.contains("dirty"));
+
+      // Switch back: the preview shows the saved bytes and offers Recover.
+      await window.NB.tabs.activate(pathA);
+      await tick(40);
+      check("hybrid switch: the draft bar appears on return",
+        !$("draft-bar").hidden);
+      $("draft-recover").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(50);
+      check("hybrid switch: Recover enters hybrid", window.NB.hybrid.isActive());
+      check("hybrid switch: Recover restores the draft text",
+        /unsaved hybrid edit/.test($("viewer-content").textContent));
+      check("hybrid switch: Recover clears the stored draft",
+        !window.NB.viewer.getDraft(pathA));
+      check("hybrid switch: Recover leaves the note dirty",
+        window.NB.hybrid.isDirty());
+      await window.NB.hybrid.exit(false);
+      await tick(20);
 
       // Autosave on: switching tabs saves silently, no permission ask.
       switchCfg.autosave = true;
@@ -14442,7 +14452,8 @@ function check(label, cond, extra) {
     // Apply a state that hides column 1, leaving only column 0 visible,
     // then try to hide column 0 through the chooser: refused + toast.
     window.NB.tableView.applyState(t0, s0, {
-      sig: s0.sig, hiddenRows: [], hiddenCols: [1],
+      sig: s0.sig, bodySig: s0.bodySig, ordinal: s0.ordinal,
+      hiddenRows: [], hiddenCols: [1],
     });
     await tick(10);
     window.NB.tableView.reveal(t0);
@@ -14797,9 +14808,10 @@ function check(label, cond, extra) {
     const rec = blob && blob.files && blob.files[TV_PATH];
     const tst = rec && rec.tables && rec.tables["0"];
     check("table view: localStorage blob is versioned",
-      !!blob && blob.v === 1, JSON.stringify(blob && blob.v));
-    check("table view: stored entry has sig/hiddenRows/hiddenCols/sort",
+      !!blob && blob.v === 2, JSON.stringify(blob && blob.v));
+    check("table view: stored entry has sig/bodySig/ordinal/hiddenRows/hiddenCols/sort",
       !!tst && typeof tst.sig === "string" &&
+      typeof tst.bodySig === "string" && Number.isInteger(tst.ordinal) &&
       Array.isArray(tst.hiddenRows) && Array.isArray(tst.hiddenCols) &&
       !!tst.sort, JSON.stringify(tst));
     check("table view: sig is the normalized header texts joined by \\u0001",
@@ -14859,15 +14871,28 @@ function check(label, cond, extra) {
     await window.NB.tabs.activate(TV_PATH);
     await tick(30);
 
-    // --- (9) out-of-range stored indices are tolerated -----------------
+    // --- (9) fail closed when the table identity moved ----------------
     const tA = tvTables()[0], tB = tvTables()[1];
     window.NB.tableView.resetTable(tA);
     window.NB.tableView.resetTable(tB);
     const sA = sessionOf(tA);
+    window.NB.tableView.applyState(tA, sA, {
+      sig: sA.sig, bodySig: "stale", ordinal: sA.ordinal, hiddenRows: [0],
+    });
+    check("table view: a changed body signature is ignored (no row hidden)",
+      !sA.sourceRows[0].classList.contains("nb-tv-hide-row"),
+      "tA=" + tA.outerHTML.slice(0, 120));
+    window.NB.tableView.applyState(tA, sA, {
+      sig: sA.sig, bodySig: sA.bodySig, ordinal: sA.ordinal + 1, hiddenRows: [0],
+    });
+    check("table view: a shifted ordinal is ignored (no row hidden)",
+      !sA.sourceRows[0].classList.contains("nb-tv-hide-row"),
+      "tA=" + tA.outerHTML.slice(0, 120));
     let tvThrew = false;
     try {
       window.NB.tableView.applyState(tA, sA, {
-        sig: sA.sig, hiddenRows: [0, 99, -1], hiddenCols: [1, 42],
+        sig: sA.sig, bodySig: sA.bodySig, ordinal: sA.ordinal,
+        hiddenRows: [0, 99, -1], hiddenCols: [1, 42],
         sort: { col: 99, dir: "ascending" },
       });
     } catch (e) { tvThrew = true; }
@@ -15366,8 +15391,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v12",
-      /const CACHE = "notebook-v12"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v13",
+      /const CACHE = "notebook-v13"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -17461,87 +17486,104 @@ function check(label, cond, extra) {
       "active=" + window.NB.tabs.getActive());
   }
 
-  // (b) DIRTY CM6 edit session + tab switch, confirm -> true: exactly one
-  // prompt, a POST /api/file save fires, edit mode exits, destination active.
+  // (b) DIRTY CM6 edit session + tab switch: no prompt, no save. The
+  // buffer is stashed, the tab stays dirty, and the preview offers Recover
+  // when the tab is opened again.
   {
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
     window.NB.viewer.startEdit();
     await tick(10);
-    cmSetValue("# notes/a\n\nSWITCH SAVE EDITS\n");
+    cmSetValue("# notes/a\n\nSWITCH DRAFT EDITS\n");
     cmFireInput();
     await tick(10);
-    check("switch: dirty precondition before save-on-switch",
+    check("switch: dirty precondition before draft switch",
       window.NB.viewer.isDirty("notes/a.md"));
     const saveBeforeSwitch = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
     let dirtyConfirms = 0;
     const dirtyOrig = window.confirm;
-    window.confirm = () => { dirtyConfirms++; return true; };
+    window.confirm = () => { dirtyConfirms++; return false; };
     try {
       await window.NB.tabs.activate("Welcome.md");
       await tick(40);
     } finally {
       window.confirm = dirtyOrig;
     }
-    check("switch: dirty edit session prompts exactly once",
-      dirtyConfirms === 1, "confirms=" + dirtyConfirms);
-    check("switch: dirty edit session fires one save POST",
-      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeSwitch === 1,
+    check("switch: dirty edit session asks nothing", dirtyConfirms === 0,
+      "confirms=" + dirtyConfirms);
+    check("switch: dirty edit session fires no save POST",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeSwitch === 0,
       "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeSwitch));
-    check("switch: dirty edit session leaves edit mode",
-      cmIsHidden(), "cmHidden=" + cmIsHidden());
+    check("switch: dirty edit session leaves edit mode", cmIsHidden(),
+      "cmHidden=" + cmIsHidden());
     check("switch: dirty edit session switches to Welcome.md",
       window.NB.tabs.getActive() === "Welcome.md",
       "active=" + window.NB.tabs.getActive());
-    // Restore the fixture and reopen notes/a.md so its cache's savedContent
-    // matches the on-disk FILE_A again for the Cancel case below.
-    FILES["notes/a.md"] = FILE_A;
-    window.NB.tabs.close("notes/a.md", { force: true });
-    await tick(20);
-    await window.NB.tabs.open("notes/a.md");
-    await tick(20);
-  }
+    check("switch: the dirty buffer is kept as a draft",
+      !!window.NB.viewer.getDraft("notes/a.md"),
+      JSON.stringify(window.NB.viewer.getDraft("notes/a.md")));
+    check("switch: the source tab stays marked dirty",
+      window.document.querySelector('.tab[data-path="notes/a.md"]').classList.contains("dirty"));
 
-  // (c) DIRTY CM6 edit session + tab switch, confirm -> false (Cancel): the
-  // active tab does NOT change, edit mode stays active with the edits, and
-  // no save POST fires.
-  {
-    window.NB.viewer.startEdit();
-    await tick(10);
-    cmSetValue("# notes/a\n\nCANCEL SWITCH EDITS\n");
-    cmFireInput();
-    await tick(10);
-    check("switch: cancel precondition is dirty",
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(40);
+    check("switch: Recover bar appears on return", !$("draft-bar").hidden);
+    $("draft-recover").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("switch: Recover re-enters source edit mode", !cmIsHidden(),
+      "cmHidden=" + cmIsHidden());
+    check("switch: Recover loads the draft into the editor",
+      /SWITCH DRAFT EDITS/.test(window.NB.cmEditor.getValue()),
+      JSON.stringify(window.NB.cmEditor.getValue().slice(-40)));
+    check("switch: Recover clears the stored draft",
+      !window.NB.viewer.getDraft("notes/a.md"));
+    check("switch: Recover leaves the file dirty",
       window.NB.viewer.isDirty("notes/a.md"));
-    const saveBeforeCancel = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
-    let cancelConfirms = 0;
-    const cancelOrig = window.confirm;
-    window.confirm = () => { cancelConfirms++; return false; };
-    try {
-      await window.NB.tabs.activate("Welcome.md");
-      await tick(30);
-    } finally {
-      window.confirm = cancelOrig;   // restore the true stub
-    }
-    check("switch: cancel prompts exactly once",
-      cancelConfirms === 1, "confirms=" + cancelConfirms);
-    check("switch: cancel keeps the source tab active",
-      window.NB.tabs.getActive() === "notes/a.md",
-      "active=" + window.NB.tabs.getActive());
-    check("switch: cancel stays in edit mode",
-      !cmIsHidden(), "cmHidden=" + cmIsHidden());
-    check("switch: cancel keeps the edits (still dirty)",
-      window.NB.viewer.isDirty("notes/a.md"));
-    check("switch: cancel fires no save POST",
-      fetchLog.filter((x) => x.startsWith("POST /api/file")).length === saveBeforeCancel,
-      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeCancel));
-    // Leave edit mode keeping the dirty content, matching the state the
-    // rename test below expects (a dirty notes/a.md), and keep the on-disk
-    // fixture at FILE_A.
     window.NB.viewer.endEdit();
     await tick(10);
     FILES["notes/a.md"] = FILE_A;
   }
+
+  // (c) Recover bar: Discard throws the draft away and reloads saved bytes.
+  {
+    window.NB.viewer.startEdit();
+    await tick(10);
+    cmSetValue("# notes/a\n\nDISCARD DRAFT\n");
+    cmFireInput();
+    await tick(10);
+    const saveBeforeDiscard = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    await window.NB.tabs.activate("Welcome.md");
+    await tick(40);
+    await window.NB.tabs.activate("notes/a.md");
+    await tick(40);
+    check("switch: Discard precondition has a draft",
+      !!window.NB.viewer.getDraft("notes/a.md"));
+    $("draft-discard").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("switch: Discard removes the draft",
+      !window.NB.viewer.getDraft("notes/a.md"));
+    check("switch: Discard stays on the tab",
+      window.NB.tabs.getActive() === "notes/a.md",
+      "active=" + window.NB.tabs.getActive());
+    check("switch: Discard shows the saved content",
+      !/DISCARD DRAFT/.test($("viewer-content").textContent));
+    check("switch: Discard clears dirty",
+      !window.NB.viewer.isDirty("notes/a.md"));
+    check("switch: Discard fires no save POST",
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length === saveBeforeDiscard,
+      "delta=" + (fetchLog.filter((x) => x.startsWith("POST /api/file")).length - saveBeforeDiscard));
+    FILES["notes/a.md"] = FILE_A;
+  }
+
+  // Keep notes/a.md dirty for the rename test below.
+  window.NB.viewer.startEdit();
+  await tick(10);
+  cmSetValue("# notes/a\n\nRENAME DIRTY\n");
+  cmFireInput();
+  await tick(10);
+  window.NB.viewer.endEdit();
+  await tick(10);
+  FILES["notes/a.md"] = FILE_A;
 
   // rename() re-keys the tab and carries dirty state.
   window.NB.tabs.rename("notes/a.md", "notes/renamed.md");
@@ -22944,11 +22986,14 @@ function check(label, cond, extra) {
     } finally {
       window.confirm = origConfirm;
     }
-    check("vim: Alt+L in dirty edit mode -> prompt asked",
-      confirmCalls === 1, "confirmCalls=" + confirmCalls);
+    check("vim: Alt+L in dirty edit mode -> no prompt", confirmCalls === 0,
+      "confirmCalls=" + confirmCalls);
     check("vim: Alt+L in dirty edit mode -> switches tab + exits edit",
       window.NB.tabs.getActive() === nextTab && cmIsHidden(),
       "active=" + window.NB.tabs.getActive() + " cmHidden=" + cmIsHidden());
+    check("vim: Alt+L in dirty edit mode -> keeps a draft",
+      !!window.NB.viewer.getDraft("notes/a.md"),
+      JSON.stringify(window.NB.viewer.getDraft("notes/a.md")));
     // Reset: restore the original content of notes/a.md so later
     // tests (outline headings) see the original headings.
     await window.NB.tabs.activate("notes/a.md");
@@ -30579,8 +30624,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v12",
-        /const CACHE = "notebook-v12"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v13",
+        /const CACHE = "notebook-v13"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);

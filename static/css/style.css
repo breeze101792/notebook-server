@@ -3352,6 +3352,8 @@ body[data-theme="light"] #viewer-content {
   position: absolute;
   top: 7px;
   left: 8px;
+  box-sizing: border-box;
+  height: 20px;
   font: .72rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   padding: 2px 8px;
   border-radius: 4px;
@@ -3363,7 +3365,6 @@ body[data-theme="light"] #viewer-content {
   z-index: 1;
   outline: none;
   min-width: 24px;
-  min-height: 18px;
 }
 .hybrid-lang-pill:hover {
   border-color: var(--border);
@@ -6355,3 +6356,45 @@ body[data-theme="light"] #dw-designer-overlay {
   .search-panel-hit:hover,
   .activity-btn:hover { background: transparent; }
 }
+
+/* Draft recovery bar: an unsaved buffer kept after a tab switch. Fixed so
+   it survives scrolling; the mobile bottom rail is cleared by the inset. */
+.draft-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  font-size: .85rem;
+}
+.draft-bar[hidden] { display: none; }
+.draft-bar-msg {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.draft-bar-btn {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+.draft-bar-btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.draft-bar-btn:hover { background: var(--bg-hover); }

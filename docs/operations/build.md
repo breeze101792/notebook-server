@@ -39,7 +39,7 @@ triggers a reinstall; touching it without changing its contents does not.
 ## Vendoring model
 
 The runtime frontend loads everything as plain `<script defer>` tags from
-`static/`. There is no bundler for the app code (the 29 `static/js/` modules)
+`static/`. There is no bundler for the app code (the 40 `static/js/` modules)
 and no CDN: every third-party library is committed under `static/vendor/`.
 
 Most vendor files are direct, byte-for-byte copies of an upstream distribution
@@ -147,17 +147,20 @@ its own `<style>` element at runtime — so there is no `visimer.css`.
 ## Service worker
 
 `static/sw.js` is hand-maintained. It is not generated and has no build step.
+`app.py` serves it at the root as `/sw.js` (scope `/`) from the same file;
+registering `/static/sw.js` would limit the worker to `/static/` and break
+offline shell loading.
 
-**`CACHE` version.** `const CACHE = "notebook-v11"`. Bumping this string makes
+**`CACHE` version.** `const CACHE = "notebook-v13"`. Bumping this string makes
 every installed worker re-run `install` (re-precache the current assets) and
 `activate` (delete every cache whose name is not the current `CACHE`). Bump it
 whenever a precached asset changes or a file is added to `PRECACHE`. Without a
 bump, an installed browser keeps serving assets from its old cache.
 
-**`PRECACHE`.** A hand-written list of **48 entries**: the app shell (`/`), the
+**`PRECACHE`.** A hand-written list of **52 entries**: the app shell (`/`), the
 manifest, the favicon, the three precached icons (apple-touch 180, 192, 512 —
 the 1024 is manifest-only), the two stylesheets, the four vendor libs needed to
-boot, and all 29 `static/js/` modules. The heavy
+boot, and all 40 `static/js/` modules. The heavy
 on-demand renderer bundles (Mermaid, Graphviz/Viz, CodeMirror, KaTeX, WaveDrom
 — about 6.8 MB) are deliberately excluded; precaching them at install would
 slow the first load. They are fetched on first use and cached on the way
@@ -169,7 +172,7 @@ bump `CACHE`.
 | Strategy | Applies to | Behavior |
 | --- | --- | --- |
 | Network-only | any URL under `/api/` | Never reads or writes the cache. If the network fails, returns a 503 JSON `{"error": "Offline"}` body. Live data is never stale. |
-| Network-first | everything else (pages and static assets) | Fetches the network first, mirrors a successful response into the cache, and falls back to the cache only when the network fails. Keeps code fresh per deploy while preserving an offline copy. |
+| Network-first | everything else (pages and static assets) | Fetches the network first, mirrors a successful response into the cache, and falls back to the cache only when the network fails. A navigation whose URL is not cached falls back to `/`, so a deep link reloads offline. Keeps code fresh per deploy while preserving an offline copy. |
 | Install-time precache | the `PRECACHE` list | `install` calls `caches.open(CACHE).addAll(PRECACHE)`; `activate` deletes caches whose name differs from `CACHE`. |
 
 Non-`GET` requests are passed through untouched. The history note in `sw.js`:

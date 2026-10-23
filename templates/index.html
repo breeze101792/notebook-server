@@ -281,6 +281,15 @@
           <div id="viewer">
             <div id="viewer-content" class="markdown-body {{ boot.wallpaper_classes }}"></div>
           </div>
+          <!-- After a tab switch, an unsaved buffer is kept in the viewer
+               cache instead of forcing a save/discard prompt. This bar
+               offers to put it back; Recover is undoable in the source
+               editor (Ctrl+Z) and Discard reloads the saved bytes. -->
+          <div id="draft-bar" class="draft-bar" role="status" aria-live="polite" hidden>
+            <span id="draft-bar-msg" class="draft-bar-msg"></span>
+            <button type="button" id="draft-recover" class="draft-bar-btn primary">Recover</button>
+            <button type="button" id="draft-discard" class="draft-bar-btn">Discard</button>
+          </div>
           <!-- #welcome shows when there's no file open. Same shell-scoping
                idea as #viewer: a single sibling that owns the empty-state
                presentation. Action buttons (New note, Open Welcome.md)
@@ -1487,7 +1496,7 @@
   <script src="/static/js/app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/static/sw.js');
+      navigator.serviceWorker.register('/sw.js', { scope: '/' });
     }
   </script>
 </body>

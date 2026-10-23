@@ -763,6 +763,11 @@
       applySidebarState();
       applyOutlineState();
     }
+    // watcher.js auto-starts the polling fallback at module load; a saved
+    // "off" choice must stop it once config has arrived.
+    if (cfg.watchEnabled === false && NB.watcher && NB.watcher.disable) {
+      NB.watcher.disable();
+    }
     // Reconcile the fetched view only when it names a different view than
     // the shell painted AND the user has not switched away while the fetch
     // was in flight (see resolveBootView). A failed fetch reconciles nothing.
@@ -984,6 +989,13 @@
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
     setHideTopbar: (on) => { applyTopbar(!!on); persistConfig(); },
     getHideTopbar: () => !!cfg.hideTopbar,
+    // File watching is on by default; the Settings toggle persists the
+    // user's off choice, and boot honours it.
+    getWatchEnabled: () => cfg.watchEnabled !== false,
+    setWatchEnabled: (on) => {
+      cfg.watchEnabled = !!on;
+      persistConfig(["watchEnabled"]);
+    },
     setGraphParticles: (on) => {
       cfg.graphParticles = !!on;
       if (NB.graph && NB.graph.setParticleField) NB.graph.setParticleField(cfg.graphParticles);

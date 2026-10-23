@@ -10,24 +10,24 @@ changes. Test-suite detail lives in [`../testing/README.md`](../testing/README.m
 
 | Entry | Description |
 | --- | --- |
-| `app.py` | The entire Flask backend: routes, auth, search, edit, AI proxy. 2537 lines |
+| `app.py` | The entire Flask backend: routes, auth, search, edit, AI proxy. 3077 lines |
 | `agent.md` | Machine-readable API guide served verbatim at `/agent.md` with the auth state substituted |
 | `README.md` | User-facing overview |
 | `CLAUDE.md` | Orientation notes for Claude Code |
 | `start.sh` | Venv bootstrap and launch wrapper (51 lines) |
 | `requirements.txt` | Python dependencies: `Flask==3.0.3`, `bcrypt==5.0.0` |
-| `package.json` / `package-lock.json` | Frontend dev tooling and tests; scripts `test`, `test:browser`, `test:browser:firefox`. `package-lock.json` is gitignored but present in a working checkout |
+| `package.json` / `package-lock.json` | Frontend dev tooling and tests; scripts `test`, `test:browser`, `test:browser:firefox`, `test:browser:all`, and one script per browser suite. `package-lock.json` is gitignored but present in a working checkout |
 | `notebook.template/` | Starter notes copied into `notebook/` on a fresh install: `Welcome.md`, `README.md`, `Syntax.md` |
 | `notebook/` | The notes folder. In this checkout, a symlink to `/mnt/projects/notebook` |
-| `config/` | Settings: `config.json`, `auth.json`, `ai.json` |
+| `config/` | Settings: `config.json`, `auth.json`, `ai.json`, and the hand-edited `acp.json` |
 | `static/` | Frontend assets (see below) |
 | `templates/index.html` | The SPA shell; loads vendor files and app modules as `<script defer>` tags |
-| `tests/` | `test_app.py` (backend), `dom/test_dom.js` (frontend), `browser/test_hybrid_browser.js` (Playwright) |
-| `docs/` | This documentation set |
+| `tests/` | `test_app.py` (backend), `dom/test_dom.js` (frontend), and the `browser/` Playwright suites (`run_all.js` runs them all) |
+| `docs/` | This documentation set; the audit results are in `testing/browser-audit.md` |
 | `TODO.md` | Task-list stub (contains only `# TODO`) |
 
 `static/` holds four folders: `css/` (`style.css`, `vimnav.css`),
-`js/` (30 app modules), `vendor/` (upstream bundles and the CodeMirror
+`js/` (40 app modules), `vendor/` (upstream bundles and the CodeMirror
 bundle), and `icons/` (PWA icons). It also holds three top-level files:
 `manifest.json`, `sw.js` (the service worker), and `favicon.svg`. Each JS
 module is an IIFE that extends the shared `window.NB` namespace.
@@ -50,6 +50,9 @@ tree.
 # Frontend (installs jsdom, then runs node tests/dom/test_dom.js)
 npm install && npm test
 node tests/dom/test_dom.js   # equivalent if jsdom is already resolvable
+
+# Every real-browser suite (auto-detects Chromium; distinct ports)
+node tests/browser/run_all.js
 ```
 
 There is no lint step. The test suites, their coverage, and the browser test

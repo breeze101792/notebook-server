@@ -349,6 +349,11 @@
         try { await NB.watcher.enable(); }
         catch (e) { alert("File watching failed: " + e.message); }
       }
+      // Persist the resulting on/off state so the choice survives reload.
+      // A cancelled picker leaves the watcher inactive and is saved as off.
+      if (NB.app && NB.app.setWatchEnabled) {
+        NB.app.setWatchEnabled(!!(NB.watcher && NB.watcher.isActive()));
+      }
       refreshWatchStatus();
     });
   }

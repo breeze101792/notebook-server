@@ -137,7 +137,8 @@ into the page shell for first paint.
 | --- | --- | --- |
 | `vimMode` | boolean | Enables the VIM keymap in the shell and in the editor (`app.js:75`) |
 | `vimrc` | string | User VIM initial script applied to the editor's vim plugin (`app.js:58`) |
-| `autosave` | boolean | Saves hybrid-mode edits after a typing pause; vim mode is unaffected (`app.js:81`) |
+| `autosave` | boolean | Saves hybrid-mode edits after a typing pause; vim mode is unaffected. Off means a dirty tab switch stashes a recoverable draft instead of saving (`app.js:81`) |
+| `watchEnabled` | boolean | Starts the external-change watcher on boot. The Settings toggle writes it; `false` disables the polling fallback after config arrives (`app.js:768`, `settings.js:349`). Defaults to on. |
 | `shortcuts` | object | Per-action key bindings; missing actions fall back to `DEFAULTS` in `static/js/shortcuts.js:44` (`app.js:86`) |
 
 ### Search
@@ -370,14 +371,19 @@ IndexedDB.
 
 | Key | Owner | Contents |
 | --- | --- | --- |
-| `nb:windowGeometry` | `static/js/windows.js:20` | Per-modal position and size for the floating windows |
-| `nb:tableView` | `static/js/table-view.js:71` | Versioned per-file, per-table view state (hidden rows/columns, sort) |
+| `nb:windowGeometry` | `static/js/windows.js` | Per-modal position and size for the floating windows |
+| `nb:tableView` | `static/js/table-view.js` | Versioned per-file, per-table view state (hidden rows/columns, sort), schema v2. Applies only when the header text, a hash of every cell, and the table's same-header ordinal all match; otherwise it is ignored. |
+| `nb:aiChat` | `static/js/ai.js` | Versioned AI transcript (conversation + tool flags + newest prompt). **Clear** removes it. |
+| `nb:mobileResume` | `static/js/mobile.js` | Phone Home resume state: last path and scroll. |
+| `nb:captureDraft` | `static/js/mobile.js` | Quick-capture draft, kept across a 401. |
 
 ### PWA cache
 
 `static/manifest.json` declares the app name "Notebook",
-`display: standalone`, and the icon set. `static/sw.js` caches the app shell
-under the cache version `notebook-v11` (`sw.js:21`). Bump that version whenever
+`display: standalone`, and the icon set. `static/sw.js` is served at `/sw.js` (scope `/`) and caches the app shell
+under the cache version `notebook-v13` (`sw.js:22`). Bump that version whenever
 a precached asset changes. The service worker strategy: non-GET requests pass through,
 `/api/*` is network-only and returns a 503 JSON error when offline, and
-everything else is network-first with a cache fallback (`sw.js:81-118`).
+everything else is network-first with a cache fallback. A navigation request
+whose URL is not cached falls back to the precached `/`, so deep links reload
+offline.

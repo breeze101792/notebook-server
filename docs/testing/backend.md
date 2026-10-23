@@ -1,10 +1,10 @@
 # Backend test suite
 
-`tests/test_app.py` is 2764 lines of stdlib `unittest`. It drives the real
+`tests/test_app.py` is about 4,900 lines of stdlib `unittest`. It drives the real
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **209 test methods across 24 `TestCase` classes**
+The suite currently holds **357 test methods across 42 `TestCase` classes**
 (plus `BaseTest`, which is the shared base and holds no tests). The class
 count and method count below were verified against the file, not copied from
 older notes.

@@ -728,6 +728,19 @@ def apple_touch_icon():
     )
 
 
+# The service worker must be served from the site root. A worker loaded
+# from /static/sw.js has a /static/ scope by default, so it can never
+# control the app shell at "/" and the PWA is not offline-capable.
+@app.route("/sw.js")
+def service_worker():
+    resp = send_from_directory(
+        os.path.join(BASE_DIR, "static"), "sw.js",
+        mimetype="application/javascript",
+    )
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 # --------------------------------------------------------------------------- #
 # First-paint boot state
 # --------------------------------------------------------------------------- #

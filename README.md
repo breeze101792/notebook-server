@@ -19,13 +19,14 @@ are plain `.md` files on disk — no database, no build step.
 - File tree with folders, bookmarks, and right-click context menus (open,
   new file/folder, rename/move, copy, delete, Export…).
 - Markdown rendering with syntax highlighting (vendored `marked.js` +
-  `highlight.js`) and five special fenced-block renderers: Mermaid,
-  WaveDrom, KaTeX, Graphviz, and sandboxed live HTML.
+  `highlight.js`) and six special fenced-block renderers: Mermaid,
+  WaveDrom, KaTeX, Graphviz, sandboxed live HTML, and inline SVG.
 - Obsidian-style `[[wikilinks]]` between notes, plus a force-directed
   wikilink graph view.
-- Multi-tab editor (CodeMirror 6) with a per-file content cache so unsaved
-  edits survive tab switches, an optional Vim keybinding mode, and a
-  WYSIWYG "hybrid" edit mode that round-trips rendered DOM back to Markdown.
+- Multi-tab editor (CodeMirror 6) with a per-file content cache: a dirty tab
+  switch keeps the buffer and offers Recover/Discard on return (source mode is
+  undoable with Ctrl+Z), an optional Vim keybinding mode, and a WYSIWYG
+  "hybrid" edit mode that round-trips rendered DOM back to Markdown.
 - Preview table controls: hide rows/columns and sort a column without
   touching the note's source.
 - Heading outline (right-side minimap) with scroll-spy and click-to-jump.
@@ -376,11 +377,11 @@ notebook.template/    starter notebook (copied into notebook/ on first run)
 templates/
   index.html          single page, loads vendored libs + app modules
 static/
-  js/                 30 app modules sharing window.NB (loaded in dependency order)
+  js/                 40 app modules sharing window.NB (loaded in dependency order)
   vendor/             marked, highlight.js, CodeMirror, Mermaid, WaveDrom, KaTeX,
                       Viz.js, Turndown, Paged.js (vendored, no CDN)
   css/                style.css, vimnav.css
-  sw.js               service worker (cache notebook-v6)
+  sw.js               service worker (cache notebook-v13)
   manifest.json       PWA manifest
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
@@ -396,7 +397,7 @@ docs/                 project documentation (see docs/README.md)
 redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (the test suite uses this so it never touches your real files).
 
-`static/js/` holds 30 modules, all extending the shared `window.NB`
+`static/js/` holds 40 modules, all extending the shared `window.NB`
 namespace. The list is documented in
 [`docs/architecture/frontend.md`](docs/architecture/frontend.md), which also covers the code-block
 renderer registry, persistence, and the service worker.
@@ -524,14 +525,20 @@ model.
 # stubs fetch, drives the app via real DOM events)
 npm install && npm test
 node tests/dom/test_dom.js        # equivalent if jsdom already resolvable
+
+# Real browser (auto-detects Chromium; one suite or all of them)
+node tests/browser/test_core_ui_browser.js
+node tests/browser/run_all.js
 ```
 
 The backend tests redirect `notebook/` and `config/` to a temp dir
 before importing `app`, so your real notebooks are never touched. The
 auth test classes reset the in-memory failure tracker between tests so
 the rate limiter doesn't leak. The frontend harness loads the real
-vendor bundles and ~30 app modules into jsdom and covers 73 sections,
-including auth, the AI tool loop, hybrid editing, and export.
+vendor bundles and all 40 app modules into jsdom and covers 111 sections,
+including auth, the AI tool loop, hybrid editing, and export. The
+`tests/browser/` suites drive the same app in real Chromium; the audit
+results are in [`docs/testing/browser-audit.md`](docs/testing/browser-audit.md).
 
 ## Security note
 

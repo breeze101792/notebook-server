@@ -58,16 +58,18 @@ linked documents for detail.
 - Recent view with fuzzy quick-open.
 - Deep links to a file and a heading (`?file=…&heading=…`).
 - Multi-tab editor with drag-reorder, pinning, and a per-file content cache so
-  unsaved edits survive tab switches.
+  unsaved edits survive a switch: the dirty buffer is kept, the tab stays
+  marked, and a Recover bar restores it on return (source mode is Ctrl+Z
+  undoable); Discard reloads the saved bytes. Autosave saves silently.
 
 **Rendering**
 
 - Markdown via vendored `marked.js` (GFM mode) with `highlight.js` syntax
   highlighting.
-- Five special fenced renderers, registered through the `NB.blocks` registry:
+- Six special fenced renderers, registered through the `NB.blocks` registry:
   Mermaid 11.16 (`securityLevel: strict`), WaveDrom 3.3, KaTeX 0.16
-  (`math` / `katex`), Graphviz 2.40.1 / Viz.js 2.1.2 (`dot` / `graphviz`), and a
-  sandboxed `html-live` iframe. Details and versions in
+  (`math` / `katex`), Graphviz 2.40.1 / Viz.js 2.1.2 (`dot` / `graphviz`), a
+  sandboxed `html-live` iframe, and inline `svg`. Details and versions in
   [markdown](../architecture/markdown.md).
 - Obsidian-style `[[wikilinks]]` between notes and a force-directed wikilink
   graph view.
@@ -79,7 +81,9 @@ linked documents for detail.
 - WYSIWYG "hybrid" mode: `contentEditable` on the rendered note, converted back
   to Markdown on save. See [hybrid editing](../architecture/hybrid-editing.md).
 - Preview-only table controls: hide rows/columns and sort one column without
-  touching the note source.
+  touching the note source. A saved view applies only to the exact table it was
+  set on (header, full-cell hash, and same-header ordinal all match); otherwise
+  it is ignored rather than applied to a neighbouring table.
 - Heading outline (right-side minimap) with scroll-spy and click-to-jump.
 - In-page search across all `.md` files, with `<<…>>` snippet markers rewrapped
   as `<mark>` via `textContent`.
@@ -222,7 +226,7 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
   request up to hard ceilings (2000 / 200).
 - **Named limits are not hard-coded in this spec.** Concrete values live with
   their source (`AI_FETCH_MAX_BYTES` 512 KiB / 15 s, `AI_SEARXNG_MAX_RESULTS`
-  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v6`).
+  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v13`).
 
 ## 6. Acceptance criteria
 
@@ -234,8 +238,8 @@ installed:
 2. A fresh install has `notebook/` seeded from `notebook.template/` and an
    existing `config/config.json`; the project's real notes are not touched.
 3. Opening a note renders Markdown, syntax-highlighted code, wikilinks, and
-   each of the five special fences (Mermaid, WaveDrom, KaTeX, Graphviz,
-   `html-live`).
+   each of the six special fences (Mermaid, WaveDrom, KaTeX, Graphviz,
+   `html-live`, `svg`).
 4. Saving an edited note writes valid Markdown that re-opens and renders
    identically.
 5. Entering hybrid mode and saving without editing issues no write.

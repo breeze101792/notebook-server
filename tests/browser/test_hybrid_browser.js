@@ -31,9 +31,10 @@ if (BROWSER !== "chromium" && BROWSER !== "firefox") {
   throw new Error("BROWSER must be chromium or firefox, got " + BROWSER);
 }
 const BROWSER_TYPE = playwright[BROWSER];
+const { findChromium } = require("./chromium");
 const BROWSER_PATH = process.env[
   BROWSER === "firefox" ? "FIREFOX_PATH" : "CHROMIUM_PATH"
-] || undefined;
+] || (BROWSER === "chromium" ? findChromium() : undefined);
 const PORT = Number(process.env.PORT || 5099);
 const BASE = "http://127.0.0.1:" + PORT;
 

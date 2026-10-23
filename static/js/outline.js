@@ -129,7 +129,15 @@
   function computeActive() {
     if (!scrollEl || !headings.length) return;
     const vTop = scrollEl.getBoundingClientRect().top;
-    const threshold = vTop + 12; // just below the top edge
+    // A heading scrolled to by click-to-jump lands `--topbar-h + 8px`
+    // below the scroller top (its scroll-margin-top). A threshold just
+    // below the top edge therefore selects the PREVIOUS heading, and at
+    // scrollTop 0 it selects none. Use the same offset plus a small
+    // settle margin.
+    const topbarH = parseFloat(
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--topbar-h")) || 0;
+    const threshold = vTop + topbarH + 8 + 2;
     let current = null;
     for (const h of headings) {
       if (h.el.getBoundingClientRect().top <= threshold) current = h.id;

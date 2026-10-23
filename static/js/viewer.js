@@ -40,6 +40,73 @@
 
   function cur() { return active ? cache.get(active) : null; }
 
+  const draftBar = document.getElementById("draft-bar");
+  const draftMsg = document.getElementById("draft-bar-msg");
+  const draftRecoverBtn = document.getElementById("draft-recover");
+  const draftDiscardBtn = document.getElementById("draft-discard");
+  let draftPath = null;
+
+  function hideDraftBar() {
+    draftPath = null;
+    if (draftBar) draftBar.hidden = true;
+  }
+
+  /* Show the bar only for a preview of a file that has a stashed buffer.
+   * Editing or hybrid mode already shows the live content, so the bar has
+   * nothing to recover there. */
+  function updateDraftBar() {
+    if (!draftBar) return;
+    const t = cur();
+    const hybridOn = !!(NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive());
+    const show = !!(t && t.draft && active && !t.editMode && !hybridOn);
+    if (!show) { hideDraftBar(); return; }
+    draftPath = active;
+    const name = active.split("/").pop();
+    draftMsg.textContent = 'Unsaved changes in "' + name + '" from before the switch.';
+    draftBar.hidden = false;
+  }
+
+  /* Put the stashed buffer back. Source mode loads the saved document
+   * first and then applies the draft as one CodeMirror transaction, so
+   * Ctrl+Z returns to the saved bytes. Hybrid mode enters on the saved
+   * content and swaps in the draft, which is recorded in the hybrid
+   * history for the same undo. */
+  function recoverDraft() {
+    const t = cur();
+    if (!t || !t.draft) { hideDraftBar(); return; }
+    const d = t.draft;
+    delete t.draft;
+    hideDraftBar();
+    if (d.mode === "hybrid" && NB.hybrid && NB.hybrid.recoverDraft) {
+      t.content = t.savedContent;
+      t.editMode = false;
+      render();
+      Promise.resolve(NB.hybrid.recoverDraft(d.content)).catch((e) => {
+        if (NB.app && NB.app.notify) NB.app.notify("Recover failed: " + e.message);
+      });
+      return;
+    }
+    t.content = t.savedContent;
+    Promise.resolve(viewer.startEdit()).then(() => {
+      t.content = d.content;
+      NB.cmEditor.setValue(d.content);
+      NB.evt.emit("viewer:dirty-changed", { path: active, dirty: true });
+    }).catch((e) => {
+      if (NB.app && NB.app.notify) NB.app.notify("Recover failed: " + e.message);
+    });
+  }
+
+  function discardDraft() {
+    const t = cur();
+    if (!t || !t.draft) { hideDraftBar(); return; }
+    delete t.draft;
+    hideDraftBar();
+    t.content = t.savedContent;
+    t.editMode = false;
+    render();
+    NB.evt.emit("viewer:dirty-changed", { path: active, dirty: false });
+  }
+
   /* --- slug + dedup for heading ids ----------------------------------- */
   let seenIds = {};
   function slugify(text) {
@@ -296,6 +363,7 @@
     // table: listeners drop any view state and never rebuild, because
     // the textarea -- not the DOM -- is the source of truth there.
     NB.evt.emit("viewer:rendered", { path: active, live: content !== undefined });
+    updateDraftBar();
   }
 
   /* Debounced live preview: re-render the viewer from the textarea content.
@@ -561,6 +629,7 @@
       active = path;
       if (t.editMode) { NB.cmEditor.setValue(t.content); showEditor(); }
       else { showViewer(); render(); }
+      updateDraftBar();
       NB.evt.emit("file:open", path);
       if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(path);
       return t.content;
@@ -571,6 +640,7 @@
       cache.delete(path);
       if (NB.watcher) NB.watcher.forget(path);
       if (active === path) { active = null; }
+      if (draftPath === path) hideDraftBar();
     },
 
     /* Re-key a tab when its file is moved/renamed; unsaved edits travel. */
@@ -587,6 +657,7 @@
      * user who deleted it doesn't see a dead link. */
     clear() {
       showWelcome();
+      hideDraftBar();
       if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(null);
     },
     /* Re-enter the empty state (e.g. after a test close). Alias for
@@ -597,7 +668,7 @@
      * container (a .special-tab-view sibling in #edit-split) becomes
      * the only visible child. Called by tabs.js when a special tab
      * (§graph, §search) is activated. */
-    showSpecial() { showSpecial(); },
+    showSpecial() { hideDraftBar(); showSpecial(); },
 
     getPath() { return active; },
     getContent() { const t = cur(); return t ? (t.editMode ? NB.cmEditor.getValue() : t.content) : ""; },
@@ -609,9 +680,33 @@
     isDirty(path) {
       const t = cache.get(path);
       if (!t) return false;
+      // A stashed buffer counts as unsaved: the tab dot stays on and a
+      // close still warns, even though the preview shows the saved bytes.
+      if (t.draft) return true;
       const current = (path === active && t.editMode) ? NB.cmEditor.getValue() : t.content;
       return current !== t.savedContent;
     },
+
+    /* Stash an unsaved buffer for `path` (hybrid uses this before a tab
+     * switch). The preview keeps showing savedContent; the tab dot and
+     * the draft bar surface the buffer. */
+    setDraft(path, draft) {
+      const t = cache.get(path);
+      if (!t || !draft) return false;
+      t.draft = {
+        content: String(draft.content == null ? "" : draft.content),
+        mode: draft.mode === "hybrid" ? "hybrid" : "source",
+      };
+      NB.evt.emit("viewer:dirty-changed", { path, dirty: true });
+      if (path === active) updateDraftBar();
+      return true;
+    },
+    getDraft(path) {
+      const t = cache.get(path);
+      return t && t.draft ? { content: t.draft.content, mode: t.draft.mode } : null;
+    },
+    recoverDraft,
+    discardDraft,
 
     startEdit() {
       const t = cur(); if (!t) return;
@@ -726,10 +821,11 @@
      * the user (or a failed save) wants to stay. */
     async commitForTabSwitch() {
       // Hybrid mode takes priority -- it sits on top of preview mode,
-      // so editMode is false while hybrid is active.
-      if (NB.hybrid && NB.hybrid.isActive) {
-        const ok = await NB.hybrid.commitForTabSwitch();
-        if (!ok) return false;
+      // so editMode is false while hybrid is active. It stashes its own
+      // serialized buffer.
+      if (NB.hybrid && typeof NB.hybrid.isActive === "function" &&
+          NB.hybrid.isActive()) {
+        return await NB.hybrid.commitForTabSwitch();
       }
       const t = cur(); if (!t) return true;
       if (!t.editMode) return true;
@@ -737,14 +833,15 @@
         this.endEdit();
         return true;
       }
-      const ok = confirm('Save changes to "' + active + '" before switching tabs?');
-      if (!ok) return false;   // stay in edit mode with the edits
-      try { await this.save(); }
-      catch (e) {
-        alert("Save failed: " + (e && e.message ? e.message : e));
-        return false;
-      }
+      // Keep the dirty buffer and switch. A prompt here forced a save or
+      // lost the edit; the tab now shows a dot and a Recover bar when
+      // opened again. Source mode restores the saved document before the
+      // draft is applied, so Ctrl+Z after Recover returns to saved bytes.
+      t.draft = { content: NB.cmEditor.getValue(), mode: "source" };
+      NB.cmEditor.setValue(t.savedContent);
+      t.content = t.savedContent;
       this.endEdit();
+      NB.evt.emit("viewer:dirty-changed", { path: active, dirty: true });
       return true;
     },
 
@@ -772,6 +869,8 @@
       await NB.api.saveFile(active, content);
       t.content = content;
       t.savedContent = content;
+      delete t.draft;
+      hideDraftBar();
       // Stay in edit mode after save — the user might still be editing.
       // Just refresh the toolbar (Save button hides because no longer dirty).
       refreshTopbar();
@@ -801,6 +900,8 @@
       if (!t) return;
       t.content = content;
       t.savedContent = content;
+      delete t.draft;
+      if (path === active) hideDraftBar();
       if (NB.watcher) NB.watcher.noteSelfSave(path);
       NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     },
@@ -883,7 +984,18 @@
       viewerContentEl.removeEventListener("scroll", onViewerScroll);
     }
   });
-  saveBtn.addEventListener("click", () => NB.viewer.save());
+  if (draftRecoverBtn) draftRecoverBtn.addEventListener("click", recoverDraft);
+  if (draftDiscardBtn) draftDiscardBtn.addEventListener("click", discardDraft);
+  saveBtn.addEventListener("click", () => {
+    Promise.resolve(NB.viewer.save()).catch((err) => {
+      // A read-only viewer role makes POST /api/file reject; without this
+      // catch the toolbar click left an unhandled rejection and no
+      // feedback.
+      const msg = "Save failed: " + (err && err.message ? err.message : err);
+      if (NB.app && NB.app.notify) NB.app.notify(msg);
+      else alert(msg);
+    });
+  });
   closeEditBtn.addEventListener("click", () => NB.viewer.closeEdit());
 
   /* Welcome page action buttons. "New note" -> sidebar's create-at-root
@@ -946,14 +1058,18 @@
     }
     t.content = fresh.content;
     t.savedContent = fresh.content;
+    const wasEditing = t.editMode;
     t.editMode = false;
     showPreview = true;  // reset for next edit session
     if (wasActive) {
       showViewer();
-      // In case the fresh copy came from data (conditional GET didn't run
-      // -- e.g. some callers pass pre-fetched data), mirror into the CM6
-      // editor if edit mode had been active. endEdit() semantics.
-      if (NB.cmEditor && t.content !== undefined) NB.cmEditor.setValue(t.content);
+      // Mirror into the CM6 editor only when edit mode was actually
+      // active. A note open in preview has never fetched the lazy CM6
+      // bundle, and calling setValue() then throws before render(), so
+      // the external change was cached but never shown.
+      if (wasEditing && NB.cmEditor && window.CM6 && t.content !== undefined) {
+        try { NB.cmEditor.setValue(t.content); } catch (_) {}
+      }
       render();
     }
     NB.evt.emit("viewer:dirty-changed", { path, dirty: false });

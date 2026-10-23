@@ -25,7 +25,8 @@ const playwright = require("playwright");
 const PROJ = path.resolve(__dirname, "..", "..");
 const PY = path.join(PROJ, ".venv_" + os.hostname(), "bin", "python");
 const BROWSER_TYPE = playwright.chromium;
-const BROWSER_PATH = process.env.CHROMIUM_PATH || undefined;
+const { findChromium } = require("./chromium");
+const BROWSER_PATH = process.env.CHROMIUM_PATH || findChromium();
 const PORT = Number(process.env.PORT || 5099);
 const BASE = "http://127.0.0.1:" + PORT;
 

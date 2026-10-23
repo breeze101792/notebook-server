@@ -104,6 +104,31 @@
   // NUL from text, so the per-session SENTINEL_NONCE above is what makes a
   // collision with real note text impossible.
   const CODE_SPACE_SENTINEL = "\u0000nbcodespace" + SENTINEL_NONCE;
+  // The fence info string of a code block, captured from the SOURCE before
+  // highlight.js runs. highlight.js appends its own `language-*` class when
+  // it auto-detects a bare fence's language; reading the class afterwards
+  // would invent an info string the user never wrote. Stored on the <pre>
+  // so the value survives editing and never reaches the note (turndown's
+  // fenced rule emits only the source text).
+  const LANG_ATTR = "data-fence-lang";
+  const LANG_RE = /^[a-z0-9_+-]+$/;
+  // Authored raw HTML blocks (a <div>, <details>, <figure>, ...) are
+  // marked at render time so the serializer can re-emit their outerHTML
+  // after an in-place edit. Marking only elements that came from the
+  // source keeps an engine-generated <div> from turning into raw HTML.
+  const RAW_HTML_ATTR = "data-hybrid-raw-html";
+  const RAW_HTML_TAGS = new Set([
+    "DIV", "DETAILS", "SUMMARY", "SECTION", "ARTICLE", "ASIDE", "HEADER",
+    "FOOTER", "NAV", "MAIN", "FIGURE", "FIGCAPTION", "VIDEO", "AUDIO",
+    "IFRAME", "SCRIPT", "STYLE", "FORM", "FIELDSET", "DIALOG", "TEMPLATE",
+    "CANVAS", "SVG", "OBJECT", "EMBED", "PICTURE", "SOURCE", "TRACK",
+    "MAP", "AREA", "METER", "PROGRESS", "OUTPUT",
+  ]);
+  // Raw HTML is restored after every Markdown post-process pass, so the
+  // escaping/heading/task passes never touch markup that is meant to be
+  // literal HTML.
+  const RAW_HTML_SENTINEL = "\u0000nbrawhtml" + SENTINEL_NONCE;
+  let rawHtmlStash = [];
   // Turndown's bundled postProcess() trims trailing whitespace, so a
   // non-whitespace sentinel is appended as the clone's LAST child and the
   // output is cut at it (see wholeDomMarkdown / serializeEditedElement).
@@ -212,6 +237,10 @@
   // checkbox, moving the user's insertion point. Captured on mousedown,
   // put back after the toggle fires (see onCheckboxChange).
   let savedCheckboxRange = null;
+  // True when the current gesture pressed a copy button inside a fence:
+  // the clipboard fallback steals focus, and that focusout must not be
+  // mistaken for "the user left the editor".
+  let copyButtonPress = false;
   // The rules carrying HR_SELECTED_CLASS as of the last selectionchange,
   // so the class is touched only when the selected set actually changes
   // (selectionchange fires many times during one drag).
@@ -291,6 +320,21 @@
           false;
         if (!node.textContent.trim() && !hasVoid) return "\n\n";
         return "\n\n" + content + "\n\n";
+      },
+    });
+    // Authored raw HTML blocks: emit the element's own outerHTML instead
+    // of letting turndown unwrap it to its text. The block is stashed and
+    // replaced by a sentinel so the Markdown clean-up passes never touch
+    // the literal markup (see postProcessMarkdown).
+    turndownSvc.addRule("raw-html-block", {
+      filter: (node) => node.nodeType === 1 && node.getAttribute &&
+        node.getAttribute(RAW_HTML_ATTR) === "1",
+      replacement: (content, node) => {
+        const clone = node.cloneNode(true);
+        clone.removeAttribute(RAW_HTML_ATTR);
+        clone.removeAttribute("contenteditable");
+        const idx = rawHtmlStash.push(clone.outerHTML) - 1;
+        return "\n\n" + RAW_HTML_SENTINEL + idx + "\n\n";
       },
     });
     // An EMPTY heading ("##" with no text yet) is handled in
@@ -491,8 +535,26 @@
    * an edited block is emitted by exactly the same rules as a full
    * serialization would have used. */
   function prepareTurndownClone(clone) {
-    // Remove injected copy buttons so they don't appear in the output.
-    clone.querySelectorAll(".code-copy-btn").forEach((b) => b.remove());
+    rawHtmlStash = [];
+    // Remove injected copy buttons and the fence-language chip so they
+    // don't appear in the output.
+    clone.querySelectorAll(".code-copy-btn, .hybrid-lang-pill").forEach((b) => b.remove());
+    // Fold text the browser parked between </code> and the chip back into
+    // the code element (turndown's fenced rule reads <code> only).
+    clone.querySelectorAll("pre").forEach((pre) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      const doc = pre.ownerDocument || document;
+      Array.from(pre.childNodes).forEach((n) => {
+        if (n === code) return;
+        if (n.nodeType === Node.TEXT_NODE) {
+          code.appendChild(n);
+        } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") {
+          code.appendChild(doc.createTextNode("\n"));
+          n.remove();
+        }
+      });
+    });
     // Drop the transient gesture-chrome classes: the <hr> selection
     // highlight (toggled by the selectionchange listener, so a save with a
     // rule still selected must serialize byte-for-byte as before) and the
@@ -649,6 +711,13 @@
     // already a heading (a space follows) and not inside a fence. Only
     // the leading run is touched, so a "#" mid-line is left alone.
     md = escapeLeadingHashes(md);
+    // Restore authored raw HTML last: every Markdown clean-up pass above
+    // would otherwise rewrite literal markup (escape "<", normalize a
+    // line that looks like a task, ...).
+    if (rawHtmlStash.length) {
+      md = md.replace(rawHtmlSentinelRe(),
+        (_, i) => rawHtmlStash[Number(i)] || "");
+    }
     return md;
   }
 
@@ -682,6 +751,11 @@
 
   function commentSentinelRe() {
     return new RegExp(COMMENT_SENTINEL + "(\\d+)" + COMMENT_SENTINEL_END, "g");
+  }
+
+  function rawHtmlSentinelRe() {
+    return new RegExp(
+      RAW_HTML_SENTINEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\d+)", "g");
   }
 
   /* Replace every HTML comment node under `root` with a text placeholder
@@ -1563,9 +1637,49 @@
     atomicObserver = null;
   }
 
+  /* Record every fence's AUTHORED language and drop the `language-*`
+   * class highlight.js appends when it auto-detects a bare fence.
+   * markdown's own class is the first token (`language-python`), while
+   * highlight.js appends its guess after `hljs`; the first token is
+   * therefore the authored value and a leading `hljs` means "bare".
+   * Runs both after marked.parse (capture) and after highlight.js
+   * (strip), and on enter() because the preview DOM is reused. */
+  function captureFenceLanguages(root) {
+    (root || viewerContentEl).querySelectorAll("pre").forEach((pre) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      let lang = pre.getAttribute(LANG_ATTR);
+      if (lang === null) {
+        const first = (code.className || "").trim().split(/\s+/)[0] || "";
+        const m = first.match(/^language-([\w+-]+)$/);
+        lang = m ? m[1] : "";
+        pre.setAttribute(LANG_ATTR, lang);
+      }
+      const classes = (code.className || "").split(/\s+/)
+        .filter((c) => c && !/^language-/.test(c));
+      if (lang) classes.unshift("language-" + lang);
+      code.className = classes.join(" ");
+    });
+  }
+
+  /* Mark authored raw HTML blocks (the source came from marked, so any
+   * block-level tag outside Markdown's own output is the author's HTML).
+   * Renderer containers are excluded: they are DIVs too, but they own
+   * their fenced source and serialize through the blocks registry. */
+  function markRawHtmlBlocks(root) {
+    Array.from((root || viewerContentEl).children).forEach((el) => {
+      if (!RAW_HTML_TAGS.has(el.tagName)) return;
+      if (el.hasAttribute(RAW_HTML_ATTR)) return;
+      if (el.getAttribute("contenteditable") === "false") return;
+      if (PLUGIN_CONTAINER_SELECTOR && el.matches(PLUGIN_CONTAINER_SELECTOR)) return;
+      el.setAttribute(RAW_HTML_ATTR, "1");
+    });
+  }
+
   function renderMarkdown(md) {
     if (!window.marked) return;
     viewerContentEl.innerHTML = marked.parse(md, { gfm: true, breaks: false });
+    markRawHtmlBlocks(viewerContentEl);
     // Drop marked's task-item separator space (see viewer.js
     // stripTaskItemSpaces): without this the caret at an item's start
     // types before the space ("X first") and the text sits one space
@@ -1577,10 +1691,15 @@
       // Reuse viewer's slugify for heading id consistency.
       if (NB.slugify) h.id = NB.slugify(h.textContent);
     });
+    captureFenceLanguages(viewerContentEl);
     if (window.hljs) {
       viewerContentEl.querySelectorAll("pre code").forEach((el) => {
         try { hljs.highlightElement(el); } catch (_) {}
       });
+      // highlight.js appends its auto-detected language to a bare fence;
+      // strip it so turndown cannot write an info string the user never
+      // authored. The token colours stay.
+      captureFenceLanguages(viewerContentEl);
     }
     if (NB.blocks && NB.blocks.renderAll) {
       NB.blocks.renderAll(viewerContentEl);
@@ -2140,6 +2259,27 @@
    * same shape the Enter key uses to end a list from an empty item.
    * Nested lists are hoisted to the paragraph's level. Returns the <p>,
    * or null when the item has no list. */
+  /* Enter on an empty quote line at the END of a blockquote exits the
+   * quote, mirroring the empty-list-item rule. A quote with an empty line
+   * in the middle keeps the native behaviour: the following quote lines
+   * are still content. */
+  function exitEmptyBlockquote(bq, p) {
+    if (!bq || !p) return false;
+    if (p.parentElement !== bq) return false;
+    if (bq.lastElementChild !== p) return false;
+    const parent = bq.parentElement;
+    if (!parent) return false;
+    const onlyEmpty = !bq.textContent.replace(/\u200B/g, "").trim() &&
+      !bq.querySelector("img,hr,table,pre,input,ul,ol,blockquote");
+    const np = document.createElement("p");
+    p.remove();
+    if (onlyEmpty) bq.replaceWith(np);
+    else bq.after(np);
+    caretToStart(np);
+    onContentChange();
+    return true;
+  }
+
   function listItemToParagraph(li) {
     if (!li) return null;
     const list = li.closest("ul,ol");
@@ -2191,6 +2331,18 @@
       "p,h1,h2,h3,h4,h5,h6,ul,ol,li,blockquote,pre,div");
     if (!blockEl || !viewerContentEl.contains(blockEl)) return null;
     return { sel, range, blockEl };
+  }
+
+  /* The raw fence editor containing the caret, or null. The editing host
+   * is the note root, so this is resolved from the selection rather than
+   * from document.activeElement. */
+  function codeEditorAtSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    let node = sel.getRangeAt(0).startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    return node.closest("pre.hybrid-plugin-editing");
   }
 
   /* Text from the block's start up to the caret. */
@@ -2825,6 +2977,11 @@
       savedCheckboxRange = null;
     }
     const editing = viewerContentEl.querySelector("pre.hybrid-plugin-editing");
+    // The clipboard fallback moves focus to a hidden textarea, which
+    // fires a focusout on the fence. Copying from the block being edited
+    // is not "leaving the editor", so the next focusout is suppressed.
+    copyButtonPress = !!(editing && e.target && e.target.closest &&
+      editing.contains(e.target) && e.target.closest(".code-copy-btn"));
     if (editing) {
       if (editing.contains(e.target)) return;   // click inside the block – let it handle itself
       editing.dispatchEvent(new FocusEvent("focusout", { relatedTarget: e.target, bubbles: true }));
@@ -2997,12 +3154,10 @@
       const parentList = list.parentElement.closest("ul,ol");
       const parentLi = list.parentElement.closest("li");
       if (!parentList || !parentLi) return false;   // already top level
-      // Move this item (and any following siblings) up into the parent list.
-      const items = [];
-      let cur = li;
-      while (cur) { const nx = cur.nextElementSibling; items.push(cur); cur = nx; }
-      const insertBefore = parentLi.nextSibling;
-      items.forEach((it) => parentList.insertBefore(it, insertBefore));
+      // Move only this item (its own children travel with it). The
+      // following siblings stay at their level -- indenting/outdenting
+      // one item must not swallow the rest of the list.
+      parentList.insertBefore(li, parentLi.nextSibling);
       if (!list.firstElementChild) list.remove();
       onContentChange();
       return true;
@@ -3015,10 +3170,7 @@
       childList = document.createElement(list.tagName);
       prev.appendChild(childList);
     }
-    const items = [];
-    let cur = li;
-    while (cur) { const nx = cur.nextElementSibling; items.push(cur); cur = nx; }
-    items.forEach((it) => childList.appendChild(it));
+    childList.appendChild(li);
     if (!list.firstElementChild) list.remove();
     onContentChange();
     return true;
@@ -3754,7 +3906,73 @@
       // regression is pinned in the DOM test suite), and Enter inside
       // the raw source is the browser's own newline.
       if (e.ctrlKey || e.metaKey || e.altKey) {
-        if (e.target.closest("pre.hybrid-plugin-editing")) return;
+        // Resolve from the selection: the keydown target is the editing
+        // host, not the <pre>. Inside a fence, Ctrl+Z/Y must stay the
+        // browser's own undo (hybrid's whole-note snapshot would revert
+        // the editor itself), and Ctrl+S falls through to the global
+        // save shortcut.
+        if (codeEditorAtSelection()) {
+          const k = (e.key || "").toLowerCase();
+          if (k === "b" || (e.shiftKey && (k === "x" || k === "c"))) {
+            e.preventDefault();
+          }
+          return;
+        }
+      }
+    }
+    // The in-place fence editor is a code editor: Tab indents instead of
+    // jumping to the copy button, Shift+Tab must not move focus out, and
+    // Escape leaves render mode. Resolved from the selection because the
+    // keydown target is the editing host, not the <pre>.
+    const editingPre = codeEditorAtSelection();
+    if (editingPre) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.shiftKey) {
+          try { document.execCommand("insertText", false, "  "); }
+          catch (_) {}
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        // blur() on a child of the editing host does not reach the
+        // <pre>'s focusout handler; commit through the same path the
+        // click-out gesture uses.
+        editingPre.dispatchEvent(new FocusEvent("focusout",
+          { relatedTarget: null, bubbles: true }));
+        return;
+      }
+    }
+    // A GFM table cell is one line. The native Enter inserts a newline
+    // into the cell, and turndown emits it as a real line break, which
+    // splits the row and breaks the table on the next render. Refuse it
+    // (the spec allows refusal; a cell has no valid multi-line form).
+    if (e.key === "Enter" && !e.shiftKey &&
+        !e.altKey && !e.ctrlKey && !e.metaKey &&
+        getCellFromSelection()) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (NB.app && NB.app.notify) {
+        NB.app.notify("Table cells cannot contain line breaks");
+      }
+      return;
+    }
+    // Enter on an empty quote line at the end of a quote exits it, the
+    // same way Enter on an empty list item does.
+    if (e.key === "Enter" && !e.shiftKey &&
+        !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const qctx = caretContext();
+      const qp = qctx && qctx.blockEl;
+      if (qp && qp.tagName === "P" &&
+          qp.parentElement && qp.parentElement.tagName === "BLOCKQUOTE" &&
+          !qp.textContent.replace(/\u200B/g, "").trim() &&
+          exitEmptyBlockquote(qp.parentElement, qp)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
     }
     // Inline-format shortcuts. Only when the caret/selection is inside
@@ -3919,6 +4137,7 @@
     // owns its text).
     if (e.key && e.key.length === 1 && !e.ctrlKey && !e.metaKey &&
         !e.altKey && !e.isComposing &&
+        !codeEditorAtSelection() &&
         !(e.target && e.target.closest &&
           e.target.closest("pre.hybrid-plugin-editing"))) {
       if (openLineAtCaretRule()) {
@@ -4735,9 +4954,10 @@
     if (e.isComposing) return;
     if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste" &&
         e.inputType !== "insertFromDrop") return;
-    if (e.target && e.target.closest &&
-        (e.target.closest(".hybrid-lang-pill") ||
-         e.target.closest("pre.hybrid-plugin-editing"))) return;
+    if ((e.target && e.target.closest &&
+         (e.target.closest(".hybrid-lang-pill") ||
+          e.target.closest("pre.hybrid-plugin-editing"))) ||
+        codeEditorAtSelection()) return;
     // Only when the caret is at a top-level rule edge: an insertion
     // inside a table cell / list item / code fence has its own block, and
     // stealing it would eject the user from that structure.
@@ -4812,6 +5032,12 @@
     // DOM after this returns leaks into the editable document, the
     // turndown round-trip, and the undo snapshot.
     NB.evt.emit("hybrid:will-enter", activePath);
+    // The preview DOM is reused (it is not re-rendered from source), so
+    // capture fence languages and drop highlight.js's auto-detected
+    // `language-*` class before the baseline snapshot is taken. Do the
+    // same for authored raw HTML blocks.
+    captureFenceLanguages(viewerContentEl);
+    markRawHtmlBlocks(viewerContentEl);
     active = true;
     dirty = false;
 
@@ -5140,26 +5366,56 @@
       await exit(false);
       return true;
     }
-    // Autosave means the user has opted into saving without a prompt, so
-    // a tab switch writes silently. With autosave off, keep the confirm
-    // so an edit is neither saved nor discarded behind their back.
-    if (!autosaveEnabled()) {
-      const ok = confirm('Save changes to "' + activePath + '" before switching tabs?');
-      if (!ok) {
-        // User cancelled -- stay in hybrid mode, abort the switch.
+    // Autosave means the user opted into saving without a prompt, so a
+    // tab switch still writes silently.
+    if (autosaveEnabled()) {
+      try {
+        await awaitPendingAutosave();
+        const md = domToMarkdown();
+        if (isNoOpMarkdown(md)) resetDirty();
+        else await doSave(md);
+      } catch (err) {
+        alert("Save failed: " + (err && err.message ? err.message : err));
         return false;
       }
+      await exit(false);
+      return true;
     }
+    // Otherwise keep the WYSIWYG buffer in the viewer cache and switch.
+    // The preview shows the saved bytes; the tab dot and Recover bar
+    // surface the draft, and recoverDraft() puts it back undoably.
+    let md;
     try {
-      await awaitPendingAutosave();
-      const md = domToMarkdown();
-      if (isNoOpMarkdown(md)) resetDirty();
-      else await doSave(md);
+      md = domToMarkdown();
     } catch (err) {
-      alert("Save failed: " + (err && err.message ? err.message : err));
+      alert("Could not keep the unsaved edits: " +
+        (err && err.message ? err.message : err));
+      return false;
+    }
+    if (md === sessionSerialized) {
+      resetDirty();
+      await exit(false);
+      return true;
+    }
+    if (!NB.viewer || !NB.viewer.setDraft ||
+        !NB.viewer.setDraft(activePath, { content: md, mode: "hybrid" })) {
       return false;
     }
     await exit(false);
+    return true;
+  }
+
+  /* Put a stashed WYSIWYG buffer back on the live document. The caller
+   * (viewer.recoverDraft) has already rendered the saved content, so
+   * this enters hybrid on the saved baseline and then swaps in the draft;
+   * pushSnapshot records it, making Ctrl+Z restore the saved content. */
+  async function recoverDraft(md) {
+    if (!active) await enter();
+    if (!active) return false;
+    renderMarkdown(md);
+    dirty = true;
+    pushSnapshot();
+    NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
     return true;
   }
 
@@ -5988,15 +6244,91 @@
     return code ? code.textContent : "";
   }
 
-  /* Current language class of the block ("" when the fence is bare). */
+  /* Current fence language of the block ("" when the fence is bare). The
+   * authored value lives in LANG_ATTR, captured before highlight.js ran:
+   * reading the class here would return highlight.js's auto-detected
+   * language for a bare fence and silently write it into the note. */
   function blockLanguage(hit) {
     if (!hit) return "";
-    let code = null;
     if (hit.plugin) return hit.plugin.lang;
-    code = hit.el.querySelector("code");
+    if (hit.el && hit.el.getAttribute) {
+      const stored = hit.el.getAttribute(LANG_ATTR);
+      if (stored !== null) return stored;
+    }
+    const code = hit.el && hit.el.querySelector("code");
     if (!code) return "";
-    const m = (code.className || "").match(/language-([\w-]+)/);
+    const m = (code.className || "").match(/(?:^|\s)language-([\w+-]+)/);
     return m ? m[1] : "";
+  }
+
+  /* Validate a typed fence language. "" clears it; null means invalid. */
+  function normalizeFenceLanguage(raw) {
+    const v = String(raw == null ? "" : raw).trim().toLowerCase();
+    if (!v) return "";
+    return LANG_RE.test(v) ? v : null;
+  }
+
+  /* Apply a language to a raw fence: update the stored value, drop the
+   * old highlight markup, and re-highlight plain code. Plugin languages
+   * are re-rendered by the commit path, so they are not highlighted. */
+  function applyFenceLanguage(pre, code, lang) {
+    const next = lang || "";
+    const prev = pre.getAttribute(LANG_ATTR) || "";
+    if (next === prev) return;
+    pre.setAttribute(LANG_ATTR, next);
+    // highlight.js replaced the text with <span> tokens; resetting the
+    // text node removes the stale colouring before a new language runs.
+    code.textContent = code.textContent;
+    code.className = next ? "language-" + next : "";
+    const mod = renderModuleFor(next);
+    if (!mod && next && window.hljs) {
+      try { hljs.highlightElement(code); } catch (_) {}
+    }
+    onContentChange();
+  }
+
+  /* Put the caret at the end of the fence source after a chip commit. */
+  function focusCodeEnd(pre, code) {
+    pre.focus();
+    const sel = window.getSelection();
+    if (!sel) return;
+    const r = document.createRange();
+    // The chip is an inline form control after the <code>; a caret at the
+    // code's END BOUNDARY is normalized to the gap between the two, so
+    // typed text would land in the <pre> and never reach the fence
+    // source. Anchor inside the last text node instead.
+    const last = code.lastChild;
+    if (last && last.nodeType === Node.TEXT_NODE) {
+      r.setStart(last, last.nodeValue.length);
+    } else {
+      r.selectNodeContents(code);
+    }
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* Move text the browser placed between </code> and the editing chip
+   * back into the code element. The chip is an inline control after the
+   * code, so a click at the visual end can park the caret in that gap;
+   * without this the typed characters sit in the <pre> and turndown's
+   * fenced rule (which reads <code>) drops them. */
+  function absorbFenceStrayText(pre) {
+    const code = pre.querySelector("code");
+    if (!code) return;
+    const doc = pre.ownerDocument || document;
+    Array.from(pre.childNodes).forEach((n) => {
+      if (n === code) return;
+      if (n.nodeType === Node.ELEMENT_NODE &&
+          (n.classList.contains("hybrid-lang-pill") ||
+           n.classList.contains("code-copy-btn"))) return;
+      if (n.nodeType === Node.TEXT_NODE) {
+        code.appendChild(n);
+      } else if (n.nodeType === Node.ELEMENT_NODE && n.tagName === "BR") {
+        code.appendChild(doc.createTextNode("\n"));
+        n.remove();
+      }
+    });
   }
 
   /* Swap a rendered plugin container (or any block) for a raw editable
@@ -6004,6 +6336,7 @@
   function toRawBlock(hit, lang, src) {
     const pre = document.createElement("pre");
     pre.className = "hybrid-plugin-editing";
+    pre.setAttribute(LANG_ATTR, lang || "");
     const code = document.createElement("code");
     code.className = lang ? "language-" + lang : "";
     code.textContent = src;
@@ -6025,74 +6358,64 @@
     } else {
       pre = hit.el;
       code = pre.querySelector("code");
-      lang = blockLanguage(hit);
       if (!code) return;
+      if (!pre.hasAttribute(LANG_ATTR)) {
+        pre.setAttribute(LANG_ATTR, blockLanguage(hit));
+      }
+      lang = pre.getAttribute(LANG_ATTR) || "";
       pre.classList.add("hybrid-plugin-editing");
       onContentChange();
     }
     // Focus and put the caret at the end of the source.
     pre.setAttribute("contenteditable", "true");
-    pre.focus();
-    const sel = window.getSelection();
-    const r = document.createRange();
-    r.selectNodeContents(code);
-    r.collapse(false);
-    sel.removeAllRanges();
-    sel.addRange(r);
+    focusCodeEnd(pre, code);
     addLanguagePill(pre, code);
-    wireCommit(pre, lang);
+    wireCommit(pre);
   }
 
-  /* The language chip: an inline editable label rendered on the block
-   * while editing -- on the LEFT side, above the code. Click it and it
-   * becomes a small text input right there (no prompt window): type
-   * "python", "mermaid", ... and Enter commits, Esc/blur cancels. The
-   * chip is a <span contenteditable> so it never steals focus from the
-   * block on click (mousedown is prevented on the wrapper). */
+  /* The language chip: an editable control on the block's top-left while
+   * the fence is being edited. It is a real <input>, not a contenteditable
+   * span: nested inside the note's editing host, a span's Ctrl+A selects
+   * the WHOLE NOTE, so "select all, retype the language" replaced the
+   * document. The input owns its own selection. Enter commits, Esc
+   * restores, and committing on blur keeps the existing exit model. */
   function addLanguagePill(pre, code) {
-    const chip = document.createElement("span");
+    const chip = document.createElement("input");
+    chip.type = "text";
     chip.className = "hybrid-lang-pill";
-    chip.setAttribute("contenteditable", "true");
     chip.setAttribute("spellcheck", "false");
-    const label = () => {
-      const m = (code.className || "").match(/language-([\w-]+)/);
-      chip.textContent = m ? m[1] : "";
+    chip.setAttribute("aria-label", "Fence language");
+    chip.value = pre.getAttribute(LANG_ATTR) || "";
+    const resize = () => {
+      chip.style.width = Math.max(2, chip.value.length + 1) + "ch";
     };
-    label();
+    resize();
     chip.addEventListener("mousedown", (e) => {
-      // Let clicks focus the chip's own caret (it is contenteditable
-      // itself); do not let them reach the <pre> and disturb the code
-      // selection.
+      // Do not let the click reach the <pre> and disturb the code caret.
       e.stopPropagation();
     });
+    chip.addEventListener("input", resize);
     chip.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
-        const next = (chip.textContent || "").trim().toLowerCase();
-        code.className = next ? "language-" + next : "";
-        onContentChange();
-        chip.blur();
-        pre.focus();
+        const next = normalizeFenceLanguage(chip.value);
+        if (next === null) {
+          chip.value = pre.getAttribute(LANG_ATTR) || "";
+          resize();
+          if (NB.app && NB.app.notify) {
+            NB.app.notify("Language may use letters, digits, +, - and _");
+          }
+          return;
+        }
+        applyFenceLanguage(pre, code, next);
+        focusCodeEnd(pre, code);
       } else if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
-        label();   // restore the current language, discard edits
-        chip.blur();
-        pre.focus();
-      }
-    });
-    chip.addEventListener("blur", () => {
-      // Commit whatever was typed on blur too (blur from Enter/Esc
-      // re-runs this but the class is already set, so it's a no-op).
-      const next = (chip.textContent || "").trim().toLowerCase();
-      const m = (code.className || "").match(/language-([\w-]+)/);
-      const cur = m ? m[1] : "";
-      if (next && next !== cur) {
-        code.className = next ? "language-" + next : "";
-        onContentChange();
-      } else {
-        label();
+        chip.value = pre.getAttribute(LANG_ATTR) || "";
+        resize();
+        focusCodeEnd(pre, code);
       }
     });
     pre.appendChild(chip);
@@ -6102,14 +6425,30 @@
    * The blur path is the "restore render mode": when focus leaves the
    * block it is committed -- a plugin language re-renders through its
    * module's renderAll, plain code stays a raw fence -- and the
-   * editing decorations (contenteditable, pill) are removed. */
-  function wireCommit(pre, lang) {
+   * editing decorations (contenteditable, pill) are removed.
+   *
+   * Wired once per <pre>: re-entering the same raw block must not stack
+   * duplicate focusout/keydown/paste listeners. */
+  const wiredCodeBlocks = new WeakSet();
+
+  function wireCommit(pre) {
+    if (wiredCodeBlocks.has(pre)) return;
+    wiredCodeBlocks.add(pre);
     const commit = () => {
-      pre.removeEventListener("focusout", onFocusOut);
-      pre.removeAttribute("contenteditable");
-      pre.classList.remove("hybrid-plugin-editing");
+      if (pre.getAttribute("contenteditable") !== "true") return;
+      // Leave edit mode BEFORE touching the chip: removing the focused
+      // input fires a synchronous focusout, which re-enters this handler.
+      // The attribute is the re-entrancy guard, so it must change first.
+      pre.setAttribute("contenteditable", "false");
+      absorbFenceStrayText(pre);
+      const code = pre.querySelector("code");
       const pill = pre.querySelector(".hybrid-lang-pill");
-      if (pill) pill.remove();
+      if (pill) {
+        const next = normalizeFenceLanguage(pill.value);
+        if (code && next !== null) applyFenceLanguage(pre, code, next);
+        if (pill.parentNode) pill.remove();
+      }
+      pre.classList.remove("hybrid-plugin-editing");
       const curLang = blockLanguage({ el: pre, plugin: null, raw: true });
       const mod = renderModuleFor(curLang);
       if (mod && mod.renderAll) {
@@ -6123,15 +6462,27 @@
     const onFocusOut = (e) => {
       // Don't commit when focus moves to a child (e.g. the lang-pill).
       if (e.relatedTarget && pre.contains(e.relatedTarget)) return;
+      // Copying is not leaving the editor; the fallback textarea steals
+      // focus only for the duration of the copy.
+      if (copyButtonPress) { copyButtonPress = false; return; }
       commit();
     };
     pre.addEventListener("focusout", onFocusOut);
-    pre.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        pre.blur();
-      }
+    // Tab / Escape are handled at the document level (onEnterKey): the
+    // editing host is the note root, so the keydown target can be the
+    // root rather than this <pre>. Handling them here too would indent
+    // twice.
+    pre.addEventListener("paste", (e) => {
+      if (e.target && e.target.closest && e.target.closest(".hybrid-lang-pill")) return;
+      if (!e.clipboardData) return;
+      // A fence holds source text. The browser's default paste would
+      // insert the HTML flavour (spans, <b>, styles) into the code body.
+      e.preventDefault();
+      e.stopPropagation();
+      const text = e.clipboardData.getData("text/plain");
+      if (!text) return;
+      try { document.execCommand("insertText", false, text); }
+      catch (_) {}
     });
   }
 
@@ -6439,6 +6790,7 @@
     flattenTheads,
     updateButtonVisibility,
     commitForTabSwitch,
+    recoverDraft,
     // The hybrid keyboard chord table (action -> display chord -> e.code).
     // Exposed read-only so the Settings reference rows and the tests can
     // assert the dispatcher and the displayed labels cannot drift.

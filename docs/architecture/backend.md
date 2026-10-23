@@ -60,7 +60,7 @@ Routes are grouped by comment banners:
 
 | Section | Banner | Endpoints |
 | --- | --- | --- |
-| Page + config | `app.py:691` | `GET /`, `/api/config`, `/api/info` |
+| Page + config | `app.py:691` | `GET /`, `GET /sw.js` (service worker at root scope), the two `apple-touch-icon` aliases, `/api/config`, `/api/info` |
 | Auth | `app.py:871` | `/api/auth`, `/api/login`, `/api/logout`, `/api/auth/passwords` |
 | API tokens | `app.py:1071` | `/api/auth/tokens`, `/api/auth/tokens/<name>` |
 | AI assistant | `app.py:1152` | `/api/ai/config`, `/probe`, `/chat`, `/fetch`, `/search` |
@@ -278,7 +278,7 @@ network; `app.py:2534-2538` prints a warning.
 The frontend has no build step at runtime. `templates/index.html` loads
 vendored libraries and app modules as plain `<script>` tags; the
 CodeMirror bundle is the one offline-built exception. It is one page plus
-30 modules under `static/js/`, all sharing the `window.NB` namespace. See
+40 modules under `static/js/`, all sharing the `window.NB` namespace. See
 [frontend.md](frontend.md) for the module inventory, boot sequence,
 renderer pipeline, and persistence.
 
@@ -310,9 +310,9 @@ imports neither Flask nor `app.py`, so it stays testable against a stub agent
 with no server around it.
 
 **No build step.** There is no bundler, transpiler, or framework. The cost
-is 29 HTTP requests on a cold load, which the service worker caches. The
-benefit is that the served code is the source code, with no build artifact
-to drift.
+is dozens of HTTP requests on a cold load (one per module and vendored
+file), which the service worker caches. The benefit is that the served code
+is the source code, with no build artifact to drift.
 
 **CodeMirror exception.** `static/vendor/codemirror.bundle.js` is an
 esbuild IIFE built offline from `static/vendor/codemirror.entry.js`. No
@@ -335,24 +335,24 @@ renderer is the exception: it runs in a sandboxed iframe with
 
 ```
 notebook-server/
-  app.py                  Flask backend (2878 lines)
-  acp_client.py           Flask-free ACP client, one agent process per turn (298 lines)
+  app.py                  Flask backend (3077 lines)
+  acp_client.py           Flask-free ACP client, one agent process per turn (306 lines)
   agent.md                machine-readable API guide, served at /agent.md
   start.sh                venv bootstrap + launcher
   requirements.txt        Python dependencies
   notebook/               notes (symlink to /mnt/projects/notebook)
   notebook.template/      starter notebook copied on first run
   config/                 config.json, auth.json, ai.json, acp.json
-  templates/index.html    the single SPA shell (983 lines)
+  templates/index.html    the single SPA shell (1502 lines)
   static/
     manifest.json         PWA manifest
-    sw.js                 service worker, cache notebook-v11
+    sw.js                 service worker source, served at /sw.js, cache notebook-v13
     css/ icons/ vendor/   styles, PWA icons, vendored libraries
-    js/                   30 app modules sharing window.NB
+    js/                   40 app modules sharing window.NB
   tests/
-    test_app.py           209 test methods, 24 TestCase classes (2764 lines)
-    dom/test_dom.js       jsdom frontend harness (17327 lines, 80 sections)
-    browser/test_hybrid_browser.js   real-browser hybrid checks
+    test_app.py           357 test methods, 42 TestCase classes (4932 lines)
+    dom/test_dom.js       jsdom frontend harness (33458 lines, 111 sections)
+    browser/              Playwright suites; run_all.js runs every suite
   docs/
     architecture/         this folder: backend, frontend, markdown,
                           hybrid-editing, ai-assistant (+ design/)

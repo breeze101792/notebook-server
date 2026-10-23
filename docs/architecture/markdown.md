@@ -24,7 +24,7 @@ then the post-processing runs in order:
    (`NB.app.parseDeepLink` at `app.js:550`, `NB.viewer.scrollToHeading`
    at `viewer.js:819`).
 2. highlight.js highlights every `pre code` (`viewer.js:278`).
-3. `NB.blocks.renderAll()` runs the five special block renderers (call at
+3. `NB.blocks.renderAll()` runs the six special block renderers (call at
    `viewer.js:297-299`, registry at `static/js/blocks.js`).
 
 Markdown is rendered **un-sanitized**. The notes are the user's own files,

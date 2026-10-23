@@ -32,16 +32,18 @@
  * innerHTML undo snapshots never see the toolbar or popovers.
  *
  * Storage shape (versioned; a version mismatch discards the blob):
- *   { v: 1, files: { "<path>": { used, tables: { "<index>": {
- *       sig, used, sort: {col,dir}|absent, hiddenRows:[], hiddenCols:[]
+ *   { v: 2, files: { "<path>": { used, tables: { "<index>": {
+ *       sig, bodySig, ordinal, used, sort: {col,dir}|absent,
+ *       hiddenRows:[], hiddenCols:[]
  *   } } } } }
- * `sig` is the header cells' normalized text; if it differs from the
- * current table, the entry is STALE and is ignored (not applied, not
- * deleted) -- the table is a different table now.
- *
- * Known limitation: identity is positional index + header signature, so
- * two tables with identical headers cannot be told apart when a table is
- * inserted or removed above them.
+ * `sig` is the header text; `bodySig` hashes every cell (header + body)
+ * and `ordinal` is the position among tables with the same header. The
+ * entry applies ONLY when all three match the current table. A changed
+ * body, a shifted ordinal (a table inserted/removed above), or a schema
+ * bump means the entry is STALE and is IGNORED (not applied, not
+ * deleted), so a view can never hide rows in a table the user did not
+ * choose. Identical tables are distinguished by ordinal, and if the
+ * document shifts, the state fails closed instead of guessing.
  */
 (function () {
   "use strict";
@@ -69,7 +71,7 @@
   const HEAD_MENU_GLYPH = "\u25BE";             // idle: menu chevron
 
   const LS_KEY = "nb:tableView";       // localStorage namespace
-  const SCHEMA_VERSION = 1;            // blob schema version
+  const SCHEMA_VERSION = 2;            // blob schema version
   const MAX_FILES = 50;                // LRU files kept in the blob
   const MAX_TABLES = 20;               // tables kept per file
   const MAX_BYTES = 100000;            // total serialized size guard
@@ -84,6 +86,17 @@
   const SORTED_CLASS = "nb-tv-sorted";           // header cell with the active sort
 
   const NUM_RE = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+  /* Small deterministic hash for the full-table signature. Stored in the
+   * blob instead of the cell text to keep localStorage compact. */
+  function hashText(text) {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+      h ^= text.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return (h >>> 0).toString(36);
+  }
 
   let viewerEl = null;         // #viewer: overlay host, position:relative
   let viewerContentEl = null;
@@ -321,6 +334,10 @@
     });
     const sig = Array.from(header.cells)
       .map((c) => headerText(c)).join(SIG_SEP);
+    // Header + every body cell. Any content edit invalidates the saved
+    // view rather than applying hidden rows/sort to a changed table.
+    const bodySig = hashText(sig + "\u0002" +
+      keys.map((row) => row.map((cell) => cell || "").join(SIG_SEP)).join("\u0003"));
     // The header menu icon is the keyboard path into the controls: it is
     // tabbable itself (tabindex=0), while the header cells carry no
     // tabindex. The icons are view-only nodes; hybrid's teardown removes
@@ -328,7 +345,7 @@
     Array.from(header.cells).forEach((c) => {
       if (!c.querySelector("." + HEAD_MENU_CLASS)) c.appendChild(buildHeadMenuIcon(c));
     });
-    return { index, header, tbody, sourceRows, keys, sig };
+    return { index, header, tbody, sourceRows, keys, sig, bodySig, ordinal: 0 };
   }
 
   /* One menu icon per header cell, anchored at the cell's right edge. It
@@ -448,6 +465,8 @@
   function applyState(table, session, state) {
     if (!session || !state) return;
     if (state.sig !== session.sig) return;
+    if (state.bodySig !== session.bodySig) return;
+    if (state.ordinal !== session.ordinal) return;
     const rowCount = session.sourceRows.length;
     const colCount = session.header.cells.length;
     const rowSet = new Set((state.hiddenRows || [])
@@ -477,7 +496,14 @@
     Array.from(session.header.cells).forEach((cell, i) => {
       if (cell.classList.contains(HIDE_COL_CLASS)) hiddenCols.push(i);
     });
-    const st = { sig: session.sig, used: Date.now(), hiddenRows, hiddenCols };
+    const st = {
+      sig: session.sig,
+      bodySig: session.bodySig,
+      ordinal: session.ordinal,
+      used: Date.now(),
+      hiddenRows,
+      hiddenCols,
+    };
     if (sort) st.sort = { col: sort.col, dir: sort.dir };
     return st;
   }
@@ -974,10 +1000,13 @@
     }
     sessions.clear();
     let touched = false;
+    const ordinals = new Map();
     const tables = Array.from(viewerContentEl.querySelectorAll("table"));
     tables.forEach((table, index) => {
       const session = buildSession(table, index);
       if (!session) return;
+      session.ordinal = ordinals.get(session.sig) || 0;
+      ordinals.set(session.sig, session.ordinal + 1);
       sessions.set(table, session);
       // Only files the user has used controls on have a record; opening
       // a file must not create one.

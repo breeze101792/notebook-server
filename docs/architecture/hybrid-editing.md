@@ -76,7 +76,7 @@ Verified today: **hybrid currently violates this.** Real Chromium, this revision
 | `Enter` at the end of a paragraph | `alpha beta\n\n` (two newlines) | one break |
 | `Enter` mid-paragraph | `alpha\n\n beta\n\n` (four newlines, block split) | one break |
 | `Enter` on a list item | `-   item\n-   \n    \n` (trailing blanks) | one break |
-| `Shift+Enter` | same `\n\n` as `Enter` | see Q15 |
+| `Shift+Enter` | a new block below the current one | decided: keep the next-line-out behaviour (Q15) |
 
 These are the real "flaky" the owner reports: lines growing blank separators from a
 single keypress. They are Q18 in §6.
@@ -173,7 +173,7 @@ The goal **G1–G4** governs every open question: where a recommendation below w
 make hybrid less Word-like, less clean in the raw file, or would add HTML, the goal
 wins.
 
-Open questions are Q2, Q3, Q8, Q10 (fork), Q13, Q14, Q15.
+Open questions are Q2, Q3, Q8 (cell boundary keys), and Q14.
 Their recommendations are recorded but not yet accepted.
 
 ---
@@ -189,7 +189,7 @@ are out of scope except where they share the write-back contract.
 
 In scope constructs: ATX and setext headings; paragraphs; bullet/ordered/nested/task
 lists; blockquotes; fenced and indented code; horizontal rules; GFM tables;
-blank-line runs; HTML comments and raw HTML; the five special fenced blocks
+blank-line runs; HTML comments and raw HTML; the six special fenced blocks
 (`mermaid`, `wavedrom`, `math`/`katex`, `dot`/`graphviz`, `html-live`) and plain
 fences; and the inline constructs (`**bold**`, `*italic*`/`_italic_`,
 `~~strike~~`, `` `code` ``, `[link](url)`, `![image](src)`, autolinks,
@@ -783,8 +783,8 @@ Rendered `<blockquote>` (often containing `<p>`); canonical output `> q`
 | ∅ | G (`> `) | `` | `<blockquote>` | ✅ `:1534`, test `4385-4388` |
 | T/M | C | `> quoted` | `> quoXted` | ✅ native |
 | E | ⇧↵ | `> quoted` | `> quoted\n\n` (`<p>` after the quote) | ✅ `:2387-2440`, test `4871-4889` |
-| E | ↵ | `> quoted` | `> quoted\n> ` (native second quote line) | 🌐 native; no custom handler; whole-DOM on save |
-| ∅ | ↵ | `> ` | exits the quote? | 🌐 native; no custom rule (only empty **list** item outdents) — §6 Q6 |
+| E | ↵ | `> quoted` | `> quoted\n> ` (native second quote line); the next ↵ on that empty line exits | ✅ native + `exitEmptyBlockquote` |
+| ∅ | ↵ | `> ` | exits the quote to a paragraph | ✅ `exitEmptyBlockquote`; browser test (§6 Q6) |
 | M | ⇧↵ | `> quoted` | `<p>` after quote | ✅ |
 | S | ⌫ | `x\n\n> quote` | merge | ⛔ browser-native; §6 Q2 |
 | — | D (remove all quote text) | `> quote` | `` — the blockquote **vanishes** | ⛔ turndown drops empty blockquote; §6 Q7 |
@@ -809,9 +809,13 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 | E | ⇧↵ | ` ```python\nprint(1)\n``` ` | fence unchanged; `<p>` **after** the block | ✅ test `4893-4933` |
 | (editing) | ↵ | inside the editable `<pre>` | native newline inside the source | ✅ comment `:2376-2378` |
 | — | D (empty the fence) | ` ```\nx\n``` ` | ` ``` \n\n ``` ` (blank fence body) | ⚠ `vendor:209-213` emits a blank line |
-| — | language pill | ` ```shell ` | change to `python` → ` ```python ` | ✅ `addLanguagePill` `:4116`, tests `6283-6311` |
-| — | `~~~` fence | `~~~\ntext\n~~~` | untouched byte-identical? corpus does not include `~~~` | ✳ add to corpus (§6 Q13); canonical output uses backticks |
-| — | P-html into fence | HTML pasted | must stay text, never become elements | ✳ §6 Q9 |
+| — | language chip | ` ```shell ` | change to `python` → ` ```python `; empty clears; `my lang` is refused | ✅ `addLanguagePill` (real `<input>` so Ctrl+A selects the chip, not the note), tests `test_block_edit_browser.js` |
+| — | bare fence touched | ` ```\ntext\n``` ` | stays bare; highlight.js's auto-detected language is never written | ✅ `captureFenceLanguages`; test `test_block_edit_browser.js` |
+| — | `~~~` fence | `~~~js\ntext\n~~~` | untouched byte-identical; touched canonicalizes to backticks | ✅ corpus + `test_block_edit_browser.js` (§6 Q13) |
+| — | P-html into fence | HTML pasted | stays plain text | ✅ plain-text paste handler; `test_block_edit_browser.js` (§6 Q9) |
+| — | Tab / Shift+Tab | inside the source | Tab inserts two spaces; Shift+Tab does not move focus out | ✅ `onEnterKey` selection-based guard; browser test |
+| — | Ctrl+Z / Ctrl+Y | inside the source | native undo/redo, not hybrid's whole-note snapshot | ✅ modifier guard by selection; browser test |
+| — | Esc | inside the source | commits and restores render mode | ✅ `test_block_edit_browser.js` |
 | — | no edit | any fence | byte-identical | ✅ tests `8013-8015`, `6420-6437` |
 
 ### 4.10 Indented code
@@ -950,16 +954,19 @@ regenerated** (`PLAN.md:69`, the segment model at `hybrid.js:625-680`, assumptio
 `PLAN.md:179-182`). A raw-HTML document deliberately makes the splice fail closed
 (`htmlTokenElementCount` `hybrid.js:656-680`).
 
-**Q10 is decided:** raw HTML stays editable in place, so the `html` token must be
-aligned and the splice must not fall closed on it. The open fork is what an *edited*
-raw HTML block writes back (§6 Q10).
+**Q10 is DECIDED and implemented:** raw HTML stays editable in place, and an edited
+raw block writes back its own `outerHTML`. `markRawHtmlBlocks` marks authored
+block-level elements at render time (renderer containers excluded), the turndown
+rule stashes the markup behind a sentinel so the Markdown clean-up passes cannot
+rewrite it, and `postProcessMarkdown` restores it. An untouched block still keeps
+its original source bytes through the splice.
 
 | Op | Before | After | Status |
 |---|---|---|---|
 | edit a neighbour | `a\n\n<!-- keep -->\n\nb\n` | comment kept | ✅ test `7586-7603` |
 | clean round-trip | `<!-- c -->\n\nbody\n` | byte-identical | ✅ corpus `7684` |
-| paste rich HTML | — | unknown tags unwrapped to text | ✳ Q9: stripped to text |
-| edit inside a raw element | `<div>block</div>` | must not fall back or lose the tag | ✳ Q10: alignment + open fork |
+| paste rich HTML | — | stripped to plain text | ✅ Q9 |
+| edit inside a raw element | `<div>block</div>` | `<div>block!</div>`: tag and attributes kept | ✅ `markRawHtmlBlocks` + raw-HTML rule; browser test |
 
 ### 4.15 Special fenced blocks (`mermaid`, `wavedrom`, `math`/`katex`, `dot`/`graphviz`, `html-live`, plain `html`)
 
@@ -980,7 +987,7 @@ editable `<pre>` with a language pill. Round-trip is owned by `NB.blocks`
 | G / heading inside | — | **refused** (protected) | ✅ `:1229` |
 | no edit | any plugin block | fence byte-identical | ✅ tests `6420-6437` |
 | `html-live` source `height` hint | comment line | preserved in fence | ✅ [markdown.md](markdown.md) |
-| pasting into the click-to-edit `<pre>` | — | must remain text, never elements | ✳ §6 Q9 |
+| pasting into the click-to-edit `<pre>` | — | remains plain text, never elements | ✅ §6 Q9 |
 
 ### 4.16 Inline constructs
 
@@ -1046,15 +1053,12 @@ is exactly one break (invariant I9).
   paragraph converts to a code block (`:2601-2616`); an **empty list item**
   outdents to a paragraph (`:2619-2643`); at a horizontal-rule edge it opens a
   fresh line (`openLineAtCaretRule` `:2343`).
-- **`Shift+Enter`** = one soft break inside the current block, saved as a Markdown
-  hard break (`  \n`). Its current DOM behavior is "insert an empty new block
-  *after this top-level block*" (`insertLineBelow` `:2387-2440`): climb to the
-  top-level ancestor and insert a `<p>` after it, so the container is never
-  extended (no second quote line, no second list item, no table row, no swallowed
-  fence break). The inserted line carries `data-hybrid-caret` and is dropped on
-  save while empty (`:417-421`). **Open:** whether `Shift+Enter` should instead
-  insert an in-block `<br>` (a true soft break, matching Word's line break) is
-  §6 Q15.
+- **`Shift+Enter`** = a new line out of the current block, decided in §6 Q15. It
+  inserts an empty new top-level block *after this block* (`insertLineBelow`):
+  climb to the top-level ancestor and insert a `<p>` after it, so the container is
+  never extended (no second quote line, no second list item, no table row, no
+  swallowed fence break). The inserted line carries `data-hybrid-caret` and is
+  dropped on save while empty. It is deliberately not an in-block `<br>`.
 - At a rule edge both keys open the line on the caret's own side
   (`openLineAtCaretRule` `:2343`).
 
@@ -1201,10 +1205,7 @@ spacing on every sibling item when one checklist line was edited read as a bug.
 yields escaped literal text. Add live rules for all four and list them in the
 Settings help text.
 
-**Q6 — `Enter` on an empty blockquote line.** The empty-list-item outdent
-(`:2619-2643`) has no blockquote analogue, so an empty quote line persists as
-`> ` and the quote never exits. Proposed: mirror the list rule — `Enter` on an empty
-quote line exits the quote into a paragraph.
+**Q6 — DECIDED and implemented. `Enter` on an empty trailing blockquote line exits the quote.** `exitEmptyBlockquote` mirrors the empty-list-item rule: it removes the empty line and inserts a paragraph after the quote. An empty line in the middle of a quote keeps the native behaviour (the following quote lines are still content). Verified in Chromium (`test_hybrid_blocks_browser.js`).
 
 **Q7 — DECIDED and implemented. An emptied blockquote survives as `>`.** Turndown
 drops an empty `<blockquote>` (verified: `conv("<blockquote></blockquote>") === ""`),
@@ -1212,12 +1213,11 @@ while an emptied heading keeps `###` and an emptied list item keeps `-`. By the
 owner's model a ">" line with zero words is a valid block. Fixed with
 `markEmptyBlockquotes` + `EMPTY_QUOTE_SENTINEL`; verified in Chromium and jsdom.
 
-**Q8 — table-cell boundary keys.** `Backspace`/`Delete` at a cell edge and `Enter`
-inside a cell are native and untested; they can merge cells or insert a `<br>`.
-`caretDirectlyInTop` deliberately excludes cells (`hybrid.js:2138`) so the
-rule-edge repair does not apply. Proposed: refuse merge across cell boundaries;
-`Enter` inserts a `<br>` that serializes as a hard break, or is refused if hard
-breaks break the GFM table.
+**Q8 — table-cell boundary keys.** `Backspace`/`Delete` at a cell edge is
+browser-native. `Enter` inside a cell is now refused with a notice: a newline in
+a cell splits the GFM row and breaks the table on the next render. `caretDirectlyInTop`
+deliberately excludes cells (`hybrid.js:2138`) so the rule-edge repair does not apply.
+Verified in Chromium (`test_hybrid_blocks_browser.js`).
 
 **Q9 — DECIDED. Paste parses Markdown into blocks.** `doPaste`/`doPastePlain`
 (`:2837`/`:2862`) today insert plain text with `<br>` between lines
@@ -1250,8 +1250,9 @@ the block a line box (measured 21.9px) and is stripped on save, so an untouched
 `###` still serializes to exactly `###`. Verified in Chromium: text now lands in
 the heading.
 
-**Q13 — `~~~` fences.** marked renders them; no corpus or test covers editing a
-`~~~` fence, and canonical output uses backticks. Proposed: add to the corpus.
+**Q13 — DECIDED and tested. `~~~` fences.** An untouched tilde fence is
+byte-identical; touching one canonicalizes it to a backtick fence. Covered by the
+byte-identity corpus and `test_block_edit_browser.js`.
 
 **Q14 — cut/copy across blocks.** Context-menu `Copy` uses `sel.toString()`,
 which loses markers and joins lines; native `Ctrl+C` is unhandled. Decision for
@@ -1259,33 +1260,11 @@ rules: selection and copy stay the browser's own, identical in hybrid and
 preview mode, and no app copy path is added (§4.11). A rule selected this way
 carries no text, which is accepted; the highlight class makes it visible.
 
-**Q15 — what `Shift+Enter` should insert (raised by the Word goal).** Today
-`Shift+Enter` inserts a new empty top-level `<p>` after the block
-(`insertLineBelow` `:2387`). That is "new paragraph", not Word's "line break
-inside the current paragraph". Verified saved bytes differ:
-
-- today: `one` + `Shift+Enter` → `one\n\n` (a **block** break; the visible result
-  is a new line, but a reader sees a paragraph split)
-- Word-like alternative: `one` + `Shift+Enter` → an in-block `<br>` → `one  \n`
-  (a **soft** break inside the same paragraph; the file shows a hard break)
-
-Under goal G4b ("`Enter` is one line break; `Shift+Enter` is a soft break"), the
-Word-like alternative is the consistent one. Options:
-
-1. **Keep today's behavior** (new block). Simple, already tested; but "soft break"
-   and "new paragraph" become the same key, which is not Word-like.
-2. **Make `Shift+Enter` insert an in-block `<br>`** (a hard break `  \n`), and keep
-   `Enter` as the block/paragraph break. This matches Word exactly and is the
-   proposal. The existing `insertLineBelow` behavior moves to `Enter` where the
-   construct continues; the "insert a block after this one" convenience would need
-   a different key or menu action.
-3. **Offer both**: `Shift+Enter` = soft break; a menu/keyboard action "insert
-   paragraph after" = the old `insertLineBelow`.
-
-Recommendation: option 2, plus keep option 3's menu action so the existing power
-behavior is not lost. This is the one place the Word goal changes tested behavior
-(`tests/dom/test_dom.js:4585-4754`, `test_hybrid_browser.js`), so decide it before
-implementation.
+**Q15 — DECIDED: keep the next-line-out behavior.** `Shift+Enter` inserts a
+new empty top-level `<p>` after the current block (`insertLineBelow`): one new
+line out of the block, not an in-block `<br>`. The owner chose this explicitly.
+`Enter` remains the block/paragraph break. The existing jsdom and Chromium
+checks pin this behavior; it is not a data-loss path.
 
 **Q16 — DECIDED. In hybrid mode, one `Enter` adds one line break.** The owner's
 words: "single new line, I don't see why we need double next line." This is about
@@ -1301,18 +1280,16 @@ blocks are normal and stay; the `breaks` option is left at its current value
 (`false`). No renderer change.
 
 **Q18 — the empty-list-item junk is FIXED; the separator/trailing-newline question
-belongs to Q15/Q16.** Real Chromium, this revision:
+belongs to Q16.** Real Chromium, this revision:
 
 - (fixed) `Enter` on a list item produced `-   item\n-     \n    \n` — trailing
   spaces and a stray indented line from the browser's `<br>` line box in the empty
   item. `markEmptyListItems` now strips the line box, so the item saves as a bare
   marker. Verified in Chromium and jsdom.
-- (open, Q15/Q16) `Enter` at the end of a paragraph saves `alpha beta\n\n`, and
-  `Shift+Enter` saves the same. `\n\n` is one Markdown paragraph break; the owner's
-  rule ("one Enter, one break") and the Word meaning of `Shift+Enter` (a soft
-  in-paragraph break, Q15) are not yet reconciled with this byte output. Left open
-  rather than changed unilaterally: which of Enter/Shift+Enter produces a paragraph
-  break vs a hard break is a behavior the owner decides.
+- (decided) `Enter` at the end of a paragraph saves `alpha beta\n\n`; the `\n\n` is
+  one Markdown paragraph break, not an invented blank line (Q16). `Shift+Enter`
+  opens a new block below the current one, not an in-paragraph soft break (Q15,
+  decided).
 - (open, Q16) `Enter` mid-paragraph saves `alpha be\n\nta` — the split the owner
   asked for, plus the standard block separator. Whether that separator count is the
   "one break" the owner means is part of the same open question.
@@ -1556,7 +1533,6 @@ Verified against the vendored bundles at this revision with the exact
   rule is selectable like a character (§4.11).
 - **Withdrawn.** Q17 (a renderer `breaks:true` change) — it misread Q16 as a
   file-format rule. No renderer change.
-- **Biggest remaining questions.** Q15 (what `Shift+Enter` inserts), then Q2 (block
-  merge), then Q3 (block-edge typing).
-- **Next decisions, in order.** Q15 (`Shift+Enter`), Q2 (merge), Q3 (block-edge
-  typing), Q8 (table cells), Q10 fork, Q13/Q14.
+- **Biggest remaining question.** Q2 (block merge), then Q3 (block-edge typing).
+- **Next decisions, in order.** Q2 (merge), Q3 (block-edge typing), Q8 (cell
+  boundary keys), Q14 (copy across blocks).

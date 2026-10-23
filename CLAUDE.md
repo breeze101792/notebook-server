@@ -34,6 +34,7 @@ python app.py
 # Frontend DOM tests (jsdom — load real vendor bundles + all app modules, stub fetch)
 npm install && npm test
 node tests/dom/test_dom.js        # equivalent if jsdom already resolvable
+node tests/browser/run_all.js     # every real-browser suite (auto-detects Chromium)
 ```
 
 There is no lint step configured; the only test runners are `unittest` (backend) and
@@ -236,10 +237,12 @@ apply.
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
-htmlpreview.js → svg.js → viewer.js → editbar.js → hybrid.js → table-edit.js →
-table-view.js → table-select.js → watcher.js → outline.js → sidebar.js →
-search.js → graph.js → tabs.js → windows.js → settings.js → export.js →
-vimnav.js → ai.js → activity.js → bookmarks.js → shortcuts.js → app.js`.
+htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
+table-edit.js → list-edit.js → table-view.js → table-select.js → watcher.js →
+outline.js → sidebar.js → search.js → graph.js → tabs.js → windows.js →
+settings.js → export.js → mermaid-designer.js → designer-shell.js →
+dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
+bookmarks.js → shortcuts.js → mobile.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`, `NB.menu`).
@@ -304,12 +307,15 @@ Module responsibilities:
   the rest of the modules boot with a known-good session. Wires the
   top-bar logout button.
 - `viewer.js` — renders Markdown with marked+highlight, owns the per-file
-  content/edit cache and the edit/view toggle. Notebooks are the user's own files in
+  content/edit cache, the edit/view toggle, and the stashed-draft Recover/Discard
+  bar. A dirty tab switch stores the buffer on the cache entry; returning shows
+  the saved preview plus a Recover bar (source recovery is Ctrl+Z undoable). Notebooks are the user's own files in
   `notebook/`, so they are rendered **un-sanitized**; if untrusted content is ever
   introduced, add vendored DOMPurify and sanitize before `innerHTML`.
 - `tabs.js` — top-bar file tabs; owns the ordered open set + active file, coordinates
-  with `viewer.js` (per-file content cache so unsaved edits survive tab switches), and
-  persists `openFiles`/`activeFile` to config.
+  with `viewer.js` (a dirty switch stashes the buffer instead of prompting; the
+  cache keeps it and the tab stays marked), and persists `openFiles`/`activeFile`
+  to config.
 - `sidebar.js` — left file tree, and the tree/folder/root menu item sets rendered
   through `NB.menu` (open, new file/folder, rename/move, copy, delete, Export…,
   copy path/link, Add/Remove bookmark). The Explorer header's ↻ button re-fetches
@@ -338,8 +344,9 @@ Module responsibilities:
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
 - `table-view.js` — preview-only table view controls: hover/focus toolbar over a
   GFM table with hide-rows, hide-columns, and a single-column sort, kept per file
-  per table in `localStorage` (`nb:tableView`, versioned; a stale header signature
-  is ignored, never deleted). Hiding is class-based only; sorting physically moves
+  per table in `localStorage` (`nb:tableView`, schema v2; an entry applies only
+  when the header text, a hash of every cell, and the table's same-header ordinal
+  all match, so a shifted table is ignored, never hijacked). Hiding is class-based only; sorting physically moves
   `<tr>` nodes, so `hybrid:will-enter` is the last synchronous moment — the module
   tears down view state there (restores source order, strips
   `nb-tv-hide-row`/`nb-tv-hide-col`/`tabindex`/`aria-sort`) before contenteditable

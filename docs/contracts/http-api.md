@@ -6,7 +6,9 @@ The notebook server is a single-user Markdown notebook. The backend is a Flask
 module, `app.py`, plus `acp_client.py` (the Flask-free ACP client the AI routes
 use); the frontend is a vanilla-JS single-page app. Every application route
 lives under `/api/*` and returns JSON, except `GET /` and the SPA catch-all
-(HTML), `GET /agent.md` (Markdown), and `POST /api/ai/chat` (an SSE byte relay).
+(HTML), `GET /sw.js` (JavaScript, served at root scope), the two
+`apple-touch-icon` aliases (PNG), `GET /agent.md` (Markdown), and
+`POST /api/ai/chat` (an SSE byte relay).
 
 A machine-readable companion guide is served at `GET /agent.md`, maintained as
 [`agent.md`](../../agent.md) at the project root. It is written for AI agents and

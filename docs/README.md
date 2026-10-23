@@ -25,10 +25,12 @@ is no database and no runtime build step.
 | --- | --- |
 | [`architecture/backend.md`](architecture/backend.md) | Import-time path resolution and seeding, `safe_path` and atomic writes, the auth layer, the AI proxy, and the design trade-offs. |
 | [`architecture/frontend.md`](architecture/frontend.md) | Script load order, the boot sequence, the `static/js/` modules, the code-block renderer registry, persistence, the service worker, and the UI surfaces. |
-| [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the five special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
+| [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, the six tools, the tool loop, and reviewing edits. |
 | [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation plan: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
+| [`architecture/table-select.md`](architecture/table-select.md) | Rectangular table-cell selection and TSV/HTML clipboard copy. |
+| [`architecture/dot-wavedrom-designer.md`](architecture/dot-wavedrom-designer.md) | The Graphviz and WaveDrom design windows: parsing subsets, preview, and Apply order. |
 | [`architecture/design/`](architecture/design/tab-equalization.md) | Tab-bar design notes and the reference mockup. |
 
 ## Product, design, research
@@ -52,7 +54,8 @@ is no database and no runtime build step.
 | --- | --- |
 | [`testing/README.md`](testing/README.md) | The test strategy and how to run both suites. |
 | [`testing/backend.md`](testing/backend.md) | The stdlib `unittest` suite against the real Flask app. |
-| [`testing/frontend.md`](testing/frontend.md) | The jsdom harness and the Playwright browser suite. |
+| [`testing/frontend.md`](testing/frontend.md) | The jsdom harness and the Playwright browser suites. |
+| [`testing/browser-audit.md`](testing/browser-audit.md) | The real-Chromium audit: coverage, defects found and fixed, and remaining decisions. |
 | [`operations/development.md`](operations/development.md) | Repo layout, the change checklists, and conventions. |
 | [`operations/build.md`](operations/build.md) | `start.sh`, vendoring, the CodeMirror bundle, and the service worker. |
 

@@ -123,6 +123,9 @@
     // The session is gone; drop the cached role so a synchronous caller
     // (the designer menu gate) stops treating us as an admin.
     if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
+    // Signed out: the logout control is meaningless until the next login.
+    const lb = logoutBtn();
+    if (lb) lb.hidden = true;
     // After logout, the next gated call will 401, but we want the modal
     // right now -- show it directly and don't wait.
     showModal();
@@ -145,6 +148,15 @@
       // synchronous gates (canWrite) stop allowing writes, and let the
       // phone shell close its write surfaces.
       if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
+      const o = overlay();
+      if (o && !o.hidden) {
+        // The modal is already up (a poll every few seconds also 401s
+        // while signed out). Still wipe the stale note/tree (the security
+        // contract of a 401), but do NOT re-run showModal(): that would
+        // clear the password being typed and any error message.
+        lock();
+        return;
+      }
       showModal();
       if (NB.mobile && NB.mobile.onAuthRequired) NB.mobile.onAuthRequired();
     });

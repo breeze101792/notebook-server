@@ -1,11 +1,13 @@
 # Frontend test suites
 
 The frontend is tested in two places. `tests/dom/test_dom.js` is the primary
-suite: 19225 lines with a hand-rolled harness, no framework, loading the real
-app into jsdom. The Playwright scripts under `tests/browser/`
-(`test_hybrid_browser.js` for the editing engine, `test_designer_browser.js`
-for the Visimer canvas, `test_dw_designer_browser.js` for the Graphviz and
-WaveDrom design windows) cover behavior only a real browser can produce.
+suite: about 33,000 lines with a hand-rolled harness, no framework, loading
+the real app into jsdom. The Playwright scripts under `tests/browser/` cover
+behavior only a real browser can produce: the hybrid editing engine, the
+hybrid block types (lists, tasks, tables, selection), the fence editor, the
+Visimer canvas, the Graphviz and WaveDrom windows, the phone shell, the core
+UI (tree, tabs, search, graph, bookmarks, outline, settings), auth/export/PWA,
+and AI/ACP plus the CodeMirror editor.
 
 Run them:
 
@@ -14,8 +16,11 @@ npm install && npm test            # jsdom DOM suite
 node tests/dom/test_dom.js         # equivalent once jsdom is resolvable
 npm run test:browser               # Playwright, chromium (default)
 npm run test:browser:firefox       # Playwright, firefox
+node tests/browser/run_all.js                 # every browser suite, distinct ports
 node tests/browser/test_designer_browser.js   # Playwright, mermaid designer
 node tests/browser/test_dw_designer_browser.js # Playwright, Graphviz + WaveDrom
+node tests/browser/test_block_edit_browser.js  # hybrid fence editor
+node tests/browser/test_hybrid_blocks_browser.js # lists, tasks, tables
 ```
 
 ## The jsdom DOM harness
@@ -81,9 +86,9 @@ console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") +
 process.exit(fail === 0 ? 0 : 1);
 ```
 
-So the exit code is `0` only when every assertion passed. The suite has **84
-test sections**, each announced with `console.log("== name ==")`, and 2104
-`check(...)` call sites covering boot, sidebar and tree, theme, viewer and
+So the exit code is `0` only when every assertion passed. The suite has **111
+test sections**, each announced with `console.log("== name ==")`, and about
+3,900 printed checks covering boot, sidebar and tree, theme, viewer and
 outline, the six renderers, the blocks registry, tabs (open/close/reorder/
 pin/ghost animation), search, edit and save, the edit bar, scroll sync,
 hybrid mode and its round-trip guards, table view, empty-tree create,
@@ -221,14 +226,14 @@ to Home, and A → B → back shows A with A's URL.
 
 ## The Playwright browser suite
 
-`tests/browser/test_hybrid_browser.js` (1381 lines) boots the real Flask app
+`tests/browser/test_hybrid_browser.js` (1963 lines) boots the real Flask app
 against a temp notebook, opens a note in a real browser, enters hybrid mode
 through the actual UI button, edits with the real editing engine, and reads
 the file back from disk. It exists because jsdom has no `contentEditable`
 engine, no selection, and no native markup insertion, so the DOM a real
 browser produces never appears there.
 
-`tests/browser/test_designer_browser.js` (322 lines) is the same harness for
+`tests/browser/test_designer_browser.js` (568 lines) is the same harness for
 the Mermaid designer: it loads the real Visimer bundle and real mermaid,
 opens the designer from the real right-click menu, drives the canvas model,
 and asserts the write-back contract against the file on disk — open → Apply
@@ -269,17 +274,37 @@ horizontal overflow, hidden tabs/outline, fixed bottom rail, 44 px targets,
 Home rows, drawer open/scrim close, browser back closing the drawer first,
 the note `…` menu), and a real capture append to `Inbox.md` on disk.
 
+The audit suites cover the rest of the app end to end:
+
+- `test_core_ui_browser.js` — desktop tree and context menus with disk
+  assertions, tabs, real search, graph, bookmarks, outline scroll-spy,
+  settings, the watcher, and the draft Recover bar on a tab switch.
+- `test_auth_export_browser.js` — auth off/on, admin and viewer identities,
+  the login rate limiter, tokens, HTML download, PDF pagination, service
+  worker scope/cache/offline reload.
+- `test_ai_editor_browser.js` — CodeMirror editing, undo/redo, per-file
+  draft recovery, VIM mode, the AI tool loop with a local stub provider, and
+  ACP with the stub agent.
+- `test_block_edit_browser.js` — every fence-editor gesture: the language
+  chip, bare fences, rich paste, Tab, native undo, Esc, save mid-edit, the
+  tilde fence, plugin re-render, and Copy.
+- `test_hybrid_blocks_browser.js` — list Enter/Tab, task toggles, table view,
+  cell Enter, Ctrl+drag selection, raw HTML, blockquote exit, and a hybrid
+  draft across a tab switch.
+
 Run the hybrid suite with `npm run test:browser` (chromium) or
 `npm run test:browser:firefox`; run the designer suite with
 `node tests/browser/test_designer_browser.js`, the Graphviz/WaveDrom suite
 with `node tests/browser/test_dw_designer_browser.js`, and the mobile suite
 with `node tests/browser/test_mobile_browser.js` (Chromium only — its phone
-contexts use Playwright's `isMobile`). `BROWSER` selects the engine for the
-hybrid suite; `CHROMIUM_PATH` / `FIREFOX_PATH` override the binary (on NixOS
-the bundled build cannot start, so point at a nix-provided browser; the
-Graphviz/WaveDrom suite probes bundled and system Chromium when the variable
-is absent); `PORT` overrides the default (`5099` hybrid and mobile, `5098`
-designer, `5096` Graphviz/WaveDrom). All use the same
+contexts use Playwright's `isMobile`). `node tests/browser/run_all.js` runs
+every suite sequentially on distinct ports. `BROWSER` selects the engine for the
+hybrid suite; `CHROMIUM_PATH` / `FIREFOX_PATH` override the binary. Every
+chromium suite falls back to `tests/browser/chromium.js`, which probes the
+Playwright cache, the system paths, and the Nix store, so no variable is
+needed when a working Chromium is installed. `PORT` overrides the default;
+`run_all.js` assigns a distinct port per suite because hybrid and mobile both
+defaulted to 5099. All use the same
 `check(name, cond, detail)` counter and report `PASS` / `FAIL` with
 `process.exitCode = 1` on failure, printing the server log tail when a run
 fails.

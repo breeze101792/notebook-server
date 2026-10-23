@@ -642,7 +642,7 @@ Copy button click clears the rectangle via its `mousedown` first.
 | --- | --- | --- |
 | New module | `static/js/table-select.js` | create |
 | Script tag | `templates/index.html` — insert between line 962 (`table-view.js`) and 963 (`watcher.js`) | `<script src="/static/js/table-select.js" defer></script>` |
-| Service worker | `static/sw.js` — insert `"/static/js/table-select.js",` between line 50 (`table-view.js`) and 51 (`watcher.js`); **bump `CACHE`** at line 16 from `"notebook-v5"` to `"notebook-v6"` (a stale precache would serve without the new module) | PRECACHE entry + cache bump |
+| Service worker | `static/sw.js` — insert `"/static/js/table-select.js",` between line 50 (`table-view.js`) and 51 (`watcher.js`); **bump `CACHE`** at line 16 from `"notebook-v5"` to the next version (the current cache is `"notebook-v13"`) (a stale precache would serve without the new module) | PRECACHE entry + cache bump |
 | CSS | `static/css/style.css` — new section after line 935 (end of the `.nb-tv-head-menu` rules) | section 7 |
 | hybrid changes | `static/js/hybrid.js` — (1) strip block in `prepareTurndownClone` after lines 417-420; (2) belt at the top of `pushSnapshot` (3047); (3) token-strip extension in `canonicalSubtree` (730-741) | section 8.7 |
 | Test harness | `tests/dom/test_dom.js` — insert `evalIn(read("static/js/table-select.js"));` after line 1439 (`table-view.js`) | load the module |
@@ -703,7 +703,7 @@ Core behavior:
 13. **Export invariant** — `read("static/js/export.js")` never references
     `nb-ts-` (extends the 9747 pattern).
 14. **Completeness** — index.html + sw.js PRECACHE contain
-    `/static/js/table-select.js`; sw.js `CACHE` is `notebook-v6`.
+    `/static/js/table-select.js`; sw.js `CACHE` is `notebook-v13`.
 
 Review-finding regressions:
 
