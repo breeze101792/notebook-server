@@ -263,12 +263,15 @@ render pipeline (`renderAll`, called by `viewer.js` / `hybrid.js` /
 `export.js`), the hybrid Save round-trip (`restoreForMarkdown`, replacing
 each rendered container or error box with its fenced source so turndown
 doesn't strip the SVG/HTML), and the hybrid click-to-edit type table
-(`pluginTypes`). Each renderer still owns its own `renderOne` and lazy-load
-gate — the cores are genuinely different library glue, so only the plumbing
-is shared. Adding a renderer means: add the module, register it, add the
-`<script>` tag, and add its `sw.js` PRECACHE entry; the registry-completeness
-test in `tests/dom/test_dom.js` checks index.html / sw.js / the ai.js prompt
-/ agent.md all mention it.
+(`pluginTypes`). Each descriptor names a `marker` attribute/value pair the
+rendered block carries (plus an optional `errorMarker` for its failure box);
+plugin identity is keyed on that marker, not the class, so authored HTML that
+merely reuses a renderer class stays raw HTML. Each renderer still owns its
+own `renderOne` and lazy-load gate — the cores are genuinely different library
+glue, so only the plumbing is shared. Adding a renderer means: add the module,
+register it with its marker, add the `<script>` tag, and add its `sw.js`
+PRECACHE entry; the registry-completeness test in `tests/dom/test_dom.js`
+checks index.html / sw.js / the ai.js prompt / agent.md all mention it.
 
 **Hybrid write-back contract.** A save that changes nothing writes nothing:
 `isNoOpMarkdown` compares the serialized DOM against the form captured at

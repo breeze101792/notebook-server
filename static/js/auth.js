@@ -17,11 +17,18 @@
   "use strict";
   window.NB = window.NB || {};
 
-  const overlay = () => document.getElementById("auth-overlay");
-  const input   = () => document.getElementById("auth-password");
-  const submit  = () => document.getElementById("auth-submit");
-  const errEl   = () => document.getElementById("auth-error");
-  const logoutBtn = () => document.getElementById("logout-btn");
+  // Captured once at load: this script runs after the markup is parsed, and
+  // a lazy getElementById could otherwise find a note element with the same
+  // id earlier in document order.
+  const overlayEl = document.getElementById("auth-overlay");
+  const inputEl = document.getElementById("auth-password");
+  const submitEl = document.getElementById("auth-submit");
+  const errorEl = document.getElementById("auth-error");
+  const logoutEl = document.getElementById("logout-btn");
+  const viewerContentEl = document.getElementById("viewer-content");
+  const fileTreeEl = document.getElementById("file-tree");
+  const searchListEl = document.getElementById("search-list");
+  const searchSummaryEl = document.getElementById("search-summary");
 
   // Raw /api/auth response from boot: {enabled, hasAdmin, hasViewer, role}.
   // Kept so synchronous callers (the hybrid context menu builds its items
@@ -50,17 +57,13 @@
       // Viewer pane: the rendered markdown for the active file. Clear
       // text content and innerHTML so a previously-cached file body
       // isn't sitting in the DOM.
-      const vc = document.getElementById("viewer-content");
-      if (vc) { vc.textContent = ""; vc.innerHTML = ""; }
+      if (viewerContentEl) { viewerContentEl.textContent = ""; viewerContentEl.innerHTML = ""; }
       // File tree (sidebar): the list of notes/folders.
-      const ft = document.getElementById("file-tree");
-      if (ft) ft.innerHTML = "";
+      if (fileTreeEl) fileTreeEl.innerHTML = "";
       // Search results list.
-      const sl = document.getElementById("search-list");
-      if (sl) sl.innerHTML = "";
+      if (searchListEl) searchListEl.innerHTML = "";
       // Search summary text.
-      const ss = document.getElementById("search-summary");
-      if (ss) ss.textContent = "";
+      if (searchSummaryEl) searchSummaryEl.textContent = "";
       // Tabs: leave the tab bar itself (the layout) but clear open
       // files by telling the tabs module to clear its state, so the
       // bar doesn't list paths the user is no longer authorized to
@@ -72,30 +75,28 @@
   }
 
   function showModal() {
-    const o = overlay();
-    if (!o) return;        // template missing -- nothing we can show
-    o.hidden = false;
+    if (!overlayEl) return;        // template missing -- nothing we can show
+    overlayEl.hidden = false;
     lock();
     // Focus + clear after the unlock/un-hide so the input is ready.
-    setTimeout(() => { try { input().focus(); } catch (e) {} }, 0);
-    if (input()) input().value = "";
-    if (errEl()) errEl().textContent = "";
+    setTimeout(() => { try { inputEl.focus(); } catch (e) {} }, 0);
+    if (inputEl) inputEl.value = "";
+    if (errorEl) errorEl.textContent = "";
   }
 
   function hideModal() {
-    const o = overlay();
-    if (o) o.hidden = true;
+    if (overlayEl) overlayEl.hidden = true;
     unlock();
   }
 
   function showError(msg) {
-    if (errEl()) errEl().textContent = msg || "";
+    if (errorEl) errorEl.textContent = msg || "";
   }
 
   async function tryLogin() {
-    const pw = input() && input().value;
+    const pw = inputEl && inputEl.value;
     if (!pw) { showError("Enter the password."); return; }
-    submit().disabled = true;
+    if (submitEl) submitEl.disabled = true;
     showError("");
     try {
       await NB.api.login(pw);
@@ -107,7 +108,7 @@
       // else -> the raw error text.
       showError(e.message || "Login failed");
     } finally {
-      submit().disabled = false;
+      if (submitEl) submitEl.disabled = false;
     }
   }
 
@@ -124,22 +125,18 @@
     // (the designer menu gate) stops treating us as an admin.
     if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
     // Signed out: the logout control is meaningless until the next login.
-    const lb = logoutBtn();
-    if (lb) lb.hidden = true;
+    if (logoutEl) logoutEl.hidden = true;
     // After logout, the next gated call will 401, but we want the modal
     // right now -- show it directly and don't wait.
     showModal();
   }
 
   function wire() {
-    const s = submit();
-    if (s) s.addEventListener("click", (e) => { e.preventDefault(); tryLogin(); });
-    const i = input();
-    if (i) i.addEventListener("keydown", (e) => {
+    if (submitEl) submitEl.addEventListener("click", (e) => { e.preventDefault(); tryLogin(); });
+    if (inputEl) inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); tryLogin(); }
     });
-    const lb = logoutBtn();
-    if (lb) lb.addEventListener("click", tryLogout);
+    if (logoutEl) logoutEl.addEventListener("click", tryLogout);
 
     // api.js fires "auth:required" on any 401. Show the modal again
     // (no-op if it's already up) so a stale tab re-prompts.
@@ -148,8 +145,7 @@
       // synchronous gates (canWrite) stop allowing writes, and let the
       // phone shell close its write surfaces.
       if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });
-      const o = overlay();
-      if (o && !o.hidden) {
+      if (overlayEl && !overlayEl.hidden) {
         // The modal is already up (a poll every few seconds also 401s
         // while signed out). Still wipe the stale note/tree (the security
         // contract of a 401), but do NOT re-run showModal(): that would
@@ -181,8 +177,7 @@
       // Auth is on. If a role is already in the session, the logout
       // button is meaningful; if not, the login modal needs to come up.
       if (status.role) {
-        const lb = logoutBtn();
-        if (lb) lb.hidden = false;
+        if (logoutEl) logoutEl.hidden = false;
       } else {
         showModal();
       }

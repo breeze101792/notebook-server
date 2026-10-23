@@ -58,6 +58,9 @@
   // the finished sheets are moved into the current page for printing.
   // Created lazily and reused across exports.
   let printFrame = null;
+  // The print-only container currently mounted, if any. Kept by reference
+  // so a note element that happens to use the same id can never be removed.
+  let printRoot = null;
 
   // The file the modal is exporting. null means "the active file" (open()
   // with no argument); a path means a specific file (the sidebar / tab
@@ -379,10 +382,26 @@
       NB.viewer.stripTaskItemSpaces(host);
     }
 
-    // Heading ids (same slugify the viewer uses, so anchors match).
+    // A standalone export has no app shell, so do not reserve live-page
+    // ids; only note-internal duplicate ids are deduped.
+    if (NB.resetHeadingIds) NB.resetHeadingIds(host, false);
+    if (NB.dedupeRawIds) NB.dedupeRawIds(host);
     host.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {
-      h.id = NB.slugify ? NB.slugify(h.textContent) : h.textContent;
+      if (NB.assignHeadingId) NB.assignHeadingId(h, false);
+      else h.id = NB.slugify ? NB.slugify(h.textContent) : h.textContent;
     });
+    // Drop the app's id bookkeeping; restore an authored heading id when
+    // there was one (a renamed raw id keeps its deduped value so the
+    // document stays valid).
+    const rawIdAttr = NB.rawIdAttr || "data-nb-id";
+    const slugAttr = NB.slugAttr || "data-nb-slug";
+    host.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {
+      const authored = h.getAttribute(rawIdAttr);
+      if (authored) h.id = authored;
+      h.removeAttribute(rawIdAttr);
+      h.removeAttribute(slugAttr);
+    });
+    host.querySelectorAll("[" + rawIdAttr + "]").forEach(el => el.removeAttribute(rawIdAttr));
 
     // Table of contents (h1-h3), prepended when requested. PDF (tocMode
     // falsy) renders an inline flat TOC; HTML (tocMode === "sidebar")
@@ -509,12 +528,15 @@
       "}";
     root.appendChild(toggle);
     document.body.appendChild(root);
+    printRoot = root;
     return true;
   }
 
   function unmountPrintRoot() {
-    const root = document.getElementById("pdf-print-root");
-    if (root) root.remove();
+    if (printRoot) {
+      printRoot.remove();
+      printRoot = null;
+    }
   }
 
   async function exportPdf(scope) {

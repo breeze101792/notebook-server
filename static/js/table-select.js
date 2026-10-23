@@ -57,7 +57,7 @@
   // avoids a new shared dependency for one selector.
   function modalIsOpen() {
     return !!document.querySelector(
-      ".settings-overlay:not([hidden]), #auth-overlay:not([hidden])");
+      "body > .settings-overlay:not([hidden]), body > #auth-overlay:not([hidden])");
   }
 
   let viewerEl = null;           // #viewer

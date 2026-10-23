@@ -243,7 +243,7 @@
 
   function modalIsOpen() {
     return !!document.querySelector(
-      ".settings-overlay:not([hidden]), #auth-overlay:not([hidden])");
+      "body > .settings-overlay:not([hidden]), body > #auth-overlay:not([hidden])");
   }
 
   function onKeyDown(e) {

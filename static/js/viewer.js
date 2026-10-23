@@ -108,18 +108,115 @@
   }
 
   /* --- slug + dedup for heading ids ----------------------------------- */
+  /* A heading id must be unique in the DOCUMENT, not just within the note:
+   * the app shell styles its own elements by id (#app, #viewer, #topbar,
+   * ...), so a note heading "## App" slugging to "app" would inherit the
+   * shell's #app flex/height rules and render as a huge empty box below
+   * the text. reserveIds() collects every id outside the rendered root;
+   * slugify() skips those and keeps the un-deduped base slug on the
+   * element (data-nb-slug) so links to "#app" still resolve. */
   let seenIds = {};
-  function slugify(text) {
-    const base = String(text)
+  let reservedIds = new Set();
+  const RAW_ID_ATTR = "data-nb-id";
+  const SLUG_ATTR = "data-nb-slug";
+  // Authored ids (for restoring them on save) and nodes this module has
+  // already renamed (so a note-authored data-nb-id cannot opt out).
+  const authoredIds = new WeakMap();
+  const renamedRawIds = new WeakSet();
+  const processedIds = new WeakSet();
+  const assignedHeadings = new WeakSet();
+
+  function baseSlug(text) {
+    return String(text)
       .replace(/<[^>]+>/g, "")      // strip any inline html
       .replace(/[^\w\s-]/g, "")      // drop punctuation
       .trim()
       .toLowerCase()
       .replace(/\s+/g, "-") || "heading";
+  }
+
+  function dedupeSlug(base) {
     let id = base, n = 2;
-    while (seenIds[id]) { id = base + "-" + (n++); }
+    while (seenIds[id] || reservedIds.has(id)) { id = base + "-" + (n++); }
     seenIds[id] = true;
     return id;
+  }
+
+  function slugify(text) {
+    return dedupeSlug(baseSlug(text));
+  }
+
+  /* Start a fresh render: reset the per-render dedup set and re-reserve
+   * every id the shell owns (everything outside `root`). `reserveShell`
+   * is false for a standalone export document, which has no app shell. */
+  function resetHeadingIds(root, reserveShell) {
+    seenIds = {};
+    reservedIds = new Set();
+    if (reserveShell === false) return;
+    document.querySelectorAll("[id]").forEach((el) => {
+      if (root && root.contains(el)) return;
+      reservedIds.add(el.id);
+    });
+  }
+
+  /* Rename raw ids that collide with the shell or an earlier note element,
+   * keeping the authored value on data-nb-id. Re-running is a no-op. */
+  function dedupeRawIds(root) {
+    if (!root) return;
+    // Only this module's markers count: a note may author data-nb-id, and
+    // honouring it would let the note opt out of the rename.
+    root.querySelectorAll("[" + RAW_ID_ATTR + "]").forEach((el) => {
+      if (!renamedRawIds.has(el) && !assignedHeadings.has(el)) {
+        el.removeAttribute(RAW_ID_ATTR);
+      }
+    });
+    root.querySelectorAll("[id]").forEach((el) => {
+      const id = el.id;
+      if (!id) return;
+      if (processedIds.has(el) || assignedHeadings.has(el)) return;
+      processedIds.add(el);
+      authoredIds.set(el, id);
+      if (seenIds[id] || reservedIds.has(id)) {
+        el.setAttribute(RAW_ID_ATTR, id);
+        el.id = dedupeSlug(id);
+        renamedRawIds.add(el);
+      } else {
+        seenIds[id] = true;
+      }
+    });
+  }
+
+  /* Assign a heading its id plus, unless `withSlug` is false, the base
+   * slug anchor resolution uses. An authored id is preserved on
+   * data-nb-id so serialization can restore it. */
+  function assignHeadingId(h, withSlug) {
+    if (assignedHeadings.has(h)) return h.id;
+    const base = baseSlug(h.textContent);
+    const authored = authoredIds.get(h);
+    if (authored !== undefined) h.setAttribute(RAW_ID_ATTR, authored);
+    h.id = dedupeSlug(base);
+    assignedHeadings.add(h);
+    if (withSlug !== false) h.dataset.nbSlug = base;
+  }
+
+  /* Resolve a slug to a rendered heading or a renamed raw element.
+   * Scoped to the viewer so a shell element that owns the same id (e.g.
+   * the #app root) can never be the target. Matches the deduped id
+   * first, then the base slug so a link written as "#app" still reaches
+   * a heading rendered as "app-2", then the authored id kept on
+   * data-nb-id for a renamed raw element. */
+  function headingForSlug(slug) {
+    // Document order decides, so the first element an anchor names wins.
+    for (const el of viewerContentEl.querySelectorAll("[id]")) {
+      if (el.id === slug) return el;
+    }
+    for (const h of viewerContentEl.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
+      if (h.dataset.nbSlug === slug) return h;
+    }
+    for (const el of viewerContentEl.querySelectorAll("[" + RAW_ID_ATTR + "]")) {
+      if (el.getAttribute(RAW_ID_ATTR) === slug) return el;
+    }
+    return null;
   }
 
   /* --- wikilinks: [[Target]] internal note links --------------------- */
@@ -265,6 +362,11 @@
     }
   }
   NB.slugify = slugify; // exposed for potential reuse
+  NB.resetHeadingIds = resetHeadingIds;
+  NB.dedupeRawIds = dedupeRawIds;
+  NB.assignHeadingId = assignHeadingId;
+  NB.rawIdAttr = RAW_ID_ATTR;
+  NB.slugAttr = SLUG_ATTR;
 
   /* --- render --------------------------------------------------------- */
   /* marked keeps the GFM task marker's separator space in the item text:
@@ -303,7 +405,7 @@
       NB.evt.emit("viewer:rendered", { path: active, live: false });
       return;
     }
-    seenIds = {}; // reset dedup per render
+    resetHeadingIds(viewerContentEl);
     if (window.marked) {
       viewerContentEl.innerHTML = marked.parse(src, { gfm: true, breaks: false });
       stripTaskItemSpaces(viewerContentEl);
@@ -313,9 +415,11 @@
       return;
     }
 
-    // Heading ids (deduped).
+    // Heading ids (deduped against the shell's ids). Raw ids are handled
+    // first so a note <div id="app"> cannot inherit the shell's #app box.
+    dedupeRawIds(viewerContentEl);
     viewerContentEl.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach(h => {
-      h.id = slugify(h.textContent);
+      assignHeadingId(h);
     });
 
     // Syntax highlighting via highlight.js (vendored). Highlight
@@ -906,16 +1010,16 @@
       NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     },
 
-    /* Scroll the rendered viewer to a heading by its slugified id.
-     * The id is the same string the renderer's slugify() produces on
-     * each h1..h6 (e.g. "## Core rules" -> "core-rules"). Used by
+    /* Scroll the rendered viewer to a heading by its slug.
+     * The slug is the base string slugify() derives from the heading
+     * text (e.g. "## Core rules" -> "core-rules"), whether or not the
+     * assigned id had to be deduped against a shell id. Used by
      * NB.app.openDeepLink() to honor a `?file=...&heading=...` URL.
-     * Same getElementById + scrollIntoView pattern as the outline
-     * click handler (outline.js:44-48). Returns true on hit, false
-     * on miss (missing id or empty slug). */
+     * Returns true on hit, false on miss (missing heading or empty
+     * slug). */
     scrollToHeading(slug) {
       if (!slug) return false;
-      const el = document.getElementById(slug);
+      const el = headingForSlug(slug);
       if (!el) return false;
       el.scrollIntoView({ behavior: "smooth", block: "start" });
       return true;

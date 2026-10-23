@@ -69,23 +69,24 @@
   let particleFieldEnabled = false;
   let particles = null;
 
-  // --- DOM refs (resolved on first mount) -----------------------------
-  let viewEl, canvasHostEl, canvasEl, summaryEl, filterEl;
+  // --- DOM refs (resolved at load, before any note is rendered) --------
+  // A rendered note can carry an element with one of these ids; resolving
+  // lazily on first mount would then bind the note's copy instead.
+  const viewEl = document.getElementById("graph-view");
+  const canvasHostEl = document.getElementById("graph-view-canvas-host");
+  const canvasEl = document.getElementById("graph-view-canvas");
+  const summaryEl = document.getElementById("graph-view-summary");
+  const filterEl = document.getElementById("graph-view-filter");
 
   function fetchGraph() { return NB.api.getGraph(); }
 
   /* --- mount: wire up the static HTML structure. Called the first time
    * the graph tab is activated. The header + controls + canvas host ship
-   * in index.html so the layout exists before the module boots; this just
-   * grabs references and attaches listeners. */
+   * in index.html so the layout exists before the module boots; this
+   * attaches listeners to the refs captured at load. */
   function mount() {
     if (mounted) return;
     mounted = true;
-    viewEl = document.getElementById("graph-view");
-    canvasHostEl = document.getElementById("graph-view-canvas-host");
-    canvasEl = document.getElementById("graph-view-canvas");
-    summaryEl = document.getElementById("graph-view-summary");
-    filterEl = document.getElementById("graph-view-filter");
     canvas = canvasEl;
     try { ctx = canvas.getContext("2d"); } catch (_) { ctx = null; }
     dpr = (window.devicePixelRatio || 1);

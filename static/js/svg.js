@@ -67,6 +67,7 @@
   function buildError(source, message) {
     const wrap = document.createElement("div");
     wrap.className = "svg-error";
+    wrap.dataset.svg = "error";
     const head = document.createElement("div");
     head.className = "svg-error-head";
     head.textContent = "SVG error: " + message;
@@ -101,6 +102,7 @@
 
     const card = document.createElement("div");
     card.className = "svg-container";
+    card.dataset.svg = "ok";
     card.dataset.svgSource = source;
     card.appendChild(document.importNode(root, true));
     pre.replaceWith(card);
@@ -151,8 +153,10 @@
       fence: FENCE,
       selector: SELECTOR,
       containerClass: "svg-container",
+      marker: { attr: "data-svg", value: "ok" },
       datasetKey: "svgSource",
       errorClass: "svg-error",
+      errorMarker: { attr: "data-svg", value: "error" },
       sourceClass: "svg-source",
       renderAll,
     });

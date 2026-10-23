@@ -117,6 +117,10 @@
   // after an in-place edit. Marking only elements that came from the
   // source keeps an engine-generated <div> from turning into raw HTML.
   const RAW_HTML_ATTR = "data-hybrid-raw-html";
+  // Viewer bookkeeping added for anchors/outline; restored or stripped
+  // before turndown so a save never writes it into the note.
+  const RAW_ID_ATTR = "data-nb-id";
+  const SLUG_ATTR = "data-nb-slug";
   const RAW_HTML_TAGS = new Set([
     "DIV", "DETAILS", "SUMMARY", "SECTION", "ARTICLE", "ASIDE", "HEADER",
     "FOOTER", "NAV", "MAIN", "FIGURE", "FIGCAPTION", "VIDEO", "AUDIO",
@@ -164,20 +168,21 @@
   // highlight and the table-select rectangle classes (table-select.js). One
   // list, so every change-hash strip site cannot drift from the others.
   const CHROME_CLASS_TOKENS = [HR_SELECTED_CLASS, "nb-ts-range", "nb-ts-drag"];
-  // Renderer container classes, derived from the blocks registry so a
-  // new renderer is covered by construction. Their rendered children
-  // change asynchronously (a lazy bundle swaps an error box for a real
-  // container, an SVG renders later), so the splice path hashes only the
-  // block's SOURCE, not its rendered subtree.
-  const PLUGIN_CONTAINER_CLASSES = [];
+  // Renderer identity, derived from the blocks registry so a new renderer
+  // is covered by construction. The registry keys it on the renderer's
+  // marker attribute, not its class, so authored HTML with the same class
+  // stays raw HTML. Their rendered children change asynchronously (a lazy
+  // bundle swaps an error box for a real container, an SVG renders later),
+  // so the splice path hashes only the block's SOURCE, not its rendered
+  // subtree.
+  const PLUGIN_CONTAINER_SELECTORS = [];
   if (NB.blocks && NB.blocks.all) {
     for (const d of NB.blocks.all()) {
-      if (d.containerClass) PLUGIN_CONTAINER_CLASSES.push(d.containerClass);
-      if (d.errorClass) PLUGIN_CONTAINER_CLASSES.push(d.errorClass);
+      const sel = NB.blocks.selectorFor(d);
+      if (sel) PLUGIN_CONTAINER_SELECTORS.push(sel);
     }
   }
-  const PLUGIN_CONTAINER_SELECTOR =
-    PLUGIN_CONTAINER_CLASSES.map((c) => "." + c).join(", ");
+  const PLUGIN_CONTAINER_SELECTOR = PLUGIN_CONTAINER_SELECTORS.join(", ");
   // Structural content whose right-click keeps the custom menu: a
   // native spellcheck menu is only useful on plain prose, and these
   // elements carry their own editing affordances. Plugin containers are
@@ -536,6 +541,19 @@
    * serialization would have used. */
   function prepareTurndownClone(clone) {
     rawHtmlStash = [];
+    // Restore authored ids and drop the viewer's id/slug bookkeeping:
+    // a raw HTML block (or a heading inside one) must save its own
+    // markup, not the ids the outline and anchor resolution added.
+    clone.querySelectorAll("h1[" + SLUG_ATTR + "],h2[" + SLUG_ATTR + "]," +
+      "h3[" + SLUG_ATTR + "],h4[" + SLUG_ATTR + "]," +
+      "h5[" + SLUG_ATTR + "],h6[" + SLUG_ATTR + "]").forEach((el) => {
+      if (!el.hasAttribute(RAW_ID_ATTR)) el.removeAttribute("id");
+      el.removeAttribute(SLUG_ATTR);
+    });
+    clone.querySelectorAll("[" + RAW_ID_ATTR + "]").forEach((el) => {
+      el.id = el.getAttribute(RAW_ID_ATTR);
+      el.removeAttribute(RAW_ID_ATTR);
+    });
     // Remove injected copy buttons and the fence-language chip so they
     // don't appear in the output.
     clone.querySelectorAll(".code-copy-btn, .hybrid-lang-pill").forEach((b) => b.remove());
@@ -1687,9 +1705,13 @@
     if (NB.viewer && NB.viewer.stripTaskItemSpaces) {
       NB.viewer.stripTaskItemSpaces(viewerContentEl);
     }
+    if (NB.resetHeadingIds) NB.resetHeadingIds(viewerContentEl);
+    if (NB.dedupeRawIds) NB.dedupeRawIds(viewerContentEl);
     viewerContentEl.querySelectorAll("h1,h2,h3,h4,h5,h6").forEach((h) => {
-      // Reuse viewer's slugify for heading id consistency.
-      if (NB.slugify) h.id = NB.slugify(h.textContent);
+      // Reuse viewer's heading-id logic for consistency (deduped against
+      // the app shell's ids, base slug kept on the element).
+      if (NB.assignHeadingId) NB.assignHeadingId(h);
+      else if (NB.slugify) h.id = NB.slugify(h.textContent);
     });
     captureFenceLanguages(viewerContentEl);
     if (window.hljs) {

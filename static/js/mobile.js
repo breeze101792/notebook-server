@@ -37,7 +37,28 @@
   let authLocked = false;
   let signingOut = false;
 
-  const $ = (id) => document.getElementById(id);
+  // Static shell nodes are captured once at load: notes render into the
+  // viewer before these ids in document order, so a lazy getElementById can
+  // return a note's element with the same id.
+  const shell = {
+    title: document.getElementById("mobile-title"),
+    viewerContent: document.getElementById("viewer-content"),
+    captureInput: document.getElementById("capture-input"),
+    captureSend: document.getElementById("capture-send"),
+    captureStatus: document.getElementById("capture-status"),
+    captureSheet: document.getElementById("capture-sheet"),
+    captureClose: document.getElementById("capture-close"),
+    scrim: document.getElementById("mobile-scrim"),
+    home: document.getElementById("mobile-home"),
+    state: document.getElementById("mobile-state"),
+    settings: document.getElementById("mobile-settings"),
+    more: document.getElementById("mobile-more"),
+    captureBtn: document.getElementById("mobile-capture"),
+    backBtn: document.getElementById("back-btn"),
+    sidePanel: document.getElementById("side-panel"),
+    menu: document.getElementById("nb-menu"),
+  };
+  let drawerStatusEl = null;
 
   /* --- mode ---------------------------------------------------------- */
   function readMode() {
@@ -106,7 +127,7 @@
 
   /* --- title --------------------------------------------------------- */
   function setTitle(path) {
-    const el = $("mobile-title");
+    const el = shell.title;
     if (!el) return;
     const site = (NB.app && NB.app.getSiteTitle) ? NB.app.getSiteTitle() : "Notebook";
     el.textContent = path ? basename(path) : site;
@@ -134,7 +155,7 @@
   function saveResumeNow() {
     const path = activePath();
     if (!path) return;
-    const vc = $("viewer-content");
+    const vc = shell.viewerContent;
     const scroll = vc ? Math.round(vc.scrollTop) : 0;
     lsSet(RESUME_KEY, JSON.stringify({ v: 1, path, scroll }));
   }
@@ -148,7 +169,7 @@
     // Never touch storage on a fresh load: an empty, unopened textarea must
     // not wipe a draft saved by an earlier visit.
     if (layer !== "capture" && !captureDirty) return;
-    const input = $("capture-input");
+    const input = shell.captureInput;
     if (!input) return;
     const v = input.value;
     if (v) lsSet(DRAFT_KEY, v);
@@ -162,7 +183,7 @@
 
   /* --- layers (drawer / capture / settings) -------------------------- */
   function updateScrim() {
-    const scrim = $("mobile-scrim");
+    const scrim = shell.scrim;
     if (scrim) scrim.hidden = !layer;
   }
 
@@ -171,10 +192,10 @@
     document.body.classList.toggle("capture-open", kind === "capture");
     document.body.classList.toggle("settings-open", kind === "settings");
     if (kind === "capture") {
-      const sheet = $("capture-sheet");
+      const sheet = shell.captureSheet;
       if (sheet) sheet.hidden = false;
     } else if (kind === "settings") {
-      const sheet = $("mobile-settings");
+      const sheet = shell.settings;
       if (sheet) sheet.hidden = false;
     }
     updateScrim();
@@ -184,19 +205,18 @@
     document.body.classList.remove("drawer-open", "capture-open", "settings-open");
     delete document.body.dataset.drawerView;
     if (kind === "capture") {
-      const sheet = $("capture-sheet");
+      const sheet = shell.captureSheet;
       if (sheet) sheet.hidden = true;
     } else if (kind === "settings") {
-      const sheet = $("mobile-settings");
+      const sheet = shell.settings;
       if (sheet) sheet.hidden = true;
     }
     updateScrim();
   }
 
   function focusOpener(kind) {
-    const id = kind === "capture" ? "mobile-capture"
-      : kind === "settings" ? "mobile-more" : "mobile-title";
-    const el = $(id);
+    const el = kind === "capture" ? shell.captureBtn
+      : kind === "settings" ? shell.more : shell.title;
     if (el && !el.hidden) { try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
 
@@ -238,7 +258,7 @@
   }
 
   function closeTopLayer() {
-    const menu = $("nb-menu");
+    const menu = shell.menu;
     if (menu && !menu.hidden) { NB.menu.close(); return true; }
     return requestCloseLayer();
   }
@@ -257,7 +277,7 @@
 
   /* --- drawer -------------------------------------------------------- */
   function drawerView() {
-    const panel = $("side-panel");
+    const panel = shell.sidePanel;
     return panel ? panel.querySelector(".side-panel-view:not([hidden])") : null;
   }
 
@@ -295,8 +315,8 @@
 
   /* --- capture ------------------------------------------------------- */
   function updateSend() {
-    const send = $("capture-send");
-    const input = $("capture-input");
+    const send = shell.captureSend;
+    const input = shell.captureInput;
     if (!send || !input) return;
     if (sending) {
       send.disabled = true;
@@ -322,7 +342,7 @@
       notify("Not allowed for this role", "warn");
       return;
     }
-    const input = $("capture-input");
+    const input = shell.captureInput;
     if (input) {
       const draft = lsGet(DRAFT_KEY);
       if (draft !== null && draft !== "") input.value = draft;
@@ -345,8 +365,8 @@
 
   async function sendCapture() {
     if (sending) return;
-    const input = $("capture-input");
-    const status = $("capture-status");
+    const input = shell.captureInput;
+    const status = shell.captureStatus;
     if (!input) return;
     const text = input.value.trim();
     if (!text) return;
@@ -421,7 +441,7 @@
   }
 
   function renderHome() {
-    const home = $("mobile-home");
+    const home = shell.home;
     if (!home) return;
     home.innerHTML = "";
     const site = (NB.app && NB.app.getSiteTitle) ? NB.app.getSiteTitle() : "Notebook";
@@ -453,13 +473,13 @@
   }
 
   function updateHome() {
-    const home = $("mobile-home");
+    const home = shell.home;
     if (!home) return;
     const active = activePath();
     const show = isOn() && !authLocked && !active;
     home.hidden = !show;
     if (isOn()) {
-      const back = $("back-btn");
+      const back = shell.backBtn;
       if (back) back.disabled = !active;
     }
     if (show) renderHome();
@@ -467,7 +487,7 @@
 
   /* --- failure / not-found state ------------------------------------- */
   function showState(opts) {
-    const host = $("mobile-state");
+    const host = shell.state;
     if (!host) return;
     host.innerHTML = "";
     const glyph = document.createElement("div");
@@ -508,7 +528,7 @@
   }
 
   function hideState() {
-    const host = $("mobile-state");
+    const host = shell.state;
     if (host) host.hidden = true;
   }
 
@@ -585,7 +605,7 @@
   }
 
   function buildSettings() {
-    const sheet = $("mobile-settings");
+    const sheet = shell.settings;
     if (!sheet) return;
     const canWrite = !(NB.auth && NB.auth.canWrite) || NB.auth.canWrite();
     sheet.innerHTML = "";
@@ -682,7 +702,8 @@
     setLayer("settings");
     checkServer();
     setTimeout(() => {
-      const close = document.querySelector("#mobile-settings .mobile-sheet-close");
+      const close = shell.settings
+        ? shell.settings.querySelector(".mobile-sheet-close") : null;
       if (close) { try { close.focus({ preventScroll: true }); } catch (_) {} }
     }, 220);
   }
@@ -692,7 +713,7 @@
     if (!isOn()) return;
     const path = activePath();
     if (!path) { openSettings(); return; }
-    const more = $("mobile-more");
+    const more = shell.more;
     const rect = more ? more.getBoundingClientRect() : { left: 10, right: 10, bottom: 60 };
     const closeMenu = () => {
       if (more) more.setAttribute("aria-expanded", "false");
@@ -730,14 +751,14 @@
 
   function setServerOnline(ok) {
     serverOnline = !!ok;
-    const status = $("mobile-drawer-status");
-    if (status) {
-      const dot = status.querySelector(".status-dot");
+    if (drawerStatusEl) {
+      const dot = drawerStatusEl.querySelector(".status-dot");
       if (dot) dot.classList.toggle("offline", !serverOnline);
-      const word = status.querySelector(".status-word");
+      const word = drawerStatusEl.querySelector(".status-word");
       if (word) word.textContent = serverLabel();
     }
-    const row = document.querySelector("#mobile-settings .mobile-settings-server");
+    const row = shell.settings
+      ? shell.settings.querySelector(".mobile-settings-server") : null;
     if (row) {
       const dot = row.querySelector(".status-dot");
       if (dot) dot.classList.toggle("offline", !serverOnline);
@@ -747,8 +768,8 @@
   }
 
   function buildDrawerStatus() {
-    const panel = $("side-panel");
-    if (!panel || $("mobile-drawer-status")) return;
+    const panel = shell.sidePanel;
+    if (!panel || drawerStatusEl) return;
     const foot = document.createElement("div");
     foot.id = "mobile-drawer-status";
     foot.hidden = true;
@@ -760,12 +781,13 @@
     origin.className = "status-origin";
     origin.textContent = location.host + " \u00B7 ";
     foot.append(origin, text);
+    drawerStatusEl = foot;
     panel.appendChild(foot);
   }
 
   /* --- chrome sync --------------------------------------------------- */
   function updateCaptureButton() {
-    const btn = $("mobile-capture");
+    const btn = shell.captureBtn;
     if (!btn) return;
     const canWrite = !(NB.auth && NB.auth.canWrite) || NB.auth.canWrite();
     btn.hidden = !canWrite;
@@ -775,7 +797,7 @@
     const on = isOn();
     setTitle(activePath());
     updateCaptureButton();
-    const status = $("mobile-drawer-status");
+    const status = drawerStatusEl;
     if (status) status.hidden = !on;
     document.querySelectorAll("#side-panel .collapse-btn").forEach((btn) => {
       if (btn.id === "sidebar-refresh" || btn.querySelector(".refresh-glyph")) return;
@@ -789,7 +811,7 @@
       removeHistoryLayerEntry();
       if (layer) closeLayerNow(false);
       document.documentElement.style.setProperty("--m-kb", "0px");
-      const home = $("mobile-home");
+      const home = shell.home;
       if (home) home.hidden = true;
       hideState();
     } else {
@@ -832,7 +854,7 @@
     if (!path) {
       // A bad deep link deliberately keeps its address while its
       // not-found screen is up.
-      const stateHost = $("mobile-state");
+      const stateHost = shell.state;
       if (stateHost && !stateHost.hidden) return;
       replaceWithHome();
       return;
@@ -934,7 +956,7 @@
     // Close before clearing: the capture close path may persist the
     // still-present text. The lock that follows skips its own write.
     if (layer === "capture" || layer === "settings") closeLayerNow(false);
-    const input = $("capture-input");
+    const input = shell.captureInput;
     if (input) { input.value = ""; input.readOnly = false; }
     captureDirty = false;
     sending = false;
@@ -945,7 +967,7 @@
 
   function onAuthLocked() {
     authLocked = true;
-    const input = $("capture-input");
+    const input = shell.captureInput;
     // Preserve a still-open draft across a 401, but never let the close
     // save an empty field. Explicit sign-out has already removed the keys
     // and must not resurrect them here.
@@ -956,12 +978,12 @@
     sending = false;
     sendFailed = false;
     updateSend();
-    const title = $("mobile-title");
+    const title = shell.title;
     if (title) {
       title.textContent = "";
       title.setAttribute("aria-label", "Browse notes");
     }
-    const home = $("mobile-home");
+    const home = shell.home;
     if (home) home.hidden = true;
     signingOut = false;
     updateCaptureButton();
@@ -977,7 +999,7 @@
     authLocked = !!(status && status.enabled && !status.role);
     updateCaptureButton();
     if (authLocked) {
-      const home = $("mobile-home");
+      const home = shell.home;
       if (home) home.hidden = true;
     } else {
       setTitle(activePath());
@@ -998,7 +1020,7 @@
         resumeScrollDone = true;
         const resume = resumeState;
         if (resume && resume.path === path && resume.scroll > 0) {
-          const vc = $("viewer-content");
+          const vc = shell.viewerContent;
           requestAnimationFrame(() => {
             requestAnimationFrame(() => { if (vc) vc.scrollTop = resume.scroll; });
           });
@@ -1010,9 +1032,9 @@
     NB.evt.on("tabs:changed", ({ activeFile }) => {
       if (!isOn()) return;
       if (authLocked) {
-        const title = $("mobile-title");
+        const title = shell.title;
         if (title) title.textContent = "";
-        const home = $("mobile-home");
+        const home = shell.home;
         if (home) home.hidden = true;
         return;
       }
@@ -1042,35 +1064,35 @@
 
   function onKeydown(e) {
     if (e.key !== "Escape" || !isOn()) return;
-    const menu = $("nb-menu");
+    const menu = shell.menu;
     if (menu && !menu.hidden) return;   // menu.js owns Esc for its own menu
     closeTopLayer();
   }
 
   function wireUi() {
-    const title = $("mobile-title");
+    const title = shell.title;
     if (title) title.addEventListener("click", () => openDrawer());
-    const capture = $("mobile-capture");
+    const capture = shell.captureBtn;
     if (capture) capture.addEventListener("click", openCapture);
-    const more = $("mobile-more");
+    const more = shell.more;
     if (more) more.addEventListener("click", (e) => { e.stopPropagation(); openMore(); });
     if (more) {
       document.addEventListener("click", () => {
-        const menu = $("nb-menu");
+        const menu = shell.menu;
         if (menu && menu.hidden) more.setAttribute("aria-expanded", "false");
       });
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") more.setAttribute("aria-expanded", "false");
       }, true);
     }
-    const scrim = $("mobile-scrim");
+    const scrim = shell.scrim;
     if (scrim) scrim.addEventListener("click", closeTopLayer);
 
-    const close = $("capture-close");
+    const close = shell.captureClose;
     if (close) close.addEventListener("click", requestCloseLayer);
-    const send = $("capture-send");
+    const send = shell.captureSend;
     if (send) send.addEventListener("click", sendCapture);
-    const input = $("capture-input");
+    const input = shell.captureInput;
     if (input) {
       input.addEventListener("input", () => {
         sendFailed = false;
@@ -1080,7 +1102,7 @@
       });
     }
 
-    const vc = $("viewer-content");
+    const vc = shell.viewerContent;
     if (vc) {
       vc.addEventListener("scroll", () => {
         if (!isOn() || scrollRaf) return;

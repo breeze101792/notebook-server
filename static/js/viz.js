@@ -150,6 +150,7 @@
       }
       const wrap = document.createElement("div");
       wrap.className = "viz-error";
+      wrap.dataset.viz = "error";
       const head = document.createElement("div");
       head.className = "viz-error-head";
       head.textContent = "Graphviz error: " + firstLine;
@@ -218,8 +219,10 @@
       fence: "dot",
       selector: "pre > code.language-dot, pre > code.language-graphviz",
       containerClass: "viz-container",
+      marker: { attr: "data-viz", value: "ok" },
       datasetKey: "vizSource",
       errorClass: "viz-error",
+      errorMarker: { attr: "data-viz", value: "error" },
       sourceClass: "viz-source",
       design: "dotDesign",
       renderAll,

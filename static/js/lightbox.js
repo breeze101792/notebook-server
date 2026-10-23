@@ -41,6 +41,9 @@
   function create(cfg) {
     const overlay = document.getElementById(cfg.overlayId);
     const body    = document.getElementById(cfg.bodyId);
+    // Owned by this lightbox, so capture it now: a lazy lookup could hit a
+    // note element that happens to reuse the id.
+    const pctEl   = document.getElementById(cfg.pctId);
     if (!overlay || !body) {
       // Overlay markup missing (e.g. a stripped-down page). Return a
       // no-op façade so callers don't have to null-check every method.
@@ -58,9 +61,8 @@
     }
 
     function updateZoomDisplay() {
-      const pct = document.getElementById(cfg.pctId);
-      if (!pct) return;
-      pct.textContent = zoomFit ? "Fit" : Math.round(zoomLevel * 100) + "%";
+      if (!pctEl) return;
+      pctEl.textContent = zoomFit ? "Fit" : Math.round(zoomLevel * 100) + "%";
     }
 
     /* The zoom transform combines scale and pan. The pan is applied in

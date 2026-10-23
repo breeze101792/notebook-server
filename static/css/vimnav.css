@@ -32,7 +32,7 @@ body.vim-enabled .vim-window.vim-active::after {
 }
 
 /* The vim cursor highlight (in the file tree and the outline). */
-.tree-row.vim-cursor {
+:where(#file-tree) .tree-row.vim-cursor {
   /* Different from .selected (the active file). The vim cursor is
    * a left-border accent + slightly brighter background. */
   border-left: 2px solid var(--accent, #5b9dff);

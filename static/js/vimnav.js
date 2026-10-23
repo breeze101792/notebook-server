@@ -41,21 +41,23 @@
   // Set on Esc keydown when CM has focus; consumed on the matching
   // keyup. See onKeyUp for why.
   let pendingEscRestore = false;
+  // Cached at load: note content is rendered later and can carry the same
+  // ids, so a lazy getElementById would resolve to the note's element.
+  let helpEl = null;
+  const searchResultsEl = document.getElementById("search-results");
 
   /* --- modal detection -------------------------------------------- */
   /* The shell keymap yields whenever an overlay is up (Settings,
    * auth, search results, this module's :help). */
   function modalIsOpen() {
     return !!document.querySelector(
-      ".settings-overlay:not([hidden]), #auth-overlay:not([hidden])");
+      "body > .settings-overlay:not([hidden]), body > #auth-overlay:not([hidden])");
   }
   function ourHelpIsOpen() {
-    const el = document.getElementById("vimnav-help");
-    return el && !el.hidden;
+    return helpEl && !helpEl.hidden;
   }
   function searchIsOpen() {
-    const el = document.getElementById("search-results");
-    return el && !el.hidden;
+    return searchResultsEl && !searchResultsEl.hidden;
   }
   /* True when the search RESULTS list (not the input) owns focus, so
    * the list's own keydown handler can decide what Esc means (pop back
@@ -386,9 +388,8 @@
 
   /* --- :help overlay ---------------------------------------------- */
   function ensureHelpEl() {
-    let el = document.getElementById("vimnav-help");
-    if (el) return el;
-    el = document.createElement("div");
+    if (helpEl) return helpEl;
+    const el = document.createElement("div");
     el.id = "vimnav-help";
     el.className = "settings-overlay";
     el.hidden = true;
@@ -459,6 +460,7 @@
       const close = e.target.closest("[data-vimnav-close]");
       if (close) closeHelp();
     });
+    helpEl = el;
     return el;
   }
   function openHelp() {
@@ -466,8 +468,7 @@
     el.hidden = false;
   }
   function closeHelp() {
-    const el = document.getElementById("vimnav-help");
-    if (el) el.hidden = true;
+    if (helpEl) helpEl.hidden = true;
   }
 
   /* --- enable / disable ------------------------------------------- */

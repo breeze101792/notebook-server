@@ -273,6 +273,7 @@
       if (stray) stray.remove();
       const wrap = document.createElement("div");
       wrap.className = "mermaid-error";
+      wrap.dataset.mermaid = "error";
       // Focusable like .mermaid-container: the repair path (Edit source /
       // Design) must be reachable with Shift+F10 from the keyboard too.
       wrap.tabIndex = 0;
@@ -375,8 +376,10 @@
       fence: "mermaid",
       selector: "pre > code.language-mermaid",
       containerClass: "mermaid-container",
+      marker: { attr: "data-mermaid", value: "ok" },
       datasetKey: "mermaidSource",
       errorClass: "mermaid-error",
+      errorMarker: { attr: "data-mermaid", value: "error" },
       sourceClass: "mermaid-source",
       renderAll,
       // Opt-in hook for a visual editor module (NB.mermaidDesign). The

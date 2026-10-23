@@ -43,8 +43,9 @@
       a.title = h.text;
       a.addEventListener("click", (e) => {
         e.preventDefault();
-        const target = document.getElementById(h.id);
-        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        // Use the stored node: getElementById could return a note element
+        // earlier in document order that reused the heading id.
+        h.el.scrollIntoView({ behavior: "smooth", block: "start" });
       });
       li.appendChild(a);
       ul.appendChild(li);
@@ -109,9 +110,9 @@
   }
   function vimCursorScrollTo() {
     if (!vimCursorId) return false;
-    const target = document.getElementById(vimCursorId);
-    if (!target) return false;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    const heading = headings.find(h => h.id === vimCursorId);
+    if (!heading || !heading.el) return false;
+    heading.el.scrollIntoView({ behavior: "smooth", block: "start" });
     return true;
   }
   function vimCursorReset() {

@@ -4442,7 +4442,7 @@ function check(label, cond, extra) {
       byLang.dot && byLang.dot.mod === "viz",
       "langs=" + types.map(t => t.lang).join(","));
     check("blocks: pluginTypes selector covers container + error box",
-      byLang.mermaid.sel === ".mermaid-container,.mermaid-error",
+      byLang.mermaid.sel === '[data-mermaid="ok"],[data-mermaid="error"]',
       "sel=" + (byLang.mermaid && byLang.mermaid.sel));
 
     // --- round-trip equivalence: rendered DOM -> fenced markdown ------
@@ -4464,12 +4464,14 @@ function check(label, cond, extra) {
       container.className = c.type + "-container";
       // htmlpreview uses .htmlpreview-card, not .htmlpreview-container.
       if (c.type === "htmlpreview") container.className = "htmlpreview-card";
+      container.dataset[c.type] = "ok";
       container.dataset[c.type + "Source"] = c.src;
       clone.appendChild(container);
       // Error box (htmlpreview has none).
       if (c.type !== "htmlpreview") {
         const err = window.document.createElement("div");
         err.className = c.type + "-error";
+        err.dataset[c.type] = "error";
         const srcEl = window.document.createElement("pre");
         srcEl.className = c.type + "-source";
         srcEl.textContent = c.src + " (broken)";
@@ -4507,6 +4509,7 @@ function check(label, cond, extra) {
     const edge = window.document.createElement("div");
     const orphan = window.document.createElement("div");
     orphan.className = "mermaid-container";
+    orphan.dataset.mermaid = "ok";
     edge.appendChild(orphan);
     blocks.restoreForMarkdown(edge);
     check("blocks round-trip: container with no source still becomes a fence (no throw)",
@@ -8400,6 +8403,7 @@ function check(label, cond, extra) {
       // container is atomic for caret walking.
       const svgCard = window.document.createElement("div");
       svgCard.className = "svg-container";
+      svgCard.dataset.svg = "ok";
       svgCard.dataset.svgSource = "<svg><text>hi</text></svg>";
       const svgEl = window.document.createElementNS("http://www.w3.org/2000/svg", "svg");
       const svgText = window.document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -30763,6 +30767,7 @@ function check(label, cond, extra) {
       {
         const err = window.document.createElement("div");
         err.className = "viz-error";
+        err.dataset.viz = "error";
         const src = window.document.createElement("pre");
         src.className = "viz-source";
         src.textContent = "digraph G { subgraph { A } }";
@@ -30783,6 +30788,7 @@ function check(label, cond, extra) {
       {
         const err = window.document.createElement("div");
         err.className = "viz-error";
+        err.dataset.viz = "error";
         const src = window.document.createElement("pre");
         src.className = "viz-source";
         src.textContent = "digraph G { subgraph { A } }";
@@ -33452,6 +33458,377 @@ function check(label, cond, extra) {
     clearMobileStorage();
     await setMode("desktop");
     check("mobile: desktop mode hides Home", $("mobile-home").hidden);
+  }
+
+  console.log("\n== heading ids vs shell ids ==");
+  // The app shell styles its own elements by id (#app, #viewer, ...).
+  // A note heading whose slug matches one of those ids must not reuse
+  // it: "## App" used to take id="app" and inherit the shell's
+  // `#app { display:flex; height:100% }` rule, which rendered the
+  // heading as a huge empty box.
+  {
+    FILES["notes/shell-ids.md"] =
+      "## App\n\nbody\n\n## Viewer\n\nbody\n\n## App\n\nbody\n";
+    await window.NB.tabs.open("notes/shell-ids.md");
+    await tick(40);
+    const heads = Array.from(
+      window.document.querySelectorAll("#viewer-content h2"));
+    check("heading ids: shell ids are not reused",
+      heads.length === 3 &&
+      heads.every(h => h.id !== "app" && h.id !== "viewer"),
+      heads.map(h => h.id).join(","));
+    check("heading ids: duplicate slugs still dedupe",
+      new Set(heads.map(h => h.id)).size === 3,
+      heads.map(h => h.id).join(","));
+    check("heading ids: base slug kept for anchor lookup",
+      !!heads[0] && heads[0].dataset.nbSlug === "app",
+      heads[0] && heads[0].dataset.nbSlug);
+    check("heading ids: scrollToHeading resolves the base slug",
+      window.NB.viewer.scrollToHeading("app") === true);
+    check("heading ids: shell root still owns #app",
+      !!$("app") && !$("app").closest("#viewer-content"));
+    window.NB.viewer.close("notes/shell-ids.md");
+    delete FILES["notes/shell-ids.md"];
+  }
+
+  console.log("\n== raw ids + shell scoping regressions ==");
+  // A note may carry raw HTML with an id that collides with the app shell
+  // (#app) or with another note element. Both are renamed and the
+  // authored value is kept on data-nb-id, so no shell rule leaks into the
+  // note and anchors still resolve.
+  {
+    FILES["notes/raw-ids.md"] =
+      '<div id="app">raw shell id</div>\n\n## App\n\nbody\n\n' +
+      '<div id="dup">one</div>\n\n<div id="dup">two</div>\n';
+    await window.NB.tabs.open("notes/raw-ids.md");
+    await tick(40);
+    const vc = $("viewer-content");
+    const rawApp = vc.querySelector('[data-nb-id="app"]');
+    const appHead = vc.querySelector("h2");
+    check("raw ids: a note element with a shell id is renamed",
+      !!rawApp && rawApp.id !== "app" && rawApp.id.length > 0,
+      rawApp && rawApp.id);
+    check("raw ids: the heading does not reuse the shell or renamed id",
+      !!appHead && appHead.id !== "app" && appHead.id !== (rawApp && rawApp.id),
+      appHead && appHead.id);
+    check("raw ids: scrollToHeading resolves the authored slug",
+      window.NB.viewer.scrollToHeading("app") === true);
+    check("raw ids: the shell root still owns #app",
+      !!$("app") && !$("app").closest("#viewer-content"));
+    const dupFirst = vc.querySelector('div[id="dup"]');
+    const dupSecond = vc.querySelector('[data-nb-id="dup"]');
+    check("raw ids: duplicate note ids -> second renamed, both reachable",
+      !!dupFirst && !!dupSecond && dupFirst !== dupSecond &&
+      dupSecond.id === "dup-2" &&
+      $("dup") === dupFirst && $("dup-2") === dupSecond,
+      dupSecond && dupSecond.id);
+    window.NB.viewer.close("notes/raw-ids.md");
+    delete FILES["notes/raw-ids.md"];
+  }
+
+  // An anchor may name an authored non-heading id. Resolution walks the
+  // viewer in document order, so the first duplicate id is the target.
+  {
+    FILES["notes/authored-anchors.md"] =
+      '<div id="intro">target</div>\n\n[go](#intro)\n\n' +
+      '<div id="dup">first</div>\n\n<div id="dup">second</div>\n\n' +
+      '<a href="#dup">dup link</a>\n';
+    await window.NB.tabs.open("notes/authored-anchors.md");
+    await tick(40);
+    const vc = $("viewer-content");
+    const introEl = vc.querySelector("#intro");
+    const dupFirst = vc.querySelector('div[id="dup"]');
+    const spy = [];
+    // HTMLElement owns its own no-op stub, so replace both prototypes.
+    const origElScroll = window.Element.prototype.scrollIntoView;
+    const origHtmlScroll = window.HTMLElement.prototype.scrollIntoView;
+    const spyScroll = function () { spy.push(this); };
+    window.Element.prototype.scrollIntoView = spyScroll;
+    window.HTMLElement.prototype.scrollIntoView = spyScroll;
+    try {
+      check("authored anchors: a non-heading id resolves",
+        window.NB.viewer.scrollToHeading("intro") === true &&
+        !!introEl && spy[0] === introEl, "spy=" + spy.length);
+      spy.length = 0;
+      check("authored anchors: the first duplicate id is the target",
+        window.NB.viewer.scrollToHeading("dup") === true &&
+        !!dupFirst && spy[0] === dupFirst, "spy=" + spy.length);
+    } finally {
+      window.Element.prototype.scrollIntoView = origElScroll;
+      window.HTMLElement.prototype.scrollIntoView = origHtmlScroll;
+    }
+    window.NB.viewer.close("notes/authored-anchors.md");
+    delete FILES["notes/authored-anchors.md"];
+  }
+
+  // A hybrid save must not write the viewer's id/slug bookkeeping into
+  // the note. Enter hybrid so authored raw HTML blocks are marked, then
+  // force the whole-DOM serializer (the splice path would return the
+  // untouched source bytes) and assert the authored markup comes back.
+  {
+    FILES["notes/serial-id-hygiene.md"] =
+      "<details><summary>x</summary><h3>Title</h3></details>\n\n" +
+      '<div id="app">raw</div>\n\n' +
+      '<div id="dup">one</div>\n\n<div id="dup">two</div>\n';
+    await window.NB.tabs.open("notes/serial-id-hygiene.md");
+    await tick(40);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const vc = $("viewer-content");
+    check("hybrid ids: render stores authored ids and the heading slug",
+      !!vc.querySelector('[data-nb-id="app"]') &&
+      !!vc.querySelector('[data-nb-id="dup"]') &&
+      !!vc.querySelector('h3[data-nb-slug="title"]'),
+      "h3slug=" + (vc.querySelector("h3") && vc.querySelector("h3").dataset.nbSlug));
+    // rootAuxCount is part of the splice guard; one extra root text node
+    // makes the splice decline so the full serializer (and its id restore
+    // pass) runs.
+    const aux = window.document.createTextNode(" ");
+    vc.appendChild(aux);
+    let md = "";
+    try { md = window.NB.hybrid.domToMarkdown(); }
+    finally { aux.remove(); }
+    check("hybrid ids: the serialized heading has no viewer id or slug",
+      md.includes("<h3>Title</h3>") &&
+      !/<h3[^>]*\bid=/.test(md) && !/<h3[^>]*data-nb-slug/.test(md),
+      JSON.stringify(md).slice(0, 200));
+    check("hybrid ids: a shell-colliding raw id is restored as authored",
+      md.includes('<div id="app">raw</div>'),
+      JSON.stringify(md).slice(0, 200));
+    check("hybrid ids: duplicate raw ids are both restored as authored",
+      md.includes('<div id="dup">one</div>') &&
+      md.includes('<div id="dup">two</div>'),
+      JSON.stringify(md).slice(0, 200));
+    check("hybrid ids: no viewer bookkeeping reaches the note",
+      md.indexOf("data-nb-id") === -1 && md.indexOf("data-nb-slug") === -1);
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    window.NB.viewer.close("notes/serial-id-hygiene.md");
+    delete FILES["notes/serial-id-hygiene.md"];
+  }
+
+  // windows.js upgrades .settings-modal elements only when they sit in a
+  // real body > .settings-overlay. A note element that merely reuses the
+  // class must stay a plain div.
+  {
+    FILES["notes/fake-modal.md"] =
+      '<div class="settings-modal">note modal</div>\n\n# Fake\n\nbody\n';
+    await window.NB.tabs.open("notes/fake-modal.md");
+    await tick(40);
+    const fakeModal = $("viewer-content").querySelector(".settings-modal");
+    check("shell scoping: a note .settings-modal is not wired by windows.js",
+      !!fakeModal && !fakeModal.dataset.windowsWired &&
+      !fakeModal.querySelector(".resize-grip"));
+    const realOverlay = window.document.createElement("div");
+    realOverlay.className = "settings-overlay";
+    realOverlay.hidden = true;
+    const realModal = window.document.createElement("div");
+    realModal.className = "settings-modal";
+    realOverlay.appendChild(realModal);
+    window.document.body.appendChild(realOverlay);
+    window.NB.windows.wire(realModal);
+    check("shell scoping: a real body > .settings-overlay > .settings-modal is wired",
+      realModal.dataset.windowsWired === "1" &&
+      !!realModal.querySelector(".resize-grip"));
+    realOverlay.remove();
+    window.NB.viewer.close("notes/fake-modal.md");
+    delete FILES["notes/fake-modal.md"];
+  }
+
+  // The modal-open guard matches body-direct overlays only, so a note
+  // .settings-overlay must not swallow app shortcuts.
+  {
+    FILES["notes/fake-overlay.md"] =
+      '<div class="settings-overlay">note overlay</div>\n\n# Guard\n\nbody\n';
+    await window.NB.tabs.open("notes/fake-overlay.md");
+    await tick(40);
+    const fakeOverlay = $("viewer-content").querySelector(".settings-overlay");
+    check("shell scoping: the note .settings-overlay renders inside the viewer",
+      !!fakeOverlay && $("viewer-content").contains(fakeOverlay));
+    window.NB.settings.close();
+    window.NB.auth.hideModal();
+    const origToggle = window.NB.viewer.toggleEdit;
+    let toggleCalls = 0;
+    window.NB.viewer.toggleEdit = function () { toggleCalls++; };
+    try {
+      window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+        key: "e", code: "KeyE", ctrlKey: true, bubbles: true, cancelable: true,
+      }));
+      await tick(20);
+    } finally {
+      window.NB.viewer.toggleEdit = origToggle;
+    }
+    check("shell scoping: a note .settings-overlay does not trip the modal guard",
+      toggleCalls === 1, "toggleCalls=" + toggleCalls);
+    window.NB.viewer.close("notes/fake-overlay.md");
+    delete FILES["notes/fake-overlay.md"];
+  }
+
+  // The stylesheet scopes overlay/modal rules to body children and
+  // shell-row rules to their owning container, not bare class selectors.
+  {
+    const styleCss = read("static/css/style.css");
+    const vimCss = read("static/css/vimnav.css");
+    const bareRule = (sel) => new RegExp("(^|\\n)\\s*" + sel + "\\s*[,{]").test(styleCss);
+    check("shell scoping: overlay rules are body-child scoped",
+      /:where\(body\)\s*>\s*\.settings-overlay\s*\{/.test(styleCss));
+    check("shell scoping: modal rules are overlay-child scoped",
+      /:where\(body > \.settings-overlay\)\s*>\s*\.settings-modal/.test(styleCss) ||
+      /body\s*>\s*\.settings-overlay\s*>\s*\.settings-modal/.test(styleCss));
+    check("shell scoping: .tree-row is #file-tree scoped, never bare",
+      !bareRule("\\.tree-row") &&
+      /:where\(#file-tree\) \.tree-row \{/.test(styleCss) &&
+      /:where\(#file-tree\) \.tree-row\.vim-cursor/.test(vimCss));
+    check("shell scoping: .tab is #tab-bar scoped, never bare",
+      !bareRule("\\.tab") && /:where\(#tab-bar\) \.tab \{/.test(styleCss));
+    check("shell scoping: .context-menu is #nb-menu scoped, never bare",
+      !bareRule("\\.context-menu") && /body > #nb-menu \.context-menu \{/.test(styleCss));
+    check("shell scoping: the maximized grip rule compounds .settings-modal--max",
+      /:where\(body > \.settings-overlay > \.settings-modal\)\.settings-modal--max \.resize-grip\s*\{/.test(styleCss) &&
+      !/:where\(body > \.settings-overlay > \.settings-modal\) \.settings-modal--max \.resize-grip/.test(styleCss));
+  }
+
+  // The sidebar's vim cursor walks #file-tree only; a note .tree-row is
+  // not a file row even when it carries data-path.
+  {
+    FILES["notes/fake-row.md"] =
+      '<div class="tree-row" data-path="fake.md">fake row</div>\n\n# Row\n\nbody\n';
+    await window.NB.tabs.open("notes/fake-row.md");
+    await tick(40);
+    const fakeRow = $("viewer-content").querySelector('.tree-row[data-path="fake.md"]');
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    check("sidebar scoping: a note .tree-row is not in the file tree",
+      !!fakeRow && !$("file-tree").contains(fakeRow) &&
+      $("file-tree").querySelectorAll(".tree-row").length > 0);
+    window.NB.sidebar.setVimCursor(null);
+    const first = window.NB.sidebar.vimCursorNext();
+    check("sidebar scoping: vim cursor skips a note .tree-row",
+      first !== "fake.md" && !fakeRow.classList.contains("vim-cursor"),
+      "first=" + first);
+    window.NB.sidebar.setVimCursor("fake.md");
+    check("sidebar scoping: a fake path marks no row in the tree",
+      !fakeRow.classList.contains("vim-cursor") &&
+      !$("file-tree").querySelector('.vim-cursor[data-path="fake.md"]'));
+    window.NB.sidebar.setVimCursor(null);
+    window.NB.viewer.close("notes/fake-row.md");
+    delete FILES["notes/fake-row.md"];
+  }
+
+  // Plugin identity is marker-keyed: a raw div reusing a renderer class is
+  // raw HTML, while a container carrying the marker resolves and
+  // round-trips to a fence.
+  {
+    FILES["notes/raw-plugin.md"] =
+      '<div class="mermaid-container">hand</div>\n\n' +
+      "```mermaid\ngraph TD; A-->B;\n```\n";
+    await window.NB.tabs.open("notes/raw-plugin.md");
+    let realEl = null;
+    for (let i = 0; i < 20 && !realEl; i++) {
+      await tick(25);
+      realEl = $("viewer-content").querySelector("[data-mermaid]");
+    }
+    const rawEl = $("viewer-content").querySelector(".mermaid-container:not([data-mermaid])");
+    check("plugin identity: a raw .mermaid-container is raw HTML",
+      !!rawEl && window.NB.blocks.forElement(rawEl) === null);
+    check("plugin identity: a marker container resolves to the mermaid descriptor",
+      !!realEl && !!window.NB.blocks.forElement(realEl) &&
+      window.NB.blocks.forElement(realEl).mod === "mermaid");
+    const clone = window.document.createElement("div");
+    const rawClone = window.document.createElement("div");
+    rawClone.className = "mermaid-container";
+    rawClone.textContent = "hand";
+    const realClone = window.document.createElement("div");
+    realClone.className = "mermaid-container";
+    realClone.dataset.mermaid = "ok";
+    realClone.dataset.mermaidSource = "graph TD; A-->B;";
+    clone.appendChild(rawClone);
+    clone.appendChild(realClone);
+    window.NB.blocks.restoreForMarkdown(clone);
+    const fences = Array.from(clone.querySelectorAll("pre > code"));
+    check("plugin identity: marker container round-trips, raw class stays HTML",
+      clone.querySelector(".mermaid-container") === rawClone &&
+      fences.length === 1 && fences[0].className === "language-mermaid" &&
+      fences[0].textContent === "graph TD; A-->B;",
+      "fences=" + fences.map(f => f.className).join(","));
+    // A hybrid click on the raw element resolves no block, so no source
+    // editor appears. The marker container does resolve.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const rawNow = $("viewer-content").querySelector(".mermaid-container:not([data-mermaid])");
+    const realNow = $("viewer-content").querySelector("[data-mermaid]");
+    check("plugin identity: hybrid resolves the marker container only",
+      !!rawNow && window.NB.hybrid.codeBlockAt(rawNow) === null &&
+      !!realNow && window.NB.hybrid.codeBlockAt(realNow) !== null);
+    rawNow.dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, cancelable: true }));
+    await tick(20);
+    check("plugin identity: hybrid click on a raw class opens no source editor",
+      !$("viewer-content").querySelector("pre.hybrid-plugin-editing"));
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    window.NB.viewer.close("notes/raw-plugin.md");
+    delete FILES["notes/raw-plugin.md"];
+  }
+
+  // An export is a standalone document: with no app shell to avoid, a
+  // "## App" heading keeps id="app" and its TOC href="#app".
+  {
+    FILES["notes/export-app.md"] = "# Top\n\n## App\n\nbody\n";
+    window.NB.export.open("notes/export-app.md");
+    await tick(20);
+    const toc = $("export-toc");
+    if (toc) toc.checked = true;
+    const htmlRadio = window.document.querySelector(
+      'input[name="export-format"][value="html"]');
+    htmlRadio.checked = true;
+    htmlRadio.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const before = __export.blobTexts.length;
+    $("export-run").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    const text = __export.blobTexts[__export.blobTexts.length - 1] || "";
+    check("export anchors: a standalone heading keeps its shell-free id and TOC href",
+      __export.blobTexts.length === before + 1 &&
+      /<h2[^>]*\bid="app"[^>]*>/.test(text) && /href="#app"/.test(text),
+      JSON.stringify((text.match(/<h[1-6][^>]*>|href="#[^"]*"/g) || []).slice(0, 6)));
+    window.NB.export.close();
+    delete FILES["notes/export-app.md"];
+  }
+
+  // auth.js captures the shell elements at load. Showing/locking must act
+  // on the real shell elements, never on note look-alikes.
+  {
+    FILES["notes/fake-auth-ids.md"] =
+      '<div id="auth-overlay">note auth</div>\n\n' +
+      '<div id="search-list">note search</div>\n\n# Auth\n\nbody\n';
+    await window.NB.tabs.open("notes/fake-auth-ids.md");
+    await tick(40);
+    // Colliding raw ids are renamed but keep the authored value on
+    // data-nb-id, so the look-alikes stay addressable.
+    const noteOverlay = $("viewer-content").querySelector('[data-nb-id="auth-overlay"]');
+    const noteList = $("viewer-content").querySelector('[data-nb-id="search-list"]');
+    const shellOverlay = $("auth-overlay");
+    const shellList = $("search-list");
+    check("cached refs: note look-alikes are distinct from the shell elements",
+      !!noteOverlay && !!noteList &&
+      noteOverlay !== shellOverlay && noteList !== shellList);
+    // Hide path: the cached overlay ref hides the shell, not the note.
+    shellOverlay.hidden = false;
+    window.NB.auth.hideModal();
+    check("cached refs: hideModal hides the shell overlay, not the note clone",
+      shellOverlay.hidden === true && noteOverlay.hidden === false);
+    // Show path: the same shell overlay is revealed and the cached search
+    // list is the one cleared by the lock.
+    window.NB.auth.showModal();
+    await tick(20);
+    check("cached refs: showModal reveals the shell overlay",
+      $("auth-overlay") === shellOverlay && shellOverlay.hidden === false);
+    check("cached refs: lock clears the shell search list, not the note clone",
+      shellList.children.length === 0 && shellList.textContent === "" &&
+      noteList.textContent === "note search");
+    window.NB.auth.hideModal();
+    await tick(10);
+    delete FILES["notes/fake-auth-ids.md"];
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

@@ -52,6 +52,9 @@
   // Top-header manual reload button. A user-driven refresh bypasses the
   // watcher's cheap JSON compare so the button always re-fetches.
   const refreshBtn = document.getElementById("sidebar-refresh");
+  // menu.js creates the singleton at load, before this module: cache it so
+  // a note element carrying the same id cannot shadow it later.
+  const menuEl = document.getElementById("nb-menu");
   // The Pinned section host, above the tree. Built by renderPins().
   const pinsEl = document.getElementById("pinned-folders");
   let selectedPath = null;
@@ -266,7 +269,7 @@
    * The bookmarks module fires bookmarks:changed from toggle(); this
    * redraws one row's star rather than re-walking the whole tree. */
   function updateTreeStar(path) {
-    const row = document.querySelector(
+    const row = treeEl.querySelector(
       '.tree-row[data-path="' + cssEscape(path) + '"]');
     if (!row) return;
     const star = row.querySelector(".tree-star");
@@ -281,7 +284,7 @@
    * re-render (mirrors updateTreeStar). The pin span's state is the
    * .is-pinned class plus its title -- no text swap is needed. */
   function updateTreePin(path) {
-    const row = document.querySelector(
+    const row = treeEl.querySelector(
       '.tree-row[data-path="' + cssEscape(path) + '"]');
     if (!row) return;
     const pin = row.querySelector(".tree-pin");
@@ -293,9 +296,9 @@
 
   function setSelected(path) {
     selectedPath = path;
-    document.querySelectorAll(".tree-row.selected")
+    treeEl.querySelectorAll(".tree-row.selected")
       .forEach(r => r.classList.remove("selected"));
-    const row = document.querySelector('.tree-row[data-path="' +
+    const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
   }
@@ -624,14 +627,15 @@
     // walk the tree model -- the rendered order is what j/k follows,
     // matching the user's mental model of the tree). Bookmarks are a
     // separate side-panel view now, so vim j/k navigates the tree only.
-    return Array.from(document.querySelectorAll(".tree-row"));
+    // Scoped to #file-tree: a note can carry a stray .tree-row.
+    return Array.from(treeEl.querySelectorAll(".tree-row"));
   }
   function setVimCursor(path) {
     vimCursorPath = path;
-    document.querySelectorAll(".tree-row.vim-cursor")
+    treeEl.querySelectorAll(".tree-row.vim-cursor")
       .forEach(r => r.classList.remove("vim-cursor"));
     if (!path) return;
-    const row = document.querySelector('.tree-row[data-path="' +
+    const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("vim-cursor");
   }
@@ -658,7 +662,7 @@
   }
   function vimCursorOpen() {
     if (!vimCursorPath) return;
-    const row = document.querySelector('.tree-row[data-path="' +
+    const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(vimCursorPath) + '"]');
     if (!row) return;
     if (row.classList.contains("collapsed")) {
@@ -673,7 +677,7 @@
   }
   function vimCursorCollapse() {
     if (!vimCursorPath) return;
-    const row = document.querySelector('.tree-row[data-path="' +
+    const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(vimCursorPath) + '"]');
     if (!row) return;
     if (row.classList.contains("dir")) {
@@ -810,14 +814,13 @@
     // Return focus to the row's trigger when the menu closes (selection,
     // outside click, or Esc). menu.js has no close callback; watch its
     // hidden attribute.
-    const menu = document.getElementById("nb-menu");
-    if (menu && window.MutationObserver) {
+    if (menuEl && window.MutationObserver) {
       const obs = new MutationObserver(() => {
-        if (!menu.hidden) return;
+        if (!menuEl.hidden) return;
         obs.disconnect();
         try { button.focus({ preventScroll: true }); } catch (_) {}
       });
-      obs.observe(menu, { attributes: true, attributeFilter: ["hidden"] });
+      obs.observe(menuEl, { attributes: true, attributeFilter: ["hidden"] });
     }
   }
 

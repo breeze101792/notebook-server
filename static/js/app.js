@@ -326,7 +326,7 @@
   function applySiteTitle(title) {
     const t = (typeof title === "string" && title.trim()) ? title.trim() : "Notebook";
     cfg.siteTitle = t;
-    const brand = document.querySelector(".brand");
+    const brand = document.getElementById("brand");
     if (brand) {
       const icon = brand.querySelector(".brand-icon");
       brand.textContent = t;

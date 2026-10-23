@@ -127,12 +127,17 @@
    *                  (may differ from a claimed lang: ```katex -> ```math)
    *   selector       CSS that finds the raw fences (pre > code.language-X)
    *   containerClass class of a successfully rendered block
+   *   marker         {attr, value} set on a successfully rendered block;
+   *                  identity requires it, so a raw element with the same
+   *                  class is not mistaken for a rendered block
    *   datasetKey     camelCase dataset key holding the original source
    *   renderAll      the module's renderAll(container) function
    *
    * Optional:
    *   errorClass     class of the failure box (null when the type has no
    *                  error box, e.g. htmlpreview)
+   *   errorMarker    {attr, value} set on the failure box (defaults to
+   *                  errorClass identity when absent)
    *   sourceClass    class of the <pre> holding the source inside the
    *                  error box (null when errorClass is null)
    */
@@ -163,23 +168,35 @@
 
   /* forElement(el) -> descriptor | null. Walks up from `el` to the
    * nearest rendered container or error box. Used by the hybrid
-   * click-to-edit path. */
+   * click-to-edit path. Identity is marker-keyed for both shapes. */
   function forElement(el) {
     if (!el || !el.closest) return null;
     for (const d of registry) {
-      if (d.containerClass && el.closest("." + d.containerClass)) return d;
-      if (d.errorClass && el.closest("." + d.errorClass)) return d;
+      const sel = selectorFor(d);
+      if (sel && el.closest(sel)) return d;
     }
     return null;
   }
 
-  /* buildCardSelector(d) -> ".mermaid-container,.mermaid-error" (the
-   * shape hybrid's codeBlockAt expects). */
+  function markerSelector(marker) {
+    if (!marker || !marker.attr) return "";
+    return "[" + marker.attr + '="' + marker.value + '"]';
+  }
+
+  function containerSelector(d) {
+    return d.marker ? markerSelector(d.marker)
+      : (d.containerClass ? "." + d.containerClass : "");
+  }
+
+  function errorSelector(d) {
+    return d.errorMarker ? markerSelector(d.errorMarker)
+      : (d.errorClass ? "." + d.errorClass : "");
+  }
+
+  /* selectorFor(d) -> "[data-mermaid=ok],[data-mermaid=error]" (the shape
+   * hybrid's codeBlockAt expects). */
   function selectorFor(d) {
-    const parts = [];
-    if (d.containerClass) parts.push("." + d.containerClass);
-    if (d.errorClass) parts.push("." + d.errorClass);
-    return parts.join(",");
+    return [containerSelector(d), errorSelector(d)].filter(Boolean).join(",");
   }
 
   /* sourceOf(d, el) -> the original fence source held by a rendered
@@ -216,17 +233,21 @@
    *
    * Containers read their source from dataset[datasetKey]; error boxes
    * read it from their .sourceClass child. Both become a fence with the
-   * descriptor's `fence` language. */
+   * descriptor's `fence` language. Identity is marker-keyed, so an
+   * authored element that merely reuses a renderer class is left as
+   * raw HTML instead of being replaced with an empty fence. */
   function restoreForMarkdown(clone) {
     if (!clone) return;
     for (const d of registry) {
-      if (d.containerClass) {
-        clone.querySelectorAll("." + d.containerClass).forEach((el) => {
+      const containerSel = containerSelector(d);
+      if (containerSel) {
+        clone.querySelectorAll(containerSel).forEach((el) => {
           el.replaceWith(makeFence(d.fence, sourceOf(d, el)));
         });
       }
-      if (d.errorClass) {
-        clone.querySelectorAll("." + d.errorClass).forEach((el) => {
+      const errorSel = errorSelector(d);
+      if (errorSel) {
+        clone.querySelectorAll(errorSel).forEach((el) => {
           el.replaceWith(makeFence(d.fence, sourceOf(d, el)));
         });
       }

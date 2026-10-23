@@ -227,7 +227,10 @@
   }
 
   function wire(modal) {
-    if (!modal || modal.dataset.windowsWired) return;
+    // Only real modals: overlays are direct body children, so a note
+    // element carrying the class is never upgraded.
+    if (!modal || !modal.closest("body > .settings-overlay")) return;
+    if (modal.dataset.windowsWired) return;
     modal.dataset.windowsWired = "1";
     ensureGrip(modal);
     ensureMaxButton(modal);
@@ -271,7 +274,9 @@
   window.addEventListener("resize", () => {
     clearTimeout(rto);
     rto = setTimeout(() => {
-      document.querySelectorAll(".settings-modal").forEach(applyGeometry);
+      document.querySelectorAll(".settings-modal").forEach((modal) => {
+        if (modal.closest("body > .settings-overlay")) applyGeometry(modal);
+      });
     }, 150);
   });
 

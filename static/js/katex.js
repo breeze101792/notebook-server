@@ -100,6 +100,7 @@
       }
       const wrap = document.createElement("div");
       wrap.className = "katex-error";
+      wrap.dataset.katex = "error";
       const head = document.createElement("div");
       head.className = "katex-error-head";
       head.textContent = "KaTeX error: " + firstLine;
@@ -144,8 +145,10 @@
       fence: "math",
       selector: "pre > code.language-math, pre > code.language-katex",
       containerClass: "katex-container",
+      marker: { attr: "data-katex", value: "ok" },
       datasetKey: "katexSource",
       errorClass: "katex-error",
+      errorMarker: { attr: "data-katex", value: "error" },
       sourceClass: "katex-source",
       renderAll,
     });

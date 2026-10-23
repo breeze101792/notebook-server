@@ -294,6 +294,7 @@
       fence: "html-live",
       selector: SELECTOR,
       containerClass: "htmlpreview-card",
+      marker: { attr: "data-htmlpreview", value: "ok" },
       datasetKey: "htmlpreviewSource",
       errorClass: null,
       sourceClass: null,

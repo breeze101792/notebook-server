@@ -199,6 +199,7 @@
       }
       const wrap = document.createElement("div");
       wrap.className = "wavedrom-error";
+      wrap.dataset.wavedrom = "error";
       const head = document.createElement("div");
       head.className = "wavedrom-error-head";
       head.textContent = "WaveDrom error: " + firstLine;
@@ -296,8 +297,10 @@
       fence: "wavedrom",
       selector: "pre > code.language-wavedrom",
       containerClass: "wavedrom-container",
+      marker: { attr: "data-wavedrom", value: "ok" },
       datasetKey: "wavedromSource",
       errorClass: "wavedrom-error",
+      errorMarker: { attr: "data-wavedrom", value: "error" },
       sourceClass: "wavedrom-source",
       design: "wavedromDesign",
       renderAll,

@@ -148,8 +148,8 @@ body {
 }
 body.topbar-hidden #topbar { display: none; }
 body.topbar-hidden { --topbar-h: 0px; }
-.brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
-.brand-icon { width: 1.1em; height: 1.1em; display: block; }
+#brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem; }
+#brand .brand-icon { width: 1.1em; height: 1.1em; display: block; }
 .topbar-actions { display: flex; gap: 6px; }
 .topbar-spacer { flex: 1 1 auto; }
 
@@ -173,7 +173,7 @@ body.topbar-hidden { --topbar-h: 0px; }
 #topbar button.brand:hover { background: transparent; border: none; }
 #topbar select { padding: 4px 6px; }
 
-.search-wrap { display: flex; align-items: center; gap: 6px; }
+:where(#topbar) .search-wrap { display: flex; align-items: center; gap: 6px; }
 #search-input {
   width: 280px;
   background: var(--bg-elev);
@@ -210,7 +210,7 @@ body.topbar-hidden { --topbar-h: 0px; }
 }
 /* The activity bar: a narrow vertical strip of icon buttons. It is the
  * leftmost grid column and never scrolls; icons stack top-to-bottom. */
-.activity-bar {
+#activity-bar {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -275,7 +275,7 @@ body.topbar-hidden { --topbar-h: 0px; }
 }
 /* A side-panel view fills the panel. Only one is shown at a time; the
  * others carry [hidden]. */
-.side-panel-view {
+:where(#side-panel) .side-panel-view {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -283,7 +283,7 @@ body.topbar-hidden { --topbar-h: 0px; }
   min-width: 0;
   overflow: hidden;
 }
-.side-panel-view[hidden] { display: none; }
+:where(#side-panel) .side-panel-view[hidden] { display: none; }
 
 /* The original #sidebar is now a side-panel-view. It reuses the
  * .side-panel-view flex layout; this rule only adds the background +
@@ -547,7 +547,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * bar and the textarea. Hidden by default; viewer.js shows it on
  * startEdit(). The [hidden] attribute is the source of truth -- a class
  * selector for display would outrank the UA's hidden rule. */
-.edit-bar {
+#edit-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -556,8 +556,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
-.edit-bar[hidden] { display: none; }
-.edit-bar .eb {
+#edit-bar[hidden] { display: none; }
+#edit-bar .eb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -573,16 +573,16 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   font-size: .93rem;
   line-height: 1;
 }
-.edit-bar .eb:hover {
+#edit-bar .eb:hover {
   color: var(--fg);
   background: var(--accent-soft);
 }
-.edit-bar .eb:active { background: var(--accent); color: white; }
-.edit-bar .eb code,
-.edit-bar .eb b,
-.edit-bar .eb i,
-.edit-bar .eb s { font-size: .93rem; }
-.edit-bar .eb-sep {
+#edit-bar .eb:active { background: var(--accent); color: white; }
+#edit-bar .eb code,
+#edit-bar .eb b,
+#edit-bar .eb i,
+#edit-bar .eb s { font-size: .93rem; }
+#edit-bar .eb-sep {
   display: inline-block;
   width: 1px;
   height: 18px;
@@ -590,8 +590,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   background: var(--border);
 }
 /* Overflow menu */
-.edit-bar .eb-overflow { position: relative; }
-.edit-bar .eb-menu {
+#edit-bar .eb-overflow { position: relative; }
+#edit-bar .eb-menu {
   position: absolute;
   top: 100%;
   right: 0;
@@ -607,8 +607,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   gap: 2px;
   min-width: 180px;
 }
-.edit-bar .eb-menu[hidden] { display: none; }
-.edit-bar .eb-menu .eb {
+#edit-bar .eb-menu[hidden] { display: none; }
+#edit-bar .eb-menu .eb {
   width: 100%;
   justify-content: flex-start;
   height: 28px;
@@ -616,31 +616,31 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 /* Table actions dropdown: a second overflow-style menu anchored to the
  * ▦ button. It reuses .eb-menu styling but is positioned relative to
  * its own .eb-table wrapper. */
-.edit-bar .eb-table { position: relative; }
-.edit-bar .eb-table .eb-table-menu {
+#edit-bar .eb-table { position: relative; }
+#edit-bar .eb-table .eb-table-menu {
   right: auto;
   left: 0;
   min-width: 170px;
 }
 /* Example-block dropdown: same anchor as the table menu, so the list
  * opens toward the editing area instead of under the right-hand actions. */
-.edit-bar .eb-example { position: relative; }
-.edit-bar .eb-example .eb-example-menu {
+#edit-bar .eb-example { position: relative; }
+#edit-bar .eb-example .eb-example-menu {
   right: auto;
   left: 0;
   min-width: 170px;
 }
 /* Nested flyout inside the example dropdown (Mermaid's six charts).
  * Left-click to open; the ▸ marker signals the extra level. */
-.edit-bar .eb-submenu { position: relative; display: block; }
-.edit-bar .eb-submenu-btn { width: 100%; }
-.edit-bar .eb-submenu-btn::after {
+#edit-bar .eb-submenu { position: relative; display: block; }
+#edit-bar .eb-submenu-btn { width: 100%; }
+#edit-bar .eb-submenu-btn::after {
   content: "▸";
   margin-left: 8px;
   font-size: .8em;
   color: var(--fg-muted);
 }
-.edit-bar .eb-submenu .eb-submenu-menu {
+#edit-bar .eb-submenu .eb-submenu-menu {
   top: 0;
   left: 100%;
   right: auto;
@@ -651,8 +651,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 /* Emoji picker: a dropdown panel anchored to the 😀 button. The grid is
  * populated by editbar.js from a curated dataset; emoji are rendered as
  * text nodes (never innerHTML) so label text cannot become markup. */
-.edit-bar .eb-emoji-wrap { position: relative; }
-.edit-bar .eb-emoji-panel {
+#edit-bar .eb-emoji-wrap { position: relative; }
+#edit-bar .eb-emoji-panel {
   position: absolute;
   top: 100%;
   left: 0;
@@ -668,8 +668,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   flex-direction: column;
   gap: 6px;
 }
-.edit-bar .eb-emoji-panel[hidden] { display: none; }
-.edit-bar .eb-emoji-search {
+#edit-bar .eb-emoji-panel[hidden] { display: none; }
+#edit-bar .eb-emoji-search {
   width: 100%;
   height: 26px;
   padding: 0 8px;
@@ -681,11 +681,11 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   font: inherit;
   font-size: .85rem;
 }
-.edit-bar .eb-emoji-tabs {
+#edit-bar .eb-emoji-tabs {
   display: flex;
   gap: 2px;
 }
-.edit-bar .eb-emoji-tabs button {
+#edit-bar .eb-emoji-tabs button {
   flex: 1;
   height: 24px;
   background: transparent;
@@ -696,20 +696,20 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   font-size: .95rem;
   line-height: 1;
 }
-.edit-bar .eb-emoji-tabs button:hover { background: var(--accent-soft); color: var(--fg); }
-.edit-bar .eb-emoji-tabs button.active {
+#edit-bar .eb-emoji-tabs button:hover { background: var(--accent-soft); color: var(--fg); }
+#edit-bar .eb-emoji-tabs button.active {
   background: var(--accent-soft);
   color: var(--fg);
   border-color: var(--accent);
 }
-.edit-bar .eb-emoji-grid {
+#edit-bar .eb-emoji-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 2px;
   max-height: 208px;
   overflow-y: auto;
 }
-.edit-bar .eb-emoji-grid button {
+#edit-bar .eb-emoji-grid button {
   height: 30px;
   background: transparent;
   border: 1px solid transparent;
@@ -719,8 +719,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   line-height: 1;
   padding: 0;
 }
-.edit-bar .eb-emoji-grid button:hover { background: var(--accent-soft); }
-.edit-bar .eb-emoji-empty {
+#edit-bar .eb-emoji-grid button:hover { background: var(--accent-soft); }
+#edit-bar .eb-emoji-empty {
   grid-column: 1 / -1;
   padding: 12px 4px;
   text-align: center;
@@ -1188,8 +1188,8 @@ body.nb-list-drag #viewer-content { user-select: none; }
 }
 
 /* Keyboard hints inside the hybrid context menu (Move row/column rows). */
-.context-menu button .context-menu-kbd,
-kbd.context-menu-kbd {
+body > #nb-menu button .context-menu-kbd,
+body > #nb-menu kbd.context-menu-kbd {
   float: right;
   margin-left: 16px;
   color: var(--fg-muted);
@@ -1201,12 +1201,12 @@ kbd.context-menu-kbd {
  * UA's `[hidden] { display: none }` at equal specificity, since user CSS
  * always wins). Without this, the Save button would stay visible even
  * when JS sets its `hidden` property. */
-.edit-bar .eb[hidden] { display: none; }
+#edit-bar .eb[hidden] { display: none; }
 /* Close button shows an "unsaved" indicator when the current file is
  * dirty, so the user can tell at a glance that clicking it will prompt
  * to discard. The badge is ::after so it doesn't add a layout slot. */
-.edit-bar .eb.unsaved { color: var(--accent); border-color: var(--accent); }
-.edit-bar .eb.unsaved::after {
+#edit-bar .eb.unsaved { color: var(--accent); border-color: var(--accent); }
+#edit-bar .eb.unsaved::after {
   content: "●";
   margin-left: 4px;
   color: var(--accent);
@@ -1215,21 +1215,21 @@ kbd.context-menu-kbd {
 }
 /* margin-left:auto pins the mode buttons (Preview/Save/Close) to the
  * right edge wherever the wrapped row lands. */
-.edit-bar .eb-actions {
+#edit-bar .eb-actions {
   display: flex;
   gap: 4px;
   align-items: center;
   margin-left: auto;
 }
 /* Save gets a primary accent to stand out from the formatting buttons. */
-.edit-bar .eb-primary {
+#edit-bar .eb-primary {
   color: var(--accent);
   font-weight: 600;
 }
-.edit-bar .eb-primary:hover { background: var(--accent); color: white; }
+#edit-bar .eb-primary:hover { background: var(--accent); color: white; }
 /* Chromium/Safari: hide the tab strip scrollbar (it still scrolls). */
 .tab-list::-webkit-scrollbar { display: none; }
-.tab {
+:where(#tab-bar) .tab {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1251,16 +1251,16 @@ kbd.context-menu-kbd {
   color: var(--fg-muted);
   user-select: none;
 }
-.tab:hover { background: var(--accent-soft); color: var(--fg); }
-.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
-.tab .tab-label {
+:where(#tab-bar) .tab:hover { background: var(--accent-soft); color: var(--fg); }
+:where(#tab-bar) .tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+:where(#tab-bar) .tab .tab-label {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
-.tab.dirty .tab-label::before {
+:where(#tab-bar) .tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
+:where(#tab-bar) .tab.dirty .tab-label::before {
   content: "";
   display: inline-block;
   width: 8px;
@@ -1270,7 +1270,7 @@ kbd.context-menu-kbd {
   background: var(--accent);
   vertical-align: middle;
 }
-.tab .tab-close {
+:where(#tab-bar) .tab .tab-close {
   background: none;
   border: none;
   color: var(--fg-muted);
@@ -1280,19 +1280,19 @@ kbd.context-menu-kbd {
   padding: 0 3px;
   border-radius: 4px;
 }
-.tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
+:where(#tab-bar) .tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
 
 /* Pinned tabs: marked with a pin glyph, no close button. They stay grouped
  * on the left and are skipped by the bulk-close actions. Width follows the
  * same equal, bounded rule as every other tab. */
-.tab.pinned { padding-right: 10px; }
-.tab.pinned .tab-pin { font-size: 11px; line-height: 1; }
+:where(#tab-bar) .tab.pinned { padding-right: 10px; }
+:where(#tab-bar) .tab.pinned .tab-pin { font-size: 11px; line-height: 1; }
 
 /* Drag-and-drop reorder: the dragged tab dims; the drop target gets an
  * accent stripe on the edge it will insert before/after. */
-.tab.dragging { opacity: .4; }
-.tab.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
-.tab.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+:where(#tab-bar) .tab.dragging { opacity: .4; }
+:where(#tab-bar) .tab.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+:where(#tab-bar) .tab.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
 
 /* Release re-equalization. tabs.js clears each tab's frozen inline flex
  * synchronously and, when a visible width change is coming, tags the bar
@@ -1322,7 +1322,7 @@ kbd.context-menu-kbd {
  * they re-equalize. tabs.js attaches no handlers; the node is inert. The
  * padding/border live on an inner span so the outer box can reach 0 (border-
  * box padding would otherwise keep a stub open). */
-.tab.ghost {
+:where(#tab-bar) .tab.ghost {
   pointer-events: none;
   min-width: 0;
   max-width: none;
@@ -1354,16 +1354,19 @@ kbd.context-menu-kbd {
 .tab-bar.nb-tab-equalizing .tab.ghost { animation: none; }
 /* Reduced motion: no collapse or fade; tabs.js does not create a ghost then,
  * and a stray one must vanish at once. */
+/* Kept unscoped: a jsdom regression test reads this exact rule text.
+ * The viewer-content override neutralizes it for note content. */
 @media (prefers-reduced-motion: reduce) {
   .tab.ghost { animation: none; opacity: 0; }
+  #viewer-content .tab.ghost { opacity: 1; }
 }
 
 /* A disabled context-menu item (a bulk-close target with nothing to close). */
-.context-menu button:disabled { color: var(--fg-muted); cursor: default; }
-.context-menu button:disabled:hover { background: none; }
+body > #nb-menu button:disabled { color: var(--fg-muted); cursor: default; }
+body > #nb-menu button:disabled:hover { background: none; }
 
 /* External-change conflict badge on a tab. */
-.tab .tab-conflict {
+:where(#tab-bar) .tab .tab-conflict {
   color: var(--danger);
   font-weight: 700;
   margin-left: 4px;
@@ -1372,10 +1375,10 @@ kbd.context-menu-kbd {
 /* Sidebar drag-and-drop: dim the dragged row; mark the drop target. The
  * two classes follow the same idiom as the tab DnD (left/right stripes for
  * before/after on a file row; an accent fill when the target is a folder). */
-.tree-row.dragging { opacity: .4; }
-.tree-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
-.tree-row.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
-.tree-row.drop-folder-target { background: var(--accent-soft); outline: 1px dashed var(--accent); }
+:where(#file-tree) .tree-row.dragging { opacity: .4; }
+:where(#file-tree) .tree-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
+:where(#file-tree) .tree-row.drop-after { box-shadow: 2px 0 0 0 var(--accent); }
+:where(#file-tree) .tree-row.drop-folder-target { background: var(--accent-soft); outline: 1px dashed var(--accent); }
 #file-tree.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
 
 /* "Watching" toggle in the top bar. */
@@ -1416,7 +1419,9 @@ kbd.context-menu-kbd {
   cursor: default;
 }
 
-.settings-overlay {
+/* Shell overlays are direct body children. `:where()` keeps the scoping
+ * free of specificity, so variant modals keep winning the cascade. */
+:where(body) > .settings-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, .5);
@@ -1434,7 +1439,7 @@ kbd.context-menu-kbd {
 /* The `hidden` attribute is in the markup, but our `display: flex` above
  * outranks the UA's `[hidden] { display: none }`. Re-assert it explicitly
  * so the overlay starts closed and stays closed. */
-.settings-overlay[hidden] { display: none; }
+:where(body) > .settings-overlay[hidden] { display: none; }
 
 /* ------------------------------------------------------------------ */
 /* Settings modal — unified design tokens. Scoped to #settings-overlay */
@@ -1836,7 +1841,7 @@ body[data-theme="light"] #settings-overlay {
 }
 #settings-overlay .settings-ai-acp-note { margin: var(--stg-space-3) 0 0; }
 
-.settings-modal {
+:where(body > .settings-overlay) > .settings-modal {
   /* The modal is its own positioned window on the viewport, not a flex
    * item. `--settings-modal-width / --settings-modal-height` (set on
    * :root by JS) pick the default size; NB.windows overrides them with
@@ -1876,12 +1881,12 @@ body[data-theme="light"] #settings-overlay {
   /* User can drag by the header (cursor cue) and resize from the grip. */
   touch-action: none;
 }
-.settings-header {
+:where(body > .settings-overlay > .settings-modal) .settings-header {
   cursor: move;
 }
 /* Bottom-right resize grip, injected by NB.windows. A diagonal gradient
  * suggests dragging; sits over the rounded corner. */
-.settings-modal .resize-grip {
+:where(body > .settings-overlay) > .settings-modal .resize-grip {
   position: absolute;
   right: 2px;
   bottom: 2px;
@@ -1891,7 +1896,7 @@ body[data-theme="light"] #settings-overlay {
   z-index: 5;
   border-radius: 0 0 10px 0;
 }
-.settings-modal .resize-grip::after {
+:where(body > .settings-overlay) > .settings-modal .resize-grip::after {
   content: "";
   position: absolute;
   right: 4px;
@@ -1907,12 +1912,12 @@ body[data-theme="light"] #settings-overlay {
  * modal is a free-floating window (NB.windows sets inline left/top/width/
  * height/transform); the max class overrides that geometry with !important
  * so it wins regardless of drag/resize state. */
-.win-max { display: inline-flex; align-items: center; padding: 4px 6px; }
-.win-max svg { display: block; }
-.win-max .win-max-restore { display: none; }
-.win-max[aria-pressed="true"] .win-max-icon { display: none; }
-.win-max[aria-pressed="true"] .win-max-restore { display: block; }
-.settings-modal--max {
+:where(body > .settings-overlay > .settings-modal) .win-max { display: inline-flex; align-items: center; padding: 4px 6px; }
+:where(body > .settings-overlay > .settings-modal) .win-max svg { display: block; }
+:where(body > .settings-overlay > .settings-modal) .win-max .win-max-restore { display: none; }
+:where(body > .settings-overlay > .settings-modal) .win-max[aria-pressed="true"] .win-max-icon { display: none; }
+:where(body > .settings-overlay > .settings-modal) .win-max[aria-pressed="true"] .win-max-restore { display: block; }
+:where(body > .settings-overlay > .settings-modal).settings-modal--max {
   left: 0 !important;
   top: 0 !important;
   transform: none !important;
@@ -1922,7 +1927,7 @@ body[data-theme="light"] #settings-overlay {
   max-height: 100vh !important;
   border-radius: 0;
 }
-.settings-modal--max .resize-grip { display: none; }
+:where(body > .settings-overlay > .settings-modal).settings-modal--max .resize-grip { display: none; }
 /* During a drag/resize, suppress text selection. */
 .modal-dragging,
 .modal-resizing {
@@ -1932,7 +1937,7 @@ body[data-theme="light"] #settings-overlay {
 .modal-resizing .settings-header {
   cursor: grabbing;
 }
-.settings-header {
+:where(body > .settings-overlay > .settings-modal) .settings-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1940,7 +1945,7 @@ body[data-theme="light"] #settings-overlay {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.settings-header h2 {
+:where(body > .settings-overlay > .settings-modal) .settings-header h2 {
   margin: 0;
   font-size: 1.14rem;
   font-weight: 600;
@@ -1948,7 +1953,7 @@ body[data-theme="light"] #settings-overlay {
 }
 /* Right-aligned control cluster in a modal header (close + maximize). Injected
  * by NB.windows so every header keeps the same [title, actions] flex shape. */
-.settings-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+:where(body > .settings-overlay > .settings-modal) .settings-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
 /* Body: flex row with a sidebar nav on the left and the section pane on
  * the right. `min-height: 0` is the load-bearing piece that lets the
  * inner .settings-sections pane scroll instead of pushing the modal
@@ -1956,7 +1961,7 @@ body[data-theme="light"] #settings-overlay {
  * without it, a wide intrinsic child (a long file path in About, a
  * long status string in Security) would push the body wider than the
  * modal, breaking the user's chosen modal width when they switch tabs. */
-.settings-body {
+:where(body > .settings-overlay > .settings-modal) .settings-body {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
@@ -1966,7 +1971,7 @@ body[data-theme="light"] #settings-overlay {
 /* Left sidebar nav. Vertical list of section entries; the active entry
  * is highlighted with the same accent treatment as .tree-row /
  * .outline-item so it feels familiar next to those panes. */
-.settings-nav {
+:where(body > .settings-overlay > .settings-modal) .settings-nav {
   flex: 0 0 180px;
   border-right: 1px solid var(--border);
   padding: 8px 6px;
@@ -1976,7 +1981,7 @@ body[data-theme="light"] #settings-overlay {
   overflow-y: auto;
   background: var(--bg);
 }
-.settings-nav-item {
+:where(body > .settings-overlay > .settings-modal) .settings-nav-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2003,35 +2008,35 @@ body[data-theme="light"] #settings-overlay {
   flex: 0 0 auto;
   line-height: 1;
 }
-.settings-nav-item:hover {
+:where(body > .settings-overlay > .settings-modal) .settings-nav-item:hover {
   background: var(--accent-soft);
   color: var(--fg);
 }
-.settings-nav-item.active {
+:where(body > .settings-overlay > .settings-modal) .settings-nav-item.active {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
-.settings-nav-item:focus-visible {
+:where(body > .settings-overlay > .settings-modal) .settings-nav-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 /* Right column: holds the four section blocks. Only the section whose
  * data-section matches the active nav entry is visible; the rest are
  * hidden via the [hidden] attribute. */
-.settings-sections {
+:where(body > .settings-overlay > .settings-modal) .settings-sections {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 4px 18px 18px;
   min-width: 0;
 }
-.settings-sections .settings-section {
+:where(body > .settings-overlay > .settings-modal) .settings-sections .settings-section {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);
 }
-.settings-sections .settings-section:last-child { border-bottom: none; }
-.settings-sections .settings-section[hidden] { display: none; }
-.settings-section h3 {
+:where(body > .settings-overlay > .settings-modal) .settings-sections .settings-section:last-child { border-bottom: none; }
+:where(body > .settings-overlay > .settings-modal) .settings-sections .settings-section[hidden] { display: none; }
+:where(body > .settings-overlay > .settings-modal) .settings-section h3 {
   margin: 0 0 10px;
   font-size: .79rem;
   text-transform: uppercase;
@@ -2292,7 +2297,7 @@ body[data-theme="light"] #settings-overlay {
 /* Footer with a single Close button (settings are live; there's no
  * Apply / Save / Cancel flow). Lives inside the modal below the
  * scrollable body so it stays anchored. */
-.settings-footer {
+:where(body > .settings-overlay > .settings-modal) .settings-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -2605,7 +2610,7 @@ body[data-theme="light"] #viewer-content {
  * whole slot; `align-items: center; justify-content: center` then
  * centers the .welcome-inner card in the full height. The whole block
  * is theme-token-driven so it follows dark / light automatically. */
-.welcome {
+#welcome.welcome {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
@@ -2615,36 +2620,36 @@ body[data-theme="light"] #viewer-content {
   overflow-y: auto;
   padding: 40px 24px;
 }
-.welcome[hidden] { display: none; }
-.welcome-inner {
+#welcome.welcome[hidden] { display: none; }
+#welcome .welcome-inner {
   max-width: 480px;
   text-align: center;
   color: var(--fg);
 }
-.welcome-icon {
+#welcome .welcome-icon {
   font-size: 48px;
   line-height: 1;
   margin-bottom: 12px;
 }
-.welcome-title {
+#welcome .welcome-title {
   margin: 0 0 8px;
   font-size: 1.4rem;
   font-weight: 600;
 }
-.welcome-subtitle {
+#welcome .welcome-subtitle {
   margin: 0 0 24px;
   color: var(--fg-muted);
   font-size: 1rem;
   line-height: 1.5;
 }
-.welcome-actions {
+#welcome .welcome-actions {
   display: flex;
   gap: 10px;
   justify-content: center;
   margin-bottom: 28px;
   flex-wrap: wrap;
 }
-.welcome-action {
+#welcome .welcome-action {
   background: var(--bg-elev);
   color: var(--fg);
   border: 1px solid var(--border);
@@ -2654,17 +2659,17 @@ body[data-theme="light"] #viewer-content {
   cursor: pointer;
   font-family: inherit;
 }
-.welcome-action:hover {
+#welcome .welcome-action:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
-.welcome-divider {
+#welcome .welcome-divider {
   border: none;
   border-top: 1px solid var(--border);
   margin: 0 0 20px;
 }
-.welcome-tips {
+#welcome .welcome-tips {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -2673,8 +2678,8 @@ body[data-theme="light"] #viewer-content {
   font-size: 0.9rem;
   line-height: 1.6;
 }
-.welcome-tips li { margin-bottom: 4px; }
-.welcome-tips kbd {
+#welcome .welcome-tips li { margin-bottom: 4px; }
+#welcome .welcome-tips kbd {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -2799,7 +2804,7 @@ body[data-theme="light"] #viewer-content {
  * to zero and pulled out of layout so it never paints a visible box. */
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .tree { padding: 6px 4px; user-select: none; }
-.tree-row {
+:where(#file-tree) .tree-row {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2808,8 +2813,8 @@ body[data-theme="light"] #viewer-content {
   cursor: pointer;
   white-space: nowrap;
 }
-.tree-row:hover { background: var(--accent-soft); }
-.tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+:where(#file-tree) .tree-row:hover { background: var(--accent-soft); }
+:where(#file-tree) .tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .tree-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 /* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
@@ -2859,7 +2864,7 @@ body[data-theme="light"] #viewer-content {
   bottom: 50%;
 }
 .tree-children { display: block; }
-.tree-row.collapsed + .tree-children { display: none; }
+:where(#file-tree) .tree-row.collapsed + .tree-children { display: none; }
 .tree-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
@@ -2989,12 +2994,12 @@ body[data-theme="light"] #viewer-content {
   cursor: pointer;
   user-select: none;
 }
-.tree-row:hover .tree-star { display: inline-block; }
-.tree-row .tree-star.is-bookmarked {
+:where(#file-tree) .tree-row:hover .tree-star { display: inline-block; }
+:where(#file-tree) .tree-row .tree-star.is-bookmarked {
   display: inline-block;
   color: var(--warn);
 }
-.tree-row .tree-star:hover { color: var(--warn); }
+:where(#file-tree) .tree-row .tree-star:hover { color: var(--warn); }
 /* The inline pin toggle on folder rows, mirroring .tree-star: hidden
  * unless the row is hovered, always shown (lit) when the folder is
  * pinned so the state is visible at a glance. */
@@ -3006,18 +3011,19 @@ body[data-theme="light"] #viewer-content {
   cursor: pointer;
   user-select: none;
 }
-.tree-row:hover .tree-pin { display: inline-block; }
-.tree-row .tree-pin.is-pinned {
+:where(#file-tree) .tree-row:hover .tree-pin { display: inline-block; }
+:where(#file-tree) .tree-row .tree-pin.is-pinned {
   display: inline-block;
   color: var(--warn);
 }
-.tree-row .tree-pin:hover { color: var(--warn); }
+:where(#file-tree) .tree-row .tree-pin:hover { color: var(--warn); }
 .tree-pin svg { width: 13px; height: 13px; flex: 0 0 13px; }
 
 /* ------------------------------------------------------------------ */
 /* Context menu                                                        */
 /* ------------------------------------------------------------------ */
-.context-menu {
+body > #nb-menu,
+body > #nb-menu .context-menu {
   position: fixed;
   z-index: 1000;
   min-width: 170px;
@@ -3027,7 +3033,7 @@ body[data-theme="light"] #viewer-content {
   box-shadow: 0 8px 24px rgba(0,0,0,.35);
   padding: 4px;
 }
-.context-menu button {
+body > #nb-menu button {
   display: block;
   width: 100%;
   text-align: left;
@@ -3039,9 +3045,9 @@ body[data-theme="light"] #viewer-content {
   font-size: .93rem;
   cursor: pointer;
 }
-.context-menu button:hover { background: var(--accent-soft); }
-.context-menu button.danger { color: var(--danger); }
-.context-menu hr {
+body > #nb-menu button:hover { background: var(--accent-soft); }
+body > #nb-menu button.danger { color: var(--danger); }
+body > #nb-menu hr {
   border: none;
   border-top: 1px solid var(--border);
   margin: 4px 0;
@@ -3052,19 +3058,19 @@ body[data-theme="light"] #viewer-content {
  * the flyout appears to the right of the parent item; a ▸ marker
  * signals that the item expands. Clicking the parent label also
  * toggles the flyout so touch / single-click devices work too. */
-.context-menu .submenu {
+body > #nb-menu .submenu {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
-.context-menu .submenu::after {
+body > #nb-menu .submenu::after {
   content: "▸";
   margin-left: 8px;
   font-size: .8em;
   color: var(--fg-muted);
 }
-.context-menu .submenu > .context-menu {
+body > #nb-menu .submenu > .context-menu {
   position: absolute;
   left: 100%;
   top: -5px;
@@ -3072,12 +3078,12 @@ body[data-theme="light"] #viewer-content {
   margin-left: 2px;
   display: none;
 }
-.context-menu .submenu:hover > .context-menu,
-.context-menu .submenu.open > .context-menu {
+body > #nb-menu .submenu:hover > .context-menu,
+body > #nb-menu .submenu.open > .context-menu {
   display: block;
 }
-.context-menu .submenu:hover,
-.context-menu .submenu.open {
+body > #nb-menu .submenu:hover,
+body > #nb-menu .submenu.open {
   background: var(--accent-soft);
 }
 
@@ -4057,14 +4063,14 @@ body[data-theme="light"] #viewer-content {
 }
 /* Special-tab styling in the tab bar: a subtle icon + label so it
  * reads as "this is a view, not a file". */
-.tab.special .tab-label {
+:where(#tab-bar) .tab.special .tab-label {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-style: italic;
   color: var(--fg-muted);
 }
-.tab.special.active .tab-label { color: var(--fg); }
+:where(#tab-bar) .tab.special.active .tab-label { color: var(--fg); }
 .tab-special-icon { font-style: normal; font-size: .9em; }
 
 /* ------------------------------------------------------------------ */
@@ -5749,7 +5755,7 @@ body[data-theme="light"] #dw-designer-overlay {
   body.topbar-hidden #topbar { display: flex; }
   body.topbar-hidden { --topbar-h: calc(var(--m-topbar-h) + env(safe-area-inset-top)); }
   #brand,
-  .search-wrap,
+  :where(#topbar) .search-wrap,
   .topbar-spacer,
   #edit-toggle,
   #hybrid-toggle,
@@ -5819,7 +5825,7 @@ body[data-theme="light"] #dw-designer-overlay {
   #edit-split { min-height: 0; }
 
   /* ---- bottom rail ------------------------------------------------ */
-  .activity-bar {
+  #activity-bar {
     position: fixed;
     left: 0;
     right: 0;
@@ -5946,7 +5952,7 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   .status-dot.offline { background: var(--warn); }
 
-  .side-panel-view { min-height: 0; }
+  :where(#side-panel) .side-panel-view { min-height: 0; }
   #file-tree,
   .bookmarks-list,
   .recent-list,
@@ -5957,7 +5963,7 @@ body[data-theme="light"] #dw-designer-overlay {
   #file-tree { margin-right: 0; }
 
   /* ---- drawer rows ------------------------------------------------ */
-  .tree-row,
+  :where(#file-tree) .tree-row,
   .pin-row,
   .pin-child {
     min-height: var(--m-hit);
@@ -5967,7 +5973,7 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   .tree-name,
   .pin-name { font-size: 15px; }
-  .tree-row.selected,
+  :where(#file-tree) .tree-row.selected,
   .pin-row.selected,
   .pin-child.selected {
     box-shadow: inset 3px 0 0 var(--accent);
@@ -6350,7 +6356,7 @@ body[data-theme="light"] #dw-designer-overlay {
    * deliberately (its … menu is the only entry). */
   .tree-star,
   .tree-pin { display: inline-block; }
-  .tree-row:hover,
+  :where(#file-tree) .tree-row:hover,
   .bookmark-row:hover,
   .recent-row:hover,
   .search-panel-hit:hover,
@@ -6359,7 +6365,7 @@ body[data-theme="light"] #dw-designer-overlay {
 
 /* Draft recovery bar: an unsaved buffer kept after a tab switch. Fixed so
    it survives scrolling; the mobile bottom rail is cleared by the inset. */
-.draft-bar {
+#draft-bar {
   position: fixed;
   left: 50%;
   bottom: calc(24px + env(safe-area-inset-bottom, 0px));
@@ -6376,14 +6382,14 @@ body[data-theme="light"] #dw-designer-overlay {
   box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
   font-size: .85rem;
 }
-.draft-bar[hidden] { display: none; }
-.draft-bar-msg {
+#draft-bar[hidden] { display: none; }
+#draft-bar .draft-bar-msg {
   color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.draft-bar-btn {
+#draft-bar .draft-bar-btn {
   flex: none;
   padding: 4px 10px;
   border: 1px solid var(--border);
@@ -6393,8 +6399,8 @@ body[data-theme="light"] #dw-designer-overlay {
   font: inherit;
   cursor: pointer;
 }
-.draft-bar-btn.primary {
+#draft-bar .draft-bar-btn.primary {
   border-color: var(--accent);
   color: var(--accent);
 }
-.draft-bar-btn:hover { background: var(--bg-hover); }
+#draft-bar .draft-bar-btn:hover { background: var(--bg-hover); }
