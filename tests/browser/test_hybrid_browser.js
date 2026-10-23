@@ -1004,6 +1004,41 @@ async function main() {
         JSON.stringify(savedUnchecked));
     }
 
+    // Enter before the first character of a checkbox item opens the new
+    // item ABOVE it. The caret is put at the item text's offset 0 in the
+    // real editing engine, then a real Enter keypress runs the handler;
+    // the saved bytes prove the new item landed first, not second.
+    {
+      writeNote("notes/taskstartenter.md", "- [ ] first\n- [ ] second\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartenter.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.evaluate(() => {
+        const vc = document.getElementById("viewer-content");
+        vc.focus();
+        const li = vc.querySelector("li");
+        const text = li && li.lastChild;
+        const r = document.createRange();
+        r.setStart(text, 0);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      });
+      await page.keyboard.press("Enter");
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const lines = readNote("notes/taskstartenter.md").trimEnd().split("\n");
+      check("real browser task: Enter at the first character opens an item above",
+        lines.length === 3 && /^- \[ \] *$/.test(lines[0]) &&
+        lines[1].indexOf("first") !== -1 && lines[2].indexOf("second") !== -1,
+        JSON.stringify(lines));
+    }
+
     // The edit-bar Task button: first press builds the task item, a
     // second press removes it (the toolbar toggle contract).
     writeNote("notes/taskbutton.md", "hello\n");

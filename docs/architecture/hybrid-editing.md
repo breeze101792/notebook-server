@@ -527,7 +527,7 @@ hybrid editor and the exporter through `NB.viewer`.
 | — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md:79`; tests `5733-5742`, `7784-7806` |
 | — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds the checkbox on the caret item; a second press returns the item to a plain **paragraph** | ✅ `toggleTask`/`setListItemType`; tests `8561-8574`, browser list-model block |
 | M | ⇧↵ | task item | `<p>` after whole list | ✅ test `4693-4708` |
-| — | ↵ | task item | new task item with a checkbox | ✅ `onEnterKey` task branch; also on a task loaded from disk |
+| — | ↵ | task item | new task item with a checkbox, **below** the caret item; **above** it when the caret sits before the item's first character (native list semantics) | ✅ `onEnterKey` task branch; also on a task loaded from disk; task-start Enter tests |
 | — | ↵ on an empty task | empty checkbox item | `-` (checkbox and item dropped) | ✅ the checkbox is stripped, then the item outdents to a `<p>` |
 | — | D (empty the item) | `- [ ] task` | `-` (checkbox gone) | ✳ sentinel path: `isEmptyListItem` ignores `input` (`:286-289`), so an item holding a checkbox is **not** "empty" — deleting text leaves the checkbox and `[ ]`; verify |
 | — | save | — | `[x]`/`[ ]` preserved, empty task keeps a trailing space | ✅ tests `6846-6855` |
@@ -1050,7 +1050,10 @@ is exactly one break (invariant I9).
 - **`Enter`** = "start the next block, or continue this construct": a new
   paragraph, a new list item, a new quote line, the fence's own newline. It saves
   as the construct's own continuation or as one blank line between blocks — never
-  as a `<br>`, never as several newlines. Claimed exceptions: a ` ``` `-only
+  as a `<br>`, never as several newlines. At the very start of a list item
+  (before its first character, after the checkbox for a task item) the new
+  item opens **above** the caret item, matching the native editor; elsewhere
+  it continues below. Claimed exceptions: a ` ``` `-only
   paragraph converts to a code block (`:2601-2616`); an **empty list item**
   outdents to a paragraph (`:2619-2643`); at a horizontal-rule edge it opens a
   fresh line (`openLineAtCaretRule` `:2343`).

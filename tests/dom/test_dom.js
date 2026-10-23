@@ -12394,6 +12394,67 @@ function check(label, cond, extra) {
         !!cbNext && cbNext.getAttribute("contenteditable") === "false",
         "attr=" + (cbNext && cbNext.getAttribute("contenteditable")));
 
+      // Enter at the very start of a task item (before its first
+      // character) opens the new task item ABOVE, matching a plain
+      // list's native Enter. Regression: it appended below, so a
+      // checklist could never grow upward from its first item.
+      vcT.innerHTML = "";
+      const ulS = window.document.createElement("ul");
+      const liS = window.document.createElement("li");
+      liS.className = "task-list-item";
+      const cbS = window.document.createElement("input");
+      cbS.type = "checkbox";
+      liS.appendChild(cbS);
+      liS.appendChild(window.document.createTextNode("task"));
+      ulS.appendChild(liS);
+      vcT.appendChild(ulS);
+      const sr = window.document.createRange();
+      sr.setStart(liS.lastChild, 0);
+      sr.collapse(true);
+      const ss = window.getSelection();
+      ss.removeAllRanges();
+      ss.addRange(sr);
+      vcT.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(20);
+      const liAbove = ulS.children[0];
+      const cbAbove = liAbove && liAbove.querySelector('input[type="checkbox"]');
+      const sAbove = window.getSelection();
+      check("hybrid Enter: at a task item's start the new item goes above",
+        ulS.children.length === 2 && liAbove !== liS &&
+        liAbove.classList.contains("task-list-item") &&
+        cbAbove !== null && cbAbove.parentElement === liAbove &&
+        liS.textContent.includes("task"),
+        "ul=" + ulS.outerHTML);
+      check("hybrid Enter: the caret lands after the new above checkbox",
+        sAbove.rangeCount > 0 && sAbove.isCollapsed &&
+        cbAbove && sAbove.anchorNode === cbAbove.nextSibling &&
+        sAbove.anchorNode.nodeType === 3 && sAbove.anchorOffset === 0,
+        "node=" + (sAbove.anchorNode && sAbove.anchorNode.nodeName) +
+        " off=" + sAbove.anchorOffset);
+
+      // The same rule applies to a later item: the new sibling lands
+      // before it, never at the top of the list.
+      vcT.innerHTML = "<ul><li><input type=\"checkbox\"> one</li>" +
+        "<li><input type=\"checkbox\"> two</li></ul>";
+      const ulM = vcT.firstElementChild;
+      const liTwo = ulM.children[1];
+      const mr = window.document.createRange();
+      mr.setStart(liTwo.lastChild, 0);
+      mr.collapse(true);
+      const ms = window.getSelection();
+      ms.removeAllRanges();
+      ms.addRange(mr);
+      vcT.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Enter", bubbles: true, cancelable: true }));
+      await tick(20);
+      check("hybrid Enter: at a later task item's start the new item stays local",
+        ulM.children.length === 3 &&
+        ulM.children[1].textContent.replace(/\u200B/g, "").trim() === "" &&
+        ulM.children[1].querySelector('input[type="checkbox"]') !== null &&
+        ulM.children[2] === liTwo,
+        "ul=" + ulM.outerHTML);
+
       // Regression: a selection whose common ancestor is the whole <ul>
       // (a drag across the list) must NOT be passed to toggleList -- its
       // ul->ul branch unwraps the list into dot paragraphs. Task targets

@@ -2668,6 +2668,20 @@
       (c) => c.tagName === "INPUT" && c.type === "checkbox") || null;
   }
 
+  /* True when the collapsed caret sits at the first text position of
+   * `li`'s own content. A task checkbox is a marker, not content, so the
+   * start is AFTER the box: "before the first character" of the item's
+   * text. Whitespace (and the zero-width caret host) does not count. */
+  function caretAtListItemStart(li, range) {
+    if (!li || !range || !li.contains(range.startContainer)) return false;
+    const cb = taskCheckboxOf(li);
+    const probe = document.createRange();
+    if (cb) probe.setStartAfter(cb);
+    else probe.selectNodeContents(li);
+    probe.setEnd(range.startContainer, range.startOffset);
+    return probe.toString().replace(/[\s\u200B]+/g, "") === "";
+  }
+
   /* Where a new checkbox for `li` belongs. A loose item wraps its content
    * in a <p>; the checkbox must be a DIRECT <li> child or turndown's gfm
    * taskListItems rule does not see it and the marker degrades to plain
@@ -4341,7 +4355,15 @@
           next.className = "task-list-item";
           const nextCb = makeTaskCheckbox();
           next.appendChild(nextCb);
-          li.after(next);
+          // A plain list's native Enter at the item's very start opens
+          // the new item ABOVE the caret item. Match it, so Enter before
+          // the first character grows the checklist upward instead of
+          // appending a second item below.
+          if (caretAtListItemStart(li, range)) {
+            li.parentNode.insertBefore(next, li);
+          } else {
+            li.after(next);
+          }
           // The new item is textless: plant its ZWS caret host
           // (ensureListMarker) and land in it, the position right of the
           // box an item with words puts the caret in.
