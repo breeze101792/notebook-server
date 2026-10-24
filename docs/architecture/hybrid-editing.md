@@ -390,7 +390,7 @@ restored at `hybrid.js:512-513`).
 | E | C | `## Title` | `## Title!` | ✅ native; edited block re-serialized ATX |
 | E | ↵ | `## Title` | `## Title\n\n` (new block) | 🌐 native; element count changes → structural splice (Q1) |
 | E | ⇧↵ | `## Title` | `## Title\n\n` (new empty `<p>` after) | ✅ test `4711-4720` |
-| B | C | `x\n\n## Title` typed at boundary | `x\n\nX\n\n## Title`? | ⛔ native; only rule-edge is protected (`openLineAtCaretRule` `:2343`); §6 Q3 |
+| B | C | `x\n\n## Title` typed at boundary | `x\n\nX\n\n## Title`? | ⛔ native; only rule-edge is protected (`openLineAtCaretRule` `:4329`); §6 Q3 |
 | ∅ | ↵ | `###` | `###\n\n` (new block) | 🌐 native; see 4.2.1 |
 | ∅ | ⌫ | `x\n\n###` | `x` + caret; marker removed by merge | ⛔ unspecified |
 | — | D (select all text) | `### Title` | `###` | ✅ sentinel `:457`, test `7158-7173` |
@@ -809,7 +809,7 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 | E | ⇧↵ | ` ```python\nprint(1)\n``` ` | fence unchanged; `<p>` **after** the block | ✅ test `4893-4933` |
 | (editing) | ↵ | inside the editable `<pre>` | native newline inside the source | ✅ comment `:2376-2378` |
 | — | D (empty the fence) | ` ```\nx\n``` ` | fence **dropped** from the note; the live view keeps an empty `<pre>` until the note is re-rendered | ✅ turndown's blank rule (`vendor:664`); the serializer never writes a blank fence |
-| (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | top-level block **removed**, caret at the previous/next block edge, undoable; a fence nested in a list/quote is left in place (the key is claimed so the native merge cannot destroy its `<code>`) | ✅ `removeEmptyCodeBlock` (`hybrid.js:2423`); `test_block_edit_browser.js` |
+| (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | **removed** from the live DOM; top-level caret at the previous/next block edge; nested fence removed from its list item/quote with the container kept and the caret at its edge; undoable | ✅ `removeEmptyCodeBlock` (`hybrid.js:2477`); `test_block_edit_browser.js` |
 | — | language chip | ` ```shell ` | change to `python` → ` ```python `; empty clears; `my lang` is refused | ✅ `addLanguagePill` (real `<input>` so Ctrl+A selects the chip, not the note), tests `test_block_edit_browser.js` |
 | — | bare fence touched | ` ```\ntext\n``` ` | stays bare; highlight.js's auto-detected language is never written | ✅ `captureFenceLanguages`; test `test_block_edit_browser.js` |
 | — | `~~~` fence | `~~~js\ntext\n~~~` | untouched byte-identical; touched canonicalizes to backticks | ✅ corpus + `test_block_edit_browser.js` (§6 Q13) |
@@ -890,7 +890,11 @@ A headerless or caption/colgroup table is **rebuilt**, never emitted as `<table>
 | cell E | ⇧↵ | `\| body \|` | `<p>` **after the whole table**, no new row | ✅ `insertLineBelow` climbs `:2401-2409`, tests `4729-4754` |
 | cell E | ↵ | `\| body \|` | native line break **inside the cell** | ⚠ not specified; §6 Q8 |
 | cell | ⌫ at cell start | first cell | rule kept, cell text intact | ✅ test `5386-5404` |
-| empty cell | save | `\|  \| 2 \|` | empty cell keeps its column | ✅ `BLANK_RULE_EXEMPT_TAGS` `:52-55`, test `6862-6872` |
+| multi-cell selection | ⌫ / ⌦ | selection crosses >1 cell | selected text cleared cell-by-cell; rows, columns, header kept; the outside part of a cell-to-paragraph selection is left (safe minimum); caret at the first affected cell | ✅ `deleteTableCellSelection` `hybrid.js:6462`; browser test |
+| multi-cell selection | Ctrl+X / Shift+Delete | selection crosses >1 cell | `beforeinput` claims `deleteByCut`, clears the cells AND deletes the selected gaps before/between/after the tables so the note matches the clipboard; rows, columns, header kept | ✅ `deleteTableSelectionGaps` `hybrid.js:6425`; browser test |
+| single-cell selection | ⌫ / ⌦ | selection inside one cell | engine-native intra-cell delete | ✅ browser test |
+| guarded delete | context menu | header / header + one body row / one column | Delete row / Delete column is rendered disabled with the CAUSE ("The header row cannot be deleted", "A table needs a header and one body row", "A table needs at least one column"); the action uses the same predicate | ✅ `deleteRowBlockedReason` / `canDeleteColumn`; browser test |
+| empty cell | save | `\|  \| 2 \|` | empty cell keeps its column; whitespace/`<br>`-only cells serialize as `\|  \|`, never a soft break | ✅ `BLANK_RULE_EXEMPT_TAGS` `:52-55`, `normalizeTablesForGfm` `:512`; test `6862-6872` |
 | header row | delete | header | **refused** | ✅ `deleteRow` `:3729`, tests `7056-7079` |
 | last col | delete | one column | **refused** | ✅ `deleteCol` `:3769`, tests `7089-7093` |
 | header toggle | `table-header` | already has header | **refused** (never removes) | ✅ `toggleHeaderRow` `:3795`, test `7079` |
@@ -1056,7 +1060,7 @@ is exactly one break (invariant I9).
   it continues below. Claimed exceptions: a ` ``` `-only
   paragraph converts to a code block (`:2601-2616`); an **empty list item**
   outdents to a paragraph (`:2619-2643`); at a horizontal-rule edge it opens a
-  fresh line (`openLineAtCaretRule` `:2343`).
+  fresh line (`openLineAtCaretRule` `:4329`).
 - **`Shift+Enter`** = a new line out of the current block, decided in §6 Q15. It
   inserts an empty new top-level block *after this block* (`insertLineBelow`):
   climb to the top-level ancestor and insert a `<p>` after it, so the container is
@@ -1064,7 +1068,7 @@ is exactly one break (invariant I9).
   swallowed fence break). The inserted line carries `data-hybrid-caret` and is
   dropped on save while empty. It is deliberately not an in-block `<br>`.
 - At a rule edge both keys open the line on the caret's own side
-  (`openLineAtCaretRule` `:2343`).
+  (`openLineAtCaretRule` `:4329`).
 
 Verified saved bytes (vendored Turndown, `codeBlockStyle:"fenced"`):
 
@@ -1083,10 +1087,11 @@ Word-like meaning (goal G1): `Backspace` at the start of a line joins it to the
 line above; `Delete` at the end of a line pulls the line below up. No word is
 lost, and the file stays clean Markdown.
 
-Only the horizontal rule has a specified merge model today (`ruleForDeleteKey`
-`:2220`: `Delete` deletes forward, `Backspace` backward). For **all other
-blocks** the merge is the browser's native `contentEditable` behavior, which is
-not specified or tested. The intended spec, proposed here:
+The horizontal rule (`ruleForDeleteKey` `:4010`: `Delete` deletes forward,
+`Backspace` backward), atomic plugin/fence blocks, and task-item edges have
+specified merge models. For **all other blocks** the merge is the browser's
+native `contentEditable` behavior, which is not specified or tested. The
+intended spec, proposed here:
 
 1. `Backspace` at **S** of block *B* removes *B*'s marker and joins *B*'s content
    to the end of the previous block *A*'s content, preserving both texts; the
@@ -1100,6 +1105,34 @@ not specified or tested. The intended spec, proposed here:
    guards already do (`:3729`, `:3769`).
 5. Byte preservation of the neighbour applies as a Q1 consequence — see §5.5.
 
+The two edges where the engine cannot merge safely are implemented:
+
+- **Atomic block.** A rendered plugin container (or a raw `<pre>` that is not
+  being edited) is one character. The caret must sit DIRECTLY in the
+  neighbouring top-level block (not in a nested list, table, or quote);
+  Backspace at that block's start, or Delete at its end, claims the key,
+  removes the container and its fence source, and moves the caret to the
+  neighbouring block's edge. An element-boundary caret at the block's true
+  start counts, and a leading image or other zero-size void is content, so the
+  key deletes that character instead. The two text blocks are *not* joined.
+  (`atomicBlockForDeleteKey` `:4113`).
+- **Task item.** A checkbox is a marker, not content, so the engine's merge
+  either no-ops or corrupts the neighbour. Backspace at the item's content start
+  joins its content (inline markup preserved) to the previous sibling item; a
+  nested list's first item joins its parent item, and a top-level list's first
+  item joins the preceding top-level block. Delete at the content end pulls the
+  next sibling's content in and drops that item's checkbox. Nested lists and
+  extra paragraphs travel after the target's own content. Plain list items keep
+  the native merge (`mergeTaskItemAtEdge` `:3031`).
+- **Whole note.** Ctrl+A + Delete/Backspace, Ctrl+X, or Shift+Delete over the
+  entire note replaces the root with one `p[data-hybrid-caret="1"]`, so the next
+  typed character is plain text and an empty save never emits a stray heading
+  marker. Coverage is decided from the first/last top-level ELEMENT positions,
+  so an empty heading or list item before the selected text is still outside a
+  partial selection. Cut runs through `beforeinput` (`deleteByCut`); a
+  multi-cell table selection still goes to the table handler first
+  (`selectionCoversNote` `:4206` / `clearNoteToParagraph` `:4249`).
+
 One browser artifact is normalized: Chromium wraps the text it carries across a
 merge in a presentational `<span style="font-size: …">` copied from the source
 block, so joining a second heading into a title rendered the moved words a size
@@ -1109,8 +1142,9 @@ font-size/font-weight on a class-less, id-less span in the caret's block. The
 saved bytes are unchanged (Turndown discards the span either way); this fixes the
 live view. Verified in Chromium.
 
-Status: ⛔ none of 1–4 is implemented; `⌫`/`⌦` on paragraphs/lists/quotes is
-unasserted.
+Status: ⛔ general paragraph/heading/list/quote merges (1–4) are still the
+browser's native behavior and unasserted. The atomic-block and task-item edges
+above are implemented and covered in `test_block_edit_browser.js`.
 
 ### 5.3 Creating a new block
 
@@ -1159,8 +1193,11 @@ blocks, whose bytes are carried raw. The rule, stated once:
 
 - A save whose output equals `sessionSerialized` or `sessionSource` writes nothing
   (`isNoOpMarkdown` `:3426`).
-- Undo/redo restore whole-DOM snapshots (`restoreSnapshot` `:3035`); node
-  identity is deliberately not relied upon (`PLAN.md:79`). The splice baseline is
+- Undo/redo restore whole-DOM snapshots (`restoreSnapshot`); node
+  identity is deliberately not relied upon (`PLAN.md:79`). A snapshot that
+  restores an in-place fence re-wires it but leaves the caret beside it, so the
+  next Ctrl+Z stays hybrid's own undo instead of the rebuilt editor's empty
+  native stack. The splice baseline is
   re-seated only on enter, after a write, and on external change
   (`rebaseSession` `:3439`); undo relies on the hash/count checks, not a
   rebase.
@@ -1181,14 +1218,15 @@ keeps `* star a` bullets, a setext `Title\n=====` heading, and `    indented` co
 byte-for-byte, and no `` ```undefined `` artifact is produced. §5.5 describes the
 mechanism.
 
-**Q2 — block merge is unspecified.** No code handles `⌫`/`⌦` for paragraphs,
-headings, lists, or quotes; only `<hr>` (`hybrid.js:2220`). Browser-native
-merges can move a paragraph's text into a heading, dropping the heading marker or
-duplicating it. Proposed spec: §5.2. Owner decision: accept §5.2 or document native
-behavior per engine.
+**Q2 — block merge is partly specified.** `<hr>` (`ruleForDeleteKey` `hybrid.js:4010`), atomic
+plugin/fence blocks (`:4113`), and task-item edges (`:3031`) have explicit merge
+models; general paragraph/heading/list/quote merges are still the browser's
+native behavior. Browser-native merges can move a paragraph's text into a
+heading, dropping the heading marker or duplicating it. Proposed spec: §5.2.
+Owner decision: accept the rest of §5.2 or document native behavior per engine.
 
 **Q3 — typing at a block boundary that is not a rule edge.** Only rule edges are
-protected (`openLineAtCaretRule` `:2343`). A root caret between two normal
+protected (`openLineAtCaretRule` `:4329`). A root caret between two normal
 blocks lets the engine prepend into the following block (e.g. text merged into a
 heading). Proposed: protect every top-level block edge, not only `<hr>`; or accept
 and test the native result.
@@ -1218,10 +1256,22 @@ owner's model a ">" line with zero words is a valid block. Fixed with
 `markEmptyBlockquotes` + `EMPTY_QUOTE_SENTINEL`; verified in Chromium and jsdom.
 
 **Q8 — table-cell boundary keys.** `Backspace`/`Delete` at a cell edge is
-browser-native. `Enter` inside a cell is now refused with a notice: a newline in
-a cell splits the GFM row and breaks the table on the next render. `caretDirectlyInTop`
-deliberately excludes cells (`hybrid.js:2138`) so the rule-edge repair does not apply.
-Verified in Chromium (`test_hybrid_blocks_browser.js`).
+browser-native only for a selection wholly inside ONE cell. Any selection that
+touches a table from more than one cell -- two cells in the same table, a cell
+to the paragraph after it, two different tables, or a range crossing a table --
+is clamped to the intersected table(s): hybrid claims the key, clears the
+selected text cell-by-cell, and keeps every row, column, and header
+(`deleteTableCellSelection` `hybrid.js:6462`). Delete/Backspace leave the outside
+part of a cell-to-paragraph selection (the safe minimum); CUT deletes the
+outside gaps too, because the clipboard already holds the whole selection
+(`deleteTableSelectionGaps` `hybrid.js:6425`). A partial cell keeps the caret at
+the original deletion start. `Enter` inside a cell is
+refused with a notice: a newline in a cell splits the GFM row and breaks the
+table on the next render. `caretDirectlyInTop` deliberately excludes cells
+(`hybrid.js:3912`) so the rule-edge repair does not apply. A
+whitespace/`<br>`-only cell is emptied and serializes as an empty GFM cell.
+Verified in Chromium (`test_block_edit_browser.js`,
+`test_hybrid_blocks_browser.js`).
 
 **Q9 — DECIDED. Paste parses Markdown into blocks.** `doPaste`/`doPastePlain`
 (`:2837`/`:2862`) today insert plain text with `<br>` between lines

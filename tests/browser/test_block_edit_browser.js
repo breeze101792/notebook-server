@@ -118,6 +118,14 @@ async function main() {
     page.on("pageerror", (e) => pageErrors.push(String(e)));
 
     const boot = async (src) => {
+      // A just-issued save may still be clearing dirty state. The old
+      // page flushes a dirty hybrid buffer on visibilitychange during
+      // navigation, which would rewrite the file we are about to load.
+      try {
+        await page.waitForFunction(
+          () => !window.NB || !window.NB.hybrid || !window.NB.hybrid.isDirty(),
+          null, { timeout: 2000 });
+      } catch (_) {}
       writeNote(src);
       await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
       await page.waitForSelector("#viewer-content h1, #viewer-content pre", { timeout: 15000 });
@@ -561,14 +569,58 @@ async function main() {
     await sleep(300);
     check("empty: undo can restore the emptied fence",
       (await blockCount()) === 1);
+    // The caret was moved beside the restored fence, so click it to
+    // resume editing before Esc commits it.
+    await page.click("#viewer-content pre.hybrid-plugin-editing");
+    await sleep(100);
     await page.keyboard.press("Escape");
     await sleep(200);
-    check("empty: Esc commits a restored editing fence and keeps its language",
+    check("empty: Esc commits a re-opened editing fence and keeps its language",
       (await page.evaluate(() => {
         const pre = document.querySelector("#viewer-content pre");
         return !!pre && pre.getAttribute("contenteditable") !== "true" &&
           pre.getAttribute("data-fence-lang") === "js";
       })) === true);
+
+    // Undo must not stall when the restored snapshot contains an editing
+    // fence. The caret is placed beside it, so the next Ctrl+Z stays
+    // hybrid's own undo instead of the rebuilt fence's empty native stack.
+    await boot(EMPTY_NOTE);
+    await openBlock();
+    await selectCode();
+    await page.keyboard.press("Backspace");
+    await sleep(650);                       // snapshot the emptied editor
+    await page.keyboard.press("Backspace"); // remove the block
+    await sleep(200);
+    await page.keyboard.press("Control+z");
+    await sleep(300);
+    const firstUndo = await page.evaluate(() => {
+      const pre = document.querySelector("#viewer-content pre");
+      const sel = window.getSelection();
+      let node = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+      if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      return {
+        blocks: document.querySelectorAll("#viewer-content pre").length,
+        editing: !!pre && pre.getAttribute("contenteditable") === "true",
+        caretInFence: !!(node && node.closest &&
+          node.closest("pre.hybrid-plugin-editing")),
+      };
+    });
+    check("empty: undo restores the emptied editing fence",
+      firstUndo.blocks === 1 && firstUndo.editing, JSON.stringify(firstUndo));
+    check("empty: the restored fence does not capture the caret",
+      !firstUndo.caretInFence, JSON.stringify(firstUndo));
+    await page.keyboard.press("Control+z");
+    await sleep(300);
+    const secondUndo = await page.evaluate(() => ({
+      blocks: document.querySelectorAll("#viewer-content pre").length,
+      editing: !!document.querySelector(
+        "#viewer-content pre.hybrid-plugin-editing"),
+    }));
+    check("empty: the second undo goes further back, not a no-op",
+      secondUndo.blocks !== firstUndo.blocks ||
+        secondUndo.editing !== firstUndo.editing,
+      JSON.stringify({ first: firstUndo, second: secondUndo }));
 
     // A caret in the middle of a whitespace-only fence is a character
     // delete, not a block removal.
@@ -610,18 +662,47 @@ async function main() {
       /hello/.test(await page.evaluate(
         () => document.querySelector("#viewer-content pre code").textContent)));
 
-    // A fence nested in a list cannot be lifted out; the key is claimed
-    // so the native merge cannot destroy its <code> element.
+    // A fence nested in a list item is removed from the live DOM too; its
+    // container stays (an empty item is a valid editable state).
     await boot("# L\n\n- item\n\n  ```js\n  x\n  ```\n\nafter\n");
     await openBlock();
     await selectCode();
     await page.keyboard.press("Backspace");
     await page.keyboard.press("Backspace");
     await sleep(200);
-    check("empty: a nested fence is not removed", (await blockCount()) === 1);
-    check("empty: a nested fence keeps its <code> element",
+    check("empty: a nested fence is removed from the live DOM",
+      (await blockCount()) === 0);
+    check("empty: the nested fence's list item survives",
       (await page.evaluate(
-        () => !!document.querySelector("#viewer-content pre code"))) === true);
+        () => !!document.querySelector("#viewer-content li"))) === true);
+    const nestedCaret = await page.evaluate(() => {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      const r = sel.getRangeAt(0);
+      let node = r.startContainer;
+      if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+      const li = node && node.closest && node.closest("li");
+      if (!li) return null;
+      const before = document.createRange();
+      before.selectNodeContents(li);
+      before.setEnd(r.startContainer, r.startOffset);
+      const after = document.createRange();
+      after.selectNodeContents(li);
+      after.setStart(r.startContainer, r.startOffset);
+      return { before: before.toString(), after: after.toString() };
+    });
+    check("empty: the caret stays at the removed fence's position",
+      nestedCaret && nestedCaret.before === "item" && nestedCaret.after === "",
+      JSON.stringify(nestedCaret));
+    await page.keyboard.type("Z");
+    await sleep(100);
+    check("empty: typing lands at the fence position, not the item start",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content li").textContent)) === "itemZ");
+    await page.keyboard.press("Control+s");
+    check("empty: saving drops the nested fence and keeps the typed text",
+      await waitForFile((md) => !/```/.test(md) && /itemZ/.test(md)),
+      JSON.stringify(readNote()));
 
     // No neighbour at all: a fresh caret line takes the block's place.
     await boot("```js\nx\n```\n");
@@ -639,6 +720,883 @@ async function main() {
     ci = await caretInfo();
     check("empty: the fallback line takes the caret",
       ci && ci.block === "P" && ci.atStart, "caret=" + JSON.stringify(ci));
+
+    // Shared gestures for the atomic-block, table, and task-item cases.
+    const placeCaretInText = (needle, offset) => page.evaluate(({ needle, offset }) => {
+      const walker = document.createTreeWalker(
+        document.getElementById("viewer-content"), NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        const idx = node.nodeValue.indexOf(needle);
+        if (idx !== -1) {
+          const r = document.createRange();
+          r.setStart(node, idx + offset);
+          r.collapse(true);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          return true;
+        }
+      }
+      return false;
+    }, { needle, offset });
+    const selectBetweenTexts = (startText, startOff, endText, endOff) =>
+      page.evaluate(({ startText, startOff, endText, endOff }) => {
+        const find = (needle) => {
+          const walker = document.createTreeWalker(
+            document.getElementById("viewer-content"), NodeFilter.SHOW_TEXT);
+          let node;
+          while ((node = walker.nextNode())) {
+            const idx = node.nodeValue.indexOf(needle);
+            if (idx !== -1) return { node, idx };
+          }
+          return null;
+        };
+        const start = find(startText);
+        const end = find(endText);
+        if (!start || !end) return false;
+        const r = document.createRange();
+        r.setStart(start.node, start.idx + startOff);
+        r.setEnd(end.node, end.idx + endOff);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        return true;
+      }, { startText, startOff, endText, endOff });
+
+    // --- 18. an atomic plugin block is one character at a block edge ---
+    console.log("\n== hybrid blocks: atomic plugin delete ==");
+    const PLUGIN_NOTE = "# P1\n\nBefore block.\n\n```mermaid\n" +
+      "graph TD; A-->B;\n```\n\nAfter block.\n";
+    const diagramCount = () => page.evaluate(
+      () => document.querySelectorAll("#viewer-content .mermaid-container").length);
+    const fenceSourceCount = () => page.evaluate(
+      () => document.querySelectorAll(
+        "#viewer-content [data-mermaid-source]").length);
+    const paragraphText = () => page.evaluate(
+      () => Array.from(document.querySelectorAll("#viewer-content p"))
+        .map((p) => p.textContent).join("|"));
+
+    await boot(PLUGIN_NOTE);
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    check("atomic: the plugin block renders", (await diagramCount()) === 1);
+    await placeCaretInText("After block.", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    check("atomic: Backspace removes the plugin container",
+      (await diagramCount()) === 0);
+    check("atomic: Backspace removes the fence source", (await fenceSourceCount()) === 0);
+    check("atomic: Backspace keeps both neighbouring paragraphs",
+      (await paragraphText()) === "Before block.|After block.",
+      JSON.stringify(await paragraphText()));
+    ci = await caretInfo();
+    check("atomic: Backspace leaves the caret at the previous block's end",
+      ci && ci.block === "P" && ci.atEnd, "caret=" + JSON.stringify(ci));
+    await page.keyboard.press("Control+s");
+    check("atomic: Backspace saves without the fence",
+      await waitForFile((md) => md === "# P1\n\nBefore block.\n\nAfter block.\n"),
+      JSON.stringify(readNote()));
+    await page.keyboard.press("Control+z");
+    await sleep(300);
+    // The enter-time snapshot can predate the lazy mermaid render, so
+    // undo may restore the fence as a raw <pre>. Either shape is the
+    // block returning with its source intact.
+    const restoredSource = await page.evaluate(() => {
+      const container = document.querySelector("#viewer-content .mermaid-container");
+      if (container) return container.getAttribute("data-mermaid-source") || "";
+      const pre = document.querySelector("#viewer-content pre");
+      return pre ? pre.textContent : "";
+    });
+    check("atomic: undo restores the removed block and its source",
+      /graph TD; A-->B;/.test(restoredSource), JSON.stringify(restoredSource));
+
+    await boot(PLUGIN_NOTE);
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await placeCaretInText("Before block.", "Before block.".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    check("atomic: Delete removes the plugin container",
+      (await diagramCount()) === 0);
+    check("atomic: Delete removes the fence source", (await fenceSourceCount()) === 0);
+    check("atomic: Delete keeps both neighbouring paragraphs",
+      (await paragraphText()) === "Before block.|After block.",
+      JSON.stringify(await paragraphText()));
+    ci = await caretInfo();
+    check("atomic: Delete leaves the caret at the next block's start",
+      ci && ci.block === "P" && ci.atStart, "caret=" + JSON.stringify(ci));
+    await page.keyboard.press("Control+s");
+    check("atomic: Delete saves without the fence",
+      await waitForFile((md) => md === "# P1\n\nBefore block.\n\nAfter block.\n"),
+      JSON.stringify(readNote()));
+
+    // A raw fence that is not being edited is atomic too.
+    await boot("# C\n\n```js\nconst x = 1;\n```\n\nAfter\n");
+    await placeCaretInText("After", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    check("atomic: a non-editing raw fence is removed as one block",
+      (await blockCount()) === 0);
+    await page.keyboard.press("Control+s");
+    check("atomic: the raw-fence removal drops its source",
+      await waitForFile((md) => md === "# C\n\nAfter\n"),
+      JSON.stringify(readNote()));
+
+    // A plain block edge is not an atomic edge; the engine's own merge
+    // must stay untouched.
+    await boot("# P\n\nAlpha\n\nBeta\n");
+    await placeCaretInText("Beta", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("atomic: a plain paragraph edge is not claimed",
+      (await page.evaluate(
+        () => document.querySelectorAll("#viewer-content p").length)) === 1,
+      JSON.stringify(await paragraphText()));
+    check("atomic: the native paragraph merge keeps both words",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content p").textContent)) === "AlphaBeta");
+
+    // A non-empty in-place fence owns its own delete keys: Backspace at
+    // the start of its body must not claim the diagram before it.
+    await boot("# F\n\n```mermaid\ngraph TD; A-->B;\n```\n\n" +
+      "```js\nconst x = 1;\n```\n\nTail\n");
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await openBlock();
+    await page.evaluate(() => {
+      const code = document.querySelector(
+        "#viewer-content pre.hybrid-plugin-editing code");
+      const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+      const node = walker.nextNode() || code;
+      const r = document.createRange();
+      r.setStart(node, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("atomic: Backspace in a non-empty fence keeps the diagram",
+      (await diagramCount()) === 1);
+    check("atomic: the non-empty fence stays in edit mode",
+      (await page.evaluate(
+        () => !!document.querySelector("#viewer-content pre.hybrid-plugin-editing"))) === true);
+    check("atomic: the fence body is not merged away",
+      /const x = 1;/.test(await page.evaluate(
+        () => document.querySelector("#viewer-content pre code").textContent)));
+
+    // A leading image is content: Backspace at the text start deletes the
+    // image character, never the diagram above it.
+    const PIC = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSJibHVlIi8+PC9zdmc+";
+    await boot("# I\n\n```mermaid\ngraph TD; A-->B;\n```\n\n" +
+      "![pic](" + PIC + ")alpha\n");
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await placeCaretInText("alpha", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("atomic: a leading image keeps the diagram",
+      (await diagramCount()) === 1);
+    check("atomic: Backspace deletes the image character",
+      (await page.evaluate(
+        () => document.querySelectorAll("#viewer-content img").length)) === 0);
+
+    // A caret at an element boundary at the true start of the following
+    // block is still the block's start.
+    await boot("# E\n\n```mermaid\ngraph TD; A-->B;\n```\n\n**After**\n");
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await page.evaluate(() => {
+      const strong = document.querySelector("#viewer-content p strong");
+      const r = document.createRange();
+      r.setStart(strong, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    check("atomic: an element-boundary caret removes the diagram",
+      (await diagramCount()) === 0);
+    check("atomic: the following block survives",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content p").textContent)) === "After");
+
+    // --- 19. a multi-cell table selection keeps the table shape --------
+    console.log("\n== hybrid blocks: table selection delete ==");
+    const TABLE_NOTE = "# Table\n\n| A | B |\n| --- | --- |\n" +
+      "| 1 | 2 |\n| 3 | 4 |\n";
+    const tableShape = () => page.evaluate(() => {
+      const table = document.querySelector("#viewer-content table");
+      if (!table) return null;
+      return {
+        rows: table.rows.length,
+        cols: Array.from(table.rows).map((row) => row.cells.length),
+        text: Array.from(table.rows)
+          .map((row) => Array.from(row.cells).map((cell) => cell.textContent)),
+      };
+    });
+
+    await boot(TABLE_NOTE);
+    check("table: the fixture renders a 3x2 table",
+      (await tableShape()).rows === 3);
+    await selectBetweenTexts("A", 0, "4", 1);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    let shape = await tableShape();
+    check("table: the text selection was not empty",
+      shape && shape.text.flat().every((t) => t.trim() === ""),
+      JSON.stringify(shape));
+    check("table: multi-cell Delete keeps every row",
+      shape && shape.rows === 3, JSON.stringify(shape));
+    check("table: multi-cell Delete keeps every column",
+      shape && shape.cols.every((n) => n === 2), JSON.stringify(shape));
+    await page.keyboard.press("Control+s");
+    check("table: multi-cell Delete saves valid GFM",
+      await waitForFile((md) => !/<br/i.test(md) &&
+        (md.match(/^\|/gm) || []).length === 4 &&
+        /^\|\s*\|\s*\|$/m.test(md)),
+      JSON.stringify(readNote()));
+    await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
+    await page.waitForSelector("#viewer-content table", { timeout: 10000 });
+    shape = await tableShape();
+    check("table: reload keeps the 3x2 shape",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+    check("table: reload keeps every cell empty",
+      shape && shape.text.flat().every(
+        (t) => t.replace(/[▾▴]/g, "").trim() === ""),
+      JSON.stringify(shape));
+
+    // A fully emptied cell must save as an empty GFM cell, never a soft
+    // line break inside the row.
+    await boot(TABLE_NOTE);
+    await selectBetweenTexts("1", 0, "2", 1);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: a row selection keeps all three rows",
+      shape && shape.rows === 3, JSON.stringify(shape));
+    check("table: a row selection empties only the selected row",
+      shape && shape.text[1][0].trim() === "" &&
+        shape.text[2][0].trim() === "3" && shape.text[2][1].trim() === "4",
+      JSON.stringify(shape));
+    await page.keyboard.press("Control+s");
+    check("table: an emptied cell saves as an empty GFM cell",
+      await waitForFile((md) => /^\|\s*\|\s*\|$/m.test(md) &&
+        /^\| 3 \| 4 \|$/m.test(md) && !/<br/i.test(md)),
+      JSON.stringify(readNote()));
+
+    // A single-cell selection keeps the engine's own intra-cell delete.
+    await boot(TABLE_NOTE);
+    await selectBetweenTexts("1", 0, "1", 1);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: single-cell delete still works",
+      shape && shape.rows === 3 &&
+        shape.text[1][0].trim() === "" && shape.text[2][1].trim() === "4",
+      JSON.stringify(shape));
+    await page.keyboard.press("Control+s");
+    check("table: single-cell delete saves an empty cell",
+      await waitForFile((md) => /^\|\s*\|\s*2\s*\|$/m.test(md) && !/<br/i.test(md)),
+      JSON.stringify(readNote()));
+
+    // A selection from a cell to the paragraph after the table must not
+    // let the engine remove rows.
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n\ntail\n");
+    await selectBetweenTexts("2", 0, "tail", 4);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: a cell-to-paragraph selection keeps every row",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+    await page.keyboard.press("Control+s");
+    check("table: a cell-to-paragraph selection saves valid GFM",
+      await waitForFile((md) => !/<br/i.test(md) &&
+        (md.match(/^\|/gm) || []).length === 4),
+      JSON.stringify(readNote()));
+
+    // A partly covered cell keeps the caret at the original deletion
+    // start, not at the cell's start.
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| hello | 2 |\n");
+    await page.waitForFunction(
+      () => /hello/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await selectBetweenTexts("hello", 2, "2", 1);
+    await page.keyboard.press("Delete");
+    await sleep(200);
+    await page.keyboard.type("Z");
+    await sleep(100);
+    shape = await tableShape();
+    check("table: a partial-cell delete keeps the deletion start",
+      shape && shape.text[1][0].trim() === "heZ" &&
+        shape.text[1][1].trim() === "",
+      JSON.stringify(shape));
+
+    // Ctrl+X over a multi-cell selection must cut the text and keep the
+    // table's shape. Chromium reports deleteByCut through beforeinput.
+    await boot(TABLE_NOTE);
+    await selectBetweenTexts("A", 0, "4", 1);
+    await page.keyboard.press("Control+x");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: Ctrl+X keeps every row and column",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2) &&
+        shape.text.flat().every((t) => t.trim() === ""),
+      JSON.stringify(shape));
+    await page.keyboard.press("Control+s");
+    check("table: Ctrl+X saves valid GFM",
+      await waitForFile((md) => !/<br/i.test(md) &&
+        (md.match(/^\|/gm) || []).length === 4 &&
+        /^\|\s*\|\s*\|$/m.test(md)),
+      JSON.stringify(readNote()));
+    await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
+    await page.waitForSelector("#viewer-content table", { timeout: 10000 });
+    shape = await tableShape();
+    check("table: Ctrl+X reloads as the same table",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+
+    // Shift+Delete is cut on Linux/Windows and reaches the same beforeinput
+    // path; it must not corrupt the table either.
+    await boot(TABLE_NOTE);
+    await selectBetweenTexts("A", 0, "4", 1);
+    await page.keyboard.press("Shift+Delete");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: Shift+Delete keeps every row and column",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+
+    // A cut that crosses the table boundary must delete the outside text
+    // too, matching what was copied, while keeping the table intact.
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n" +
+      "| 3 | 4 |\n\ntail\n");
+    await selectBetweenTexts("2", 0, "tail", 4);
+    await page.keyboard.press("Control+x");
+    await sleep(250);
+    shape = await tableShape();
+    check("table: a cell-to-paragraph cut keeps every row and column",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+    check("table: a cell-to-paragraph cut empties the selected cells",
+      shape && shape.text[1][0].trim() === "1" &&
+        shape.text[1][1].trim() === "" &&
+        shape.text[2][0].trim() === "" && shape.text[2][1].trim() === "",
+      JSON.stringify(shape));
+    check("table: a cell-to-paragraph cut deletes the outside paragraph",
+      !/tail/.test(await page.evaluate(
+        () => document.getElementById("viewer-content").textContent)),
+      await page.evaluate(
+        () => document.getElementById("viewer-content").textContent));
+    await page.keyboard.press("Control+s");
+    check("table: a cell-to-paragraph cut saves valid GFM",
+      await waitForFile((md) => !/tail/.test(md) && !/<br/i.test(md) &&
+        (md.match(/^\|/gm) || []).length === 4),
+      JSON.stringify(readNote()));
+    await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
+    await page.waitForSelector("#viewer-content table", { timeout: 10000 });
+    shape = await tableShape();
+    check("table: a cell-to-paragraph cut reloads as the same table",
+      shape && shape.rows === 3 && shape.cols.every((n) => n === 2),
+      JSON.stringify(shape));
+
+    // --- 20. task item merges at the checkbox --------------------------
+    console.log("\n== hybrid blocks: task item merge ==");
+    const TASK_NOTE = "# Tasks\n\n- [ ] alpha\n- [ ] beta\n";
+    const taskState = () => page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll("#viewer-content li"));
+      return {
+        count: items.length,
+        boxes: document.querySelectorAll(
+          '#viewer-content input[type="checkbox"]').length,
+        texts: items.map((li) => li.textContent.replace(/\u200B/g, "")),
+      };
+    });
+
+    await boot(TASK_NOTE);
+    await placeCaretInText("beta", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    let tasks = await taskState();
+    check("task: Backspace merges the second item into the first",
+      tasks.count === 1 && tasks.boxes === 1, JSON.stringify(tasks));
+    check("task: Backspace keeps both words and drops the second box",
+      tasks.texts[0] === "alphabeta", JSON.stringify(tasks));
+    await page.keyboard.press("Control+s");
+    check("task: Backspace saves one task with the joined text",
+      await waitForFile((md) => md.trim() === "# Tasks\n\n- [ ] alphabeta" &&
+        !/\[ \].*\[ \]/.test(md)),
+      JSON.stringify(readNote()));
+
+    await boot(TASK_NOTE);
+    await placeCaretInText("alpha", "alpha".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    tasks = await taskState();
+    check("task: Delete merges the next item into the current one",
+      tasks.count === 1 && tasks.boxes === 1, JSON.stringify(tasks));
+    check("task: Delete keeps both words and drops the next box",
+      tasks.texts[0] === "alphabeta", JSON.stringify(tasks));
+    await page.keyboard.press("Control+s");
+    check("task: Delete saves one task with the joined text",
+      await waitForFile((md) => md.trim() === "# Tasks\n\n- [ ] alphabeta" &&
+        !/\[ \].*\[ \]/.test(md)),
+      JSON.stringify(readNote()));
+
+    // The first item has no previous sibling item: it joins the block
+    // above and gives up its marker.
+    await boot("# T\n\nIntro\n\n- [ ] alpha\n- [ ] beta\n");
+    await placeCaretInText("alpha", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    tasks = await taskState();
+    check("task: the first item joins the preceding block",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content p").textContent)) ===
+        "Introalpha" && tasks.count === 1 && tasks.texts[0] === "beta",
+      JSON.stringify(tasks));
+    await page.keyboard.press("Control+s");
+    check("task: the first-item merge saves clean Markdown",
+      await waitForFile((md) => md === "# T\n\nIntroalpha\n\n- [ ] beta\n"),
+      JSON.stringify(readNote()));
+
+    // A plain list item has no checkbox: its native merge stays intact.
+    await boot("# L\n\n- one\n- two\n");
+    await placeCaretInText("two", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    const plainItems = await page.evaluate(
+      () => Array.from(document.querySelectorAll("#viewer-content li"))
+        .map((li) => li.textContent));
+    check("task: plain list items still merge natively",
+      plainItems.length === 1 && plainItems[0] === "onetwo",
+      JSON.stringify(plainItems));
+
+    // A loose task item's nested list and extra paragraph must survive
+    // the merge, not vanish with the source item.
+    await boot("# T\n\n- [ ] alpha\n- [ ] beta\n\n" +
+      "  second paragraph\n\n  - [ ] sub\n");
+    await placeCaretInText("beta", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const looseMerge = await page.evaluate(() => {
+      const outer = document.querySelector("#viewer-content > ul > li");
+      return {
+        text: outer ? outer.textContent.replace(/\u200B/g, "") : "",
+        paragraphs: outer ? Array.from(outer.querySelectorAll(":scope > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "")) : [],
+        nested: outer ? Array.from(outer.querySelectorAll(":scope > ul > li"))
+          .map((li) => li.textContent.replace(/\u200B/g, "")) : [],
+        topLevelItems: Array.from(
+          document.querySelectorAll("#viewer-content > ul > li"))
+          .map((li) => li.firstChild && li.firstChild.nodeType === 3 ?
+            li.textContent : ""),
+      };
+    });
+    check("task loose: the merged item keeps its nested list",
+      looseMerge.nested.includes("sub"), JSON.stringify(looseMerge));
+    check("task loose: the merged item keeps its extra paragraph",
+      looseMerge.paragraphs.some((p) => /second paragraph/.test(p)),
+      JSON.stringify(looseMerge));
+    check("task loose: both item texts survive",
+      /alpha/.test(looseMerge.text) && /beta/.test(looseMerge.text),
+      JSON.stringify(looseMerge));
+    await page.keyboard.press("Control+s");
+    check("task loose: saving preserves the paragraph and nested item",
+      await waitForFile((md) => /second paragraph/.test(md) &&
+        /sub/.test(md) && !/\[ \] beta/.test(md)),
+      JSON.stringify(readNote()));
+
+    // A tight task item with a nested list claims Delete at its content
+    // end (the nested list is not its text end).
+    const TIGHT_NEST = "# T\n\n- [ ] alpha\n  - [ ] sub\n- [ ] beta\n";
+    await boot(TIGHT_NEST);
+    await placeCaretInText("alpha", "alpha".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    let nestedState = await page.evaluate(() => ({
+      outer: document.querySelector("#viewer-content > ul > li").textContent
+        .replace(/\u200B/g, ""),
+      nested: Array.from(document.querySelectorAll("#viewer-content li li"))
+        .map((li) => li.textContent.replace(/\u200B/g, "")),
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+    }));
+    check("task nested: Delete merges the next item without corrupting",
+      /alphabeta/.test(nestedState.outer) &&
+        nestedState.nested.includes("sub"), JSON.stringify(nestedState));
+    check("task nested: the nested checkbox survives",
+      nestedState.boxes === 2, JSON.stringify(nestedState));
+    await page.keyboard.press("Control+s");
+    check("task nested: saving keeps the nested item",
+      await waitForFile((md) => /- \[ \] sub/.test(md) &&
+        /alphabeta/.test(md)),
+      JSON.stringify(readNote()));
+
+    // Backspace joins before the target's nested list, so later typing
+    // cannot land inside the child item.
+    await boot(TIGHT_NEST);
+    await placeCaretInText("beta", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    await page.keyboard.type("Z");
+    await sleep(100);
+    nestedState = await page.evaluate(() => ({
+      outer: document.querySelector("#viewer-content > ul > li").textContent
+        .replace(/\u200B/g, ""),
+      nested: Array.from(document.querySelectorAll("#viewer-content li li"))
+        .map((li) => li.textContent.replace(/\u200B/g, "")),
+    }));
+    check("task nested: Backspace joins before the nested list",
+      /alphaZbeta/.test(nestedState.outer), JSON.stringify(nestedState));
+    check("task nested: typing does not land in the child item",
+      nestedState.nested.includes("sub"), JSON.stringify(nestedState));
+
+    // The first item of a NESTED list joins its parent item, not the
+    // block above the whole outer list.
+    await boot("# H\n\n- [ ] outer\n  - [ ] sub\n");
+    await placeCaretInText("sub", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const nestedFirst = await page.evaluate(() => ({
+      heading: document.querySelector("#viewer-content h1").textContent,
+      outer: document.querySelector("#viewer-content > ul > li").textContent
+        .replace(/\u200B/g, ""),
+      nestedCount: document.querySelectorAll("#viewer-content li li").length,
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+    }));
+    check("task nested-first: the heading is not corrupted",
+      nestedFirst.heading === "H", JSON.stringify(nestedFirst));
+    check("task nested-first: the child joins the parent item",
+      /outersub/.test(nestedFirst.outer), JSON.stringify(nestedFirst));
+    check("task nested-first: the emptied nested list is gone",
+      nestedFirst.nestedCount === 0 && nestedFirst.boxes === 1,
+      JSON.stringify(nestedFirst));
+
+    // A non-list target keeps the source's nested list AFTER the block,
+    // never inside its paragraph.
+    await boot("# T\n\nIntro\n\n- [ ] alpha\n\n  - [ ] sub\n");
+    await page.waitForFunction(
+      () => /Intro/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await placeCaretInText("alpha", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const firstPara = await page.evaluate(() => {
+      const p = Array.from(document.querySelectorAll("#viewer-content p"))
+        .find((el) => /Introalpha/.test(el.textContent));
+      return {
+        text: p ? p.textContent : "",
+        nestedInside: p ? p.querySelectorAll("ul,ol").length : -1,
+        siblingList: p && p.nextElementSibling &&
+          p.nextElementSibling.tagName === "UL" ?
+          p.nextElementSibling.textContent.replace(/\u200B/g, "") : "",
+      };
+    });
+    check("task first-item: the joined text lands in the paragraph",
+      firstPara.text === "Introalpha", JSON.stringify(firstPara));
+    check("task first-item: the nested list stays outside the paragraph",
+      firstPara.nestedInside === 0 && /sub/.test(firstPara.siblingList),
+      JSON.stringify(firstPara));
+
+    // --- 21. delete edges around tables, task items, and images -------
+    console.log("\n== hybrid blocks: delete edge guards ==");
+
+    // Ctrl+A + Delete must clear the whole note. A table fully inside the
+    // selection is an ordinary block; the table guard must not claim a
+    // selection whose endpoints are both outside cells.
+    await boot("# Title\n\nPara one.\n\n| A | B |\n| --- | --- |\n" +
+      "| 1 | 2 |\n\nPara two.\n");
+    await page.waitForFunction(
+      () => /Para one/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await page.click("#viewer-content p");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const cleared = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      const p = root.querySelector(":scope > p[data-hybrid-caret]");
+      return {
+        table: root.querySelectorAll("table").length,
+        h1: root.querySelectorAll("h1").length,
+        children: root.children.length,
+        caretP: !!p,
+        text: root.textContent.trim(),
+      };
+    });
+    check("delete edge: Ctrl+A + Delete clears the table",
+      cleared.table === 0, JSON.stringify(cleared));
+    check("delete edge: Ctrl+A + Delete leaves one plain caret paragraph",
+      cleared.children === 1 && cleared.caretP && cleared.text === "",
+      JSON.stringify(cleared));
+    await page.keyboard.type("hello");
+    await sleep(100);
+    check("delete edge: typing after Ctrl+A + Delete is plain text",
+      (await page.evaluate(() => {
+        const root = document.getElementById("viewer-content");
+        return root.children.length === 1 &&
+          root.firstElementChild.tagName === "P" &&
+          root.textContent.trim() === "hello";
+      })) === true);
+    await page.keyboard.press("Control+s");
+    check("delete edge: typing after Ctrl+A + Delete saves plain text",
+      await waitForFile((md) => md.trim() === "hello"), JSON.stringify(readNote()));
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await sleep(150);
+    await page.keyboard.press("Control+s");
+    check("delete edge: saving the empty state emits no heading junk",
+      await waitForFile((md) => /^\s*$/.test(md) && !/#/.test(md)),
+      JSON.stringify(readNote()));
+
+    // An empty first block is still a block. Selecting only the text in a
+    // later block must not be read as a whole-note clear.
+    await boot("# \n\nHello\n");
+    await page.waitForFunction(
+      () => /Hello/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await selectBetweenTexts("Hello", 0, "Hello", 5);
+    await page.keyboard.press("Delete");
+    await sleep(200);
+    const partialClear = await page.evaluate(() => ({
+      h1: document.querySelectorAll("#viewer-content h1").length,
+      caretP: document.querySelectorAll(
+        "#viewer-content p[data-hybrid-caret]").length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("delete edge: a later-block selection is not a whole-note clear",
+      partialClear.h1 === 1 && partialClear.caretP === 0,
+      JSON.stringify(partialClear));
+    check("delete edge: the partial delete removes only the selected text",
+      !/Hello/.test(partialClear.text), JSON.stringify(partialClear));
+
+    // Ctrl+A + Ctrl+X clears the whole note to one plain paragraph; the
+    // clipboard side is untouched.
+    await boot("# Title\n\nParagraph.\n");
+    await page.waitForFunction(
+      () => /Paragraph/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await page.click("#viewer-content p");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Control+x");
+    await sleep(250);
+    const cutClear = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      return {
+        h1: root.querySelectorAll("h1").length,
+        children: root.children.length,
+        caretP: !!root.querySelector(":scope > p[data-hybrid-caret]"),
+        text: root.textContent.trim(),
+      };
+    });
+    check("delete edge: Ctrl+A + Ctrl+X leaves one plain caret paragraph",
+      cutClear.h1 === 0 && cutClear.children === 1 &&
+        cutClear.caretP && cutClear.text === "", JSON.stringify(cutClear));
+    await page.keyboard.type("hello");
+    await sleep(100);
+    check("delete edge: typing after a whole-note cut is plain text",
+      (await page.evaluate(() => {
+        const root = document.getElementById("viewer-content");
+        return root.children.length === 1 &&
+          root.firstElementChild.tagName === "P" &&
+          root.textContent.trim() === "hello";
+      })) === true);
+    await page.keyboard.press("Control+s");
+    check("delete edge: a whole-note cut saves plain text",
+      await waitForFile((md) => md.trim() === "hello"), JSON.stringify(readNote()));
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await sleep(150);
+    await page.keyboard.press("Control+s");
+    check("delete edge: saving after a whole-note cut emits no heading junk",
+      await waitForFile((md) => /^\s*$/.test(md) && !/#/.test(md)),
+      JSON.stringify(readNote()));
+
+    // Delete at the end of a plain item whose next item is a task must
+    // merge the text and drop the checkbox, not write a literal [ ].
+    await boot("# L\n\n- one\n- [ ] two\n");
+    await page.waitForFunction(
+      () => /one/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await placeCaretInText("one", "one".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const mergedPlain = await page.evaluate(() => ({
+      items: document.querySelectorAll("#viewer-content li").length,
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+      text: document.querySelector("#viewer-content li").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("delete edge: a plain item absorbs the following task",
+      mergedPlain.items === 1 && mergedPlain.boxes === 0 &&
+        mergedPlain.text.trim() === "onetwo", JSON.stringify(mergedPlain));
+    await page.keyboard.press("Control+s");
+    check("delete edge: the merged plain item saves no literal [ ]",
+      await waitForFile((md) => /onetwo/.test(md) && !/\[ \]/.test(md)),
+      JSON.stringify(readNote()));
+
+    // A caret AT a nested list boundary is not the outer item's content
+    // end: Delete must not merge the following outer item.
+    await boot("# T\n\n- [ ] alpha\n  - sub\n- [ ] beta\n");
+    await page.waitForFunction(
+      () => /beta/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await page.evaluate(() => {
+      const nested = document.querySelector("#viewer-content ul ul");
+      const r = document.createRange();
+      r.setStart(nested, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const boundary = await page.evaluate(() => ({
+      outer: document.querySelectorAll("#viewer-content > ul > li").length,
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("delete edge: a nested-list boundary keeps the next outer item",
+      boundary.outer === 2 && boundary.boxes === 2 &&
+        /beta/.test(boundary.text), JSON.stringify(boundary));
+
+    // A leading image inside a task item is content: Backspace deletes
+    // the image, not the item's start/merge.
+    await boot("# T\n\n- [ ] ![](" + PIC + ")alpha\n");
+    await page.waitForFunction(
+      () => /alpha/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await placeCaretInText("alpha", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const taskImage = await page.evaluate(() => ({
+      images: document.querySelectorAll("#viewer-content img").length,
+      items: document.querySelectorAll("#viewer-content li").length,
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("delete edge: a leading task image is deleted, not the item",
+      taskImage.images === 0 && taskImage.items === 1 &&
+        taskImage.boxes === 1 && /alpha/.test(taskImage.text),
+      JSON.stringify(taskImage));
+
+    // Same rule at an <hr> edge: the image is the character Backspace
+    // removes, not the rule.
+    await boot("# H\n\n---\n\n![](" + PIC + ")alpha\n");
+    await page.waitForFunction(
+      () => /alpha/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await placeCaretInText("alpha", 0);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const ruleImage = await page.evaluate(() => ({
+      rules: document.querySelectorAll("#viewer-content hr").length,
+      images: document.querySelectorAll("#viewer-content img").length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("delete edge: a leading image after a rule is deleted, not the rule",
+      ruleImage.rules === 1 && ruleImage.images === 0 &&
+        /alpha/.test(ruleImage.text), JSON.stringify(ruleImage));
+
+    // Table context-menu items must be disabled on the shapes the delete
+    // actions already refuse.
+    const openTableMenu = async (selector = "#viewer-content td") => {
+      await page.click(selector);
+      await page.evaluate((sel) => {
+        const cell = document.querySelector(sel);
+        cell.dispatchEvent(new MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+      }, selector);
+      await sleep(100);
+    };
+    const tableMenuState = () => page.evaluate(() => {
+      const menu = document.getElementById("nb-menu");
+      const wrap = Array.from(menu.querySelectorAll("button.submenu"))
+        .find((b) => b.firstChild && b.firstChild.nodeType === Node.TEXT_NODE &&
+          b.firstChild.nodeValue.trim() === "Table");
+      if (!wrap) return null;
+      const buttons = Array.from(wrap.querySelectorAll("button"));
+      const pick = (label) => buttons.find((b) => b.textContent.trim() === label);
+      const row = pick("Delete row");
+      const col = pick("Delete column");
+      return {
+        row: row && { disabled: row.disabled, title: row.title },
+        col: col && { disabled: col.disabled, title: col.title },
+        rows: menu.ownerDocument
+          .querySelectorAll("#viewer-content table tr").length,
+      };
+    });
+
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n");
+    await page.waitForFunction(
+      () => /1/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await openTableMenu();
+    let menuState = await tableMenuState();
+    check("table menu: Delete row is disabled for header + one row",
+      menuState && menuState.row && menuState.row.disabled &&
+        /header/.test(menuState.row.title), JSON.stringify(menuState));
+    // The header row has its own reason, not the header+body-row reason.
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n");
+    await page.waitForFunction(
+      () => /3/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await openTableMenu("#viewer-content th");
+    menuState = await tableMenuState();
+    check("table menu: deleting the header row states the header cause",
+      menuState && menuState.row && menuState.row.disabled &&
+        /header row cannot be deleted/.test(menuState.row.title),
+      JSON.stringify(menuState));
+
+    await boot("# T\n\n| A |\n| --- |\n| 1 |\n");
+    await page.waitForFunction(
+      () => /1/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await openTableMenu();
+    menuState = await tableMenuState();
+    check("table menu: Delete column is disabled for one column",
+      menuState && menuState.col && menuState.col.disabled &&
+        /column/.test(menuState.col.title), JSON.stringify(menuState));
+
+    await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n");
+    await page.waitForFunction(
+      () => /3/.test(document.getElementById("viewer-content").textContent),
+      null, { timeout: 5000 });
+    await openTableMenu();
+    menuState = await tableMenuState();
+    check("table menu: an ordinary table keeps both deletes enabled",
+      menuState && menuState.row && !menuState.row.disabled &&
+        menuState.col && !menuState.col.disabled, JSON.stringify(menuState));
+    await page.evaluate(() => {
+      const menu = document.getElementById("nb-menu");
+      const wrap = Array.from(menu.querySelectorAll("button.submenu"))
+        .find((b) => b.firstChild && b.firstChild.nodeType === Node.TEXT_NODE &&
+          b.firstChild.nodeValue.trim() === "Table");
+      const row = wrap && Array.from(wrap.querySelectorAll("button"))
+        .find((b) => b.textContent.trim() === "Delete row");
+      if (row && !row.disabled) row.click();
+    });
+    await sleep(150);
+    check("table menu: enabled Delete row removes that row",
+      (await page.evaluate(
+        () => document.querySelectorAll("#viewer-content table tr").length)) === 2,
+      JSON.stringify(await tableShape()));
+    await page.keyboard.press("Control+s");
+    check("table menu: enabled Delete row saves the shortened table",
+      await waitForFile((md) => (md.match(/^\|/gm) || []).length === 3 &&
+        /\| 3 \| 4 \|/.test(md) && !/\| 1 \| 2 \|/.test(md)),
+      JSON.stringify(readNote()));
 
     check("no uncaught page errors", pageErrors.length === 0, pageErrors.join(" | "));
     await page.screenshot({ path: path.join(tmp, "block-edit.png") });

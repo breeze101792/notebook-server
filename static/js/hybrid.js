@@ -145,6 +145,20 @@
   // empty list item. It is invisible and meaningless, so the content hash
   // ignores it (and domToMarkdown strips it from the output).
   const ZERO_WIDTH_SPACE = "\u200B";
+  // Void/embedded content that makes an otherwise empty element real: an
+  // image, rule, checkbox, canvas, svg, iframe, or embedded media. Shared
+  // by the empty-block, empty-cell, and list-merge checks so they cannot
+  // disagree about what counts as content.
+  const EMBEDDED_CONTENT_SELECTOR =
+    "img,hr,input,canvas,svg,iframe,embed,object,video,audio";
+  // Block-level children of a list item. Everything before the first of
+  // these is the item's own inline content; everything from it onward is
+  // structure that a merge moves AFTER the target's content.
+  const LIST_BLOCK_TAGS = [
+    "P", "UL", "OL", "BLOCKQUOTE", "PRE", "TABLE", "DIV",
+    "H1", "H2", "H3", "H4", "H5", "H6", "HR",
+  ];
+  const LIST_BLOCK_TAG_SET = new Set(LIST_BLOCK_TAGS);
   // Attributes that hybrid/viewer inject for editing chrome and must not
   // count as content in the change hash: contenteditable is set on the
   // root and on atomic plugin blocks, and every data-hybrid-* attribute
@@ -388,7 +402,7 @@
    * it is a void child for the purpose of "is there content"; only the
    * truly empty item gets the sentinel. */
   function isEmptyListItem(li) {
-    if (li.querySelector("img,hr,canvas,svg,iframe,input")) return false;
+    if (li.querySelector(EMBEDDED_CONTENT_SELECTOR)) return false;
     return li.textContent.replace(/\u200B/g, "").trim() === "";
   }
 
@@ -496,6 +510,16 @@
    * NB.blocks.restoreForMarkdown runs afterwards to replace any table
    * living inside a plugin container with its fence. */
   function normalizeTablesForGfm(root) {
+    // A th/td holding only whitespace and engine line boxes must serialize
+    // as an empty GFM cell ("|  |"). Left in, a <br> emits a soft break
+    // inside the row and the table no longer parses on reload. A cell
+    // holding only <br>s is therefore emptied too. A <br> in a cell with
+    // text is left alone: it may be authored inline HTML and is content.
+    root.querySelectorAll("th,td").forEach((cell) => {
+      if (cell.textContent.trim()) return;
+      if (cell.querySelector(EMBEDDED_CONTENT_SELECTOR + ",pre,table")) return;
+      cell.querySelectorAll("br").forEach((br) => br.remove());
+    });
     root.querySelectorAll("table").forEach((table) => {
       const caption = table.querySelector("caption");
       if (caption && caption.textContent.trim()) {
@@ -2367,6 +2391,33 @@
     return node.closest("pre.hybrid-plugin-editing");
   }
 
+  /* True when a delete key is at the editable edge of a non-empty fence
+   * body. Native Backspace/Delete there would merge the nested editor
+   * with the neighbouring block (Chromium moved the code into the
+   * preceding heading and removed the diagram in between), so the key is
+   * claimed and does nothing instead. An emptied fence is handled by
+   * removeEmptyCodeBlock before this check. */
+  function codeEditorAtEdge(pre, key) {
+    const code = pre && pre.querySelector("code");
+    if (!code) return false;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    if (!code.contains(range.startContainer)) return false;
+    const side = document.createRange();
+    side.selectNodeContents(code);
+    if (key === "Backspace") {
+      side.setEnd(range.startContainer, range.startOffset);
+    } else {
+      side.setStart(range.startContainer, range.startOffset);
+    }
+    // Whitespace is a real character inside a fence: a caret part-way
+    // through a whitespace-only body is an ordinary delete, not an edge.
+    if (side.toString().replace(/\u200B/g, "") !== "") return false;
+    const frag = side.cloneContents();
+    return !frag.querySelector(EMBEDDED_CONTENT_SELECTOR + ",br");
+  }
+
   /* The leaf of a top-level block that can hold a text caret at its
    * start/end. Lists and quotes are containers, so their carets belong
    * to the first/last item; a rule, table, fence or atomic plugin block
@@ -2387,8 +2438,11 @@
       return edgeCaretHost(atEnd ? kids[kids.length - 1] : kids[0], atEnd);
     }
     if (node.tagName === "LI") {
+      // A checkbox (contenteditable=false) is a marker island, not a block
+      // of its own: skipping it lets the <li> itself host the caret.
       const blocks = Array.prototype.filter.call(node.children,
-        (c) => c.tagName !== "UL" && c.tagName !== "OL" && c.tagName !== "HR");
+        (c) => c.tagName !== "UL" && c.tagName !== "OL" &&
+          c.tagName !== "HR" && c.getAttribute("contenteditable") !== "false");
       if (blocks.length) {
         return edgeCaretHost(atEnd ? blocks[blocks.length - 1] : blocks[0], atEnd);
       }
@@ -2445,11 +2499,71 @@
     if (back) side.setEnd(range.startContainer, range.startOffset);
     else side.setStart(range.startContainer, range.startOffset);
     if (side.toString().replace(/\u200B|[\n\r]/g, "") !== "") return false;
-    // A fence nested in a list item or quote cannot be lifted out
-    // without tearing its container open, but the native merge would
-    // destroy its <code> element: claim the key and leave the empty
-    // fence for the serializer to drop.
-    if (pre.parentElement !== viewerContentEl) return true;
+    if (pre.parentElement !== viewerContentEl) {
+      // A fence nested in a list item or quote cannot be lifted out
+      // without tearing its container open, but leaving it for the
+      // serializer makes the key a dead no-op and the native merge
+      // destroys its <code>. Remove just the empty block and keep its
+      // container (an empty list item is a valid editable state).
+      const container = pre.parentElement;
+      pre.setAttribute("contenteditable", "false");
+      // Marked parks formatting newlines between a container's blocks.
+      // Left behind, they serialize as a blank indented line inside the
+      // list item or quote once the fence is gone.
+      const dropWhitespaceSiblings = (node) => {
+        let prev = node.previousSibling;
+        while (prev && prev.nodeType === Node.TEXT_NODE && !prev.nodeValue.trim()) {
+          const older = prev.previousSibling;
+          prev.remove();
+          prev = older;
+        }
+        let next = node.nextSibling;
+        while (next && next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()) {
+          const newer = next.nextSibling;
+          next.remove();
+          next = newer;
+        }
+      };
+      dropWhitespaceSiblings(pre);
+      const contentSibling = (node, dir) => {
+        let sibling = dir < 0 ? node.previousSibling : node.nextSibling;
+        while (sibling && sibling.nodeType === Node.TEXT_NODE &&
+               !sibling.nodeValue.trim()) {
+          sibling = dir < 0 ? sibling.previousSibling : sibling.nextSibling;
+        }
+        return sibling;
+      };
+      const previousContent = contentSibling(pre, -1);
+      const followingContent = contentSibling(pre, 1);
+      pre.remove();
+      viewerContentEl.focus();
+      // Keep the caret where the block stood: at the end of the content
+      // before it (Backspace) or the start of the content after it
+      // (Delete). Falling back to the container edge only when that side
+      // has no content.
+      const placeCaretAt = (node, atEnd) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          caretToEdge(node, atEnd);
+          return;
+        }
+        const r = document.createRange();
+        r.setStart(node, atEnd ? node.nodeValue.length : 0);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      };
+      let target = back ? previousContent : followingContent;
+      let atEnd = back;
+      if (!target) {
+        target = back ? followingContent : previousContent;
+        atEnd = !back;
+      }
+      if (target) placeCaretAt(target, atEnd);
+      else caretToEdge(container, !back);
+      onContentChange();
+      return true;
+    }
     const prevHost = caretHostBeside(pre, -1);
     const nextHost = caretHostBeside(pre, 1);
     const host = back ? (prevHost || nextHost) : (nextHost || prevHost);
@@ -2583,7 +2697,7 @@
     const BLOCKS = "p,h1,h2,h3,h4,h5,h6,blockquote,li";
     viewerContentEl.querySelectorAll(BLOCKS).forEach((el) => {
       if (el.textContent.trim()) return;
-      if (el.querySelector("img,br,canvas,svg,iframe,input,hr")) return;
+      if (el.querySelector(EMBEDDED_CONTENT_SELECTOR + ",br")) return;
       if (el.querySelector(PLUGIN_CONTAINER_SELECTOR)) return;
       const br = document.createElement("br");
       br.setAttribute(CARET_BR_ATTR, "1");
@@ -2668,18 +2782,301 @@
       (c) => c.tagName === "INPUT" && c.type === "checkbox") || null;
   }
 
+  /* True when the collapsed caret sits in the item's OWN content -- not
+   * inside a nested list, even though the nested list's `<li>` is still
+   * a descendant of the outer item. */
+  function caretInListItemOwnContent(li, range) {
+    let el;
+    if (range.startContainer.nodeType === Node.TEXT_NODE) {
+      el = range.startContainer.parentElement;
+    } else if (range.startContainer.nodeType === Node.ELEMENT_NODE) {
+      el = range.startContainer;
+    } else {
+      return false;
+    }
+    while (el && el !== li) {
+      if (el.tagName === "UL" || el.tagName === "OL") return false;
+      el = el.parentElement;
+    }
+    return el === li;
+  }
+
   /* True when the collapsed caret sits at the first text position of
    * `li`'s own content. A task checkbox is a marker, not content, so the
-   * start is AFTER the box: "before the first character" of the item's
-   * text. Whitespace (and the zero-width caret host) does not count. */
+   * start is AFTER the box. The probe is element-aware: a leading image
+   * is content, so Backspace there deletes the image, not the item. */
   function caretAtListItemStart(li, range) {
     if (!li || !range || !li.contains(range.startContainer)) return false;
+    if (!caretInListItemOwnContent(li, range)) return false;
     const cb = taskCheckboxOf(li);
     const probe = document.createRange();
-    if (cb) probe.setStartAfter(cb);
-    else probe.selectNodeContents(li);
-    probe.setEnd(range.startContainer, range.startOffset);
-    return probe.toString().replace(/[\s\u200B]+/g, "") === "";
+    try {
+      if (cb) probe.setStartAfter(cb);
+      else probe.selectNodeContents(li);
+      probe.setEnd(range.startContainer, range.startOffset);
+    } catch (_) {
+      return false;
+    }
+    return !rangeHasContent(probe);
+  }
+
+  /* A nested list is the item's structural child, never its text. */
+  function isNestedList(node) {
+    return !!node && node.nodeType === Node.ELEMENT_NODE &&
+      (node.tagName === "UL" || node.tagName === "OL");
+  }
+
+  function isListItemBlockChild(node) {
+    return !!node && node.nodeType === Node.ELEMENT_NODE &&
+      LIST_BLOCK_TAG_SET.has(node.tagName);
+  }
+
+  /* The paragraph that hosts a loose item's own content, or null for a
+   * tight item (whose content is its leading inline run). A loose task
+   * item keeps its checkbox inside that paragraph. */
+  function listItemPrimaryHost(li) {
+    const cb = taskCheckboxOf(li);
+    if (cb) {
+      const p = cb.parentElement;
+      if (p && p.tagName === "P" && p.parentElement === li) return p;
+      return null;
+    }
+    const first = Array.from(li.childNodes).find((node) =>
+      node.nodeType === Node.ELEMENT_NODE ||
+      (node.nodeType === Node.TEXT_NODE && node.nodeValue.trim()));
+    return first && first.nodeType === Node.ELEMENT_NODE &&
+      first.tagName === "P" ? first : null;
+  }
+
+  /* The source item's own content: the children of its primary paragraph,
+   * or its leading inline/text run for a tight item. The checkbox and
+   * zero-width caret host are markers, not content. */
+  function listItemPrimaryNodes(li) {
+    const cb = taskCheckboxOf(li);
+    const host = listItemPrimaryHost(li);
+    const nodes = [];
+    const trimLeadingBreak = (list) => {
+      const first = list.find((node) => node.nodeType === Node.TEXT_NODE);
+      if (first) first.nodeValue = first.nodeValue.replace(/^[\n\r]+/, "");
+      return list;
+    };
+    if (host) {
+      Array.from(host.childNodes).forEach((node) => {
+        if (node !== cb) nodes.push(node);
+      });
+      return trimLeadingBreak(nodes);
+    }
+    for (const node of li.childNodes) {
+      if (node === cb) continue;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.nodeValue === ZERO_WIDTH_SPACE) continue;
+        nodes.push(node);
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue;
+      if (isListItemBlockChild(node)) break;
+      nodes.push(node);
+    }
+    // Marked parks a formatting newline before a nested list; it is not
+    // part of the joined text.
+    while (nodes.length) {
+      const last = nodes[nodes.length - 1];
+      if (last.nodeType === Node.TEXT_NODE && !last.nodeValue.trim()) nodes.pop();
+      else break;
+    }
+    return trimLeadingBreak(nodes);
+  }
+
+  /* The source item's structural children: extra paragraphs, nested
+   * lists, quotes, fences, ... -- everything that must not be folded into
+   * the target's inline content. */
+  function listItemBlockChildren(li) {
+    const cb = taskCheckboxOf(li);
+    const host = listItemPrimaryHost(li);
+    return Array.from(li.childNodes).filter((node) => {
+      if (node === cb || node === host) return false;
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      return isListItemBlockChild(node);
+    });
+  }
+
+  /* A range collapsed at the end of the target item's OWN content, before
+   * its nested lists. This is both the text join point and where later
+   * typing must land. */
+  function listItemOwnContentEndRange(li) {
+    const host = listItemPrimaryHost(li);
+    const range = document.createRange();
+    if (host) {
+      range.selectNodeContents(host);
+      range.collapse(false);
+      return range;
+    }
+    const block = Array.from(li.childNodes).find(isListItemBlockChild);
+    if (block) {
+      range.setStart(li, Array.prototype.indexOf.call(li.childNodes, block));
+      range.collapse(true);
+    } else {
+      range.selectNodeContents(li);
+      range.collapse(false);
+    }
+    return range;
+  }
+
+  /* Append the source's inline content to the target's own content: the
+   * primary paragraph when loose, the leading run before the first block
+   * child when tight, or the target element itself for a non-list block. */
+  function appendListItemPrimary(target, nodes) {
+    if (!nodes.length) return;
+    if (target.tagName !== "LI") {
+      nodes.forEach((node) => target.appendChild(node));
+      return;
+    }
+    const host = listItemPrimaryHost(target);
+    if (host) {
+      nodes.forEach((node) => host.appendChild(node));
+      return;
+    }
+    const block = Array.from(target.childNodes).find(isListItemBlockChild);
+    if (block) {
+      nodes.forEach((node) => target.insertBefore(node, block));
+    } else {
+      nodes.forEach((node) => target.appendChild(node));
+    }
+  }
+
+  /* Structural source children go after the target's own content and
+   * nested lists. A non-list target must never receive them INSIDE its
+   * paragraph; they follow the target block instead. */
+  function appendListItemBlocks(target, nodes) {
+    if (!nodes.length) return;
+    if (target.tagName === "LI") {
+      nodes.forEach((node) => target.appendChild(node));
+      return;
+    }
+    const parent = target.parentNode;
+    if (!parent) return;
+    const ref = target.nextSibling;
+    nodes.forEach((node) => parent.insertBefore(node, ref));
+  }
+
+  function moveListItemContent(source, target) {
+    appendListItemPrimary(target, listItemPrimaryNodes(source));
+    appendListItemBlocks(target, listItemBlockChildren(source));
+  }
+
+  /* True when the collapsed caret sits at the end of `li`'s own content.
+   * A trailing nested list is structure, not content: its text must not
+   * make the caret stop being "at the item's end", but a caret AT the
+   * nested list boundary is not in the own content either. */
+  function caretAtListItemContentEnd(li, range) {
+    if (!li || !range || !li.contains(range.startContainer)) return false;
+    if (!caretInListItemOwnContent(li, range)) return false;
+    const cb = taskCheckboxOf(li);
+    let last = null;
+    for (const node of li.childNodes) {
+      if (node === cb || isNestedList(node)) continue;
+      if (node.nodeType === Node.TEXT_NODE && !node.nodeValue.trim()) continue;
+      last = node;
+    }
+    const after = document.createRange();
+    try {
+      after.setStart(range.startContainer, range.startOffset);
+      if (last) {
+        const end = document.createRange();
+        end.selectNodeContents(last);
+        after.setEnd(end.endContainer, end.endOffset);
+      } else if (cb) {
+        after.setEndAfter(cb);
+      } else {
+        after.setEnd(li, li.childNodes.length);
+      }
+    } catch (_) {
+      return false;
+    }
+    return !rangeHasContent(after);
+  }
+
+  /* The list item whose edge a delete key claims, or null. Only a
+   * collapsed caret directly at the item's content start (Backspace) or
+   * end (Delete) qualifies; a caret inside a nested item resolves to that
+   * item instead. A task item is claimed for itself; a plain item is
+   * claimed only when the neighbour it would merge with is a task item,
+   * because the native merge destroys that checkbox. */
+  function taskItemForDeleteKey(key) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !node.closest) return null;
+    const li = node.closest("li");
+    if (!li || !viewerContentEl.contains(li)) return null;
+    if (key === "Backspace" && !caretAtListItemStart(li, range)) return null;
+    if (key === "Delete" && !caretAtListItemContentEnd(li, range)) return null;
+    if (taskCheckboxOf(li)) return { li };
+    const neighbour = key === "Backspace" ? li.previousElementSibling :
+      li.nextElementSibling;
+    if (neighbour && neighbour.tagName === "LI" &&
+        taskCheckboxOf(neighbour)) return { li };
+    return null;
+  }
+
+  /* Merge a task item at its edge, mirroring the engine's selection
+   * merge but keeping the checklist intact. Backspace joins the item's
+   * own content to the previous sibling item, the parent item for a
+   * nested list's first item, or the preceding top-level block. Delete
+   * pulls the next sibling's content in and drops that item's checkbox.
+   * Structural children (nested lists, extra paragraphs) travel after
+   * the target's own content. The caret stays at the join. */
+  function mergeTaskItemAtEdge(li, key) {
+    if (!li || !li.parentElement) return false;
+    const list = li.closest("ul,ol");
+    const target = key === "Backspace" ? li.previousElementSibling :
+      li.nextElementSibling;
+    if (key === "Backspace" && target && target.tagName === "LI") {
+      return joinListItemInto(li, target, list);
+    }
+    if (key === "Delete" && target && target.tagName === "LI") {
+      return joinListItemInto(target, li, list);
+    }
+    if (key === "Backspace") {
+      // First item of a nested list: the parent item is its actual
+      // neighbour, not the block above the whole outer list.
+      const parentItem = list && list.parentElement &&
+        list.parentElement.tagName === "LI" ? list.parentElement : null;
+      if (parentItem) return joinListItemInto(li, parentItem, list);
+      // First item of a top-level list: join into the preceding top-level
+      // block's caret host. With none, leave the native behavior intact.
+      const top = list && topLevelBlock(list);
+      const host = top && edgeCaretHost(top.previousElementSibling, true);
+      if (!host) return false;
+      return joinListItemInto(li, host, list);
+    }
+    return false;
+  }
+
+  /* Move `source`'s content into `target`, remove the emptied source item,
+   * and leave the caret at the join point. `list` is the source's list;
+   * it is removed once no items remain. */
+  function joinListItemInto(source, target, list) {
+    const join = target.tagName === "LI"
+      ? listItemOwnContentEndRange(target)
+      : (() => {
+        const range = document.createRange();
+        range.selectNodeContents(target);
+        range.collapse(false);
+        return range;
+      })();
+    moveListItemContent(source, target);
+    source.remove();
+    if (list && !list.querySelector("li")) list.remove();
+    if (target.tagName === "LI") ensureListMarker(target);
+    viewerContentEl.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(join);
+    onContentChange();
+    return true;
   }
 
   /* Where a new checkbox for `li` belongs. A loose item wraps its content
@@ -3493,18 +3890,36 @@
     "UL", "OL", "LI", "BLOCKQUOTE",
   ];
 
+  /* True when a range carries content: text, or a void/embedded node (an
+   * image, a rule, a checkbox, a line box). The element branch is what
+   * makes an edge test independent of textContent: a leading image makes
+   * the caret NOT at the block start even though the text before it is
+   * empty. An empty inline wrapper at a boundary is not content: a caret
+   * at (span, 0) is still the start of the block. */
+  function rangeHasContent(range) {
+    if (!range || range.collapsed) return false;
+    // Formatting whitespace and the zero-width caret host are not content.
+    if (range.toString().replace(/[\s\u200B]/g, "") !== "") return true;
+    const frag = range.cloneContents();
+    return !!frag.querySelector(EMBEDDED_CONTENT_SELECTOR + ",br");
+  }
+
   /* True when the collapsed caret sits directly in `top` -- not nested
-   * inside a table cell, list item or blockquote. The rule-click repair
-   * leaves the caret ON `top` itself (startContainer === top) whatever
-   * the block type; a deliberate click into a table cell or list item
-   * leaves it in a nested element, which must keep its own editing. An
-   * inline chain (a fence's <code> inside its <pre>) still counts, since
-   * that is the block's own text. The caller pairs this with a
-   * start-of-block or end-of-block test to pick the edge. */
+   * inside a table cell, list item or blockquote. A caret at an element
+   * boundary ((span, 0)) is as direct as one in a text node, so resolve
+   * from the containing element too. An inline chain (a fence's <code>
+   * inside its <pre>) still counts, since that is the block's own text. */
   function caretDirectlyInTop(top, range) {
+    if (!top) return false;
     if (range.startContainer === top) return true;
-    if (range.startContainer.nodeType !== Node.TEXT_NODE) return false;
-    let el = range.startContainer.parentElement;
+    let el;
+    if (range.startContainer.nodeType === Node.TEXT_NODE) {
+      el = range.startContainer.parentElement;
+    } else if (range.startContainer.nodeType === Node.ELEMENT_NODE) {
+      el = range.startContainer;
+    } else {
+      return false;
+    }
     while (el && el !== top) {
       if (NESTED_STRUCTURE_TAGS.indexOf(el.tagName) !== -1) return false;
       el = el.parentElement;
@@ -3523,13 +3938,22 @@
     return (top && top !== viewerContentEl) ? top : null;
   }
 
-  /* True when the collapsed caret sits at the very END of `blockEl`
-   * (nothing but whitespace between it and the block's end). */
+  /* True when nothing (text or an element) lies between `top`'s start and
+   * the caret. */
+  function caretAtBlockStart(top, range) {
+    const before = document.createRange();
+    before.selectNodeContents(top);
+    before.setEnd(range.startContainer, range.startOffset);
+    return !rangeHasContent(before);
+  }
+
+  /* True when nothing (text or an element) lies between the caret and
+   * `blockEl`'s end. */
   function caretAtBlockEnd(blockEl, range) {
     const after = document.createRange();
-    after.selectNodeContents(blockEl);
     after.setStart(range.startContainer, range.startOffset);
-    return after.toString().replace(/\u200B/g, "") === "";
+    after.setEnd(blockEl, blockEl.childNodes.length);
+    return !rangeHasContent(after);
   }
 
   /* The top-level <hr> a ROOT-level caret sits beside, with the side the
@@ -3598,8 +4022,7 @@
     const prev = top.previousElementSibling;
     const next = top.nextElementSibling;
     if (key === "Backspace" && prev && prev.tagName === "HR" &&
-        caretDirectlyInTop(top, range) &&
-        textBeforeCaret(top, range) === "") {
+        caretDirectlyInTop(top, range) && caretAtBlockStart(top, range)) {
       return { hr: prev, after: true };
     }
     if (key === "Delete" && next && next.tagName === "HR" &&
@@ -3634,6 +4057,203 @@
     p.setAttribute("data-hybrid-caret", "1");
     viewerContentEl.appendChild(p);
     caretToStart(p);
+  }
+
+  /* A top-level block the caret cannot enter: a rendered plugin
+   * container, or a raw code fence that is not in its click-to-edit
+   * state. The delete keys treat these as one character at the block
+   * edge, like a rule; the serializer drops the fence source when the
+   * container is removed. */
+  function isAtomicBlockElement(el) {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    if (el.getAttribute(ATOMIC_BLOCK_MARKER) === "1") return true;
+    if (PLUGIN_CONTAINER_SELECTOR && el.matches(PLUGIN_CONTAINER_SELECTOR)) {
+      return true;
+    }
+    return el.tagName === "PRE" &&
+      el.getAttribute("contenteditable") !== "true";
+  }
+
+  /* A root-level caret can live in one of the whitespace text nodes marked
+   * parks between top-level blocks, not only as a root offset. When it
+   * sits at that node's edge, the adjacent element is the block beside
+   * the caret; report it when it is atomic. */
+  function atomicBlockAtRootText(node, offset, key) {
+    if (!node || node.nodeType !== Node.TEXT_NODE ||
+        node.parentNode !== viewerContentEl) return null;
+    if (/\S/.test(node.nodeValue)) return null;
+    if (key === "Backspace" && offset !== 0) return null;
+    if (key === "Delete" && offset !== node.nodeValue.length) return null;
+    const nodes = viewerContentEl.childNodes;
+    const idx = Array.prototype.indexOf.call(nodes, node);
+    if (idx < 0) return null;
+    let before = null;
+    for (let i = idx - 1; i >= 0; i -= 1) {
+      if (nodes[i].nodeType === Node.ELEMENT_NODE) { before = nodes[i]; break; }
+    }
+    let after = null;
+    for (let i = idx + 1; i < nodes.length; i += 1) {
+      if (nodes[i].nodeType === Node.ELEMENT_NODE) { after = nodes[i]; break; }
+    }
+    if (key === "Backspace" && before && isAtomicBlockElement(before)) {
+      return before;
+    }
+    if (key === "Delete" && after && isAtomicBlockElement(after)) {
+      return after;
+    }
+    return null;
+  }
+
+  /* The atomic block a delete key removes, or null. Delete removes the
+   * block to the caret's RIGHT, Backspace the one to its LEFT -- but only
+   * from the very edge of the neighbouring top-level block, and only for
+   * a collapsed caret directly in that block (a nested list/table caret
+   * keeps its own editing). A ROOT-level caret parked beside an atomic
+   * block, the shape keyboard navigation leaves, resolves the same way. */
+  function atomicBlockForDeleteKey(key) {
+    // A fence being edited owns its own delete keys; only the emptied-
+    // fence path (removeEmptyCodeBlock) may claim them there. Without
+    // this, Backspace at the start of the fence body removed the plugin
+    // block just before it.
+    if (codeEditorAtSelection()) return null;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const root = sel.getRangeAt(0);
+    if (root.startContainer.nodeType === Node.TEXT_NODE) {
+      const inText = atomicBlockAtRootText(
+        root.startContainer, root.startOffset, key);
+      if (inText) return inText;
+    }
+    if (root.startContainer === viewerContentEl) {
+      const nodes = viewerContentEl.childNodes;
+      let before = null;
+      for (let i = root.startOffset - 1; i >= 0; i -= 1) {
+        if (nodes[i].nodeType === Node.ELEMENT_NODE) { before = nodes[i]; break; }
+      }
+      let after = null;
+      for (let i = root.startOffset; i < nodes.length; i += 1) {
+        if (nodes[i].nodeType === Node.ELEMENT_NODE) { after = nodes[i]; break; }
+      }
+      if (key === "Backspace" && before && isAtomicBlockElement(before)) {
+        return before;
+      }
+      if (key === "Delete" && after && isAtomicBlockElement(after)) {
+        return after;
+      }
+      return null;
+    }
+    const at = caretTopBlock();
+    if (!at) return null;
+    const { top, range } = at;
+    const prev = top.previousElementSibling;
+    const next = top.nextElementSibling;
+    if (key === "Backspace" && prev && isAtomicBlockElement(prev) &&
+        caretDirectlyInTop(top, range) && caretAtBlockStart(top, range)) {
+      return prev;
+    }
+    if (key === "Delete" && next && isAtomicBlockElement(next) &&
+        caretDirectlyInTop(top, range) && caretAtBlockEnd(top, range)) {
+      return next;
+    }
+    return null;
+  }
+
+  /* Remove an atomic block deliberately and move the caret to the edge
+   * of the nearest usable block on the side the caret came from. The
+   * container is detached, never left for the serializer: a rendered
+   * plugin's fence source would otherwise vanish only on the next save
+   * while the diagram stayed visible. */
+  function removeAtomicBlock(block, key) {
+    if (!block || !block.parentElement) return;
+    const back = key === "Backspace";
+    const prevHost = caretHostBeside(block, -1);
+    const nextHost = caretHostBeside(block, 1);
+    const host = back ? (prevHost || nextHost) : (nextHost || prevHost);
+    const atEnd = back ? !!prevHost : !nextHost;
+    const parent = block.parentNode;
+    const anchor = block.nextSibling;
+    block.remove();
+    let target = host;
+    if (!target) {
+      // No sibling block: leave a marked empty line where it stood (the
+      // same repair removeRuleLine uses), dropped on save while empty.
+      target = document.createElement("p");
+      target.setAttribute("data-hybrid-caret", "1");
+      parent.insertBefore(target, anchor);
+    }
+    viewerContentEl.focus();
+    caretToEdge(target, atEnd);
+    onContentChange();
+  }
+
+  /* The direct child of #viewer-content that contains `node`, or null for
+   * the root itself. */
+  function topLevelChildFor(node) {
+    if (!node || node === viewerContentEl) return null;
+    let top = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    while (top && top !== viewerContentEl &&
+           top.parentElement !== viewerContentEl) {
+      top = top.parentElement;
+    }
+    return top && top !== viewerContentEl ? top : null;
+  }
+
+  /* True when a non-collapsed selection covers the note's whole content.
+   * Coverage is decided from the TOP-LEVEL CHILD positions, not from text
+   * content: an empty heading or list item before the selected text is
+   * still a block the selection does not cover. A selection that starts
+   * inside a later block (even at its first character) is partial. */
+  function selectionCoversNote() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    if (!viewerContentEl.contains(range.startContainer) ||
+        !viewerContentEl.contains(range.endContainer)) return false;
+    // Formatting whitespace text nodes between blocks are not top-level
+    // blocks; the first/last ELEMENT is the note's real content boundary.
+    const first = viewerContentEl.firstElementChild;
+    const last = viewerContentEl.lastElementChild;
+    if (!first || !last) return false;
+    if (range.startContainer === viewerContentEl) {
+      if (range.startOffset !== 0) return false;
+    } else {
+      if (topLevelChildFor(range.startContainer) !== first) return false;
+      const before = document.createRange();
+      try {
+        before.selectNodeContents(first);
+        before.setEnd(range.startContainer, range.startOffset);
+      } catch (_) {
+        return false;
+      }
+      if (rangeHasContent(before)) return false;
+    }
+    if (range.endContainer === viewerContentEl) {
+      if (range.endOffset !== viewerContentEl.childNodes.length) return false;
+    } else {
+      if (topLevelChildFor(range.endContainer) !== last) return false;
+      const after = document.createRange();
+      try {
+        after.selectNodeContents(last);
+        after.setStart(range.endContainer, range.endOffset);
+      } catch (_) {
+        return false;
+      }
+      if (rangeHasContent(after)) return false;
+    }
+    return true;
+  }
+
+  /* A whole-note delete must not leave the first block's type behind (an
+   * emptied <h1> would make the next typed character a heading and could
+   * save "#   "). Replace the root with one marked, editable paragraph. */
+  function clearNoteToParagraph() {
+    viewerContentEl.innerHTML = "";
+    const p = document.createElement("p");
+    p.setAttribute("data-hybrid-caret", "1");
+    viewerContentEl.appendChild(p);
+    viewerContentEl.focus();
+    caretToStart(p);
+    onContentChange();
   }
 
   /* The top-level block holding the collapsed caret, with the range:
@@ -4073,11 +4693,17 @@
       // An emptied fence is removed by the next Backspace/Delete instead
       // of being merged into the neighbouring block by the native engine.
       if ((e.key === "Backspace" || e.key === "Delete") &&
-          !e.altKey && !e.ctrlKey && !e.metaKey &&
-          removeEmptyCodeBlock(editingPre, e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        return;
+          !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (removeEmptyCodeBlock(editingPre, e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (!e.shiftKey && codeEditorAtEdge(editingPre, e.key)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
       }
       if (e.key === "Tab") {
         e.preventDefault();
@@ -4098,6 +4724,27 @@
           { relatedTarget: null, bubbles: true }));
         return;
       }
+    }
+    // A multi-cell selection inside one table: the engine removes whole
+    // rows (and leaves an unmarked <br> in the header) when it deletes,
+    // which corrupts the table on save. Clear the selected text cell by
+    // cell instead, keeping the full row/column shape. A single-cell
+    // selection keeps the engine's own (safe) delete.
+    if ((e.key === "Backspace" || e.key === "Delete") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        deleteTableCellSelection()) {
+      e.preventDefault();
+      return;
+    }
+    // Ctrl+A + Delete (or Backspace) on the whole note: clear the root and
+    // leave one plain paragraph, never the first block's type. The table
+    // check above wins when a selection endpoint is in a cell.
+    if ((e.key === "Backspace" || e.key === "Delete") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        selectionCoversNote()) {
+      e.preventDefault();
+      clearNoteToParagraph();
+      return;
     }
     // A GFM table cell is one line. The native Enter inserts a newline
     // into the cell, and turndown emits it as a real line break, which
@@ -4278,6 +4925,29 @@
         e.preventDefault();
         removeRuleLine(at.hr);
         return;
+      }
+      // Shift+Delete is cut on Linux/Windows: a structural claim must
+      // not delete without copying.
+      if (!e.shiftKey) {
+        // A rendered plugin block, or a raw fence that is not being
+        // edited, is one atomic character: the key at the neighbouring
+        // block's edge removes it (and its fence source) deliberately.
+        // The engine would otherwise merge the surrounding blocks and
+        // leave the container.
+        const atomic = atomicBlockForDeleteKey(e.key);
+        if (atomic) {
+          e.preventDefault();
+          removeAtomicBlock(atomic, e.key);
+          return;
+        }
+        // A task item's checkbox is an atomic island, so the engine's
+        // merge is a no-op (Backspace) or corrupts the neighbouring item
+        // (Delete).
+        const task = taskItemForDeleteKey(e.key);
+        if (task && mergeTaskItemAtEdge(task.li, e.key)) {
+          e.preventDefault();
+          return;
+        }
       }
     }
     // A printable character typed against a rule would merge into the
@@ -4922,10 +5592,22 @@
     });
     const child = state.caret ? viewerContentEl.children[state.caret.index] : null;
     if (child) {
-      const code = child.matches("pre.hybrid-plugin-editing")
-        ? child.querySelector("code") : null;
-      if (code) {
-        focusCodeEnd(child, code);
+      if (child.matches("pre.hybrid-plugin-editing")) {
+        // Do not put the caret inside the restored editor: the fence
+        // chord guard would route the next Ctrl+Z to the browser's empty
+        // native undo, stalling hybrid history. Land beside it instead;
+        // the fence stays wired and clicking it resumes editing.
+        viewerContentEl.focus();
+        const next = caretHostBeside(child, 1);
+        const host = next || caretHostBeside(child, -1);
+        if (host) {
+          caretToEdge(host, !next);
+        } else {
+          const p = document.createElement("p");
+          p.setAttribute("data-hybrid-caret", "1");
+          child.after(p);
+          caretToStart(p);
+        }
       } else {
         const r = document.createRange();
         r.selectNodeContents(child);
@@ -5135,6 +5817,31 @@
   function onBeforeInput(e) {
     if (!active) return;
     if (e.isComposing) return;
+    // A table selection must be cleared cell-by-cell before the default
+    // delete runs. Ctrl+X (and Shift+Delete on Linux/Windows) reports
+    // deleteByCut here; the copy side has already happened, so preventing
+    // the default only stops the destructive delete. Backspace/Delete
+    // normally arrive through the keydown path; handling the same types
+    // here is the safety net if a browser reaches beforeinput directly.
+    if (e.inputType === "deleteByCut") {
+      // Cut already copied the whole selection. A table-crossing cut must
+      // also delete the outside gaps so the note matches the clipboard.
+      if (deleteTableCellSelection(true)) {
+        e.preventDefault();
+        return;
+      }
+      if (selectionCoversNote()) {
+        e.preventDefault();
+        clearNoteToParagraph();
+        return;
+      }
+      return;
+    }
+    if (e.inputType === "deleteContentBackward" ||
+        e.inputType === "deleteContentForward") {
+      if (deleteTableCellSelection(false)) e.preventDefault();
+      return;
+    }
     if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste" &&
         e.inputType !== "insertFromDrop") return;
     if ((e.target && e.target.closest &&
@@ -5645,6 +6352,157 @@
     return cell && viewerContentEl.contains(cell) ? cell : null;
   }
 
+  /* The th/td containing `node`, or null. */
+  function cellForNode(node) {
+    if (!node) return null;
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    const cell = el && el.closest ? el.closest("td,th") : null;
+    return cell && viewerContentEl.contains(cell) ? cell : null;
+  }
+
+  /* The part of a non-collapsed selection that lies inside `cell`, or
+   * null when the two do not overlap. Boundaries outside the cell are
+   * clamped to its contents, so a fully covered cell yields a range from
+   * its first child to its last. */
+  function cellSelectionSlice(range, cell) {
+    if (!range.intersectsNode(cell)) return null;
+    const slice = range.cloneRange();
+    if (!cell.contains(slice.startContainer)) slice.setStart(cell, 0);
+    if (!cell.contains(slice.endContainer)) {
+      slice.setEnd(cell, cell.childNodes.length);
+    }
+    return slice.collapsed ? null : slice;
+  }
+
+  /* A non-collapsed selection that starts or ends in a table cell. A
+   * selection wholly inside ONE cell is deliberately not reported: the
+   * engine's own intra-cell delete is safe and must keep working. Anything
+   * else -- two cells, a cell to an outside paragraph, two different
+   * tables -- must be claimed so the engine never removes rows or
+   * headers. A selection with BOTH endpoints outside a table is NOT
+   * claimed: a table fully inside it is an ordinary block the native
+   * delete may remove whole (Ctrl+A + Delete must clear the note). */
+  function tableCellSelectionForDelete() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    const startCell = cellForNode(range.startContainer);
+    const endCell = cellForNode(range.endContainer);
+    if (!startCell && !endCell) return null;
+    if (startCell && endCell && startCell === endCell) return null;
+    const tableSet = new Set();
+    if (startCell) tableSet.add(startCell.closest("table"));
+    if (endCell) tableSet.add(endCell.closest("table"));
+    const tables = [];
+    viewerContentEl.querySelectorAll("table").forEach((table) => {
+      if (tableSet.has(table) || range.intersectsNode(table)) {
+        tableSet.add(table);
+        tables.push(table);
+      }
+    });
+    const cells = [];
+    tables.forEach((table) => {
+      if (!table || !viewerContentEl.contains(table)) return;
+      table.querySelectorAll("td,th").forEach((cell) => {
+        if (cellSelectionSlice(range, cell)) cells.push(cell);
+      });
+    });
+    return cells.length ? { range, cells, tables } : null;
+  }
+
+  function deleteRangeContents(range) {
+    if (!range || range.collapsed) return;
+    try {
+      range.deleteContents();
+    } catch (_) {}
+  }
+
+  /* For a CUT, the clipboard already holds the WHOLE selection, so the
+   * note deletion must match it. The cell slices above keep every table
+   * intact; this removes the selected text in the gaps before, between,
+   * and after the intersected tables. Anchored on the table elements,
+   * which the cell clearing never removes. */
+  function deleteTableSelectionGaps(info, startInCell, endInCell) {
+    const tables = info.tables.filter((table) => table.isConnected);
+    if (!tables.length) return;
+    const first = tables[0];
+    const last = tables[tables.length - 1];
+    if (!endInCell) {
+      const gap = document.createRange();
+      try {
+        gap.setStartAfter(last);
+        gap.setEnd(info.range.endContainer, info.range.endOffset);
+        deleteRangeContents(gap);
+      } catch (_) {}
+    }
+    for (let i = tables.length - 1; i > 0; i -= 1) {
+      const gap = document.createRange();
+      try {
+        gap.setStartAfter(tables[i - 1]);
+        gap.setEndBefore(tables[i]);
+        deleteRangeContents(gap);
+      } catch (_) {}
+    }
+    if (!startInCell) {
+      const gap = document.createRange();
+      try {
+        gap.setStart(info.range.startContainer, info.range.startOffset);
+        gap.setEndBefore(first);
+        deleteRangeContents(gap);
+      } catch (_) {}
+    }
+  }
+
+  /* Delete a table-crossing selection WITHOUT letting the engine remove
+   * rows, columns, or headers: clear each intersecting cell's selected
+   * text and keep the table's full shape. A fully covered cell becomes
+   * empty; a partly covered one loses only the selected part. The caret
+   * returns to the original deletion start when that boundary survived,
+   * otherwise to the first affected cell's start. */
+  function deleteTableCellSelection(includeOutside) {
+    const info = tableCellSelectionForDelete();
+    if (!info) return false;
+    const startInCell = !!cellForNode(info.range.startContainer);
+    const endInCell = !!cellForNode(info.range.endContainer);
+    const startContainer = info.range.startContainer;
+    const startOffset = info.range.startOffset;
+    const firstCell = info.cells[0];
+    info.cells.forEach((cell) => {
+      const slice = cellSelectionSlice(info.range, cell);
+      if (!slice) return;
+      const full = slice.startContainer === cell && slice.startOffset === 0 &&
+        slice.endContainer === cell && slice.endOffset === cell.childNodes.length;
+      if (full) {
+        while (cell.firstChild) cell.removeChild(cell.firstChild);
+      } else {
+        slice.deleteContents();
+      }
+    });
+    if (includeOutside) deleteTableSelectionGaps(info, startInCell, endInCell);
+    viewerContentEl.focus();
+    let restored = false;
+    if (startContainer && viewerContentEl.contains(startContainer)) {
+      let offset = startOffset;
+      if (startContainer.nodeType === Node.TEXT_NODE) {
+        offset = Math.min(offset, startContainer.nodeValue.length);
+      } else if (startContainer.nodeType === Node.ELEMENT_NODE) {
+        offset = Math.min(offset, startContainer.childNodes.length);
+      }
+      try {
+        const r = document.createRange();
+        r.setStart(startContainer, offset);
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        restored = true;
+      } catch (_) {}
+    }
+    if (!restored) caretToEdge(firstCell, false);
+    onContentChange();
+    return true;
+  }
+
   /* Insert a row above or below the given row. Copies the cell count
    * from the row's own cells so the new row lines up. "Above" is refused
    * on the header row: GFM tables must keep the header first, and a
@@ -5669,22 +6527,31 @@
     onContentChange();
   }
 
-  /* Delete the given row. The header row (rows[0]) is never deletable
-   * -- a GFM table without its heading row cannot be saved as a table.
-   * The last body row is protected too: header + one row is the minimum
-   * shape, and deleting the row would leave an orphaned header (the
-   * drag overlay aria-disables its "-" for the same reason). If the
-   * table has no header at all (a lone body row), deleting it removes
-   * the whole table. */
-  function deleteRow(row) {
-    if (!row) return;
+  /* The reason deleteRow refuses `row`, or "" when it may act. Mirrors
+   * the guard exactly so the context menu and the action cannot drift.
+   * The FIRST row is always protected -- it is the header, or the lone
+   * body row of a headerless table, which GFM still needs as a heading.
+   * header + one body row is the minimum shape. */
+  function deleteRowBlockedReason(row) {
+    if (!row) return "No row selected";
     const table = row.closest("table");
-    if (!table) return;
+    if (!table) return "No table selected";
     const rows = Array.from(table.rows);
-    if (row === rows[0]) return;
-    if (rows.length <= 1) { deleteTable(table); return; }
-    // Header + this single body row: nothing left to show.
-    if (rows.length <= 2) return;
+    if (row === rows[0]) return "The header row cannot be deleted";
+    if (rows.length <= 2) return "A table needs a header and one body row";
+    return "";
+  }
+
+  function canDeleteRow(row) {
+    return deleteRowBlockedReason(row) === "";
+  }
+
+  /* Delete the given row. The first row (header, or a headerless table's
+   * lone body row) is never deletable, and the last body row is protected
+   * too: header + one row is the minimum shape. The drag overlay
+   * aria-disables its "-" for the same reason. */
+  function deleteRow(row) {
+    if (!canDeleteRow(row)) return;
     row.remove();
     onContentChange();
   }
@@ -5712,16 +6579,24 @@
     onContentChange();
   }
 
+  /* True when deleteCol may act on `cell`'s column. Mirrors the guard
+   * exactly so the context menu and the action cannot drift. */
+  function canDeleteColumn(cell) {
+    if (!cell) return false;
+    const table = cell.closest("table");
+    if (!table) return false;
+    const first = table.rows[0];
+    return !(first && first.cells.length <= 1);
+  }
+
   /* Delete the current cell's column from every row. The last remaining
    * column is protected: GFM cannot represent a zero-column table, and
    * the drag overlay aria-disables its column "-" for the same reason
    * (a table needs at least one column). */
   function deleteCol(cell) {
-    if (!cell) return;
+    if (!canDeleteColumn(cell)) return;
     const table = cell.closest("table");
-    if (!table) return;
     const first = table.rows[0];
-    if (first && first.cells.length <= 1) return;
     const idx = cell.cellIndex;
     Array.from(table.rows).forEach((row) => {
       const cells = Array.from(row.cells);
@@ -5876,6 +6751,10 @@
    * and the touch fallback; the caret must be inside the table, which it
    * is because the submenu only exists when the right-click landed there. */
   function buildTableItems(table) {
+    const row = getRowFromSelection();
+    const cell = getCellFromSelection();
+    const canRow = canDeleteRow(row);
+    const canCol = canDeleteColumn(cell);
     return [
       { label: "Move row up", handler: () => moveRowBySelection("up"), kbd: "Alt+Up" },
       { label: "Move row down", handler: () => moveRowBySelection("down"), kbd: "Alt+Down" },
@@ -5886,11 +6765,15 @@
       { separator: true },
       { label: "Insert row above", handler: () => insertRow(getRowFromSelection(), "above") },
       { label: "Insert row below", handler: () => insertRow(getRowFromSelection(), "below") },
-      { label: "Delete row", handler: () => deleteRow(getRowFromSelection()) },
+      { label: "Delete row", handler: () => deleteRow(getRowFromSelection()),
+        disabled: !canRow,
+        title: canRow ? undefined : deleteRowBlockedReason(row) },
       { separator: true },
       { label: "Insert column left", handler: () => insertCol(getCellFromSelection(), "left") },
       { label: "Insert column right", handler: () => insertCol(getCellFromSelection(), "right") },
-      { label: "Delete column", handler: () => deleteCol(getCellFromSelection()) },
+      { label: "Delete column", handler: () => deleteCol(getCellFromSelection()),
+        disabled: !canCol,
+        title: canCol ? undefined : "A table needs at least one column" },
       { separator: true },
       { label: "Toggle header row", handler: () => toggleHeaderRow(table) },
       { label: "Delete table", handler: () => deleteTable(table) },
