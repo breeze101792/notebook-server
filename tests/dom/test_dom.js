@@ -20978,7 +20978,9 @@ function check(label, cond, extra) {
     // does. Drift between the two would render both marker and checkbox.
     check("export: HTML blob mirrors the task-list CSS",
       /\.markdown-body li:has\(> input\[type="checkbox"\], > p > input\[type="checkbox"\]\)\{list-style:none\}/.test(htmlText) &&
-      /\.markdown-body li>input\[type="checkbox"\],\.markdown-body li>p>input\[type="checkbox"\]\{width:1em;height:1em;margin:0 \.53em 0 -1\.53em;vertical-align:middle\}/.test(htmlText),
+      /\.markdown-body li>input\[type="checkbox"\],\.markdown-body li>p>input\[type="checkbox"\]\{appearance:none;-webkit-appearance:none;position:relative;width:1em;height:1em;margin:0 \.53em 0 -1\.53em;vertical-align:middle;border:1px solid [^;]+;border-radius:3px;background:transparent\}/.test(htmlText) &&
+      /\.markdown-body li>input\[type="checkbox"\]:checked,\.markdown-body li>p>input\[type="checkbox"\]:checked\{border-color:[^;]+;background:[^}]+\}/.test(htmlText) &&
+      /\.markdown-body li>input\[type="checkbox"\]:checked::after,[^{]*\{content:"";[^}]*transform:rotate\(45deg\)\}/.test(htmlText),
       "task css=" + /li:has\(/.test(htmlText));
     // List spacing: the embedded CSS mirrors style.css so a toggled line
     // keeps the same vertical rhythm and tight/loose items match. Drift
