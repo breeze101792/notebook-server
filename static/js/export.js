@@ -698,13 +698,13 @@
       bg: "#0d1117", fg: "#c9d1d9", border: "#30363d", muted: "#8b949e",
       link: "#58a6ff", codeBg: "#161b22", preBg: "#161b22",
       quoteBg: "rgba(88,166,255,.12)", quoteColor: "#8b949e",
-      rowOdd: "#161b22", accent: "#58a6ff",
+      rowOdd: "#161b22", accent: "#58a6ff", onAccent: "#0d1117",
       panelBg: "#22232a", warn: "#f3b454",
     } : {
       bg: "#fff", fg: "#1f2330", border: "#d8dde4", muted: "#5d6470",
       link: "#2f5fd0", codeBg: "#f0f2f5", preBg: "#f0f2f5",
       quoteBg: "rgba(47,95,208,.12)", quoteColor: "#5d6470",
-      rowOdd: "#f6f7f9", accent: "#2f5fd0",
+      rowOdd: "#f6f7f9", accent: "#2f5fd0", onAccent: "#ffffff",
       panelBg: "#f6f7f9", warn: "#c9831d",
     };
     const hljs = dark ? DARK_HLJS : LIGHT_HLJS;
@@ -794,7 +794,9 @@
       ".markdown-body li>p:last-child{margin-bottom:0}",
       ".markdown-body li>ul,.markdown-body li>ol{margin-top:.15em;margin-bottom:0}",
       ".markdown-body li:has(> input[type=\"checkbox\"], > p > input[type=\"checkbox\"]){list-style:none}",
-      ".markdown-body li>input[type=\"checkbox\"],.markdown-body li>p>input[type=\"checkbox\"]{width:1em;height:1em;margin:0 .53em 0 -1.53em;vertical-align:middle}",
+      ".markdown-body li>input[type=\"checkbox\"],.markdown-body li>p>input[type=\"checkbox\"]{appearance:none;-webkit-appearance:none;position:relative;width:1em;height:1em;margin:0 .53em 0 -1.53em;vertical-align:middle;border:1px solid " + base.muted + ";border-radius:3px;background:transparent}",
+      ".markdown-body li>input[type=\"checkbox\"]:checked,.markdown-body li>p>input[type=\"checkbox\"]:checked{border-color:" + base.accent + ";background:" + base.accent + "}",
+      ".markdown-body li>input[type=\"checkbox\"]:checked::after,.markdown-body li>p>input[type=\"checkbox\"]:checked::after{content:\"\";position:absolute;left:32%;top:8%;width:30%;height:55%;border:solid " + base.onAccent + ";border-width:0 2px 2px 0;transform:rotate(45deg)}",
       ".markdown-body blockquote{border-left:3px solid " + base.accent + ";margin:.7em 0;padding:.2em 1em;color:" + base.quoteColor + ";background:" + base.quoteBg + ";border-radius:0 6px 6px 0}",
       // A quote's edge paragraphs lose their margin so a one-line quote is
       // not ~2.2x the height of a paragraph (mirrors style.css).

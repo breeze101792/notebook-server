@@ -3258,6 +3258,33 @@ body > #nb-menu .submenu.open {
    * margins sum to -1em, so the text left edge does not move. */
   margin: 0 .53em 0 -1.53em;
   vertical-align: middle;
+  /* marked emits a `disabled` checkbox, and the UA keeps drawing its own
+   * grey fill for a disabled control, so `accent-color` alone does not
+   * change the check. Draw the box and the tick ourselves and let only
+   * the checked state carry the theme accent. */
+  appearance: none; -webkit-appearance: none;
+  position: relative;
+  border: 1px solid var(--fg-muted);
+  border-radius: 3px;
+  background: transparent;
+}
+.markdown-body li > input[type="checkbox"]:checked,
+.markdown-body li > p > input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+/* The tick: two borders on an empty box, rotated 45deg. */
+.markdown-body li > input[type="checkbox"]:checked::after,
+.markdown-body li > p > input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 32%;
+  top: 8%;
+  width: 30%;
+  height: 55%;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
 }
 .markdown-body blockquote {
   border-left: 3px solid var(--accent);
