@@ -191,6 +191,8 @@ async function main() {
     s = await state();
     check("chip: Enter applies the typed language", s.lang === "javascript",
       "lang=" + s.lang);
+    check("chip: Enter keeps the block editable", s.editing, JSON.stringify(s));
+    check("chip: Enter keeps the language chip", s.hasPill, JSON.stringify(s));
     await commitAndSave();
     check("chip: save writes the new info string and keeps the body",
       readNote() === "# Code\n\n```javascript\nprint(\"hello\")\n```\n",
@@ -235,11 +237,42 @@ async function main() {
     await page.keyboard.press("Escape");
     await sleep(120);
     s = await state();
-    // Esc cancels the language edit; the click-out/blur model may then
-    // commit the block, so the chip is allowed to be gone -- what must
-    // survive is the original language.
+    // Esc cancels the language edit and hands the caret back to the fence,
+    // so the block stays editable with the original language.
     check("chip Esc: previous language restored", s.lang === "js",
       JSON.stringify({ lang: s.lang, pill: s.pill }));
+    check("chip Esc: block stays editable", s.editing, JSON.stringify(s));
+
+    // --- 5b. the chip returns a live caret to the fence ----------------
+    await boot(JS);
+    await openBlock();
+    await chip().click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.type("javascript");
+    await page.keyboard.press("Enter");
+    await sleep(150);
+    s = await state();
+    check("chip return: the fence is re-highlighted",
+      /language-javascript/.test(s.codeClass || "") && /<span/.test(s.html || ""),
+      JSON.stringify({ cls: s.codeClass, html: (s.html || "").slice(0, 60) }));
+    await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.type("Q");
+    await sleep(120);
+    s = await state();
+    check("chip return: typing after Enter lands in the fence",
+      /const x = 1;Q/.test(s.text || ""), JSON.stringify(s.text));
+    await page.keyboard.press("Control+s");
+    check("chip return: save writes the typed text",
+      (await waitForFile((md) => /const x = 1;Q/.test(md))) === true,
+      JSON.stringify(readNote()));
 
     // --- 6. a bare fence stays bare after being touched ----------------
     console.log("\n== fence editor: authored language ==");

@@ -260,6 +260,11 @@
   // the clipboard fallback steals focus, and that focusout must not be
   // mistaken for "the user left the editor".
   let copyButtonPress = false;
+  // True while focusCodeEnd() hands the caret back from the language chip.
+  // Chromium focuses the note root rather than the nested <pre>, so the
+  // chip's focusout reaches the commit handler; that move is not the user
+  // leaving the editor and must not commit the block.
+  let langChipReturn = false;
   // The rules carrying HR_SELECTED_CLASS as of the last selectionchange,
   // so the class is touched only when the selected set actually changes
   // (selectionchange fires many times during one drag).
@@ -7346,6 +7351,9 @@
     // text node removes the stale colouring before a new language runs.
     code.textContent = code.textContent;
     code.className = next ? "language-" + next : "";
+    // highlight.js skips an element it has already processed, so the reset
+    // above would leave the fence uncoloured until the next full render.
+    delete code.dataset.highlighted;
     const mod = renderModuleFor(next);
     if (!mod && next && window.hljs) {
       try { hljs.highlightElement(code); } catch (_) {}
@@ -7355,23 +7363,28 @@
 
   /* Put the caret at the end of the fence source after a chip commit. */
   function focusCodeEnd(pre, code) {
-    pre.focus();
-    const sel = window.getSelection();
-    if (!sel) return;
-    const r = document.createRange();
-    // The chip is an inline form control after the <code>; a caret at the
-    // code's END BOUNDARY is normalized to the gap between the two, so
-    // typed text would land in the <pre> and never reach the fence
-    // source. Anchor inside the last text node instead.
-    const last = code.lastChild;
-    if (last && last.nodeType === Node.TEXT_NODE) {
-      r.setStart(last, last.nodeValue.length);
-    } else {
-      r.selectNodeContents(code);
+    langChipReturn = true;
+    try {
+      pre.focus();
+      const sel = window.getSelection();
+      if (!sel) return;
+      const r = document.createRange();
+      // The chip is an inline form control after the <code>; a caret at the
+      // code's END BOUNDARY is normalized to the gap between the two, so
+      // typed text would land in the <pre> and never reach the fence
+      // source. Anchor inside the last text node instead.
+      const last = code.lastChild;
+      if (last && last.nodeType === Node.TEXT_NODE) {
+        r.setStart(last, last.nodeValue.length);
+      } else {
+        r.selectNodeContents(code);
+      }
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } finally {
+      langChipReturn = false;
     }
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
   }
 
   /* Move text the browser placed between </code> and the editing chip
@@ -7526,6 +7539,8 @@
       }
     };
     const onFocusOut = (e) => {
+      // Handing the caret back from the language chip is not leaving.
+      if (langChipReturn) return;
       // Don't commit when focus moves to a child (e.g. the lang-pill).
       if (e.relatedTarget && pre.contains(e.relatedTarget)) return;
       // Copying is not leaving the editor; the fallback textarea steals
