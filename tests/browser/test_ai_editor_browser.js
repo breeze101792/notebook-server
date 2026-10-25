@@ -127,6 +127,16 @@ function startStubServer() {
               replace_with: "NEW_TOKEN",
             }],
           }) + "\n";
+        } else if (prompt.includes("APPLY_IN_EDIT")) {
+          reply = "Proposed change.\n\n" + toolFence({
+            tool: "patch",
+            path: TARGET,
+            edits: [{
+              op: "find_replace",
+              find: "NEW_TOKEN",
+              replace_with: "EDIT_TOKEN",
+            }],
+          }) + "\n";
         }
         res.writeHead(200, {
           "Content-Type": "text/event-stream",
@@ -536,6 +546,51 @@ async function main() {
       editPosts.length === editsBeforeApply + 1,
       "posts=" + (editPosts.length - editsBeforeApply));
 
+    /* ---- AI tool loop: apply while the source editor is open --------
+     * The edit bar belongs to the open edit session. An applied patch
+     * refresh must load the bytes into CM6 instead of going through the
+     * view-mode path that hides the bar. The jsdom suite also covers the
+     * watcher-race variant, where file:external-change lands before
+     * ai:applied. */
+    section("ai apply in edit mode");
+    // The earlier VIM block left vim on; vim hides the source edit bar by
+    // design. Turn it off so this phase observes the bar itself.
+    await page.evaluate(() => window.NB.app.setVimMode(false));
+    await page.evaluate((p) => window.NB.tabs.open(p), TARGET);
+    await page.waitForFunction(
+      (p) => window.NB.viewer.getPath() === p, TARGET, { timeout: 10000 });
+    await openSourceEdit(page);
+    check("ai apply in edit mode: edit bar visible before Apply",
+      await page.evaluate(() => !document.getElementById("edit-bar").hidden));
+    const editCardsBefore = await page.evaluate(() =>
+      document.querySelectorAll('.ai-edit-card[data-test-patch-card]').length);
+    await sendAi(page, "APPLY_IN_EDIT please");
+    await page.waitForFunction(
+      (n) => document.querySelectorAll('.ai-edit-card[data-test-patch-card]').length > n,
+      editCardsBefore, { timeout: 20000 });
+    const editCardIndex = await page.evaluate(() =>
+      document.querySelectorAll('.ai-edit-card[data-test-patch-card]').length - 1);
+    await page.evaluate((idx) => {
+      const cards = document.querySelectorAll('.ai-edit-card[data-test-patch-card]');
+      cards[idx].querySelector(".ai-apply").click();
+    }, editCardIndex);
+    await page.waitForFunction((idx) => {
+      const cards = document.querySelectorAll('.ai-edit-card[data-test-patch-card]');
+      return !!(cards[idx] && cards[idx].querySelector(".ai-card-status.applied"));
+    }, editCardIndex, { timeout: 20000 });
+    await page.waitForTimeout(300);
+    const editApplyState = await page.evaluate(() => ({
+      barHidden: document.getElementById("edit-bar").hidden,
+      cmHidden: document.getElementById("cm-host").hidden,
+      editing: document.getElementById("edit-toggle").classList.contains("editing"),
+      buffer: window.NB.cmEditor.getValue(),
+    }));
+    check("ai apply in edit mode: edit bar stays visible", !editApplyState.barHidden);
+    check("ai apply in edit mode: editor stays open", !editApplyState.cmHidden);
+    check("ai apply in edit mode: edit button still .editing", editApplyState.editing);
+    check("ai apply in edit mode: patched bytes land in the CM buffer",
+      /EDIT_TOKEN/.test(editApplyState.buffer), editApplyState.buffer);
+
     check("no uncaught page errors in the source-editor / AI phase",
       pageErrors.length === 0, pageErrors.join(" | "));
 
@@ -565,7 +620,11 @@ async function main() {
     await waitApp(page2);
 
     section("acp provider");
-    await page2.click('.activity-btn[data-view="ai"]');
+    // The persisted activeView from phase A can boot the panel already
+    // open; the activity button is a toggle, so only click it when hidden.
+    if (!(await page2.isVisible("#ai-input"))) {
+      await page2.click('.activity-btn[data-view="ai"]');
+    }
     await page2.waitForSelector("#ai-input", { state: "visible", timeout: 10000 });
     await page2.waitForFunction(() => {
       const sel = document.getElementById("ai-model-select");

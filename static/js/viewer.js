@@ -1163,18 +1163,24 @@
     t.content = fresh.content;
     t.savedContent = fresh.content;
     const wasEditing = t.editMode;
-    t.editMode = false;
-    showPreview = true;  // reset for next edit session
-    if (wasActive) {
-      showViewer();
-      // Mirror into the CM6 editor only when edit mode was actually
-      // active. A note open in preview has never fetched the lazy CM6
-      // bundle, and calling setValue() then throws before render(), so
-      // the external change was cached but never shown.
-      if (wasEditing && NB.cmEditor && window.CM6 && t.content !== undefined) {
+    if (wasActive && wasEditing) {
+      // A source-edit session owns the edit bar. Reload the buffer in
+      // place and stay in edit mode: showViewer() would hide the bar and
+      // drop the user back to the preview. This also covers the watcher
+      // catching a write (an AI apply, another agent) before its
+      // ai:applied/self-save bookkeeping lands.
+      if (NB.cmEditor && window.CM6 && t.content !== undefined) {
         try { NB.cmEditor.setValue(t.content); } catch (_) {}
       }
+      if (showPreview) render(t.content);
+      refreshTopbar();
+    } else if (wasActive) {
+      t.editMode = false;
+      showPreview = true;  // reset for next edit session
+      showViewer();
       render();
+    } else {
+      t.editMode = false;
     }
     NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
     NB.evt.emit("viewer:conflict", { path, conflict: false });
@@ -1188,15 +1194,30 @@
     const t = cache.get(path);
     if (!t) return;
     if (NB.watcher) NB.watcher.noteSelfSave(path);
-    if (data) {
-      t.content = data.content;
-      t.savedContent = data.content;
-      t.mtime = data.mtime;
-      if (NB.watcher) NB.watcher.noteOpened(path, data.mtime);
-      const wasActive = (active === path);
-      if (wasActive) { showViewer(); render(); }
-      NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
+    if (!data) return;
+    t.content = data.content;
+    t.savedContent = data.content;
+    t.mtime = data.mtime;
+    if (NB.watcher) NB.watcher.noteOpened(path, data.mtime);
+    const wasActive = (active === path);
+    // An edit session owns the edit bar. Refreshing through the view-mode
+    // path (showViewer + render) would hide the bar under the open editor
+    // and drop the user back to the preview. Load the patched bytes into
+    // the surface that is already open instead; its own change plumbing
+    // refreshes the toolbar and the live preview.
+    const hybridOn = NB.hybrid && typeof NB.hybrid.isActive === "function" &&
+      NB.hybrid.isActive();
+    if (wasActive && t.editMode) {
+      try { NB.cmEditor.setValue(data.content); } catch (_) {}
+    } else if (wasActive && hybridOn) {
+      if (NB.hybrid.refreshFromContent) {
+        NB.hybrid.refreshFromContent(path, data.content);
+      }
+    } else if (wasActive) {
+      showViewer();
+      render();
     }
+    NB.evt.emit("viewer:dirty-changed", { path, dirty: false });
   });
 
   /* In-app link interception. A Markdown link like

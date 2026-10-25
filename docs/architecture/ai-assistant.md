@@ -286,9 +286,12 @@ surface as Apply/Reject cards.
   the card is blocked with "write cannot overwrite — ask the AI to patch
   it instead" (`makeWriteCard`'s apply handler re-reads the path and
   blocks on a readable file).
-- Applying emits `NB.evt("ai:applied", {path})`. The viewer refreshes its
-  cache from that event (`static/js/viewer.js:949`) and records a
-  self-save so the watcher does not raise an "external change" prompt.
+- Applying emits `NB.evt("ai:applied", {path, data})`. The viewer refreshes
+  its cache from that event and records a self-save so the watcher does not
+  raise an "external change" prompt. An open edit session is preserved:
+  source edit mode loads the patched bytes into CM6 and WYSIWYG re-renders
+  in place, so neither refresh goes through the view-mode path that hides
+  the edit bar.
 - Rejecting records the outcome in the conversation so the model knows the
   proposal was declined.
 

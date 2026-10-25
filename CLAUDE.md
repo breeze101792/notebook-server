@@ -402,8 +402,10 @@ Module responsibilities:
     simulation) and applied through `/api/edit`, so the server re-checks every
     anchor against the CURRENT file — stale/ambiguous finds fail closed with
     400 and the card turns errored. Applying emits `NB.evt("ai:applied",
-    {path})`; `viewer.js` listens and refreshes its cache (self-save noted to
-    the watcher, no confirm prompt). The tool contract is introduced in
+    {path, data})`; `viewer.js` listens and refreshes its cache (self-save
+    noted to the watcher, no confirm prompt) without closing an open edit
+    session — source edit reloads CM6 and WYSIWYG re-renders in place, so
+    the edit bar stays up. The tool contract is introduced in
     `ai.js`'s `systemPrompt()`; server keys live only in `config/ai.json`.
 - `app.js` — bootstrap: loads config (merged over `DEFAULTS`), wires everything,
   drives sidebar/outline collapse + drag-resize (CSS vars `--sidebar-width` /

@@ -5457,6 +5457,38 @@ function check(label, cond, extra) {
     "got: " + JSON.stringify(cmGetValue()));
   click("close-edit-btn"); await tick(10);
 
+  // An AI patch applied while the source editor is open must keep the
+  // edit session (and its bar) up. Regression: the viewer's ai:applied
+  // handler used to go through showViewer(), which hides #edit-bar and
+  // drops the user into the preview pane.
+  const aiPatchPath = activeTabPath();
+  const aiPatchMd = "# Edited\n\n## New heading\n\npatched body";
+  click("edit-toggle"); await tick(10);
+  window.NB.evt.emit("ai:applied", {
+    path: aiPatchPath,
+    data: { content: aiPatchMd, mtime: (MTIMES[aiPatchPath] || 1) + 1 },
+  });
+  await tick(220);
+  check("ai:applied in source edit: edit bar stays visible", !$("edit-bar").hidden);
+  check("ai:applied in source edit: editor stays open", !cmIsHidden());
+  check("ai:applied in source edit: edit button keeps .editing",
+    $("edit-toggle").classList.contains("editing"));
+  check("ai:applied in source edit: patched bytes land in the editor",
+    cmGetValue() === aiPatchMd, "got: " + JSON.stringify(cmGetValue()));
+  check("ai:applied in source edit: live preview shows the patch",
+    /patched body/.test($("viewer-content").textContent));
+  check("ai:applied in source edit: buffer is clean",
+    !window.NB.viewer.isDirty(aiPatchPath) && $("save-btn").hidden);
+  // Restore the cache to the bytes still on disk so the next block sees
+  // the same fixture content as before this check.
+  window.NB.evt.emit("ai:applied", {
+    path: aiPatchPath,
+    data: { content: "# Edited\n\n## New heading\n\nsaved body",
+            mtime: (MTIMES[aiPatchPath] || 1) + 2 },
+  });
+  await tick(220);
+  click("close-edit-btn"); await tick(10);
+
   console.log("== edit bar ==");
   // Bar is hidden in preview mode.
   check("edit bar: hidden in preview", $("edit-bar").hidden);
@@ -14307,6 +14339,13 @@ function check(label, cond, extra) {
     const tvTables = () => Array.from(vcTV.querySelectorAll("table"));
     const namesOf = (t) =>
       Array.from(t.tBodies[0].rows).map((r) => r.cells[0].textContent);
+    // Hybrid unwraps <thead>, so a header row lives in tBodies[0] while
+    // the session is open. Ignore it when comparing against the source
+    // body row order.
+    const bodyNamesOf = (t) =>
+      Array.from(t.tBodies[0].rows)
+        .filter((r) => !Array.from(r.cells).every((c) => c.tagName === "TH"))
+        .map((r) => r.cells[0].textContent);
     const sessionOf = (t) => window.NB.tableView.sessions.get(t);
     const controlsEl = () => $("viewer").querySelector(".nb-tv-controls");
     const toolbarEl = () => $("viewer").querySelector(".nb-tv-toolbar");
@@ -15039,12 +15078,17 @@ function check(label, cond, extra) {
     const hvTables = tvTables();
     check("table view hybrid render: a real render during hybrid applies no view state",
       hvTables.length === hvTablesBefore &&
-      JSON.stringify(namesOf(hvTables[0])) ===
+      JSON.stringify(bodyNamesOf(hvTables[0])) ===
         JSON.stringify(["beta", "alpha", "gamma", "delta", "epsilon"]) &&
       vcTV.querySelectorAll(".nb-tv-hide-row,.nb-tv-hide-col,[aria-sort]").length === 0 &&
       window.NB.tableView.sessions.size === 0,
-      "rows=" + JSON.stringify(namesOf(hvTables[0])) +
+      "rows=" + JSON.stringify(bodyNamesOf(hvTables[0])) +
       " sessions=" + window.NB.tableView.sessions.size);
+    // The applied patch must leave the WYSIWYG session and its edit bar up.
+    check("ai:applied during hybrid keeps the edit bar visible", !$("edit-bar").hidden);
+    check("ai:applied during hybrid stays in WYSIWYG editing",
+      vcTV.getAttribute("contenteditable") === "true" &&
+      window.NB.hybrid.isActive());
     await window.NB.hybrid.exit(false);
     await tick(40);
     const t0x = tvTables()[0];
@@ -18312,6 +18356,25 @@ function check(label, cond, extra) {
   window.NB.evt.emit("file:external-change", { path: "Welcome.md", data: { path: "Welcome.md", content: FILES["Welcome.md"], mtime: 9999, size: 99 } });
   await tick(40);
   check("external: clean file auto-reloads", /new/.test(window.document.getElementById("viewer-content").textContent));
+
+  // Case 1b: an external change while a clean source-edit session is open
+  // keeps the session (and the edit bar) up and reloads the buffer in
+  // place. Regression: the watcher poll can see an AI patch write before
+  // ai.js emits ai:applied, and the old handler exited edit mode there.
+  FILES["Welcome.md"] = "# Welcome\n\nnewer\n";
+  window.NB.viewer.startEdit();
+  await tick(10);
+  window.NB.evt.emit("file:external-change", {
+    path: "Welcome.md",
+    data: { path: "Welcome.md", content: FILES["Welcome.md"], mtime: 9998, size: 99 },
+  });
+  await tick(40);
+  check("external: clean edit session stays open (bar visible, editor up)",
+    !cmIsHidden() && !$("edit-bar").hidden);
+  check("external: clean edit session reloads the buffer in place",
+    cmGetValue().includes("newer"), cmGetValue());
+  window.NB.viewer.endEdit();
+  await tick(10);
 
   // Case 2: dirty + external change -> confirm() prompt.
   window.NB.viewer.startEdit();

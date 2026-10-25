@@ -7860,6 +7860,22 @@
     }
   });
 
+  /* Re-render the live session from bytes written by an approved AI
+   * patch. The viewer calls this instead of its view-mode refresh so the
+   * contenteditable surface and the edit bar stay up. The patch is the
+   * user's own decision, so it replaces the buffer (and its baselines)
+   * without the external-change conflict flow. */
+  function refreshFromContent(path, content) {
+    if (!active || path !== activePath || content == null) return false;
+    // Identical bytes: the patch changed nothing this session renders.
+    // Leaving dirty alone keeps pending edits pending.
+    if (content === sessionSource) return true;
+    renderMarkdown(content);
+    rebaseSession(content);
+    resetDirty();
+    return true;
+  }
+
   NB.hybrid = {
     enter,
     exit,
@@ -7867,6 +7883,7 @@
     save,
     isActive,
     isDirty,
+    refreshFromContent,
     domToMarkdown,
     flattenTheads,
     updateButtonVisibility,
