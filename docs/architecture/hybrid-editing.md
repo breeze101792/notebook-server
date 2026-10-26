@@ -1590,3 +1590,17 @@ Verified against the vendored bundles at this revision with the exact
 - **Biggest remaining question.** Q2 (block merge), then Q3 (block-edge typing).
 - **Next decisions, in order.** Q2 (merge), Q3 (block-edge typing), Q8 (cell
   boundary keys), Q14 (copy across blocks).
+
+## Phone surface (v2)
+
+WYSIWYG is the phone's only editor; the CM6 source surface stays hidden there.
+`static/js/mobile.js` layers it into browser history (`setLayer("edit")`), so
+back and hardware back exit before navigating, and `body.edit-open` hides the
+bottom rail and the +/… actions. `#edit-bar` becomes one sideways-scrolling
+44 px strip with Save/Done pinned left; the anchored flyout menus are hidden.
+Toolbar taps call `preventDefault` on `mousedown` and restore a captured range
+if focus moved, so a command acts on the caret the user had and the on-screen
+keyboard stays open. Drag-reorder grips, the right-click formatting menu, and
+the keyboard chord table remain desktop-only. See
+[`mobile.md`](mobile.md) §13 and [`../design/mobile-shell.md`](../design/mobile-shell.md) §4.12.
+

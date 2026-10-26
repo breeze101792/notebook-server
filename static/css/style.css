@@ -5785,12 +5785,12 @@ body[data-theme="light"] #dw-designer-overlay {
   :where(#topbar) .search-wrap,
   .topbar-spacer,
   #edit-toggle,
-  #hybrid-toggle,
   #outline-toggle { display: none; }
   .topbar-actions { flex: 1 1 auto; gap: 4px; align-items: center; min-width: 0; }
   #topbar #back-btn,
   #topbar #mobile-capture,
-  #topbar #mobile-more {
+  #topbar #mobile-more,
+  #topbar #hybrid-toggle {
     background: none;
     border: 0;
     border-radius: 8px;
@@ -5798,7 +5798,8 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   #back-btn,
   #mobile-capture,
-  #mobile-more {
+  #mobile-more,
+  #hybrid-toggle {
     width: var(--m-hit);
     height: var(--m-hit);
     flex: 0 0 var(--m-hit);
@@ -5830,15 +5831,19 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   #mobile-capture { display: flex; }
   #mobile-more { display: flex; }
+  #hybrid-toggle { display: flex; }
   #mobile-capture[hidden] { display: none; }
+  #hybrid-toggle[hidden] { display: none; }
   #mobile-title:active,
   #mobile-capture:active,
   #mobile-more:active,
+  #hybrid-toggle:active,
   #back-btn:active { background: var(--accent-soft); }
   body.auth-locked #topbar { opacity: .25; pointer-events: none; }
   body.auth-locked #mobile-title,
   body.auth-locked #mobile-capture,
-  body.auth-locked #mobile-more { display: none; }
+  body.auth-locked #mobile-more,
+  body.auth-locked #hybrid-toggle { display: none; }
   body.auth-locked #mobile-home { display: none; }
 
   /* ---- one-column layout ------------------------------------------ */
@@ -5846,10 +5851,78 @@ body[data-theme="light"] #dw-designer-overlay {
   #editor-pane { height: 100%; min-height: 0; }
   #tab-bar,
   #outline-pane,
-  #edit-bar,
   #cm-host { display: none; }
   #welcome { display: none; }
   #edit-split { min-height: 0; }
+
+  /* ---- WYSIWYG edit bar ------------------------------------------- */
+  /* A single horizontal strip under the top bar. It scrolls sideways, so
+   * every action stays a 44 px target without wrapping into the reader.
+   * Save / Done are pinned to the left edge and never scroll away. The
+   * flyout groups are hidden: their menus are desktop popovers anchored
+   * to a button, which do not fit a touch toolbar (the phone inserts
+   * the same constructs by typing or via the remaining buttons). */
+  #edit-bar:not([hidden]) {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2px;
+    height: calc(var(--m-hit) + 8px);
+    padding: 4px calc(6px + env(safe-area-inset-right))
+             4px calc(6px + env(safe-area-inset-left));
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  #edit-bar::-webkit-scrollbar { display: none; }
+  /* Source editing has no phone surface; only a WYSIWYG layer may show
+   * this bar (also covers a desktop->phone resize mid source edit). */
+  body:not(.edit-open) #edit-bar { display: none; }
+  #edit-bar .eb {
+    flex: 0 0 auto;
+    min-width: var(--m-hit);
+    height: var(--m-hit);
+    padding: 0 8px;
+    font-size: 15px;
+  }
+  #edit-bar .eb-sep { flex: 0 0 1px; margin: 0 2px; }
+  #edit-bar .eb-actions {
+    order: -1;
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    flex: 0 0 auto;
+    margin-left: 0;
+    padding-right: 6px;
+    background: var(--bg-panel);
+    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, .45);
+  }
+  #edit-bar .eb-actions .eb { min-width: var(--m-hit); padding: 0 12px; }
+  #edit-bar .eb-actions .eb-primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  #edit-bar .eb-actions .eb-primary:active {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  #edit-bar .eb-table,
+  #edit-bar .eb-example,
+  #edit-bar .eb-emoji-wrap,
+  #edit-bar .eb-list { display: none; }
+
+  /* While editing, the reader owns the screen: the rail and the
+   * navigation actions are gone, and the shell shrinks above the
+   * on-screen keyboard (mobile.js mirrors the visual viewport into
+   * --m-kb). The top bar keeps back (exits editing) and the title. */
+  body.edit-open #activity-bar,
+  body.edit-open #mobile-capture,
+  body.edit-open #mobile-more { display: none; }
+  body.edit-open #app { height: calc(100dvh - var(--m-kb, 0px)); }
+  body.edit-open #viewer-content {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
 
   /* ---- bottom rail ------------------------------------------------ */
   #activity-bar {

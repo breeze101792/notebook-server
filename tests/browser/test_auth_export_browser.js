@@ -815,7 +815,7 @@ async function main() {
 
     const cacheRoot = await page.evaluate(async () => {
       try {
-        const c = await caches.open("notebook-v13");
+        const c = await caches.open("notebook-v14");
         return !!(await c.match("/"));
       } catch (e) { return false; }
     });

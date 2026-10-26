@@ -167,11 +167,12 @@ padding shortened `#app` while the rail was fixed to the viewport.
 
 ### 3.4 What mobile hides (never removes)
 
-`#tab-bar`, `#outline-pane`, `#edit-bar`, `#cm-host`, `#hybrid-toggle`,
-`#edit-toggle`, `#outline-toggle`, `.search-wrap` (the fixed 280 px input,
-`style.css:177`), `#brand`, `.activity-bar-spacer`, `#activity-graph-btn`,
-`#activity-settings-btn`, `#logout-btn`, `[data-view="ai"]` (the rail button and
-the panel view), plus the table-view toolbar and hybrid chrome.
+`#tab-bar`, `#outline-pane`, `#cm-host`, `#edit-toggle`, `#outline-toggle`,
+`.search-wrap` (the fixed 280 px input, `style.css:177`), `#brand`,
+`.activity-bar-spacer`, `#activity-graph-btn`, `#activity-settings-btn`,
+`#logout-btn`, `[data-view="ai"]` (the rail button and the panel view), plus the
+table-view toolbar. `#edit-bar` and `#hybrid-toggle` are conditional: the pencil
+appears with an editable note and the bar only inside an edit layer (§4.12).
 
 These IDs are read at boot by `tabs.js`, `outline.js`, `viewer.js`,
 `sidebar.js`, `search.js`; hiding is CSS only.
@@ -195,17 +196,19 @@ for these four controls: `#topbar .icon-btn, #topbar .mobile-title
 |---|---|---|---|
 | Back | `#back-btn` | 44×44, glyph 20 | default `--fg`; **disabled** (no nav history) `--fg-muted` at .4 opacity (`style.css:1386`); `:active` `--accent-soft`; focus ring |
 | Title | new `#mobile-title` (button) | 44 high, flex 1, min-width 0 | note basename, 16 px/600, one line, ellipsis; tap opens the drawer (`mobile.md` M2.4); Home shows the site title |
+| Edit | existing `#hybrid-toggle` | 44×44, ✎ 20 | hidden unless a note is open and the role can write; `.active` keeps the desktop accent fill; opens §4.12 |
 | Capture | new `#mobile-capture` | 44×44, `+` 22 | hidden for viewer role; `:active` `--accent-soft`; opens §4.8 |
 | More | new `#mobile-more` | 44×44, `…` 22 | `aria-haspopup="menu"`, `aria-expanded`; opens `NB.menu` anchored 4 px below the button, right-aligned; on Home opens §4.9 settings |
 
-Order: back, title, capture, more. On 390 px: 44 + 44 + 44 plus 3×4 gaps and 2×4 padding leaves
-238 px for the title. Back is always present but disabled on first load
-(`viewer.js:1121-1123`).
+Order: back, title, edit, capture, more. On 390 px: 4×44 plus 4×4 gaps and
+2×4 padding leaves 178 px for the title; it ellipsizes. Back is always present
+but disabled on first load (`viewer.js:1121-1123`).
 
 Note `…` menu (desktop parity per `mobile.md` M3.4):
 
 | Item | Action |
 |---|---|
+| Edit note | enter WYSIWYG mode (§4.12); admin/open server only |
 | Reload | `NB.viewer.reload()` |
 | Copy link | `NB.app.copyLink(path)` |
 | Show in Browse | open drawer, reveal + select the active row |
@@ -557,8 +560,9 @@ Design-only list; no implementation beyond the tokens above.
 
 1. `index.html:5` — add `interactive-widget=resizes-content` to the viewport.
 2. `#topbar` (`:87`) — add `<button id="mobile-title">`, `<button
-   id="mobile-capture">`, `<button id="mobile-more">` before/after the existing
-   actions. Keep `#back-btn`, `#brand`, `.search-wrap`, `#edit-toggle`.
+   id="mobile-capture">`, `<button id="mobile-more">`; move the existing
+   `#hybrid-toggle` before them. Keep `#back-btn`, `#brand`, `.search-wrap`,
+   `#edit-toggle`.
 3. Before `#app` closes — add `#mobile-scrim`, `#capture-sheet`, `#mobile-state`
    (all `hidden` initially) and the settings-sheet host.
 4. Add `<script src="/static/js/mobile.js" defer>` before `app.js` (`:1190`).
@@ -578,7 +582,8 @@ No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline
 | `static/js/table-view.js`, `table-select.js` | No-op on phone (CSS alone hides the toolbar; guards prevent arming). |
 | `static/js/search.js` | Autofocus the field when opened on phone; debounce 250 ms already exists (`:255`). |
 | `static/js/api.js` | Add `appendFile: (path, content, create) => request("POST", "/api/file/append", {path, content, create})`. |
-| `static/js/hybrid.js`, `settings.js`, `export.js`, `ai.js`, `graph.js` | No change. Their entry points are hidden or their views unmounted on phone. |
+| `static/js/hybrid.js` | v2 (§4.12): phone-only Done/Save labels, the toolbar touch-selection guard, and the canWrite gate on the pencil. |
+| `static/js/settings.js`, `export.js`, `ai.js`, `graph.js` | No change. Their entry points are hidden or their views unmounted on phone. |
 | `tests/dom/test_dom.js` | New `== mobile ==` block: set `dataset.uiMode="phone"`, assert drawer open/close, capture states, 44 px CSS presence, edit controls hidden, no config write on drawer toggle. |
 
 The drawer "wins" without `!important` because (a) the only inline positioning
@@ -634,4 +639,37 @@ The implementation answers are in [`../architecture/mobile.md`](../architecture/
 | Capture target | `Inbox.md` at notebook root; `append` with `create:true`. No folder variant. |
 | Tablet split | Portrait tablets up to 1023 px get the phone shell; 1024 px and above stay desktop. |
 | iPad + trackpad | Still open: an iPad with a trackpad reports hover and fine pointer, so it keeps desktop hover behaviour. Use `(any-pointer: coarse)` for hit areas only if this proves wrong on a device. |
+
+### 4.12 Edit mode (WYSIWYG)
+
+Editing is a layer over the reader, not a second screen. Entering it swaps the
+rendered note into the contenteditable surface in place; the address, note, and
+scroll do not change.
+
+```
+top bar      52 + inset   back ← (exits) · title · ✎ active
+edit bar     52           [💾 Save][✕ Done] │ undo redo │ H1 H2 H3 … (scrolls →)
+reader       1fr           the note, now editable
+rail         hidden       the keyboard owns the bottom edge
+```
+
+- **Entry.** ✎ in the top bar, or **Edit note** as the first `…` item. Both
+  absent for a viewer role and with no note open.
+- **Edit bar.** One horizontal strip, `background: var(--bg-panel)`
+  (`--bg-elev` under the top bar would read as a second header), a 1 px
+  `--border` bottom edge, 8 px vertical padding, 44 px controls, 2 px gaps.
+  It scrolls sideways; the horizontal scrollbar is hidden. `Save` and `Done`
+  are pinned at the left with a soft right shadow, so they are reachable
+  whatever the scroll position.
+- **Hidden while editing.** Rail, `+`, `…`, and the drawer title action. Back
+  (top bar, hardware, browser, Esc) exits editing instead of navigating.
+- **Keyboard.** The shell height is `100dvh - var(--m-kb)`, so the reader ends
+  above the keyboard rather than under it. Tapping a formatting control keeps
+  the keyboard and the caret.
+- **Saving.** `Save` writes immediately and toasts “Saved”. `Done` and back
+  save when autosave is on, otherwise ask; the exit path never discards typed
+  text without a prompt or a recoverable draft.
+- **Not offered.** The flyout menus (table actions, list move, examples,
+  emoji) are display:none on the phone; the remaining buttons are a single
+  scrollable row. Drag-reorder grips and the right-click menu stay desktop.
 

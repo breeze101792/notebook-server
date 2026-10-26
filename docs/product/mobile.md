@@ -8,7 +8,7 @@ Related: [mobile-support research](../research/mobile-support.md) owns the fact 
 
 > **On a phone, the user should reach a note, read it properly, find something, and write a quick thought — without a desktop beside them and without disturbing the desktop they left at home.**
 
-Today the four-column shell collapses the editor to 0 px on a phone, so the product is desktop-only in practice. v1 makes the same web app usable on a phone for reading and capture; it does not become a phone editor. It stays one web app over plain HTTP on the LAN: no framework, no bundler, no native shell, no TLS or reverse-proxy work, no offline guarantee.
+Today the four-column shell collapses the editor to 0 px on a phone, so the product is desktop-only in practice. v1 makes the same web app usable on a phone for reading and capture; v2 adds WYSIWYG editing of the open note. It stays one web app over plain HTTP on the LAN: no framework, no bundler, no native shell, no TLS or reverse-proxy work, no offline guarantee.
 
 ### 1.1 Facts this spec takes from the research document
 
@@ -18,7 +18,7 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 
 ## 2. Scope and non-goals
 
-### 2.1 In scope (v1)
+### 2.1 In scope
 
 | ID | Capability | User-visible outcome |
 |---|---|---|
@@ -30,12 +30,13 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 | M6 | Minimal settings | theme, text size, sign out, server origin and reachability |
 | M7 | Deep links and resume | `?file=` opens the right note; the last note on this device is one tap away |
 | M8 | Unreachable states | a clear failure screen with Retry, distinct from sign-in |
+| M9 | WYSIWYG edit | edit the open note in place with a touch formatting bar; Save and back both persist |
 
-### 2.2 Out of scope for v1 (with the reason)
+### 2.2 Out of scope (with the reason)
 
 | Excluded | Why |
 |---|---|
-| Editing an existing note | the only safe v1 write is append-only capture; editing is v2 |
+| Source (Markdown) editing | WYSIWYG covers the phone job; CM6's line editing is a desktop tool |
 | Tabs UI, TOC / outline sheet | one note at a time; the tab substrate must not be forked; heading links still work |
 | Per-device theme and text size | v1 uses the existing server-side prefs; no per-device promise |
 | Image/diagram lightbox, pan, pinch-zoom | neither exists on desktop today; fit plus block scroll is enough |
@@ -115,6 +116,15 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 2. v1 caches no notes. A note readable before a failure is not shown from cache, and the failure screen says so.
 3. A 401 is never shown as unreachable: it shows sign-in (M1). A 403 shows a role-permission message. A capture sent while unreachable fails with its draft kept; there is no background retry queue in v1.
 
+### M9 — WYSIWYG edit
+
+1. With a note open, an ✎ control in the top bar and **Edit note** as the first item of the `…` menu enter WYSIWYG mode. Both are absent for a viewer role and with no note open.
+2. The rendered note becomes the editable surface. A single sideways-scrolling formatting strip sits under the top bar with Save and Done pinned at its left; every control is at least 44 px.
+3. Tapping a formatting control keeps the caret and the keyboard. Typing, selection, task checkboxes, lists, headings, quotes, links, and code blocks behave as they do in desktop WYSIWYG mode.
+4. Autosave (server setting) covers idle typing. **Save** writes immediately; **Done** writes when autosave is on, otherwise it asks before leaving unsaved changes.
+5. Back (browser, hardware, the top-bar arrow), Esc, or Done leave edit mode before any navigation. Leaving with autosave off keeps the buffer as a recoverable draft.
+6. The bottom rail and the +/… actions are hidden while editing. The note, its address, and the scroll position do not change when entering or leaving.
+
 ## 5. Edge cases
 
 | Case | Expected behaviour | M |
@@ -129,7 +139,7 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 | Sign-in rate limit | distinct message with the wait; form usable afterwards; no auto-retry | M1 |
 | Rotation or keyboard | note, drawer state, and draft survive; scroll position approximately preserved; focused field and Send scroll above the keyboard; no duplicate request | all |
 | Double-tap Send | exactly one append | M5 |
-| Viewer role | reader only; capture absent; a direct write is refused with a message | M1, M5 |
+| Viewer role | reader only; capture and edit absent; a direct write is refused with a message | M1, M5, M9 |
 
 ## 6. Acceptance criteria
 
@@ -161,14 +171,15 @@ Tagged **[H]** manual on a real phone (device matrix in the research document) o
 24. C4 — At the desktop breakpoint the shell is unchanged: same four columns, tab strip, widths, and menus [D].
 25. C5 — Reading a note on a phone changes neither the desktop's open tabs, active file, nor panel widths [D].
 26. C6 — Unreachable and unauthorized are visually distinct: Retry versus sign-in; rotation and keyboard focus preserve the note, drawer state, and draft [H].
+27. M9 — With a note open, ✎ and **Edit note** enter WYSIWYG mode; the toolbar keeps text on the caret, Save writes, and back/Done/Esc leave before navigating [D]. A viewer sees no edit entry [D].
 
 ## 7. Out-of-scope confirmation and the v2 boundary
 
-§2.2 stands: no excluded item ships in v1, and v1 implies none of them — no disabled edit buttons, no “coming soon” tabs, no offline promise. v2 adds: editing an existing note in an edit mode, then tabs, TOC, per-device prefs, lightbox with pan, export, graph, AI, table and diagram editing, admin settings, and an offline cache only if the server story changes.
+§2.2 stands: no excluded item ships, and the shipped shell implies none of them — no disabled tabs, no offline promise. Still deferred: source (CM6) editing, tabs, TOC, per-device prefs, lightbox with pan, export, graph, AI, table/diagram visual designers, admin settings, and an offline cache only if the server story changes.
 
-| v2 need | What v1 must preserve |
+| Still-deferred need | What the shipped shell must preserve |
 |---|---|
-| Editing the open note and tabs | note identity is the `?file=` path; back uses visit order, not a tab stack |
+| Tabs | note identity is the `?file=` path; back uses visit order, not a tab stack |
 | Per-device prefs | v1 says theme and size are server-wide; never presents them as per-device |
 | Lightbox, offline | images and diagrams keep block boundaries; nothing claims cached content or background delivery |
 

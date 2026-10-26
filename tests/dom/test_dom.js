@@ -15500,8 +15500,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v13",
-      /const CACHE = "notebook-v13"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v14",
+      /const CACHE = "notebook-v14"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -30754,8 +30754,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v13",
-        /const CACHE = "notebook-v13"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v14",
+        /const CACHE = "notebook-v14"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);
@@ -33511,8 +33511,9 @@ function check(label, cond, extra) {
     let mmMenu = $("nb-menu");
     let mmLabels = Array.from(mmMenu.querySelectorAll("button"))
       .map((b) => b.textContent.trim());
-    check("mobile note menu: opens Reload / Copy link / Show in Browse",
-      !mmMenu.hidden && mmLabels.join("|") === "Reload|Copy link|Show in Browse",
+    check("mobile note menu: opens Edit note / Reload / Copy link / Show in Browse",
+      !mmMenu.hidden &&
+      mmLabels.join("|") === "Edit note|Reload|Copy link|Show in Browse",
       mmLabels.join(","));
     check("mobile note menu: the trigger advertises aria-expanded",
       $("mobile-more").getAttribute("aria-expanded") === "true");
@@ -33539,6 +33540,36 @@ function check(label, cond, extra) {
       !!window.document.querySelector('#file-tree .tree-row[data-path="notes/a.md"].selected'));
     window.NB.mobile.closeDrawer();
     await tick(40);
+
+    // --- WYSIWYG editing on the phone -------------------------------
+    await window.NB.tabs.open("notes/a.md");
+    await tick(80);
+    const vc = $("viewer-content");
+    check("mobile edit: a note shows the top-bar edit pencil",
+      !$("hybrid-toggle").hidden);
+    $("hybrid-toggle").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(120);
+    check("mobile edit: the pencil enters WYSIWYG mode",
+      vc.getAttribute("contenteditable") === "true");
+    check("mobile edit: the edit layer marks the body",
+      window.document.body.classList.contains("edit-open"));
+    check("mobile edit: the formatting bar is shown",
+      !$("edit-bar").hidden);
+    check("mobile edit: Save stays visible in the phone toolbar",
+      !$("save-btn").hidden);
+    check("mobile edit: the rail and navigation actions are hidden by class",
+      window.document.body.classList.contains("edit-open"));
+
+    // Browser/hardware back leaves editing instead of navigating.
+    window.dispatchEvent(new window.PopStateEvent("popstate",
+      { state: { nbFile: "notes/a.md" } }));
+    await tick(160);
+    check("mobile edit: back leaves edit mode",
+      vc.getAttribute("contenteditable") === null &&
+      !window.document.body.classList.contains("edit-open"));
+    check("mobile edit: back stays on the same note",
+      window.NB.tabs.getActive() === "notes/a.md", window.NB.tabs.getActive());
+    check("mobile edit: the pencil is ready again", !$("hybrid-toggle").hidden);
 
     // Home with no active note: the same button opens the settings sheet.
     window.NB.tabs.clearAll();

@@ -3,7 +3,7 @@
 Status: implementation plan. Owner: `architect`.
 Applies to: `templates/index.html`, `static/css/style.css`, `static/js/{app,viewer,sidebar,api,auth,mobile}.js`, `static/sw.js`, `tests/dom/test_dom.js`, `tests/browser/`.
 Behaviour spec: [`../product/mobile.md`](../product/mobile.md); device facts: [`../research/mobile-support.md`](../research/mobile-support.md).
-Decided upstream: no framework/bundler, no native shell, no TLS (plain HTTP on the LAN), desktop must not regress, editing deferred to v2.
+Decided upstream: no framework/bundler, no native shell, no TLS (plain HTTP on the LAN), desktop must not regress. Editing was deferred from v1 and shipped as the v2 addendum in §13.
 
 ## 1. Goal
 
@@ -13,7 +13,7 @@ One web app, one codebase. At phone widths the four-column shell becomes a reade
 
 | Cut | Reason |
 | --- | --- |
-| Editing, tabs UI, TOC, lightbox, AI, export, graph, offline cache | spec §2.2; hybrid editing's structural gestures are `mousedown`/`mouseup` (`hybrid.js:4808-4809`) — touch needs pointer-event work, v2 |
+| Source (CM6) editing, tabs UI, TOC, lightbox, AI, export, graph, offline cache | spec §2.2; WYSIWYG editing shipped in §13. Drag-reorder gestures stay desktop-only (`mousedown`/`mousemove`, `hybrid.js:4808-4809`) |
 | Per-device theme/text size | theme/fontSize stay server-wide prefs; only Continue and the draft are device-local (spec M6.2) |
 | Long-press menus | iOS never fires `contextmenu` (research §3.1); the `…` button is the one entry (spec §4.0.3) |
 | Server changes | none required (§5, §7) |
@@ -179,7 +179,7 @@ POST /api/file/append  {"path": "Inbox.md", "content": "\n\n" + text.trim() + "\
 - **Hover-only rules:** hide `.tree-star`/`.tree-pin` on mobile (both actions live in the `…` menu — no dead UI) and reveal the code-block copy button: `.tree-star, .tree-pin { display: none; }`, `.copy-btn { opacity: 1; }` inside the phone arm. Today they are hover-gated (`style.css:2953-2980`, `:3281-3290` per research §3.2). No `:hover` rule remains load-bearing in the phone arm.
 - **44 px targets:** the phone arm raises `.activity-btn` (36 px today, `style.css:224-226`), drawer rows (27 px), and every `…`/sheet control to ≥44 px with padding (HIG; research §6).
 - **Capture sheet + `visualViewport`:** the sheet is bottom-anchored and listens to `window.visualViewport` `resize`/`scroll` to re-anchor above the open keyboard (iOS does not shrink the layout viewport; research §5/M4). Fallback: `resize` for Android. The field renders at ≥16 px so iOS does not zoom on focus (spec C2).
-- **`#edit-toggle` hidden** on mobile (`#edit-toggle { display: none; }` in the phone arm); `#hybrid-toggle` already carries `hidden` (`index.html:98`). No edit entry point remains on a phone.
+- **`#edit-toggle` hidden, `#hybrid-toggle` shown** on mobile. The source editor stays desktop-only; the WYSIWYG pencil is the phone edit entry and is hidden until a note is open and the role can write (§13).
 - **`#brand` must not be the mobile title:** it is a reload button — click calls `NB.viewer.reload()` (`viewer.js:1169-1171`) — so a mis-tap would discard the reading position. The phone arm hides it; the title is `#mobile-title` (opens the drawer).
 - **`topbar-hidden` config class:** §3's two rules keep the topbar and back button alive on a phone even when the desktop preference is on (`app.js:294-297`, `style.css:149-150`).
 
@@ -243,3 +243,38 @@ Rollback overall: v1 is one module + one CSS section + four small JS hunks; no s
 - Per-device prefs, if ever wanted, are additive `config.json` keys (the blob is schema-free, `app.py:885-895`); v1 adds none, so there is nothing to migrate.
 
 **Not verified** (could not be confirmed from the code): Android Chrome long-press `contextmenu` synthesis (research §10); iOS storage-eviction window for Safari/installed-app `localStorage` (degradation is designed); real-iPhone behaviour of hover-synthesized controls (moot once §8 hides/reveals them); the 932×430 landscape figure comes from the task brief — the research table measured 390×844 portrait only.
+
+## 13. v2 addendum — WYSIWYG editing (shipped)
+
+Editing reuses hybrid mode; no second editor surface was added.
+
+**Entry.** `#hybrid-toggle` (✎) moves before the +/… controls and is unhidden in
+the phone arm. `hybrid.js:updateButtonVisibility` shows it only when a note is
+open and `NB.auth.canWrite()` is true (default-deny until `/api/auth` answers;
+`auth:status` re-runs it). The note `…` menu's first item, **Edit note**, enters
+the same mode, so the menu path works on iOS where the pencil is small.
+
+**Layer.** Entering emits `hybrid:entered`; `mobile.js` turns it into
+`setLayer("edit")`, the same history entry the drawer uses. `body.edit-open`
+hides the rail and the +/… actions, and `#app` shrinks above the keyboard with
+`calc(100dvh - var(--m-kb))` (`--m-kb` already mirrors `visualViewport`).
+`popstate`/Esc/top-bar back close the layer through `commitForTabSwitch` inside
+`exitEditSession`: autosave on writes silently, autosave off stashes a draft, and
+a 401 exits without writing.
+
+**Toolbar.** `#edit-bar` becomes a single sideways-scrolling 44 px strip.
+`#edit-bar .eb-actions` (`Save`, `Done`) is `order: -1` and sticky-left, so the
+two exits never scroll away. Save is visible on the phone only (desktop keeps
+autosave + the exit prompt). The flyout groups (table, list-move, examples,
+emoji) are hidden: their anchored popovers do not fit the strip, and the same
+constructs remain typeable. Tapping a button keeps the contenteditable caret
+(`mousedown` `preventDefault` on `#edit-bar`) and a captured range is restored
+when the browser moved focus anyway, so formatting acts on the user's selection
+and the keyboard stays up.
+
+**Desktop is unchanged** outside the phone media query: the pencil stays where
+it was in the top bar, Save stays hidden in hybrid, and the bar keeps wrapping.
+
+**Not supported on the phone:** drag-reorder handles (table/list `mousedown`
+drags), the right-click formatting menu, and the source editor.
+

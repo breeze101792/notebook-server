@@ -380,8 +380,8 @@ async function main() {
       await page.click("#mobile-more");
       await page.waitForSelector("#nb-menu:not([hidden])", { timeout: 5000 });
       const menuItems = await page.locator("#nb-menu button").allTextContents();
-      check(size.name + ": the note … menu is Reload / Copy link / Show in Browse",
-        menuItems.join("|") === "Reload|Copy link|Show in Browse",
+      check(size.name + ": the note … menu is Edit note / Reload / Copy link / Show in Browse",
+        menuItems.join("|") === "Edit note|Reload|Copy link|Show in Browse",
         menuItems.join(","));
       check(size.name + ": opening … does not navigate",
         page.url() === urlBefore);
@@ -395,6 +395,95 @@ async function main() {
       await page.keyboard.press("Escape");
       await page.waitForFunction(
         () => document.getElementById("nb-menu").hidden, null, { timeout: 5000 });
+
+      // --- WYSIWYG editing from the phone top bar --------------------
+      check(size.name + ": the top bar shows the edit pencil",
+        await page.evaluate(() => !document.getElementById("hybrid-toggle").hidden));
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 5000 });
+      const editUi = await page.evaluate(() => {
+        const bar = document.getElementById("edit-bar");
+        const btns = Array.from(bar.querySelectorAll(".eb"))
+          .filter((b) => b.offsetParent !== null)
+          .map((b) => b.getBoundingClientRect());
+        return {
+          barVisible: !bar.hidden && bar.getBoundingClientRect().height > 0,
+          saveVisible: !document.getElementById("save-btn").hidden,
+          btnMinW: btns.length ? Math.min(...btns.map((r) => r.width)) : 0,
+          btnMinH: btns.length ? Math.min(...btns.map((r) => r.height)) : 0,
+          editOpen: document.body.classList.contains("edit-open"),
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      check(size.name + ": editing shows the formatting bar",
+        editUi.barVisible && editUi.editOpen);
+      check(size.name + ": toolbar buttons meet the 44 px touch target",
+        editUi.btnMinW >= 44 && editUi.btnMinH >= 44,
+        editUi.btnMinW + "x" + editUi.btnMinH);
+      check(size.name + ": Save is visible in the phone toolbar",
+        editUi.saveVisible);
+      check(size.name + ": editing adds no horizontal page overflow",
+        editUi.overflow <= 1, String(editUi.overflow));
+
+      // A toolbar tap formats the user's selection and keeps the editor
+      // focused (the touch keyboard must stay up).
+      await page.evaluate(() => {
+        const vc = document.getElementById("viewer-content");
+        const p = vc.querySelector("p");
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        vc.focus();
+      });
+      // The note may already be bold from the previous viewport run, so
+      // assert the state flips rather than that bold is now on.
+      const boldBefore = await page.evaluate(() =>
+        !!document.querySelector("#viewer-content b, #viewer-content strong"));
+      await page.tap('#edit-bar .eb[data-act="bold"]');
+      await page.waitForFunction(
+        (was) => (!!document.querySelector("#viewer-content b, #viewer-content strong")) !== was,
+        boldBefore, { timeout: 5000 });
+      check(size.name + ": a toolbar tap formats the selection",
+        await page.evaluate((was) =>
+          (!!document.querySelector("#viewer-content b, #viewer-content strong")) !== was,
+        boldBefore));
+      check(size.name + ": a toolbar tap keeps the editor focused",
+        await page.evaluate(() =>
+          document.activeElement === document.getElementById("viewer-content")));
+
+      // Type at the end of the note and save through the API.
+      await page.evaluate(() => {
+        const vc = document.getElementById("viewer-content");
+        const last = vc.querySelector("p:last-of-type") || vc.lastElementChild;
+        const range = document.createRange();
+        range.selectNodeContents(last);
+        range.collapse(false);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        vc.focus();
+      });
+      await page.keyboard.type(" Edited on phone.");
+      await page.evaluate(() => window.NB.hybrid.save());
+      await page.waitForFunction(() => !window.NB.hybrid.isDirty(), null,
+        { timeout: 5000 });
+      const diskAfterEdit = fs.readFileSync(path.join(DATA, "Welcome.md"), "utf8");
+      check(size.name + ": typed text reaches the file",
+        /Edited on phone\./.test(diskAfterEdit), diskAfterEdit.slice(0, 120));
+
+      // Back leaves edit mode and stays on the note.
+      await page.goBack();
+      await page.waitForFunction(
+        () => !document.body.classList.contains("edit-open"), null, { timeout: 5000 });
+      check(size.name + ": back leaves edit mode and stays on the note",
+        await page.evaluate(() =>
+          document.getElementById("viewer-content")
+            .getAttribute("contenteditable") === null &&
+          window.NB.tabs.getActive() === "Welcome.md"));
 
       check(size.name + ": no uncaught page errors", pageErrors.length === 0,
         pageErrors.join(" | "));

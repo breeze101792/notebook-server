@@ -470,7 +470,7 @@ Module responsibilities:
   up to the next heading of the same or higher level, so only that
   section is exported.
 
-**Mobile shell (v1: read + capture).** `static/js/mobile.js` adds a phone
+**Mobile shell (read + capture + WYSIWYG edit).** `static/js/mobile.js` adds a phone
 layout on top of the same app: one CSS media query
 (`max-width: 860px` or `(pointer: coarse) and (max-width: 1023px)`) sets
 `--ui-mode: phone`, and JS reads that token (mirrored to
@@ -489,8 +489,16 @@ writes are keyed read-merge-writes (never `openFiles`/`activeFile`/`lastFile`/
 `sidebarCollapsed`), so a phone cannot clobber the desktop. Continue/scroll
 live in `localStorage["nb:mobileResume"]`; quick capture appends one block to
 `Inbox.md` via `/api/file/append {create:true}` and keeps
-`localStorage["nb:captureDraft"]` across a 401. Editing, tabs, TOC, AI, export,
-offline and PWA install are out of v1 (plain HTTP is not a secure context).
+`localStorage["nb:captureDraft"]` across a 401. Editing is WYSIWYG only: the
+top-bar ✎ (`#hybrid-toggle`, shown when a note is open and the role can write)
+and the note `…` menu's **Edit note** enter hybrid mode; the edit bar becomes a
+sideways-scrolling 44 px strip with Save/Done pinned at the left, the rail and
+the +/… actions hide (`body.edit-open`), and the shell shrinks above the
+keyboard via `--m-kb`. Edit mode is a history layer (`setLayer("edit")`), so
+browser/hardware back, Esc, and the top-bar back leave editing before they
+navigate; the exit path saves like a tab switch (autosave flush, otherwise a
+stashed draft). No source/CM6 editor, tabs, TOC, AI, export, offline or PWA
+install on the phone (plain HTTP is not a secure context).
 The Home Screen icon is `static/icons/apple-touch-icon-v2.png`; the root
 `/apple-touch-icon.png` and `/apple-touch-icon-precomposed.png` routes serve it
 because iOS probes those paths, and the SPA catch-all used to answer with HTML.

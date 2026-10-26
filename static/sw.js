@@ -20,7 +20,9 @@
 /* Bumped v10 -> v11: the opaque v2 icon set replaces the transparent icons. */
 /* Bumped v11 -> v12: the Graphviz / WaveDrom designer modules join the precache. */
 /* Bumped v12 -> v13: navigation requests fall back to the cached app shell. */
-const CACHE = "notebook-v13";
+/* Bumped v13 -> v14: the phone WYSIWYG edit surface (CSS + JS) must reach
+ * already installed workers. */
+const CACHE = "notebook-v14";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

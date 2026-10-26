@@ -50,6 +50,13 @@
   // region, so the insertion is done here, not by editbar.js).
   const emojiPanelEl   = editBar ? editBar.querySelector(".eb-emoji-panel") : null;
 
+  /* Phone shell? mobile.js mirrors the CSS --ui-mode token to
+   * html[data-ui-mode]. Read it at the moment of the decision so a mode
+   * flip (rotation, window resize) is always current. */
+  function isPhoneMode() {
+    return document.documentElement.dataset.uiMode === "phone";
+  }
+
   // Elements the turndown `blank` rule must never match. <p>/<div> are
   // handled by the paragraph rule; table structure belongs to the GFM
   // table rule, which emits a cell for every <td>/<th> -- an empty one
@@ -5095,6 +5102,49 @@
     "undo", "redo", "clear",
   ];
 
+  /* A touch tap on the toolbar can move focus out of the contenteditable
+   * before the click handler runs. Capture the live range on mousedown and
+   * put it back when the command needs it, so a formatting tap still acts
+   * on the caret the user had. */
+  let savedToolbarRange = null;
+
+  /* Record the caret while it is still inside the editor. touchstart runs
+   * before the tap's focus change, mousedown before its default action, so
+   * either one is early enough to save the range the command should use. */
+  function captureToolbarRange() {
+    if (!active) return;
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && viewerContentEl.contains(sel.anchorNode)) {
+      savedToolbarRange = sel.getRangeAt(0).cloneRange();
+    }
+  }
+
+  function onEditBarMouseDown(e) {
+    if (!active) return;
+    if (e.target.closest("input, textarea")) return;
+    captureToolbarRange();
+    e.preventDefault();
+  }
+
+  function onEditBarTouchStart(e) {
+    if (e.target.closest("input, textarea")) return;
+    captureToolbarRange();
+  }
+
+  function ensureEditorSelection() {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && viewerContentEl.contains(sel.anchorNode)) return;
+    if (!sel || !savedToolbarRange) return;
+    try {
+      sel.removeAllRanges();
+      sel.addRange(savedToolbarRange);
+    } catch (_) {
+      // The saved nodes were replaced by a previous command; nothing to
+      // restore.
+    }
+    savedToolbarRange = null;
+  }
+
   function onEditBarClick(e) {
     if (!active) return;
     // The emoji picker's grid is not a button this listener routes by act
@@ -5107,6 +5157,7 @@
       onEmojiPanelClick(e);
       return;
     }
+    ensureEditorSelection();
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const act = btn.dataset.act;
@@ -5960,12 +6011,17 @@
     if (previewBtn) previewBtn.hidden = true;
     if (closeEditBtn) {
       closeEditBtn.hidden = false;
-      closeEditBtn.textContent = HYBRID_EXIT_ICON;
+      // The phone has no keyboard shortcut and icons alone are ambiguous;
+      // spell the exit out. Desktop keeps the compact ✕.
+      closeEditBtn.textContent = isPhoneMode() ? "Done" : HYBRID_EXIT_ICON;
       closeEditBtn.title = "Exit WYSIWYG mode";
       closeEditBtn.setAttribute("aria-label", "Exit WYSIWYG mode");
     }
     if (saveBtn) {
-      saveBtn.hidden = true;
+      // Desktop relies on autosave + the exit prompt, so Save stays out of
+      // the way. The phone toolbar has room and no keyboard shortcut, so
+      // the explicit Save stays visible next to Done.
+      saveBtn.hidden = !isPhoneMode();
       saveBtn.textContent = HYBRID_SAVE_ICON;
       saveBtn.title = "Save current file";
       saveBtn.setAttribute("aria-label", "Save current file");
@@ -6012,6 +6068,9 @@
     viewerContentEl.addEventListener("click", onBlockClick);
     viewerContentEl.addEventListener("mousedown", onContentMouseDown);
     viewerContentEl.addEventListener("mouseup", onContentMouseUp);
+    savedToolbarRange = null;
+    editBar.addEventListener("mousedown", onEditBarMouseDown);
+    editBar.addEventListener("touchstart", onEditBarTouchStart, { passive: true });
     editBar.addEventListener("click", onEditBarClick, true);
     if (emojiPanelEl) emojiPanelEl.addEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
@@ -6049,6 +6108,9 @@
     viewerContentEl.removeEventListener("mousedown", onContentMouseDown);
     viewerContentEl.removeEventListener("mouseup", onContentMouseUp);
     pendingRuleClick = null;
+    savedToolbarRange = null;
+    editBar.removeEventListener("mousedown", onEditBarMouseDown);
+    editBar.removeEventListener("touchstart", onEditBarTouchStart, { passive: true });
     editBar.removeEventListener("click", onEditBarClick, true);
     if (emojiPanelEl) emojiPanelEl.removeEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
@@ -6079,6 +6141,8 @@
       saveBtn.textContent = "Save";
       saveBtn.title = "Save current file";
       saveBtn.setAttribute("aria-label", "Save current file");
+      // The bar is hidden; the source editor re-shows Save on entry.
+      saveBtn.hidden = true;
     }
 
     active = false;
@@ -7788,7 +7852,13 @@
   /* --- top-bar button wiring ------------------------------------- */
 
   if (hybridBtn) {
-    hybridBtn.addEventListener("click", () => toggle());
+    hybridBtn.addEventListener("click", () => {
+      // On a phone the active pencil doubles as Done. The desktop toggle
+      // discards an unsaved buffer, so route the phone path through the
+      // same save/prompt exit as the Done button instead.
+      if (active && isPhoneMode()) { onClose(); return; }
+      toggle();
+    });
   }
 
   /* Keyboard shortcut: Mod+Shift+E toggles hybrid mode. */
@@ -7805,7 +7875,10 @@
   function updateButtonVisibility() {
     if (!hybridBtn) return;
     const path = NB.viewer && NB.viewer.getPath ? NB.viewer.getPath() : null;
-    hybridBtn.hidden = !path;
+    // Default-deny until the auth status resolves: a viewer role can read
+    // but not write, so the edit entry must not appear at all.
+    const canWrite = !(NB.auth && NB.auth.canWrite) || NB.auth.canWrite();
+    hybridBtn.hidden = !path || !canWrite;
   }
 
   NB.evt.on("file:open", updateButtonVisibility);
@@ -7813,6 +7886,8 @@
   // tabs:changed covers the close-last-tab path (viewer.clear() does not
   // emit file:open), so the button disappears with the empty state.
   NB.evt.on("tabs:changed", updateButtonVisibility);
+  // canWrite is default-deny until /api/auth answers; refresh when it does.
+  NB.evt.on("auth:status", updateButtonVisibility);
   // Seed the initial state: a restored tab may already be active before
   // this module wired its listeners.
   updateButtonVisibility();

@@ -87,6 +87,15 @@
     // for the visible note or Home. Idempotent when already seeded.
     if (mode === "phone" && previousMode && previousMode !== "phone" && bootDone) {
       seedPhoneHistory();
+      // A desktop WYSIWYG session that rotates into the phone shell needs
+      // its back layer and the phone-only toolbar actions.
+      if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
+        setLayer("edit");
+        const save = document.getElementById("save-btn");
+        if (save) save.hidden = false;
+        const done = document.getElementById("close-edit-btn");
+        if (done) done.textContent = "Done";
+      }
     }
     return mode;
   }
@@ -184,13 +193,16 @@
   /* --- layers (drawer / capture / settings) -------------------------- */
   function updateScrim() {
     const scrim = shell.scrim;
-    if (scrim) scrim.hidden = !layer;
+    // Edit mode is a history layer but not a modal: the note stays live
+    // underneath, so it gets no scrim.
+    if (scrim) scrim.hidden = !layer || layer === "edit";
   }
 
   function showLayerUi(kind) {
     document.body.classList.toggle("drawer-open", kind === "drawer");
     document.body.classList.toggle("capture-open", kind === "capture");
     document.body.classList.toggle("settings-open", kind === "settings");
+    document.body.classList.toggle("edit-open", kind === "edit");
     if (kind === "capture") {
       const sheet = shell.captureSheet;
       if (sheet) sheet.hidden = false;
@@ -202,7 +214,8 @@
   }
 
   function hideLayerUi(kind) {
-    document.body.classList.remove("drawer-open", "capture-open", "settings-open");
+    document.body.classList.remove(
+      "drawer-open", "capture-open", "settings-open", "edit-open");
     delete document.body.dataset.drawerView;
     if (kind === "capture") {
       const sheet = shell.captureSheet;
@@ -216,7 +229,9 @@
 
   function focusOpener(kind) {
     const el = kind === "capture" ? shell.captureBtn
-      : kind === "settings" ? shell.more : shell.title;
+      : kind === "settings" ? shell.more
+      : kind === "edit" ? document.getElementById("hybrid-toggle")
+      : shell.title;
     if (el && !el.hidden) { try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
 
@@ -241,7 +256,28 @@
     layerHistory = false;
     hideLayerUi(kind);
     if (kind === "capture" || kind === "settings") updateKeyboardInset();
+    if (kind === "edit") exitEditSession();
     if (restoreFocus !== false) focusOpener(kind);
+  }
+
+  // Leave WYSIWYG mode through the same save path a tab switch uses: an
+  // autosave flush when autosave is on, otherwise a stashed draft with the
+  // Recover bar, so a phone back gesture never discards typed text. A 401
+  // or a desktop mode flip skips the write.
+  function exitEditSession() {
+    if (!isOn()) return;
+    if (!(NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive())) return;
+    if (NB.auth && NB.auth.isLocked && NB.auth.isLocked()) {
+      NB.hybrid.exit(false);
+      return;
+    }
+    const done = NB.hybrid.commitForTabSwitch();
+    Promise.resolve(done).then((ok) => {
+      // A failed save keeps the session open; restore its layer so the
+      // phone toolbar and the back step come back instead of leaving a
+      // half-torn-down editor.
+      if (ok === false && isOn() && layer !== "edit") setLayer("edit");
+    }).catch(() => {});
   }
 
   // Close through the history entry so browser/hardware back and the UI
@@ -718,15 +754,22 @@
     const closeMenu = () => {
       if (more) more.setAttribute("aria-expanded", "false");
     };
-    const items = [
+    const canWrite = !(NB.auth && NB.auth.canWrite) || NB.auth.canWrite();
+    const items = [];
+    if (canWrite && NB.hybrid && NB.hybrid.enter) {
+      items.push({ label: "Edit note", handler: () => {
+        closeMenu();
+        NB.hybrid.enter();
+      } });
+    }
+    items.push(
       { label: "Reload", handler: () => { closeMenu(); NB.viewer.reload(); } },
       { label: "Copy link", handler: () => { closeMenu(); NB.app.copyLink(path); } },
       { label: "Show in Browse", handler: () => {
         closeMenu();
         openDrawer("explorer");
         if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path);
-      } },
-    ];
+      } });
     NB.menu.open({
       owner: "mobile",
       x: rect.right - MENU_WIDTH,
@@ -1060,6 +1103,17 @@
       resumeScrollDone = false;
       updateHome();
     });
+
+    // WYSIWYG mode rides the same history layer as the drawer and the
+    // sheets: browser/hardware back and Esc leave edit mode before they
+    // navigate. Entering from the top-bar pencil lands here too.
+    NB.evt.on("hybrid:entered", () => {
+      if (isOn()) setLayer("edit");
+    });
+    NB.evt.on("hybrid:exited", () => {
+      // Pop the layer entry through history so no dead back step remains.
+      if (layer === "edit") requestCloseLayer();
+    });
   }
 
   function onKeydown(e) {
@@ -1071,7 +1125,12 @@
 
   function wireUi() {
     const title = shell.title;
-    if (title) title.addEventListener("click", () => openDrawer());
+    if (title) title.addEventListener("click", () => {
+      // Browsing away mid-edit would stack a second layer over the edit
+      // session; finish editing first (Done / back) to open the drawer.
+      if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
+      openDrawer();
+    });
     const capture = shell.captureBtn;
     if (capture) capture.addEventListener("click", openCapture);
     const more = shell.more;
