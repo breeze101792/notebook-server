@@ -522,15 +522,27 @@
    * NB.blocks.restoreForMarkdown runs afterwards to replace any table
    * living inside a plugin container with its fence. */
   function normalizeTablesForGfm(root) {
-    // A th/td holding only whitespace and engine line boxes must serialize
-    // as an empty GFM cell ("|  |"). Left in, a <br> emits a soft break
-    // inside the row and the table no longer parses on reload. A cell
-    // holding only <br>s is therefore emptied too. A <br> in a cell with
-    // text is left alone: it may be authored inline HTML and is content.
+    // GFM rows are single lines, so a <br> inside a cell has no Markdown
+    // representation. Turndown's default "  \n" would split the row and
+    // the table would no longer parse on reload; writing the tag back
+    // would put presentation HTML in the note. Flatten a line break in a
+    // cell with text to a space, and empty a cell that holds only <br>s
+    // so it serializes as "|  |".
     root.querySelectorAll("th,td").forEach((cell) => {
-      if (cell.textContent.trim()) return;
+      // Authored raw HTML and plugin source are restored verbatim; never
+      // rewrite a cell inside them.
+      if (cell.closest("[" + RAW_HTML_ATTR + "]")) return;
+      if (PLUGIN_CONTAINER_SELECTOR &&
+          cell.closest(PLUGIN_CONTAINER_SELECTOR)) return;
+      const breaks = cell.querySelectorAll("br");
+      if (!breaks.length) return;
+      if (cell.textContent.trim()) {
+        breaks.forEach((br) =>
+          br.replaceWith(document.createTextNode(" ")));
+        return;
+      }
       if (cell.querySelector(EMBEDDED_CONTENT_SELECTOR + ",pre,table")) return;
-      cell.querySelectorAll("br").forEach((br) => br.remove());
+      breaks.forEach((br) => br.remove());
     });
     root.querySelectorAll("table").forEach((table) => {
       const caption = table.querySelector("caption");

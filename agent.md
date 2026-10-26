@@ -138,10 +138,16 @@ DELETE /api/auth/tokens/<name>  → {"ok": true}
 
 ## Markdown rendering (when authoring notes)
 
-Note bodies are Markdown. The client renders these fenced languages
-specially, so include them when a note benefits from a diagram or a live
-demo — they are just ordinary fenced blocks in the file. Each engine is
-a **fixed vendored version**; use only syntax that version supports:
+Note bodies are Markdown. A GFM table row is a single line. A `<br>`
+inside a table cell is shown as literal text, not a line break, so keep
+the cell on one line (use a space or a parenthetical) or add a column.
+When replacing a table, emit exactly one table and separate it from the
+surrounding blocks with a blank line.
+
+The client renders these fenced languages specially, so include them when
+a note benefits from a diagram or a live demo — they are just ordinary
+fenced blocks in the file. Each engine is a **fixed vendored version**;
+use only syntax that version supports:
 
 | Fence | Renders as |
 | --- | --- |

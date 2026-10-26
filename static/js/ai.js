@@ -900,6 +900,8 @@
       "- To UPDATE an existing file you MUST use patch. write on an existing file is blocked by the app.",
       "- Use write only for creating a NEW file.",
       "- In patch edits, find must match the file EXACTLY and appear exactly once (verbatim, whitespace included).",
+      "- A <br> inside a table cell is shown as literal text, not a line break. Keep a GFM row on one line (use a space or a parenthetical) or add a column; do not use <br> expecting a line break.",
+      "- When replacing a table, output exactly one table. Do not leave the old table above or below the new one; separate a table from surrounding blocks with a blank line.",
       "- To modify the user's current file, patch that path unless told otherwise.",
       "- One logical change per patch tool call; several patch calls are fine.",
       "- After the tool result arrives, continue your answer in normal prose.",

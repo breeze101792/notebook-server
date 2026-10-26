@@ -10380,6 +10380,60 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(20);
 
+    // --- a <br> inside a table cell is shown literally ----------------
+    // GFM has no line break inside a row. Do not interpret the tag as
+    // HTML: render it as text, so the row stays one line and the source
+    // is not silently rewritten. A re-serialized table escapes it to
+    // &lt;br&gt;, which still displays as <br>.
+    FILES["notes/a.md"] =
+      "| en | zh |\n| --- | --- |\n| salt | Add salt.<br>加鹽。 |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const brCell = $("viewer-content").querySelector("tbody td:nth-child(2)");
+    check("hybrid table-br: <br> is shown as literal text in the cell",
+      brCell && brCell.textContent.includes("<br>") &&
+      !brCell.querySelector("br"),
+      brCell ? brCell.innerHTML : "none");
+    // Touch a body cell so its block hash differs from the baseline: the
+    // splice then re-serializes the whole table instead of carrying the
+    // untouched source bytes.
+    const saltCell = $("viewer-content").querySelector("tbody td");
+    saltCell.firstChild.nodeValue += "2";
+    const brMd = window.NB.hybrid.domToMarkdown();
+    const brRows = brMd.split("\n").filter((l) => l.startsWith("|"));
+    check("hybrid table-br: the literal tag stays inside one GFM row",
+      brRows.length === 3 && brRows[2].includes("salt2") &&
+      brRows[2].includes("Add salt.&lt;br&gt;加鹽。") &&
+      !/<br\b/i.test(brMd),
+      JSON.stringify(brRows));
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
+    // The literal-<br> rule is scoped to table cells: a paragraph <br>
+    // still breaks, and other inline HTML in a cell is still HTML. A
+    // <br> with attributes is a line-break tag too, so it is literal.
+    FILES["notes/a.md"] =
+      "line one<br>line two\n\n| h | v |\n| --- | --- |\n" +
+      "| <b>bold</b> | x<br class=\"c\">y |\n";
+    window.NB.viewer.close("notes/a.md");
+    await window.NB.tabs.open("notes/a.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    const scopeRow = $("viewer-content").querySelectorAll("tbody tr")[1];
+    const scopeBold = scopeRow && scopeRow.cells[0].querySelector("b");
+    const scopeCell = scopeRow && scopeRow.cells[1];
+    check("hybrid table-br: paragraph <br> breaks; cell <b> still renders",
+      !!$("viewer-content").querySelector("p br") && !!scopeBold &&
+      !!scopeCell && !scopeCell.querySelector("br") &&
+      scopeCell.textContent.includes('<br class="c">'),
+      scopeCell ? scopeCell.innerHTML : "none");
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+
     // --- table header guards ------------------------------------------
     // Deleting the header row (or toggling it off) used to leave a
     // headerless table that turndown can only round-trip as raw

@@ -274,6 +274,21 @@
           return '<a href="' + href + '" data-wikilink="1">' + token.text + "</a>";
         },
       }],
+      renderer: {
+        // A GFM table cell is a single line. Do not interpret a <br>
+        // inside one as HTML: show the tag as literal text, so the row
+        // stays valid and nothing the source contains is silently
+        // turned into a line break the table cannot represent.
+        tablecell(content, flags) {
+          const escaped = content.replace(/<br(?:\s[^>]*)?\/?>/gi, (tag) =>
+            tag.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+          const name = flags.header ? "th" : "td";
+          const open = flags.align
+            ? "<" + name + ' align="' + flags.align + '">'
+            : "<" + name + ">";
+          return open + escaped + "</" + name + ">\n";
+        },
+      },
     });
   }
 

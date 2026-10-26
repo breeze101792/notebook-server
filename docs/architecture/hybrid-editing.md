@@ -67,7 +67,9 @@ What "one `Enter`, one break" means in hybrid:
   action, click, focus change, or save may add or double a break.
 - A `<br>` stays inside the editing DOM; `domToMarkdown` converts it to Markdown
   before the write (verified: an in-block `<br>` becomes a Markdown break, never a
-  literal tag).
+  literal tag). Inside a table cell GFM has no row-internal line break, so the tag
+  is rendered as literal text instead of a line break: the row stays valid and the
+  tag is not interpreted.
 
 Verified today: **hybrid currently violates this.** Real Chromium, this revision:
 
@@ -81,8 +83,10 @@ Verified today: **hybrid currently violates this.** Real Chromium, this revision
 These are the real "flaky" the owner reports: lines growing blank separators from a
 single keypress. They are Q18 in §6.
 
-For the record, no `<br>` reaches the file from these paths. The vendored Turndown
-converts an in-block `<br>` to a Markdown break; the file never gains a literal tag.
+For the record, no `<br>` is interpreted from these paths. The vendored Turndown
+converts an in-block `<br>` to a Markdown break; the file never gains a literal tag
+from an `Enter`. Inside a table cell, where a Markdown break would split the row,
+the tag is shown as literal text (see `table-br` below).
 
 Verified in real Chromium: the owner's example `## Commands\n###\n### `   `\n`
 survives enter+exit byte-identically, and editing the `## Commands` line keeps both
@@ -138,6 +142,7 @@ format bar's removal shifts the rule). Backend `unittest` **209 OK**.
 | escape-# | A leading `#` with no following space (`#no-space`) saved unescaped and re-read as a heading. | `escapeLeadingHashes` escapes a leading `#` run that is not a valid ATX heading, outside fences. |
 | new-note-# | The first block trigger typed into a **brand-new empty note** stayed literal: a bare text node under the empty root failed the root-caret guard's `firstChild` test, so `# ` never converted and saved as the escaped `\# `. | `applyBlockRules` refuses only real **block** content (`hasBlockContent` ignores the placeholder `<br>`), so an empty root is wrapped in a `<p>` and the block rules fire; a root `<br>` line box is dropped first. Verified in jsdom and Chromium. |
 | Q10 | An untouched raw HTML block (`<div>x</div>`) lost its tags on a clean save. | `html` tokens are aligned by the element count they render, so an untouched raw block keeps its bytes. A raw `<table>` is the exception and still falls back so it converts to GFM. |
+| table-br | A `<br>` inside a table cell saved as Turndown's two-space hard break (`"  \n"`), splitting the GFM row; after the next reload the table was corrupted. | The `tablecell` renderer escapes `<br>` in a cell, so it shows as literal text and the row stays one line. If a real `<br>` element reaches the serializer (a contenteditable insert), `normalizeTablesForGfm` flattens it to a space; a cell holding only `<br>`s still serializes as an empty cell. |
 
 ### Defects found by the second-round adversarial review and fixed
 
@@ -256,7 +261,8 @@ I9. **One `Enter`, one break (goal G4b).** In hybrid mode a single `Enter` adds 
     (focus change, click, save) adds a break. This is about the editor's behavior,
     not the file format: blank lines already in the Markdown are normal and stay.
     The bug is `alpha beta` + `Enter` becoming `alpha beta\n\n` (Q18); the target is
-    one break.
+    one break. A `<br>` inside a table cell has no GFM line-break form, so it is
+    shown and saved as literal text (see `table-br`).
 
 ### 1.4 Non-hard-coded values
 
