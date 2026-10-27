@@ -5013,7 +5013,7 @@
     }
     const ctx = caretContext();
     if (!ctx) return;
-    const { blockEl, range } = ctx;
+    const { blockEl } = ctx;
     // ``` + Enter -> code block. Only on Enter: the handler runs for
     // every keydown, and a paragraph that merely contains the fence
     // trigger must not eat arrow keys / Backspace (the list rule below
@@ -5055,15 +5055,13 @@
           next.className = "task-list-item";
           const nextCb = makeTaskCheckbox();
           next.appendChild(nextCb);
-          // A plain list's native Enter at the item's very start opens
-          // the new item ABOVE the caret item. Match it, so Enter before
-          // the first character grows the checklist upward instead of
-          // appending a second item below.
-          if (caretAtListItemStart(li, range)) {
-            li.parentNode.insertBefore(next, li);
-          } else {
-            li.after(next);
-          }
+          // A checklist always grows DOWNWARD: the new item lands below
+          // the caret item even when the caret sits at the item's start
+          // (the position a checkbox click leaves it in). Inserting it
+          // above there left the caret on the first line while the text
+          // the user was editing moved down, which read as Enter doing
+          // nothing.
+          li.after(next);
           // The new item is textless: plant its ZWS caret host
           // (ensureListMarker) and land in it, the position right of the
           // box an item with words puts the caret in.

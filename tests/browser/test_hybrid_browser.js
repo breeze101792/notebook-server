@@ -1004,10 +1004,11 @@ async function main() {
         JSON.stringify(savedUnchecked));
     }
 
-    // Enter before the first character of a checkbox item opens the new
-    // item ABOVE it. The caret is put at the item text's offset 0 in the
-    // real editing engine, then a real Enter keypress runs the handler;
-    // the saved bytes prove the new item landed first, not second.
+    // Enter before the first character of a checkbox item -- the caret a
+    // checkbox click leaves -- still opens the new item BELOW and puts the
+    // caret in it. The caret is put at the item text's offset 0 in the real
+    // editing engine, then a real Enter keypress types into the new item;
+    // the saved bytes prove the text landed second, not first.
     {
       writeNote("notes/taskstartenter.md", "- [ ] first\n- [ ] second\n");
       await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartenter.md"));
@@ -1029,13 +1030,14 @@ async function main() {
         sel.addRange(r);
       });
       await page.keyboard.press("Enter");
+      await page.keyboard.type("added");
       await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
       const lines = readNote("notes/taskstartenter.md").trimEnd().split("\n");
-      check("real browser task: Enter at the first character opens an item above",
-        lines.length === 3 && /^- \[ \] *$/.test(lines[0]) &&
-        lines[1].indexOf("first") !== -1 && lines[2].indexOf("second") !== -1,
+      check("real browser task: Enter at the first character opens an item below",
+        lines.length === 3 && /^- \[ \] first$/.test(lines[0]) &&
+        /^- \[ \] added$/.test(lines[1]) && lines[2].indexOf("second") !== -1,
         JSON.stringify(lines));
     }
 
