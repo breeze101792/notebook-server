@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preview Overflow, Settings Focus, Tab Strip — reference mockup</title>
+<style>
+/* ------------------------------------------------------------------ *
+ * Token sets — inlined from static/css/style.css.
+ * .theme-dark mirrors :root; .theme-light mirrors body[data-theme=light].
+ * ------------------------------------------------------------------ */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --code-fg: #e6e6ea;
+}
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --code-fg: #1f2330;
+}
+
+/* ================================================================== *
+ * DESIGN UNDER TEST 1 — long-token wrapping (port to
+ * #viewer-content.markdown-body in static/css/style.css).
+ * ================================================================== */
+.prose {
+  overflow-wrap: break-word;
+  word-break: normal;
+  color: var(--fg);
+  font-size: .86rem;
+  line-height: 1.6;
+}
+.prose code { box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.prose pre { white-space: pre; overflow-wrap: normal; word-break: normal; overflow-x: auto; }
+
+/* ================================================================== *
+ * DESIGN UNDER TEST 2 — Settings focus ring.
+ * ================================================================== */
+.settings-demo { --stg-focus-ring: 2px solid var(--accent); }
+.settings-demo .icon-btn.initial-focus {
+  outline: var(--stg-focus-ring);
+  outline-offset: 1px;
+}
+.settings-demo .field:focus-visible { outline: var(--stg-focus-ring); outline-offset: 1px; }
+
+/* ================================================================== *
+ * DESIGN UNDER TEST 3 — tab strip reveal. No fade, no chevron: the
+ * strip is a plain clipper and the active tab is scrolled fully inside.
+ * ================================================================== */
+.tab-clip { overflow: hidden; }
+
+/* --- page chrome (not part of the deliverable) -------------------- */
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 28px; background: #101116; color: #c9ccd6;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+h1 { font-size: 16px; margin: 0 0 4px; color: #fff; }
+.lead { margin: 0 0 24px; color: #8b8d98; max-width: 860px; }
+.grid { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.frame-wrap { display: flex; flex-direction: column; gap: 8px; }
+.frame-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #8b8d98; }
+.frame { border: 1px solid #2a2b34; border-radius: 12px; overflow: hidden; }
+.caption { font-size: 12px; color: #8b8d98; max-width: 420px; }
+.caption b { color: #c9ccd6; font-weight: 600; }
+
+/* --- prose demo --------------------------------------------------- */
+.prose-col { width: 400px; padding: 16px; background: var(--bg); }
+.prose.before { overflow: hidden; overflow-wrap: normal; word-break: normal; }
+.prose a { color: var(--accent); text-decoration: none; }
+.prose h2 { font-size: 1.3rem; margin: 0 0 .5em; line-height: 1.25; }
+.prose h3 { font-size: 1.02rem; margin: 1.1em 0 .4em; line-height: 1.3; }
+.prose p { margin: .6em 0; }
+.prose code {
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: .9em; background: var(--code-bg); padding: .12em .4em; border-radius: 4px;
+}
+.prose pre {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin: .7em 0; font-size: .78rem; line-height: 1.5;
+}
+.prose pre code { background: none; padding: 0; }
+.prose table { border-collapse: collapse; display: block; max-width: 100%; overflow-x: auto; margin: .7em 0; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 4px 7px; text-align: left; font-size: .78rem; }
+.prose th { background: var(--bg-elev); }
+.clip-note {
+  display: inline-block; margin-top: 6px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--danger);
+}
+.after-note { color: #5fd49a; }
+
+/* --- settings demo ------------------------------------------------ */
+.settings-demo {
+  display: flex; flex-direction: column;
+  width: 520px; background: var(--bg-panel); color: var(--fg);
+  border-radius: 10px; overflow: hidden;
+}
+.settings-demo .modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.settings-demo .modal-head h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+.settings-demo .icon-btn {
+  background: none; border: none; color: var(--fg-muted);
+  font-size: 1.1rem; line-height: 1; padding: 2px 6px; border-radius: 6px; cursor: pointer;
+}
+.settings-demo .modal-body { display: flex; min-height: 200px; }
+.settings-demo .nav { flex: 0 0 150px; padding: 8px 6px; background: var(--bg); border-right: 1px solid var(--border); }
+.settings-demo .nav-item {
+  display: block; width: 100%; text-align: left; padding: 6px 10px;
+  border: none; border-radius: 6px; background: transparent;
+  color: var(--fg-muted); font: inherit; font-size: .88rem; cursor: pointer;
+}
+.settings-demo .nav-item.active {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.settings-demo .section { flex: 1 1 auto; padding: 14px 16px; min-width: 0; }
+.settings-demo h3 {
+  margin: 0 0 10px; font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .8px; color: var(--fg-muted);
+}
+.settings-demo .row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.settings-demo .row label { flex: 0 0 96px; color: var(--fg-muted); font-size: .86rem; }
+.settings-demo .field {
+  flex: 1 1 auto; min-width: 0; background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px;
+  font: inherit; font-size: .86rem;
+}
+.settings-demo .switch {
+  position: relative; width: 34px; height: 19px; border-radius: 999px;
+  background: var(--accent); margin-left: auto; flex: 0 0 auto;
+}
+.settings-demo .switch::after {
+  content: ""; position: absolute; top: 2px; right: 2px;
+  width: 15px; height: 15px; border-radius: 50%; background: var(--fg);
+}
+.settings-demo .modal-foot {
+  padding: 10px 16px; border-top: 1px solid var(--border); text-align: right;
+}
+.settings-demo .btn {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 13px; font: inherit; font-size: .85rem; cursor: pointer;
+}
+
+/* --- tab strip demo ---------------------------------------------- */
+.tab-demo {
+  width: 480px; background: var(--bg-panel); border-radius: 8px;
+  border: 1px solid var(--border); overflow: hidden;
+}
+.tab-bar { display: flex; align-items: flex-end; gap: 2px; height: 34px; padding: 0 6px; }
+.tab-pinned { display: none; }
+.tab-clip { flex: 1 1 auto; min-width: 0; height: 100%; overflow: hidden; }
+.tab-strip { display: flex; align-items: flex-end; gap: 2px; height: 100%; }
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 120px; width: 120px; height: 28px;
+  padding: 4px 6px 4px 10px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-bottom: none;
+  border-radius: 6px 6px 0 0; white-space: nowrap; font-size: .82rem; color: var(--fg-muted);
+}
+.tab .label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab .close { color: var(--fg-muted); font-size: 13px; }
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.strike { margin-left: auto; align-self: center; color: var(--fg-muted); padding: 0 4px; }
+</style>
+</head>
+<body>
+  <h1>Preview overflow, Settings focus, tab strip</h1>
+  <p class="lead">
+    Three treatments. The CSS blocks marked “DESIGN UNDER TEST” are what
+    <code>web-engineer</code> ports into <code>static/css/style.css</code>;
+    everything else is demo framing.
+  </p>
+
+  <div class="grid">
+
+    <!-- ============ 1. Long tokens: before / after ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">1 · Prose — before (clips at the column edge)</div>
+      <div class="frame theme-dark">
+        <div class="prose-col prose before">
+          <h2>Deployment notes</h2>
+          <p>
+            Fetch the schema from
+            <a href="#">https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/schema.ts#L1234-L1290</a>
+            before changing any handler.
+          </p>
+          <h3>Long identifier: org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter</h3>
+          <p>
+            Inline code:
+            <code>npm install -g @agentclientprotocol/claude-agent-acp@0.4.2-beta.11</code>
+          </p>
+          <p>Short text stays exactly as it is in both panels.</p>
+          <span class="clip-note">Clipped, not scrollable</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame-wrap">
+      <div class="frame-label">1 · Prose — after (breaks, nothing is lost)</div>
+      <div class="frame theme-dark">
+        <div class="prose-col prose">
+          <h2>Deployment notes</h2>
+          <p>
+            Fetch the schema from
+            <a href="#">https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/schema.ts#L1234-L1290</a>
+            before changing any handler.
+          </p>
+          <h3>Long identifier: org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter</h3>
+          <p>
+            Inline code:
+            <code>npm install -g @agentclientprotocol/claude-agent-acp@0.4.2-beta.11</code>
+          </p>
+          <p>Short text stays exactly as it is in both panels.</p>
+          <table>
+            <thead><tr><th>Source</th><th>Canonical URL</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>schema</td>
+                <td>deployment_spec_template_containers_0_resources_limits_cpu_nanocores_2000000000</td>
+              </tr>
+            </tbody>
+          </table>
+          <pre><code>git clone https://github.com/agentclientprotocol/agent-client-protocol.git --depth 1 --branch v0.4.2</code></pre>
+          <span class="clip-note after-note">Prose wraps; code and tables keep their own scroll</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 2. Settings focus ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">2 · Settings — initial focus on the close button</div>
+      <div class="frame theme-dark">
+        <div class="settings-demo">
+          <div class="modal-head">
+            <h2>Settings</h2>
+            <button class="icon-btn initial-focus" aria-label="Close">×</button>
+          </div>
+          <div class="modal-body">
+            <nav class="nav" role="tablist" aria-label="Settings sections">
+              <button class="nav-item active" role="tab" aria-selected="true">General</button>
+              <button class="nav-item" role="tab" aria-selected="false">Appearance</button>
+              <button class="nav-item" role="tab" aria-selected="false">Shortcuts</button>
+              <button class="nav-item" role="tab" aria-selected="false">Security</button>
+              <button class="nav-item" role="tab" aria-selected="false">AI</button>
+              <button class="nav-item" role="tab" aria-selected="false">About</button>
+            </nav>
+            <div class="section">
+              <h3>Site</h3>
+              <div class="row">
+                <label for="demo-title">Site title</label>
+                <input id="demo-title" class="field" value="Notebook">
+              </div>
+              <div class="row">
+                <label for="demo-watch">Watching</label>
+                <input id="demo-watch" class="field" value="On" readonly>
+                <span class="switch" aria-hidden="true"></span>
+              </div>
+              <div class="row">
+                <label for="demo-auto">Autosave</label>
+                <span class="switch" aria-hidden="true"></span>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot"><button class="btn">Close</button></div>
+        </div>
+      </div>
+      <p class="caption">
+        <b>Focus lands on the close button</b> — the first focusable in DOM
+        order and present on every tab — with a forced visible ring.
+        Programmatic focus after a mouse click usually does not match
+        <code>:focus-visible</code>, so the opening move adds
+        <code>stg-initial-focus</code> until the first key or click. The app
+        behind the backdrop is <code>inert</code>, so it reads as a still
+        frame: no hover, caret, or focus ring.
+      </p>
+    </div>
+
+    <!-- ============ 3. Tab strip ============ -->
+    <div class="frame-wrap">
+      <div class="frame-label">3 · Tabs — before (active tab off-screen, no cue)</div>
+      <div class="frame theme-dark">
+        <div class="tab-demo">
+          <div class="tab-bar">
+            <div class="tab-clip">
+              <div class="tab-strip">
+                <div class="tab"><span class="label">Welcome.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">architecture.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">mobile-shell.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">settings-modal.md</span><span class="close">×</span></div>
+              </div>
+            </div>
+            <button class="strike" aria-label="Toggle outline">≣</button>
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        Eight tabs are open; the active one is the ninth and sits past the
+        right edge. The scrollbar is hidden, so nothing says more exist.
+      </p>
+    </div>
+
+    <div class="frame-wrap">
+      <div class="frame-label">3 · Tabs — after (active tab revealed, scrollbar still hidden)</div>
+      <div class="frame theme-dark">
+        <div class="tab-demo">
+          <div class="tab-bar">
+            <div class="tab-clip">
+              <div class="tab-strip" style="margin-left: -655px">
+                <div class="tab"><span class="label">Welcome.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">architecture.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">mobile-shell.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">settings-modal.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">preview.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">focus.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">tabs.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">api.md</span><span class="close">×</span></div>
+                <div class="tab active"><span class="label">bugfix-preview.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">handoff.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">notes.md</span><span class="close">×</span></div>
+                <div class="tab"><span class="label">inbox.md</span><span class="close">×</span></div>
+              </div>
+            </div>
+            <button class="strike" aria-label="Toggle outline">≣</button>
+          </div>
+        </div>
+      </div>
+      <p class="caption">
+        <b>The active tab is brought fully into view.</b> The strip scrolls
+        the minimum needed and the tab lands flush with the right edge; the
+        hidden scrollbar stays, and no fade or chevron is added. A manual
+        scroll survives re-renders and is never dragged back.
+      </p>
+    </div>
+
+  </div>
+</body>
+</html>

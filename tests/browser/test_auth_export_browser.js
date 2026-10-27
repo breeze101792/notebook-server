@@ -282,6 +282,105 @@ async function main() {
     }
 
     /* ---------------------------------------------------------------- */
+    section("1b. Settings focus containment");
+    await page.focus("#activity-settings-btn");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => !document.getElementById("settings-overlay").hidden, null, { timeout: 10000 });
+    check("settings focus: opening moves focus to the Close button",
+      await page.evaluate(() => document.activeElement === document.getElementById("settings-close")),
+      await page.evaluate(() => document.activeElement && document.activeElement.id));
+    {
+      const inert = await page.evaluate(() => {
+        const overlay = document.getElementById("settings-overlay");
+        const others = Array.from(document.body.children).filter((el) => el !== overlay);
+        const dialog = document.querySelector("#settings-overlay .settings-modal");
+        return {
+          all: others.every((el) => el.inert === true),
+          app: document.getElementById("app").inert === true,
+          ariaModal: dialog.getAttribute("aria-modal"),
+        };
+      });
+      check("settings focus: the dimmed app is inert", inert.all && inert.app,
+        JSON.stringify(inert));
+      check("settings focus: aria-modal is true while the dialog is open",
+        inert.ariaModal === "true", inert.ariaModal);
+    }
+
+    let tabStayedInside = true;
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      const inside = await page.evaluate(() =>
+        document.querySelector("#settings-overlay .settings-modal")
+          .contains(document.activeElement));
+      if (!inside) { tabStayedInside = false; break; }
+    }
+    check("settings focus: forty Tab presses stay inside the dialog", tabStayedInside);
+
+    await page.evaluate(() => {
+      const overlay = document.getElementById("settings-overlay");
+      const list = Array.from(overlay.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )).filter((el) => !el.disabled && !el.hidden && el.offsetParent !== null);
+      window.__nbFirst = list[0];
+      window.__nbLast = list[list.length - 1];
+      window.__nbLast.focus();
+    });
+    await page.keyboard.press("Tab");
+    check("settings focus: Tab from the last control wraps to the first",
+      await page.evaluate(() => document.activeElement === window.__nbFirst),
+      await page.evaluate(() => {
+        const a = document.activeElement;
+        return "active=" + (a && (a.id || a.className)) +
+          " first=" + (window.__nbFirst && (window.__nbFirst.id || window.__nbFirst.className));
+      }));
+
+    await page.evaluate(() => window.__nbFirst.focus());
+    await page.keyboard.press("Shift+Tab");
+    check("settings focus: Shift+Tab from the first control wraps to the last",
+      await page.evaluate(() => document.activeElement === window.__nbLast),
+      await page.evaluate(() => {
+        const a = document.activeElement;
+        return "active=" + (a && (a.id || a.className)) +
+          " last=" + (window.__nbLast && (window.__nbLast.id || window.__nbLast.className));
+      }));
+
+    await page.evaluate(() => document.getElementById("activity-settings-btn").focus());
+    check("settings focus: programmatic focus cannot reach the background",
+      await page.evaluate(() =>
+        document.querySelector("#settings-overlay .settings-modal")
+          .contains(document.activeElement)));
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      () => document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    check("settings focus: Esc closes and returns focus to the opener",
+      await page.evaluate(() => document.activeElement === document.getElementById("activity-settings-btn")),
+      await page.evaluate(() => document.activeElement && document.activeElement.id));
+    check("settings focus: closing clears inert from the app",
+      await page.evaluate(() => document.getElementById("app").inert === false));
+
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => !document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    await page.click("#settings-close");
+    await page.waitForFunction(
+      () => document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    check("settings focus: the Close button returns focus to the opener",
+      await page.evaluate(() => document.activeElement === document.getElementById("activity-settings-btn")),
+      await page.evaluate(() => document.activeElement && document.activeElement.id));
+
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      () => !document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    await page.mouse.click(5, 5);
+    await page.waitForFunction(
+      () => document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    check("settings focus: the backdrop returns focus to the opener",
+      await page.evaluate(() => document.activeElement === document.getElementById("activity-settings-btn")),
+      await page.evaluate(() => document.activeElement && document.activeElement.id));
+
+    /* ---------------------------------------------------------------- */
     section("2. set admin password + login lockout");
     await openSettings(page, "security");
     {
@@ -627,6 +726,29 @@ async function main() {
       const label = await page.locator("#export-file-label").textContent();
       check("export modal targets the chosen file", /Export\.md/.test(label || ""), label || "");
     }
+    check("export modal: focus stays inside the dialog and the app is inert",
+      await page.evaluate(() => {
+        const overlay = document.getElementById("export-overlay");
+        const dialog = overlay.querySelector(".settings-modal");
+        const others = Array.from(document.body.children).filter((el) => el !== overlay);
+        return dialog.contains(document.activeElement) &&
+          others.every((el) => el.inert === true);
+      }));
+    // Export opens without initialFocus, so the container is the default
+    // target. Shift+Tab from it must wrap to the last control, not escape to
+    // BODY (the container is excluded from the focusable list).
+    await page.keyboard.press("Shift+Tab");
+    check("export modal: Shift+Tab from the default container focus stays inside",
+      await page.evaluate(() => {
+        const overlay = document.getElementById("export-overlay");
+        const dialog = overlay.querySelector(".settings-modal");
+        const active = document.activeElement;
+        return dialog.contains(active) && active !== dialog && active !== document.body;
+      }),
+      await page.evaluate(() => {
+        const a = document.activeElement;
+        return "active=" + (a && (a.id || a.className || a.tagName));
+      }));
 
     const htmlDownload = page.waitForEvent("download", { timeout: 40000 })
       .then((d) => ({ download: d }), (err) => ({ error: err }));
@@ -663,6 +785,9 @@ async function main() {
         stripTags(htmlText).includes('console.log("audit")'));
       check("HTML contains a rendered diagram SVG",
         htmlText.includes("mermaid-container") && /<svg[\s>]/.test(htmlText));
+      check("HTML export embeds the long-prose wrap rule",
+        /\.markdown-body\{overflow-wrap:break-word\}/.test(htmlText) &&
+        /-webkit-box-decoration-break:clone/.test(htmlText));
     }
     if (dlPath) {
       const page2 = await ctx.newPage();
@@ -778,6 +903,16 @@ async function main() {
       const o = document.getElementById("export-overlay");
       if (o && !o.hidden) document.getElementById("export-close").click();
     });
+    check("export modal: close falls back to the explorer button when the opener is gone",
+      await page.evaluate(() => {
+        const explorer = document.querySelector(
+          '#activity-bar .activity-btn[data-view="explorer"]');
+        return !!explorer && document.activeElement === explorer;
+      }),
+      await page.evaluate(() => {
+        const a = document.activeElement;
+        return "active=" + (a && (a.id || a.className || a.tagName));
+      }));
     await page.evaluate(() => {
       const r = document.getElementById("pdf-print-root");
       if (r) r.remove();
@@ -815,7 +950,7 @@ async function main() {
 
     const cacheRoot = await page.evaluate(async () => {
       try {
-        const c = await caches.open("notebook-v14");
+        const c = await caches.open("notebook-v15");
         return !!(await c.match("/"));
       } catch (e) { return false; }
     });

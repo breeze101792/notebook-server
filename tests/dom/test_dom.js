@@ -1925,6 +1925,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/vendor/turndown.browser.js"));
   evalIn(read("static/vendor/turndown-plugin-gfm.browser.js"));
   evalIn(read("static/js/api.js"));
+  evalIn(read("static/js/dialog.js"));
   evalIn(read("static/js/auth.js"));
   evalIn(read("static/js/cm-bridge.js"));
   evalIn(read("static/js/lightbox.js"));
@@ -15554,8 +15555,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v14",
-      /const CACHE = "notebook-v14"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v15",
+      /const CACHE = "notebook-v15"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -20399,6 +20400,14 @@ function check(label, cond, extra) {
   // Expose the public hooks for direct testing.
   check("auth: NB.auth is exposed", typeof window.NB.auth === "object"
     && typeof window.NB.auth.showModal === "function");
+  check("dialog: NB.dialog is exposed", typeof window.NB.dialog === "object"
+    && typeof window.NB.dialog.open === "function");
+  check("dialog: index.html loads dialog.js before auth.js",
+    read("templates/index.html").indexOf("/static/js/dialog.js") !== -1 &&
+    read("templates/index.html").indexOf("/static/js/dialog.js") <
+      read("templates/index.html").indexOf("/static/js/auth.js"));
+  check("dialog: dialog.js is in sw.js PRECACHE",
+    read("static/sw.js").indexOf("/static/js/dialog.js") !== -1);
   check("auth: NB.api.getAuthStatus is exposed", typeof window.NB.api.getAuthStatus === "function");
   check("auth: NB.api.login is exposed", typeof window.NB.api.login === "function");
   check("auth: NB.api.logout is exposed", typeof window.NB.api.logout === "function");
@@ -31505,8 +31514,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v14",
-        /const CACHE = "notebook-v14"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v15",
+        /const CACHE = "notebook-v15"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);

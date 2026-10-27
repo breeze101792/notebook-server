@@ -41,13 +41,43 @@ const LONG_BODY = (() => {
   return lines.join("\n");
 })();
 
-const NOTES = {
+const LONG_URL = "https://example.com/" + "a".repeat(280);
+const LONG_WORD = "b".repeat(300);
+const LONG_CODE = "c".repeat(300);
+const LONG_CODE_LINE = "d".repeat(300);
+const TABLE_HEAD = Array.from({ length: 20 }, (_, i) => "H" + i).join(" | ");
+const TABLE_RULE = Array.from({ length: 20 }, () => "---").join(" | ");
+const TABLE_ROW = Array.from({ length: 20 }, (_, i) => ("r" + i).repeat(20)).join(" | ");
+const OVERFLOW_BODY = [
+  "# Overflow",
+  "",
+  LONG_URL,
+  "",
+  "Inline `" + LONG_CODE + "` tail.",
+  "",
+  "## " + LONG_WORD,
+  "",
+  "| " + TABLE_HEAD + " |",
+  "| " + TABLE_RULE + " |",
+  "| " + TABLE_ROW + " |",
+  "",
+  "```text",
+  LONG_CODE_LINE,
+  "```",
+  "",
+].join("\n");
+
+const TAB_FILES = Array.from({ length: 13 }, (_, i) =>
+  "many/" + String(i + 1).padStart(2, "0") + ".md");
+
+const NOTES = Object.assign({
   "Welcome.md": "# Welcome\n\nRoot note.\n",
   "Long.md": LONG_BODY,
   "Watcher.md": "# Watcher\n\nOriginal watcher body.\n",
+  "Overflow.md": OVERFLOW_BODY,
   "notes/a.md": "# Note A\n\nAn alpha needle line in a subfolder.\n",
   "notes/b.md": "# Note B\n\nA beta needle line for search.\n",
-};
+}, Object.fromEntries(TAB_FILES.map((p, i) => [p, "# Tab " + (i + 1) + "\n\nBody.\n"])));
 
 for (const [rel, body] of Object.entries(NOTES)) {
   const p = path.join(DATA, rel);
@@ -277,6 +307,74 @@ async function main() {
       JSON.stringify(dialogSeen.slice(-2)));
 
     // ---------------------------------------------------------------
+    console.log("== preview overflow ==");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await row("Overflow.md").click();
+    await page.waitForFunction(() => NB.tabs.getActive() === "Overflow.md", null, { timeout: 8000 });
+    await page.waitForSelector("#viewer-content h1", { timeout: 8000 });
+    const overflow = await page.evaluate(() => {
+      const viewer = document.getElementById("viewer-content");
+      const code = viewer.querySelector("p code");
+      const link = viewer.querySelector('a[href^="https://example.com/"]');
+      const pre = viewer.querySelector("pre");
+      // highlight.js makes the inner <code> the scroller; the <pre> is the
+      // visible box either way.
+      const codeScroller = pre && pre.scrollWidth > pre.clientWidth
+        ? pre : (pre && pre.querySelector("code"));
+      if (codeScroller) codeScroller.scrollLeft = codeScroller.scrollWidth - codeScroller.clientWidth;
+      const table = viewer.querySelector("table");
+      // Content box = border box minus padding. The clipped prose lives
+      // here, so geometry against this edge is the real assertion; the
+      // page and the viewer both clip, which hides the failure.
+      const style = getComputedStyle(viewer);
+      const box = viewer.getBoundingClientRect();
+      const contentLeft = box.left + (parseFloat(style.paddingLeft) || 0);
+      const contentRight = box.right - (parseFloat(style.paddingRight) || 0);
+      const linkBox = link ? link.getBoundingClientRect() : null;
+      const para = link ? link.closest("p") : null;
+      const paraBox = para ? para.getBoundingClientRect() : null;
+      return {
+        viewerOverflow: viewer.scrollWidth - viewer.clientWidth,
+        contentLeft: contentLeft,
+        contentRight: contentRight,
+        linkText: link ? link.textContent : "",
+        linkLeft: linkBox ? linkBox.left : 0,
+        linkRight: linkBox ? linkBox.right : 0,
+        linkLines: link ? link.getClientRects().length : 0,
+        paragraphRight: paraBox ? paraBox.right : 0,
+        codeRight: code ? code.getBoundingClientRect().right : 0,
+        viewerRight: box.right,
+        preOwnScroller: !!codeScroller && codeScroller.scrollWidth > codeScroller.clientWidth,
+        preScrolled: !!codeScroller && codeScroller.scrollLeft > 0,
+        tableOwnScroller: !!table && table.scrollWidth > table.clientWidth,
+      };
+    });
+    check("preview overflow: #viewer-content's content fits its box",
+      overflow.viewerOverflow <= 1, "overflow=" + overflow.viewerOverflow);
+    check("preview overflow: the long bare URL stays inside the viewer content box",
+      overflow.linkRight <= overflow.contentRight + 1 &&
+      overflow.linkLeft >= overflow.contentLeft - 1,
+      JSON.stringify({ left: overflow.linkLeft, right: overflow.linkRight,
+        box: [overflow.contentLeft, overflow.contentRight] }));
+    check("preview overflow: the bare URL is complete and wraps onto more than one line",
+      overflow.linkText === LONG_URL && overflow.linkLines > 1,
+      JSON.stringify({ len: overflow.linkText.length, lines: overflow.linkLines }));
+    check("preview overflow: the paragraph containing the bare URL stays inside the content box",
+      overflow.paragraphRight <= overflow.contentRight + 1,
+      JSON.stringify({ para: overflow.paragraphRight, box: overflow.contentRight }));
+    // Inline code padding legitimately paints into the viewer's padding
+    // gutter, so this compares against the border box (the clip edge).
+    check("preview overflow: long inline code stays inside the viewer",
+      overflow.codeRight <= overflow.viewerRight + 1,
+      JSON.stringify({ code: overflow.codeRight, viewer: overflow.viewerRight }));
+    check("preview overflow: a fenced block keeps its own horizontal scroller",
+      overflow.preOwnScroller && overflow.preScrolled,
+      JSON.stringify(overflow));
+    check("preview overflow: a wide table keeps its own horizontal scroller",
+      overflow.tableOwnScroller, JSON.stringify(overflow));
+    await page.setViewportSize(VIEW);
+
+    // ---------------------------------------------------------------
     console.log("== tabs ==");
     // Clear whatever the file operations left open, through the close buttons.
     for (let i = 0; i < 12; i++) {
@@ -387,6 +485,107 @@ async function main() {
     await page.waitForFunction(() => NB.tabs.getActive() === "notes/a.md");
     check("tabs: active file persists in config.activeFile",
       await waitConfig((c) => c.activeFile === "notes/a.md"));
+
+    // ---------------------------------------------------------------
+    console.log("== tab strip scroll ==");
+    const tabVisible = (path) => page.evaluate((p) => {
+      const strip = document.getElementById("tab-list");
+      const el = strip.querySelector('.tab[data-path="' + p + '"]');
+      if (!el) return false;
+      const b = strip.getBoundingClientRect();
+      const t = el.getBoundingClientRect();
+      return t.left >= b.left - 1 && t.right <= b.right + 1;
+    }, path);
+    await page.evaluate(() => NB.tabs.clearAll());
+    await page.waitForFunction(() => NB.tabs.getOpen().length === 0, null, { timeout: 5000 });
+    await page.evaluate(async (paths) => {
+      for (const p of paths) await NB.tabs.open(p);
+    }, TAB_FILES);
+    await page.waitForFunction((n) => NB.tabs.getOpen().length === n, TAB_FILES.length,
+      { timeout: 15000 });
+    check("tab strip: thirteen tabs leave the active tab fully visible",
+      await waitFor(() => tabVisible(TAB_FILES[TAB_FILES.length - 1]), 4000),
+      await page.evaluate(() => {
+        const s = document.getElementById("tab-list");
+        return "scroll=" + s.scrollLeft + " max=" + (s.scrollWidth - s.clientWidth);
+      }));
+
+    await page.evaluate(async (p) => NB.tabs.activate(p), TAB_FILES[0]);
+    await page.evaluate(() => document.getElementById("tab-list").scrollTo({ left: 0, behavior: "instant" }));
+    await page.evaluate(async (p) => NB.tabs.activate(p), TAB_FILES[TAB_FILES.length - 1]);
+    check("tab strip: activating a far tab reveals it",
+      await waitFor(() => tabVisible(TAB_FILES[TAB_FILES.length - 1]), 4000));
+
+    // Re-activating the tab that is already active must still reveal it:
+    // a sidebar click on the active note lands on this path, and the tab may
+    // have been scrolled out of view since it was activated.
+    const activeTab = TAB_FILES[TAB_FILES.length - 1];
+    await page.evaluate(() =>
+      document.getElementById("tab-list").scrollTo({ left: 0, behavior: "instant" }));
+    await page.evaluate(async (p) => NB.tabs.activate(p), activeTab);
+    check("tab strip: re-activating the active tab reveals it again",
+      await waitFor(() => tabVisible(activeTab), 4000),
+      await page.evaluate(() => "scrollLeft=" + document.getElementById("tab-list").scrollLeft));
+
+    await page.evaluate(async (p) => NB.tabs.activate(p), TAB_FILES[0]);
+    check("tab strip: activating a tab to the left reveals it",
+      await waitFor(() => tabVisible(TAB_FILES[0]), 4000));
+
+    // Chromium keeps the pixel offset across an innerHTML rebuild when no
+    // layout flush happens between the clear and the re-append, so the final
+    // value alone cannot prove render() restores it. Record the helper's own
+    // reads and writes instead: it must read the current offset before
+    // clearing and write it back after the rebuild.
+    const scrollContract = await page.evaluate(() => {
+      const list = document.getElementById("tab-list");
+      list.scrollTo({ left: 300, behavior: "instant" });
+      const proto = Object.getOwnPropertyDescriptor(Element.prototype, "scrollLeft");
+      const log = [];
+      Object.defineProperty(list, "scrollLeft", {
+        configurable: true,
+        get() {
+          const value = proto.get.call(this);
+          log.push({ op: "get", value });
+          return value;
+        },
+        set(value) {
+          log.push({ op: "set", value, tabs: this.children.length });
+          proto.set.call(this, value);
+        },
+      });
+      window.NB.tabs.render();
+      delete list.scrollLeft;
+      return { log, final: list.scrollLeft };
+    });
+    const savedAt = scrollContract.log.findIndex((e) => e.op === "get" && e.value === 300);
+    const restoredAt = scrollContract.log.findIndex((e) => e.op === "set" &&
+      e.value === 300 && e.tabs > 0);
+    check("tab strip: a plain re-render saves the manual scroll before clearing",
+      savedAt !== -1, JSON.stringify(scrollContract.log.slice(0, 4)));
+    check("tab strip: a plain re-render restores the manual scroll after rebuilding",
+      savedAt !== -1 && restoredAt > savedAt,
+      JSON.stringify(scrollContract.log.slice(Math.max(savedAt, 0), Math.max(savedAt, 0) + 3)));
+    check("tab strip: the restored scroll position survives the render",
+      Math.abs(scrollContract.final - 300) <= 1, "scrollLeft=" + scrollContract.final);
+
+    await page.evaluate(() => document.getElementById("tab-list").scrollTo({ left: 200, behavior: "instant" }));
+    await page.evaluate(() => NB.tabs.open("Overflow.md", { activate: false }));
+    await page.waitForFunction(() => NB.tabs.isOpen("Overflow.md"), null, { timeout: 5000 });
+    check("tab strip: a background tab does not move the strip",
+      await page.evaluate(() => Math.abs(document.getElementById("tab-list").scrollLeft - 200) <= 1),
+      await page.evaluate(() => "scrollLeft=" + document.getElementById("tab-list").scrollLeft));
+
+    const closedTab = TAB_FILES[TAB_FILES.length - 1];
+    await page.evaluate(async (p) => NB.tabs.activate(p), closedTab);
+    await waitFor(() => tabVisible(closedTab), 4000);
+    await page.evaluate((p) => NB.tabs.close(p), closedTab);
+    await page.waitForFunction((p) => {
+      const active = NB.tabs.getActive();
+      return active && active !== p;
+    }, closedTab, { timeout: 5000 });
+    const nextActive = await page.evaluate(() => NB.tabs.getActive());
+    check("tab strip: closing the active tab reveals the newly active tab",
+      await waitFor(() => tabVisible(nextActive), 4000), nextActive);
 
     // ---------------------------------------------------------------
     console.log("== search ==");

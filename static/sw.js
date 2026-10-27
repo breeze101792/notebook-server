@@ -22,7 +22,9 @@
 /* Bumped v12 -> v13: navigation requests fall back to the cached app shell. */
 /* Bumped v13 -> v14: the phone WYSIWYG edit surface (CSS + JS) must reach
  * already installed workers. */
-const CACHE = "notebook-v14";
+/* Bumped v14 -> v15: the shared dialog helper must reach already installed
+ * workers. */
+const CACHE = "notebook-v15";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -43,6 +45,7 @@ const PRECACHE = [
   "/static/vendor/turndown.browser.js",
   "/static/vendor/turndown-plugin-gfm.browser.js",
   "/static/js/api.js",
+  "/static/js/dialog.js",
   "/static/js/auth.js",
   "/static/js/cm-bridge.js",
   "/static/js/lightbox.js",

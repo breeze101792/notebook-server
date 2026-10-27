@@ -27,6 +27,7 @@
 
   const overlayEl = document.getElementById("settings-overlay");
   const modalEl   = overlayEl.querySelector(".settings-modal");
+  const settingsBtn = document.getElementById("activity-settings-btn");
   const closeBtn  = document.getElementById("settings-close");
   const closeFooterBtn = document.getElementById("settings-close-btn");
   const navItems = Array.from(overlayEl.querySelectorAll(".settings-nav-item"));
@@ -104,6 +105,7 @@
 
   let infoLoaded = false;
   let onOpenListeners = [];
+  let clearInitialFocus = null;
   // The currently visible tab name. Defaults to "general" so the file
   // watching section shows first; reset on every open() so the user
   // always lands somewhere predictable.
@@ -155,6 +157,27 @@
     }
   }
 
+  /* Focus lands on the Close button, and a forced ring keeps it visible
+   * after a mouse click (where :focus-visible may not match). The ring
+   * clears on the first key or pointer press inside the dialog, or on
+   * blur. */
+  function markInitialFocus() {
+    if (!closeBtn) return;
+    if (clearInitialFocus) clearInitialFocus();
+    closeBtn.classList.add("stg-initial-focus");
+    const clear = () => {
+      closeBtn.classList.remove("stg-initial-focus");
+      modalEl.removeEventListener("keydown", clear, true);
+      modalEl.removeEventListener("pointerdown", clear, true);
+      closeBtn.removeEventListener("blur", clear);
+      if (clearInitialFocus === clear) clearInitialFocus = null;
+    };
+    clearInitialFocus = clear;
+    modalEl.addEventListener("keydown", clear, true);
+    modalEl.addEventListener("pointerdown", clear, true);
+    closeBtn.addEventListener("blur", clear);
+  }
+
   function open() {
     // Always start on the General tab so the user lands somewhere
     // predictable (and sees the file-watching status, which is the
@@ -172,11 +195,20 @@
     renderShortcuts();
     if (!infoLoaded) loadInfo();
     overlayEl.hidden = false;
+    markInitialFocus();
+    if (NB.dialog) {
+      NB.dialog.open(overlayEl, {
+        initialFocus: closeBtn || modalEl,
+        fallbackFocus: settingsBtn,
+      });
+    }
     onOpenListeners.forEach(fn => { try { fn(); } catch (e) {} });
   }
 
   function close() {
+    if (clearInitialFocus) clearInitialFocus();
     overlayEl.hidden = true;
+    if (NB.dialog) NB.dialog.close(overlayEl);
     // Release focus held by any field inside the modal. In the browser
     // hiding the overlay blurs its inputs automatically, but doing it
     // explicitly keeps keyboard state sane (e.g. VIM mode, which yields

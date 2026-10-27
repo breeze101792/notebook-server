@@ -45,6 +45,11 @@
   // the sidebar is shown/hidden.
   const SIDEBAR_WIDTH = 320;
 
+  // Focus target when the opener is gone: Export… is usually reached from a
+  // context-menu item that the menu hides before the dialog opens.
+  const FALLBACK_FOCUS_SELECTOR =
+    '#activity-bar .activity-btn[data-view="explorer"]';
+
   // How long to wait for Paged.js to finish paginating the print document
   // before printing anyway. This is only a safety net against a renderer
   // that never signals completion.
@@ -342,11 +347,17 @@
     refreshSections();
     if (errorEl) errorEl.hidden = true;
     overlayEl.hidden = false;
+    if (NB.dialog) {
+      NB.dialog.open(overlayEl, {
+        fallbackFocus: document.querySelector(FALLBACK_FOCUS_SELECTOR),
+      });
+    }
   }
 
   function close() {
     if (!overlayEl) return;
     overlayEl.hidden = true;
+    if (NB.dialog) NB.dialog.close(overlayEl);
     if (document.activeElement && overlayEl.contains(document.activeElement)) {
       document.activeElement.blur();
     }
@@ -773,6 +784,8 @@
       ".export-toc a:hover{text-decoration:underline}",
       ".export-toc-level-h2{padding-left:1.2em}",
       ".export-toc-level-h3{padding-left:2.4em}",
+      ".markdown-body{overflow-wrap:break-word}",
+      ".markdown-body code{-webkit-box-decoration-break:clone;box-decoration-break:clone}",
       ".markdown-body h1,.markdown-body h2,.markdown-body h3,.markdown-body h4,.markdown-body h5,.markdown-body h6{margin:1.4em 0 .5em;font-weight:650;line-height:1.25}",
       ".markdown-body> :first-child{margin-top:0}",
       ".markdown-body h1{font-size:1.9em;border-bottom:1px solid " + base.border + ";padding-bottom:.2em}",

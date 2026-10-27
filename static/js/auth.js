@@ -78,14 +78,19 @@
     if (!overlayEl) return;        // template missing -- nothing we can show
     overlayEl.hidden = false;
     lock();
-    // Focus + clear after the unlock/un-hide so the input is ready.
-    setTimeout(() => { try { inputEl.focus(); } catch (e) {} }, 0);
+    if (NB.dialog) {
+      NB.dialog.open(overlayEl, { initialFocus: inputEl });
+    } else {
+      // Focus after the unlock/un-hide so the input is ready.
+      setTimeout(() => { try { inputEl.focus(); } catch (e) {} }, 0);
+    }
     if (inputEl) inputEl.value = "";
     if (errorEl) errorEl.textContent = "";
   }
 
   function hideModal() {
     if (overlayEl) overlayEl.hidden = true;
+    if (NB.dialog) NB.dialog.close(overlayEl);
     unlock();
   }
 

@@ -3425,6 +3425,12 @@
     hitRef = hit;
     invoker = document.activeElement;
     overlay.hidden = false;
+    if (NB.dialog) {
+      // The rendered block, not a context-menu item that close() destroys.
+      const fallback = target && target.parent
+        ? target.parent.children[target.index] : null;
+      NB.dialog.open(overlay, { fallbackFocus: fallback });
+    }
     hasRendered = false;
     setStatus("Loading\u2026", "");
     setState("loading");
@@ -3441,6 +3447,7 @@
     }
     destroyView();
     overlay.hidden = true;
+    if (NB.dialog) NB.dialog.close(overlay);
     setState("loading");
     restoreFocus();
   }
@@ -3716,30 +3723,7 @@
     close(true);
   }
 
-  /* --- keyboard: Esc, Ctrl/Cmd+Z isolation, focus trap -------------- */
-
-  function focusables() {
-    if (!modalEl) return [];
-    return Array.from(modalEl.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    )).filter(function (el) {
-      return !el.disabled && el.offsetParent !== null && !el.hidden;
-    });
-  }
-
-  function trapTab(e) {
-    const list = focusables();
-    if (!list.length) return;
-    const first = list[0];
-    const last = list[list.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
+  /* --- keyboard: Esc and Ctrl/Cmd+Z isolation ----------------------- */
 
   function undoRedo(shift) {
     if (!editor) return;
@@ -3777,7 +3761,6 @@
       undoRedo(e.shiftKey);
       return;
     }
-    if (e.key === "Tab") trapTab(e);
   });
 
   /* --- wiring ------------------------------------------------------- */

@@ -370,7 +370,7 @@
        active session. The rest of the UI is dimmed via the .auth-locked
        body class while this is up. -->
   <div id="auth-overlay" class="settings-overlay" hidden>
-    <div class="settings-modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <div class="settings-modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" tabindex="-1">
       <div class="settings-header">
         <h2 id="auth-title">Sign in</h2>
       </div>
@@ -397,11 +397,12 @@
        the background. The rest of the app modules load in dependency
        order at the bottom of <body>. -->
   <script src="/static/js/api.js"></script>
+  <script src="/static/js/dialog.js"></script>
   <script src="/static/js/auth.js"></script>
 
   <!-- Settings modal. Opened by the ⚙ button in the top bar. -->
   <div id="settings-overlay" class="settings-overlay" hidden>
-    <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
       <div class="settings-header">
         <h2 id="settings-title">Settings</h2>
         <button id="settings-close" class="icon-btn" title="Close" aria-label="Close">×</button>
@@ -908,7 +909,7 @@
        menu's "Export…" item. Lets the user export the targeted note to PDF
        (browser print-to-PDF) or a self-contained HTML file. -->
   <div id="export-overlay" class="settings-overlay" hidden>
-    <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
+    <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title" tabindex="-1">
       <div class="settings-header">
         <h2 id="export-title">Export</h2>
         <button id="export-close" class="icon-btn" title="Close" aria-label="Close">×</button>

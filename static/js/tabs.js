@@ -322,6 +322,8 @@
   function render() {
     stopRelease();               // an in-flight settle belongs to the old nodes
     captureFrozenWidths();       // measure before the old tab nodes are dropped
+    const savedScroll = listEl.scrollLeft;
+    const savedPinnedScroll = pinEl === listEl ? 0 : pinEl.scrollLeft;
     pinEl.innerHTML = "";
     listEl.innerHTML = "";
     ordered.forEach(path => {
@@ -392,6 +394,23 @@
     syncPinnedRegion();
     materializeGhosts();         // ghost slots hold a closed tab's position
     applyFrozenWidths();
+    listEl.scrollLeft = savedScroll;
+    if (pinEl !== listEl) pinEl.scrollLeft = savedPinnedScroll;
+  }
+
+  /* Reveal the active unpinned tab only enough to bring it fully inside the
+   * strip. Called from activate(), never from render(), so a watcher tick or
+   * a pin toggle cannot yank the user's scroll position. Re-activating the
+   * already-active tab still reveals it, because its tab may have been
+   * scrolled out of view. */
+  function revealActiveTab() {
+    if (!activePath || pinned.has(activePath)) return;
+    const tab = listEl.querySelector('.tab[data-path="' + cssEscape(activePath) + '"]');
+    if (!tab || !listEl.clientWidth) return;
+    const strip = listEl.getBoundingClientRect();
+    const box = tab.getBoundingClientRect();
+    if (box.left < strip.left) listEl.scrollLeft -= strip.left - box.left;
+    else if (box.right > strip.right) listEl.scrollLeft += box.right - strip.right;
   }
 
   function emitChanged() {
@@ -450,6 +469,7 @@
       if (NB.viewer && NB.viewer.showSpecial) NB.viewer.showSpecial();
       activePath = path;
       render();
+      revealActiveTab();
       emitChanged();
       if (spec && spec.onActivate) { try { spec.onActivate(path); } catch (e) { console.error(e); } }
       return;
@@ -470,6 +490,7 @@
       }
       activePath = path;
       render();
+      revealActiveTab();
       emitChanged();
     } catch (e) {
       if (isStale()) return;

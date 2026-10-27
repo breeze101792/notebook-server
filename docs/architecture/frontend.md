@@ -12,7 +12,7 @@ No script in the repository regenerates it; the esbuild invocation is
 undocumented. For every other module, the served file is the source file.
 
 Every app module is an IIFE that extends the shared `window.NB` namespace.
-`templates/index.html` is 1502 lines; the 40 modules live under `static/js/`.
+`templates/index.html` is 1502 lines; the 41 modules live under `static/js/`.
 Siblings: [backend.md](backend.md) for the server side,
 [markdown.md](markdown.md) for the render pipeline, and
 [hybrid-editing.md](hybrid-editing.md) for the WYSIWYG write-back
@@ -24,8 +24,9 @@ checklists are in [`../operations/development.md`](../operations/development.md)
 
 `templates/index.html` loads scripts in three groups:
 
-1. **Eager, non-`defer`**: `api.js` then `auth.js`, so the login prompt can
-   appear before the heavy assets load.
+1. **Eager, non-`defer`**: `api.js`, `dialog.js`, then `auth.js`, so the
+   login prompt can appear before the heavy assets load and the shared
+   dialog helper exists before `auth.js` boots.
 2. **Deferred vendored libraries**: `marked.min.js`, `highlight.min.js`,
    `turndown.browser.js`, `turndown-plugin-gfm.browser.js`.
 3. **Deferred app modules in dependency order**, after the vendored
@@ -105,12 +106,13 @@ only control `/static/`, so it could never serve the app shell offline
 
 ## 3. Module inventory
 
-All 40 modules, in script load order. Namespace and purpose are as
+All 41 modules, in script load order. Namespace and purpose are as
 implemented today.
 
 | File | Lines | Namespace | Purpose |
 | --- | --- | --- | --- |
 | `api.js` | 220 | `NB.api`, `NB.lazyload`, `NB.evt` | Fetch wrappers for every `/api` route (`credentials: same-origin`), on-demand vendor loader, tiny pub/sub. Emits `auth:required` on 401. |
+| `dialog.js` | 122 | `NB.dialog` | Shared containment for the body-level modal overlays: `open()` makes every other direct body child inert, focuses the requested control (default: the dialog container), and wraps Tab/Shift+Tab so the container counts as both ends of the cycle. `close()` clears the inert flags and restores focus to the opener, then the caller's `fallbackFocus`. Each surface keeps its own Esc and backdrop handling. |
 | `auth.js` | 221 | `NB.auth` | Login modal. Boots immediately, dims the UI with `body.auth-locked`, reloads the page on login, wires logout. |
 | `cm-bridge.js` | 611 | `NB.cmEditor` | Thin CodeMirror 6 wrapper. Lazy view creation, stable API, `setVimMode`, `compileVimrc`. |
 | `lightbox.js` | 296 | `NB.lightbox` | Factory shared by mermaid/wavedrom/viz. Zoom/pan overlay, 0.25–5×, Esc and Ctrl+±. |
@@ -140,7 +142,7 @@ implemented today.
 | `settings.js` | 1728 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 965 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
 | `mermaid-designer.js` | 3870 | `NB.mermaidDesigner` | Visual Mermaid editor modal; lazy-loads Visimer and writes Mermaid back through the hybrid path. |
-| `designer-shell.js` | 847 | `NB.designerShell` | Shared lifecycle for the Graphviz and WaveDrom design windows: overlay, focus trap, dirty guard, target re-resolution, Apply order. |
+| `designer-shell.js` | 847 | `NB.designerShell` | Shared lifecycle for the Graphviz and WaveDrom design windows: overlay, dirty guard, target re-resolution, Apply order. Focus containment is delegated to `NB.dialog`. |
 | `dot-designer.js` | 2184 | `NB.dotDesigner` | Graphviz design window over a line-local single-graph subset; untouched lines stay byte-identical. |
 | `wavedrom-designer.js` | 1588 | `NB.wavedromDesigner` | WaveDrom design window; the parsed object is the model and Apply writes strict JSON. |
 | `vimnav.js` | 564 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
@@ -345,6 +347,20 @@ matter for the bar's structure: `realTabs()` is **bar-scoped**
 the release class lives on `#tab-bar` (`.tab-bar.nb-tab-equalizing .tab`,
 `style.css:1055`), not on the scroller, so it reaches a `.tab` in either
 region.
+
+Scroll ownership is also in `tabs.js`. `render()` reads `#tab-list`'s and
+`#tab-pinned`'s `scrollLeft` before clearing their children and restores both
+after `applyFrozenWidths()`, the last layout-mutating step. A rebuild caused
+by a dirty marker, conflict badge, watcher tick, ghost close, pin, or reorder
+therefore keeps the user's scroll position. `activate()` reveals the active
+tab on every call, including re-activating the tab that is already active
+(a sidebar click can land there after the strip was scrolled away): after
+`render()` it clamps `#tab-list.scrollLeft` against the tab's and the strip's
+`getBoundingClientRect()` edges, moving only far enough to show the tab in
+full. It never calls `scrollIntoView()` (which would also move the window and
+every scrollable ancestor). A pinned active tab and a hidden strip
+(`clientWidth === 0`) are no-ops. The strip keeps its hidden scrollbar; there
+is no fade or chevron affordance.
 
 ### Special tabs
 

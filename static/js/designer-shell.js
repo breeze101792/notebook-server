@@ -4,10 +4,11 @@
  * The Mermaid designer (mermaid-designer.js) owns its own overlay and its
  * own copy of the capture/apply/close lifecycle. These two languages share
  * one sibling overlay (D1) and one lifecycle (D2): this module owns the
- * overlay, states, focus trap, dirty guard, target re-resolution and the
- * fixed Apply order. Each language module (dot-designer.js,
- * wavedrom-designer.js) passes a plain controller object with only the
- * genuinely different pieces: the model, serialization, preview and UI.
+ * overlay, states, dirty guard, target re-resolution and the fixed Apply
+ * order. Focus containment is delegated to NB.dialog. Each language module
+ * (dot-designer.js, wavedrom-designer.js) passes a plain controller object
+ * with only the genuinely different pieces: the model, serialization,
+ * preview and UI.
  *
  * The Apply order mirrors mermaid-designer.js exactly:
  *   no-op -> serialize -> validate by rendering -> hybrid guard ->
@@ -31,7 +32,6 @@
     "Preview can\u2019t render this change. Apply still validates before saving.";
 
   const overlay = document.getElementById(OVERLAY_ID);
-  const modalEl = overlay && overlay.querySelector(".settings-modal");
   const viewerContentEl = document.getElementById("viewer-content");
 
   const ui = {
@@ -545,6 +545,12 @@
     model = null;
     invoker = document.activeElement;
     overlay.hidden = false;
+    if (NB.dialog) {
+      // The rendered block, not a context-menu item that close() destroys.
+      const fallback = target && target.parent
+        ? target.parent.children[target.index] : null;
+      NB.dialog.open(overlay, { fallbackFocus: fallback });
+    }
     syncCompact();
     if (ui.apply) ui.apply.disabled = true;
     setStatus(STATUS_LOADING, "");
@@ -569,6 +575,7 @@
     clearCard();
     if (ui.overlayLayer) ui.overlayLayer.innerHTML = "";
     overlay.hidden = true;
+    if (NB.dialog) NB.dialog.close(overlay);
     overlay.removeAttribute("data-designer-lang");
     setInert(false);
     if (ui.sidebar) ui.sidebar.hidden = true;
@@ -726,29 +733,6 @@
     }
   }
 
-  function focusables() {
-    if (!modalEl) return [];
-    return Array.from(modalEl.querySelectorAll(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-    )).filter(function (el) {
-      return !el.disabled && el.offsetParent !== null && !el.hidden;
-    });
-  }
-
-  function trapTab(e) {
-    const list = focusables();
-    if (!list.length) return;
-    const first = list[0];
-    const last = list[list.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
-
   document.addEventListener("keydown", function (e) {
     if (!isOpen()) return;
     if (e.key === "Escape") {
@@ -776,7 +760,6 @@
       }
       return;
     }
-    if (e.key === "Tab") trapTab(e);
   });
 
   function retry() {

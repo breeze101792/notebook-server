@@ -499,6 +499,10 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
    * of a 6px scrollbar that would eat into the tab labels. */
   scrollbar-width: none;
   -ms-overflow-style: none;
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-list { scroll-behavior: auto; }
 }
 
 /* The pinned tab region: a fixed sibling at the left of the scroller, so
@@ -1483,12 +1487,24 @@ body > #nb-menu button:disabled:hover { background: none; }
   /* Switch knob: the app's --accent-fg is dark in the dark theme, so the
    * knob is taken from --fg there and from --accent-fg in light. */
   --stg-switch-knob: var(--fg);
+
+  /* One focus ring for every control in Settings. */
+  --stg-focus-ring: 2px solid var(--accent);
 }
 body[data-theme="light"] #settings-overlay {
   --fg-muted: #5d6470;                    /* 5.13:1 on --bg-elev */
   --stg-ok: #16703f;                     /* 5.28:1 on --bg-elev */
   --stg-warn: #8a5a0b;                   /* 5.10:1 on --bg-elev */
   --stg-switch-knob: var(--accent-fg);   /* = #ffffff in light */
+}
+
+/* Catch-all for controls that had no focus style (e.g. .icon-btn). The
+ * forced class shows the same ring after a mouse-opened dialog, where
+ * :focus-visible does not reliably match. */
+#settings-overlay .settings-modal :focus-visible,
+#settings-overlay .settings-modal .stg-initial-focus {
+  outline: var(--stg-focus-ring);
+  outline-offset: 1px;
 }
 
 /* Settings -> section + group headings. */
@@ -1589,7 +1605,7 @@ body[data-theme="light"] #settings-overlay {
   background: var(--accent-soft); border-color: var(--accent);
 }
 #settings-overlay .settings-action:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 1px;
+  outline: var(--stg-focus-ring); outline-offset: 1px;
 }
 #settings-overlay .settings-action:disabled {
   opacity: .5; cursor: not-allowed;
@@ -1649,7 +1665,7 @@ body[data-theme="light"] #settings-overlay {
 #settings-overlay input[type="checkbox"]:checked { background: var(--accent); }
 #settings-overlay input[type="checkbox"]:checked::after { transform: translateX(16px); }
 #settings-overlay input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--accent); outline-offset: 2px;
+  outline: var(--stg-focus-ring); outline-offset: 2px;
 }
 #settings-overlay input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
@@ -1698,7 +1714,7 @@ body[data-theme="light"] #settings-overlay {
   .settings-modal-width-options, .settings-modal-height-options,
   .wallpaper-options, .wallpaper-scroll-options,
   .wallpaper-color-options, .wallpaper-intensity-options) label:has(input:focus-visible) {
-  outline: 2px solid var(--accent); outline-offset: 1px;
+  outline: var(--stg-focus-ring); outline-offset: 1px;
 }
 #settings-overlay :is(.theme-options, .font-size-options,
   .settings-modal-width-options, .settings-modal-height-options,
@@ -2018,7 +2034,7 @@ body[data-theme="light"] #settings-overlay {
   font-weight: 600;
 }
 :where(body > .settings-overlay > .settings-modal) .settings-nav-item:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: var(--stg-focus-ring);
   outline-offset: 1px;
 }
 /* Right column: holds the four section blocks. Only the section whose
@@ -3204,6 +3220,14 @@ body > #nb-menu .submenu.open {
 /* Rendered content fills the editor width (the #viewer padding provides the
  * gutters); no fixed max-width column. */
 .markdown-body { color: var(--fg); max-width: none; margin: 0; }
+/* Long unbroken prose wraps instead of being clipped by #viewer-content's
+ * overflow-x: hidden. break-word leaves min-content untouched, so tables and
+ * <pre> keep their own horizontal scrollers. */
+#viewer-content.markdown-body { overflow-wrap: break-word; }
+#viewer-content.markdown-body code {
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .markdown-body h4, .markdown-body h5, .markdown-body h6 {
   margin: 1.4em 0 .5em;
