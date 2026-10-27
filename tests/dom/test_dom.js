@@ -26282,6 +26282,12 @@ function check(label, cond, extra) {
       asstBubbles()[0].querySelector(".ai-regenerate") === regenBtns()[0]);
     check("ai regenerate: the control is enabled while idle",
       regenBtns()[0] && regenBtns()[0].disabled === false);
+    check("ai regenerate: a normal send carries no retry instruction",
+      (aiChatLog[0] || { messages: [] }).messages[0].role === "system" &&
+      !/This turn is a retry/.test(
+        (aiChatLog[0] || { messages: [] }).messages[0].content),
+      "system=" + JSON.stringify(((aiChatLog[0] || { messages: [] })
+        .messages[0] || {}).content || "").slice(0, 80));
 
     // (2) clicking it re-sends the same genuine turn, replaces the reply --
     {
@@ -26297,6 +26303,14 @@ function check(label, cond, extra) {
       check("ai regenerate: the request still ends at the same genuine user turn",
         genuine.length === 1 && genuine[0].content === "first question",
         JSON.stringify(genuine.map(m => m.content)));
+      check("ai regenerate: the replaced reply is not re-sent",
+        !req.messages.some(m => m.role === "assistant" &&
+          /First answer/.test(String(m.content))),
+        JSON.stringify(req.messages.map(m => m.role)));
+      check("ai regenerate: a retry asks the model for a different answer",
+        req.messages[0].role === "system" &&
+        /This turn is a retry/.test(req.messages[0].content),
+        "system tail=" + JSON.stringify(req.messages[0].content.slice(-60)));
       check("ai regenerate: no duplicate user turn is re-sent",
         req.messages.filter(m => m.role === "user").length === 1 &&
         userBubbles().length === 1,
@@ -26313,6 +26327,17 @@ function check(label, cond, extra) {
         window.NB.ai._getConversationForTests().filter(m => m.role === "user").length === 1 &&
         window.NB.ai._getConversationForTests().filter(m => m.role === "assistant").length === 1,
         JSON.stringify(window.NB.ai._getConversationForTests().map(m => m.role)));
+
+      // The retry instruction is scoped to the regenerate turn only.
+      aiChatStreams.push([sseFrame("Normal follow-up.")]);
+      aiInput().value = "second question";
+      aiSend();
+      await tick(120);
+      const nextReq = aiChatLog[aiChatLog.length - 1];
+      check("ai regenerate: the retry instruction does not leak into the next send",
+        nextReq.messages[0].role === "system" &&
+        !/This turn is a retry/.test(nextReq.messages[0].content),
+        "system tail=" + JSON.stringify(nextReq.messages[0].content.slice(-60)));
     }
 
     // (3) after a provider rejection on an image turn: the vision hint

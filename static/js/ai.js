@@ -34,7 +34,10 @@
  * Regenerate: once a turn finishes (success, error, or stop) the newest
  * assistant bubble carries a "↻ Regenerate" footer button. regenerate()
  * trims the conversation back to the latest genuine user turn and re-runs
- * the loop, re-sending that turn (image parts included) unchanged.
+ * the loop, re-sending that turn (image parts included) unchanged. The
+ * discarded reply (and its tool round) is never part of the request; a
+ * retry instruction rides the system turn so the model does not just
+ * reproduce the answer it replaced.
  *
  * Attachments: the user may attach images (PNG/JPEG/WebP/GIF) and local
  * text files. Text bodies are inlined into the user turn (128 KiB per
@@ -68,6 +71,15 @@
     '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
   const AI_EDIT_TITLE = "Edit your last question and resend";
   const AI_EDIT_DRAFT_TITLE = "Clear the draft and attachments first";
+
+  /* Regenerate re-sends the trimmed turn, so without a hint the model
+   * tends to answer the same question the same way. The hint rides the
+   * system turn -- the user turn stays byte-identical and the replaced
+   * reply is never sent. */
+  const AI_RETRY_INSTRUCTION =
+    "\n\nThis turn is a retry. Give a materially different answer than any " +
+    "earlier attempt: change the opening, the structure, and the wording. " +
+    "Do not reuse the phrasing or the order of an earlier response.";
 
   /* Composer textarea auto-grow cap, in px; mirrors .ai-input's
    * max-height in style.css. */
@@ -825,6 +837,9 @@
 
   let conversation = [];   // {role, content} minuse the system prompt
   let systemCache = null;  // reset when the active file changes
+  /* True for the whole span of a Regenerate turn (every tool round), so
+   * getSystem() adds the retry instruction without caching it. */
+  let regenerating = false;
   /* Structural tag for role-user entries that are tool follow-ups, not
    * genuine user turns. A WeakSet keeps sliced-away entries collectable
    * and adds nothing to the serialized entry (the wire body stays
@@ -935,7 +950,12 @@
   function systemCacheKey() { return currentPath(); }
 
   function getSystem() {
-    /* Return a chat message ({role, content}), not a bare string. */
+    /* Return a chat message ({role, content}), not a bare string. A retry
+     * gets the retry instruction appended; it is not cached, because the
+     * next normal turn must not carry it. */
+    if (regenerating) {
+      return { role: "system", content: systemPrompt() + AI_RETRY_INSTRUCTION };
+    }
     if (!systemCache) {
       systemCache = { role: "system", content: systemPrompt() };
     }
@@ -1501,6 +1521,7 @@
 
   async function send(log, userText, ui, files) {
     ui.begin();
+    regenerating = false;   // a new prompt is not a retry
     acpImageNoticeShown = false;
     /* ACP has no image input. Strip image entries before they can enter the
      * transcript (they would otherwise be re-uploaded every turn) and say
@@ -1669,7 +1690,12 @@
     persistHistory();
     ui.begin();
     acpImageNoticeShown = false;
-    await runToolLoop(log, ui);
+    regenerating = true;
+    try {
+      await runToolLoop(log, ui);
+    } finally {
+      regenerating = false;
+    }
   }
 
   /* Edit the latest genuine user turn: drop its DOM tail and conversation
@@ -2092,6 +2118,7 @@
       if (ctl) ctl.abort();   // an in-flight reply must not land in the reset
       conversation = [];
       systemCache = null;
+      regenerating = false;
       log.innerHTML = "";
       clearAttachments();
       removeTurnControls(log);
@@ -2654,6 +2681,7 @@
     _resetForTests() {
       conversation = [];
       systemCache = null;
+      regenerating = false;
       attachReset();
       if (mountLog) removeTurnControls(mountLog);
       regenBtn = null;
@@ -2667,6 +2695,7 @@
     _resetMemoryForTests() {
       conversation = [];
       systemCache = null;
+      regenerating = false;
       attachReset();
       if (mountLog) {
         removeTurnControls(mountLog);

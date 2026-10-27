@@ -212,6 +212,16 @@ latest genuine user turn and replaces that turn's assistant reply.
 - The user turn is re-sent unchanged, so an image-bearing turn keeps its
   image parts and a provider rejection can be retried after a model switch
   or a config fix (§10 R1).
+- The replaced reply is discarded in full: `conversation` is sliced to the
+  anchor turn and `clearLastTurnDom()` drops the whole DOM tail (reply,
+  trace lines, errors, cards), so the regenerated request never carries the
+  previous answer or its tool round. Only the retry instruction below is
+  added.
+- `regenerating` is true for the whole regenerate turn (every tool round),
+  and `getSystem()` appends `AI_RETRY_INSTRUCTION` to an uncached copy of
+  the system turn: the same prompt otherwise makes the model reproduce the
+  answer it just gave. The hint never names or contains the discarded
+  reply, and it is cleared before the next normal send (or by Clear).
 
 **Edit** (`editLastMessage`, exposed as `NB.ai.editLastMessage`) drops the
 last turn and restores its input to the composer for editing:
