@@ -2763,6 +2763,13 @@ body[data-theme="light"] #viewer-content {
 #viewer-content.hybrid-editing table {
   overflow: visible;
 }
+/* Chromium's insertHTML unwraps an INLINE <code> when a paste or Enter
+ * replaces its whole contents, which drops the fence on save. Highlighted
+ * fences are already block via pre code.hljs; this covers plugin sources
+ * and bare fences too. */
+#viewer-content.hybrid-editing pre code {
+  display: block;
+}
 #viewer-content.hybrid-editing {
   overflow-x: auto;
 }

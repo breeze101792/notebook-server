@@ -65,8 +65,8 @@ a tab switch, and wikilink navigation.
 ### Fence editor — `test_block_edit_browser.js`
 
 One group per interaction: open, language chip, clear, invalid input,
-Esc, bare fence, alias (`js` not `javascript`), rich paste, Tab,
-Shift+Tab, native undo, save mid-edit, Esc on the source, re-enter,
+Esc, bare fence, alias (`js` not `javascript`), rich and multi-line paste,
+Enter, Tab, Shift+Tab, native undo, save mid-edit, Esc on the source, re-enter,
 `~~~` fence, plugin fence re-render, Copy button, emptied-block removal
 (Backspace/Delete, top-level and nested), atomic plugin-block deletion,
 multi-cell table-selection deletion, task-item merges at the checkbox,
@@ -123,6 +123,8 @@ undo. This suite pins the regressions below.
 | 43 | Ctrl+A + Ctrl+X still left the first block's type behind | only Delete/Backspace had a whole-note claim | `beforeinput` claims `deleteByCut` for a whole-note selection and replaces the root with one plain paragraph | fence editor: whole-note cut |
 | 44 | Selecting only text in a later block was treated as a whole-note clear when an empty block preceded it | coverage used text content, so an empty heading contributed nothing | coverage is decided from first/last top-level element positions | fence editor: whole-note delete |
 | 45 | Delete row showed the header+body-row reason on the header and had an unreachable lone-row branch | the reason was hard-coded and the first-row guard ran first | a cause-specific `deleteRowBlockedReason` is shared by menu and action; the first row (header or lone body row) is protected and the dead branch is gone | fence editor: table menu guards |
+| 46 | A multi-line paste or Enter collapsed the fence body to one line | Chromium's `insertText`/native Enter split a `<pre><code>` into sibling `<code>` elements; only the first stayed in the fence source | `insertTextIntoFence` inserts escaped text with `insertHTML` so raw newlines stay in one `<code>` and native undo still works | fence editor: multi-line paste, Enter |
+| 47 | A multi-line paste into a Mermaid (or other plugin) fence deleted the whole fence | plugin source has no highlight spans, so its `<code>` is inline; Chromium's `insertHTML` unwraps an inline `<code>` when replacing its contents | fence `<code>` is `display: block` in hybrid mode, matching highlighted fences | fence editor: plugin multi-line |
 
 ## Known issues left unchanged
 

@@ -813,13 +813,14 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 | any | G / block transform | inside a fence | **refused** | ✅ `insideProtectedBlock` `:1229`, tests `7123-7145` |
 | any | inline pairs `**x**` | ` ```\n**x**\n``` ` | delimiters **preserved** | ✅ `applyInlineRules` bails in `pre` `:1650-1651`, test `7172` |
 | E | ⇧↵ | ` ```python\nprint(1)\n``` ` | fence unchanged; `<p>` **after** the block | ✅ test `4893-4933` |
-| (editing) | ↵ | inside the editable `<pre>` | native newline inside the source | ✅ comment `:2376-2378` |
+| (editing) | ↵ | inside the editable `<pre>` | one newline inside the source, in the same `<code>` | ✅ `insertTextIntoFence`; browser test |
 | — | D (empty the fence) | ` ```\nx\n``` ` | fence **dropped** from the note; the live view keeps an empty `<pre>` until the note is re-rendered | ✅ turndown's blank rule (`vendor:664`); the serializer never writes a blank fence |
 | (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | **removed** from the live DOM; top-level caret at the previous/next block edge; nested fence removed from its list item/quote with the container kept and the caret at its edge; undoable | ✅ `removeEmptyCodeBlock` (`hybrid.js:2477`); `test_block_edit_browser.js` |
 | — | language chip | ` ```shell ` | change to `python` → ` ```python `; empty clears; `my lang` is refused | ✅ `addLanguagePill` (real `<input>` so Ctrl+A selects the chip, not the note), tests `test_block_edit_browser.js` |
 | — | bare fence touched | ` ```\ntext\n``` ` | stays bare; highlight.js's auto-detected language is never written | ✅ `captureFenceLanguages`; test `test_block_edit_browser.js` |
 | — | `~~~` fence | `~~~js\ntext\n~~~` | untouched byte-identical; touched canonicalizes to backticks | ✅ corpus + `test_block_edit_browser.js` (§6 Q13) |
 | — | P-html into fence | HTML pasted | stays plain text | ✅ plain-text paste handler; `test_block_edit_browser.js` (§6 Q9) |
+| — | P-plain into fence | multi-line text pasted | every line stays in the same `<code>`; native undo works | ✅ `insertTextIntoFence`; browser test |
 | — | Tab / Shift+Tab | inside the source | Tab inserts two spaces; Shift+Tab does not move focus out | ✅ `onEnterKey` selection-based guard; browser test |
 | — | Ctrl+Z / Ctrl+Y | inside the source | native undo/redo, not hybrid's whole-note snapshot | ✅ modifier guard by selection; browser test |
 | — | Esc | inside the source | commits and restores render mode | ✅ `test_block_edit_browser.js` |

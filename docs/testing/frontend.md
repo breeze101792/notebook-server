@@ -286,8 +286,9 @@ The audit suites cover the rest of the app end to end:
   draft recovery, VIM mode, the AI tool loop with a local stub provider, and
   ACP with the stub agent.
 - `test_block_edit_browser.js` — every fence-editor gesture: the language
-  chip, bare fences, rich paste, Tab, native undo, Esc, save mid-edit, the
-  tilde fence, plugin re-render, and Copy.
+  chip, bare fences, rich and multi-line paste, Enter, Tab, native undo, Esc,
+  save mid-edit, the tilde fence, plugin re-render and plugin multi-line paste,
+  and Copy.
 - `test_hybrid_blocks_browser.js` — list Enter/Tab, task toggles, table view,
   cell Enter, Ctrl+drag selection, raw HTML, blockquote exit, and a hybrid
   draft across a tab switch.

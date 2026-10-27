@@ -4691,8 +4691,8 @@
       // The in-place code editor owns the MODIFIER chords, but plain
       // keys keep falling through -- Shift+Enter from inside the block
       // must still open a fresh line after it (see insertLineBelow; the
-      // regression is pinned in the DOM test suite), and Enter inside
-      // the raw source is the browser's own newline.
+      // regression is pinned in the DOM test suite), and plain Enter
+      // inserts a newline inside the fence below.
       if (e.ctrlKey || e.metaKey || e.altKey) {
         // Resolve from the selection: the keydown target is the editing
         // host, not the <pre>. Inside a fence, Ctrl+Z/Y must stay the
@@ -4736,6 +4736,12 @@
           try { document.execCommand("insertText", false, "  "); }
           catch (_) {}
         }
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (insertTextIntoFence(editingPre, "\n")) onContentChange();
         return;
       }
       if (e.key === "Escape") {
@@ -5434,6 +5440,60 @@
     try { document.execCommand("paste"); } catch (_) {}
   }
 
+  /* The <pre> that holds `range`, or null. A fence is the one place
+   * where a newline is source text rather than DOM structure: it must
+   * stay a literal "\n" inside <code>, not a <br> or a new block. */
+  function fenceAtRange(range) {
+    if (!range) return null;
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+    if (!node || !node.closest) return null;
+    const pre = node.closest("pre");
+    if (!pre || !viewerContentEl.contains(pre)) return null;
+    return pre.contains(range.endContainer) ? pre : null;
+  }
+
+  /* Insert plain text into a fence's <code> with its newlines intact.
+   * execCommand("insertText") splits a multi-line paste into sibling
+   * <code> elements in Chromium; only the first one is inside the fence
+   * source, so everything after the first newline was lost on save.
+   * insertHTML keeps the text in one node and stays on the native undo
+   * stack (plain Range insertion would not be undoable). A raw "\n" is
+   * preserved by <pre> and read back by turndown. */
+  function insertTextIntoFence(pre, text) {
+    const code = pre.querySelector("code");
+    if (!code) return false;
+    const sel = window.getSelection();
+    if (!sel) return false;
+    let range = sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!range || !code.contains(range.startContainer) ||
+        !code.contains(range.endContainer)) {
+      range = document.createRange();
+      range.selectNodeContents(code);
+      range.collapse(false);
+    }
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const source = String(text).replace(/\r\n?/g, "\n");
+    const html = source
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    try {
+      if (document.execCommand &&
+          document.execCommand("insertHTML", false, html)) return true;
+    } catch (_) {}
+    range.deleteContents();
+    const node = document.createTextNode(source);
+    range.insertNode(node);
+    const after = document.createRange();
+    after.setStartAfter(node);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+    return true;
+  }
+
   /* Insert `text` at the caret as PLAIN content, then place the caret
    * AFTER the inserted content. We can't use setStartAfter(node)
    * directly because browsers merge an adjacent text node, detaching
@@ -5445,11 +5505,14 @@
    * DOM (HTML collapses the whitespace), so a multi-line plain paste
    * would visibly lose its line structure. <br> is exactly what the
    * contentEditable itself produces for a line break, and what turndown
-   * round-trips back to a Markdown hard break. */
+   * round-trips back to a Markdown hard break. Inside a fence, where
+   * newlines are source text, the raw text node is used instead. */
   function insertTextAtCaret(text) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
+    const fence = fenceAtRange(range);
+    if (fence && insertTextIntoFence(fence, text)) return;
     range.deleteContents();
     const lines = String(text).split(/\r\n?|\n/);
     // One fragment, inserted once, so the nodes land in document order.
@@ -7638,8 +7701,7 @@
       e.stopPropagation();
       const text = e.clipboardData.getData("text/plain");
       if (!text) return;
-      try { document.execCommand("insertText", false, text); }
-      catch (_) {}
+      if (insertTextIntoFence(pre, text)) onContentChange();
     });
   }
 

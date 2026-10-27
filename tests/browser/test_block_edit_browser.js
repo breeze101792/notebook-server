@@ -13,6 +13,8 @@
  *     contenteditable chip selected the whole document and retyping it
  *     replaced the note);
  *   - a rich-HTML paste must land as plain text inside the fence;
+ *   - a multi-line paste or Enter must keep every line in the fence body,
+ *     including plugin fences with no highlight markup;
  *   - Tab must indent, not focus the Copy button;
  *   - Ctrl+Z inside the fence must be the browser's undo, not hybrid's
  *     whole-note snapshot;
@@ -152,6 +154,7 @@ async function main() {
         editing: pre ? pre.getAttribute("contenteditable") === "true" : false,
         lang: pre ? pre.getAttribute("data-fence-lang") : null,
         codeClass: code ? code.className : null,
+        codes: pre ? pre.querySelectorAll("code").length : 0,
         text: code ? code.textContent : null,
         pill: pill ? pill.value : null,
         hasPill: !!pill,
@@ -339,6 +342,50 @@ async function main() {
       readNote() === "# Code\n\n```python\nprint(\"hello\")bold\n```\n",
       JSON.stringify(readNote()));
 
+    // --- 8b. a multi-line paste keeps every line in the fence ----------
+    console.log("\n== fence editor: multi-line paste ==");
+    await boot(PLAIN);
+    await openBlock();
+    await page.evaluate(async () => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      await navigator.clipboard.writeText("line one\nline two\nline three");
+    });
+    await page.keyboard.press("Control+V");
+    await sleep(200);
+    const multi = await page.evaluate(() => {
+      const pre = document.querySelector("#viewer-content pre");
+      const code = pre && pre.querySelector("code");
+      return {
+        codes: pre ? pre.querySelectorAll("code").length : 0,
+        text: code ? code.textContent : null,
+      };
+    });
+    check("multi-line paste: every line lands in one fence body",
+      multi.codes === 1 &&
+        multi.text === "print(\"hello\")line one\nline two\nline three\n",
+      JSON.stringify(multi));
+    await page.keyboard.press("Control+Z");
+    await sleep(200);
+    const multiUndo = await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      return code ? code.textContent : null;
+    });
+    check("multi-line paste: Ctrl+Z undoes the whole paste",
+      multiUndo === "print(\"hello\")\n", JSON.stringify(multiUndo));
+    await page.keyboard.press("Control+Shift+Z");
+    await sleep(200);
+    await commitAndSave();
+    check("multi-line paste: save keeps every line",
+      readNote() ===
+        "# Code\n\n```python\nprint(\"hello\")line one\nline two\nline three\n```\n",
+      JSON.stringify(readNote()));
+
     // --- 9. Tab indents and never focuses the Copy button --------------
     console.log("\n== fence editor: keyboard ==");
     await boot(JS);
@@ -367,6 +414,30 @@ async function main() {
       s.editing &&
         !/code-copy-btn/.test(await page.evaluate(() => document.activeElement.className)),
       JSON.stringify(s));
+
+    // --- 9b. Enter adds a newline inside the fence ---------------------
+    console.log("\n== fence editor: Enter ==");
+    await boot(JS);
+    await openBlock();
+    await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("line two");
+    await sleep(150);
+    s = await state();
+    check("Enter: adds a line inside the fence, not a sibling <code>",
+      s.codes === 1 && s.text === "const x = 1;\nline two", JSON.stringify(s));
+    await commitAndSave();
+    check("Enter: save keeps both lines",
+      readNote() === "# JS\n\n```js\nconst x = 1;\nline two\n```\n",
+      JSON.stringify(readNote()));
 
     // --- 10. native undo inside the fence ------------------------------
     await boot(JS);
@@ -494,6 +565,64 @@ async function main() {
     await sleep(300);
     check("plugin: save writes the edited source",
       (await waitForFile((md) => /B-->C;/.test(md))) === true, JSON.stringify(readNote()));
+
+    // --- 15b. plugin fence keeps multi-line paste and Enter -----------
+    console.log("\n== fence editor: plugin multi-line ==");
+    await boot(MERMAID);
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await page.click("#viewer-content .mermaid-container");
+    await page.waitForSelector("#viewer-content pre.hybrid-plugin-editing", { timeout: 5000 });
+    await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.evaluate(async () =>
+      navigator.clipboard.writeText("graph TD;\nA-->B;\nB-->C;"));
+    await page.keyboard.press("Control+V");
+    await sleep(200);
+    s = await state();
+    check("plugin multi-line paste: source stays in one code body",
+      s.codes === 1 && s.text === "graph TD;\nA-->B;\nB-->C;\n",
+      JSON.stringify(s));
+    await page.click("#viewer-content h1");
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await page.keyboard.press("Control+s");
+    await sleep(300);
+    check("plugin multi-line paste: save keeps every line",
+      readNote() === "# Diagram\n\n```mermaid\ngraph TD;\nA-->B;\nB-->C;\n```\n",
+      JSON.stringify(readNote()));
+
+    await boot(MERMAID);
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await page.click("#viewer-content .mermaid-container");
+    await page.waitForSelector("#viewer-content pre.hybrid-plugin-editing", { timeout: 5000 });
+    await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("B-->C;");
+    await sleep(150);
+    s = await state();
+    check("plugin Enter: adds a source line inside the same code body",
+      s.codes === 1 && s.text === "graph TD; A-->B;\nB-->C;",
+      JSON.stringify(s));
+    await page.click("#viewer-content h1");
+    await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 10000 });
+    await page.keyboard.press("Control+s");
+    await sleep(300);
+    check("plugin Enter: save keeps both lines",
+      readNote() === "# Diagram\n\n```mermaid\ngraph TD; A-->B;\nB-->C;\n```\n",
+      JSON.stringify(readNote()));
 
     // --- 16. copy button works while the fence is being edited --------
     await boot(PLAIN);
