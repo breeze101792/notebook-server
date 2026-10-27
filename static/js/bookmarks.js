@@ -344,13 +344,26 @@
     updateAddBtn();
   });
 
-  // A rename / move re-keys any bookmark pointing at the old path, so the
-  // row follows the file instead of being pruned on the next refresh.
+  // A rename / move re-keys every bookmark at or below the old path, so the
+  // rows follow the files instead of being pruned on the next refresh.
   NB.evt.on("file:moved", ({ from, to }) => {
-    const i = bookmarks.indexOf(from);
-    if (i < 0) return;
-    bookmarks[i] = to;
-    if (activeFile === from) activeFile = to;
+    if (!from || !to) return;
+    const prefix = from + "/";
+    const remap = (p) => p === from
+      ? to
+      : (p.startsWith(prefix) ? to + p.slice(from.length) : null);
+    let changed = false;
+    bookmarks = bookmarks.map((p) => {
+      const mapped = remap(p);
+      if (mapped === null) return p;
+      changed = true;
+      return mapped;
+    });
+    if (activeFile) {
+      const mapped = remap(activeFile);
+      if (mapped !== null) { activeFile = mapped; changed = true; }
+    }
+    if (!changed) return;
     render();
     persist();
     updateAddBtn();

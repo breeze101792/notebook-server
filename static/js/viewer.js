@@ -767,6 +767,10 @@
       const t = cache.get(from);
       if (t) { cache.delete(from); cache.set(to, t); }
       if (active === from) active = to;
+      if (draftPath === from) draftPath = to;
+      else if (draftPath && draftPath.startsWith(from + "/")) {
+        draftPath = to + draftPath.slice(from.length);
+      }
     },
 
     /* No tabs open: show the welcome page. The page is a sibling of

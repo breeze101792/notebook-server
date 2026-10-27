@@ -28,6 +28,19 @@
   // path -> until-ts: changes within this window are our own save's echo
   const selfSaveUntil = new Map();
 
+  /* Move a map entry (and every descendant entry) to the new path. */
+  function rekeyPathMap(map, from, to) {
+    const prefix = from + "/";
+    for (const key of Array.from(map.keys())) {
+      const mapped = key === from ? to
+        : (key.startsWith(prefix) ? to + key.slice(from.length) : null);
+      if (mapped === null) continue;
+      const value = map.get(key);
+      map.delete(key);
+      map.set(mapped, value);
+    }
+  }
+
 // Native observer state
   let observer = null;
   let watching = false;                  // true iff an observer is active
@@ -299,6 +312,14 @@
     } else if (mode === "polling") {
       startPolling_();   // immediate first tick covers time spent away
     }
+  });
+
+  // Keep the mtime baseline and self-save window attached to a note after
+  // its file or a parent folder is moved.
+  NB.evt.on("file:moved", ({ from, to }) => {
+    if (!from || !to || from === to) return;
+    rekeyPathMap(knownMtime, from, to);
+    rekeyPathMap(selfSaveUntil, from, to);
   });
 
   NB.watcher = watcher;

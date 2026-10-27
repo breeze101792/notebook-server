@@ -545,20 +545,49 @@
     }
   }
 
+  /* Re-key every member of a Set whose path is `from` or below it. */
+  function rekeyMembers(set, remap) {
+    for (const p of Array.from(set)) {
+      const mapped = remap(p);
+      if (mapped === null) continue;
+      set.delete(p);
+      set.add(mapped);
+    }
+  }
+
   function rename(from, to) {
-    if (!openSet.has(from) || from === to) return;
-    const idx = ordered.indexOf(from);
-    ordered[idx] = to;
-    openSet.delete(from); openSet.add(to);
-    if (pinned.has(from)) { pinned.delete(from); pinned.add(to); }
+    if (from === to) return;
+    const prefix = from + "/";
+    const remap = (p) => p === from
+      ? to
+      : (p.startsWith(prefix) ? to + p.slice(from.length) : null);
+    // A folder move re-keys every open note under it, preserving order.
+    const pairs = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const mapped = remap(ordered[i]);
+      if (mapped === null) continue;
+      pairs.push({ from: ordered[i], to: mapped });
+      ordered[i] = mapped;
+    }
+    if (!pairs.length) return;
+    rekeyMembers(openSet, remap);
+    rekeyMembers(pinned, remap);
     // Carry the frozen width across the re-key so a rename while the pointer
     // is in the bar does not re-equalize the renamed tab alone.
-    if (frozenWidths && frozenWidths.has(from)) {
-      frozenWidths.set(to, frozenWidths.get(from));
-      frozenWidths.delete(from);
+    if (frozenWidths) {
+      const widths = [];
+      for (const [p, w] of frozenWidths) {
+        const mapped = remap(p);
+        if (mapped !== null) widths.push([mapped, w]);
+      }
+      for (const [p] of Array.from(frozenWidths)) {
+        if (remap(p) !== null) frozenWidths.delete(p);
+      }
+      for (const [p, w] of widths) frozenWidths.set(p, w);
     }
-    NB.viewer.rename(from, to);
-    if (activePath === from) activePath = to;
+    for (const pair of pairs) NB.viewer.rename(pair.from, pair.to);
+    const mappedActive = activePath ? remap(activePath) : null;
+    if (mappedActive !== null) activePath = mappedActive;
     render();
     emitChanged();
   }

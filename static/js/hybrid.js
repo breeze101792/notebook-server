@@ -7915,6 +7915,16 @@
     }
   });
 
+  /* A move/rename re-keys the live hybrid session so doSave() writes to
+   * the note's new path and external-change matching still hits it. */
+  NB.evt.on("file:moved", ({ from, to }) => {
+    if (!activePath || !from || !to || from === to) return;
+    if (activePath === from) activePath = to;
+    else if (activePath.startsWith(from + "/")) {
+      activePath = to + activePath.slice(from.length);
+    }
+  });
+
   /* --- external change handling ---------------------------------- */
   /* If the file changes on disk while hybrid-editing, re-render. The
    * viewer's file:external-change handler will also fire; we intercept

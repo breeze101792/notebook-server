@@ -693,6 +693,86 @@ async function main() {
         !!document.querySelector('#file-tree .tree-row[data-path="External.md"]')), 12000));
 
     // ---------------------------------------------------------------
+    console.log("== sidebar multi-select ==");
+    // Isolated fixtures created directly on disk, then pulled in through
+    // the same sidebar-refresh button a user clicks.
+    fs.writeFileSync(path.join(DATA, "ms-a.md"), "# MS A\n\nroot a\n");
+    fs.writeFileSync(path.join(DATA, "ms-b.md"), "# MS B\n\nroot b\n");
+    fs.mkdirSync(path.join(DATA, "ms-dest"));
+    await page.click("#sidebar-refresh");
+    check("multi-select: refresh brings in the fixtures",
+      await waitFor(() => page.evaluate(() =>
+        !!document.querySelector('#file-tree .tree-row[data-path="ms-a.md"]') &&
+        !!document.querySelector('#file-tree .tree-row[data-path="ms-b.md"]') &&
+        !!document.querySelector('#file-tree .tree-row[data-path="ms-dest"]')), 8000));
+
+    // 1. Ctrl+click selects without opening.
+    await row("ms-a.md").click({ modifiers: ["Control"] });
+    await row("ms-b.md").click({ modifiers: ["Control"] });
+    const msSelectedNow = await page.evaluate(() => ({
+      paths: Array.from(document.querySelectorAll("#file-tree .tree-row.multi-selected"))
+        .map((el) => el.dataset.path),
+      aOpen: NB.tabs.isOpen("ms-a.md"),
+      bOpen: NB.tabs.isOpen("ms-b.md"),
+    }));
+    check("multi-select: ctrl+click marks exactly two rows",
+      msSelectedNow.paths.length === 2 &&
+      msSelectedNow.paths.includes("ms-a.md") &&
+      msSelectedNow.paths.includes("ms-b.md"),
+      JSON.stringify(msSelectedNow.paths));
+    check("multi-select: ctrl+click does not open a file",
+      msSelectedNow.aOpen === false && msSelectedNow.bOpen === false,
+      JSON.stringify(msSelectedNow));
+
+    // 2. Right-click a selected row -> move the whole selection via prompt.
+    await row("ms-a.md").click({ button: "right" });
+    await page.waitForFunction(() => !document.getElementById("nb-menu").hidden,
+      null, { timeout: 5000 });
+    const msMenuLabels = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("#nb-menu > button"))
+        .map((b) => b.textContent));
+    check("multi-select: selected row offers 'Move 2 items to…'",
+      msMenuLabels.includes("Move 2 items to…"), JSON.stringify(msMenuLabels));
+    queuePrompt("ms-dest");
+    await menuBtn("Move 2 items to").click();
+    check("multi-select: menu move relocates both files on disk",
+      await waitFor(() => exists("ms-dest/ms-a.md") && exists("ms-dest/ms-b.md") &&
+        !exists("ms-a.md") && !exists("ms-b.md"), 10000));
+    check("multi-select: sidebar drops the old rows after the move",
+      await waitFor(() => page.evaluate(() =>
+        !document.querySelector('#file-tree .tree-row[data-path="ms-a.md"]') &&
+        !document.querySelector('#file-tree .tree-row[data-path="ms-b.md"]') &&
+        !!document.querySelector('#file-tree .tree-row[data-path="ms-dest/ms-a.md"]') &&
+        !!document.querySelector('#file-tree .tree-row[data-path="ms-dest/ms-b.md"]')), 8000));
+
+    // 3. Multi-item drag onto a root file lands both in the root.
+    const msDestCollapsed = await row("ms-dest").evaluate(
+      (el) => el.classList.contains("collapsed"));
+    if (msDestCollapsed) await row("ms-dest").click();
+    await row("ms-dest/ms-a.md").click({ modifiers: ["Control"] });
+    await row("ms-dest/ms-b.md").click({ modifiers: ["Control"] });
+    check("multi-select: ctrl+click selects both moved rows",
+      await page.evaluate(() =>
+        document.querySelectorAll("#file-tree .tree-row.multi-selected").length === 2));
+    await row("ms-dest/ms-a.md").dragTo(row("Welcome.md"), {
+      targetPosition: { x: 20, y: 2 },
+    });
+    check("multi-select: multi-drag onto a root file moves both to the root",
+      await waitFor(() => exists("ms-a.md") && exists("ms-b.md") &&
+        !exists("ms-dest/ms-a.md") && !exists("ms-dest/ms-b.md"), 12000));
+
+    // 4. Clean up the isolated fixtures and refresh the tree.
+    fs.unlinkSync(path.join(DATA, "ms-a.md"));
+    fs.unlinkSync(path.join(DATA, "ms-b.md"));
+    fs.rmdirSync(path.join(DATA, "ms-dest"));
+    await page.click("#sidebar-refresh");
+    check("multi-select: cleanup removes the fixture rows",
+      await waitFor(() => page.evaluate(() =>
+        !document.querySelector('#file-tree .tree-row[data-path="ms-a.md"]') &&
+        !document.querySelector('#file-tree .tree-row[data-path="ms-b.md"]') &&
+        !document.querySelector('#file-tree .tree-row[data-path="ms-dest"]')), 8000));
+
+    // ---------------------------------------------------------------
     console.log("== page errors ==");
     check("no uncaught page errors", pageErrors.length === 0,
       pageErrors.slice(0, 3).join(" | "));

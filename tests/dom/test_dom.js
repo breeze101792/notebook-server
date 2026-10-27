@@ -17529,9 +17529,14 @@ function check(label, cond, extra) {
 
   console.log("== tabs: regression coverage ==");
   // Reset to a known state: close everything (covers close-last-tab -> viewer.clear).
-  window.NB.tabs.close("notes/a.md", { force: true });   // non-active
+  // Close the non-active tabs first, then the active last. Iterating the
+  // live set keeps this robust to earlier folder re-keys that changed tab
+  // paths.
+  for (const p of window.NB.tabs.getOpen().slice()) {
+    if (p !== activeTabPath()) window.NB.tabs.close(p, { force: true });
+  }
   await tick(10);
-  window.NB.tabs.close(activeTabPath(), { force: true }); // active, last tab
+  if (activeTabPath()) window.NB.tabs.close(activeTabPath(), { force: true });
   await tick(20);
   // After closing the last tab the right pane switches from the viewer
   // to the welcome page (a friendly landing with action buttons), not
@@ -18385,6 +18390,673 @@ function check(label, cond, extra) {
 
   // restore: real implementation so other test blocks (if any) work.
   window.NB.api.moveItem = origMoveItem;
+
+  console.log("== sidebar multi-select ==");
+  {
+    const msRow = (p) => window.document.querySelector(
+      '.tree-row[data-path="' + p.replace(/"/g, '\\"') + '"]');
+    const msClick = (p, opts) => {
+      const row = msRow(p);
+      if (!row) throw new Error("no row: " + p);
+      row.dispatchEvent(new window.MouseEvent("click",
+        Object.assign({ bubbles: true, cancelable: true }, opts || {})));
+    };
+    const msCtx = (p) => {
+      const row = msRow(p);
+      if (!row) throw new Error("no row: " + p);
+      row.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
+    };
+    const msClear = () => window.document.getElementById("file-tree")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const msSelected = () => Array.from(window.document.querySelectorAll(
+      "#file-tree .tree-row.multi-selected")).map(r => r.dataset.path);
+    const msMenuButtons = () =>
+      Array.from($("nb-menu").querySelectorAll("button"));
+    const msResetTree = async () => {
+      TREE.length = 0;
+      TREE.push(
+        { name: "ms-alpha", type: "dir", path: "ms-alpha", children: [
+          { name: "ms-sub", type: "dir", path: "ms-alpha/ms-sub", children: [
+            { name: "ms-x.md", type: "file", path: "ms-alpha/ms-sub/ms-x.md" },
+          ]},
+          { name: "ms-a.md", type: "file", path: "ms-alpha/ms-a.md" },
+        ]},
+        { name: "ms-beta", type: "dir", path: "ms-beta", children: [
+          { name: "ms-b.md", type: "file", path: "ms-beta/ms-b.md" },
+        ]},
+        { name: "ms-dest", type: "dir", path: "ms-dest", children: [] },
+        { name: "ms-a.md", type: "file", path: "ms-a.md" },
+        { name: "ms-b.md", type: "file", path: "ms-b.md" },
+      );
+      await window.NB.sidebar.refresh();
+      await tick(20);
+      // Fresh paths start expanded; reopen them if an earlier subtest left
+      // a folder collapsed so the shift-range has every row visible.
+      const alpha = msRow("ms-alpha");
+      if (alpha && alpha.classList.contains("collapsed")) {
+        msClick("ms-alpha");
+        await tick(20);
+      }
+      const sub = msRow("ms-alpha/ms-sub");
+      if (sub && sub.classList.contains("collapsed")) {
+        msClick("ms-alpha/ms-sub");
+        await tick(20);
+      }
+    };
+    // Mirror a backend move in the TREE fixture (path + subtree re-key).
+    const msFind = (nodes, path) => {
+      for (const n of nodes) {
+        if (n.path === path) return n;
+        const r = n.children ? msFind(n.children, path) : null;
+        if (r) return r;
+      }
+      return null;
+    };
+    const msRekeySubtree = (node, from, to) => {
+      if (node.path === from) node.path = to;
+      else if (node.path.startsWith(from + "/")) {
+        node.path = to + node.path.slice(from.length);
+      }
+      for (const c of node.children || []) msRekeySubtree(c, from, to);
+    };
+    const msMoveInTree = (from, to) => {
+      const fromParent = from.includes("/") ? from.slice(0, from.lastIndexOf("/")) : "";
+      const toParent = to.includes("/") ? to.slice(0, to.lastIndexOf("/")) : "";
+      const src = fromParent ? (msFind(TREE, fromParent) || {}).children : TREE;
+      const dstNode = toParent ? msFind(TREE, toParent) : null;
+      const dst = toParent ? (dstNode && dstNode.children) : TREE;
+      if (!src || !dst) return;
+      const i = src.findIndex(n => n.path === from);
+      if (i < 0) return;
+      const [node] = src.splice(i, 1);
+      msRekeySubtree(node, from, to);
+      node.name = to.split("/").pop();
+      dst.push(node);
+    };
+
+    const origMultiPrompt = window.prompt;
+    const origMultiAlert = window.alert;
+    const origMultiMove = window.NB.api.moveItem;
+    let msMoveCalls = [];
+    window.NB.api.moveItem = async (from, to) => {
+      msMoveCalls.push({ from, to });
+      return { from, to };
+    };
+    const msOpenRequests = [];
+    const onMsOpen = (p) => msOpenRequests.push(p);
+    window.NB.evt.on("file:open-request", onMsOpen);
+    const msMoved = [];
+    const onMsMoved = (m) => msMoved.push(m);
+    window.NB.evt.on("file:moved", onMsMoved);
+    const msAlerts = [];
+    window.alert = (msg) => { msAlerts.push(msg); };
+
+    await msResetTree();
+    msClear();
+    msOpenRequests.length = 0;
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    check("multi-select: ctrl+click selects two rows",
+      msSelected().length === 2 &&
+      msSelected().includes("ms-a.md") && msSelected().includes("ms-b.md"),
+      msSelected().join(","));
+    check("multi-select: ctrl+click does not fire file:open-request",
+      msOpenRequests.length === 0, msOpenRequests.join(","));
+
+    msClear();
+    msOpenRequests.length = 0;
+    msClick("ms-a.md");
+    check("multi-select: plain click still emits file:open-request",
+      msOpenRequests.includes("ms-a.md"), msOpenRequests.join(","));
+    await tick(40);
+    if (window.NB.tabs.isOpen("ms-a.md")) {
+      await window.NB.tabs.close("ms-a.md", { force: true });
+      await tick(30);
+    }
+
+    msClear();
+    msClick("ms-alpha", { ctrlKey: true });
+    msClick("ms-dest", { shiftKey: true });
+    const msRange = msSelected();
+    check("multi-select: shift+click selects the inclusive visible range",
+      msRange.length === 7 &&
+      msRange[0] === "ms-alpha" && msRange[msRange.length - 1] === "ms-dest" &&
+      msRange.includes("ms-alpha/ms-sub") &&
+      msRange.includes("ms-beta/ms-b.md") &&
+      !msRange.includes("ms-a.md") && !msRange.includes("ms-b.md"),
+      msRange.length + ": " + msRange.join(","));
+
+    // A collapsed folder keeps hidden rows in the DOM; a Shift range must
+    // count only the rows the user can actually see.
+    TREE.length = 0;
+    TREE.push(
+      { name: "v-top.md", type: "file", path: "v-top.md" },
+      { name: "v-hid", type: "dir", path: "v-hid", children: [
+        { name: "v-in.md", type: "file", path: "v-hid/v-in.md" },
+      ]},
+      { name: "v-bottom.md", type: "file", path: "v-bottom.md" },
+    );
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    msClick("v-hid");   // collapse
+    await tick(20);
+    msClear();
+    msClick("v-top.md", { ctrlKey: true });
+    msClick("v-bottom.md", { shiftKey: true });
+    const msHidRange = msSelected();
+    check("multi-select: shift range skips rows hidden by a collapsed folder",
+      msHidRange.length === 3 &&
+      msHidRange.includes("v-top.md") && msHidRange.includes("v-hid") &&
+      msHidRange.includes("v-bottom.md") &&
+      !msHidRange.includes("v-hid/v-in.md"),
+      msHidRange.length + ": " + msHidRange.join(","));
+    msClick("v-hid");   // restore the folder state
+    await tick(20);
+    await msResetTree();
+
+    // B: revealFile resets the range anchor to the revealed row.
+    msClear();
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    window.NB.sidebar.revealFile("ms-dest");
+    await tick(30);
+    check("multi-select: revealFile clears the multi-selection",
+      msSelected().length === 0, msSelected().join(","));
+    msClick("ms-a.md", { shiftKey: true });
+    const msRevealRange = msSelected();
+    check("multi-select: revealFile resets the shift-range anchor",
+      msRevealRange.length === 2 &&
+      msRevealRange.includes("ms-dest") && msRevealRange.includes("ms-a.md") &&
+      !msRevealRange.includes("ms-b.md"),
+      msRevealRange.join(","));
+
+    // file:moved re-keys the collapse state and the vim cursor.
+    await msResetTree();
+    msClear();
+    const destRowForMove = msRow("ms-dest");
+    if (destRowForMove && destRowForMove.classList.contains("collapsed")) {
+      msClick("ms-dest");
+      await tick(20);
+    }
+    msClick("ms-alpha");   // collapse it
+    await tick(20);
+    window.NB.sidebar.setVimCursor("ms-alpha/ms-a.md");
+    msMoveInTree("ms-alpha", "ms-dest/ms-alpha");
+    window.NB.evt.emit("file:moved", { from: "ms-alpha", to: "ms-dest/ms-alpha" });
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    const movedAlphaRow = msRow("ms-dest/ms-alpha");
+    check("multi-select: a moved folder keeps its collapsed state",
+      !!movedAlphaRow && movedAlphaRow.classList.contains("collapsed") &&
+      !msRow("ms-alpha"),
+      movedAlphaRow ? movedAlphaRow.className : "missing");
+    check("multi-select: a moved path re-keys the vim cursor",
+      window.NB.sidebar.getVimCursor() === "ms-dest/ms-alpha/ms-a.md",
+      window.NB.sidebar.getVimCursor());
+
+    await msResetTree();
+    msClick("ms-dest");
+    check("multi-select: plain click clears the multi-selection",
+      msSelected().length === 0, msSelected().join(","));
+
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msCtx("ms-a.md");
+    const msMoveBtn = msMenuButtons().find(b => /^Move 2 items to/.test(b.textContent));
+    check("multi-select: right-click on a selected row offers Move 2 items to…",
+      !!msMoveBtn && msMoveBtn.textContent === "Move 2 items to…",
+      msMenuButtons().map(b => b.textContent).join("|"));
+    check("multi-select: right-click keeps the selection",
+      msSelected().length === 2, msSelected().join(","));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true }));
+    check("multi-select: Esc dismisses the menu but keeps the selection",
+      $("nb-menu").hidden === true && msSelected().length === 2,
+      "hidden=" + $("nb-menu").hidden + " sel=" + msSelected().join(","));
+
+    $("capture-input").dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true }));
+    check("multi-select: Esc inside a text field keeps the selection",
+      msSelected().length === 2, msSelected().join(","));
+
+    msCtx("ms-dest");
+    const msNormalLabels = msMenuButtons().map(b => b.textContent);
+    check("multi-select: right-click on an unselected row clears the selection",
+      msSelected().length === 0, msSelected().join(","));
+    check("multi-select: unselected row shows the normal folder menu",
+      msNormalLabels.includes("New folder…") &&
+      msNormalLabels.includes("Rename / Move…"),
+      msNormalLabels.join("|"));
+    window.NB.menu.close();
+
+    // The unselected-row right-click cleared the selection; reselect.
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    window.prompt = () => "ms-dest";
+    msCtx("ms-a.md");
+    const msMoveNow = msMenuButtons().find(b => /^Move 2 items to/.test(b.textContent));
+    msMoveNow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(80);
+    check("multi-select: menu move calls /api/move once per item with dest paths",
+      msMoveCalls.length === 2 &&
+      msMoveCalls.some(c => c.from === "ms-a.md" && c.to === "ms-dest/ms-a.md") &&
+      msMoveCalls.some(c => c.from === "ms-b.md" && c.to === "ms-dest/ms-b.md"),
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+    check("multi-select: menu move emits file:moved per item",
+      msMoved.length === 2 &&
+      msMoved.some(m => m.from === "ms-a.md" && m.to === "ms-dest/ms-a.md") &&
+      msMoved.some(m => m.from === "ms-b.md" && m.to === "ms-dest/ms-b.md"),
+      JSON.stringify(msMoved));
+    check("multi-select: menu move clears the selection",
+      msSelected().length === 0, msSelected().join(","));
+
+    await msResetTree();
+    msClear();
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    {
+      const src = msRow("ms-a.md");
+      const tgt = msRow("ms-dest");
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      tgt.dispatchEvent(new window.Event("dragover", { bubbles: true }));
+      tgt.dispatchEvent(new window.Event("drop", { bubbles: true }));
+      src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    }
+    await tick(80);
+    check("multi-select: multi-item drag moves both items into the folder",
+      msMoveCalls.length === 2 &&
+      msMoveCalls.some(c => c.from === "ms-a.md" && c.to === "ms-dest/ms-a.md") &&
+      msMoveCalls.some(c => c.from === "ms-b.md" && c.to === "ms-dest/ms-b.md"),
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+    check("multi-select: multi-item drag emits file:moved per item",
+      msMoved.length === 2 &&
+      msMoved.some(m => m.from === "ms-a.md" && m.to === "ms-dest/ms-a.md") &&
+      msMoved.some(m => m.from === "ms-b.md" && m.to === "ms-dest/ms-b.md"),
+      JSON.stringify(msMoved));
+
+    // D: a multi-item drag over a file row marks its parent folder, not
+    // an insert-before/after line; a root file row marks the whole tree.
+    await msResetTree();
+    msClear();
+    msClick("ms-b.md", { ctrlKey: true });
+    msClick("ms-dest", { ctrlKey: true });
+    const msFileTarget = msRow("ms-alpha/ms-a.md");
+    msRow("ms-b.md").dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    msFileTarget.dispatchEvent(new window.Event("dragover", { bubbles: true }));
+    const msAlphaRow = msRow("ms-alpha");
+    check("multi-select: multi-drag over a file marks its parent folder",
+      msAlphaRow.classList.contains("drop-folder-target") &&
+      !msFileTarget.classList.contains("drop-before") &&
+      !msFileTarget.classList.contains("drop-after"),
+      "alpha=" + msAlphaRow.className + " file=" + msFileTarget.className);
+    msRow("ms-a.md").dispatchEvent(new window.Event("dragover", { bubbles: true }));
+    check("multi-select: multi-drag over a root file marks the empty area",
+      window.document.getElementById("file-tree").classList.contains("drop-empty") &&
+      !msRow("ms-a.md").classList.contains("drop-before") &&
+      !msRow("ms-a.md").classList.contains("drop-after"),
+      "tree=" + window.document.getElementById("file-tree").className);
+    msRow("ms-b.md").dispatchEvent(new window.Event("dragend", { bubbles: true }));
+
+    // performMove: dragging a folder with the active note inside keeps the
+    // tree highlight on the note's new path.
+    await msResetTree();
+    msClear();
+    const dstRowForDrag = msRow("ms-dest");
+    if (dstRowForDrag && dstRowForDrag.classList.contains("collapsed")) {
+      msClick("ms-dest");
+      await tick(20);
+    }
+    await window.NB.tabs.open("ms-alpha/ms-sub/ms-x.md");
+    await tick(40);
+    msMoveCalls = [];
+    msMoved.length = 0;
+    const origDragMove = window.NB.api.moveItem;
+    window.NB.api.moveItem = async (from, to) => {
+      msMoveCalls.push({ from, to });
+      msMoveInTree(from, to);
+      return { from, to };
+    };
+    {
+      const src = msRow("ms-alpha");
+      const dst = msRow("ms-dest");
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      dst.dispatchEvent(new window.Event("dragover", { bubbles: true }));
+      dst.dispatchEvent(new window.Event("drop", { bubbles: true }));
+      src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    }
+    await tick(100);
+    window.NB.api.moveItem = origDragMove;
+    check("multi-select: dragging a folder remaps the active note highlight",
+      !!msRow("ms-dest/ms-alpha/ms-sub/ms-x.md") &&
+      msRow("ms-dest/ms-alpha/ms-sub/ms-x.md").classList.contains("selected") &&
+      msMoveCalls.some(c => c.from === "ms-alpha" && c.to === "ms-dest/ms-alpha"),
+      "calls=" + msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+    if (window.NB.tabs.isOpen("ms-dest/ms-alpha/ms-sub/ms-x.md")) {
+      await window.NB.tabs.close("ms-dest/ms-alpha/ms-sub/ms-x.md", { force: true });
+      await tick(20);
+    }
+    await msResetTree();
+    msClear();
+    msClick("ms-alpha", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    {
+      const src = msRow("ms-alpha");
+      const tgt = msRow("ms-alpha/ms-sub");
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      tgt.dispatchEvent(new window.Event("drop", { bubbles: true }));
+      src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    }
+    await tick(80);
+    check("multi-select: folder-into-descendant blocks the whole multi-drop",
+      msMoveCalls.length === 0,
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+    check("multi-select: folder-into-descendant reports via alert",
+      msAlerts.includes("Cannot move a folder into itself or one of its subfolders."),
+      msAlerts.join(" | "));
+
+    // Dropping a selection onto one of its own rows aborts without moving
+    // anything; the selection is still live from the aborted drop above.
+    msMoveCalls = [];
+    msAlerts.length = 0;
+    {
+      const src = msRow("ms-alpha");
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      src.dispatchEvent(new window.Event("drop", { bubbles: true }));
+      src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    }
+    await tick(60);
+    check("multi-select: dropping on a dragged row moves nothing",
+      msMoveCalls.length === 0 && msAlerts.length === 0,
+      "calls=" + msMoveCalls.length + " alerts=" + msAlerts.length);
+
+    await msResetTree();
+    msClear();
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    window.prompt = () => "";
+    msCtx("ms-a.md");
+    const msSkipNow = msMenuButtons().find(b => /^Move 2 items to/.test(b.textContent));
+    msSkipNow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(60);
+    check("multi-select: items already in the destination are skipped",
+      msMoveCalls.length === 0, msMoveCalls.map(c => c.from).join(","));
+    check("multi-select: skipped-only move explains and keeps the selection",
+      msAlerts.some(m => /already in the notebook root/.test(m)) &&
+      msSelected().length === 2,
+      msAlerts.join(" | ") + " sel=" + msSelected().join(","));
+
+    // I: one rejected move does not abort the rest.
+    await msResetTree();
+    msClear();
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msClick("ms-alpha", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    window.prompt = () => "ms-dest";
+    const origFailMove = window.NB.api.moveItem;
+    window.NB.api.moveItem = async (from, to) => {
+      msMoveCalls.push({ from, to });
+      if (from === "ms-a.md") throw new Error("Destination already exists");
+      return { from, to };
+    };
+    msCtx("ms-a.md");
+    const msFailBtn = msMenuButtons().find(b => /^Move 3 items to/.test(b.textContent));
+    msFailBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(100);
+    window.NB.api.moveItem = origFailMove;
+    check("multi-select: a failed item does not abort the rest",
+      msMoveCalls.length === 3 && msMoved.length === 2 &&
+      !msMoved.some(m => m.from === "ms-a.md") &&
+      msMoved.some(m => m.from === "ms-b.md") &&
+      msMoved.some(m => m.from === "ms-alpha"),
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", ") +
+        " moved=" + msMoved.length);
+    check("multi-select: a partial failure alerts with the attempted total",
+      msAlerts.some(m =>
+        /Moved 2 of 3 items/.test(m) && /ms-a\.md: Destination already exists/.test(m)),
+      msAlerts.join(" | "));
+    check("multi-select: a partial failure still clears the selection",
+      msSelected().length === 0, msSelected().join(","));
+
+    // I: a move to root uses the bare basename as the destination.
+    await msResetTree();
+    msClear();
+    msClick("ms-alpha/ms-a.md", { ctrlKey: true });
+    msClick("ms-alpha/ms-sub/ms-x.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    window.prompt = () => "";
+    msCtx("ms-alpha/ms-a.md");
+    const msRootBtn = msMenuButtons().find(b => /^Move 2 items to/.test(b.textContent));
+    msRootBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(80);
+    check("multi-select: moving to root targets the bare basename",
+      msMoveCalls.length === 2 &&
+      msMoveCalls.some(c => c.from === "ms-alpha/ms-a.md" && c.to === "ms-a.md") &&
+      msMoveCalls.some(c => c.from === "ms-alpha/ms-sub/ms-x.md" && c.to === "ms-x.md"),
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+
+    // I: a selected folder dedupes its selected descendant; label and
+    // prompt count both use the top-level move set.
+    await msResetTree();
+    msClear();
+    msClick("ms-alpha", { ctrlKey: true });
+    msClick("ms-alpha/ms-a.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    let msDedupePrompt = "";
+    window.prompt = (msg) => { msDedupePrompt = msg; return "ms-dest"; };
+    msCtx("ms-alpha");
+    const msDedupeBtn = msMenuButtons().find(b => /^Move 1 item to/.test(b.textContent));
+    check("multi-select: menu label counts only top-level selected paths",
+      !!msDedupeBtn, msMenuButtons().map(b => b.textContent).join("|"));
+    msDedupeBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(80);
+    check("multi-select: prompt count matches the deduped move set",
+      /Move 1 item/.test(msDedupePrompt), msDedupePrompt);
+    check("multi-select: selecting a folder and its child moves only the folder",
+      msMoveCalls.length === 1 &&
+      msMoveCalls[0].from === "ms-alpha" && msMoveCalls[0].to === "ms-dest/ms-alpha",
+      msMoveCalls.map(c => c.from + "->" + c.to).join(", "));
+
+    // I: refresh prunes selected paths that no longer exist.
+    await msResetTree();
+    msClear();
+    msClick("ms-a.md", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    TREE.splice(TREE.findIndex(n => n.path === "ms-b.md"), 1);
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    check("multi-select: refresh prunes selected paths that vanished",
+      msSelected().length === 1 && msSelected()[0] === "ms-a.md",
+      msSelected().join(","));
+
+    // I: phone mode ignores Ctrl and behaves like a plain click.
+    await msResetTree();
+    msClear();
+    const msPrevUiMode = window.document.documentElement.dataset.uiMode;
+    window.document.documentElement.dataset.uiMode = "phone";
+    msOpenRequests.length = 0;
+    msClick("ms-a.md", { ctrlKey: true });
+    check("multi-select: phone ctrl+click opens like a plain click",
+      msOpenRequests.includes("ms-a.md"), msOpenRequests.join(","));
+    check("multi-select: phone ctrl+click creates no multi-selection",
+      msSelected().length === 0, msSelected().join(","));
+    window.document.documentElement.dataset.uiMode = msPrevUiMode;
+    await tick(30);
+    if (window.NB.tabs.isOpen("ms-a.md")) {
+      await window.NB.tabs.close("ms-a.md", { force: true });
+      await tick(30);
+    }
+    await window.NB.sidebar.refresh();
+    await tick(20);
+
+    // H: a folder move re-keys open tabs and bookmarks under it.
+    await msResetTree();
+    msClear();
+    const msPriorBookmarks = window.NB.bookmarks.get();
+    await window.NB.tabs.open("ms-alpha/ms-a.md");
+    await tick(30);
+    await window.NB.tabs.open("ms-alpha/ms-sub/ms-x.md");
+    await tick(40);
+    window.NB.tabs.togglePin("ms-alpha/ms-a.md");
+    await tick(20);
+    window.NB.bookmarks.toggle("ms-alpha/ms-a.md");
+    check("multi-select: folder re-key setup has two tabs, a pin and a bookmark",
+      window.NB.tabs.isOpen("ms-alpha/ms-a.md") &&
+      window.NB.tabs.isOpen("ms-alpha/ms-sub/ms-x.md") &&
+      window.NB.tabs.getActive() === "ms-alpha/ms-sub/ms-x.md" &&
+      window.NB.tabs.isPinned("ms-alpha/ms-a.md") &&
+      window.NB.bookmarks.has("ms-alpha/ms-a.md"),
+      "tabs=" + window.NB.tabs.getOpen().join(",") +
+        " active=" + window.NB.tabs.getActive() +
+        " marks=" + window.NB.bookmarks.get().join(","));
+    msClick("ms-alpha", { ctrlKey: true });
+    msClick("ms-b.md", { ctrlKey: true });
+    msMoveCalls = [];
+    msMoved.length = 0;
+    msAlerts.length = 0;
+    window.prompt = () => "ms-dest";
+    const origHMove = window.NB.api.moveItem;
+    window.NB.api.moveItem = async (from, to) => {
+      msMoveCalls.push({ from, to });
+      msMoveInTree(from, to);
+      return { from, to };
+    };
+    msCtx("ms-alpha");
+    const msHMoveBtn = msMenuButtons().find(b => /^Move 2 items to/.test(b.textContent));
+    msHMoveBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(100);
+    window.NB.api.moveItem = origHMove;
+    check("multi-select: folder move re-keys both open tabs under it",
+      window.NB.tabs.isOpen("ms-dest/ms-alpha/ms-a.md") &&
+      window.NB.tabs.isOpen("ms-dest/ms-alpha/ms-sub/ms-x.md") &&
+      !window.NB.tabs.isOpen("ms-alpha/ms-a.md") &&
+      !window.NB.tabs.isOpen("ms-alpha/ms-sub/ms-x.md"),
+      window.NB.tabs.getOpen().join(","));
+    check("multi-select: folder move keeps the pin and active path on the new paths",
+      window.NB.tabs.isPinned("ms-dest/ms-alpha/ms-a.md") &&
+      !window.NB.tabs.isPinned("ms-alpha/ms-a.md") &&
+      window.NB.tabs.getActive() === "ms-dest/ms-alpha/ms-sub/ms-x.md",
+      "pin=" + window.NB.tabs.isPinned("ms-dest/ms-alpha/ms-a.md") +
+        " active=" + window.NB.tabs.getActive());
+    check("multi-select: folder move keeps the tree highlight on the moved note",
+      !!msRow("ms-dest/ms-alpha/ms-sub/ms-x.md") &&
+      msRow("ms-dest/ms-alpha/ms-sub/ms-x.md").classList.contains("selected"),
+      "selected=" + msSelected().join(","));
+    check("multi-select: folder move re-keys a bookmark under it",
+      window.NB.bookmarks.has("ms-dest/ms-alpha/ms-a.md") &&
+      !window.NB.bookmarks.has("ms-alpha/ms-a.md"),
+      window.NB.bookmarks.get().join(","));
+    if (window.NB.tabs.isPinned("ms-dest/ms-alpha/ms-a.md")) {
+      window.NB.tabs.togglePin("ms-dest/ms-alpha/ms-a.md");
+      await tick(20);
+    }
+    for (const p of ["ms-dest/ms-alpha/ms-a.md", "ms-dest/ms-alpha/ms-sub/ms-x.md"]) {
+      if (window.NB.tabs.isOpen(p)) {
+        await window.NB.tabs.close(p, { force: true });
+        await tick(20);
+      }
+    }
+    window.NB.app.setBookmarks(msPriorBookmarks);
+    window.NB.bookmarks.set(msPriorBookmarks);
+    await msResetTree();
+
+    // The live hybrid session follows a folder move: Save writes the new
+    // path and does not recreate the old one.
+    await msResetTree();
+    msClear();
+    await window.NB.tabs.open("ms-alpha/ms-a.md");
+    await tick(40);
+    await window.NB.hybrid.enter("ms-alpha/ms-a.md");
+    await tick(20);
+    const msHybridVc = $("viewer-content");
+    msHybridVc.innerHTML += "<p>hybrid move save</p>";
+    msHybridVc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(20);
+    msMoveInTree("ms-alpha", "ms-dest/ms-alpha");
+    window.NB.evt.emit("file:moved", { from: "ms-alpha", to: "ms-dest/ms-alpha" });
+    await tick(20);
+    delete FILES["ms-alpha/ms-a.md"];
+    delete FILES["ms-dest/ms-alpha/ms-a.md"];
+    await window.NB.hybrid.save();
+    await tick(80);
+    check("hybrid: save after a folder move targets the new path",
+      typeof FILES["ms-dest/ms-alpha/ms-a.md"] === "string" &&
+      /hybrid move save/.test(FILES["ms-dest/ms-alpha/ms-a.md"]),
+      JSON.stringify(FILES["ms-dest/ms-alpha/ms-a.md"]));
+    check("hybrid: save after a folder move does not recreate the old path",
+      FILES["ms-alpha/ms-a.md"] === undefined,
+      JSON.stringify(FILES["ms-alpha/ms-a.md"]));
+    await window.NB.hybrid.exit(false);
+    await tick(40);
+    delete FILES["ms-dest/ms-alpha/ms-a.md"];
+    if (window.NB.tabs.isOpen("ms-dest/ms-alpha/ms-a.md")) {
+      await window.NB.tabs.close("ms-dest/ms-alpha/ms-a.md", { force: true });
+      await tick(20);
+    }
+    await msResetTree();
+
+    // A stashed viewer draft follows a folder move and still recovers.
+    await msResetTree();
+    msClear();
+    await window.NB.tabs.open("ms-alpha/ms-a.md");
+    await tick(40);
+    window.NB.viewer.setDraft("ms-alpha/ms-a.md", {
+      content: "# stashed draft", mode: "source",
+    });
+    await tick(20);
+    check("viewer draft: setup shows the Recover bar",
+      !$("draft-bar").hidden &&
+      !!window.NB.viewer.getDraft("ms-alpha/ms-a.md"));
+    msMoveInTree("ms-alpha", "ms-dest/ms-alpha");
+    window.NB.evt.emit("file:moved", { from: "ms-alpha", to: "ms-dest/ms-alpha" });
+    await window.NB.sidebar.refresh();
+    await tick(30);
+    check("viewer draft: folder move re-keys the stashed draft",
+      !!window.NB.viewer.getDraft("ms-dest/ms-alpha/ms-a.md") &&
+      !window.NB.viewer.getDraft("ms-alpha/ms-a.md") &&
+      !$("draft-bar").hidden,
+      JSON.stringify(window.NB.viewer.getDraft("ms-dest/ms-alpha/ms-a.md")));
+    $("draft-recover").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    check("viewer draft: Recover restores the moved draft",
+      cmGetValue() === "# stashed draft" || window.NB.hybrid.isActive(),
+      "cm=" + JSON.stringify(cmGetValue()) +
+        " hybrid=" + window.NB.hybrid.isActive());
+    if (!cmIsHidden()) { await window.NB.viewer.endEdit(); await tick(20); }
+    if (window.NB.hybrid.isActive()) {
+      await window.NB.hybrid.exit(false);
+      await tick(20);
+    }
+    if (window.NB.tabs.isOpen("ms-dest/ms-alpha/ms-a.md")) {
+      await window.NB.tabs.close("ms-dest/ms-alpha/ms-a.md", { force: true });
+      await tick(20);
+    }
+    await msResetTree();
+
+    window.NB.evt.off("file:open-request", onMsOpen);
+    window.NB.evt.off("file:moved", onMsMoved);
+    window.NB.api.moveItem = origMultiMove;
+    window.prompt = origMultiPrompt;
+    window.alert = origMultiAlert;
+    msClear();
+  }
 
   console.log("== external file change ==");
   // Reset to a clean 2-tab state and seed the cache via activate().

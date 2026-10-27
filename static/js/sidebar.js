@@ -58,7 +58,14 @@
   // The Pinned section host, above the tree. Built by renderPins().
   const pinsEl = document.getElementById("pinned-folders");
   let selectedPath = null;
-  let draggingNode = null;          // { path, type } the row being dragged (module state: works in jsdom too)
+  // Multi-selection of tree rows (main tree only, never the Pinned
+  // section). selectionAnchor is the last plain/ctrl-clicked row and
+  // anchors Shift+click ranges. draggingNodes is the set currently being
+  // dragged -- one entry normally, the whole top-level selection for a
+  // multi-item drag.
+  const selectedPaths = new Set();
+  let selectionAnchor = null;
+  let draggingNodes = [];
 
   function isPhone() {
     return !!(window.NB && NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
@@ -111,6 +118,7 @@
     row.className = "tree-row";
     row.dataset.path = node.path;
     row.draggable = !isPhone();
+    if (selectedPaths.has(node.path)) row.classList.add("multi-selected");
     row.appendChild(renderGuide(ancestors, isLast, isRoot));
     // Phone-only row action button (CSS-hidden on desktop). It reuses the
     // shared menu module; stopPropagation + preventDefault keeps the row's
@@ -155,7 +163,7 @@
       pin.addEventListener("dragstart", (e) => e.preventDefault());
       row.append(icon, name, pin);
       appendMore();
-      row.addEventListener("click", () => toggleDir(node));
+      row.addEventListener("click", (e) => handleRowClick(e, node));
       row.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         if (isPhone()) return;   // the phone uses the … button only
@@ -199,7 +207,7 @@
       row.append(icon, name, star);
       appendMore();
       if (node.path === selectedPath) row.classList.add("selected");
-      row.addEventListener("click", () => openFile(node.path));
+      row.addEventListener("click", (e) => handleRowClick(e, node));
       row.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         if (isPhone()) return;
@@ -294,14 +302,130 @@
     pin.classList.toggle("is-pinned", isOn);
   }
 
+  /* --- multi-selection ------------------------------------------------ */
+  /* Repaint the .multi-selected class on every visible row from the set.
+   * Selection changes never re-render the tree; renderNode reads the same
+   * set so a full render (refresh) reproduces the state. */
+  function syncSelectionClasses() {
+    treeEl.querySelectorAll(".tree-row").forEach((row) => {
+      row.classList.toggle("multi-selected", selectedPaths.has(row.dataset.path));
+    });
+  }
+
+  /* Drop the multi-selection but keep the range anchor (a plain click
+   * keeps the row as the anchor for a following Shift+click). */
+  function clearMultiSelection() {
+    if (!selectedPaths.size) return;
+    selectedPaths.clear();
+    syncSelectionClasses();
+  }
+
+  /* Drop the multi-selection and the anchor (empty-area click, Esc). */
+  function clearSelection() {
+    selectedPaths.clear();
+    selectionAnchor = null;
+    syncSelectionClasses();
+  }
+
+  function toggleSelection(path) {
+    if (selectedPaths.has(path)) selectedPaths.delete(path);
+    else selectedPaths.add(path);
+    selectionAnchor = path;
+    syncSelectionClasses();
+  }
+
+  /* Visible tree rows in DOM order. A collapsed folder keeps its subtree in
+   * the DOM; renderNode hides it with an inline display:none on its
+   * .tree-children wrapper. */
+  function visibleTreeRows() {
+    return Array.from(treeEl.querySelectorAll(".tree-row")).filter((row) => {
+      for (let el = row.parentElement; el && el !== treeEl; el = el.parentElement) {
+        if (el.classList.contains("tree-children") && el.style.display === "none") {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /* Replace the selection with the inclusive range of visible rows between
+   * the anchor and `path`, in DOM order. Missing anchor or row falls back to
+   * the ctrl-click behavior. */
+  function selectRangeTo(path) {
+    const rows = visibleTreeRows();
+    const anchorIdx = rows.findIndex(r => r.dataset.path === selectionAnchor);
+    const clickedIdx = rows.findIndex(r => r.dataset.path === path);
+    if (anchorIdx < 0 || clickedIdx < 0) {
+      toggleSelection(path);
+      return;
+    }
+    selectedPaths.clear();
+    const start = Math.min(anchorIdx, clickedIdx);
+    const end = Math.max(anchorIdx, clickedIdx);
+    for (let i = start; i <= end; i++) selectedPaths.add(rows[i].dataset.path);
+    syncSelectionClasses();
+  }
+
+  function handleRowClick(e, node) {
+    // The phone shell has no multi-selection; taps stay plain clicks.
+    if (!isPhone() && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      toggleSelection(node.path);
+      return;
+    }
+    if (!isPhone() && e.shiftKey) {
+      e.preventDefault();
+      // No anchor yet: Shift behaves like a plain ctrl-click.
+      if (selectionAnchor) selectRangeTo(node.path);
+      else toggleSelection(node.path);
+      return;
+    }
+    // Plain click: normal open/toggle, and it starts a fresh selection
+    // anchored on this row.
+    clearMultiSelection();
+    selectionAnchor = node.path;
+    if (node.type === "dir") toggleDir(node);
+    else openFile(node.path);
+  }
+
+  /* Keep only paths whose ancestor isn't also selected, so a folder and a
+   * child inside it move once (as the folder). */
+  function topLevelSelectedPaths(paths) {
+    return paths.filter(p => !paths.some(q => q !== p && isAncestorOrSelf(q, p)));
+  }
+
   function setSelected(path) {
     selectedPath = path;
+    // The active-file highlight and a multi-selection must not compete.
+    clearMultiSelection();
+    // The newly active note is the natural next Shift+click anchor.
+    selectionAnchor = path;
     treeEl.querySelectorAll(".tree-row.selected")
       .forEach(r => r.classList.remove("selected"));
     const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
   }
+
+  // Clicking the empty tree area (not a row or its guide) drops the
+  // selection. Esc does the same without disturbing menu.js's own handler.
+  treeEl.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest(".tree-row")) return;
+    clearSelection();
+  });
+  // Capture phase: run before menu.js's bubble-phase Esc handler closes the
+  // menu, so the gate below still sees it open.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !selectedPaths.size) return;
+    // Esc while the context menu is open dismisses the menu only; menu.js
+    // handles that, and the selection must survive.
+    if (menuEl && !menuEl.hidden) return;
+    // A text context owns Esc (caret/selection); never drop the tree
+    // selection from inside an input or editor.
+    if (e.target.closest &&
+        e.target.closest("input, textarea, [contenteditable]")) return;
+    clearSelection();
+  }, true);
 
   /* --- pinned folders ------------------------------------------------- */
   /* The Pinned section sits above the tree inside the Explorer view. A
@@ -718,6 +842,10 @@
       collapsed.delete(parts.slice(0, i).join("/"));
     }
     selectedPath = path;
+    clearMultiSelection();
+    // The revealed row is the new Shift+click anchor; a stale anchor would
+    // range from an unrelated old row.
+    selectionAnchor = path;
     refresh();
   }
 
@@ -786,6 +914,25 @@
   }
 
   function openMenu(e, node) {
+    // Right-clicking inside a real multi-selection acts on the whole
+    // selection; any other row (including every Pinned-section row, which
+    // is not a .tree-row) drops it and shows the normal row menu.
+    const fromMainTree = !!(e.target.closest && e.target.closest(".tree-row"));
+    if (fromMainTree && selectedPaths.has(node.path) && selectedPaths.size >= 2) {
+      const n = topLevelSelectedPaths(Array.from(selectedPaths)).length;
+      if (n > 0) {
+        NB.menu.open({
+          owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+          items: [{
+            label: "Move " + n + " " + itemWord(n) + " to…",
+            handler: () => { doMoveSelected(); },
+          }],
+          focusFirst: true,
+        });
+        return;
+      }
+    }
+    clearSelection();
     const items = node.type === "dir" ? treeFolderMenuItems(node) : treeFileMenuItems(node);
     NB.menu.open({
       owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
@@ -856,6 +1003,25 @@
   function baseName(path) {
     const i = path.lastIndexOf("/");
     return i < 0 ? path : path.slice(i + 1);
+  }
+
+  function itemWord(n) { return n === 1 ? "item" : "items"; }
+
+  /* Map a path equal to `from` or inside it to its new location; null when
+   * the path is unrelated to the move. */
+  function remapPath(path, from, to) {
+    if (!path || !from || !to || from === to) return null;
+    if (path === from) return to;
+    if (path.startsWith(from + "/")) return to + path.slice(from.length);
+    return null;
+  }
+
+  /* Follow the active tree selection across one or more moves. */
+  function remapSelectedPath(pairs) {
+    for (const p of pairs) {
+      const mapped = remapPath(selectedPath, p.from, p.to);
+      if (mapped !== null) { selectedPath = mapped; return; }
+    }
   }
 
   // A tree icon: a 16x16 <svg> that pulls its shape from the hidden
@@ -949,6 +1115,71 @@
     } catch (e) { alert("Copy failed: " + e.message); }
   }
 
+  /* Move every path in `sources` into `dest` ("" = root) one at a time.
+   * /api/move handles a single item per call; failures are collected so
+   * one conflict does not abort the rest. Shared by the "Move N items"
+   * menu item and the multi-item drag path. */
+  async function movePathsInto(sources, dest) {
+    const failures = [];
+    const moved = [];
+    let movedCount = 0;
+    let attempted = 0;
+    for (const src of sources) {
+      if (parentOf(src) === dest) continue;   // already in the destination
+      attempted++;
+      const node = findNode(treeCache, src);
+      if (node && node.type === "dir" && dest && isAncestorOrSelf(src, dest)) {
+        failures.push(src + ": cannot move into itself");
+        continue;
+      }
+      const to = dest ? dest + "/" + baseName(src) : baseName(src);
+      try {
+        await NB.api.moveItem(src, to);
+        movedCount++;
+        moved.push({ from: src, to });
+        NB.evt.emit("file:moved", { from: src, to });
+      } catch (e) {
+        failures.push(src + ": " + e.message);
+      }
+    }
+    if (failures.length) {
+      alert("Moved " + movedCount + " of " + attempted + " " +
+        itemWord(attempted) + ".\n\nFailed:\n" + failures.join("\n"));
+    }
+    clearSelection();
+    // Follow the active file if it was one of the moved paths (or lived
+    // inside a moved folder).
+    remapSelectedPath(moved);
+    await refresh();
+  }
+
+  async function doMoveSelected() {
+    const sources = topLevelSelectedPaths(Array.from(selectedPaths));
+    if (!sources.length) return;
+    const parents = new Set(sources.map(parentOf));
+    const defaultDest = parents.size === 1 ? Array.from(parents)[0] : "";
+    const answer = prompt(
+      "Move " + sources.length + " " + itemWord(sources.length) +
+        " to (folder path relative to notebook root, empty for root):",
+      defaultDest);
+    if (answer === null) return;
+    const dest = answer.trim().replace(/\/+$/, "");
+    if (dest) {
+      const target = findNode(treeCache, dest);
+      if (!target || target.type !== "dir") {
+        alert("Destination folder not found: " + dest);
+        return;
+      }
+    }
+    const remaining = sources.filter(src => parentOf(src) !== dest);
+    if (!remaining.length) {
+      alert("All selected items are already in " +
+        (dest || "the notebook root") + ".");
+      return;   // keep the selection; nothing moved, so no refresh
+    }
+    await movePathsInto(remaining, dest);
+  }
+
   function doExport(path) {
     if (NB.export && NB.export.open) NB.export.open(path);
   }
@@ -996,6 +1227,14 @@
       if (NB.bookmarks) NB.bookmarks.prune(treeCache);
       // Same for pinned folders, so a pin never points at a missing folder.
       prunePins(treeCache);
+      // Drop selected paths that vanished (delete / move / rename) so the
+      // set never holds a row the tree can no longer render.
+      for (const p of Array.from(selectedPaths)) {
+        if (!findNode(treeCache, p)) selectedPaths.delete(p);
+      }
+      if (selectionAnchor && !findNode(treeCache, selectionAnchor)) {
+        selectionAnchor = null;
+      }
       render(treeCache);
       // The Pinned section lives above the tree; refresh it after render
       // so its rows reflect the tree we just built.
@@ -1085,27 +1324,49 @@
       to = target.dir ? target.dir + "/" + name : name;
       await NB.api.moveItem(from, to);
     }
+    const wasSelected = selectedPath === from;
     NB.evt.emit("file:moved", { from, to });
-    if (selectedPath === from) openFile(to);
+    remapSelectedPath([{ from, to }]);
+    if (wasSelected) openFile(to);
     await refresh();
   }
 
   treeEl.addEventListener("dragstart", (e) => {
     if (isPhone()) { e.preventDefault(); return; }
     const row = e.target.closest && e.target.closest(".tree-row");
-    if (!row || !row.dataset.path) { e.preventDefault(); return; }
+    if (!row || !row.dataset.path) {
+      e.preventDefault();
+      return;
+    }
     const node = findNode(treeCache, row.dataset.path);
-    if (!node) { e.preventDefault(); return; }
-    draggingNode = { path: node.path, type: node.type };
-    row.classList.add("dragging");
+    if (!node) {
+      e.preventDefault();
+      return;
+    }
+    // A row inside a multi-selection drags the whole top-level selection;
+    // any other row drags alone (the existing single-item behavior).
+    if (selectedPaths.has(node.path) && selectedPaths.size >= 2) {
+      draggingNodes = topLevelSelectedPaths(Array.from(selectedPaths))
+        .map(p => findNode(treeCache, p) || { path: p, type: "file" });
+    } else {
+      draggingNodes = [{ path: node.path, type: node.type }];
+    }
+    for (const dn of draggingNodes) {
+      const r = treeEl.querySelector('.tree-row[data-path="' +
+        cssEscape(dn.path) + '"]');
+      if (r) r.classList.add("dragging");
+    }
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = "move";
-      try { e.dataTransfer.setData("text/plain", node.path); } catch (_) {}
+      try {
+        e.dataTransfer.setData("text/plain",
+          draggingNodes.map(d => d.path).join("\n"));
+      } catch (_) {}
     }
   });
 
   treeEl.addEventListener("dragover", (e) => {
-    if (isPhone() || !draggingNode) return;
+    if (isPhone() || !draggingNodes.length) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
     clearDropMarks();
@@ -1115,37 +1376,78 @@
       treeEl.classList.add("drop-empty");
       return;
     }
-    if (row.dataset.path === draggingNode.path) return;   // can't drop on self
+    // Dropping on any dragged row (not just the one under the cursor) is a no-op.
+    if (draggingNodes.some(dn => dn.path === row.dataset.path)) return;
     const node = findNode(treeCache, row.dataset.path);
     if (!node) return;
-    if (node.type === "dir" && draggingNode.type === "dir" &&
-        isAncestorOrSelf(draggingNode.path, node.path)) return;   // no recurse
-    if (node.type === "dir") row.classList.add("drop-folder-target");
-    else {
-      const rect = row.getBoundingClientRect();
-      const before = e.clientX < rect.left + rect.width / 2;
-      row.classList.add(before ? "drop-before" : "drop-after");
+    // A folder can't land inside itself or any of its descendants. Check
+    // every dragged folder, so a mixed selection is blocked too.
+    const insideDraggedFolder = (path) => draggingNodes.some(dn =>
+      dn.type === "dir" && isAncestorOrSelf(dn.path, path));
+    if (node.type === "dir") {
+      if (insideDraggedFolder(node.path)) return;
+      row.classList.add("drop-folder-target");
+      return;
     }
+    // A multi-item drop on a file lands inside its parent folder, so mark
+    // that folder instead of an insert-before/after line.
+    if (draggingNodes.length > 1) {
+      const parent = parentOf(row.dataset.path);
+      if (!parent) {
+        treeEl.classList.add("drop-empty");
+        return;
+      }
+      if (insideDraggedFolder(parent)) return;
+      const parentRow = treeEl.querySelector('.tree-row[data-path="' +
+        cssEscape(parent) + '"]');
+      if (parentRow) parentRow.classList.add("drop-folder-target");
+      return;
+    }
+    const rect = row.getBoundingClientRect();
+    const before = e.clientX < rect.left + rect.width / 2;
+    row.classList.add(before ? "drop-before" : "drop-after");
   });
 
   treeEl.addEventListener("drop", async (e) => {
-    if (isPhone() || !draggingNode) return;
+    if (isPhone() || !draggingNodes.length) return;
     e.preventDefault();
     const row = e.target.closest && e.target.closest(".tree-row");
     const target = row ? resolveDropTarget(row, e.clientX)
                        : { dir: "", insertBefore: null };
-    // Final guard: a folder can't move into itself or a descendant. We
-    // check this BEFORE clearing state so the guard has the data it needs.
-    if (draggingNode.type === "dir" && target.dir &&
-        isAncestorOrSelf(draggingNode.path, target.dir)) {
+    if (draggingNodes.length === 1) {
+      const dragged = draggingNodes[0];
+      // Final guard: a folder can't move into itself or a descendant. We
+      // check this BEFORE clearing state so the guard has the data it needs.
+      if (dragged.type === "dir" && target.dir &&
+          isAncestorOrSelf(dragged.path, target.dir)) {
+        clearDragging();
+        alert("Cannot move a folder into itself or one of its subfolders.");
+        return;
+      }
+      const from = dragged.path;
+      clearDragging();
+      try { await performMove(from, target); }
+      catch (err) { alert("Move failed: " + err.message); await refresh(); }
+      return;
+    }
+    // Multi-item drop: insert-before/after has no meaning for a set, so
+    // every item moves into the resolved target folder. Reject the whole
+    // drop before moving anything if it targets a dragged row or would
+    // put a dragged folder inside itself.
+    if (row && draggingNodes.some(dn => dn.path === row.dataset.path)) {
+      clearDragging();
+      return;
+    }
+    if (target.dir && draggingNodes.some(dn =>
+        dn.type === "dir" && isAncestorOrSelf(dn.path, target.dir))) {
       clearDragging();
       alert("Cannot move a folder into itself or one of its subfolders.");
       return;
     }
-    const from = draggingNode.path;
+    const sources = topLevelSelectedPaths(draggingNodes.map(d => d.path));
+    const dest = target.dir;
     clearDragging();
-    try { await performMove(from, target); }
-    catch (e) { alert("Move failed: " + e.message); await refresh(); }
+    await movePathsInto(sources, dest);
   });
 
   treeEl.addEventListener("dragend", clearDragging);
@@ -1156,7 +1458,7 @@
     treeEl.classList.remove("drop-empty");
   }
   function clearDragging() {
-    draggingNode = null;
+    draggingNodes = [];
     treeEl.querySelectorAll(".dragging").forEach(r => r.classList.remove("dragging"));
     clearDropMarks();
   }
@@ -1242,19 +1544,31 @@
     treeEl.querySelectorAll(".tree-row").forEach((r) => {
       r.draggable = draggable;
     });
+    // The phone shell has no multi-select; a mode flip drops any desktop
+    // selection instead of leaving highlights behind.
+    if (!draggable) clearSelection();
   });
 
-  // A rename / move re-keys pinned folders whose path IS the moved folder
-  // or lives inside it (prefix form -- moving a parent renames descendants).
+  // A rename / move re-keys pinned folders, the collapse state, the vim
+  // cursor and the active tree selection whose path IS the moved folder or
+  // lives inside it (prefix form -- moving a parent renames descendants).
   // Expanded pins follow the same remap so they stay open across a move.
   NB.evt.on("file:moved", ({ from, to }) => {
-    if (!from || !to) return;
-    const prefix = from + "/";
-    const rekey = (p) => {
-      if (p === from) return to;
-      if (p.startsWith(prefix)) return to + p.slice(from.length);
-      return null;
-    };
+    if (!from || !to || from === to) return;
+    const rekey = (p) => remapPath(p, from, to);
+    // A moved folder/subfolder keeps its collapse state; stale old paths
+    // must not linger in the set.
+    for (const p of Array.from(collapsed)) {
+      const mapped = rekey(p);
+      if (mapped === null) continue;
+      collapsed.delete(p);
+      collapsed.add(mapped);
+    }
+    const vimMapped = rekey(vimCursorPath);
+    if (vimMapped !== null) vimCursorPath = vimMapped;
+    const selectedMapped = rekey(selectedPath);
+    if (selectedMapped !== null) selectedPath = selectedMapped;
+
     let changed = false;
     pinnedFolders = pinnedFolders.map(p => {
       const mapped = rekey(p);

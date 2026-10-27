@@ -2815,6 +2815,15 @@ body[data-theme="light"] #viewer-content {
 }
 :where(#file-tree) .tree-row:hover { background: var(--accent-soft); }
 :where(#file-tree) .tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+/* Multi-selection: a soft band with an accent edge, deliberately distinct
+ * from the active-file .selected (accent text + bold). */
+:where(#file-tree) .tree-row.multi-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--fg);
+  font-weight: 400;
+}
+:where(#file-tree) .tree-row.selected.multi-selected { color: var(--accent); font-weight: 600; }
 .tree-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 /* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
