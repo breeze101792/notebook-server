@@ -70,6 +70,14 @@
   // token in step.
   const EXPORT_PROSE_PX = 16;
 
+  // Standalone math fitting mirrors katex.js. The inline export script
+  // fits on load and resize (and Paged.js after pagination); keep these
+  // names/values in sync with static/js/katex.js.
+  const MATH_FIT_MAX_PASSES = 2;
+  const MATH_FIT_EPSILON = 1;
+  const MATH_FIT_SAFETY = 0.99;
+  const MATH_FIT_DEBOUNCE_MS = 80;
+
   // Hidden same-origin iframe that Paged.js paginates the PDF into before
   // the finished sheets are moved into the current page for printing.
   // Created lazily and reused across exports.
@@ -639,7 +647,7 @@
         // page has been laid out, which is how exportPdf knows the print
         // snapshot is ready.
         (paged
-          ? "  <script>window.__nbPagedRendered=false;window.PagedConfig={auto:true,after:function(){window.__nbPagedRendered=true;}};<\/script>\n" +
+          ? "  <script>window.__nbPagedRendered=false;window.PagedConfig={auto:true,after:function(){if(window.__nbFitMath)window.__nbFitMath();window.__nbPagedRendered=true;}};<\/script>\n" +
             "  <script src=\"" + window.location.origin + "/static/vendor/paged.polyfill.min.js\"><\/script>\n"
           : "") +
         "</head>\n" +
@@ -666,13 +674,16 @@
     });
   }
 
-  /* Inline script embedded in the exported HTML. The native <details> tree
-   * handles individual expand/collapse, but "expand all" cannot be done in
-   * pure CSS, so this one small script wires the button. It is a string
-   * (not a live listener) precisely because DOM serialization through
-   * outerHTML drops attached handlers. */
+  /* One inline script embedded in the exported HTML: the standalone math
+   * fitting first, then the TOC "expand all" button. The native <details>
+   * tree handles individual expand/collapse, but "expand all" cannot be
+   * done in pure CSS. It is a string (not a live listener) precisely
+   * because DOM serialization through outerHTML drops attached handlers.
+   * Keeping math + TOC in one <script> also avoids tripping Paged.js's
+   * break-token walk with a second trailing body script. */
   function tocScript() {
     return "<script>\n" +
+      mathFitScript() + "\n" +
       "(function(){\n" +
       "  var btn=document.querySelector('.export-toc-expandall');\n" +
       "  if(!btn)return;\n" +
@@ -690,6 +701,42 @@
       "  });\n" +
       "})();\n" +
       "<\/script>";
+  }
+
+  /* Inline standalone math fitting. The exported doc is detached at build
+   * time, so the app's katex.fitOne cannot see its layout; this runs the
+   * same fit-to-width algorithm on load and resize in both the downloaded
+   * HTML and the Paged.js/PDF iframe. PagedConfig.after calls it again on
+   * the paginated clones. */
+  function mathFitScript() {
+    return "(function(){\n" +
+      "  var MAX_PASSES=" + MATH_FIT_MAX_PASSES + ";\n" +
+      "  var EPSILON=" + MATH_FIT_EPSILON + ";\n" +
+      "  var SAFETY=" + MATH_FIT_SAFETY + ";\n" +
+      "  var RESIZE_DELAY=" + MATH_FIT_DEBOUNCE_MS + ";\n" +
+      "  function fitOne(c){\n" +
+      "    var d=c&&c.querySelector('.katex-display');\n" +
+      "    var k=d&&d.querySelector(':scope > .katex');\n" +
+      "    if(!d||!k)return;\n" +
+      "    d.style.fontSize='';\n" +
+      "    var avail=d.clientWidth;\n" +
+      "    if(!(avail>0))return;\n" +
+      "    for(var p=0;p<MAX_PASSES;p++){\n" +
+      "      var w=k.getBoundingClientRect().width;\n" +
+      "      if(!(w>avail+EPSILON))break;\n" +
+      "      var cur=parseFloat(getComputedStyle(d).fontSize);\n" +
+      "      if(!(cur>0))break;\n" +
+      "      d.style.fontSize=(cur*avail/w*SAFETY)+'px';\n" +
+      "    }\n" +
+      "  }\n" +
+      "  function fitAll(){var cs=document.querySelectorAll('.katex-container');for(var i=0;i<cs.length;i++)fitOne(cs[i]);}\n" +
+      "  window.__nbFitMath=fitAll;\n" +
+      "  function boot(){fitAll();}\n" +
+      "  boot();\n" +
+      "  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);\n" +
+      "  window.addEventListener('load',boot);\n" +
+      "  var t=0;window.addEventListener('resize',function(){clearTimeout(t);t=setTimeout(boot,RESIZE_DELAY);});\n" +
+      "})();\n";
   }
 
   /* Print rules shared by real printing (PDF export) and the on-screen
@@ -844,8 +891,8 @@
       ".markdown-body blockquote>:first-child{margin-top:0}",
       ".markdown-body blockquote>:last-child{margin-bottom:0}",
       ".markdown-body code{font-family:'SFMono-Regular',Menlo,Consolas,monospace;background:" + base.codeBg + ";padding:.12em .4em;border-radius:4px;font-size:.9em}",
-      ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;margin:.7em 0;overflow-x:auto;white-space:pre}",
-      ".markdown-body pre code{background:none;padding:0;font-size:.88em}",
+      ".markdown-body pre{background:" + base.preBg + ";border:1px solid " + base.border + ";border-radius:8px;padding:14px 16px;margin:.7em 0;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:clip}",
+      ".markdown-body pre code,.markdown-body pre code.hljs{background:none;padding:0;font-size:.88em;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:clip}",
       ".markdown-body table{border-collapse:collapse;display:block;max-width:100%;overflow-x:auto;margin:.7em 0}",
       ".markdown-body th,.markdown-body td{border:1px solid " + base.border + ";padding:6px 10px;text-align:left;vertical-align:top}",
       ".markdown-body tbody tr:nth-child(odd){background:" + base.rowOdd + "}",
@@ -859,9 +906,9 @@
       // elements the viewer does, so it must style them too or a diagram
       // exports as bare content. Mirrors style.css's container rules.
       ".markdown-body .mermaid-container,.markdown-body .wavedrom-container,.markdown-body .katex-container,.markdown-body .viz-container,.markdown-body .svg-container{margin:.7em 0;padding:14px 16px;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;text-align:center;overflow:hidden}",
-      ".markdown-body .katex-container{text-align:left}",
-      ".markdown-body .katex-container .katex-display{margin:0;max-width:100%;overflow-x:auto;text-align:left}",
-      ".markdown-body .katex-container .katex-display>.katex{display:inline-block;min-width:100%;text-align:center}",
+      ".markdown-body .katex-container{text-align:center}",
+      ".markdown-body .katex-container .katex-display{display:block;margin:0;max-width:100%;text-align:center}",
+      ".markdown-body .katex-container .katex-display>.katex{display:inline-block;text-align:center}",
       ".markdown-body .wavedrom-container{background:#fff}",
       ".markdown-body .htmlpreview-card{margin:.7em 0;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;overflow:hidden}",
       ".markdown-body .htmlpreview-frame{display:block;width:100%;border:0;background:#fff}",
@@ -876,7 +923,7 @@
       ".nb-figure-viewport>svg[data-nb-sizing=\"explicit\"],.nb-figure-viewport>svg[data-nb-sizing=\"fallback\"]{width:auto;height:auto}",
       ".markdown-body .mermaid-error,.markdown-body .wavedrom-error,.markdown-body .katex-error,.markdown-body .viz-error,.markdown-body .svg-error{margin:.7em 0;border:1px solid " + base.warn + ";border-radius:8px;overflow:hidden}",
       ".markdown-body .mermaid-error-head,.markdown-body .wavedrom-error-head,.markdown-body .katex-error-head,.markdown-body .viz-error-head,.markdown-body .svg-error-head{background:" + base.warn + ";color:" + base.bg + ";font-size:.86rem;padding:6px 12px;font-weight:600}",
-      ".markdown-body .mermaid-source,.markdown-body .wavedrom-source,.markdown-body .katex-source,.markdown-body .viz-source,.markdown-body .svg-source{margin:0;background:" + base.codeBg + ";color:" + base.fg + ";border:0;border-radius:0;padding:10px 12px;font-size:.85rem;line-height:1.4;white-space:pre;overflow-x:auto}",
+      ".markdown-body .mermaid-source,.markdown-body .wavedrom-source,.markdown-body .katex-source,.markdown-body .viz-source,.markdown-body .svg-source{margin:0;background:" + base.codeBg + ";color:" + base.fg + ";border:0;border-radius:0;padding:10px 12px;font-size:.85rem;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;overflow-x:clip}",
       // Diagram hosts — keep each diagram on one page.
       ".markdown-body .mermaid,.markdown-body .katex-display,.markdown-body .svg-container,.markdown-body figure,.markdown-body pre,.markdown-body table,.markdown-body blockquote,.markdown-body img,.markdown-body svg{break-inside:avoid;page-break-inside:avoid}",
       // Headings: each h1 starts a new page in print (except the first

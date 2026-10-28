@@ -29,6 +29,14 @@
   // Fetched on demand (see whenReady) so a notebook with no math never
   // pays for the 275KB bundle + its fonts at boot.
   const VENDOR_SRC = "/static/vendor/katex/katex.min.js";
+  // Fit-to-width: measure the rendered .katex, then reduce the display's
+  // font-size proportionally. Two passes absorb rounding; the 1px
+  // tolerance avoids needless sub-pixel shrinking.
+  const FIT_MAX_PASSES = 2;
+  const FIT_EPSILON = 1;
+  // A little headroom absorbs centred inline-block rounding so the display
+  // itself (not just .katex) never reports a 1-2px overflow.
+  const FIT_SAFETY = 0.99;
 
   let ready = false;
   let loadPromise = null;
@@ -67,6 +75,41 @@
     return loadPromise;
   }
 
+  /* fitOne(container) -- shrink one rendered equation until it fits the
+   * card's content width. The display font-size is reset to the inherited
+   * prose size first, so resize and font-size changes recompute from the
+   * natural size rather than compounding. Hidden / detached containers
+   * (clientWidth 0) are skipped safely. */
+  function fitOne(container) {
+    if (!container) return;
+    const display = container.querySelector(".katex-display");
+    const katex = display && display.querySelector(":scope > .katex");
+    if (!display || !katex) return;
+    display.style.removeProperty("font-size");
+    const available = display.clientWidth;
+    if (!(available > 0)) return;
+    for (let pass = 0; pass < FIT_MAX_PASSES; pass++) {
+      const width = katex.getBoundingClientRect().width;
+      if (!(width > available + FIT_EPSILON)) break;
+      const current = parseFloat(window.getComputedStyle(display).fontSize);
+      if (!(current > 0)) break;
+      display.style.fontSize =
+        (current * available / width * FIT_SAFETY) + "px";
+    }
+  }
+
+  /* fitAll(root) -- fit every rendered math block in a viewer/render
+   * root. Called from the shared relayout pass even when the note has no
+   * SVG figures. */
+  function fitAll(root) {
+    if (!root || !root.querySelectorAll) return;
+    if (root.nodeType === 1 && root.matches &&
+        root.matches(".katex-container")) {
+      fitOne(root);
+    }
+    root.querySelectorAll(".katex-container").forEach(fitOne);
+  }
+
   /* renderOne(pre) -- render a single <pre><code class="language-math">
    * (or language-katex) into a .katex-container div holding the typeset
    * HTML. The source is code.textContent, which the DOM has already
@@ -90,6 +133,7 @@
         output: "html",
       });
       pre.replaceWith(container);
+      fitOne(container);
     } catch (err) {
       // renderToString with throwOnError:false shouldn't throw, but be
       // defensive: fall back to a plain code block so nothing is lost.
@@ -132,7 +176,7 @@
     }
   }
 
-  NB.katex = { renderAll, whenReady };
+  NB.katex = { renderAll, whenReady, fitOne, fitAll };
 
   // Register with the shared blocks registry: one authoritative list for
   // the render pipelines, the hybrid click-to-edit table, and the Save

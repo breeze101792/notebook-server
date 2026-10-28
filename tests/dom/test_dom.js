@@ -3353,6 +3353,9 @@ function check(label, cond, extra) {
   // NB.katex façade surface.
   check("katex: NB.katex.renderAll is a function", typeof window.NB.katex.renderAll === "function");
   check("katex: NB.katex.whenReady is a function", typeof window.NB.katex.whenReady === "function");
+  check("katex: NB.katex.fitOne/fitAll are functions",
+    typeof window.NB.katex.fitOne === "function" &&
+    typeof window.NB.katex.fitAll === "function");
 
   // CSS sanity.
   const katexCssText = read("static/css/style.css");
@@ -4785,6 +4788,7 @@ function check(label, cond, extra) {
 
     // CSS / export source guards.
     const sizingCss = read("static/css/style.css");
+    const exportSrc = read("static/js/export.js");
     check("sizing css: prose reference token + phone override",
       /--nb-ref-size:\s*1rem/.test(sizingCss) &&
       /--nb-ref-size:\s*calc\(16px \* var\(--font-scale\)\)/.test(sizingCss));
@@ -4799,11 +4803,40 @@ function check(label, cond, extra) {
     check("sizing css: font sizing rule exists and no fluid rule remains",
       /data-nb-sizing="font"/.test(sizingCss) &&
       !/data-nb-sizing="fluid"/.test(sizingCss));
-    check("sizing css: KaTeX scrolls inside .katex-display",
-      /\.katex-container \.katex-display\s*\{[^}]*overflow-x:\s*auto/.test(sizingCss));
+    const preRule = (sizingCss.match(/\.markdown-body pre\s*\{[^}]*\}/) || [""])[0];
+    check("sizing css: code blocks wrap with no inner horizontal scroller",
+      /white-space:\s*pre-wrap/.test(preRule) &&
+      /overflow-wrap:\s*anywhere/.test(preRule) &&
+      /overflow-x:\s*clip/.test(preRule) &&
+      !/\.markdown-body pre\s*\{[^}]*overflow-x:\s*auto/.test(sizingCss));
+    check("sizing css: highlighted pre/code override wraps and clips",
+      /\.markdown-body pre code\.hljs[^{]*\{[^}]*white-space:\s*pre-wrap[^}]*overflow-x:\s*clip/.test(sizingCss));
+    check("sizing css: AI prose code blocks wrap with no horizontal scroller",
+      /\.ai-prose-span pre\s*\{[^}]*white-space:\s*pre-wrap[^}]*overflow-x:\s*clip/.test(sizingCss) &&
+      /\.ai-prose-span pre code\.hljs[^{]*\{[^}]*overflow-x:\s*clip/.test(sizingCss));
+    check("sizing css: diagram error sources wrap with no horizontal scroller",
+      /\.mermaid-source[^{]*\{[^}]*white-space:\s*pre-wrap[^}]*overflow-x:\s*clip/.test(sizingCss));
+    const kdRule = (sizingCss.match(/\.katex-container \.katex-display\s*\{[^}]*\}/) || [""])[0];
+    check("sizing css: KaTeX display is centered and never scrolls",
+      /text-align:\s*center/.test(kdRule) && !/overflow-x/.test(kdRule));
+    const kRule = (sizingCss.match(/\.katex-container \.katex-display > \.katex\s*\{[^}]*\}/) || [""])[0];
+    check("sizing css: KaTeX inline-block reports its content width",
+      /display:\s*inline-block/.test(kRule) && !/min-width/.test(kRule));
+    const katexSrc = read("static/js/katex.js");
+    const blocksSrc = read("static/js/blocks.js");
+    check("sizing js: KaTeX fitOne/fitAll hooks exist and fit after render",
+      /function fitOne\s*\(/.test(katexSrc) &&
+      /function fitAll\s*\(/.test(katexSrc) &&
+      /fitOne,\s*fitAll/.test(katexSrc) &&
+      /pre\.replaceWith\(container\);\s*\n\s*fitOne\(container\)/.test(katexSrc));
+    check("sizing js: shared relayout calls katex.fitAll before figure returns",
+      /NB\.katex\.fitAll\(scope\)/.test(blocksSrc));
+    check("sizing export: inline standalone math fit script is present",
+      /function mathFitScript\s*\(/.test(exportSrc) &&
+      /__nbFitMath/.test(exportSrc) &&
+      /mathFitScript\(\)/.test(exportSrc));
     check("sizing css: lightbox fit rule is not shadowed by the figure rule",
       /\.mermaid-lightbox-body\.svg-fit svg\s*\{/.test(sizingCss));
-    const exportSrc = read("static/js/export.js");
     check("sizing export: mirrors the wrapper and ref token, no scroll token",
       /--nb-ref-size/.test(exportSrc) && /\.nb-figure-viewport/.test(exportSrc) &&
       !/--nb-viewport-h/.test(exportSrc));

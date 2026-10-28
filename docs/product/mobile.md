@@ -78,8 +78,8 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 ### M3 — Read
 
 1. A chosen note shows loading, then one full-width reading column. It never renders at zero width and the page never scrolls sideways.
-2. Long code lines scroll horizontally inside the code block and keep alignment; wide tables scroll inside the table box. Table hover controls, row/column hiding, and sorting are not offered on mobile.
-3. Images fit the column and never overflow; tapping one does nothing. Mermaid, WaveDrom, KaTeX, and Graphviz render. A diagram wider than the reader scales down to the column; a tall one keeps its readable width and grows the page (no nested diagram scroller), and one far taller than the viewport shrinks to fit with the lightbox as the detail view. KaTeX scrolls only the equation. No pan or pinch-zoom in v1.
+2. Long code lines wrap inside the code block (no inner horizontal scrollbar); wide tables scroll inside the table box. Table hover controls, row/column hiding, and sorting are not offered on mobile.
+3. Images fit the column and never overflow; tapping one does nothing. Mermaid, WaveDrom, KaTeX, and Graphviz render. A diagram wider than the reader scales down to the column; a tall one keeps its readable width and grows the page (no nested diagram scroller), and one far taller than the viewport shrinks to fit with the lightbox as the detail view. KaTeX fits its equation to the reader with no inner scrollbar. No pan or pinch-zoom in v1.
 4. An internal Markdown link opens that note in place; an external `http(s)` link opens a new tab so back returns to the note; `mailto:` hands off to the mail app. The `…` menu offers Reload, Copy link, and Show in Browse. Viewer-role users see the same reader, with capture absent.
 
 ### M4 — Search
@@ -131,7 +131,7 @@ Today the four-column shell collapses the editor to 0 px on a phone, so the prod
 |---|---|---|
 | Very long note | scrolls normally; back restores the approximate position; no truncation | M3, M7 |
 | Wide table | scrolls inside its box; the page does not scroll sideways | M3 |
-| Wide diagram / long code line | a wide diagram scales to the reader and a tall one grows the page; code scrolls inside its block; diagram stays legible; code alignment preserved | M3 |
+| Wide diagram / long code line | a wide diagram scales to the reader and a tall one grows the page; code wraps with no inner scrollbar; diagram stays legible | M3 |
 | Unicode filename | opens from tree, search, and `?file=`; address bar shows it encoded; reload resolves the same file | M2, M7 |
 | Missing deep link, stale tree, or file deleted while reading | “Note not found” with Browse/Home and a refresh action; a bad link keeps its address; never a blank screen or stale copy | M2, M3, M7 |
 | File changed while reading | no auto-update in v1; Reload in the `…` menu shows the new content | M3 |
@@ -151,7 +151,7 @@ Tagged **[H]** manual on a real phone (device matrix in the research document) o
 4. Browse expands a folder on tap, opens a file, and closes the drawer; back closes an open drawer or sheet before leaving the note [D].
 5. Bookmarks opens in saved order and offers no add, remove, or reorder; an empty list explains desktop [D].
 6. At the mobile breakpoint the reading column is wider than 0 px and the page has no horizontal overflow [D].
-7. A wide table and a long code line scroll inside their own block; an over-wide diagram scales to the reader column and an over-tall one grows the page without an inner diagram scroller; images fit without overflow [H].
+7. A wide table scrolls inside its box; long code lines wrap with no inner scrollbar; an over-wide diagram scales to the reader column and an over-tall one grows the page without an inner diagram scroller; images fit without overflow [H].
 8. An internal link opens in place, an external link opens a new tab, and back returns to the note [H].
 9. Typing issues one search request per debounce interval and none for an empty query [D].
 10. Tapping a hit opens that note at the match and marks it; empty and failed searches keep the query, and a failure offers Retry [D].

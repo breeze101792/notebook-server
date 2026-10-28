@@ -2772,13 +2772,11 @@ body[data-theme="light"] #viewer-content {
  * as atomic for vertical caret movement: an ArrowDown from the block
  * above cannot put the caret inside it, so it skips the whole block --
  * a code block jumps to its last line, a table is stepped over. The
- * code/table rules below normally own their own horizontal scrollers
- * (the vendored highlight.js theme sets `pre code { overflow-x: auto }`,
- * and `.markdown-body pre` / table set `overflow-x: auto` too), which is
- * what triggers the skip. In hybrid mode we drop the inner scrollers and
- * move horizontal scrolling to #viewer-content itself, so the caret can
- * enter normally. The other browsers are unaffected (they already
- * descend into scroll containers). */
+ * code/table rules below can still create a scroll container (the table
+ * owns a horizontal scroller even though code now wraps), which is what
+ * triggers the skip. In hybrid mode we drop the inner scrollers and let
+ * #viewer-content own any overflow, so the caret can enter normally. The
+ * override is kept for tables and legacy/raw <pre> content. */
 #viewer-content.hybrid-editing pre,
 #viewer-content.hybrid-editing pre code,
 #viewer-content.hybrid-editing table {
@@ -3364,7 +3362,16 @@ body > #nb-menu .submenu.open {
    * keeps the same neighbour gap. Without this, <pre> fell back to the
    * browser's default 1em and shifted the blocks around it. */
   margin: .7em 0;
-  overflow-x: auto;
+  /* Code blocks wrap long lines; the note page owns the only scrollbar. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+}
+.markdown-body pre code,
+.markdown-body pre code.hljs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
 }
 .markdown-body pre code { background: none; padding: 0; font-size: .88em; }
 /* Code-block Copy button. position:relative on .markdown-body pre
@@ -3517,8 +3524,9 @@ body > #nb-menu .submenu.open {
   padding: 10px 12px;
   font-size: .85rem;
   line-height: 1.4;
-  white-space: pre;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
 }
 /* WaveDrom waveform timing diagrams. The .wavedrom-container wraps a
  * rendered SVG produced by the wavedrom library (```wavedrom JSON
@@ -3558,19 +3566,17 @@ body > #nb-menu .submenu.open {
   border-radius: 8px;
   overflow: hidden;
 }
-/* Only the equation scrolls; the card chrome and its padding stay put.
- * text-align:left keeps the left edge of an over-wide equation reachable
- * (a centred overflowing line can clip its own start), while the inner
- * .katex span is re-centred when the equation fits. */
+/* The equation is centred and never scrolls. katex.js measures the
+ * rendered .katex width and reduces the display font-size when needed;
+ * removing min-width lets the inline-block report its real content width. */
 .katex-container .katex-display {
+  display: block;
   margin: 0;
   max-width: 100%;
-  overflow-x: auto;
-  text-align: left;
+  text-align: center;
 }
 .katex-container .katex-display > .katex {
   display: inline-block;
-  min-width: 100%;
   text-align: center;
 }
 /* Graphviz diagrams. The .viz-container wraps a rendered SVG produced
@@ -3650,16 +3656,21 @@ body > #nb-menu .submenu.open {
 
 /* Copy affordance (copy-image.js). One shared .code-copy-btn sits in the
  * top-right of every rendered code-block variant: the <pre> wrapper, the
- * katex / html-live containers, and the three diagram containers (whose
+ * katex / html-live containers, and the four diagram containers (whose
  * image button adds the .nb-copy-img-btn icon modifier). Hidden by default
  * (base .code-copy-btn rule) and revealed on hover / focus within the host
- * or on the button's own focus. The three diagram containers need to be a
- * positioning context for the absolutely-positioned button. */
+ * or on the button's own focus. The four diagram containers need to be a
+ * positioning context for the absolutely-positioned button and the
+ * zoom-in cursor for the lightbox click target. */
 .mermaid-container,
 .wavedrom-container,
 .viz-container,
 .svg-container {
   position: relative;
+  /* The whole card is the lightbox click target (lightbox.js delegates
+   * from #viewer-content), so the cursor must cover the padding too, not
+   * just the SVG. The copy button sets its own pointer cursor. */
+  cursor: zoom-in;
 }
 /* Icon modifier of the shared .code-copy-btn: square padding and no text
  * line-height. Position, colors, and the reveal all come from the base. */
@@ -4272,9 +4283,17 @@ body > #nb-menu .submenu.open {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
   font-size: .78rem;
   line-height: 1.5;
+}
+.ai-prose-span pre code,
+.ai-prose-span pre code.hljs {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
 }
 .ai-prose-span pre code {
   background: transparent;
@@ -6208,8 +6227,7 @@ body[data-theme="light"] #dw-designer-overlay {
   .markdown-body pre {
     padding: 12px 14px;
     font-size: 13px;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+    /* Long lines wrap on the phone too; no inner code scrollbar. */
   }
   .code-copy-btn {
     top: 0;
@@ -6232,7 +6250,7 @@ body[data-theme="light"] #dw-designer-overlay {
     max-width: 100%;
     /* Diagrams fit the measure (widthScale never upsizes) and the card
      * grows for a tall one; the note page owns the only vertical
-     * scrollbar. KaTeX still scrolls inside .katex-display. */
+     * scrollbar. KaTeX fits its equation; no inner scroller. */
     overflow: hidden;
   }
   .nb-tv-controls,

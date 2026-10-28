@@ -14,7 +14,7 @@ The server has two host suites plus a real-browser suite per surface:
 | Frontend DOM | `tests/dom/test_dom.js` | The real app modules in jsdom | Hand-rolled `check()` harness |
 | Frontend browser (hybrid) | `tests/browser/test_hybrid_browser.js`, `test_hybrid_blocks_browser.js`, `test_block_edit_browser.js` | The real editing engine, block types, and fence editor via Playwright | Hand-rolled `check()` harness |
 | Frontend browser (app) | `tests/browser/test_core_ui_browser.js`, `test_auth_export_browser.js`, `test_ai_editor_browser.js` | Tree, tabs, search, graph, bookmarks, auth, export, PWA, AI, ACP, CodeMirror | Hand-rolled `check()` harness |
-| Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
+| Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), no inner math/code/error scrollbars, lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
 | Frontend browser (design/windows) | `tests/browser/test_designer_browser.js`, `test_dw_designer_browser.js`, `test_mobile_browser.js` | Visimer canvas, Graphviz/WaveDrom windows, phone shell | Hand-rolled `check()` harness |
 
 The backend suite exercises routing, path safety, the atomic write paths, the

@@ -295,9 +295,11 @@ The audit suites cover the rest of the app end to end:
 - `test_figure_sizing_browser.js` — rendered SVG sizing: font-scale response,
   the wide/tall/huge/tiny layout matrix, per-engine units (Graphviz pt,
   WaveDrom px, Mermaid viewBox, inline-SVG viewBox/explicit), the tall-mode
-  page-growth contract (no nested scroller or scroll a11y), the lightbox
-  from a tall diagram, the phone reference token, HTML-export wrapper/print
-  tokens, and a hybrid round-trip byte check. Synthetic SVGs mirror each
+  page-growth contract (no nested scroller or scroll a11y), no inner
+  scrollbars for math/code/error sources (KaTeX fit-to-width and wrapped
+  code), the lightbox from a tall diagram, the phone reference token,
+  HTML-export wrapper/print tokens plus the inline math fit script, and a
+  hybrid round-trip byte check. Synthetic SVGs mirror each
   renderer for the matrix; the suite additionally renders every block type
   for real in Chromium: Mermaid natural max-width versus viewBox and label
   scale, WaveDrom labels, Graphviz pt-to-px and labels, KaTeX prose sizing

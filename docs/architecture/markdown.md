@@ -184,9 +184,28 @@ on window resize, a guarded `ResizeObserver` on `#viewer-content`
 phone/desktop flip, and a `<details>` open. The exported HTML carries the
 same wrapper and tokens (its body prose is 16px, so that is its
 reference); on screen a tall figure grows the exported page, and in print
-a 180mm page cap scales the whole figure to fit. KaTeX keeps no height cap
-and scrolls only its equation inside `.katex-display`; live HTML keeps its
-content-height iframe and sandbox, with only a print-time one-page cap.
+a 180mm page cap scales the whole figure to fit. KaTeX fits a wide
+equation by reducing the display font-size (`katex.js` `fitOne`), so it
+never scrolls or clips; live HTML keeps its content-height iframe and
+sandbox, with only a print-time one-page cap.
+
+### No inner scrollbars
+
+Code blocks and rendered-block error source panes wrap long lines:
+`white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: clip`. The
+app rule `.markdown-body pre code.hljs` / `.ai-prose-span pre code.hljs`
+overrides the vendored highlight.js `pre code.hljs { overflow-x: auto }`.
+The desktop and phone rules both wrap; the hybrid Firefox caret override
+still drops any remaining inner scroller. Diagram cards already grow with
+the page. KaTeX display math is centred with no `overflow-x`; its
+`fitOne`/`fitAll` hooks reset to the inherited prose size, then shrink
+the display font-size in at most two passes until `.katex` fits the card
+content width. The shared relayout pass calls `fitAll` even for notes with
+no SVG figures, so resize, font-size, sidebar, and `<details>` changes
+recompute. Tables and the lightbox keep their own scrolling; live HTML's
+authored overflow is untouched. The exported HTML mirrors the wrap and
+fit CSS and embeds a small inline `__nbFitMath` script for the downloaded
+page and the Paged.js/PDF iframe.
 
 The same tight/loose mismatch existed in a second place: the AI assistant
 panel renders its replies through the same marked pipeline under
@@ -259,7 +278,9 @@ at `katex.js:144`).
 
 Only KaTeX-supported LaTeX commands work. There are no full TeX macros.
 `displayMode: true` and `throwOnError: false` (`katex.js:88-89`); a bad
-expression renders the raw source in place rather than throwing.
+expression renders the raw source in place rather than throwing. A wide
+equation is centred and fitted by reducing the display font-size; it has
+no horizontal scrollbar. The exported document embeds the same fit step.
 
 ### `dot` / `graphviz` — Graphviz 2.40.1
 

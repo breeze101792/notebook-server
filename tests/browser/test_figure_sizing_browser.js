@@ -80,6 +80,10 @@ const FIGURE_WIDE_KATEX =
   "\\prod_{k=1}^{m} \\left(1 + \\frac{1}{k}\\right) + " +
   "\\int_0^1 \\frac{1+2x+3x^2+4x^3}{1+x+x^2+x^3+x^4}\\,dx = \\infty";
 
+// A genuinely long single code line for the wrap/no-scroll contract.
+const FIGURE_LONG_CODE =
+  "const longLine = \"" + "wrapped-token ".repeat(70) + "\";";
+
 const FIGURE_HTML_LIVE =
   '<div class="demo" style="font-size:20px">' +
   "<strong>Live HTML demo</strong><p>Body text at 20px.</p>" +
@@ -111,9 +115,11 @@ const NOTES = {
   "FigKatex.md": "# KaTeX Figure\n\nProse before the equation.\n\n" +
     "```math\n" + FIGURE_KATEX + "\n```\n",
   "FigWideKatex.md": "# Wide KaTeX Figure\n\nProse before the equation.\n\n" +
-    "```math\n" + FIGURE_WIDE_KATEX + "\n```\n",
+    "```math\n" + FIGURE_WIDE_KATEX + "\n```\n\n" +
+    "```javascript\n" + FIGURE_LONG_CODE + "\n```\n",
   "FigErrors.md": "# Error Boxes\n\nProse before the broken blocks.\n\n" +
-    "```mermaid\nthis is not valid mermaid @@@\n```\n\n" +
+    "```mermaid\nthis is not valid mermaid @@@ " +
+    "and more broken tokens ".repeat(28) + "\n```\n\n" +
     "```wavedrom\n{ not valid json\n```\n\n" +
     "```dot\nnot a graph {{{\n```\n\n" +
     "```svg\n<svg><not-closed>\n```\n",
@@ -614,6 +620,56 @@ async function main() {
       near(real420wide.textScreenFont, 16.9, 0.3),
       JSON.stringify({ w: real420wide.svgWidth,
         text: real420wide.textScreenFont }));
+
+    // ---------------------------------------------------------------
+    section("3b. diagram cursor matches the lightbox click target");
+    const cursorSpecs = [
+      { id: "cur-mermaid", mod: "mermaid", cardClass: "mermaid-container",
+        attrs: { viewBox: "0 0 200 100" }, marker: "mermaid" },
+      { id: "cur-wavedrom", mod: "wavedrom", cardClass: "wavedrom-container",
+        attrs: { viewBox: "0 0 480 60", width: "480", height: "60" },
+        marker: "wavedrom" },
+      { id: "cur-viz", mod: "viz", cardClass: "viz-container",
+        attrs: { viewBox: "0 0 200 100", width: "120pt", height: "60pt" },
+        marker: "viz" },
+      { id: "cur-svg", mod: "svg", cardClass: "svg-container",
+        attrs: { viewBox: "0 0 420 120" }, marker: "svg" },
+    ];
+    await installFigures(cursorSpecs);
+    const cursorOverlays = {
+      "cur-mermaid": "#mermaid-lightbox",
+      "cur-wavedrom": "#wavedrom-lightbox",
+      "cur-viz": "#viz-lightbox",
+      "cur-svg": "#svg-lightbox",
+    };
+    for (const spec of cursorSpecs) {
+      const cursors = await page.evaluate((cardId) => {
+        const card = document.getElementById(cardId);
+        const svg = card && card.querySelector(".nb-figure-viewport > svg");
+        return {
+          card: card ? getComputedStyle(card).cursor : "",
+          svg: svg ? getComputedStyle(svg).cursor : "",
+        };
+      }, spec.id);
+      check(spec.mod + ": the card and SVG use the same zoom-in cursor",
+        cursors.card === "zoom-in" && cursors.svg === "zoom-in",
+        JSON.stringify(cursors));
+
+      const card = page.locator("#" + spec.id);
+      await card.scrollIntoViewIfNeeded();
+      const box = await card.boundingBox();
+      // Click the card's left padding, outside the SVG: the whole card is
+      // the lightbox target, so this must open the overlay.
+      await page.mouse.click(box.x + 4, box.y + box.height / 2);
+      await page.waitForTimeout(120);
+      const opened = await page.evaluate((sel) => {
+        const overlay = document.querySelector(sel);
+        return !!overlay && !overlay.hidden;
+      }, cursorOverlays[spec.id]);
+      check(spec.mod + ": clicking the card padding opens its lightbox", opened);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(100);
+    }
 
     // ---------------------------------------------------------------
     section("4. tall diagrams and page scroll");
@@ -1214,7 +1270,7 @@ async function main() {
     await page.waitForTimeout(200);
 
     // ---------------------------------------------------------------
-    section("12. real KaTeX: prose sizing and wide-equation scroll");
+    section("12. real KaTeX: fit-to-width, wrapped code, no inner scroll");
     await boot("FigKatex.md");
     await setFontSize("medium");
     await page.waitForFunction(
@@ -1234,6 +1290,7 @@ async function main() {
           cardFont: parseFloat(getComputedStyle(card).fontSize),
           displayFont: parseFloat(getComputedStyle(display).fontSize),
           katexFont: katex ? parseFloat(getComputedStyle(katex).fontSize) : null,
+          katexWidth: katex ? katex.getBoundingClientRect().width : null,
           proseFont: prose ? parseFloat(getComputedStyle(prose).fontSize) : null,
           hasViewport: !!card.querySelector(".nb-figure-viewport"),
           displayWidth: dr.width,
@@ -1287,17 +1344,114 @@ async function main() {
         await page.waitForTimeout(350);
       }
       const wide = await measureKatex();
-      check("katex " + fsName + ": a wide equation scrolls inside .katex-display",
-        !wide.missing && wide.overflowX === "auto" &&
-        wide.scrollWidth > wide.clientWidth + 5 &&
-        wide.cardOverflowX !== "auto" &&
+      check("katex " + fsName + ": a wide equation fits by reducing its font, no scrollbar",
+        !wide.missing && wide.overflowX !== "auto" &&
+        wide.scrollWidth <= wide.clientWidth + 1 &&
+        wide.katexWidth != null && wide.katexWidth <= wide.clientWidth + 1 &&
+        wide.displayFont < wide.proseFont - 0.5 &&
         wide.pageScrollWidth <= wide.innerWidth + 1 &&
         wide.bodyScrollWidth <= wide.innerWidth + 1,
         JSON.stringify({ overflowX: wide.overflowX,
           scrollW: wide.scrollWidth, clientW: wide.clientWidth,
-          cardOverflowX: wide.cardOverflowX,
+          katexW: wide.katexWidth, displayFont: wide.displayFont,
+          proseFont: wide.proseFont,
           pageScrollW: wide.pageScrollWidth, innerW: wide.innerWidth }));
     }
+
+    // Long single-line code fence in the same note: it must wrap, not
+    // create an inner horizontal scrollbar.
+    async function measureWrappedCode() {
+      return page.evaluate(() => {
+        const pre = document.querySelector("#viewer-content pre");
+        const code = pre && pre.querySelector("code");
+        if (!pre || !code) return { missing: true };
+        return {
+          codeClass: code.className,
+          preScrollWidth: pre.scrollWidth,
+          preClientWidth: pre.clientWidth,
+          preWhiteSpace: getComputedStyle(pre).whiteSpace,
+          preOverflowX: getComputedStyle(pre).overflowX,
+          codeScrollWidth: code.scrollWidth,
+          codeClientWidth: code.clientWidth,
+          codeWhiteSpace: getComputedStyle(code).whiteSpace,
+          codeOverflowX: getComputedStyle(code).overflowX,
+          pageScrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        };
+      });
+    }
+    const codeMid = await measureWrappedCode();
+    check("code: a long single line wraps with no inner horizontal scrollbar",
+      !codeMid.missing &&
+      codeMid.preScrollWidth <= codeMid.preClientWidth + 1 &&
+      codeMid.codeScrollWidth <= codeMid.codeClientWidth + 1 &&
+      codeMid.preWhiteSpace === "pre-wrap" &&
+      codeMid.codeWhiteSpace === "pre-wrap" &&
+      codeMid.preOverflowX !== "auto" &&
+      codeMid.codeOverflowX !== "auto" &&
+      codeMid.pageScrollWidth <= codeMid.innerWidth + 1,
+      JSON.stringify(codeMid));
+    check("code: the highlighted code element carries the app wrap override",
+      !codeMid.missing && /\bhljs\b/.test(codeMid.codeClass || ""),
+      JSON.stringify({ codeClass: codeMid.codeClass }));
+
+    // Exported HTML: same no-scroll CSS, plus the standalone inline
+    // fit-to-width script for the downloaded doc and the Paged.js iframe.
+    const mathDlPromise = page.waitForEvent("download", { timeout: 40000 });
+    await page.evaluate(() => NB.export.exportHtml("current"));
+    const mathDl = await mathDlPromise;
+    const mathExportPath = path.join(tmp, "math-code-export.html");
+    await mathDl.saveAs(mathExportPath);
+    const mathHtml = fs.readFileSync(mathExportPath, "utf8");
+    check("exported HTML carries the inline standalone math fit script",
+      /__nbFitMath/.test(mathHtml) &&
+      /function fitOne/.test(mathHtml) &&
+      /katex-display/.test(mathHtml));
+    check("exported HTML has no math/code scrollbar CSS",
+      /\.markdown-body pre\{[^}]*white-space:pre-wrap[^}]*overflow-x:clip/.test(mathHtml) &&
+      /\.katex-container \.katex-display\{[^}]*text-align:center/.test(mathHtml) &&
+      !/\.katex-container \.katex-display\{[^}]*overflow-x:auto/.test(mathHtml) &&
+      /\.mermaid-source[^{]*\{[^}]*overflow-x:clip/.test(mathHtml),
+      "preWrap=" + /\.markdown-body pre\{[^}]*white-space:pre-wrap/.test(mathHtml));
+
+    const mathPage = await ctx.newPage();
+    const mathErrors = [];
+    mathPage.on("pageerror", (e) => mathErrors.push(String(e)));
+    await mathPage.goto("file://" + mathExportPath, { waitUntil: "load", timeout: 20000 });
+    await mathPage.waitForTimeout(600);
+    const mathExport = await mathPage.evaluate(() => {
+      const display = document.querySelector(".katex-container .katex-display");
+      const pre = document.querySelector("pre");
+      const code = pre && pre.querySelector("code");
+      return {
+        hasFitScript: typeof window.__nbFitMath === "function",
+        displayOverflowX: display ? getComputedStyle(display).overflowX : null,
+        displayClientWidth: display ? display.clientWidth : 0,
+        displayScrollWidth: display ? display.scrollWidth : 0,
+        preScrollWidth: pre ? pre.scrollWidth : 0,
+        preClientWidth: pre ? pre.clientWidth : 0,
+        preWhiteSpace: pre ? getComputedStyle(pre).whiteSpace : null,
+        codeScrollWidth: code ? code.scrollWidth : 0,
+        codeClientWidth: code ? code.clientWidth : 0,
+        codeWhiteSpace: code ? getComputedStyle(code).whiteSpace : null,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      };
+    });
+    check("exported HTML math/code has no inner scrollbar and no page overflow",
+      mathExport.hasFitScript &&
+      mathExport.displayOverflowX !== "auto" &&
+      mathExport.displayScrollWidth <= mathExport.displayClientWidth + 1 &&
+      mathExport.preScrollWidth <= mathExport.preClientWidth + 1 &&
+      mathExport.preWhiteSpace === "pre-wrap" &&
+      mathExport.codeScrollWidth <= mathExport.codeClientWidth + 1 &&
+      mathExport.codeWhiteSpace === "pre-wrap" &&
+      mathExport.pageScrollWidth <= mathExport.innerWidth + 1,
+      JSON.stringify(mathExport));
+    check("exported HTML fit script runs without page errors",
+      mathErrors.length === 0, JSON.stringify(mathErrors));
+    await mathPage.close();
+
     await setFontSize("medium");
     await page.waitForTimeout(200);
 
@@ -1463,6 +1617,8 @@ async function main() {
             present: !!box,
             headFont: head ? parseFloat(getComputedStyle(head).fontSize) : null,
             srcFont: src ? parseFloat(getComputedStyle(src).fontSize) : null,
+            srcWhiteSpace: src ? getComputedStyle(src).whiteSpace : null,
+            srcOverflowX: src ? getComputedStyle(src).overflowX : null,
             boxWidth: br ? br.width : 0,
             srcWidth: sr ? sr.width : 0,
             srcScrollWidth: src ? src.scrollWidth : 0,
@@ -1482,7 +1638,8 @@ async function main() {
         e.present && !e.hasViewport && errMid.ref > 0 &&
         e.headFont >= 9 && e.headFont <= errMid.ref * 1.05 &&
         e.srcFont >= 9 && e.srcFont <= errMid.ref * 1.05 &&
-        e.srcWidth <= e.boxWidth + 1 && e.srcScrollWidth <= e.srcWidth + 1,
+        e.srcWidth <= e.boxWidth + 1 && e.srcScrollWidth <= e.srcWidth + 1 &&
+        e.srcWhiteSpace === "pre-wrap" && e.srcOverflowX !== "auto",
         JSON.stringify(e));
     }
 

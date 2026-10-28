@@ -746,6 +746,11 @@
   function layoutAll(root) {
     if (root && root.nodeType === 1 && root.isConnected === false) return;
     const scope = resolveRelayoutScope(root);
+    // Math fitting is independent of SVG diagrams: run it before the
+    // figure-only early returns so a note with only code/math still
+    // recomputes on resize, font-size, and disclosure changes. Hidden or
+    // detached containers skip themselves on clientWidth 0.
+    if (NB.katex && NB.katex.fitAll) NB.katex.fitAll(scope);
     const viewportH = measureViewportH();
     if (!(viewportH > 0)) return;
     const cards = [];
