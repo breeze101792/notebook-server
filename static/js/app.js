@@ -202,6 +202,10 @@
     const mult = FONT_SCALES[name] != null ? FONT_SCALES[name] : 1;
     cfg.fontSize = (FONT_SCALES[name] != null) ? name : "medium";
     document.documentElement.style.setProperty("--font-scale", String(mult));
+    // Rendered diagrams store a unitless factor, not a px size, but the
+    // matrix (scroll vs fit) depends on the prose size; recompute once
+    // the new scale is live.
+    if (NB.blocks && NB.blocks.scheduleRelayout) NB.blocks.scheduleRelayout();
   }
 
   /* --- settings modal width ----------------------------------------- */

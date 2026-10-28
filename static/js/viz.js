@@ -97,27 +97,10 @@
     tmp.innerHTML = svgText;
     const svg = tmp.querySelector("svg");
     if (!svg) throw new Error("No SVG rendered");
-    // Make the SVG responsive, exactly like mermaid.js: keep the
-    // `width` attribute (so the SVG has an intrinsic width for
-    // aspect-ratio to anchor to) and remove only `height`. Pin the
-    // aspect ratio from the viewBox so max-width + max-height both
-    // scale the element uniformly instead of clipping.
-    const vb = svg.getAttribute("viewBox");
-    let vbW = 0, vbH = 0;
-    if (vb) {
-      const parts = vb.split(/\s+/).map(Number);
-      if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-        vbW = parts[2];
-        vbH = parts[3];
-      }
-    }
-    if (!vbW || !vbH) {
-      vbW = parseFloat(svg.getAttribute("width")) || 0;
-      vbH = parseFloat(svg.getAttribute("height")) || 0;
-      if (vbW > 0 && vbH > 0) svg.setAttribute("viewBox", "0 0 " + vbW + " " + vbH);
-    }
-    svg.removeAttribute("height");
-    if (vbW > 0 && vbH > 0) svg.style.aspectRatio = vbW + " / " + vbH;
+    // Shared viewBox/aspect-ratio normalisation (blocks.js). The note
+    // path additionally records Graphviz's pt width/height in prepareSvg;
+    // the designer preview calls this seam directly.
+    if (NB.blocks && NB.blocks.normalizeSvg) NB.blocks.normalizeSvg(svg);
     return svg;
   }
 
@@ -141,6 +124,9 @@
     try {
       const svg = await renderSvgElement(source);
       container.appendChild(svg);
+      if (NB.blocks && NB.blocks.prepareSvg) {
+        NB.blocks.prepareSvg(svg, { mod: "viz", card: container });
+      }
       pre.replaceWith(container);
     } catch (err) {
       const msg = (err && err.message) ? String(err.message) : "Render failed";

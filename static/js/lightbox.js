@@ -284,7 +284,10 @@
         const container = e.target.closest(cfg.containerSelector);
         if (!container) return;
         if (e.target.closest("a")) return;
-        const svg = container.querySelector("svg");
+        // Prefer the diagram inside the sizing wrapper: the copy-image
+        // button is also an <svg> and can follow the diagram in the card.
+        const svg = container.querySelector(".nb-figure-viewport > svg") ||
+          container.querySelector("svg");
         if (!svg) return;
         e.stopPropagation();
         openLightbox(svg);

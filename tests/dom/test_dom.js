@@ -4351,8 +4351,14 @@ function check(label, cond, extra) {
     check("svg: the card holds an <svg> in the SVG namespace",
       !!cards[0] && !!cards[0].querySelector("svg") &&
       cards[0].querySelector("svg").namespaceURI === "http://www.w3.org/2000/svg");
-    check("svg: a viewBox-only block fills the card width",
-      !!cards[0] && cards[0].querySelector("svg").getAttribute("width") === "100%");
+    const goodSvg = cards[0] && cards[0].querySelector("svg");
+    check("svg: a viewBox-only block is font-sized, not stretched to the card",
+      !!goodSvg && goodSvg.dataset.nbSizing === "font" &&
+      goodSvg.getAttribute("width") === "100" &&
+      Math.abs(parseFloat(goodSvg.dataset.nbW) - 100 / 14) < 0.001,
+      goodSvg && ("sizing=" + goodSvg.dataset.nbSizing +
+        " w=" + goodSvg.getAttribute("width") +
+        " nbW=" + goodSvg.dataset.nbW));
     check("svg: the card stores the original source for round-trip",
       !!cards[0] && /<svg viewBox="0 0 100 50"/.test(cards[0].dataset.svgSource || ""),
       "src=" + (cards[0] && (cards[0].dataset.svgSource || "").slice(0, 40)));
@@ -4536,6 +4542,273 @@ function check(label, cond, extra) {
         agentMd.indexOf("```" + d.fence) !== -1,
         "fence=" + d.fence);
     }
+  }
+
+  console.log("== rendered-block sizing ==");
+  {
+    // jsdom has no layout, so these are source/attribute guards plus the
+    // pure matrix (planFigure/layoutFigure with explicit metrics). Real
+    // widths are covered by tests/browser/.
+    const NS = "http://www.w3.org/2000/svg";
+    const mkSvg = (attrs) => {
+      const svg = window.document.createElementNS(NS, "svg");
+      Object.keys(attrs || {}).forEach((k) => svg.setAttribute(k, attrs[k]));
+      return svg;
+    };
+    const mkCard = (cls, svg, marker, source) => {
+      const card = window.document.createElement("div");
+      card.className = cls;
+      card.dataset[marker] = "ok";
+      card.dataset[marker + "Source"] = source;
+      card.appendChild(svg);
+      return card;
+    };
+    const near = (a, b, eps) => Math.abs(a - b) <= (eps || 0.001);
+    const fig = (card) => card.querySelector(".nb-figure-viewport");
+    const mode = (card) => {
+      const vp = fig(card);
+      return vp && vp.dataset.nbMode;
+    };
+    const noInnerScroll = (card) => {
+      const vp = fig(card);
+      return !!vp && !vp.style.height && !vp.style.maxHeight &&
+        !vp.style.overflowY && !vp.getAttribute("tabindex") &&
+        !vp.getAttribute("role") && !vp.getAttribute("aria-label");
+    };
+
+    // Matrix: never upscale; wide-but-short is normal; tall grows the card
+    // up to 3 viewports; anything taller shrinks to fit.
+    let p = window.NB.blocks.planFigure(100, 50, 1000, 500);
+    check("sizing matrix: a small diagram is not upscaled",
+      p.mode === "normal" && near(p.width, 100) && near(p.height, 50),
+      JSON.stringify(p));
+    p = window.NB.blocks.planFigure(800, 300, 400, 500);
+    check("sizing matrix: wide-but-short fits the width",
+      p.mode === "normal" && near(p.width, 400) && near(p.height, 150),
+      JSON.stringify(p));
+    p = window.NB.blocks.planFigure(100, 1000, 1000, 500);
+    check("sizing matrix: tall-but-narrow keeps its width-fitted size",
+      p.mode === "tall" && near(p.width, 100) && near(p.height, 1000),
+      JSON.stringify(p));
+    p = window.NB.blocks.planFigure(100, 2000, 1000, 500);
+    check("sizing matrix: more than 3 viewports shrinks to fit",
+      p.mode === "fit" && near(p.height, 500) && near(p.width, 25),
+      JSON.stringify(p));
+
+    // Mermaid: viewBox px -> factor relative to the 14px base; the
+    // library's inline max-width is cleared and the height attr removed.
+    const mSvg = mkSvg({ viewBox: "0 0 140 70", width: "100%",
+      style: "max-width: 140px;" });
+    const mCard = mkCard("mermaid-container", mSvg, "mermaid", "graph TD; A-->B;");
+    window.NB.blocks.prepareSvg(mSvg, { mod: "mermaid", card: mCard });
+    check("sizing mermaid: stored unitless factor (140/14, 70/14)",
+      mSvg.dataset.nbSizing === "font" &&
+      near(parseFloat(mSvg.dataset.nbW), 10) &&
+      near(parseFloat(mSvg.dataset.nbH), 5),
+      "w=" + mSvg.dataset.nbW + " h=" + mSvg.dataset.nbH);
+    check("sizing mermaid: inline max-width cleared",
+      !mSvg.style.maxWidth,
+      "max-width=" + mSvg.style.maxWidth);
+    check("sizing mermaid: height attr removed, width attr is the natural size",
+      !mSvg.getAttribute("height") && mSvg.getAttribute("width") === "140",
+      "w=" + mSvg.getAttribute("width") + " h=" + mSvg.getAttribute("height"));
+    check("sizing: every figure gets one sizing wrapper",
+      !!fig(mCard) && fig(mCard).querySelector("svg") === mSvg);
+
+    window.NB.blocks.layoutFigure(mCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing mermaid: normal layout keeps the natural size",
+      mode(mCard) === "normal" && noInnerScroll(mCard) &&
+      mSvg.style.width === "140px" && mSvg.style.height === "70px",
+      "mode=" + mode(mCard) + " w=" + mSvg.style.width + " h=" + mSvg.style.height);
+
+    const tallSvg = mkSvg({ viewBox: "0 0 140 1000" });
+    const tallCard = mkCard("mermaid-container", tallSvg, "mermaid", "graph TD; A-->B;");
+    window.NB.blocks.prepareSvg(tallSvg, { mod: "mermaid", card: tallCard });
+    window.NB.blocks.layoutFigure(tallCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing: tall mode grows the card instead of scrolling the viewport",
+      mode(tallCard) === "tall" && noInnerScroll(tallCard) &&
+      tallSvg.style.height === "1000px",
+      "mode=" + mode(tallCard) + " h=" + tallSvg.style.height +
+        " vpHeight=" + JSON.stringify(fig(tallCard).style.height));
+
+    const hugeSvg = mkSvg({ viewBox: "0 0 140 2000" });
+    const hugeCard = mkCard("mermaid-container", hugeSvg, "mermaid", "graph TD; A-->B;");
+    window.NB.blocks.prepareSvg(hugeSvg, { mod: "mermaid", card: hugeCard });
+    window.NB.blocks.layoutFigure(hugeCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing: huge diagrams shrink to fit without a nested scroller",
+      mode(hugeCard) === "fit" && noInnerScroll(hugeCard) &&
+      hugeSvg.style.height === "500px",
+      "mode=" + mode(hugeCard) + " h=" + hugeSvg.style.height +
+        " vpHeight=" + JSON.stringify(fig(hugeCard).style.height));
+
+    // WaveDrom: width/height attributes are px.
+    const wdSvg = mkSvg({ viewBox: "0 0 480 60", width: "480", height: "60" });
+    const wdCard = mkCard("wavedrom-container", wdSvg, "wavedrom", "{}");
+    window.NB.blocks.prepareSvg(wdSvg, { mod: "wavedrom", card: wdCard });
+    check("sizing wavedrom: px attributes become the 14px-base factor",
+      wdSvg.dataset.nbSizing === "font" &&
+      near(parseFloat(wdSvg.dataset.nbW), 480 / 14) &&
+      near(parseFloat(wdSvg.dataset.nbH), 60 / 14),
+      "w=" + wdSvg.dataset.nbW + " h=" + wdSvg.dataset.nbH);
+
+    // Graphviz: width/height are pt, including the designer seam that
+    // normalises (and drops height) before the note path measures.
+    const vzSvg = mkSvg({ viewBox: "0 0 200 100", width: "120pt", height: "60pt" });
+    const vzCard = mkCard("viz-container", vzSvg, "viz", "digraph { a -> b }");
+    window.NB.blocks.normalizeSvg(vzSvg);
+    window.NB.blocks.prepareSvg(vzSvg, { mod: "viz", card: vzCard });
+    check("sizing graphviz: pt converted to CSS px before the factor",
+      vzSvg.dataset.nbSizing === "font" &&
+      near(parseFloat(vzSvg.dataset.nbW), (120 * 4 / 3) / 14) &&
+      near(parseFloat(vzSvg.dataset.nbH), (60 * 4 / 3) / 14),
+      "w=" + vzSvg.dataset.nbW + " h=" + vzSvg.dataset.nbH);
+
+    // Inline SVG: viewBox-only / percentage SVGs are font-sized at the
+    // viewBox dimensions (never stretched to the card); explicit author
+    // dimensions are explicit.
+    const vbSvg = mkSvg({ viewBox: "0 0 100 50" });
+    const vbCard = mkCard("svg-container", vbSvg, "svg",
+      '<svg viewBox="0 0 100 50"></svg>');
+    window.NB.blocks.prepareSvg(vbSvg, { mod: "svg", card: vbCard });
+    check("sizing inline svg: viewBox-only is font-sized at its viewBox size",
+      vbSvg.dataset.nbSizing === "font" &&
+      near(parseFloat(vbSvg.dataset.nbW), 100 / 14) &&
+      near(parseFloat(vbSvg.dataset.nbH), 50 / 14) &&
+      vbSvg.getAttribute("width") === "100",
+      "sizing=" + vbSvg.dataset.nbSizing + " w=" + vbSvg.getAttribute("width"));
+    window.NB.blocks.layoutFigure(vbCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing inline svg: viewBox-only never upscales past its natural size",
+      mode(vbCard) === "normal" &&
+      vbSvg.style.width === "100px" && vbSvg.style.height === "50px",
+      "mode=" + mode(vbCard) + " w=" + vbSvg.style.width +
+        " h=" + vbSvg.style.height);
+
+    // Regression mirroring notebook/Syntax.md's 420x120 block diagram:
+    // the viewBox is the design size; 13px internal text must not be
+    // stretched by the reading column.
+    const realSvg = mkSvg({ viewBox: "0 0 420 120" });
+    const realText = window.document.createElementNS(NS, "text");
+    realText.setAttribute("font-size", "13");
+    realText.textContent = "Block diagram";
+    realSvg.appendChild(realText);
+    const realCard = mkCard("svg-container", realSvg, "svg",
+      '<svg viewBox="0 0 420 120"><text font-size="13">Block diagram</text></svg>');
+    window.NB.blocks.prepareSvg(realSvg, { mod: "svg", card: realCard });
+    window.NB.blocks.layoutFigure(realCard, { contentW: 1200, ref: 14, viewportH: 500 });
+    check("sizing regression: 420x120 is 420px at medium, not the card width",
+      realSvg.dataset.nbSizing === "font" &&
+      realSvg.style.width === "420px" && realSvg.style.height === "120px" &&
+      realText.getAttribute("font-size") === "13",
+      "mode=" + mode(realCard) + " w=" + realSvg.style.width +
+        " h=" + realSvg.style.height);
+    window.NB.blocks.layoutFigure(realCard, { contentW: 1200, ref: 18.2, viewportH: 500 });
+    check("sizing regression: 420x120 scales to 546px at xlarge",
+      realSvg.style.width === "546px" && realSvg.style.height === "156px",
+      "w=" + realSvg.style.width + " h=" + realSvg.style.height);
+    window.NB.blocks.layoutFigure(realCard, { contentW: 4000, ref: 18.2, viewportH: 500 });
+    check("sizing regression: a wide card never upscales past 546px at xlarge",
+      realSvg.style.width === "546px" && realSvg.style.height === "156px",
+      "w=" + realSvg.style.width + " cardW=4000");
+
+    const pctSvg = mkSvg({ viewBox: "0 0 100 50", width: "100%" });
+    const pctCard = mkCard("svg-container", pctSvg, "svg",
+      '<svg viewBox="0 0 100 50" width="100%"></svg>');
+    window.NB.blocks.prepareSvg(pctSvg, { mod: "svg", card: pctCard });
+    check("sizing inline svg: width=100% is still font-sized at the viewBox size",
+      pctSvg.dataset.nbSizing === "font" &&
+      near(parseFloat(pctSvg.dataset.nbW), 100 / 14) &&
+      pctSvg.getAttribute("width") === "100",
+      "sizing=" + pctSvg.dataset.nbSizing + " w=" + pctSvg.getAttribute("width"));
+    window.NB.blocks.layoutFigure(pctCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing inline svg: width=100% does not fill the card",
+      mode(pctCard) === "normal" &&
+      pctSvg.style.width === "100px" && pctSvg.style.height === "50px",
+      "mode=" + mode(pctCard) + " w=" + pctSvg.style.width);
+
+    const expSvg = mkSvg({ viewBox: "0 0 100 50", width: "120", height: "60" });
+    const expCard = mkCard("svg-container", expSvg, "svg",
+      '<svg viewBox="0 0 100 50" width="120" height="60"></svg>');
+    window.NB.blocks.prepareSvg(expSvg, { mod: "svg", card: expCard });
+    check("sizing inline svg: explicit author dimensions win",
+      expSvg.dataset.nbSizing === "explicit" &&
+      near(parseFloat(expSvg.dataset.nbW), 120) &&
+      near(parseFloat(expSvg.dataset.nbH), 60) &&
+      expSvg.getAttribute("height") === "60",
+      "sizing=" + expSvg.dataset.nbSizing + " w=" + expSvg.dataset.nbW);
+
+    // Explicit relative units use the SVG's own font for em and the
+    // document root for rem (passed through the layout metrics seam).
+    const emSvg = mkSvg({ viewBox: "0 0 10 5", width: "2em", height: "1em" });
+    const emCard = mkCard("svg-container", emSvg, "svg",
+      '<svg viewBox="0 0 10 5" width="2em" height="1em"></svg>');
+    window.NB.blocks.prepareSvg(emSvg, { mod: "svg", card: emCard });
+    window.NB.blocks.layoutFigure(emCard, {
+      contentW: 1000, ref: 14, viewportH: 500, emPx: 20, remPx: 14,
+    });
+    check("sizing inline svg: em resolves against the SVG font, not the card ref",
+      mode(emCard) === "normal" &&
+      emSvg.style.width === "40px" && emSvg.style.height === "20px",
+      "mode=" + mode(emCard) + " w=" + emSvg.style.width +
+        " h=" + emSvg.style.height);
+
+    const remSvg = mkSvg({ viewBox: "0 0 10 5", width: "2rem", height: "1rem" });
+    const remCard = mkCard("svg-container", remSvg, "svg",
+      '<svg viewBox="0 0 10 5" width="2rem" height="1rem"></svg>');
+    window.NB.blocks.prepareSvg(remSvg, { mod: "svg", card: remCard });
+    window.NB.blocks.layoutFigure(remCard, {
+      contentW: 1000, ref: 16, viewportH: 500, emPx: 16, remPx: 14,
+    });
+    check("sizing inline svg: rem resolves against the root, not the card ref",
+      mode(remCard) === "normal" &&
+      remSvg.style.width === "28px" && remSvg.style.height === "14px",
+      "mode=" + mode(remCard) + " w=" + remSvg.style.width +
+        " h=" + remSvg.style.height);
+
+    const fallbackSvg = mkSvg({});
+    const fallbackCard = mkCard("svg-container", fallbackSvg, "svg", "<svg></svg>");
+    window.NB.blocks.prepareSvg(fallbackSvg, { mod: "svg", card: fallbackCard });
+    window.NB.blocks.layoutFigure(fallbackCard, { contentW: 1000, ref: 14, viewportH: 500 });
+    check("sizing inline svg: unknown natural size falls back safely",
+      fallbackSvg.dataset.nbSizing === "fallback" && mode(fallbackCard) === "fallback" &&
+      noInnerScroll(fallbackCard),
+      "sizing=" + fallbackSvg.dataset.nbSizing + " mode=" + mode(fallbackCard));
+
+    // The wrapper and sizing attributes must not change the fence source
+    // the hybrid Save path writes back.
+    const drift = window.document.createElement("div");
+    drift.appendChild(mCard.cloneNode(true));
+    window.NB.blocks.restoreForMarkdown(drift);
+    const driftFence = drift.querySelector("pre > code.language-mermaid");
+    check("sizing: rendered figure still round-trips to the exact fence source",
+      !!driftFence && driftFence.textContent === "graph TD; A-->B;",
+      "fence=" + (driftFence && JSON.stringify(driftFence.textContent)));
+
+    // CSS / export source guards.
+    const sizingCss = read("static/css/style.css");
+    check("sizing css: prose reference token + phone override",
+      /--nb-ref-size:\s*1rem/.test(sizingCss) &&
+      /--nb-ref-size:\s*calc\(16px \* var\(--font-scale\)\)/.test(sizingCss));
+    const figureRule = (sizingCss.match(/\.nb-figure-viewport\s*\{[^}]*\}/) || [""])[0];
+    check("sizing css: sizing wrapper has no height cap, overflow, or focus ring",
+      /\.nb-figure-viewport\s*\{/.test(sizingCss) &&
+      !/max-height/.test(figureRule) &&
+      !/overflow/.test(figureRule) &&
+      !/overscroll/.test(figureRule) &&
+      !/\.nb-figure-viewport:focus/.test(sizingCss) &&
+      !/--nb-viewport-h/.test(sizingCss));
+    check("sizing css: font sizing rule exists and no fluid rule remains",
+      /data-nb-sizing="font"/.test(sizingCss) &&
+      !/data-nb-sizing="fluid"/.test(sizingCss));
+    check("sizing css: KaTeX scrolls inside .katex-display",
+      /\.katex-container \.katex-display\s*\{[^}]*overflow-x:\s*auto/.test(sizingCss));
+    check("sizing css: lightbox fit rule is not shadowed by the figure rule",
+      /\.mermaid-lightbox-body\.svg-fit svg\s*\{/.test(sizingCss));
+    const exportSrc = read("static/js/export.js");
+    check("sizing export: mirrors the wrapper and ref token, no scroll token",
+      /--nb-ref-size/.test(exportSrc) && /\.nb-figure-viewport/.test(exportSrc) &&
+      !/--nb-viewport-h/.test(exportSrc));
+    check("sizing export: print-only page cap",
+      /PRINT_FIGURE_MAX_HEIGHT/.test(exportSrc) && /180mm/.test(exportSrc));
   }
 
   // Cleanup.

@@ -141,7 +141,52 @@ viewer does, but `exportCss` originally carried no rules for them, so a
 diagram exported as bare content with no card. The export now mirrors the
 container chrome (border, panel background, padding, and the `.7em` rhythm),
 using `panelBg` / `warn` entries in its light/dark palette. A test asserts
-the card rules are present in the exported blob.
+the card rules are present in the exported blob. It also mirrors the
+rendered-figure tokens and the `.nb-figure-viewport` sizing model below;
+the print-only page cap lives in `printRules()`, never in the shared
+screen CSS.
+
+## Rendered-block sizing
+
+Mermaid, WaveDrom, Graphviz, and inline SVG share one sizing model in
+`static/js/blocks.js`: the renderers hand their SVG to
+`NB.blocks.prepareSvg()`, which wraps it in a `.nb-figure-viewport` and
+records a unitless natural-size factor. The reference is the prose font at
+the card — `1rem` on desktop, `calc(16px * var(--font-scale))` on the
+phone (`--nb-ref-size`) — so a diagram keeps its medium size and follows
+the 0.9 / 1.15 / 1.3 text setting. Library diagrams store their natural
+pixel width/height divided by 14; Graphviz converts its `pt` width/height
+to CSS px first; an inline SVG's explicit physical `width` / `height`
+wins. A viewBox-only or percentage-dimension SVG is font-sized at its
+viewBox dimensions — the viewBox is the design size, not permission to
+stretch the drawing's internal text to the reading column. Unknown sizes
+stay on the safe intrinsic-CSS fallback.
+
+The matrix is measured at layout time from the card's content width and
+70% of `#viewer-content.clientHeight`:
+
+- **normal** — the diagram fits the width and the measured viewport.
+- **tall** — it fits the width but is taller than the viewport, up to
+  three viewports. The width-fitted size is kept; the card grows and the
+  note page (`#viewer-content`) is the only scroller. There is no nested
+  diagram scroller, no bounded wrapper height, and no scroll-specific
+  focus/tab/ARIA state.
+- **fit** — it is more than three viewports tall; the whole diagram is
+  scaled down to the viewport height (never upscaled) and the lightbox is
+  the detail view. It still does not scroll internally.
+
+The card itself stays at the reading measure; `width: fit-content` is not
+used because it collapses a viewBox-only SVG or live HTML. The
+`.nb-figure-viewport` wrapper only sizes and centres the SVG; it never
+sets a height cap or `overflow`. Layout recomputes after each render and
+on window resize, a guarded `ResizeObserver` on `#viewer-content`
+(sidebar/outline drags and split-pane changes), font-size changes, the
+phone/desktop flip, and a `<details>` open. The exported HTML carries the
+same wrapper and tokens (its body prose is 16px, so that is its
+reference); on screen a tall figure grows the exported page, and in print
+a 180mm page cap scales the whole figure to fit. KaTeX keeps no height cap
+and scrolls only its equation inside `.katex-display`; live HTML keeps its
+content-height iframe and sandbox, with only a print-time one-page cap.
 
 The same tight/loose mismatch existed in a second place: the AI assistant
 panel renders its replies through the same marked pipeline under
@@ -262,9 +307,12 @@ rather than HTML: malformed markup falls back to an inline `.svg-error`
 box that keeps the source visible (`svg.js`). A well-formed block is
 sanitized — `<script>`, `<foreignObject>`, every `on*` attribute, and any
 `href` / `xlink:href` that is not a fragment (`#id`) or a `data:` URI are
-removed — and inlined into a `.svg-container`. A viewBox-only SVG gets
-`width="100%"` plus an `aspect-ratio`, so it scales to the reading
-column; an explicit `width` / `height` from the author wins. Clicking the
+removed — and inlined into a `.svg-container`. A viewBox-only SVG (or one
+with a percentage dimension) is font-sized at its viewBox dimensions: it
+keeps the drawing's internal text legible and scales with the prose font,
+rather than stretching to the card. An explicit physical `width` /
+`height` from the author wins; CSS units are converted to px, then the
+shared width/height matrix may fit or shrink it. Clicking the
 card opens it in the shared lightbox (`static/js/lightbox.js`) with zoom,
 fit, and Escape-to-close, exactly like the other diagram renderers. The
 original source stays in `dataset.svgSource` for the hybrid round-trip.

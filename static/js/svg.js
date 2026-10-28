@@ -15,6 +15,10 @@
  * are dropped and every on* attribute and external href / xlink:href is
  * removed. Fragment refs (#id) and inline data: URIs stay. This keeps
  * inline SVG self-contained and inert; it is not a full sanitizer.
+ *
+ * Sizing is owned by blocks.js: a viewBox-only SVG renders at its
+ * viewBox dimensions (scaled with the prose font), not stretched to the
+ * reading column; a physical author width/height still wins.
  */
 (function () {
   "use strict";
@@ -47,20 +51,6 @@
           el.removeAttributeNode(attr);
         }
       }
-    }
-  }
-
-  /* sizeForContainer(root) -- an SVG with only a viewBox has no intrinsic
-   * width, so let it fill the card and pin the aspect ratio for the
-   * height:auto CSS. An explicit width/height from the author wins. */
-  function sizeForContainer(root) {
-    const viewBox = root.getAttribute("viewBox");
-    if (!viewBox) return;
-    if (root.hasAttribute("width") || root.hasAttribute("height")) return;
-    root.setAttribute("width", "100%");
-    const parts = viewBox.trim().split(/[\s,]+/).map(Number);
-    if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-      root.style.aspectRatio = parts[2] + " / " + parts[3];
     }
   }
 
@@ -98,13 +88,16 @@
     }
 
     sanitize(root);
-    sizeForContainer(root);
 
     const card = document.createElement("div");
     card.className = "svg-container";
     card.dataset.svg = "ok";
     card.dataset.svgSource = source;
     card.appendChild(document.importNode(root, true));
+    const svg = card.querySelector("svg");
+    if (svg && NB.blocks && NB.blocks.prepareSvg) {
+      NB.blocks.prepareSvg(svg, { mod: "svg", card: card });
+    }
     pre.replaceWith(card);
   }
 

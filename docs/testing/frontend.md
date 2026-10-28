@@ -292,6 +292,18 @@ The audit suites cover the rest of the app end to end:
 - `test_hybrid_blocks_browser.js` — list Enter/Tab, task toggles, table view,
   cell Enter, Ctrl+drag selection, raw HTML, blockquote exit, and a hybrid
   draft across a tab switch.
+- `test_figure_sizing_browser.js` — rendered SVG sizing: font-scale response,
+  the wide/tall/huge/tiny layout matrix, per-engine units (Graphviz pt,
+  WaveDrom px, Mermaid viewBox, inline-SVG viewBox/explicit), the tall-mode
+  page-growth contract (no nested scroller or scroll a11y), the lightbox
+  from a tall diagram, the phone reference token, HTML-export wrapper/print
+  tokens, and a hybrid round-trip byte check. Synthetic SVGs mirror each
+  renderer for the matrix; the suite additionally renders every block type
+  for real in Chromium: Mermaid natural max-width versus viewBox and label
+  scale, WaveDrom labels, Graphviz pt-to-px and labels, KaTeX prose sizing
+  and wide-equation scroll containment, html-live frame width / font
+  isolation / content auto-fit, and the prose-sized error boxes for all five
+  renderers.
 
 Run the hybrid suite with `npm run test:browser` (chromium) or
 `npm run test:browser:firefox`; run the designer suite with

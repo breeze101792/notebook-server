@@ -34,6 +34,11 @@
    * edit bar, settings rows) is rem-ified; only micro-decorations (8-11px
    * glyphs that would look wrong at 1.3x) stay in px. */
   --font-scale: 1;
+  /* Reference size for rendered-block sizing (mermaid / wavedrom /
+   * graphviz / inline SVG). Desktop prose is 1rem; the phone media query
+   * overrides this to its 16px prose size. The JS layout uses the card's
+   * computed font-size, so the two stay in step. */
+  --nb-ref-size: 1rem;
   /* Graph view canvas colors. RGB triples so graph.js can read them
    * with getComputedStyle and assemble rgba(...) strings at draw time
    * (canvas fillStyle/strokeStyle need full color strings, not var()).
@@ -3463,30 +3468,13 @@ body > #nb-menu .submenu.open {
   border: 1px solid var(--border);
   border-radius: 8px;
   text-align: center;
-}
-/* Cap the inline diagram to the reading content width and the viewer
- * window height. mermaid emits SVGs at fixed pixel sizes (width="..."
- * + viewBox); without a cap a tall graph runs off the bottom and only
- * the top half is visible. The SVG has `aspect-ratio` set from the
- * viewBox (see mermaid.js), so max-width + max-height both scale the
- * element uniformly instead of clipping. The diagram shows at its
- * natural size when it fits, and scales down to fit otherwise. The
- * lightbox still gives a full-size + zoomable view on click. */
-.mermaid-container {
-  /* dvh avoids the iOS Safari "URL bar inflating 100vh" jump; the
-   * subtraction covers the top bar (--topbar-h) plus the viewer
-   * content's top/bottom padding. The container stays auto-height
-   * (no `height: ...`) so small diagrams don't leave an empty card. */
-  overflow: auto;
+  /* The card's auto height grows with a tall diagram; the note page,
+   * not the card, owns the only scrollbar. */
+  overflow: hidden;
 }
 .mermaid-container svg {
   display: inline-block;
   max-width: 100%;
-  /* Absolute max-height: percentages don't work here because the
-   * parent (.mermaid-container) has no definite height. Combined
-   * with the aspect-ratio pinned in mermaid.js, the browser scales
-   * the SVG element to fit when this cap binds. */
-  max-height: calc(100dvh - var(--topbar-h) - 64px);
   height: auto;
   width: auto;
   cursor: zoom-in;
@@ -3547,18 +3535,11 @@ body > #nb-menu .submenu.open {
   border: 1px solid var(--border);
   border-radius: 8px;
   text-align: center;
-  overflow-x: auto;
+  overflow: hidden;
 }
 .wavedrom-container svg {
   display: inline-block;
   max-width: 100%;
-  /* Cap the inline waveform to the viewer window height, exactly like
-   * mermaid: the SVG has `aspect-ratio` set from its viewBox (see
-   * wavedrom.js), so max-width + max-height both scale the element
-   * uniformly instead of clipping. A tall waveform shows at its natural
-   * size when it fits and scales down to fit otherwise; the lightbox
-   * still gives a full-size + zoomable view on click. */
-  max-height: calc(100dvh - var(--topbar-h) - 64px);
   height: auto;
   width: auto;
   cursor: zoom-in;
@@ -3575,10 +3556,22 @@ body > #nb-menu .submenu.open {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
-  overflow-x: auto;
+  overflow: hidden;
 }
+/* Only the equation scrolls; the card chrome and its padding stay put.
+ * text-align:left keeps the left edge of an over-wide equation reachable
+ * (a centred overflowing line can clip its own start), while the inner
+ * .katex span is re-centred when the equation fits. */
 .katex-container .katex-display {
   margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  text-align: left;
+}
+.katex-container .katex-display > .katex {
+  display: inline-block;
+  min-width: 100%;
+  text-align: center;
 }
 /* Graphviz diagrams. The .viz-container wraps a rendered SVG produced
  * by the graphviz (viz.js) library (```dot code blocks). Styling
@@ -3591,18 +3584,11 @@ body > #nb-menu .submenu.open {
   border: 1px solid var(--border);
   border-radius: 8px;
   text-align: center;
-  overflow-x: auto;
+  overflow: hidden;
 }
 .viz-container svg {
   display: inline-block;
   max-width: 100%;
-  /* Cap the inline graph to the viewer window height, exactly like
-   * mermaid: the SVG has `aspect-ratio` set from its viewBox (see
-   * viz.js), so max-width + max-height both scale the element uniformly
-   * instead of clipping. A tall graph shows at its natural size when it
-   * fits and scales down to fit otherwise; the lightbox still gives a
-   * full-size + zoomable view on click. */
-  max-height: calc(100dvh - var(--topbar-h) - 64px);
   height: auto;
   width: auto;
   cursor: zoom-in;
@@ -3610,9 +3596,9 @@ body > #nb-menu .submenu.open {
 
 /* Inline SVG blocks. A ```svg fence wraps the author's own <svg> in a
  * card matching the other diagram containers. The source is sanitized
- * and self-contained by svg.js; this only handles presentation. An SVG
- * with only a viewBox is given width="100%" and an aspect-ratio, so
- * height:auto scales it to the reading column. */
+ * and self-contained by svg.js; this only handles presentation. A
+ * viewBox-only SVG is sized at its viewBox dimensions (scaled with the
+ * prose font), not stretched to the reading column. */
 .svg-container {
   margin: .7em 0;
   padding: 14px 16px;
@@ -3620,13 +3606,46 @@ body > #nb-menu .submenu.open {
   border: 1px solid var(--border);
   border-radius: 8px;
   text-align: center;
-  overflow-x: auto;
+  overflow: hidden;
 }
 .svg-container svg {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+}
+
+/* Shared sizing wrapper for every rendered SVG diagram. It never
+ * scrolls or caps its height: a tall diagram keeps its width-fitted size
+ * and the card grows, so #viewer-content (the note page) owns the only
+ * scrollbar. blocks.js writes the per-figure width/height/mode at layout
+ * time; the rules below are the no-JS / exported-HTML baseline. */
+.nb-figure-viewport {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  text-align: center;
+}
+.nb-figure-viewport > svg {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+  height: auto;
+}
+/* Library diagrams: the factor is the natural width/14, multiplied by
+ * the prose reference size. JS overrides width/height with the matrix
+ * result once it can measure; this keeps a no-JS render proportional. */
+.nb-figure-viewport > svg[data-nb-sizing="font"] {
+  width: calc(var(--nb-w, 0) * var(--nb-ref-size));
+  height: auto;
+}
+/* Explicit author dimensions (width/height attributes) and the
+ * unknown-size fallback both keep their intrinsic size until JS fits
+ * them; the card grows with the result. */
+.nb-figure-viewport > svg[data-nb-sizing="explicit"],
+.nb-figure-viewport > svg[data-nb-sizing="fallback"] {
+  width: auto;
+  height: auto;
 }
 
 /* Copy affordance (copy-image.js). One shared .code-copy-btn sits in the
@@ -5793,6 +5812,9 @@ body[data-theme="light"] #dw-designer-overlay {
     --m-radius: 10px;
     --m-sheet-radius: 16px;
     --m-scrim: rgba(0, 0, 0, .45);
+    /* The phone reader uses 16px prose (style.css #viewer-content), not
+     * the 14px rem base, so rendered blocks follow the reader, not rem. */
+    --nb-ref-size: calc(16px * var(--font-scale));
     /* The top bar owns the status-bar inset, so the shell can be
      * edge-to-edge: body padding is removed on the phone. */
     --topbar-h: calc(var(--m-topbar-h) + env(safe-area-inset-top));
@@ -6208,8 +6230,10 @@ body[data-theme="light"] #dw-designer-overlay {
   .svg-container,
   .katex-container {
     max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+    /* Diagrams fit the measure (widthScale never upsizes) and the card
+     * grows for a tall one; the note page owns the only vertical
+     * scrollbar. KaTeX still scrolls inside .katex-display. */
+    overflow: hidden;
   }
   .nb-tv-controls,
   .nb-tv-toolbar,

@@ -737,7 +737,12 @@
     if (!container || container.querySelector("." + IMAGE_BUTTON_CLASS)) return;
     if (!container.querySelector("svg")) return;
     container.appendChild(buildImageButton(() => {
-      copySvgToPng(container.querySelector("svg"), { name: pngName() });
+      // The diagram lives in the sizing wrapper; prefer it so a
+      // copy-button icon (also an <svg>) can never be mistaken for the
+      // figure.
+      const diagram = container.querySelector(".nb-figure-viewport > svg") ||
+        container.querySelector("svg");
+      copySvgToPng(diagram, { name: pngName() });
     }));
   }
 

@@ -59,6 +59,17 @@
   // for the pagination-complete flag.
   const PRINT_WINDOW_POLL = 25;
 
+  // Print-only cap for a rendered figure or live-HTML card. Tall diagrams
+  // grow the page on screen but must shrink to one A4 page on paper; the
+  // mm value lives only in printRules(), never in the screen CSS.
+  const PRINT_FIGURE_MAX_HEIGHT = "180mm";
+
+  // The export document's prose size. Its <html> rem base is 15px, but
+  // the body font (and therefore a rendered figure's reference size) is
+  // this; keep the CSS, the detached host measurement, and the figure
+  // token in step.
+  const EXPORT_PROSE_PX = 16;
+
   // Hidden same-origin iframe that Paged.js paginates the PDF into before
   // the finished sheets are moved into the current page for printing.
   // Created lazily and reused across exports.
@@ -586,6 +597,10 @@
 
     const host = document.createElement("div");
     host.className = "markdown-body";
+    // The host is detached; give it the export body's prose size so the
+    // renderer's CSS-unit measurement (explicit em SVGs) matches the
+    // document the HTML is about to be written into.
+    host.style.fontSize = EXPORT_PROSE_PX + "px";
     return renderInto(host, scope, tocMode).then(() => {
       const title = path.split("/").pop().replace(/\.md$/i, "") || "note";
       const css = exportCss(printPreview, paged);
@@ -690,6 +705,15 @@
       ".markdown-body a{color:#2f5fd0;text-decoration:underline}",
       ".markdown-body a[href^=\"http\"]::after{content:\" (\" attr(href) \")\";color:#5d6470}",
       ".markdown-body pre,.markdown-body code,.markdown-body blockquote,.markdown-body table,.markdown-body img,.markdown-body svg,.markdown-body .mermaid,.markdown-body .katex-display,.markdown-body figure{break-inside:avoid;page-break-inside:avoid}",
+      // Figures: on paper a figure must fit one page. Auto width/height
+      // against the intrinsic attributes keeps the aspect ratio while
+      // max-width/max-height shrink it to the sheet. The 180mm cap is
+      // print-only; the screen page grows for a tall figure.
+      ".nb-figure-viewport{max-height:" + PRINT_FIGURE_MAX_HEIGHT + "!important;overflow:visible!important}",
+      ".nb-figure-viewport>svg{width:auto!important;height:auto!important;max-width:100%!important;max-height:" + PRINT_FIGURE_MAX_HEIGHT + "!important}",
+      // A live HTML demo cannot paginate; clip it to one page instead.
+      ".markdown-body .htmlpreview-card{max-height:" + PRINT_FIGURE_MAX_HEIGHT + "!important;overflow:hidden!important}",
+      ".markdown-body .htmlpreview-frame{height:" + PRINT_FIGURE_MAX_HEIGHT + "!important}",
       ".markdown-body h1{break-before:page;page-break-before:always}",
       ".markdown-body>h1:first-child,.markdown-body>.export-toc+h1{break-before:auto;page-break-before:avoid}",
       ".markdown-body h2,.markdown-body h3{break-after:avoid;page-break-after:avoid}",
@@ -729,7 +753,11 @@
       "@page{size:A4;margin:18mm 16mm}",
       "@page :first{margin-top:22mm}",
       "html{font-size:15px}",
-      "body{margin:0;background:" + base.bg + ";color:" + base.fg + ";-webkit-print-color-adjust:exact;print-color-adjust:exact;font:16px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
+      // The export document's prose is EXPORT_PROSE_PX (its <html> rem
+      // base is 15px, but body text is 16px). Tall figures grow the
+      // screen page; printRules() applies the one-page cap.
+      ":root{--nb-ref-size:" + EXPORT_PROSE_PX + "px}",
+      "body{margin:0;background:" + base.bg + ";color:" + base.fg + ";-webkit-print-color-adjust:exact;print-color-adjust:exact;font:" + EXPORT_PROSE_PX + "px/1.65 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
       ".export-sidebar{position:fixed;top:0;left:0;bottom:0;width:" + SIDEBAR_WIDTH + "px;overflow-y:auto;background:" + base.rowOdd + ";border-right:1px solid " + base.border + ";padding:16px;box-sizing:border-box}",
       ".export-sidebar .export-toc{border:none;background:none;padding:0;margin:0}",
       ".export-sidebar .export-toc-title{font-size:1.1em;font-weight:700;margin:0 0 .6em;min-height:29px;display:flex;align-items:center;padding-left:46px}",
@@ -830,13 +858,22 @@
       // and their error boxes. The export renders the same container
       // elements the viewer does, so it must style them too or a diagram
       // exports as bare content. Mirrors style.css's container rules.
-      ".markdown-body .mermaid-container,.markdown-body .wavedrom-container,.markdown-body .katex-container,.markdown-body .viz-container,.markdown-body .svg-container{margin:.7em 0;padding:14px 16px;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;text-align:center;overflow:auto}",
+      ".markdown-body .mermaid-container,.markdown-body .wavedrom-container,.markdown-body .katex-container,.markdown-body .viz-container,.markdown-body .svg-container{margin:.7em 0;padding:14px 16px;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;text-align:center;overflow:hidden}",
       ".markdown-body .katex-container{text-align:left}",
+      ".markdown-body .katex-container .katex-display{margin:0;max-width:100%;overflow-x:auto;text-align:left}",
+      ".markdown-body .katex-container .katex-display>.katex{display:inline-block;min-width:100%;text-align:center}",
       ".markdown-body .wavedrom-container{background:#fff}",
       ".markdown-body .htmlpreview-card{margin:.7em 0;background:" + base.panelBg + ";border:1px solid " + base.border + ";border-radius:8px;overflow:hidden}",
       ".markdown-body .htmlpreview-frame{display:block;width:100%;border:0;background:#fff}",
       ".markdown-body .mermaid-container svg,.markdown-body .wavedrom-container svg,.markdown-body .viz-container svg{display:inline-block;max-width:100%;height:auto;width:auto}",
       ".markdown-body .svg-container svg{display:block;max-width:100%;height:auto;margin:0 auto}",
+      // The sizing wrapper mirrors style.css: no inner scrollbar on screen;
+      // a tall figure grows the exported page. The printable cap is only in
+      // printRules().
+      ".nb-figure-viewport{display:block;width:100%;max-width:100%;text-align:center}",
+      ".nb-figure-viewport>svg{display:block;max-width:100%;margin:0 auto;height:auto}",
+      ".nb-figure-viewport>svg[data-nb-sizing=\"font\"]{width:calc(var(--nb-w,0)*var(--nb-ref-size));height:auto}",
+      ".nb-figure-viewport>svg[data-nb-sizing=\"explicit\"],.nb-figure-viewport>svg[data-nb-sizing=\"fallback\"]{width:auto;height:auto}",
       ".markdown-body .mermaid-error,.markdown-body .wavedrom-error,.markdown-body .katex-error,.markdown-body .viz-error,.markdown-body .svg-error{margin:.7em 0;border:1px solid " + base.warn + ";border-radius:8px;overflow:hidden}",
       ".markdown-body .mermaid-error-head,.markdown-body .wavedrom-error-head,.markdown-body .katex-error-head,.markdown-body .viz-error-head,.markdown-body .svg-error-head{background:" + base.warn + ";color:" + base.bg + ";font-size:.86rem;padding:6px 12px;font-weight:600}",
       ".markdown-body .mermaid-source,.markdown-body .wavedrom-source,.markdown-body .katex-source,.markdown-body .viz-source,.markdown-body .svg-source{margin:0;background:" + base.codeBg + ";color:" + base.fg + ";border:0;border-radius:0;padding:10px 12px;font-size:.85rem;line-height:1.4;white-space:pre;overflow-x:auto}",

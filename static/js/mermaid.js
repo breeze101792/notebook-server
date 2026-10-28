@@ -209,42 +209,12 @@
       // through its own parser (the securityLevel:"strict" config
       // above disables click-jacking too).
       container.innerHTML = result.svg;
-      // Make the SVG responsive: mermaid emits fixed pixel width /
-      // height attributes that don't scale with the pane. We strip
-      // the height and pin aspect-ratio from the viewBox so the
-      // browser scales the SVG element uniformly when either max-
-      // width or max-height kicks in (otherwise height: auto + a
-      // max-height clips the bottom instead of rescaling).
+      // Shared sizing (blocks.js): records mermaid's natural px size,
+      // clears its inline max-width, and wraps the SVG in the scroll
+      // viewport that the width/height matrix drives.
       const svg = container.querySelector("svg");
-      if (svg) {
-        svg.removeAttribute("height");
-        // mermaid emits width/height attributes. Use the viewBox if
-        // present, else fall back to the original width/height. The
-        // CSS then scales the SVG to the container width and the
-        // browser preserves the aspect ratio.
-        const vb = svg.getAttribute("viewBox");
-        let vbW = 0, vbH = 0;
-        if (vb) {
-          const parts = vb.split(/\s+/).map(Number);
-          if (parts.length === 4 && parts[2] > 0 && parts[3] > 0) {
-            vbW = parts[2];
-            vbH = parts[3];
-          }
-        }
-        if (!vbW || !vbH) {
-          vbW = parseFloat(svg.getAttribute("width")) || 0;
-          vbH = parseFloat(svg.getAttribute("height")) || 0;
-          if (vbW > 0 && vbH > 0) {
-            svg.setAttribute("viewBox", `0 0 ${vbW} ${vbH}`);
-          }
-        }
-        // Pin the aspect ratio on the SVG element so max-width and
-        // max-height both scale the element (not clip it). Browsers
-        // respect aspect-ratio even when one dimension is constrained
-        // and the other is "auto".
-        if (vbW > 0 && vbH > 0) {
-          svg.style.aspectRatio = `${vbW} / ${vbH}`;
-        }
+      if (svg && NB.blocks && NB.blocks.prepareSvg) {
+        NB.blocks.prepareSvg(svg, { mod: "mermaid", card: container });
       }
       pre.replaceWith(container);
     } catch (err) {

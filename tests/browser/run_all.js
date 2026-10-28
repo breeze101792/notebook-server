@@ -19,6 +19,7 @@ const SUITES = [
   { name: "hybrid", file: "test_hybrid_browser.js", port: 5099 },
   { name: "hybrid blocks", file: "test_hybrid_blocks_browser.js", port: 5082 },
   { name: "fence editor", file: "test_block_edit_browser.js", port: 5091 },
+  { name: "figure sizing", file: "test_figure_sizing_browser.js", port: 5083 },
   { name: "mobile", file: "test_mobile_browser.js", port: 5095 },
   { name: "mermaid designer", file: "test_designer_browser.js", port: 5098 },
   { name: "dot/wavedrom designer", file: "test_dw_designer_browser.js", port: 5096 },
