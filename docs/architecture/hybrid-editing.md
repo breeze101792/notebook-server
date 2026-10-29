@@ -115,7 +115,7 @@ These are settled by the owner and override any conflicting recommendation below
 | Q9 | **Paste parses Markdown into blocks.** Plain-text insert stays available via the menu's "Paste without formatting"; rich HTML is stripped to text. | `doPaste` gains a Markdown-parse path; verify in the Chromium harness. |
 | Q10 | **Raw HTML is editable in place** (not made read-only). | The `html` token must be aligned by the splice so an edit does not force whole-file fallback. **Open fork:** what an *edited* raw HTML block writes back is undecided — preserve the user's tags, or unwrap to text (§6 Q10). |
 | Q16 | **One `Enter`, one break, in hybrid mode.** The rule is about the editor's behavior, not the file format. A single `Enter` must not add several newlines. | Invariant I9, criterion AC7. |
-| Q18 | **Fix the extra-break defects found in real Chromium.** An empty list item marked with a `<br>` saved as junk (`-     \n    \n`) instead of a bare marker. | ✅ Implemented: `markEmptyListItems` (`hybrid.js:305`) strips the line box before the sentinel; the item saves as a bare marker. Verified in Chromium and jsdom. |
+| Q18 | **Fix the extra-break defects found in real Chromium.** An empty list item marked with a `<br>` saved as junk (`-     \n    \n`) instead of a bare marker. | ✅ Implemented: `markEmptyListItems` (`hybrid.js:305`) strips the line box before the sentinel; `ensureListMarker` also drops a textless item's browser `<br>` when the item is created, so typing cannot preserve it as a trailing soft break. Verified in Chromium and jsdom. |
 
 ## Test suite
 
@@ -533,7 +533,7 @@ hybrid editor and the exporter through `NB.viewer`.
 | — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md:79`; tests `5733-5742`, `7784-7806` |
 | — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds the checkbox on the caret item; a second press returns the item to a plain **paragraph** | ✅ `toggleTask`/`setListItemType`; tests `8561-8574`, browser list-model block |
 | M | ⇧↵ | task item | `<p>` after whole list | ✅ test `4693-4708` |
-| — | ↵ | task item | new task item with a checkbox, always **below** the caret item (even at the item's start, where a checkbox click leaves the caret) with the caret in it | ✅ `onEnterKey` task branch; also on a task loaded from disk; task-start Enter tests |
+| — | ↵ | task item | new task item with a checkbox: **above** at the content start (the caret stays at the original text start below), **below** at the content end (the caret lands in the new item), and a **split** at the caret mid-text (text before stays, text after moves into the new item, caret right of its box) | ✅ `onEnterKey` task branch (`insertEmptyTaskItem`, native split + `repairNativeTaskSplit`); also on a task loaded from disk; task Enter tests |
 | — | ↵ on an empty task | empty checkbox item | `-` (checkbox and item dropped) | ✅ the checkbox is stripped, then the item outdents to a `<p>` |
 | — | D (empty the item) | `- [ ] task` | `-` (checkbox gone) | ✳ sentinel path: `isEmptyListItem` ignores `input` (`:286-289`), so an item holding a checkbox is **not** "empty" — deleting text leaves the checkbox and `[ ]`; verify |
 | — | save | — | `[x]`/`[ ]` preserved, empty task keeps a trailing space | ✅ tests `6846-6855` |
@@ -1062,9 +1062,15 @@ is exactly one break (invariant I9).
   paragraph, a new list item, a new quote line, the fence's own newline. It saves
   as the construct's own continuation or as one blank line between blocks — never
   as a `<br>`, never as several newlines. At the very start of a list item
-  (before its first character, after the checkbox for a task item) the new
-  item opens **above** the caret item, matching the native editor; elsewhere
-  it continues below. Claimed exceptions: a ` ``` `-only
+  (before its first character; for a task item, just after the checkbox) the
+  new item opens **above** the caret item (`insertEmptyListItemAbove` for plain
+  items, the task branch of `onEnterKey` for checkboxes), and the caret stays at
+  the start of the original item's text, now below the blank (the position a
+  newline at the caret leaves the cursor in a text editor); in the middle of an
+  item the text splits at the caret
+  (a task item's second half is repaired with its own checkbox); at the content
+  end the next item continues below. Claimed
+  exceptions: a ` ``` `-only
   paragraph converts to a code block (`:2601-2616`); an **empty list item**
   outdents to a paragraph (`:2619-2643`); at a horizontal-rule edge it opens a
   fresh line (`openLineAtCaretRule` `:4329`).

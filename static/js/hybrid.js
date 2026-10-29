@@ -2184,7 +2184,7 @@
       cb.remove();
       li.classList.remove("task-list-item");
     }
-    if (list.tagName !== wantTag) return retagListItem(li, wantTag);
+    if (list.tagName !== wantTag) retagListItem(li, wantTag);
     ensureListMarker(li);
     return li;
   }
@@ -2279,8 +2279,10 @@
     const ctx = caretListItem();
     if (!ctx) return null;
     let made = null;
+    let caretEl = null;
     if (ctx.li) {
       made = setListItemType(ctx.li, tag === "ol" ? "number" : "bullet");
+      caretEl = made;
     } else {
       const li = document.createElement("li");
       const newList = document.createElement(tag);
@@ -2288,10 +2290,15 @@
       newList.appendChild(li);
       ctx.block.replaceWith(newList);
       ensureListMarker(li);
+      // The caret must land INSIDE the new item, not at the list's end:
+      // a range at the <ul>/<ol> level has no line box, so the engine
+      // paints the caret (and sends the first keystroke) on the block
+      // above the list.
+      caretEl = li;
       made = newList;
     }
     if (!made) return null;
-    reselectBlock(made, ctx.wasCollapsed);
+    reselectBlock(caretEl, ctx.wasCollapsed);
     onContentChange();
     return made;
   }
@@ -2304,8 +2311,10 @@
     const ctx = caretListItem();
     if (!ctx) return null;
     let made = null;
+    let caretEl = null;
     if (ctx.li) {
       made = setListItemType(ctx.li, "task");
+      caretEl = made;
     } else {
       const li = document.createElement("li");
       const newList = document.createElement("ul");
@@ -2316,10 +2325,13 @@
       const box = makeTaskCheckbox();
       li.insertBefore(box, li.firstChild);
       ensureListMarker(li);
+      // Same reason as toggleList: anchor the caret in the item's text
+      // host, never at the list element's end.
+      caretEl = li;
       made = newList;
     }
     if (!made) return null;
-    reselectBlock(made, ctx.wasCollapsed);
+    reselectBlock(caretEl, ctx.wasCollapsed);
     onContentChange();
     return made;
   }
@@ -2376,6 +2388,89 @@
     // Hoist nested lists: they follow the paragraph (with its split).
     nested.forEach((n) => p.after(n));
     return p;
+  }
+
+  /* Enter at a list item's content start: insert a blank sibling ABOVE
+   * it and leave the caret at the start of the original item's text,
+   * which is now below the blank -- the same place a newline at the caret
+   * leaves the cursor in a text editor. The engines disagree on which side
+   * of the caret the break lands, so this path is claimed rather than left
+   * native. */
+  function insertEmptyListItemAbove(li) {
+    if (!li || !li.parentElement) return null;
+    const blank = document.createElement("li");
+    li.parentElement.insertBefore(blank, li);
+    ensureListMarker(blank);
+    const host = listItemPrimaryHost(li);
+    if (host) {
+      const r = document.createRange();
+      r.selectNodeContents(host);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } else {
+      caretToStart(li);
+    }
+    return blank;
+  }
+
+  /* Insert a blank TASK item beside `li`. At the content start the blank
+   * opens ABOVE and the caret stays at the start of the original item's
+   * text (after its checkbox); below, the caret lands in the new item. */
+  function insertEmptyTaskItem(li, before) {
+    const cb = taskCheckboxOf(li);
+    const next = document.createElement("li");
+    next.className = "task-list-item";
+    const nextCb = makeTaskCheckbox();
+    next.appendChild(nextCb);
+    if (before) li.before(next); else li.after(next);
+    ensureListMarker(next);
+    const r = document.createRange();
+    if (before && cb) {
+      r.setStart(taskCaretHost(cb), 0);
+    } else {
+      const host = nextCb.nextSibling;
+      if (host && host.nodeType === 3) r.setStart(host, 0);
+      else r.setStartAfter(nextCb);
+    }
+    r.collapse(true);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(r);
+    return next;
+  }
+
+  /* Native Enter splits a task item's content into a new sibling <li>,
+   * but the engine does not know the checkbox is a marker: the new item
+   * comes out plain. Repair it AFTER the default action, without moving
+   * the caret (it already sits at the split, now right of the box).
+   * `previousNext` is the sibling that existed BEFORE the key, so a split
+   * that did not create a new item never touches an existing neighbour. */
+  function repairNativeTaskSplit(li, previousNext) {
+    setTimeout(() => {
+      if (!active || !li || !li.parentNode) return;
+      const next = li.nextElementSibling;
+      if (!next || next === previousNext || next.tagName !== "LI" ||
+          taskCheckboxOf(next)) return;
+      next.classList.add("task-list-item");
+      const host = Array.from(next.children).find((c) => c.tagName === "P") || next;
+      const cb = makeTaskCheckbox();
+      host.insertBefore(cb, host.firstChild);
+      ensureListMarker(next);
+      // The engine leaves the caret at the split on the new item's content
+      // start (often ON the <li> element). Once the box is inserted that
+      // point is BEFORE the box, so typing would land ahead of it. Move the
+      // caret into the text host right of the box.
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && sel.isCollapsed && next.contains(sel.anchorNode)) {
+        const r = document.createRange();
+        r.setStart(taskCaretHost(cb), 0);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      onContentChange();
+    }, 0);
   }
 
   /* --- live markdown input rules ------------------------------------ */
@@ -2680,16 +2775,26 @@
    * the box, but a textless one leaves the engines nothing to click or
    * paint there, so the caret shows beside/before the box instead. Give
    * it the same host a with-words item has, through taskCaretHost. Only
-   * a textless item is touched; one with words already hosts the caret. */
+   * a textless item is touched; one with words already hosts the caret.
+   *
+   * A textless item converted from a block carries that block's <br> line
+   * box. It is not content: once the user types, it survives as a trailing
+   * soft break and saves as trailing spaces plus an indented blank line.
+   * Drop it and let the ZWS host provide the line box instead. */
   function ensureListMarker(li) {
     if (!li) return;
     const cb = taskCheckboxOf(li);
+    const textless = li.textContent.replace(/\u200B/g, "").trim() === "";
     if (cb) {
-      if (li.textContent.replace(/\u200B/g, "").trim()) return;
+      if (!textless) return;
+      li.querySelectorAll("br").forEach((br) => br.remove());
       taskCaretHost(cb);
       return;
     }
-    if (!li.textContent && !li.querySelector("img,br,canvas,svg,iframe,input")) {
+    if (!textless) return;
+    if (li.querySelector("img,canvas,svg,iframe,input")) return;
+    li.querySelectorAll("br").forEach((br) => br.remove());
+    if (li.textContent.indexOf(ZERO_WIDTH_SPACE) === -1) {
       li.appendChild(document.createTextNode(ZERO_WIDTH_SPACE));
     }
   }
@@ -5042,40 +5147,53 @@
     // checkbox and no class. An EMPTY task item sheds its checkbox and
     // class first, so the outdent below ends the list as a paragraph
     // instead of carrying the checkbox into a plain item.
-    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey &&
+        !e.metaKey && !e.isComposing) {
       const li = blockEl.closest("li");
       const cb = taskCheckboxOf(li);
       if (li && cb) {
         if (li.textContent.replace(/\u200B/g, "").trim() === "") {
           cb.remove();
           li.classList.remove("task-list-item");
-        } else {
+        } else if (caretAtListItemStart(li, ctx.range)) {
+          // At the item's content start (just after the checkbox) the new
+          // task item opens ABOVE the caret item, leaving this item's text
+          // in place below.
           e.preventDefault();
-          const next = document.createElement("li");
-          next.className = "task-list-item";
-          const nextCb = makeTaskCheckbox();
-          next.appendChild(nextCb);
-          // A checklist always grows DOWNWARD: the new item lands below
-          // the caret item even when the caret sits at the item's start
-          // (the position a checkbox click leaves it in). Inserting it
-          // above there left the caret on the first line while the text
-          // the user was editing moved down, which read as Enter doing
-          // nothing.
-          li.after(next);
-          // The new item is textless: plant its ZWS caret host
-          // (ensureListMarker) and land in it, the position right of the
-          // box an item with words puts the caret in.
-          ensureListMarker(next);
-          const r = document.createRange();
-          const nHost = nextCb.nextSibling;
-          if (nHost && nHost.nodeType === 3) r.setStart(nHost, 0);
-          else r.setStartAfter(nextCb);
-          r.collapse(true);
-          window.getSelection().removeAllRanges();
-          window.getSelection().addRange(r);
+          insertEmptyTaskItem(li, true);
           onContentChange();
           return;
+        } else if (caretAtListItemContentEnd(li, ctx.range)) {
+          // At the content end the next item continues below, after the
+          // item's whole subtree (nested lists stay with this item).
+          e.preventDefault();
+          insertEmptyTaskItem(li, false);
+          onContentChange();
+          return;
+        } else {
+          // In the middle of the item's content: let the engine split the
+          // text into a new sibling <li>, then repair the task marker on
+          // that new item. The caret stays at the split, right of the box.
+          repairNativeTaskSplit(li, li.nextElementSibling);
+          return;
         }
+      }
+    }
+    // Enter at the START of a non-empty plain list item opens an EMPTY
+    // item ABOVE it, leaving the item's text in place below. Some
+    // engines put the native break below the caret, which made Enter at
+    // the first line read as if it moved the text. Task items take the
+    // same above/below rule in their own branch above.
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey &&
+        !e.ctrlKey && !e.metaKey && !e.isComposing) {
+      const li = blockEl.closest("li");
+      if (li && !taskCheckboxOf(li) &&
+          li.textContent.replace(/\u200B/g, "").trim() !== "" &&
+          caretAtListItemStart(li, ctx.range) &&
+          insertEmptyListItemAbove(li)) {
+        e.preventDefault();
+        onContentChange();
+        return;
       }
     }
     // Empty list item -> outdent to a paragraph. Only on Enter (the

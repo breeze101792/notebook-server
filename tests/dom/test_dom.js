@@ -6650,6 +6650,248 @@ function check(label, cond, extra) {
       ol.remove();
     }
 
+    // --- list caret anchoring and Enter-at-start ---------------------
+    // The edit-bar list buttons must anchor the caret INSIDE the new
+    // item. A range at the <ul>/<ol> level has no line box, so the caret
+    // was painted on the line above the item (the reported bug).
+    {
+      const caretIn = (node, offset) => {
+        const r = window.document.createRange();
+        r.setStart(node, offset);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      };
+      const pressEnter = (node, opts) => {
+        const ev = new window.KeyboardEvent("keydown",
+          Object.assign({ key: "Enter", bubbles: true, cancelable: true }, opts));
+        node.dispatchEvent(ev);
+        return ev;
+      };
+      const pressAct = (act) => $("edit-bar").querySelector('[data-act="' + act + '"]')
+        .dispatchEvent(new window.Event("click", { bubbles: true }));
+      const selInside = (el) => {
+        const s = window.getSelection();
+        return !!s.anchorNode && (s.anchorNode === el || el.contains(s.anchorNode));
+      };
+      const blank = (li) => li &&
+        li.textContent.replace(/\u200B/g, "").trim() === "";
+
+      const pList = window.document.createElement("p");
+      pList.textContent = "paragraph";
+      vc.appendChild(pList);
+      caretIn(pList.firstChild, 0);
+      pressAct("ul");
+      const ul = vc.lastElementChild;
+      const firstLi = ul && ul.querySelector("li");
+      check("hybrid: the UL button anchors the caret in the new item",
+        !!firstLi && selInside(firstLi),
+        "anchor=" + (window.getSelection().anchorNode &&
+          window.getSelection().anchorNode.nodeName));
+
+      // A type change (UL -> OL) keeps the caret in the same item node.
+      const retagged = window.document.createElement("ul");
+      const retagLi = window.document.createElement("li");
+      retagLi.textContent = "retag";
+      retagged.appendChild(retagLi);
+      vc.appendChild(retagged);
+      caretIn(retagLi.firstChild, 0);
+      pressAct("ol");
+      check("hybrid: changing a list item's type anchors the caret in the item",
+        selInside(retagLi) && retagLi.parentNode.tagName === "OL",
+        "parent=" + (retagLi.parentNode && retagLi.parentNode.tagName));
+
+      // Enter at the start of a plain item opens a BLANK item above it;
+      // the original text stays in place and the caret lands in the blank.
+      const plain = window.document.createElement("ul");
+      const liA = window.document.createElement("li");
+      liA.textContent = "first";
+      const liB = window.document.createElement("li");
+      liB.textContent = "second";
+      plain.appendChild(liA);
+      plain.appendChild(liB);
+      vc.appendChild(plain);
+      caretIn(liA.firstChild, 0);
+      const startEv = pressEnter(liA);
+      check("hybrid: Enter at a plain list item's start is claimed",
+        startEv.defaultPrevented);
+      check("hybrid: Enter at a plain list item's start opens an item above",
+        plain.children.length === 3 && blank(plain.children[0]) &&
+        plain.children[1] === liA && plain.children[2] === liB,
+        "children=" + Array.from(plain.children).map((n) => JSON.stringify(n.textContent)));
+      check("hybrid: Enter at a plain list item's start keeps the caret in the original item",
+        selInside(liA));
+
+      // The same at the start of a LATER item: the blank lands above that
+      // item, not at the list's top.
+      caretIn(liB.firstChild, 0);
+      pressEnter(liB);
+      check("hybrid: Enter at a later item's start opens an item directly above it",
+        plain.children.length === 4 && blank(plain.children[2]) &&
+        plain.children[3] === liB,
+        "children=" + Array.from(plain.children).map((n) => JSON.stringify(n.textContent)));
+
+      // A caret inside the text is native: the handler must not insert an
+      // item above or prevent the engine's split.
+      const mid = window.document.createElement("ul");
+      const midLi = window.document.createElement("li");
+      midLi.textContent = "hello";
+      mid.appendChild(midLi);
+      vc.appendChild(mid);
+      caretIn(midLi.firstChild, 2);
+      const midEv = pressEnter(midLi);
+      check("hybrid: Enter mid-item stays native (no item inserted above)",
+        !midEv.defaultPrevented && mid.children.length === 1,
+        "prevented=" + midEv.defaultPrevented + " children=" + mid.children.length);
+
+      // Task items follow the same rule: at the item's content start the
+      // new task item opens ABOVE and the caret stays at the original
+      // text start, now below the blank.
+      const tasks = window.document.createElement("ul");
+      const taskLi = window.document.createElement("li");
+      taskLi.className = "task-list-item";
+      const taskCb = window.document.createElement("input");
+      taskCb.type = "checkbox";
+      const taskText = window.document.createTextNode("task");
+      taskLi.appendChild(taskCb);
+      taskLi.appendChild(taskText);
+      tasks.appendChild(taskLi);
+      vc.appendChild(tasks);
+      caretIn(taskText, 0);
+      pressEnter(taskLi);
+      check("hybrid: a task item at its start opens the next item above",
+        tasks.children.length === 2 && blank(tasks.children[0]) &&
+        tasks.children[0].querySelector('input[type="checkbox"]') !== null &&
+        tasks.children[1] === taskLi && selInside(taskLi) &&
+        window.getSelection().anchorNode === taskText &&
+        window.getSelection().anchorOffset === 0,
+        "children=" + tasks.children.length);
+
+      // The raw boundary BEFORE the checkbox (the shape a Firefox click can
+      // leave): the blank still opens above, and the caret is nudged to the
+      // item's text start after the box.
+      const preTasks = window.document.createElement("ul");
+      const preLi = window.document.createElement("li");
+      preLi.className = "task-list-item";
+      const preCb = window.document.createElement("input");
+      preCb.type = "checkbox";
+      const preText = window.document.createTextNode("task");
+      preLi.appendChild(preCb);
+      preLi.appendChild(preText);
+      preTasks.appendChild(preLi);
+      vc.appendChild(preTasks);
+      caretIn(preLi, 0);
+      pressEnter(preLi);
+      check("hybrid: a caret before the task checkbox still opens the item above",
+        preTasks.children.length === 2 && blank(preTasks.children[0]) &&
+        preTasks.children[1] === preLi &&
+        window.getSelection().anchorNode === preText &&
+        window.getSelection().anchorOffset === 0,
+        "children=" + preTasks.children.length + " anchor=" +
+        (window.getSelection().anchorNode && window.getSelection().anchorNode.nodeName));
+
+      // Away from the start the task item continues below: at the content
+      // end the next task item opens after this item's whole subtree.
+      caretIn(taskText, taskText.length);
+      pressEnter(taskLi);
+      check("hybrid: a task item at its content end opens the next item below",
+        tasks.children.length === 3 && tasks.children[1] === taskLi &&
+        blank(tasks.children[2]) && selInside(tasks.children[2]),
+        "children=" + tasks.children.length);
+
+      // MID-text must NOT be claimed: the engine splits the text into a new
+      // sibling <li> and the repair pass adds that item's checkbox after
+      // the default action. Here (no engine) the keydown must at least stay
+      // unclaimed and must not insert a blank item.
+      const midTask = window.document.createElement("ul");
+      const midTaskLi = window.document.createElement("li");
+      midTaskLi.className = "task-list-item";
+      const midCb = window.document.createElement("input");
+      midCb.type = "checkbox";
+      const midText = window.document.createTextNode("hello");
+      midTaskLi.appendChild(midCb);
+      midTaskLi.appendChild(midText);
+      midTask.appendChild(midTaskLi);
+      vc.appendChild(midTask);
+      caretIn(midText, 2);
+      const midTaskEv = pressEnter(midTaskLi);
+      check("hybrid: task mid-text Enter is left to the engine to split",
+        !midTaskEv.defaultPrevented && midTask.children.length === 1,
+        "prevented=" + midTaskEv.defaultPrevented +
+        " children=" + midTask.children.length);
+
+      // An IME composition Enter confirms the composition; it must not
+      // split the item.
+      const compTasks = window.document.createElement("ul");
+      const compLi = window.document.createElement("li");
+      compLi.className = "task-list-item";
+      const compCb = window.document.createElement("input");
+      compCb.type = "checkbox";
+      const compText = window.document.createTextNode("ime");
+      compLi.appendChild(compCb);
+      compLi.appendChild(compText);
+      compTasks.appendChild(compLi);
+      vc.appendChild(compTasks);
+      caretIn(compText, 0);
+      const compEv = pressEnter(compLi, { isComposing: true });
+      check("hybrid: an IME composition Enter does not split a task item",
+        !compEv.defaultPrevented && compTasks.children.length === 1,
+        "prevented=" + compEv.defaultPrevented +
+        " children=" + compTasks.children.length);
+
+      // A task item created from an empty line with a <br> line box must
+      // drop that box. Left in, it survived typing and saved as trailing
+      // spaces plus an indented blank line.
+      const pBr = window.document.createElement("p");
+      pBr.appendChild(window.document.createElement("br"));
+      vc.appendChild(pBr);
+      caretIn(pBr, 0);
+      pressAct("task");
+      const brTaskList = vc.lastElementChild;
+      const brTaskLi = brTaskList && brTaskList.querySelector("li");
+      check("hybrid: a task item from an empty line drops its <br> line box",
+        !!brTaskLi && !brTaskLi.querySelector("br") &&
+        brTaskLi.textContent.indexOf("\u200B") !== -1,
+        "html=" + (brTaskLi && brTaskLi.outerHTML));
+
+      // Ordered lists and nested items use the same above-at-start rule.
+      const ordered = window.document.createElement("ol");
+      const orderedFirst = window.document.createElement("li");
+      orderedFirst.textContent = "first";
+      const orderedSecond = window.document.createElement("li");
+      orderedSecond.textContent = "second";
+      ordered.appendChild(orderedFirst);
+      ordered.appendChild(orderedSecond);
+      vc.appendChild(ordered);
+      caretIn(orderedFirst.firstChild, 0);
+      pressEnter(orderedFirst);
+      check("hybrid: Enter at an ordered item's start opens an item above",
+        ordered.children.length === 3 && blank(ordered.children[0]) &&
+        ordered.children[1] === orderedFirst && ordered.children[2] === orderedSecond,
+        "children=" + ordered.children.length);
+
+      const nested = window.document.createElement("ul");
+      const parentLi = window.document.createElement("li");
+      parentLi.textContent = "parent";
+      const childList = window.document.createElement("ul");
+      const childLi = window.document.createElement("li");
+      childLi.textContent = "child";
+      childList.appendChild(childLi);
+      parentLi.appendChild(childList);
+      nested.appendChild(parentLi);
+      vc.appendChild(nested);
+      caretIn(childLi.firstChild, 0);
+      pressEnter(childLi);
+      check("hybrid: Enter at a nested item's start opens an item in that list",
+        childList.children.length === 2 && blank(childList.children[0]) &&
+        childList.children[1] === childLi && nested.children.length === 1,
+        "children=" + childList.children.length);
+
+      [ul, retagged, plain, mid, tasks, preTasks, midTask, compTasks,
+        brTaskList, ordered, nested].forEach((n) => n && n.remove());
+    }
+
     await typeIn("> ");
     check("hybrid: input rule '> ' makes a blockquote",
       vc.querySelector("blockquote") !== null,
@@ -12791,10 +13033,9 @@ function check(label, cond, extra) {
         "attr=" + (cbNext && cbNext.getAttribute("contenteditable")));
 
       // Enter at the very start of the FIRST task item (before its first
-      // character, the caret a checkbox click leaves) still opens the new
-      // task item BELOW it and moves the caret there. Regression: it opened
-      // above, so the caret stayed on the first line while the item text
-      // moved down to the second.
+      // character, the caret a checkbox click leaves) opens the new task
+      // item ABOVE it and leaves the caret at the start of the original
+      // text, now the second item.
       vcT.innerHTML = "";
       const ulS = window.document.createElement("ul");
       const liS = window.document.createElement("li");
@@ -12814,24 +13055,24 @@ function check(label, cond, extra) {
       vcT.dispatchEvent(new window.KeyboardEvent("keydown",
         { key: "Enter", bubbles: true, cancelable: true }));
       await tick(20);
-      const liBelow = ulS.children[1];
-      const cbBelow = liBelow && liBelow.querySelector('input[type="checkbox"]');
-      const sBelow = window.getSelection();
-      check("hybrid Enter: at the first task item's start the new item goes below",
-        ulS.children.length === 2 && liBelow !== liS &&
-        liBelow.classList.contains("task-list-item") &&
-        cbBelow !== null && cbBelow.parentElement === liBelow &&
-        ulS.children[0] === liS && liS.textContent.includes("task"),
+      const liAbove = ulS.children[0];
+      const cbAbove = liAbove && liAbove.querySelector('input[type="checkbox"]');
+      const sAbove = window.getSelection();
+      check("hybrid Enter: at the first task item's start the new item goes above",
+        ulS.children.length === 2 && liAbove !== liS &&
+        liAbove.classList.contains("task-list-item") &&
+        cbAbove !== null && cbAbove.parentElement === liAbove &&
+        ulS.children[1] === liS && liS.textContent.includes("task"),
         "ul=" + ulS.outerHTML);
-      check("hybrid Enter: the caret lands after the new below checkbox",
-        sBelow.rangeCount > 0 && sBelow.isCollapsed &&
-        cbBelow && sBelow.anchorNode === cbBelow.nextSibling &&
-        sBelow.anchorNode.nodeType === 3 && sBelow.anchorOffset === 0,
-        "node=" + (sBelow.anchorNode && sBelow.anchorNode.nodeName) +
-        " off=" + sBelow.anchorOffset);
+      check("hybrid Enter: the caret stays at the original item's text start",
+        sAbove.rangeCount > 0 && sAbove.isCollapsed &&
+        sAbove.anchorNode === cbS.nextSibling &&
+        sAbove.anchorNode.nodeType === 3 && sAbove.anchorOffset === 0,
+        "node=" + (sAbove.anchorNode && sAbove.anchorNode.nodeName) +
+        " off=" + sAbove.anchorOffset);
 
       // The same rule applies to a later item: the new sibling lands
-      // after it, never before it or at the top of the list.
+      // directly before it, never after it or at the top of the list.
       vcT.innerHTML = "<ul><li><input type=\"checkbox\"> one</li>" +
         "<li><input type=\"checkbox\"> two</li></ul>";
       const ulM = vcT.firstElementChild;
@@ -12847,9 +13088,9 @@ function check(label, cond, extra) {
       await tick(20);
       check("hybrid Enter: at a later task item's start the new item stays local",
         ulM.children.length === 3 &&
-        ulM.children[1] === liTwo &&
-        ulM.children[2].textContent.replace(/\u200B/g, "").trim() === "" &&
-        ulM.children[2].querySelector('input[type="checkbox"]') !== null,
+        ulM.children[2] === liTwo &&
+        ulM.children[1].textContent.replace(/\u200B/g, "").trim() === "" &&
+        ulM.children[1].querySelector('input[type="checkbox"]') !== null,
         "ul=" + ulM.outerHTML);
 
       // Regression: a selection whose common ancestor is the whole <ul>

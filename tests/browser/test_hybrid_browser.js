@@ -304,6 +304,114 @@ async function main() {
         JSON.stringify(le));
     }
 
+    // --- behavior catalog: edit-bar list button anchors the caret ------
+    // Clicking UL on an empty line builds a one-item list. The caret used
+    // to be re-anchored at the <ul> level, whose range has no line box, so
+    // the caret was painted on the line above and the first keystroke
+    // looked misplaced. The selection must anchor inside the new item.
+    writeNote("notes/listbutton.md", "above\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/listbutton.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await caretInBlock(page, "#viewer-content p", 0);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+    await page.click('#edit-bar [data-act="ul"]');
+    await page.waitForTimeout(80);
+    {
+      const anchored = await page.evaluate(() => {
+        const sel = window.getSelection();
+        const node = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+        const li = document.querySelector("#viewer-content li");
+        return !!li && !!node && (node === li || li.contains(node));
+      });
+      check("real browser: the edit-bar list button anchors the caret in the new item",
+        anchored);
+    }
+    await page.keyboard.type("item");
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    {
+      const lb = readNote("notes/listbutton.md");
+      check("real browser: the edit-bar list button saves the typed text in the item",
+        lb.indexOf("aboveitem") === -1 && /^-   item$/m.test(lb),
+        JSON.stringify(lb));
+    }
+
+    // Enter before the first character of a PLAIN list item opens a blank
+    // item ABOVE it and leaves the caret at the start of the original text,
+    // now the second item -- the same place a newline at the caret leaves
+    // the cursor in a text editor. The gesture is a real click plus Home.
+    writeNote("notes/liststartenter.md", "- first\n- second\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/liststartenter.md"));
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.click("#viewer-content li");
+    await page.keyboard.press("Home");
+    await page.keyboard.press("Enter");
+    {
+      const state = await page.evaluate(() => {
+        const lis = document.querySelectorAll("#viewer-content li");
+        const sel = window.getSelection();
+        return {
+          count: lis.length,
+          firstBlank: lis[0] && lis[0].textContent.replace(/\u200B/g, "").trim() === "",
+          caretInSecond: !!sel.anchorNode && !!lis[1] && lis[1].contains(sel.anchorNode),
+        };
+      });
+      check("real browser: Enter at a list item's start keeps the caret with the text below",
+        state.count === 3 && state.firstBlank && state.caretInSecond,
+        JSON.stringify(state));
+    }
+    await page.keyboard.type("added");
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    {
+      const lines = readNote("notes/liststartenter.md").trimEnd().split("\n");
+      check("real browser: Enter at the first character of a list item opens an item above",
+        lines.length === 3 && /^-$/.test(lines[0]) &&
+        /^-   addedfirst$/.test(lines[1]) && /^-   second$/.test(lines[2]),
+        JSON.stringify(lines));
+    }
+
+    // A task item created from an empty line must not carry that line's
+    // <br> into the item. Once the user typed, the stray break survived
+    // and Enter for the next line saved "- [ ] one  \n    \n".
+    writeNote("notes/tasknextline.md", "above\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/tasknextline.md"));
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.click("#viewer-content p");
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(50);
+    await page.click('#edit-bar [data-act="task"]');
+    await page.waitForTimeout(80);
+    await page.keyboard.type("one");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("two");
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    {
+      const lines = readNote("notes/tasknextline.md").trimEnd().split("\n");
+      check("real browser task: next line after the first item saves clean Markdown",
+        lines.length === 4 && lines[0] === "above" && lines[1] === "" &&
+        lines[2] === "- [ ] one" && lines[3] === "- [ ] two",
+        JSON.stringify(lines));
+    }
+
     // --- behavior catalog: emptied blockquote keeps its marker (Q7) --
     writeNote("notes/emptyquote.md", "> quote\n\nbody\n");
     await page.goto(BASE + "/?file=" + encodeURIComponent("notes/emptyquote.md"));
@@ -1005,13 +1113,62 @@ async function main() {
     }
 
     // Enter before the first character of a checkbox item -- the caret a
-    // checkbox click leaves -- still opens the new item BELOW and puts the
-    // caret in it. The caret is put at the item text's offset 0 in the real
-    // editing engine, then a real Enter keypress types into the new item;
-    // the saved bytes prove the text landed second, not first.
+    // click just right of the box leaves -- opens the new task item ABOVE
+    // and leaves the caret at the start of the original text, now the
+    // second item. A real pointer click in the gap after the checkbox is
+    // used, then a real Enter and typed text; the saved bytes prove the
+    // text landed second, below the blank.
     {
       writeNote("notes/taskstartenter.md", "- [ ] first\n- [ ] second\n");
       await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartenter.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      const gap = await page.evaluate(() => {
+        const cb = document.querySelector('#viewer-content li input[type="checkbox"]');
+        const r = cb.getBoundingClientRect();
+        return { x: r.right + 3, y: r.top + r.height / 2 };
+      });
+      await page.mouse.click(gap.x, gap.y);
+      await page.waitForTimeout(50);
+      await page.keyboard.press("Enter");
+      {
+        const state = await page.evaluate(() => {
+          const lis = document.querySelectorAll("#viewer-content li");
+          const sel = window.getSelection();
+          return {
+            count: lis.length,
+            firstBlank: lis[0] && lis[0].textContent.replace(/\u200B/g, "").trim() === "",
+            firstHasBox: !!(lis[0] && lis[0].querySelector('input[type="checkbox"]')),
+            caretInSecond: !!sel.anchorNode && !!lis[1] && lis[1].contains(sel.anchorNode),
+            caretAtTextStart: sel.anchorNode && sel.anchorNode.nodeType === 3 &&
+              sel.anchorOffset === 0,
+          };
+        });
+        check("real browser task: Enter at the item's start keeps the caret with the text below",
+          state.count === 3 && state.firstBlank && state.firstHasBox &&
+          state.caretInSecond && state.caretAtTextStart,
+          JSON.stringify(state));
+      }
+      await page.keyboard.type("added");
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const lines = readNote("notes/taskstartenter.md").trimEnd().split("\n");
+      check("real browser task: Enter at the first character opens an item above",
+        lines.length === 3 && lines[0].trimEnd() === "- [ ]" &&
+        /^- \[ \] addedfirst$/.test(lines[1]) && /^- \[ \] second$/.test(lines[2]),
+        JSON.stringify(lines));
+    }
+
+    // Enter MID-TEXT in a task item splits it into two task items: the text
+    // before the caret stays, the text after it moves down into a new item
+    // with its own checkbox, and the caret continues right of that box.
+    {
+      writeNote("notes/taskmidsplit.md", "- [ ] hello\n- [ ] second\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskmidsplit.md"));
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -1021,23 +1178,23 @@ async function main() {
         const vc = document.getElementById("viewer-content");
         vc.focus();
         const li = vc.querySelector("li");
-        const text = li && li.lastChild;
         const r = document.createRange();
-        r.setStart(text, 0);
+        r.setStart(li.lastChild, 2);
         r.collapse(true);
         const sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(r);
       });
       await page.keyboard.press("Enter");
-      await page.keyboard.type("added");
+      await page.waitForTimeout(200);
+      await page.keyboard.type("X");
       await saveAndExit(page);
       await page.waitForFunction(
         () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
-      const lines = readNote("notes/taskstartenter.md").trimEnd().split("\n");
-      check("real browser task: Enter at the first character opens an item below",
-        lines.length === 3 && /^- \[ \] first$/.test(lines[0]) &&
-        /^- \[ \] added$/.test(lines[1]) && lines[2].indexOf("second") !== -1,
+      const lines = readNote("notes/taskmidsplit.md").trimEnd().split("\n");
+      check("real browser task: Enter mid-item splits it into two task items",
+        lines.length === 3 && /^- \[ \] he$/.test(lines[0]) &&
+        /^- \[ \] Xllo$/.test(lines[1]) && /^- \[ \] second$/.test(lines[2]),
         JSON.stringify(lines));
     }
 
