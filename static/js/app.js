@@ -68,6 +68,10 @@
     // sidebar reorders them via drag-and-drop. Folders that vanish from
     // the tree (e.g. after a delete) are pruned on the next refresh.
     pinnedFolders: [],
+    // Which section fills the Explorer view's top slot: "pinned" for the
+    // pinned-folder list, "bookmarks" for an inline copy of the bookmark
+    // list, or "none". The header toggle cycles all three.
+    explorerTop: "pinned",
     // User-supplied vimrc: lines of VIM initial script applied to the
     // editor's vim plugin (cm-bridge.compileVimrc). Empty by default;
     // populated via the Settings modal's VIM script pane. Stored as
@@ -366,6 +370,15 @@
     // Pinned section renders before the first tree refresh arrives.
     if (NB.sidebar && NB.sidebar.setPinnedFolders) {
       NB.sidebar.setPinnedFolders(cfg.pinnedFolders || []);
+    }
+    // Explorer top-section mode: the sidebar owns the valid set and
+    // normalizes a hand-edited config value; read the result back so a
+    // later write persists a known value.
+    if (NB.sidebar && NB.sidebar.setExplorerTop) {
+      NB.sidebar.setExplorerTop(cfg.explorerTop);
+      cfg.explorerTop = NB.sidebar.getExplorerTop();
+    } else {
+      cfg.explorerTop = DEFAULTS.explorerTop;
     }
   }
 
@@ -1067,6 +1080,19 @@
     // Read the pinned-folder list (a copy) so callers can snapshot it
     // before a mutation or during a test.
     getPinnedFolders: () => (cfg.pinnedFolders || []).slice(),
+    // Explorer top-section mode. The header toggle calls this; the value
+    // is validated and persisted through the same debounced write path as
+    // the other UI preferences.
+    setExplorerTop: (mode) => {
+      if (NB.sidebar && NB.sidebar.setExplorerTop) {
+        NB.sidebar.setExplorerTop(mode);
+        cfg.explorerTop = NB.sidebar.getExplorerTop();
+      } else {
+        cfg.explorerTop = DEFAULTS.explorerTop;
+      }
+      persistConfig();
+    },
+    getExplorerTop: () => cfg.explorerTop || DEFAULTS.explorerTop,
     // Update the user's vimrc. The Settings modal calls this on save;
     // applyConfig already pulls cfg.vimrc into the editor when the
     // view is created (and when setVimMode(true) re-creates the

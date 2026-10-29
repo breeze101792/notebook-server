@@ -19,6 +19,15 @@
   const PIN_ICON = "pin";
   const STAR_ON = "★";
   const STAR_OFF = "☆";
+  // Tri-state top section in the Explorer view: Pinned folders, inline
+  // Bookmarks, or nothing. Persisted as cfg.explorerTop.
+  const EXPLORER_TOP_LABELS = {
+    pinned: { icon: "📌", current: "Pinned folders", next: "Bookmarks" },
+    bookmarks: { icon: "🔖", current: "Bookmarks", next: "None" },
+    none: { icon: "▭", current: "None", next: "Pinned folders" },
+  };
+  const EXPLORER_TOP_MODES = Object.keys(EXPLORER_TOP_LABELS);
+  const EXPLORER_TOP_DEFAULT = "pinned";
   // Well-known note names get a distinct icon. Keyed by the basename stem
   // (extension stripped, lowercased); any other file falls back to
   // FILE_ICON.
@@ -57,6 +66,17 @@
   const menuEl = document.getElementById("nb-menu");
   // The Pinned section host, above the tree. Built by renderPins().
   const pinsEl = document.getElementById("pinned-folders");
+  // The tri-state top-section toggle in the Explorer header. (The inline
+  // bookmark host next to #pinned-folders is owned by bookmarks.js.)
+  const explorerTopBtn = document.getElementById("explorer-top-toggle");
+  // The Pinned folder view mounted lazily by activity.js, plus its
+  // scrolling list. Both are null until the view is first activated.
+  let pinnedViewEl = null;
+  let pinnedViewListEl = null;
+  // Set of containers whose pin drag handlers are already wired, so a
+  // remount never adds duplicate listeners.
+  const pinDnDWired = new WeakSet();
+  let explorerTop = EXPLORER_TOP_DEFAULT;
   let selectedPath = null;
   // Multi-selection of tree rows (main tree only, never the Pinned
   // section). selectionAnchor is the last plain/ctrl-clicked row and
@@ -474,17 +494,66 @@
     if (NB.app && NB.app.setPinnedFolders) NB.app.setPinnedFolders(getPinnedFolders());
   }
 
-  /* Rebuild the Pinned section from scratch. Hidden entirely when there
-   * are no pins; otherwise a header row ("Pinned") followed by one
-   * expandable row per pin, each showing its subtree when expanded. */
+  /* --- tri-state top section ----------------------------------------- */
+  /* The Explorer header's toggle cycles Pinned folders -> Bookmarks ->
+   * None. The mode is validated here so a hand-edited config.json can
+   * never leave the panel in an unknown state. */
+  function normalizeExplorerTop(mode) {
+    return EXPLORER_TOP_MODES.includes(mode) ? mode : EXPLORER_TOP_DEFAULT;
+  }
+
+  /* Config-load path: set the mode without persisting (app.js owns the
+   * loaded value and calls this from applyConfig). */
+  function setExplorerTop(mode) {
+    explorerTop = normalizeExplorerTop(mode);
+    applyExplorerTop();
+  }
+
+  function getExplorerTop() { return explorerTop; }
+
+  function nextExplorerTop(mode) {
+    if (mode === "pinned") return "bookmarks";
+    if (mode === "bookmarks") return "none";
+    return "pinned";
+  }
+
+  function updateTopToggle() {
+    if (!explorerTopBtn) return;
+    const info = EXPLORER_TOP_LABELS[explorerTop];
+    explorerTopBtn.dataset.mode = explorerTop;
+    explorerTopBtn.textContent = info.icon;
+    explorerTopBtn.title =
+      "Top section: " + info.current + ". Click to show " + info.next + ".";
+    explorerTopBtn.setAttribute("aria-label", explorerTopBtn.title);
+  }
+
+  function applyExplorerTop() {
+    updateTopToggle();
+    renderPinsInline();
+    // Tell bookmarks.js whether its inline section is the active one; it
+    // keeps the host hidden when the list itself is empty.
+    if (NB.bookmarks && NB.bookmarks.setExplorerVisible) {
+      NB.bookmarks.setExplorerVisible(explorerTop === "bookmarks");
+    }
+  }
+
+  /* Rebuild both Pinned surfaces from scratch. Call this after every pin
+   * mutation so the inline Explorer section and the activity-bar view
+   * never drift apart. */
   function renderPins() {
+    renderPinsInline();
+    renderPinnedView();
+  }
+
+  /* Inline section: hidden unless the top section is "pinned" and there
+   * is at least one pin. A header row ("Pinned") is followed by one
+   * expandable row per pin, each showing its subtree when expanded. */
+  function renderPinsInline() {
     if (!pinsEl) return;
     pinsEl.innerHTML = "";
-    if (!pinnedFolders.length) {
-      pinsEl.hidden = true;
-      return;
-    }
-    pinsEl.hidden = false;
+    const visible = explorerTop === "pinned" && pinnedFolders.length > 0;
+    pinsEl.hidden = !visible;
+    if (!visible) return;
     const header = document.createElement("div");
     header.className = "pinned-header";
     const title = document.createElement("span");
@@ -492,16 +561,24 @@
     title.textContent = "Pinned";
     header.appendChild(title);
     pinsEl.appendChild(header);
+    appendPinRows(pinsEl, sidebarEl);
+  }
+
+  /* Append the shared pin rows (and any expanded subtrees) to a
+   * container. `scope` is the element the row context menu belongs to:
+   * the Explorer view for the inline section, the Pinned view host for
+   * the activity-bar view. */
+  function appendPinRows(container, scope) {
     for (const path of pinnedFolders) {
-      pinsEl.appendChild(renderPinRow(path));
+      container.appendChild(renderPinRow(path, scope));
       if (pinExpanded.has(path)) {
         const node = findNode(treeCache, path);
         // A pin whose folder vanished simply renders no children until the
         // next prune removes it.
         if (node && node.children) {
           node.children.forEach((child, i) => {
-            for (const el of renderPinChild(child, i === node.children.length - 1, [])) {
-              pinsEl.appendChild(el);
+            for (const el of renderPinChild(child, i === node.children.length - 1, [], scope)) {
+              container.appendChild(el);
             }
           });
         }
@@ -509,10 +586,56 @@
     }
   }
 
+  /* Activity-bar Pinned view: a standard panel header plus a scrolling
+   * list. Unlike the inline section it never disappears -- with no pins
+   * it shows an empty hint so the view is not a blank pane. */
+  function mountPinnedView(host) {
+    if (!host) return;
+    pinnedViewEl = host;
+    host.innerHTML = "";
+    const header = document.createElement("div");
+    header.className = "panel-header";
+    const title = document.createElement("span");
+    title.className = "panel-title";
+    title.textContent = "Pinned";
+    header.appendChild(title);
+    if (NB.activity && NB.activity.makeCollapseBtn) {
+      header.appendChild(NB.activity.makeCollapseBtn());
+    }
+    host.appendChild(header);
+
+    const list = document.createElement("div");
+    list.className = "pinned-view-list";
+    host.appendChild(list);
+    pinnedViewListEl = list;
+
+    wirePinsDnD(list);
+    list.addEventListener("contextmenu", (e) => {
+      if (e.target.closest && e.target.closest(".pin-row,.pin-child")) return;
+      e.preventDefault();
+      if (isPhone()) return;
+      openPinsRootMenu(e, host);
+    });
+    renderPinnedView();
+  }
+
+  function renderPinnedView() {
+    if (!pinnedViewListEl) return;
+    pinnedViewListEl.innerHTML = "";
+    if (!pinnedFolders.length) {
+      const empty = document.createElement("div");
+      empty.className = "pinned-view-empty";
+      empty.textContent = "No pinned folders. Pin one from a folder's menu.";
+      pinnedViewListEl.appendChild(empty);
+      return;
+    }
+    appendPinRows(pinnedViewListEl, pinnedViewEl);
+  }
+
   /* A pinned root row, drawn exactly like a tree root row: flat (no guide
    * cells), folder icon flipping open/closed with expansion, name. The lit
    * pin at the right matches a pinned folder's tree row and unpins on click. */
-  function renderPinRow(path) {
+  function renderPinRow(path, scope) {
     const row = document.createElement("div");
     row.className = "pin-row";
     row.dataset.path = path;
@@ -539,7 +662,7 @@
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (isPhone()) return;
-      openPinMenu(e, path);
+      openPinMenu(e, path, scope);
     });
     return row;
   }
@@ -565,7 +688,7 @@
    * descendants so the caller can append them linearly. Uses .pin-child
    * (never .pin-row / .tree-row) so the pin-reorder drag handlers, the
    * main-tree drag handlers, and the vim cursor ignore it. */
-  function renderPinChild(node, isLast, ancestors) {
+  function renderPinChild(node, isLast, ancestors, scope) {
     const row = document.createElement("div");
     row.className = "pin-child";
     row.dataset.path = node.path;
@@ -592,13 +715,13 @@
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (isPhone()) return;
-      openMenu(e, node);
+      openMenu(e, node, scope);
     });
     if (node.type === "dir" && pinExpanded.has(node.path) && node.children) {
       const out = [row];
       const childAncestors = ancestors.concat(!isLast);
       node.children.forEach((child, i) => {
-        for (const el of renderPinChild(child, i === node.children.length - 1, childAncestors)) {
+        for (const el of renderPinChild(child, i === node.children.length - 1, childAncestors, scope)) {
           out.push(el);
         }
       });
@@ -610,7 +733,7 @@
   /* A pinned row's context menu groups the pin-specific actions together at
    * the top (expand/collapse, collapse all, unpin), then shows the SAME menu
    * the file browser shows for a folder row minus its redundant pin toggle. */
-  function openPinMenu(e, path) {
+  function openPinMenu(e, path, scope) {
     const node = findNode(treeCache, path) || { path, type: "dir", name: baseName(path) };
     const items = [
       {
@@ -622,7 +745,7 @@
       { separator: true },
     ].concat(treeFolderMenuItems(node, { skipPin: true }));
     NB.menu.open({
-      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: scope || sidebarEl,
       items, focusFirst: true,
     });
   }
@@ -630,9 +753,9 @@
   /* Right-clicking the empty Pinned area offers the pinned-section
    * counterpart of the tree's "Collapse all folders": one item that folds
    * every expanded pin. Disabled while nothing is expanded. */
-  function openPinsRootMenu(e) {
+  function openPinsRootMenu(e, scope) {
     NB.menu.open({
-      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: scope || sidebarEl,
       items: [
         {
           label: "Collapse all pinned folders",
@@ -661,10 +784,17 @@
 
   /* --- pin drag-to-reorder -------------------------------------------- */
   /* Mirror the bookmarks list: handlers live on the section element so the
-   * empty area still accepts a drop (which lands the row at the end). */
-  function wirePinsDnD() {
-    if (!pinsEl) return;
-    pinsEl.addEventListener("dragstart", (e) => {
+   * empty area still accepts a drop (which lands the row at the end). The
+   * same wiring serves the inline Pinned section and the activity-bar
+   * Pinned view; both mutate the one `pinnedFolders` order. */
+  function pinDnDContainers() {
+    return [pinsEl, pinnedViewListEl].filter(Boolean);
+  }
+
+  function wirePinsDnD(container) {
+    if (!container || pinDnDWired.has(container)) return;
+    pinDnDWired.add(container);
+    container.addEventListener("dragstart", (e) => {
       const row = e.target.closest && e.target.closest(".pin-row");
       if (!row || !row.dataset.path) { e.preventDefault(); return; }
       draggingPin = row.dataset.path;
@@ -675,21 +805,21 @@
         catch (_) {}
       }
     });
-    pinsEl.addEventListener("dragover", (e) => {
+    container.addEventListener("dragover", (e) => {
       if (!draggingPin) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
       clearPinDropMarks();
       const row = e.target.closest && e.target.closest(".pin-row");
       if (!row || row.dataset.path === draggingPin) {
-        pinsEl.classList.add("drop-empty");
+        container.classList.add("drop-empty");
         return;
       }
       const rect = row.getBoundingClientRect();
       const before = e.clientY < rect.top + rect.height / 2;
       row.classList.add(before ? "drop-before" : "drop-after");
     });
-    pinsEl.addEventListener("drop", (e) => {
+    container.addEventListener("drop", (e) => {
       if (!draggingPin) return;
       e.preventDefault();
       const row = e.target.closest && e.target.closest(".pin-row");
@@ -706,7 +836,7 @@
       try { reorderPin(from, targetPath, before); }
       catch (err) { console.error("pin reorder failed", err); }
     });
-    pinsEl.addEventListener("dragend", clearPinDragging);
+    container.addEventListener("dragend", clearPinDragging);
   }
 
   function reorderPin(fromPath, toPath, before) {
@@ -728,16 +858,18 @@
   }
 
   function clearPinDropMarks() {
-    if (!pinsEl) return;
-    pinsEl.querySelectorAll(".drop-before,.drop-after")
-      .forEach(r => r.classList.remove("drop-before", "drop-after"));
-    pinsEl.classList.remove("drop-empty");
+    for (const el of pinDnDContainers()) {
+      el.querySelectorAll(".drop-before,.drop-after")
+        .forEach(r => r.classList.remove("drop-before", "drop-after"));
+      el.classList.remove("drop-empty");
+    }
   }
   function clearPinDragging() {
     draggingPin = null;
-    if (!pinsEl) return;
-    pinsEl.querySelectorAll(".dragging")
-      .forEach(r => r.classList.remove("dragging"));
+    for (const el of pinDnDContainers()) {
+      el.querySelectorAll(".dragging")
+        .forEach(r => r.classList.remove("dragging"));
+    }
     clearPinDropMarks();
   }
 
@@ -913,7 +1045,8 @@
     return items;
   }
 
-  function openMenu(e, node) {
+  function openMenu(e, node, scope) {
+    const menuScope = scope || sidebarEl;
     // Right-clicking inside a real multi-selection acts on the whole
     // selection; any other row (including every Pinned-section row, which
     // is not a .tree-row) drops it and shows the normal row menu.
@@ -922,7 +1055,7 @@
       const n = topLevelSelectedPaths(Array.from(selectedPaths)).length;
       if (n > 0) {
         NB.menu.open({
-          owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+          owner: "sidebar", x: e.clientX, y: e.clientY, scope: menuScope,
           items: [{
             label: "Move " + n + " " + itemWord(n) + " to…",
             handler: () => { doMoveSelected(); },
@@ -935,7 +1068,7 @@
     clearSelection();
     const items = node.type === "dir" ? treeFolderMenuItems(node) : treeFileMenuItems(node);
     NB.menu.open({
-      owner: "sidebar", x: e.clientX, y: e.clientY, scope: sidebarEl,
+      owner: "sidebar", x: e.clientX, y: e.clientY, scope: menuScope,
       items, focusFirst: true,
     });
   }
@@ -1491,9 +1624,12 @@
     setBookmarks: (list) => { if (NB.bookmarks) NB.bookmarks.set(list); },
     getBookmarks: () => (NB.bookmarks ? NB.bookmarks.get() : []),
     toggleBookmark: (path) => { if (NB.bookmarks) NB.bookmarks.toggle(path); },
-    // Pinned folders: the section above the tree is part of the Explorer
-    // view, so its state and UI live here (not in a separate module).
+    // Pinned folders: the inline section above the tree and the dedicated
+    // activity-bar view both render from this module's state.
     setPinnedFolders, getPinnedFolders, togglePin, hasPin,
+    mountPinnedView,
+    // Explorer top-section tri-state (Pinned folders / Bookmarks / None).
+    setExplorerTop, getExplorerTop,
     // File-operation façade. The tab menu runs the same rename / copy /
     // delete actions the tree and bookmark menus run, for the same path.
     renameFile: (path) => doRename({ path, type: "file" }),
@@ -1503,8 +1639,20 @@
 
   // Wire the pin list's drag-to-reorder + paint the (initially empty)
   // section. setPinnedFolders() re-renders it again once config loads.
-  wirePinsDnD();
+  wirePinsDnD(pinsEl);
+  applyExplorerTop();
   renderPins();
+
+  // Cycle the Explorer top section through Pinned -> Bookmarks -> None.
+  // NB.app owns the cfg value + debounced persistence; the fallback keeps
+  // the button working if app.js has not booted yet.
+  if (explorerTopBtn) {
+    explorerTopBtn.addEventListener("click", () => {
+      const next = nextExplorerTop(explorerTop);
+      if (NB.app && NB.app.setExplorerTop) NB.app.setExplorerTop(next);
+      else setExplorerTop(next);
+    });
+  }
 
   // Right-clicking the empty Pinned area (not a pin row) opens the
   // pinned-section menu; rows handle their own contextmenu.
@@ -1513,23 +1661,25 @@
       if (e.target.closest && e.target.closest(".pin-row,.pin-child")) return;
       e.preventDefault();
       if (isPhone()) return;
-      openPinsRootMenu(e);
+      openPinsRootMenu(e, sidebarEl);
     });
   }
 
   // Keep the tree highlight in sync whenever a file is shown, regardless
   // of how it was opened (tab click, search result, boot). Mirror the
   // active file into the Pinned section's child rows too, so their
-  // .selected never goes stale.
+  // .selected never goes stale. Both pin surfaces repaint from the same
+  // state, so both are updated here.
   NB.evt.on("file:open", (path) => {
     if (path) setSelected(path);
-    if (!pinsEl) return;
-    pinsEl.querySelectorAll(".pin-child.selected")
-      .forEach(r => r.classList.remove("selected"));
-    if (!path) return;
-    const row = pinsEl.querySelector('.pin-child[data-path="' +
-      cssEscape(path) + '"]');
-    if (row) row.classList.add("selected");
+    for (const container of pinDnDContainers()) {
+      container.querySelectorAll(".pin-child.selected")
+        .forEach(r => r.classList.remove("selected"));
+      if (!path) continue;
+      const row = container.querySelector('.pin-child[data-path="' +
+        cssEscape(path) + '"]');
+      if (row) row.classList.add("selected");
+    }
   });
 
   // Bookmark list changes -> refresh that file's inline tree star. The

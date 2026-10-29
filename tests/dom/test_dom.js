@@ -205,12 +205,15 @@ const html = `<!DOCTYPE html><html><head>
         <div id="sidebar" class="side-panel-view" data-view="explorer">
           <div class="panel-header"><span class="panel-title">Files</span>
             <div class="panel-header-actions">
+              <button class="collapse-btn" id="explorer-top-toggle" data-mode="pinned" title="Top section: Pinned folders. Click to show Bookmarks." aria-label="Top section: Pinned folders. Click to show Bookmarks.">📌</button>
               <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
               <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button>
             </div></div>
           <div id="pinned-folders" class="pinned-folders" hidden></div>
+          <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
           <div id="file-tree" class="tree"></div>
         </div>
+        <div id="pinned-view" class="side-panel-view" data-view="pinned" hidden></div>
         <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
         <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
@@ -16256,6 +16259,123 @@ function check(label, cond, extra) {
       check("bookmarks view: Explorer icon returns to the file tree",
         $("bookmarks-view").hidden && !$("sidebar").hidden &&
         window.NB.activity.getActive() === "explorer");
+
+      // --- Explorer tri-state top section -----------------------------
+      // The header toggle swaps the area above #file-tree between the
+      // Pinned folder list, an inline copy of the bookmark list, and
+      // nothing. The mode persists as cfg.explorerTop.
+      const topToggle = $("explorer-top-toggle");
+      check("explorer top: header ships the tri-state toggle",
+        !!topToggle && topToggle.dataset.mode === "pinned",
+        topToggle ? topToggle.dataset.mode : "missing");
+      check("explorer top: app.js DEFAULTS declares explorerTop",
+        read("static/js/app.js").indexOf('explorerTop: "pinned"') !== -1);
+
+      window.NB.bookmarks.set(["notes/a.md"]);
+      await tick(10);
+      check("explorer top: inline host starts hidden in pinned mode",
+        $("explorer-bookmarks").hidden);
+
+      window.NB.app.setExplorerTop("bookmarks");
+      await tick(20);
+      check("explorer top: bookmarks mode shows the inline host",
+        !$("explorer-bookmarks").hidden);
+      const inlineRow = window.document.querySelector(
+        "#explorer-bookmarks .bookmark-row");
+      check("explorer top: inline rows reuse .bookmark-row markup",
+        !!inlineRow && inlineRow.dataset.path === "notes/a.md",
+        inlineRow ? inlineRow.dataset.path : "no row");
+
+      // Inline drag-to-reorder mutates the one shared bookmark order.
+      window.NB.bookmarks.set(["notes/a.md", "notes/b.md"]);
+      await tick(10);
+      const inlineRows = () =>
+        Array.from(window.document.querySelectorAll("#explorer-bookmarks .bookmark-row"));
+      check("explorer top: inline list renders every bookmark",
+        inlineRows().map(r => r.dataset.path).join(",") === "notes/a.md,notes/b.md",
+        inlineRows().map(r => r.dataset.path).join(","));
+      inlineRows()[0].dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      const inlineTarget = inlineRows()[1];
+      const realInlineRect = inlineTarget.getBoundingClientRect;
+      inlineTarget.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: 200, bottom: 20, width: 200, height: 20,
+        x: 0, y: 0, toJSON() {},
+      });
+      try {
+        inlineTarget.dispatchEvent(new window.MouseEvent("dragover",
+          { bubbles: true, clientY: 18 }));
+        inlineTarget.dispatchEvent(new window.MouseEvent("drop",
+          { bubbles: true, clientY: 18 }));
+      } finally {
+        inlineTarget.getBoundingClientRect = realInlineRect;
+      }
+      await tick(20);
+      check("explorer top: inline drag reorders the shared bookmarks",
+        window.NB.bookmarks.get().join(",") === "notes/b.md,notes/a.md",
+        window.NB.bookmarks.get().join(","));
+
+      // Inline row menu opens and closes against the inline host scope.
+      inlineRows()[0].dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 20, clientY: 20 }));
+      await tick(10);
+      check("explorer top: inline row opens the bookmark menu",
+        !$("nb-menu").hidden &&
+        Array.from($("nb-menu").querySelectorAll("button"))
+          .some(b => b.textContent === "Open"));
+      window.document.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+      window.NB.bookmarks.set(["notes/a.md"]);
+      await tick(10);
+      check("explorer top: pinned section hidden in bookmarks mode",
+        $("pinned-folders").hidden);
+      check("explorer top: toggle reflects bookmarks mode + next step",
+        topToggle.dataset.mode === "bookmarks" &&
+        topToggle.title.indexOf("Bookmarks") !== -1 &&
+        topToggle.title.indexOf("None") !== -1,
+        topToggle.title);
+
+      // mobile.js rewrites every #side-panel .collapse-btn caption on a
+      // resize; the tri-state toggle must keep its own glyph and label.
+      window.NB.mobile.refreshMode();
+      check("explorer top: chrome sync leaves the toggle label alone",
+        topToggle.textContent === "🔖" && topToggle.title.indexOf("Bookmarks") !== -1,
+        topToggle.textContent + " | " + topToggle.title);
+      await tick(350);
+      const topCfg1 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+      check("explorer top: bookmarks mode persisted",
+        /"explorerTop":"bookmarks"/.test(topCfg1), topCfg1);
+
+      // Clicking the toggle cycles bookmarks -> none.
+      topToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("explorer top: toggle cycles to none",
+        topToggle.dataset.mode === "none" &&
+        $("explorer-bookmarks").hidden && $("pinned-folders").hidden,
+        topToggle.dataset.mode);
+      await tick(350);
+      const topCfg2 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+      check("explorer top: none mode persisted",
+        /"explorerTop":"none"/.test(topCfg2), topCfg2);
+
+      // Clicking again cycles none -> pinned; the empty inline host stays
+      // hidden and the (empty) Pinned section stays hidden too.
+      topToggle.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("explorer top: toggle cycles back to pinned",
+        topToggle.dataset.mode === "pinned" &&
+        $("explorer-bookmarks").hidden && $("pinned-folders").hidden,
+        topToggle.dataset.mode);
+      await tick(350);
+      const topCfg3 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+      check("explorer top: pinned mode persisted",
+        /"explorerTop":"pinned"/.test(topCfg3), topCfg3);
+      check("explorer top: invalid mode falls back to pinned",
+        (window.NB.app.setExplorerTop("bogus"), window.NB.app.getExplorerTop() === "pinned"),
+        window.NB.app.getExplorerTop());
+      window.NB.bookmarks.set([]);
+      await tick(10);
+      check("explorer top: inline host hides when the bookmark list is empty",
+        $("explorer-bookmarks").hidden);
     } else {
       check("bookmarks view: activity bar button missing", false);
     }
@@ -17821,6 +17941,104 @@ function check(label, cond, extra) {
     await tick(20);
     window.NB.sidebar.setPinnedFolders([]);
     await tick(20);
+
+    // --- dedicated Pinned activity-bar view ---------------------------
+    // The same pin rows render into #pinned-view, mounted lazily by
+    // activity.js. It shares pinExpanded + the pinnedFolders order with
+    // the inline section, but shows an empty hint instead of hiding.
+    const pinnedBtn = window.document.querySelector(
+      '#activity-bar .activity-btn[data-view="pinned"]');
+    check("pinned view: activity bar has a data-view=pinned button",
+      !!pinnedBtn);
+    check("pinned view: index.html ships #pinned-view",
+      read("templates/index.html").indexOf('id="pinned-view"') !== -1);
+    check("pinned view: sidebar exports mountPinnedView",
+      typeof window.NB.sidebar.mountPinnedView === "function");
+
+    if (pinnedBtn) {
+      pinnedBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("pinned view: the 📌 icon shows #pinned-view",
+        !$("pinned-view").hidden && $("sidebar").hidden &&
+        window.NB.activity.getActive() === "pinned",
+        "active=" + window.NB.activity.getActive());
+      check("pinned view: header has the title + collapse button",
+        window.document.querySelector("#pinned-view .panel-title").textContent === "Pinned" &&
+        !!window.document.querySelector("#pinned-view .panel-header .collapse-btn"));
+      const pinnedEmpty = window.document.querySelector("#pinned-view .pinned-view-empty");
+      check("pinned view: empty state explains how to pin",
+        !!pinnedEmpty &&
+        pinnedEmpty.textContent.indexOf("No pinned folders") !== -1 &&
+        pinnedEmpty.textContent.indexOf("menu") !== -1,
+        pinnedEmpty ? pinnedEmpty.textContent : "missing");
+
+      window.NB.sidebar.setPinnedFolders(["notes", "notes/archive"]);
+      await tick(20);
+      const pinnedRows = () =>
+        Array.from(window.document.querySelectorAll("#pinned-view .pin-row"));
+      const pinnedChildren = () =>
+        Array.from(window.document.querySelectorAll("#pinned-view .pin-child"));
+      check("pinned view: pins render as .pin-row rows",
+        pinnedRows().map(r => r.dataset.path).join(",") === "notes,notes/archive",
+        pinnedRows().map(r => r.dataset.path).join(","));
+
+      pinnedRows()[0].dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("pinned view: clicking a pin expands its subtree in place",
+        pinnedChildren().map(r => r.dataset.path).join(",") ===
+          "notes/a.md,notes/b.md",
+        pinnedChildren().map(r => r.dataset.path).join(","));
+      check("pinned view: the inline section mirrors the same expansion",
+        window.document.querySelectorAll("#pinned-folders .pin-child").length ===
+          pinnedChildren().length);
+
+      const pinnedChildA = window.document.querySelector(
+        '#pinned-view .pin-child[data-path="notes/a.md"]');
+      window.NB.evt.emit("file:open", "notes/a.md");
+      await tick(20);
+      check("pinned view: the active file row is selected",
+        !!pinnedChildA && pinnedChildA.classList.contains("selected"));
+
+      // Drag-to-reorder inside the Pinned view mutates the one shared
+      // order; the inline section repaints to match.
+      const dragRows = pinnedRows();
+      dragRows[0].dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      const dragTarget = dragRows[1];
+      const realRect2 = dragTarget.getBoundingClientRect;
+      dragTarget.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: 200, bottom: 20, width: 200, height: 20,
+        x: 0, y: 0, toJSON() {},
+      });
+      try {
+        dragTarget.dispatchEvent(new window.MouseEvent("dragover",
+          { bubbles: true, clientY: 18 }));
+        dragTarget.dispatchEvent(new window.MouseEvent("drop",
+          { bubbles: true, clientY: 18 }));
+      } finally {
+        dragTarget.getBoundingClientRect = realRect2;
+      }
+      await tick(20);
+      check("pinned view drag: dropping after a row reorders the shared pins",
+        window.NB.sidebar.getPinnedFolders().join(",") === "notes/archive,notes",
+        window.NB.sidebar.getPinnedFolders().join(","));
+      check("pinned view drag: the inline section reflects the same order",
+        Array.from(window.document.querySelectorAll("#pinned-folders .pin-row"))
+          .map(r => r.dataset.path).join(",") === "notes/archive,notes");
+
+      window.NB.sidebar.setPinnedFolders([]);
+      await tick(20);
+      check("pinned view: clearing every pin restores the empty hint",
+        !!window.document.querySelector("#pinned-view .pinned-view-empty") &&
+        !window.document.querySelector("#pinned-view .pin-row"));
+
+      const explorerBack2 = window.document.querySelector(
+        '#activity-bar .activity-btn[data-view="explorer"]');
+      explorerBack2.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("pinned view: Explorer icon returns to the file tree",
+        $("pinned-view").hidden && !$("sidebar").hidden &&
+        window.NB.activity.getActive() === "explorer");
+    }
   }
 
   console.log("== tabs: close active ==");
@@ -28653,8 +28871,8 @@ function check(label, cond, extra) {
 
     // 4. The registry and the server host set stay in sync.
     const ids = window.NB.activity.views();
-    check("adopt: views() lists the five ids in registration order",
-      ids.join(",") === "explorer,bookmarks,recent,search,ai", ids.join(","));
+    check("adopt: views() lists the six ids in registration order",
+      ids.join(",") === "explorer,pinned,bookmarks,recent,search,ai", ids.join(","));
     const tplIds = Array.from(
       read("templates/index.html").matchAll(
         /class="side-panel-view"[^>]*data-view="([^"]+)"/g),

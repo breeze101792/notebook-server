@@ -10,9 +10,9 @@
  * The bar is intentionally generic: the module adopts whichever
  * .side-panel-view host the server rendered visible as the boot view
  * (so a reload shows the saved view with no flash), falling back to
- * Explorer when none is visible. Further views (Bookmarks, Recent,
- * Search, AI, future plugins) register the same way, so adding a new
- * side-panel function is a single NB.activity.register() call.
+ * Explorer when none is visible. Further views (Pinned, Bookmarks,
+ * Recent, Search, AI, future plugins) register the same way, so adding
+ * a new side-panel function is a single NB.activity.register() call.
  */
 (function () {
   "use strict";
@@ -575,6 +575,18 @@
     icon: "📁",
     label: "Explorer",
     mount: function () {},
+  });
+  // Pinned folders: the same pin rows the Explorer's inline top section
+  // shows, mounted into their own pane on first activation.
+  register({
+    id: "pinned",
+    icon: "📌",
+    label: "Pinned folders",
+    mount: function (host) {
+      if (NB.sidebar && typeof NB.sidebar.mountPinnedView === "function") {
+        NB.sidebar.mountPinnedView(host);
+      }
+    },
   });
   // Bookmarks: the host (#bookmarks-view) ships empty; bookmarks.js
   // populates its header + list at load, so mount is a no-op.

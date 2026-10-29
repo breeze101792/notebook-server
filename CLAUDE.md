@@ -327,22 +327,30 @@ Module responsibilities:
   tree's inline ⭐ reads `NB.bookmarks.has()` and toggles through
   `NB.bookmarks.toggle()`, keeping `setBookmarks`/`getBookmarks`/`toggleBookmark`
   as thin delegations for `app.js` and `tabs.js`. It also owns the pinned-folders
-  state: a "Pinned" section above the tree (`#pinned-folders`) lists pinned
-  folders, each of which expands in place to show its subtree (click the row or a
-  child folder to expand/collapse) independently of the main tree; click a file
-  inside to open it. A pin row's right-click menu groups the pin actions at the
-  top (Expand/Collapse, Collapse all pinned folders, Unpin folder), then the
-  same folder menu the tree shows; "Collapse all pinned folders" is also on the
-  empty Pinned area's menu. Persisted as `pinnedFolders`.
+  state. The Explorer header's tri-state toggle (`#explorer-top-toggle`) cycles
+  the top slot through Pinned folders (`#pinned-folders`) → inline Bookmarks
+  (`#explorer-bookmarks`) → none, persisted as `explorerTop`. Both Pinned
+  surfaces — the inline section and the dedicated `#pinned-view` activity-bar
+  pane (`mountPinnedView`) — repaint from one `renderPins()` and share
+  `pinExpanded` and the one `pinnedFolders` order. Each pin expands in place to
+  show its subtree (click the row or a child folder to expand/collapse)
+  independently of the main tree; click a file inside to open it. A pin row's
+  right-click menu groups the pin actions at the top (Expand/Collapse, Collapse
+  all pinned folders, Unpin folder), then the same folder menu the tree shows;
+  "Collapse all pinned folders" is also on the empty area's menu. The inline
+  section hides when empty; the dedicated view shows an empty hint instead.
+  Persisted as `pinnedFolders`.
 - `bookmarks.js` — the Bookmarks side-panel view (`NB.bookmarks`, 🔖 in the
   activity bar; host `#bookmarks-view`, built at load and kept in the DOM so list
-  state survives view switches). Owns the ordered list of pinned file paths, the
-  list rendering, the ★ add button, drag-to-reorder, the bookmark context menu
-  (Open | Organize | View | Terminal, rendered through `NB.menu` with scope
-  `#bookmarks-view`; its "Show in file sidebar" reveals the file in the tree),
-  the auto-prune when a file vanishes from the tree, and the rename re-key. It
-  fires `bookmarks:changed` after a toggle so `sidebar.js` updates the tree's
-  star.
+  state survives view switches) plus the Explorer's inline bookmark section
+  (`#explorer-bookmarks`). One `buildSection(host, …)` renderer serves both: it
+  owns the ordered list of pinned file paths, the list rendering, the ★ add
+  button, drag-to-reorder, the bookmark context menu (Open | Organize | View |
+  Terminal, rendered through `NB.menu` scoped to the section's own host; its
+  "Show in file sidebar" reveals the file in the tree), the auto-prune when a
+  file vanishes from the tree, and the rename re-key. The inline section hides
+  when empty or when `explorerTop` is not `"bookmarks"`. It fires
+  `bookmarks:changed` after a toggle so `sidebar.js` updates the tree's star.
   Replaced the old bookmarks section that used to sit above the file tree.
 - `outline.js` — right-side heading TOC minimap, scroll-spy highlight, click-to-jump.
 - `table-view.js` — preview-only table view controls: hover/focus toolbar over a
@@ -508,7 +516,8 @@ Docs: `docs/architecture/mobile.md`, `docs/design/mobile-shell.md`,
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `activeView`,
 `sidebarWidth`, `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`,
-`searchCaseSensitive`, `pinnedFolders`.
+`searchCaseSensitive`, `pinnedFolders`, `explorerTop` (`"pinned"`,
+`"bookmarks"`, or `"none"`).
 `fontSize` ∈ {`"small"`, `"medium"`, `"large"`, `"xlarge"`} drives the
 `--font-scale` CSS variable (0.9 / 1.0 / 1.15 / 1.3); the resolved value applies
 to the whole app via rem-ified chrome. The code-block syntax theme is **not**

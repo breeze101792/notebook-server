@@ -843,7 +843,10 @@
     const status = drawerStatusEl;
     if (status) status.hidden = !on;
     document.querySelectorAll("#side-panel .collapse-btn").forEach((btn) => {
-      if (btn.id === "sidebar-refresh" || btn.querySelector(".refresh-glyph")) return;
+      // The Explorer top-section toggle only borrows the collapse-btn
+      // styling; its glyph and label are owned by sidebar.js.
+      if (btn.id === "sidebar-refresh" || btn.id === "explorer-top-toggle" ||
+          btn.querySelector(".refresh-glyph")) return;
       btn.textContent = on ? "\u00D7" : "\u2039";
       btn.title = on ? "Close panel" : "Collapse panel";
       btn.setAttribute("aria-label", on ? "Close panel" : "Collapse panel");

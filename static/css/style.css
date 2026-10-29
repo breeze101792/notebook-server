@@ -2950,7 +2950,46 @@ body[data-theme="light"] #viewer-content {
 .pin-row.dragging { opacity: .4; }
 .pin-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
 .pin-row.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
-.pinned-folders.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+.pinned-folders.drop-empty,
+.pinned-view-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+/* The inline Bookmark section mirrors the Pinned section's box: same
+ * border/padding/max-height/scroll behaviour, so the tri-state header
+ * swaps one for the other without shifting the tree. */
+.explorer-bookmarks {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 4px;
+  margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
+  max-height: 30vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.explorer-bookmarks[hidden] { display: none; }
+/* The host is already the scroll container, so the inner list must not
+ * create a second scroll region. */
+.explorer-bookmarks .bookmarks-list {
+  flex: 0 0 auto;
+  overflow: visible;
+  min-height: 0;
+  padding: 0;
+  margin-right: 0;
+}
+
+/* The dedicated Pinned side-panel view (#pinned-view). Its list fills the
+ * pane and scrolls; the empty hint keeps the view from going blank. */
+.pinned-view-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  padding: 0 4px 6px;
+  margin-right: 8px;
+}
+.pinned-view-empty {
+  padding: 10px 12px;
+  color: var(--fg-muted);
+  font-size: .86rem;
+  font-style: italic;
+}
 
 /* ------------------------------------------------------------------ */
 /* Bookmarks                                                           */
@@ -5866,7 +5905,8 @@ body[data-theme="light"] #dw-designer-overlay {
   :where(#topbar) .search-wrap,
   .topbar-spacer,
   #edit-toggle,
-  #outline-toggle { display: none; }
+  #outline-toggle,
+  #explorer-top-toggle { display: none; }
   .topbar-actions { flex: 1 1 auto; gap: 4px; align-items: center; min-width: 0; }
   #topbar #back-btn,
   #topbar #mobile-capture,
@@ -6135,7 +6175,9 @@ body[data-theme="light"] #dw-designer-overlay {
 
   :where(#side-panel) .side-panel-view { min-height: 0; }
   #file-tree,
+  .explorer-bookmarks,
   .bookmarks-list,
+  .pinned-view-list,
   .recent-list,
   .search-panel-list {
     -webkit-overflow-scrolling: touch;

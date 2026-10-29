@@ -770,7 +770,7 @@ _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
 # activity.js registers and the data-view hosts templates/index.html
 # ships; tests/test_app.py enforces that. "graph" is an overlay, not a
 # view, so it is deliberately absent.
-_ACTIVE_VIEWS = ("explorer", "bookmarks", "recent", "search", "ai")
+_ACTIVE_VIEWS = ("explorer", "pinned", "bookmarks", "recent", "search", "ai")
 
 
 def _read_public_config():

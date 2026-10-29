@@ -6,16 +6,20 @@
  * Extracted from sidebar.js so bookmarks live in their own activity-bar
  * view instead of a section above the file tree.
  *
- * The view host (#bookmarks-view) ships empty in index.html; this module
- * populates it at load with a standard .panel-header + the list. This
- * mirrors the Explorer view's eager-DOM pattern so the list state survives
- * view switches (activity.js only toggles [hidden]) and tests stay simple.
+ * The activity host (#bookmarks-view) ships empty in index.html; this
+ * module populates it at load with a standard .panel-header + the list.
+ * One section builder also renders the Explorer's inline top section
+ * (#explorer-bookmarks) when sidebar.js' tri-state header selects it, so
+ * both lists share one state and one set of handlers. Hosts stay in the
+ * DOM so list state survives view switches (activity.js only toggles
+ * [hidden]) and tests stay simple.
  */
 (function () {
   "use strict";
   window.NB = window.NB || {};
 
   const viewEl = document.getElementById("bookmarks-view");
+  const explorerEl = document.getElementById("explorer-bookmarks");
   const STAR_ON = "★";
   // Bookmarks: an ordered list of file paths. The source of truth on disk
   // is config.json; this list is the in-memory view. Insertion order:
@@ -27,10 +31,16 @@
   // Tracks the active file so the ★ button shows only when there's a file
   // to bookmark (and it isn't already bookmarked).
   let activeFile = null;
+  // True while sidebar.js' tri-state Explorer header is showing the inline
+  // bookmark section. The host still hides itself when the list is empty.
+  let explorerVisible = false;
+
+  // One entry per mounted list. Both the activity-bar view and the inline
+  // Explorer section render from this same state and share this renderer.
+  const sections = [];
 
   // DOM refs, filled by buildView(). Null when the host is missing, so
   // every use is guarded.
-  let listEl = null;
   let addBtn = null;
 
   function isPhone() {
@@ -38,8 +48,8 @@
   }
 
   /* --- view construction --------------------------------------------- */
-  /* Build the header + list once, at load. The host stays in the DOM
-   * across view switches, so the list state survives. */
+  /* Build the activity-bar view header + list once, at load. The host
+   * stays in the DOM across view switches, so the list state survives. */
   function buildView() {
     if (!viewEl) return;
     viewEl.innerHTML = "";
@@ -71,34 +81,93 @@
     header.appendChild(actions);
     viewEl.appendChild(header);
 
-    listEl = document.createElement("div");
-    listEl.id = "bookmarks-list";
-    listEl.className = "bookmarks-list";
-    viewEl.appendChild(listEl);
+    buildSection(viewEl, {
+      id: "bookmarks-list",
+      emptyText: "No bookmarks yet. Add them from a desktop browser.",
+    });
+  }
 
-    wireListDnD();
-    render();
+  /* Build one list section inside `host`. The activity-bar view passes no
+   * heading (its .panel-header already names it); the Explorer inline
+   * section passes "Bookmarks" so it can sit above the tree like the
+   * Pinned section. */
+  function buildSection(host, opts) {
+    if (!host) return null;
+    if (opts.heading) {
+      const header = document.createElement("div");
+      header.className = "pinned-header";
+      const title = document.createElement("span");
+      title.className = "pinned-title";
+      title.textContent = opts.heading;
+      header.appendChild(title);
+      host.appendChild(header);
+    }
+    const listEl = document.createElement("div");
+    listEl.id = opts.id;
+    listEl.className = "bookmarks-list";
+    host.appendChild(listEl);
+    const section = {
+      host,
+      listEl,
+      emptyText: opts.emptyText || "",
+    };
+    sections.push(section);
+    wireListDnD(section);
+    return section;
+  }
+
+  function buildExplorerSection() {
+    if (!explorerEl) return;
+    explorerEl.innerHTML = "";
+    buildSection(explorerEl, {
+      id: "explorer-bookmarks-list",
+      emptyText: "",
+      heading: "Bookmarks",
+    });
+    syncExplorerVisibility();
+  }
+
+  /* Hide the inline Explorer section whenever the tri-state header is not
+   * showing bookmarks, or when there are no bookmarks to show. sidebar.js
+   * calls setExplorerVisible() when the mode changes. */
+  function setExplorerVisible(on) {
+    explorerVisible = !!on;
+    syncExplorerVisibility();
+  }
+
+  function syncExplorerVisibility() {
+    if (!explorerEl) return;
+    explorerEl.hidden = !explorerVisible || !bookmarks.length;
   }
 
   /* --- render --------------------------------------------------------- */
-  /* The list is rebuilt from scratch on every render -- bookmarks are a
-   * small set, so the cost is negligible and the code stays uniform. */
-  function render() {
+  /* Every mounted list is rebuilt from scratch on every render --
+   * bookmarks are a small set, so the cost is negligible and the code
+   * stays uniform across the activity view and the inline section. */
+  function renderAll() {
+    for (const section of sections) renderSection(section);
+    syncExplorerVisibility();
+  }
+
+  function renderSection(section) {
+    const listEl = section.listEl;
     if (!listEl) return;
     listEl.innerHTML = "";
     if (!bookmarks.length) {
-      const empty = document.createElement("div");
-      empty.className = "bookmarks-empty";
-      empty.textContent = "No bookmarks yet. Add them from a desktop browser.";
-      listEl.appendChild(empty);
+      if (section.emptyText) {
+        const empty = document.createElement("div");
+        empty.className = "bookmarks-empty";
+        empty.textContent = section.emptyText;
+        listEl.appendChild(empty);
+      }
       return;
     }
     for (const path of bookmarks) {
-      listEl.appendChild(renderRow(path));
+      listEl.appendChild(renderRow(section, path));
     }
   }
 
-  function renderRow(path) {
+  function renderRow(section, path) {
     const row = document.createElement("div");
     row.className = "bookmark-row";
     row.dataset.path = path;
@@ -119,7 +188,7 @@
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (isPhone()) return;   // read-only on the phone
-      openBookmarkMenu(e, path);
+      openBookmarkMenu(e, path, section);
     });
     return row;
   }
@@ -129,7 +198,7 @@
    * app.js -- already owns the loaded value). */
   function set(list) {
     bookmarks = Array.isArray(list) ? list.slice() : [];
-    render();
+    renderAll();
     updateAddBtn();
   }
   function get() { return bookmarks.slice(); }
@@ -148,7 +217,7 @@
     } else {
       bookmarks.push(path);
     }
-    render();
+    renderAll();
     updateAddBtn();
     persist();
     NB.evt.emit("bookmarks:changed", { path });
@@ -178,7 +247,7 @@
     const before = bookmarks.length;
     bookmarks = bookmarks.filter(p => treeHasPath(tree, p));
     if (bookmarks.length !== before) {
-      render();
+      renderAll();
       persist();
       // The active file may have been the pruned one; re-evaluate the ★.
       updateAddBtn();
@@ -197,7 +266,8 @@
   /* The handlers live on the list element so the empty area still accepts
    * a drop (which lands the row at the end). Reordering is purely a UI
    * concern: we mutate the list and persist -- no API call, no tree change. */
-  function wireListDnD() {
+  function wireListDnD(section) {
+    const listEl = section.listEl;
     if (!listEl) return;
     listEl.addEventListener("dragstart", (e) => {
       if (isPhone()) { e.preventDefault(); return; }
@@ -261,21 +331,27 @@
         bookmarks.splice(before ? toIdx : toIdx + 1, 0, moved);
       }
     }
-    render();
+    renderAll();
     persist();
   }
 
   function clearBookmarkDropMarks() {
-    if (!listEl) return;
-    listEl.querySelectorAll(".drop-before,.drop-after")
-      .forEach(r => r.classList.remove("drop-before", "drop-after"));
-    listEl.classList.remove("drop-empty");
+    for (const section of sections) {
+      const listEl = section.listEl;
+      if (!listEl) continue;
+      listEl.querySelectorAll(".drop-before,.drop-after")
+        .forEach(r => r.classList.remove("drop-before", "drop-after"));
+      listEl.classList.remove("drop-empty");
+    }
   }
   function clearBookmarkDragging() {
     draggingBookmark = null;
-    if (!listEl) return;
-    listEl.querySelectorAll(".dragging")
-      .forEach(r => r.classList.remove("dragging"));
+    for (const section of sections) {
+      const listEl = section.listEl;
+      if (!listEl) continue;
+      listEl.querySelectorAll(".dragging")
+        .forEach(r => r.classList.remove("dragging"));
+    }
     clearBookmarkDropMarks();
   }
 
@@ -306,10 +382,10 @@
     if (NB.sidebar && typeof NB.sidebar[name] === "function") NB.sidebar[name](path);
   }
 
-  function openBookmarkMenu(e, path) {
+  function openBookmarkMenu(e, path, section) {
     if (isPhone()) return;
     NB.menu.open({
-      owner: "bookmarks", x: e.clientX, y: e.clientY, scope: viewEl,
+      owner: "bookmarks", x: e.clientX, y: e.clientY, scope: section.host,
       items: bookmarkMenuItems(path), focusFirst: true,
     });
   }
@@ -324,15 +400,17 @@
     return String(s).replace(/["\\]/g, "\\$&");
   }
 
-  NB.evt.on("mobile:mode", () => { render(); updateAddBtn(); });
+  NB.evt.on("mobile:mode", () => { renderAll(); updateAddBtn(); });
 
-  NB.bookmarks = { set, get, has, toggle, prune };
+  NB.bookmarks = { set, get, has, toggle, prune, setExplorerVisible };
 
   // Keep the + button + row highlight in step with the active file,
   // however it was opened (tab click, search result, bookmark click, boot).
   NB.evt.on("file:open", (path) => {
     activeFile = path || null;
-    if (listEl) {
+    for (const section of sections) {
+      const listEl = section.listEl;
+      if (!listEl) continue;
       listEl.querySelectorAll(".bookmark-row.selected")
         .forEach(r => r.classList.remove("selected"));
       if (activeFile && bookmarks.includes(activeFile)) {
@@ -364,10 +442,12 @@
       if (mapped !== null) { activeFile = mapped; changed = true; }
     }
     if (!changed) return;
-    render();
+    renderAll();
     persist();
     updateAddBtn();
   });
 
   buildView();
+  buildExplorerSection();
+  renderAll();
 })();

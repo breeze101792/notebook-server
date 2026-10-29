@@ -140,14 +140,21 @@
           <div class="panel-header">
             <span class="panel-title">Files</span>
             <div class="panel-header-actions">
+              <button class="collapse-btn" id="explorer-top-toggle" data-mode="pinned" title="Top section: Pinned folders. Click to show Bookmarks." aria-label="Top section: Pinned folders. Click to show Bookmarks.">📌</button>
               <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
               <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)">‹</button>
             </div>
           </div>
           <div id="pinned-folders" class="pinned-folders" hidden></div>
+          <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
           <div id="file-tree" class="tree"></div>
           <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
         </div>
+
+        <!-- Pinned folders view: the same pin rows the Explorer's inline
+             top section shows, in their own activity-bar pane. Mounted
+             lazily by sidebar.js the first time the 📌 icon is activated. -->
+        <div id="pinned-view" class="side-panel-view" data-view="pinned"{% if boot.active_view != 'pinned' %} hidden{% endif %}></div>
 
         <!-- Bookmarks view: the pinned-files list. bookmarks.js populates
              this host at load (header + list); it stays in the DOM so list
