@@ -443,10 +443,12 @@ Rendered `<ul><li>`; canonical output `-   a` (three spaces, `bulletListMarker: 
 | S | ⌫ | `a\n\n- item` | outdent item / merge into `a` | ⛔ browser-native; §6 Q2 |
 | E | ⌦ | `- item\n\na` | merge next block into item | ⛔ browser-native; §6 Q2 |
 | — | D (empty the item) | `- item` | `-` | ✅ sentinel `:305-311`, `:514-522`, test `7199-7226` |
+| — | Ctrl+X / ⇧⌫ over a whole item | `- a\n- b\n- c` | the covered items are removed; no empty marker is left; the caret moves to the nearest surviving edge | ✅ `deleteListSelection` (`hybrid.js:7164`); browser test |
 | — | Tab | `- a\n- b` (caret in b) | `- a\n    - b` nested | ✅ `indentListItem` `:1922`, test `4365-4370` |
 | — | ⇧Tab | nested b | outdent to top level | ✅ test `4377-4381` |
-| (item) | P-txt | `- a` | plain text inserted with `<br>` inside the item | ⚠ `insertTextAtCaret` `:2893`; §6 Q9 |
-| (item) | P-md | multi-line MD | one item with hard breaks, **not** new blocks | ✳ Q9: parse into blocks |
+| (item) | P-txt | `- a` | plain text inserted with `<br>` inside the item | ✅ `insertTextAtCaret` |
+| (item) | Ctrl+V of list item(s) | `- a\n- b` + copied item | pasted items become clean siblings (above / below / split at the caret); clipboard `style`/`class` markup is stripped | ✅ `onPaste` / `insertPastedListItems` (`hybrid.js:6037`/`:5994`); browser test |
+| (item) | P-md | multi-line MD | one item with hard breaks, **not** new blocks | ⚠ Q9: general Markdown-text parse still open |
 
 ### 4.5 Ordered lists `1.` / `1)`
 
@@ -977,7 +979,7 @@ its original source bytes through the splice.
 |---|---|---|---|
 | edit a neighbour | `a\n\n<!-- keep -->\n\nb\n` | comment kept | ✅ test `7586-7603` |
 | clean round-trip | `<!-- c -->\n\nbody\n` | byte-identical | ✅ corpus `7684` |
-| paste rich HTML | — | stripped to plain text | ✅ Q9 |
+| paste rich HTML | — | list items become clean siblings; `style`/`class`/scripts stripped | ✅ `onPaste` (Q9, list path) |
 | edit inside a raw element | `<div>block</div>` | `<div>block!</div>`: tag and attributes kept | ✅ `markRawHtmlBlocks` + raw-HTML rule; browser test |
 
 ### 4.15 Special fenced blocks (`mermaid`, `wavedrom`, `math`/`katex`, `dot`/`graphviz`, `html-live`, plain `html`)
@@ -1286,13 +1288,19 @@ whitespace/`<br>`-only cell is emptied and serializes as an empty GFM cell.
 Verified in Chromium (`test_block_edit_browser.js`,
 `test_hybrid_blocks_browser.js`).
 
-**Q9 — DECIDED. Paste parses Markdown into blocks.** `doPaste`/`doPastePlain`
-(`:2837`/`:2862`) today insert plain text with `<br>` between lines
-(`insertTextAtCaret` `:2893`), turning multi-line Markdown into one paragraph
-of hard breaks; native `Ctrl+V` is unhandled and inserts HTML. New behavior:
-(a) Paste parses clipboard **text** with marked and inserts the rendered blocks at
-the caret; (b) Paste without formatting keeps the current plain-text behavior;
-(c) rich HTML is stripped to text. Verify in the Chromium harness.
+**Q9 — PARTIALLY IMPLEMENTED. Paste of list items is list-aware.** A native
+`Ctrl+V` whose clipboard HTML carries list items and whose caret is inside a
+list item is claimed (`onPaste` `hybrid.js:6037`): the top-level `<li>` clones
+are sanitized (no `style`, `class`, `id`, scripts, `SVG`/`MathML`/`template`
+content, or unsafe URLs; a fragment over the size/node budget is not claimed)
+and inserted as siblings of the target item — above at the content start, below at the
+content end, or between the split halves mid-item. When the target item is a
+task, a marker-less pasted clone gets an unchecked checkbox, so a plain copy
+does not land as a dot among the checkboxes. This removes the pasted `<ul>`
+nesting and foreign theme styling that made hybrid differ from the re-rendered
+preview. `doPaste`/`doPastePlain` still insert plain text with
+`<br>` between lines (`insertTextAtCaret`); general Markdown-text parsing and
+stripping rich HTML outside a list remain open.
 
 **Q10 — DECIDED (editable in place), one fork open.** Raw HTML stays editable in
 hybrid; the `html` token must be aligned by the splice. Untouched raw HTML keeps
@@ -1432,8 +1440,9 @@ required wherever the **native editing engine** produces the DOM that jsdom cann
 
 - Any row marked 🌐: `Enter` splits, cell merges, `Tab` between cells, IME.
 - Native typing into an empty heading (Q12) — the known redirect bug.
-- Paste: native `Ctrl+V` rich HTML and multi-line Markdown (Q9). The current
-  harness has no paste test.
+- Paste: list-item cut/paste (`test_hybrid_browser.js`, `real browser
+  clipboard:` block). General native rich HTML and multi-line Markdown
+  (Q9) still have no harness coverage.
 - Backspace/Delete block merges (Q2, Q8): the merged DOM is engine-specific.
 - Arrow-walk over atomic plugin blocks and table rows (why `flattenTheads` exists,
   `:1467`).

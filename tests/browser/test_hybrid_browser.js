@@ -326,9 +326,9 @@ async function main() {
         const sel = window.getSelection();
         const node = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
         const li = document.querySelector("#viewer-content li");
-        return !!li && !!node && (node === li || li.contains(node));
+        return !!li && !!node && node.nodeType === 3 && li.contains(node);
       });
-      check("real browser: the edit-bar list button anchors the caret in the new item",
+      check("real browser: the edit-bar list button anchors the caret in the new item's text",
         anchored);
     }
     await page.keyboard.type("item");
@@ -363,10 +363,11 @@ async function main() {
         return {
           count: lis.length,
           firstBlank: lis[0] && lis[0].textContent.replace(/\u200B/g, "").trim() === "",
-          caretInSecond: !!sel.anchorNode && !!lis[1] && lis[1].contains(sel.anchorNode),
+          caretInSecond: !!sel.anchorNode && sel.anchorNode.nodeType === 3 &&
+            !!lis[1] && lis[1].contains(sel.anchorNode),
         };
       });
-      check("real browser: Enter at a list item's start keeps the caret with the text below",
+      check("real browser: Enter at a list item's start keeps the caret in the text below",
         state.count === 3 && state.firstBlank && state.caretInSecond,
         JSON.stringify(state));
     }
@@ -1161,6 +1162,52 @@ async function main() {
         lines.length === 3 && lines[0].trimEnd() === "- [ ]" &&
         /^- \[ \] addedfirst$/.test(lines[1]) && /^- \[ \] second$/.test(lines[2]),
         JSON.stringify(lines));
+    }
+
+    // A caret parked on the <li> element itself, before the checkbox, is
+    // still the item start. The probe cannot span that boundary (it would
+    // be built backwards), so the guard must treat it as the start rather
+    // than let the native Enter insert below.
+    {
+      writeNote("notes/taskstartedge.md", "- [ ] first\n- [ ] second\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartedge.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content li");
+        li.focus();
+        const r = document.createRange();
+        r.setStart(li, 0);
+        r.collapse(true);
+        const s = window.getSelection();
+        s.removeAllRanges(); s.addRange(r);
+      });
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(100);
+      const edge = await page.evaluate(() => {
+        const lis = document.querySelectorAll("#viewer-content li");
+        const sel = window.getSelection();
+        return {
+          count: lis.length,
+          firstBlank: lis[0] && lis[0].textContent.replace(/\u200B/g, "").trim() === "",
+          caretInSecond: !!sel.anchorNode && !!lis[1] && lis[1].contains(sel.anchorNode),
+          caretIsText: !!sel.anchorNode && sel.anchorNode.nodeType === 3,
+        };
+      });
+      check("real browser task: a caret on the <li> before the checkbox still opens above",
+        edge.count === 3 && edge.firstBlank && edge.caretInSecond && edge.caretIsText,
+        JSON.stringify(edge));
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const edgeLines = readNote("notes/taskstartedge.md").trimEnd().split("\n");
+      check("real browser task: the element-boundary start saves an item above",
+        edgeLines.length === 3 && edgeLines[0].trimEnd() === "- [ ]" &&
+        /^- \[ \] first$/.test(edgeLines[1]) && /^- \[ \] second$/.test(edgeLines[2]),
+        JSON.stringify(edgeLines));
     }
 
     // Enter MID-TEXT in a task item splits it into two task items: the text
@@ -2139,6 +2186,242 @@ async function main() {
     check("real browser chords: the list chord saves valid Markdown",
       readNote("notes/chordlist.md").indexOf("1.  alpha") === 0,
       JSON.stringify(readNote("notes/chordlist.md")));
+
+    // --- list clipboard: cut removes the item, paste joins the list ---
+    // Native cut deletes only the selected text, which left an empty <li>
+    // (with the hybrid placeholder) behind. Native paste dropped the
+    // clipboard's styled <ul> inside the target item. Both diverged from
+    // the re-rendered preview and from the saved Markdown.
+    const CLIPBOARD_NOTE = "notes/cliplist.md";
+    writeNote(CLIPBOARD_NOTE,
+      "- alpha\n- bravo\n- charlie\n\nMiddle paragraph.\n\n- one\n- two\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent(CLIPBOARD_NOTE));
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const li = [...document.querySelectorAll("#viewer-content li")]
+        .find((x) => x.textContent.trim() === "bravo");
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
+    await page.keyboard.press("Control+x");
+    await page.waitForTimeout(120);
+    const cutState = await page.evaluate(() => ({
+      texts: [...document.querySelectorAll("#viewer-content li")]
+        .map((li) => li.textContent.replace(/\u200B/g, "")),
+      empty: [...document.querySelectorAll("#viewer-content li")]
+        .some((li) => li.textContent.replace(/\u200B/g, "").trim() === ""),
+    }));
+    check("real browser clipboard: cutting a whole item removes it",
+      JSON.stringify(cutState.texts) ===
+        JSON.stringify(["alpha", "charlie", "one", "two"]),
+      JSON.stringify(cutState.texts));
+    check("real browser clipboard: the cut leaves no empty bullet",
+      cutState.empty === false, JSON.stringify(cutState));
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser clipboard: the cut saves no empty list line",
+      readNote(CLIPBOARD_NOTE) ===
+        "-   alpha\n-   charlie\n\nMiddle paragraph.\n\n- one\n- two\n",
+      JSON.stringify(readNote(CLIPBOARD_NOTE)));
+
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const li = [...document.querySelectorAll("#viewer-content li")]
+        .find((x) => x.textContent.trim() === "two");
+      li.focus();
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(false);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+      // A synthetic paste drives the app's own handler in every engine;
+      // the trusted-clipboard path was verified in Chromium separately.
+      const dt = new DataTransfer();
+      dt.setData("text/html",
+        '<ul style="background-color:#fff;padding-left:22.4px">' +
+        '<li style="color:#1f2330"><span style="background-color:white">bravo</span></li></ul>');
+      dt.setData("text/plain", "bravo");
+      document.getElementById("viewer-content").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await page.waitForTimeout(150);
+    const pasteState = await page.evaluate(() => ({
+      nested: !!document.querySelector("#viewer-content li > ul"),
+      styled: !!document.querySelector("#viewer-content [style]"),
+      texts: [...document.querySelectorAll("#viewer-content li")]
+        .map((li) => li.textContent.replace(/\u200B/g, "")),
+    }));
+    check("real browser clipboard: pasted items become siblings",
+      pasteState.nested === false, JSON.stringify(pasteState));
+    check("real browser clipboard: pasted inline styles are stripped",
+      pasteState.styled === false, JSON.stringify(pasteState));
+    check("real browser clipboard: the pasted text is present",
+      pasteState.texts.indexOf("bravo") !== -1, JSON.stringify(pasteState.texts));
+    {
+      const pasteCaret = await page.evaluate(() => {
+        const lis = [...document.querySelectorAll("#viewer-content li")];
+        const last = lis[lis.length - 1];
+        const sel = window.getSelection();
+        return {
+          textNode: !!sel.anchorNode && sel.anchorNode.nodeType === 3,
+          inLast: !!sel.anchorNode && !!last && last.contains(sel.anchorNode),
+        };
+      });
+      check("real browser clipboard: the paste caret sits in the pasted item's text",
+        pasteCaret.textNode && pasteCaret.inLast, JSON.stringify(pasteCaret));
+    }
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser clipboard: the paste saves in the list",
+      readNote(CLIPBOARD_NOTE) ===
+        "-   alpha\n-   charlie\n\nMiddle paragraph.\n\n-   one\n-   two\n-   bravo\n",
+      JSON.stringify(readNote(CLIPBOARD_NOTE)));
+
+    // A task checkbox is a marker, not content: cutting the item's text
+    // must remove the whole item (box included), not leave a checkbox.
+    const CLIPBOARD_TASK = "notes/cliptask.md";
+    writeNote(CLIPBOARD_TASK, "- [ ] task one\n- [ ] task two\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent(CLIPBOARD_TASK));
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const li = [...document.querySelectorAll("#viewer-content li")]
+        .find((x) => x.textContent.trim() === "task one");
+      const walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT);
+      let node = null;
+      while ((node = walker.nextNode())) {
+        if (node.nodeValue.trim() === "task one") break;
+      }
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      const s = window.getSelection();
+      s.removeAllRanges(); s.addRange(r);
+    });
+    await page.keyboard.press("Control+x");
+    await page.waitForTimeout(120);
+    const taskCut = await page.evaluate(() => ({
+      texts: [...document.querySelectorAll("#viewer-content li")]
+        .map((li) => li.textContent.replace(/\u200B/g, "").trim()),
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+    }));
+    check("real browser clipboard: cutting a task item removes its checkbox",
+      JSON.stringify(taskCut.texts) === JSON.stringify(["task two"]) &&
+      taskCut.boxes === 1, JSON.stringify(taskCut));
+    await saveAndExit(page);
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser clipboard: the task cut saves the survivor",
+      readNote(CLIPBOARD_TASK).indexOf("task one") === -1 &&
+      readNote(CLIPBOARD_TASK).indexOf("- [ ] task two") !== -1,
+      JSON.stringify(readNote(CLIPBOARD_TASK)));
+
+    // A clipboard serializer may omit the implicit `type` on a checkbox.
+    // Dropping that input turned a pasted task item into a plain bullet.
+    {
+      writeNote("notes/cliptype.md", "- [ ] keep\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/cliptype.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content li");
+        li.focus();
+        const r = document.createRange();
+        r.selectNodeContents(li);
+        r.collapse(false);
+        const s = window.getSelection();
+        s.removeAllRanges(); s.addRange(r);
+        const dt = new DataTransfer();
+        dt.setData("text/html",
+          '<ul><li><input checked><p>pasted task</p></li></ul>');
+        dt.setData("text/plain", "pasted task");
+        document.getElementById("viewer-content").dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await page.waitForTimeout(120);
+      const typedBox = await page.evaluate(() => {
+        const lis = document.querySelectorAll("#viewer-content li");
+        const last = lis[lis.length - 1];
+        return {
+          box: !!(last && last.querySelector('input[type="checkbox"]')),
+          checked: !!(last && last.querySelector('input[type="checkbox"]:checked')),
+          text: last ? last.textContent.trim() : "",
+        };
+      });
+      check("real browser clipboard: a type-less pasted checkbox stays a checkbox",
+        typedBox.box && typedBox.checked && typedBox.text === "pasted task",
+        JSON.stringify(typedBox));
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser clipboard: the type-less task saves as a task item",
+        readNote("notes/cliptype.md").indexOf("- [x] pasted task") !== -1 &&
+        readNote("notes/cliptype.md").indexOf("- [ ] keep") !== -1,
+        JSON.stringify(readNote("notes/cliptype.md")));
+    }
+
+    // A paste into a task item inherits the task marker: a plain copied
+    // line must not land as a dot among the checkboxes.
+    {
+      writeNote("notes/cliptaskinherit.md", "- [ ] keep\n");
+      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/cliptaskinherit.md"));
+      await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await page.evaluate(() => {
+        const li = document.querySelector("#viewer-content li");
+        li.focus();
+        const r = document.createRange();
+        r.selectNodeContents(li);
+        r.collapse(false);
+        const s = window.getSelection();
+        s.removeAllRanges(); s.addRange(r);
+        const dt = new DataTransfer();
+        dt.setData("text/html", "<ul><li>plain item</li></ul>");
+        dt.setData("text/plain", "plain item");
+        document.getElementById("viewer-content").dispatchEvent(
+          new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await page.waitForTimeout(120);
+      const inherited = await page.evaluate(() => {
+        const lis = document.querySelectorAll("#viewer-content li");
+        const last = lis[lis.length - 1];
+        return {
+          box: !!(last && last.querySelector('input[type="checkbox"]')),
+          text: last ? last.textContent.trim() : "",
+        };
+      });
+      check("real browser clipboard: a plain paste into a task list keeps the checkbox",
+        inherited.box && inherited.text === "plain item", JSON.stringify(inherited));
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      check("real browser clipboard: the inherited task saves with its marker",
+        readNote("notes/cliptaskinherit.md").indexOf("- [ ] plain item") !== -1,
+        JSON.stringify(readNote("notes/cliptaskinherit.md")));
+    }
+
+    check("real browser clipboard: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
 
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {

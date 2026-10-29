@@ -1860,6 +1860,17 @@
     viewerContentEl.focus({ preventScroll: true });
   }
 
+  /* A list item needs its caret inside a text node, not at the <li>
+   * element boundary: the element boundary has no line box of its own in
+   * some engines, so the caret paints on the line above and typing looks
+   * misplaced. */
+  function reselectListItem(li, wasCollapsed) {
+    if (!li) return;
+    if (!wasCollapsed) { reselectBlock(li, false); return; }
+    setSelectionToRange(listItemCaretRange(li, true));
+    viewerContentEl.focus({ preventScroll: true });
+  }
+
   /* Wrap the selection in an element with the given tag. Used for
    * headings (h1-h6) and blockquote. Operates on the current selection
    * inside #viewer-content. Returns the element the block became
@@ -2298,7 +2309,7 @@
       made = newList;
     }
     if (!made) return null;
-    reselectBlock(caretEl, ctx.wasCollapsed);
+    reselectListItem(caretEl, ctx.wasCollapsed);
     onContentChange();
     return made;
   }
@@ -2331,7 +2342,7 @@
       made = newList;
     }
     if (!made) return null;
-    reselectBlock(caretEl, ctx.wasCollapsed);
+    reselectListItem(caretEl, ctx.wasCollapsed);
     onContentChange();
     return made;
   }
@@ -2401,17 +2412,11 @@
     const blank = document.createElement("li");
     li.parentElement.insertBefore(blank, li);
     ensureListMarker(blank);
-    const host = listItemPrimaryHost(li);
-    if (host) {
-      const r = document.createRange();
-      r.selectNodeContents(host);
-      r.collapse(true);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
-    } else {
-      caretToStart(li);
-    }
+    // Inside the original item's first text node, not at the <li>
+    // boundary: the boundary has no line box and paints the caret on the
+    // new blank item above.
+    setSelectionToRange(listItemCaretRange(li, false));
+    viewerContentEl.focus({ preventScroll: true });
     return blank;
   }
 
@@ -2905,10 +2910,13 @@
    * item, so a descendant query would corrupt it. */
   function taskCheckboxOf(li) {
     if (!li) return null;
+    // A browser/clipboard shape can keep the box as a direct child even
+    // when the item also carries a paragraph; check both, direct first.
+    const direct = Array.from(li.children).find(
+      (c) => c.tagName === "INPUT" && c.type === "checkbox");
+    if (direct) return direct;
     const p = Array.from(li.children).find((c) => c.tagName === "P");
-    if (p) return p.querySelector(':scope > input[type="checkbox"]');
-    return Array.from(li.children).find(
-      (c) => c.tagName === "INPUT" && c.type === "checkbox") || null;
+    return p ? p.querySelector(':scope > input[type="checkbox"]') : null;
   }
 
   /* True when the collapsed caret sits in the item's OWN content -- not
@@ -2938,6 +2946,10 @@
     if (!li || !range || !li.contains(range.startContainer)) return false;
     if (!caretInListItemOwnContent(li, range)) return false;
     const cb = taskCheckboxOf(li);
+    // A caret parked on the item element at offset 0 is before the marker,
+    // not after it; the probe cannot be built across that boundary in
+    // order, but it is still the item's first position.
+    if (cb && range.startContainer === li && range.startOffset === 0) return true;
     const probe = document.createRange();
     try {
       if (cb) probe.setStartAfter(cb);
@@ -2968,7 +2980,10 @@
     if (cb) {
       const p = cb.parentElement;
       if (p && p.tagName === "P" && p.parentElement === li) return p;
-      return null;
+      // Clipboard shapes can keep the box as a direct child beside the
+      // paragraph that holds the item's text; that paragraph is the host.
+      const sibling = Array.from(li.children).find((c) => c.tagName === "P");
+      return sibling || null;
     }
     const first = Array.from(li.childNodes).find((node) =>
       node.nodeType === Node.ELEMENT_NODE ||
@@ -3048,6 +3063,58 @@
       range.selectNodeContents(li);
       range.collapse(false);
     }
+    return range;
+  }
+
+  /* The text nodes of an item's OWN content, in reading order. A loose
+   * item's own content is its primary paragraph; a tight item's is the
+   * leading inline run before its first block child. Nested lists, fences,
+   * extra paragraphs, and task checkboxes are structure/markers, not the
+   * caret's text. */
+  function listItemOwnTextNodes(li) {
+    const nodes = [];
+    const collect = (el) => {
+      for (const child of el.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) { nodes.push(child); continue; }
+        if (child.nodeType !== Node.ELEMENT_NODE) continue;
+        if (isListItemBlockChild(child)) continue;
+        if (child.tagName === "INPUT") continue;
+        collect(child);
+      }
+    };
+    const host = listItemPrimaryHost(li);
+    if (host) {
+      collect(host);
+      return nodes;
+    }
+    for (const child of li.childNodes) {
+      if (isListItemBlockChild(child)) break;
+      if (child.nodeType === Node.TEXT_NODE) { nodes.push(child); continue; }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      if (child.tagName === "INPUT") continue;
+      collect(child);
+    }
+    return nodes;
+  }
+
+  /* A collapsed range inside the item's first/last own text node. An
+   * element-level range ((li, 0) or (li, childCount)) has no line box of
+   * its own in some engines: the caret paints on the line above and the
+   * first keystroke looks misplaced. The zero-width placeholder is a real
+   * text node, so an empty item still lands inside one. */
+  function listItemCaretRange(li, atEnd) {
+    const nodes = listItemOwnTextNodes(li);
+    const target = atEnd ? nodes[nodes.length - 1] : nodes[0];
+    const range = document.createRange();
+    if (target) {
+      range.setStart(target, atEnd ? target.nodeValue.length : 0);
+      range.collapse(true);
+      return range;
+    }
+    // No own text (only an image/void): its own line box makes the element
+    // boundary usable.
+    range.selectNodeContents(li);
+    range.collapse(!atEnd);
     return range;
   }
 
@@ -3903,6 +3970,15 @@
     r.collapse(!atEnd);   // Range.collapse(toStart): true = start
     sel.removeAllRanges();
     sel.addRange(r);
+  }
+
+  /* Replace the current selection with `range`. Used by structural
+   * deletions that must place the caret themselves. */
+  function setSelectionToRange(range) {
+    if (!range) return;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
   }
 
   /* --- horizontal rule editing -------------------------------------- */
@@ -4881,6 +4957,17 @@
       clearNoteToParagraph();
       return;
     }
+    // A selection that covers whole list items removes those items, not
+    // just their text: the native delete would leave empty markers. A
+    // partial item stays native. Shift+Delete is left to beforeinput's
+    // deleteByCut, because a structural claim must never delete without
+    // the browser having copied the selection first.
+    if ((e.key === "Backspace" || e.key === "Delete") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        deleteListSelection()) {
+      e.preventDefault();
+      return;
+    }
     // A GFM table cell is one line. The native Enter inserts a newline
     // into the cell, and turndown emits it as a real line break, which
     // splits the row and breaks the table on the next render. Refuse it
@@ -5490,6 +5577,50 @@
   // round-trip, short enough not to outlive the editing session.
   const PASTE_PLAIN_TIMEOUT_MS = 1000;
 
+  // Presentational/executable markup that must never enter the live note
+  // from a paste. Attributes outside these allowlists (style, class, id,
+  // data-*) are dropped too: hybrid saves through Turndown, which discards
+  // them anyway, and until the save they make the pasted block look
+  // different from the note around it. This is the hybrid-vs-preview
+  // divergence a rich paste used to cause.
+  const PASTE_DROP_TAGS = new Set([
+    "SCRIPT", "STYLE", "NOSCRIPT", "IFRAME", "OBJECT", "EMBED",
+    "LINK", "META", "BASE", "FORM", "TEMPLATE",
+    // Foreign content reports lower-case tagName values, so the namespace
+    // roots are dropped wholesale rather than sanitized element by element.
+    "SVG", "MATH", "FOREIGNOBJECT",
+  ]);
+  const PASTE_ALLOWED_ATTRS = {
+    A: new Set(["href", "title"]),
+    IMG: new Set(["src", "alt", "title", "width", "height"]),
+    INPUT: new Set(["type", "checked"]),
+  };
+  const PASTE_HTML_MAX_CHARS = 512 * 1024;
+  const PASTE_MAX_NODES = 5000;
+  const PASTE_MAX_DEPTH = 100;
+  let plainPastePending = false;
+
+  function pastedTagName(node) {
+    return String((node && (node.localName || node.tagName)) || "")
+      .toUpperCase();
+  }
+
+  /* A pasted image may only fetch over http(s); `data:`, `file:`, and
+   * `blob:` are not note content. */
+  function pastedImageUrlIsSafe(raw) {
+    if (!raw) return false;
+    const decoded = decodeHtmlEntities(raw);
+    if (/[\s\u0000-\u001f]/.test(decoded)) return false;
+    const cleaned = decoded.replace(/[\u0000-\u001f]+/g, "");
+    let resolved;
+    try {
+      resolved = new URL(cleaned, window.location.href);
+    } catch (_) {
+      return false;
+    }
+    return resolved.protocol === "http:" || resolved.protocol === "https:";
+  }
+
   async function doCopy() {
     const sel = window.getSelection();
     const text = sel && sel.rangeCount ? sel.toString() : "";
@@ -5539,7 +5670,9 @@
    * later native Ctrl+V would have inserted the text once per leak. */
   function doPastePlain() {
     restoreCaret();
+    plainPastePending = true;
     const handler = (e) => {
+      plainPastePending = false;
       clearTimeout(cleanup);
       viewerContentEl.removeEventListener("paste", handler);
       e.preventDefault();
@@ -5550,6 +5683,7 @@
     // Belt to the handler's braces: if no paste event ever arrives, drop
     // the interceptor so it cannot fire on some later, unrelated paste.
     const cleanup = setTimeout(() => {
+      plainPastePending = false;
       viewerContentEl.removeEventListener("paste", handler);
     }, PASTE_PLAIN_TIMEOUT_MS);
     viewerContentEl.addEventListener("paste", handler, { once: true });
@@ -5675,6 +5809,257 @@
     newRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(newRange);
+  }
+
+  /* Strip everything the Markdown round trip cannot keep. The live DOM is
+   * the one the user sees until the save, so a pasted `style="background:
+   * white;color:#1f2330"` from another theme would paint a foreign box in
+   * the note even though Turndown would drop it from the file. */
+  function sanitizePastedNode(node, depth) {
+    if (node.nodeType === Node.TEXT_NODE) return;
+    if (node.nodeType !== Node.ELEMENT_NODE) { node.remove(); return; }
+    const level = depth || 0;
+    if (level > PASTE_MAX_DEPTH) { node.remove(); return; }
+    const tag = pastedTagName(node);
+    if (PASTE_DROP_TAGS.has(tag)) { node.remove(); return; }
+    // The note has no form controls except task checkboxes. A clipboard
+    // serializer may omit the implicit `type` on a checkbox; treat a
+    // type-less input as one rather than dropping the checkbox and
+    // leaving a plain bullet behind.
+    if (tag === "INPUT") {
+      const type = String(node.getAttribute("type") || "").toLowerCase();
+      if (!type) node.setAttribute("type", "checkbox");
+      else if (type !== "checkbox") { node.remove(); return; }
+    }
+    const allowed = PASTE_ALLOWED_ATTRS[tag];
+    Array.from(node.attributes).forEach((attr) => {
+      if (!allowed || !allowed.has(attr.name.toLowerCase())) {
+        node.removeAttribute(attr.name);
+      }
+    });
+    if (tag === "A") {
+      if (!isSafeLinkUrl(node.getAttribute("href"))) node.removeAttribute("href");
+    }
+    if (tag === "IMG") {
+      if (!pastedImageUrlIsSafe(node.getAttribute("src"))) node.removeAttribute("src");
+    }
+    Array.from(node.children).forEach((child) => sanitizePastedNode(child, level + 1));
+  }
+
+  function markPastedTaskItem(li) {
+    if (!li || pastedTagName(li) !== "LI") return;
+    const box = li.querySelector(
+      ':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]');
+    if (box) li.classList.add("task-list-item");
+  }
+
+  /* A paste into a task item should not leave a plain bullet among the
+   * checkboxes, even when the clipboard lost the marker (a label-only copy
+   * carries no input). Give a marker-less pasted clone an unchecked box. */
+  function addPastedTaskMarker(li) {
+    if (!li || pastedTagName(li) !== "LI") return;
+    if (taskCheckboxOf(li)) return;
+    li.classList.add("task-list-item");
+    const host = listItemPrimaryHost(li) || li;
+    host.insertBefore(makeTaskCheckbox(), host.firstChild);
+    ensureListMarker(li);
+  }
+
+  /* The clipboard's top-level list items, cloned and sanitized. Nested
+   * items travel inside their parent's clone, so the paste keeps the
+   * source's list tree instead of flattening it. A fragment that carries
+   * anything besides list items is left to the engine: claiming it would
+   * silently drop the non-list part. */
+  function pastedListItems(html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    if (template.content.querySelectorAll("*").length > PASTE_MAX_NODES) {
+      return [];
+    }
+    const topNodes = Array.from(template.content.childNodes).filter((node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.nodeValue.trim() !== "";
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+      return !PASTE_DROP_TAGS.has(pastedTagName(node));
+    });
+    if (!topNodes.length) return [];
+    if (topNodes.some((node) => {
+      const tag = pastedTagName(node);
+      return tag !== "UL" && tag !== "OL" && tag !== "LI";
+    })) return [];
+    const all = Array.from(template.content.querySelectorAll("li"));
+    const top = all.filter((li) => {
+      let p = li.parentElement;
+      while (p) {
+        if (pastedTagName(p) === "LI") return false;
+        p = p.parentElement;
+      }
+      return true;
+    });
+    return top.map((li) => {
+      const clone = li.cloneNode(true);
+      sanitizePastedNode(clone);
+      markPastedTaskItem(clone);
+      clone.querySelectorAll("li").forEach(markPastedTaskItem);
+      return clone;
+    });
+  }
+
+  /* Split `li` at the caret, returning the item that now carries the tail.
+   * A task item's tail gets its own checkbox; a loose item's tail keeps a
+   * paragraph wrapper so the split does not change the list's spacing. */
+  function splitListItemAtCaret(li, range) {
+    const loose = !!listItemPrimaryHost(li);
+    const cb = taskCheckboxOf(li);
+    const right = document.createElement("li");
+    if (!loose && cb) {
+      right.classList.add("task-list-item");
+      const nextCb = makeTaskCheckbox();
+      nextCb.checked = cb.checked;
+      right.appendChild(nextCb);
+    }
+    const tail = document.createRange();
+    try {
+      tail.setStart(range.startContainer, range.startOffset);
+      tail.setEnd(li, li.childNodes.length);
+    } catch (_) {
+      return null;
+    }
+    // A split at or before the marker would move the original checkbox
+    // into the tail; adding another one above it would duplicate the box.
+    if (cb && tail.intersectsNode(cb)) return null;
+    right.appendChild(tail.extractContents());
+    if (loose) {
+      // A loose item keeps a paragraph wrapper on the tail. The new task
+      // checkbox belongs INSIDE that paragraph, beside the text, not in a
+      // paragraph of its own.
+      wrapLeadingInlineRun(right);
+      if (cb) {
+        right.classList.add("task-list-item");
+        let host = right.firstElementChild &&
+          right.firstElementChild.tagName === "P" ? right.firstElementChild : null;
+        if (!host) {
+          host = document.createElement("p");
+          right.insertBefore(host, right.firstChild);
+        }
+        const nextCb = makeTaskCheckbox();
+        nextCb.checked = cb.checked;
+        host.insertBefore(nextCb, host.firstChild);
+      }
+    }
+    li.after(right);
+    ensureListMarker(right);
+    return right;
+  }
+
+  function wrapLeadingInlineRun(li) {
+    const inline = [];
+    let node = li.firstChild;
+    while (node && !isListItemBlockChild(node)) {
+      const next = node.nextSibling;
+      inline.push(node);
+      node = next;
+    }
+    if (!inline.length) return;
+    const p = document.createElement("p");
+    inline.forEach((n) => p.appendChild(n));
+    li.insertBefore(p, li.firstChild);
+  }
+
+  /* Give a pasted item the target list's tight/loose shape. A mixed list
+   * would re-render loose after the save, so the live DOM and the preview
+   * would disagree until the next hybrid entry. */
+  function matchListItemShape(li, loose) {
+    if (!li || pastedTagName(li) !== "LI") return;
+    if (!!listItemPrimaryHost(li) === loose) return;
+    if (loose) {
+      wrapLeadingInlineRun(li);
+      return;
+    }
+    // A tight item cannot hold multiple paragraphs; unwrap only a single
+    // paragraph item with no other block children and leave a genuinely
+    // multi-paragraph item loose.
+    const paragraphs = Array.from(li.children).filter((child) => child.tagName === "P");
+    if (paragraphs.length !== 1) return;
+    if (listItemBlockChildren(li).length) return;
+    const p = paragraphs[0];
+    while (p.firstChild) li.insertBefore(p.firstChild, p);
+    p.remove();
+  }
+
+  /* Insert pasted items as siblings of `targetLi`: above it at the content
+   * start, below it at the content end, between the two halves mid-item,
+   * and in place of an empty placeholder item. The browser's own splice
+   * would instead nest a pasted <ul> inside the target item, which is the
+   * indentation a copy from another list used to gain in hybrid mode. */
+  function insertPastedListItems(targetLi, clones, range) {
+    if (!clones.length) return false;
+    const list = targetLi.parentElement;
+    if (!list) return false;
+    const last = clones[clones.length - 1];
+    const loose = !!listItemPrimaryHost(targetLi);
+    const targetTask = !!taskCheckboxOf(targetLi);
+    clones.forEach((clone) => {
+      matchListItemShape(clone, loose);
+      if (targetTask) addPastedTaskMarker(clone);
+    });
+    // An empty task item is a placeholder too: its checkbox is a marker,
+    // not content, so isEmptyListItem() alone would miss it.
+    const emptyTask = !!taskCheckboxOf(targetLi) &&
+      targetLi.textContent.replace(/\u200B/g, "").trim() === "";
+    if (isEmptyListItem(targetLi) || emptyTask) {
+      targetLi.replaceWith(...clones);
+    } else {
+      let ref;
+      if (caretAtListItemStart(targetLi, range)) {
+        ref = targetLi;
+      } else if (caretAtListItemContentEnd(targetLi, range)) {
+        ref = targetLi.nextSibling;
+      } else {
+        const right = splitListItemAtCaret(targetLi, range);
+        // A caret parked before the item's marker still pastes below the
+        // item rather than dropping the clipboard.
+        ref = right ? right : targetLi.nextSibling;
+      }
+      clones.forEach((clone) => list.insertBefore(clone, ref));
+    }
+    viewerContentEl.focus();
+    ensureListMarker(last);
+    enableCheckboxes();
+    setSelectionToRange(listItemCaretRange(last, true));
+    return true;
+  }
+
+  /* Native Ctrl+V in the note body. Only a paste of list items whose
+   * caret is already inside a list item is claimed: ordinary text, links,
+   * images, and tables keep the engine's own insertion. The clipboard's
+   * HTML is rebuilt into clean <li> siblings, so neither the source's
+   * inline styles nor its <ul> wrapper can leak into the live view. */
+  function onPaste(e) {
+    if (!active || plainPastePending || !e.clipboardData) return;
+    const target = e.target;
+    if (target && target.closest &&
+        (target.closest(".hybrid-lang-pill") ||
+         target.closest("pre.hybrid-plugin-editing"))) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    if (!viewerContentEl.contains(range.startContainer) ||
+        !viewerContentEl.contains(range.endContainer)) return;
+    const html = e.clipboardData.getData("text/html");
+    if (!html || html.length > PASTE_HTML_MAX_CHARS) return;
+    // A cheap pre-parse bound: a fragment with more tags than the node
+    // budget cannot be inserted anyway, so do not hand a pathological tree
+    // to the parser first.
+    if ((html.match(/</g) || []).length > PASTE_MAX_NODES) return;
+    const clones = pastedListItems(html);
+    if (!clones.length) return;
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const li = node && node.closest ? node.closest("li") : null;
+    if (!li || !viewerContentEl.contains(li) || li.closest("table")) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (insertPastedListItems(li, clones, range)) onContentChange();
   }
 
   /* Insert `emoji` at the saved caret as a plain text node. The emoji
@@ -6082,11 +6467,18 @@
         clearNoteToParagraph();
         return;
       }
+      if (deleteListSelection()) {
+        e.preventDefault();
+        return;
+      }
       return;
     }
     if (e.inputType === "deleteContentBackward" ||
-        e.inputType === "deleteContentForward") {
-      if (deleteTableCellSelection(false)) e.preventDefault();
+        e.inputType === "deleteContentForward" ||
+        e.inputType === "deleteWordBackward" ||
+        e.inputType === "deleteWordForward") {
+      if (deleteTableCellSelection(false)) { e.preventDefault(); return; }
+      if (deleteListSelection()) { e.preventDefault(); return; }
       return;
     }
     if (e.inputType !== "insertText" && e.inputType !== "insertFromPaste" &&
@@ -6254,6 +6646,7 @@
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
     viewerContentEl.addEventListener("beforeinput", onBeforeInput);
+    viewerContentEl.addEventListener("paste", onPaste);
     viewerContentEl.addEventListener("change", onCheckboxChange);
     viewerContentEl.addEventListener("keydown", onEnterKey);
     viewerContentEl.addEventListener("click", onBlockClick);
@@ -6293,6 +6686,7 @@
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
     viewerContentEl.removeEventListener("beforeinput", onBeforeInput);
+    viewerContentEl.removeEventListener("paste", onPaste);
     viewerContentEl.removeEventListener("change", onCheckboxChange);
     viewerContentEl.removeEventListener("keydown", onEnterKey);
     viewerContentEl.removeEventListener("click", onBlockClick);
@@ -6675,6 +7069,186 @@
     try {
       range.deleteContents();
     } catch (_) {}
+  }
+
+  /* True when `range` covers the whole CONTENT of `li`. The check is
+   * boundary- and element-aware: formatting whitespace is not content,
+   * but an unselected nested list, image, or checkbox is. A selection that
+   * starts or ends inside the item must have no item content on that side,
+   * so a partial line still takes the browser's ordinary text delete. */
+  function rangeCoversListItem(li, range) {
+    if (!li || !range || !range.intersectsNode(li)) return false;
+    if (li.closest("table")) return false;
+    const cb = taskCheckboxOf(li);
+    if (li.contains(range.startContainer)) {
+      const before = document.createRange();
+      try {
+        // A task checkbox is a marker, not content: selecting the item's
+        // words must still count as covering the whole item.
+        if (cb) before.setStartAfter(cb);
+        else before.selectNodeContents(li);
+        before.setEnd(range.startContainer, range.startOffset);
+      } catch (_) { return false; }
+      if (rangeHasContent(before)) return false;
+    }
+    if (li.contains(range.endContainer)) {
+      const after = document.createRange();
+      try {
+        after.selectNodeContents(li);
+        after.setStart(range.endContainer, range.endOffset);
+      } catch (_) { return false; }
+      if (rangeHasContent(after)) return false;
+    }
+    return true;
+  }
+
+  /* True when a range carries content beyond plain text: text is the
+   * common case, and the element branch also catches an image, rule,
+   * checkbox, line box, or rendered plugin block. Used by the selection
+   * guards so a non-text fragment outside the covered items is not
+   * silently kept while the item is removed. */
+  function selectionGapHasContent(range) {
+    if (!range || range.collapsed) return false;
+    if (rangeHasContent(range)) return true;
+    const frag = range.cloneContents();
+    return !!frag.querySelector(
+      PLUGIN_CONTAINER_SELECTOR + ",[" + ATOMIC_BLOCK_MARKER + "]");
+  }
+
+  /* The outermost list items a non-collapsed selection covers. An inner
+   * item whose parent is also covered is dropped: removing the parent
+   * takes the subtree with it. */
+  function coveredListItemsForDelete(range) {
+    const covered = [];
+    viewerContentEl.querySelectorAll("li").forEach((li) => {
+      if (rangeCoversListItem(li, range)) covered.push(li);
+    });
+    if (!covered.length) return [];
+    const set = new Set(covered);
+    return covered.filter((li) => {
+      for (let p = li.parentElement; p && p !== viewerContentEl; p = p.parentElement) {
+        if (p.tagName === "LI" && set.has(p)) return false;
+      }
+      return true;
+    });
+  }
+
+  /* Remove `list` and every list ancestor left with no items. A nested
+   * list's parent item keeps its own text and stays. */
+  function removeEmptyListChain(list) {
+    let empty = list;
+    while (empty && empty.isConnected &&
+           (empty.tagName === "UL" || empty.tagName === "OL") &&
+           !empty.querySelector("li")) {
+      const parent = empty.parentElement;
+      empty.remove();
+      empty = parent && (parent.tagName === "UL" || parent.tagName === "OL")
+        ? parent : null;
+    }
+  }
+
+  /* True when a blockquote holds no content any more: removing its last
+   * list must not leave a bare ">" line in the note. */
+  function bareBlockquoteAfterList(bq) {
+    if (!bq || bq.tagName !== "BLOCKQUOTE") return false;
+    if (bq.textContent.replace(/\u200B/g, "").trim()) return false;
+    return !bq.querySelector(
+      "blockquote,ul,ol,pre,table,img,hr,canvas,svg,iframe,input");
+  }
+
+  /* Delete every list item fully covered by the selection, then put the
+   * caret on the nearest surviving edge. This is the structural path for
+   * Ctrl+X / Shift+Delete and for Delete/Backspace over a whole item: the
+   * native text delete leaves an empty item behind, which the hybrid
+   * placeholder paints as a stray bullet the saved Markdown then hides. */
+  function deleteListSelection() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+    const range = sel.getRangeAt(0);
+    if (!viewerContentEl.contains(range.startContainer) ||
+        !viewerContentEl.contains(range.endContainer)) return false;
+    const items = coveredListItemsForDelete(range);
+    if (!items.length) return false;
+    const first = items[0];
+    const last = items[items.length - 1];
+    // Only a selection made entirely of whole list items is ours. Check
+    // the element content outside the items, not just their text: an
+    // image, rule, or rendered block would otherwise survive while the
+    // items the clipboard holds are removed.
+    if (!first.contains(range.startContainer)) {
+      const before = document.createRange();
+      try {
+        before.setStart(range.startContainer, range.startOffset);
+        before.setEndBefore(first);
+      } catch (_) { return false; }
+      if (selectionGapHasContent(before)) return false;
+    }
+    if (!last.contains(range.endContainer)) {
+      const after = document.createRange();
+      try {
+        after.setStartAfter(last);
+        after.setEnd(range.endContainer, range.endOffset);
+      } catch (_) { return false; }
+      if (selectionGapHasContent(after)) return false;
+    }
+    for (let i = 0; i + 1 < items.length; i += 1) {
+      const gap = document.createRange();
+      try {
+        gap.setStartAfter(items[i]);
+        gap.setEndBefore(items[i + 1]);
+      } catch (_) { return false; }
+      if (selectionGapHasContent(gap)) return false;
+    }
+    const list = first.parentElement;
+    if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) return false;
+    const prev = first.previousElementSibling;
+    const next = last.nextElementSibling;
+    const parentLi = list.parentElement && list.parentElement.closest("li");
+    const topList = topLevelBlock(list);
+    const prevHost = topList ? caretHostBeside(topList, -1) : null;
+    const nextHost = topList ? caretHostBeside(topList, 1) : null;
+    const topParent = topList ? topList.parentNode : null;
+    const topAnchor = topList ? topList.nextSibling : null;
+    // A selection may cross more than one list; every emptied container
+    // must go, not only the first item's list.
+    const affectedLists = new Set();
+    const quotes = new Set();
+    items.forEach((li) => {
+      if (li.parentElement) affectedLists.add(li.parentElement);
+      for (let p = li.parentElement; p && p !== viewerContentEl; p = p.parentElement) {
+        if (p.tagName === "BLOCKQUOTE") quotes.add(p);
+      }
+    });
+
+    items.forEach((li) => li.remove());
+    affectedLists.forEach(removeEmptyListChain);
+    Array.from(quotes)
+      .sort((a, b) => (a.contains(b) ? 1 : b.contains(a) ? -1 : 0))
+      .forEach((bq) => {
+        if (bq.isConnected && bareBlockquoteAfterList(bq)) bq.remove();
+      });
+
+    viewerContentEl.focus();
+    const prevHostLive = prevHost && prevHost.isConnected ? prevHost : null;
+    const nextHostLive = nextHost && nextHost.isConnected ? nextHost : null;
+    if (prev && prev.isConnected && prev.tagName === "LI") {
+      setSelectionToRange(listItemCaretRange(prev, true));
+    } else if (next && next.isConnected && next.tagName === "LI") {
+      setSelectionToRange(listItemCaretRange(next, false));
+    } else if (parentLi && parentLi.isConnected) {
+      setSelectionToRange(listItemCaretRange(parentLi, true));
+    } else if (topList && topList.isConnected) {
+      caretToEdge(topList, true);
+    } else if (prevHostLive || nextHostLive) {
+      caretToEdge(prevHostLive || nextHostLive, !!prevHostLive);
+    } else if (topParent) {
+      const p = document.createElement("p");
+      p.setAttribute("data-hybrid-caret", "1");
+      topParent.insertBefore(p, topAnchor);
+      caretToStart(p);
+    }
+    onContentChange();
+    return true;
   }
 
   /* For a CUT, the clipboard already holds the WHOLE selection, so the
