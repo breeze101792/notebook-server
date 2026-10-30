@@ -90,12 +90,6 @@
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">{{ boot.site_title }}</button>
-      <div class="search-wrap">
-        <input id="search-input" type="search" placeholder="Search notebooks…  (Enter to run)">
-        <label class="case-toggle" title="Case sensitive">
-          <input type="checkbox" id="search-case"> Aa
-        </label>
-      </div>
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
         <button id="back-btn" class="icon-btn" title="Back" aria-label="Back" disabled>←</button>
@@ -167,10 +161,8 @@
              replaced on mount. -->
         <div id="recent-view" class="side-panel-view" data-view="recent"{% if boot.active_view != 'recent' %} hidden{% endif %}></div>
 
-        <!-- Search view: a self-contained search panel with its own input
-             and results list. Mounted lazily by activity.js. Independent
-             from the top-bar search, which keeps its overlay behavior;
-             both call the same NB.api.search backend. -->
+        <!-- Search view: the search surface, with its own input and
+             results list. Mounted lazily by activity.js. -->
         <div id="search-view" class="side-panel-view" data-view="search"{% if boot.active_view != 'search' %} hidden{% endif %}></div>
 
         <!-- AI assistant view: chat + reviewable nb-edit proposal cards.
@@ -317,7 +309,7 @@
               <ul class="welcome-tips">
                 <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li>
                 <li>Right-click the sidebar to create, rename, copy, or delete</li>
-                <li>Use the top search bar to find anything in your notebook</li>
+                <li>Use the Search panel to find anything in your notebook</li>
                 <li>The ⚙ button picks theme, font size, and wallpaper</li>
               </ul>
             </div>
@@ -347,18 +339,6 @@
             <div class="graph-view-host" id="graph-view-canvas-host">
               <canvas id="graph-view-canvas" class="graph-view-canvas"></canvas>
             </div>
-          </div>
-          <!-- Search results: shown as a special tab (§search) in the tab
-               bar. The top-bar search input triggers NB.tabs.openSpecial
-               ("§search") when the user types a query; results render
-               here, a .special-tab-view sibling of #viewer inside
-               #edit-split. The viewer hides when this tab is active. -->
-          <div id="search-results" class="search-results special-tab-view" hidden>
-            <div class="search-results-header">
-              <span id="search-summary"></span>
-              <button id="search-close" title="Close search">×</button>
-            </div>
-            <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
           </div>
         </div>
       </section>
@@ -1485,7 +1465,6 @@
   <script src="/static/js/watcher.js" defer></script>
   <script src="/static/js/outline.js" defer></script>
   <script src="/static/js/sidebar.js" defer></script>
-  <script src="/static/js/search.js" defer></script>
   <script src="/static/js/graph.js" defer></script>
   <script src="/static/js/tabs.js" defer></script>
   <script src="/static/js/windows.js" defer></script>

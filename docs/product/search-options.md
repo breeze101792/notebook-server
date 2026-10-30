@@ -18,7 +18,7 @@ Today the panel is a flat list of occurrences:
 - the summary counts occurrences only, so "23 matches" does not say whether that is one note or ten;
 - the per-file cap (`MAX_MATCHES_PER_FILE`) clips a file with no signal; `truncated` reports only the total cap;
 - results have a fixed walk order; there is no sort;
-- the panel's "Aa" is not persisted and does not stay in step with the top-bar "Aa";
+- the panel's "Aa" is not persisted;
 - clicking a hit for a note that was deleted or moved is not caught, and `tabs.open` has already added the tab before the read fails.
 
 P1 fixes the shape of the result list, makes every cap visible, and keeps the existing read-only safety: search never writes note content.
@@ -43,7 +43,7 @@ One user, their own Markdown notebook. Desktop is the main surface; the phone dr
 |---|---|---|
 | S1 | One result per note | a file with many hits appears once, with its total match count and its first snippet |
 | S2 | Sort | Path A–Z, Recently modified, or Most matches; deterministic order |
-| S3 | Shared match case | one persisted `Aa` setting, reflected in the panel and the top bar |
+| S3 | Shared match case | one persisted `Aa` setting for the Search view |
 | S4 | Honest caps | unique mode never hides a matching note silently; every-match mode discloses the per-file cap; `truncated` is always stated |
 | S5 | Search lifecycle | debounced, latest-response-wins, empty query is idle, failures keep the query and offer Retry |
 | S6 | Robust open | a deleted or moved hit shows an inline message, does not leave a new empty tab, and writes nothing |
@@ -88,7 +88,7 @@ Transitions are driven only by the current query and options. A response is appl
 5. Changing any option re-runs immediately when the query is non-empty (no debounce); with no query it changes only the control and persists.
 6. **Latest response wins.** The panel keeps a request token; a response for an older token is ignored. This includes an older response that arrives after a newer query, a newer option change, or a cleared input.
 7. While running, previous rows stay visible under `Searching…`; they remain clickable and open the note at their term.
-8. The panel keeps its query, options, results, and active row across side-panel view switches. It does not re-run on becoming active unless a shared option changed while it was hidden (§4.9). The §search tab keeps its existing re-run-on-activation behaviour.
+8. The panel keeps its query, options, results, and active row across side-panel view switches. It does not re-run on becoming active unless a shared option changed while it was hidden (§4.9).
 9. The query is not persisted. After a reload the panel is Idle; the options are restored from config.
 
 ### 4.2 One result per note (P1, default ON)
@@ -155,9 +155,9 @@ No dedupe is applied in this mode.
 ### 4.5 Match case (P1, existing)
 
 - Label `Aa`, accessible name "Match case". Off by default.
-- One setting, `searchCaseSensitive`, shared by the panel and the top bar.
-- Toggling in either place updates both checkboxes and persists once. The surface where the change was made re-runs its non-empty query immediately; the other surface re-runs on its next activation/visibility (the §search tab already re-runs on activation). Focus does not move.
-- With no query, no request is made.
+- One persisted setting, `searchCaseSensitive`.
+- The panel is the only case control. Toggling it re-runs a non-empty query immediately and persists once. Focus does not move.
+- With no query, no search request is made.
 - If the panel mounted before the first config load (Search can be the saved view), it syncs its controls when the loaded config arrives. A change the user made in that window is not reverted by the late load.
 
 ### 4.6 Opening a result
@@ -181,7 +181,7 @@ Accessibility semantics: the result list is a listbox (or an equivalent roving-f
 
 ### 4.8 Phone
 
-The panel is the Search view inside the drawer (`#search-view`), reached from Home or the activity rail. The top-bar search is hidden, so in P1 the panel's options are the only search options on a phone.
+The panel is the Search view inside the drawer (`#search-view`), reached from Home, the activity rail, or the global search shortcut. There is no top-bar search, so the panel is the only search surface on every device.
 
 1. Opening the drawer focuses the query field.
 2. The options row wraps or stacks; every control is at least the mobile hit target (mobile spec C3), and the input stays at 16 px so iOS does not zoom (C2). No horizontal page scroll.
@@ -189,25 +189,17 @@ The panel is the Search view inside the drawer (`#search-view`), reached from Ho
 4. A 401 shows the login flow above the drawer; after login the page reloads and the panel is Idle.
 5. The keyboard must not cover the query field; the results list scrolls above it.
 
-### 4.9 Consistency with the top bar and the §search tab
+### 4.9 Single search surface
 
-| Setting | Panel | Top bar / §search tab | Storage |
-|---|---|---|---|
-| query text | own | own | in memory, per surface |
-| match case | yes | yes | `searchCaseSensitive` |
-| one per note | yes | no control, always every-match | `searchUnique` |
-| sort | yes | no control, fixed walk order | `searchSort` |
-| scope (P2) | yes | no; the top bar stays an all-notes search | session only |
+Search lives only in the side panel. There is no top-bar search input and no
+`§search` tab, so a query or option change cannot leak into a second surface.
 
-The split is deliberate: the panel answers "which note", the tab answers "which line". The tab is not changed to grouped results in P1.
-
-Re-run rules:
-
-- A panel query/option change runs only the panel; a top-bar query runs only the tab.
-- A shared case change re-runs the surface where it happened, updates the other surface's checkbox, and marks the hidden panel to re-run when it next becomes active (if its query is non-empty and the value changed since its last run).
-- The panel does not open or activate the §search tab. Changing a panel option never pops a tab.
-- Switching away from the panel and back does not re-run or reset. Switching to the §search tab re-runs it, as today.
-- Both surfaces adopt latest-response-wins. This is a small `search.js` correction; the tab's existing behaviour is otherwise unchanged.
+- The global search shortcut (Ctrl/Cmd+F and `/`; VIM `/` and `T`) opens the
+  Search view, expands the panel or phone drawer, and focuses the query.
+- Switching away from the panel and back preserves the query, options,
+  results, and active row; returning does not re-run the query.
+- Every response still follows latest-response-wins; an older in-flight
+  response cannot overwrite a newer one.
 
 ## 5. Option inventory
 
@@ -312,7 +304,7 @@ Re-run rules:
 | AC31 | Keyboard-only | Tab reaches query → Aa → one-per-note → sort → results; arrows/Home/End move the active row; Enter opens; Esc returns to the query (and clears when in the query); every focused control has a visible ring | D, H |
 | AC32 | Screen reader semantics | results expose a listbox/option (or equivalent) with the active row announced; summary is a live region; error is an alert; list is busy while running | D |
 | AC33 | Switch to Explorer and back | same query, options, results, and active row; no new request unless a shared case value changed while hidden | D |
-| AC34 | Case toggled in the top bar while the panel is active | both checkboxes update; the panel re-runs its own query once; focus does not move; one config POST | D |
+| AC34 | Global search shortcut | Ctrl/Cmd+F, `/`, VIM `/` and `T` open the Search view, expand the panel or phone drawer, and focus the query; no `§search` tab is created | D |
 | AC35 | Phone drawer | search opens focused; controls meet the 44 px target (mobile C3) and do not scroll the page sideways; tap closes the drawer, opens the note, marks the hit; reopening shows the same query/results | H |
 | AC36 | Panel at default 240 px and at the drawer width | long paths ellipsize, snippets wrap, controls do not overlap or clip, no horizontal scroll | H |
 
@@ -344,8 +336,7 @@ Re-run rules:
 | `app.py` (`search()`, constants near `MAX_TOTAL_MATCHES`) | `unique=1`; exact per-file `count`; order before file cap; `perFileTruncated` | yes |
 | `static/js/api.js` | `search(q, opts)` with `{caseSensitive, unique, order, desc, …}`; old `(q, caseSensitive)` calls still work | yes |
 | `static/js/activity.js` (`mountSearch`) | controls, row rendering, dedupe/display rules, sort, latest-wins, error paths, keyboard, open-error catch | yes |
-| `static/js/app.js` | `DEFAULTS` + `NB.app` setters for `searchUnique`/`searchSort`; case sync to the top-bar checkbox; signal the loaded config; do not clobber a user change made before the first load | yes |
-| `static/js/search.js` | latest-response-wins; read/emit the shared case; no unique/sort here | small |
+| `static/js/app.js` | `DEFAULTS` + `NB.app` setters for `searchUnique`/`searchSort`/`searchTarget`; persist `searchCaseSensitive`; signal the loaded config; do not clobber a user change made before the first load | yes |
 | `static/css/style.css` | options row and result count/meta; mobile hit targets; focus rings | yes (with `ui-designer`) |
 | `tests/test_app.py` (`TestSearch`) | contract tests AC4–AC12 | yes |
 | `tests/dom/test_dom.js` | stub `/api/search` honours `unique`, `order`, `desc`, returns `count`/`perFileTruncated`; panel tests AC1–AC36 | yes |
@@ -376,7 +367,7 @@ GET /api/search?q=…&unique=1
 1. Server contract + `TestSearch` cases; update `agent.md` and `docs/contracts/http-api.md`.
 2. `api.js` options object; update the jsdom search stub.
 3. Panel controls and rendering; latest-wins; keyboard; open-error path.
-4. Case sync and config load/save in `app.js` + `search.js`.
+4. Case persistence and config load/save in `app.js` + `activity.js`.
 5. CSS with `ui-designer`; phone checks.
 6. DOM tests and the frontend/backend docs.
 
@@ -394,17 +385,17 @@ GET /api/search?q=…&unique=1
 
 - A1 The notebook is small enough for a fresh scan per search; no index is added.
 - A2 "Match" means one occurrence; two on a line count twice.
-- A3 The panel is the "find the note" surface; the §search tab is the "find the line" surface and keeps per-hit results in P1.
+- A3 The panel is the single search surface and answers both "which note" and "which line".
 - A4 The viewer role may search; search writes nothing.
 - A5 Client and server deploy together; `unique` is additive and defaults off for other callers.
 - A6 The existing caps (`MAX_TOTAL_MATCHES`, `MAX_MATCHES_PER_FILE`) remain the defaults; unique mode reinterprets `limit` as a note cap and ignores `perFile`.
 - A7 No new script file is added; the panel stays in `activity.js`.
-- A8 The phone drawer is the only search surface on a phone; the top bar is hidden there.
+- A8 The phone drawer is the search surface on a phone; there is no top bar.
 
 **Open questions**
 
 - Q1 Confirm one-per-note is ON by default (it changes today's panel behaviour).
-- Q2 Confirm unique/sort stay panel-only, with the §search tab unchanged in shape.
+- Q2 Resolved: the top-bar search was removed; unique/sort are the only search result shape.
 - Q3 Confirm the additive server change is acceptable; if not, the fallback is client-side dedupe with capped, approximate counts and the cap-budget limitation in §4.2.
 - Q4 If P2 ships, which first: regex, current-note scope, or title search?
 - Q5 Is losing the query on a 401 reload acceptable, or should the panel restore the last query for the session? (Current decision: not restored.)

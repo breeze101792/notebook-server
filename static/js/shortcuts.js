@@ -7,11 +7,16 @@
  * VIM keymap is not configurable here. (See Settings -> VIM mode
  * and the :help overlay for VIM's own bindings.)
  *
- * The four actions exposed today:
- *   save         Ctrl/Cmd+S   -- save the current file
- *   openSearch   Ctrl/Cmd+F   -- focus the search box
- *   toggleEdit   Ctrl/Cmd+E   -- enter / leave edit mode
- *   openSettings Ctrl/Cmd+,   -- open the Settings modal
+ * The app-level actions:
+ *   save         Mod+S        -- save the current file
+ *   openSearch   /            -- open the Search panel
+ *   tabPrev      Alt+H        -- previous tab
+ *   tabNext      Alt+L        -- next tab
+ *   toggleEdit   Mod+E        -- enter / leave edit mode
+ *   toggleHybrid Mod+Shift+E  -- enter / leave WYSIWYG mode
+ *   windowCycle  Mod+W        -- cycle sidebar / editor / outline
+ *   toggleTopbar Mod+Shift+T  -- hide / show the top bar
+ *   openSettings Mod+comma    -- open the Settings modal
  *
  * Bindings are stored in cfg.shortcuts as {action: chordString}, where
  * a chord string is a "+"-joined list of modifiers + a key, e.g.

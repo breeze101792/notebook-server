@@ -1199,7 +1199,7 @@ mobile-specific behaviour.
 - `templates/index.html`: the host is built by JS.
 - `static/js/api.js`, `app.py`: no request or endpoint change.
 - Persistence keys and request parameters.
-- The top-bar search overlay.
+- The top-bar search was removed; the side-panel Search is the only surface.
 - Result rows and their states.
 - `tests/`: the existing selectors remain valid. Run the suite only
   after implementation.

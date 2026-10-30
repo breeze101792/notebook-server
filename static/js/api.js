@@ -60,7 +60,7 @@
     copyItem:      (from, to)   => request("POST", "/api/copy",  { from, to }),
     deleteItem:    (path)      => request("POST", "/api/delete", { path }),
     // opts = {caseSensitive, unique, order, desc}. A boolean second arg is
-    // the legacy (q, caseSensitive) shape used by the top-bar search.
+    // accepted as shorthand for {caseSensitive}.
     search:        (q, opts) => {
       const o = (opts && typeof opts === "object")
         ? opts : { caseSensitive: !!opts };

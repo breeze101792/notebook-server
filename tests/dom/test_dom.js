@@ -185,8 +185,6 @@ const html = `<!DOCTYPE html><html><head>
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">📓 Notebook</button>
-      <input id="search-input" type="search">
-      <input type="checkbox" id="search-case">
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="mobile-title" class="mobile-title" aria-label="Browse notes"></button>
       <button id="mobile-capture" class="icon-btn" title="Quick capture" aria-label="Quick capture" hidden>＋</button>
@@ -320,7 +318,7 @@ const html = `<!DOCTYPE html><html><head>
               <ul class="welcome-tips">
                 <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li>
                 <li>Right-click the sidebar to create, rename, copy, or delete</li>
-                <li>Use the top search bar to find anything in your notebook</li>
+                <li>Use the Search panel to find anything in your notebook</li>
                 <li>The ⚙ button picks theme, font size, and wallpaper</li>
               </ul>
             </div>
@@ -340,13 +338,6 @@ const html = `<!DOCTYPE html><html><head>
             <div class="graph-view-host" id="graph-view-canvas-host">
               <canvas id="graph-view-canvas" class="graph-view-canvas"></canvas>
             </div>
-          </div>
-          <div id="search-results" class="search-results special-tab-view" hidden>
-            <div class="search-results-header">
-              <span id="search-summary"></span>
-              <button id="search-close" title="Close search">×</button>
-            </div>
-            <ul id="search-list" tabindex="0" aria-label="Search results"></ul>
           </div>
         </div>
       </section>
@@ -2073,7 +2064,6 @@ evalIn(read("static/vendor/highlight.min.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
-evalIn(read("static/js/search.js"));
 evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/windows.js"));
@@ -2122,7 +2112,7 @@ function check(label, cond, extra) {
 
   console.log("== side-panel search options ==");
   // Covers the D rows of docs/product/search-options.md §7 (AC1-AC7,
-  // AC11-AC26, AC29-AC34). The panel is the Search view in #search-view;
+  // AC11-AC26, AC29-AC33). The panel is the Search view in #search-view;
   // its controls are rebuilt by mountSearch(activity.js) on first activation.
   {
     const searchView = () => $("search-view");
@@ -2649,36 +2639,6 @@ function check(label, cond, extra) {
         window.fetch = real;
       }
       setUnique(true);
-      await tick(330);
-    }
-
-    // AC34: the top-bar Aa updates the panel, re-runs its query once, keeps
-    // focus, and persists one config POST.
-    {
-      await tick(320);
-      const postsBeforeCase = configPosts().length;
-      spInputEl().focus();
-      const topCase = $("search-case");
-      topCase.checked = true;
-      fire(topCase, "change");
-      await tick(20);
-      check("search panel AC34: panel Aa mirrors the top bar",
-        spCaseCb().checked === true);
-      check("search panel AC34: top bar Aa stays checked",
-        topCase.checked === true);
-      check("search panel AC34: the panel re-runs with case=1",
-        lastSearch().indexOf("case=1") >= 0, lastSearch());
-      check("search panel AC34: focus does not move",
-        window.document.activeElement === spInputEl());
-      await tick(330);
-      check("search panel AC34: one config POST carries the case change",
-        configPosts().length - postsBeforeCase === 1,
-        "posts=" + (configPosts().length - postsBeforeCase));
-      check("search panel AC34: the POST body has searchCaseSensitive=true",
-        /"searchCaseSensitive":true/.test(lastConfig()), lastConfig());
-      topCase.checked = false;
-      fire(topCase, "change");
-      await tick(20);
       await tick(330);
     }
 
@@ -5961,7 +5921,7 @@ function check(label, cond, extra) {
   // Tab switches now commit (and would SAVE) a dirty edit session, so this
   // scratch edit must be discarded explicitly before the width-freeze test
   // switches tabs -- otherwise the save clobbers the notes/a.md fixture
-  // (FILE_A) that the search block below relies on.
+  // (FILE_A) that later blocks rely on.
   window.confirm = () => true;   // discard the scratch edit
   click("close-edit-btn");
   await tick(20);
@@ -6417,7 +6377,7 @@ function check(label, cond, extra) {
     tabs().length + " tab(s), active=" + activeTabPath());
 
   // Cleanup: end the settle, drop the stub + counters, and confirm the suite
-  // is back in the single-tab state the == search == block expects.
+  // is back in the single-tab state the next block expects.
   closeNode("notes/a.md").dispatchEvent(new window.Event("animationend", { bubbles: true }));
   check("close-reflow cleanup: settle ended", !window.NB.tabs.isReleasing() && !closeClassOn());
   window.Element.prototype.getBoundingClientRect = closeOrigRect;
@@ -6606,7 +6566,7 @@ function check(label, cond, extra) {
     "no reduced-motion ghost guard");
 
   // Cleanup: restore the prototype rect stub and return to the single-tab
-  // state the == search == block expects.
+  // state the next block expects.
   await tick(320);   // let any pending ghostTimer fire before the stub is gone
   window.Element.prototype.getBoundingClientRect = ghostOrigRect;
   await window.NB.tabs.open("notes/a.md");
@@ -6614,130 +6574,6 @@ function check(label, cond, extra) {
   check("ghost cleanup: back to one tab on notes/a.md",
     tabs().length === 1 && activeTabPath() === "notes/a.md" && !window.NB.tabs.isWidthFrozen(),
     tabs().length + " tab(s), active=" + activeTabPath());
-
-  console.log("== search ==");
-  const si = $("search-input");
-  si.value = "fix this";
-  si.dispatchEvent(new window.Event("input", { bubbles: true }));
-  await tick(350);
-  const hits = window.document.querySelectorAll("#search-list .search-hit");
-  check("search returns 2 hits", hits.length === 2, "got " + hits.length);
-  check("search panel visible", !$("search-results").hidden);
-
-  // --- search results list: Enter -> focus the list, hjkl nav ---
-  // After typing a query, pressing Enter in the search input hands
-  // focus to the results list. j/k (and arrows) move the active hit,
-  // Enter/l opens it, Esc pops back to the input (overlay stays open).
-  // Esc from the input itself still closes the overlay.
-  const searchListEl = $("search-list");
-  const listHits = () => window.document.querySelectorAll("#search-list .search-hit");
-  const activeHit = () => window.document.querySelector("#search-list .search-hit.is-active");
-  const fireOnList = (k) => searchListEl.dispatchEvent(new window.KeyboardEvent("keydown",
-    { key: k, bubbles: true, cancelable: true }));
-
-  const preActive = activeTabPath();
-  si.focus();
-  si.dispatchEvent(new window.KeyboardEvent("keydown",
-    { key: "Enter", bubbles: true, cancelable: true }));
-  await tick(50);
-  check("search: Enter -> focus moves to #search-list",
-    window.document.activeElement === searchListEl,
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  check("search: Enter -> first hit is active",
-    listHits().length > 0 && activeHit() === listHits()[0],
-    "active=" + (activeHit() && activeHit().querySelector(".hit-file").textContent));
-
-  fireOnList("j"); await tick(10);
-  check("search: j -> next hit is active", activeHit() === listHits()[1]);
-  fireOnList("k"); await tick(10);
-  check("search: k -> previous hit is active", activeHit() === listHits()[0]);
-  fireOnList("ArrowDown"); await tick(10);
-  check("search: ArrowDown -> next hit is active", activeHit() === listHits()[1]);
-  fireOnList("ArrowUp"); await tick(10);
-  check("search: ArrowUp -> previous hit is active", activeHit() === listHits()[0]);
-  fireOnList("G"); await tick(10);
-  check("search: G -> last hit is active",
-    activeHit() === listHits()[listHits().length - 1]);
-  fireOnList("g"); await tick(10);
-  fireOnList("g"); await tick(10);
-  check("search: gg -> first hit is active", activeHit() === listHits()[0]);
-  // Esc on the list pops back to the input (does NOT close the overlay).
-  fireOnList("Escape"); await tick(20);
-  check("search: Esc on list -> input focused, overlay still open",
-    window.document.activeElement === si && !$("search-results").hidden);
-  // No matches -> there's nothing to navigate to, so focus stays on input.
-  si.value = "zzzznomatch";
-  si.dispatchEvent(new window.Event("input", { bubbles: true }));
-  await tick(350);
-  check("search: no matches -> focus stays on input",
-    window.document.activeElement === si,
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  // Enter on the list opens the active hit. Restore the query, focus
-  // the list via Enter, move to the second hit, then Enter to open.
-  si.value = "fix this";
-  si.dispatchEvent(new window.Event("input", { bubbles: true }));
-  si.dispatchEvent(new window.KeyboardEvent("keydown",
-    { key: "Enter", bubbles: true, cancelable: true }));
-  await tick(50);
-  check("search: re-Enter -> focus back on #search-list",
-    window.document.activeElement === searchListEl);
-  fireOnList("j"); await tick(10);
-  const expectedHit = listHits()[1].querySelector(".hit-file");
-  const expectedFile = expectedHit.title || expectedHit.textContent;
-  fireOnList("Enter"); await tick(50);
-  check("search: Enter on list -> overlay closes", $("search-results").hidden);
-  check("search: Enter on list -> opens active hit (" + expectedFile + ")",
-    activeTabPath() === expectedFile, "active=" + activeTabPath());
-  // The hit may have opened a tab that wasn't open before the search
-  // block. Close any tab we didn't start with, then restore the
-  // pre-test active file so the rest of the suite is unaffected.
-  if (expectedFile !== preActive) {
-    await window.NB.tabs.close(expectedFile, { force: true });
-    await tick(20);
-  }
-  await window.NB.tabs.open(preActive);
-  await tick(20);
-
-  click("search-close");
-  await tick(10);
-  check("search panel hides on close", $("search-results").hidden);
-
-  // Regression: a response that lands after close() must not reopen the
-  // §search tab or repaint the list.
-  {
-    const real = window.fetch;
-    let release;
-    const gate = new Promise((resolve) => { release = resolve; });
-    window.fetch = async (url, opts) => {
-      const u = new URL(url, "http://127.0.0.1:5000");
-      if (u.pathname === "/api/search" &&
-          u.searchParams.get("q") === "deferred") {
-        await gate;
-      }
-      return real(url, opts);
-    };
-    try {
-      si.value = "deferred";
-      si.dispatchEvent(new window.Event("input", { bubbles: true }));
-      await tick(300);   // debounce fired; the response is gated
-      const listBefore = $("search-list").textContent;
-      const summaryBefore = $("search-summary").textContent;
-      click("search-close");
-      await tick(10);
-      release();
-      await tick(30);
-      check("search: late response after close does not reopen the tab",
-        !window.NB.tabs.isOpen("§search"));
-      check("search: late response after close does not repaint the list",
-        $("search-list").textContent === listBefore &&
-        $("search-summary").textContent === summaryBefore &&
-        $("search-results").hidden);
-    } finally {
-      release();
-      window.fetch = real;
-      await tick(20);
-    }
-  }
 
   console.log("== edit + save ==");
   // The previous "dirty dot" test left the active file with unsaved edits
@@ -17202,8 +17038,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v15",
-      /const CACHE = "notebook-v15"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v16",
+      /const CACHE = "notebook-v16"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -21740,8 +21576,9 @@ function check(label, cond, extra) {
   // Close the modal so the global shortcut dispatch is unblocked.
   window.NB.settings.close();
   await tick(10);
+  const spSearchInput = () => $("search-view").querySelector(".search-panel-input");
   // Make sure no input is holding focus (so the post-press focus
-  // change to #search-input is attributable to the shortcut).
+  // change to the Search panel input is attributable to the shortcut).
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
@@ -21749,25 +21586,25 @@ function check(label, cond, extra) {
     key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
-  check("shortcuts: / (default openSearch) focuses #search-input",
-    window.document.activeElement === $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  $("search-input").blur(); await tick(10);
+  check("shortcuts: / (default openSearch) focuses the Search panel input",
+    window.document.activeElement === spSearchInput() &&
+    !window.NB.tabs.isOpen("§search"),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
+  spSearchInput().blur(); await tick(10);
 
   // --- modifierless / must NOT fire when an input has focus ---
   // The user is typing, not invoking a shortcut -- the dispatcher
   // guards bare-chord matches so the keystroke passes through.
-  $("search-input").focus();
+  spSearchInput().focus();
   await tick(10);
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
     key: "/", code: "Slash", bubbles: true, cancelable: true,
   }));
   await tick(20);
   check("shortcuts: / in an input does NOT fire openSearch (typing guard)",
-    window.document.activeElement === $("search-input") &&
-    window.document.getElementById("search-results").hidden,
-    "results.hidden=" + window.document.getElementById("search-results").hidden);
-  $("search-input").blur(); await tick(10);
+    window.document.activeElement === spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
+  spSearchInput().blur(); await tick(10);
 
   // --- rebind via the API and verify the new binding fires (and the
   // old one stops firing) ---
@@ -21781,9 +21618,9 @@ function check(label, cond, extra) {
   }));
   await tick(20);
   check("shortcuts: new binding (Mod+G) fires openSearch",
-    window.document.activeElement === $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  $("search-input").blur(); await tick(10);
+    window.document.activeElement === spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
+  spSearchInput().blur(); await tick(10);
   if (window.document.activeElement && window.document.activeElement !== window.document.body) {
     window.document.activeElement.blur();
   }
@@ -21792,8 +21629,8 @@ function check(label, cond, extra) {
   }));
   await tick(20);
   check("shortcuts: old binding (/) no longer fires after rebind",
-    window.document.activeElement !== $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
+    window.document.activeElement !== spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
 
   // --- reset a single binding ---
   sc.resetBinding("openSearch");
@@ -21806,8 +21643,8 @@ function check(label, cond, extra) {
   }));
   await tick(20);
   check("shortcuts: resetBinding restores default (/ fires again)",
-    window.document.activeElement === $("search-input"));
-  $("search-input").blur(); await tick(10);
+    window.document.activeElement === spSearchInput());
+  spSearchInput().blur(); await tick(10);
 
   // --- tabPrev / tabNext (Alt+H / Alt+L) actually cycle tabs ---
   // The suite has Welcome.md open from the earlier "external change"
@@ -21853,7 +21690,7 @@ function check(label, cond, extra) {
     await window.NB.tabs.activate(preCycleActive);
     await tick(20);
   }
-  $("search-input").blur(); await tick(10);
+  spSearchInput().blur(); await tick(10);
 
   // --- openSettings (Ctrl+,) actually fires ---
   // Make sure the modal is closed so the global dispatch runs.
@@ -21943,8 +21780,8 @@ function check(label, cond, extra) {
   }));
   await tick(20);
   check("shortcuts: settings open -> / does NOT fire (modal blocks)",
-    window.document.activeElement !== $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
+    window.document.activeElement !== spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
   // But the capture flow still works inside the modal (the Change
   // button armed capture, and a key inside the modal is captured).
   const osRowInModal = shortcutsList.querySelector('.shortcut-row[data-action="openSearch"]');
@@ -21991,9 +21828,9 @@ function check(label, cond, extra) {
   await tick(20);
   check("shortcuts: vim on + Ctrl+/ -> vim disables AND search does NOT open",
     !window.NB.vimnav.isEnabled() &&
-    window.document.activeElement !== $("search-input"),
+    window.document.activeElement !== spSearchInput(),
     "vimEnabled=" + window.NB.vimnav.isEnabled() +
-    " active=" + (window.document.activeElement && window.document.activeElement.id));
+    " active=" + (window.document.activeElement && window.document.activeElement.className));
   // Restore for the next block (the big vim mode test that runs
   // later in the suite enables vim via the settings toggle and
   // expects the default off state at boot of that block).
@@ -22087,7 +21924,9 @@ function check(label, cond, extra) {
   // 5) Typing guard: modifierless chord in an input is NOT
   // preventDefaulted -- the keystroke passes through to the input.
   {
-    $("search-input").focus();
+    window.NB.activity.openSearch();
+    await tick(20);
+    spSearchInput().focus();
     await tick(10);
     const e = new window.KeyboardEvent("keydown", {
       key: "/", code: "Slash", bubbles: true, cancelable: true,
@@ -22095,7 +21934,7 @@ function check(label, cond, extra) {
     window.document.dispatchEvent(e);
     check("shortcuts: claim -> / in an input is NOT preventDefaulted (typing guard)",
       e.defaultPrevented === false);
-    $("search-input").blur();
+    spSearchInput().blur();
     await tick(10);
   }
   // 6) A key the app does NOT claim (e.g. Ctrl+L with no binding)
@@ -22342,7 +22181,7 @@ function check(label, cond, extra) {
   // read; the auth-required handler must not leave them visible.
   $("viewer-content").textContent = "secret notebook content";
   $("file-tree").textContent = "secret tree";
-  $("search-list").textContent = "secret matches";
+  $("search-view").querySelector(".search-panel-list").textContent = "secret matches";
   let emitted = 0;
   const evtHandler = () => { emitted++; };
   window.NB.evt.on("auth:required", evtHandler);
@@ -22362,8 +22201,9 @@ function check(label, cond, extra) {
     $("file-tree").textContent === "",
     "textContent=" + JSON.stringify($("file-tree").textContent));
   check("auth: 401 -> search list wiped (textContent empty)",
-    $("search-list").textContent === "",
-    "textContent=" + JSON.stringify($("search-list").textContent));
+    $("search-view").querySelector(".search-panel-list").textContent === "",
+    "textContent=" + JSON.stringify(
+      $("search-view").querySelector(".search-panel-list").textContent));
   // And the body has the locked class so the auth-locked CSS rules
   // (opacity + blur) kick in for any content that survived.
   check("auth: 401 -> body has .auth-locked class",
@@ -25010,7 +24850,9 @@ function check(label, cond, extra) {
     check("scroll: PageUp scrolls back up",
       vc.scrollTop === before, "after=" + vc.scrollTop);
     // Typing guard: with an input focused, ArrowDown must NOT scroll.
-    $("search-input").focus();
+    window.NB.activity.openSearch();
+    await tick(20);
+    spSearchInput().focus();
     const beforeTyping = vc.scrollTop;
     window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
       key: "ArrowDown", code: "ArrowDown", bubbles: true, cancelable: true,
@@ -25018,7 +24860,7 @@ function check(label, cond, extra) {
     await tick(10);
     check("scroll: ArrowDown in an input does NOT scroll (typing guard)",
       vc.scrollTop === beforeTyping, "after=" + vc.scrollTop);
-    $("search-input").blur();
+    spSearchInput().blur();
     await tick(10);
   }
 
@@ -25874,7 +25716,9 @@ function check(label, cond, extra) {
   // j should NOT move the sidebar cursor. (Otherwise typing 'j' in
   // search would also navigate the tree.)
   const sidebarBefore = window.NB.sidebar.getVimCursor();
-  $("search-input").focus();
+  window.NB.activity.openSearch();
+  await tick(20);
+  spSearchInput().focus();
   pressKey("j");
   await tick(20);
   check("vim: keymap yields when input focused (no sidebar nav)",
@@ -25884,7 +25728,7 @@ function check(label, cond, extra) {
   pressKey("Escape");
   await tick(10);
   check("vim: Esc in input blurs the input",
-    window.document.activeElement !== $("search-input"));
+    window.document.activeElement !== spSearchInput());
   // Ctrl+S in editor window calls NB.viewer.save(). Stub fetch to a
   // clean file (no dirty) and verify nothing throws.
   blurActive();
@@ -25924,11 +25768,11 @@ function check(label, cond, extra) {
   await tick(10);
   pressKey("T");
   await tick(10);
-  check("vim: T in editor focuses search input",
-    window.document.activeElement === $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  check("vim: T in editor focuses the Search panel input",
+    window.document.activeElement === spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
   // Blur to drop focus for the rest of the suite.
-  $("search-input").blur();
+  spSearchInput().blur();
   await tick(10);
 
   // / (VIM-style search) in edit mode (CM not focused) also focuses
@@ -25939,10 +25783,10 @@ function check(label, cond, extra) {
   await tick(10);
   pressKey("/");
   await tick(10);
-  check("vim: / in edit mode focuses search input",
-    window.document.activeElement === $("search-input"),
-    "active=" + (window.document.activeElement && window.document.activeElement.id));
-  $("search-input").blur();
+  check("vim: / in edit mode focuses the Search panel input",
+    window.document.activeElement === spSearchInput(),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
+  spSearchInput().blur();
   await tick(10);
 
   // Mac Option-key compose: on macOS, Alt+H composes a special character
@@ -29843,12 +29687,12 @@ function check(label, cond, extra) {
     }
   }
 
-  // --- registration timing: graph.js and search.js load before tabs.js
-  // in the HTML (defer scripts execute in document order). When their
-  // IIFEs run, NB.tabs doesn't exist yet, so the immediate registerSpecial
-  // call is skipped. The fix defers registration to DOMContentLoaded,
-  // which fires after tabs.js has created NB.tabs. Verify both special
-  // tabs are registered by opening them. ---
+  // --- registration timing: graph.js loads before tabs.js in the HTML
+  // (defer scripts execute in document order). When its IIFE runs,
+  // NB.tabs doesn't exist yet, so the immediate registerSpecial call is
+  // skipped. The fix defers registration to DOMContentLoaded, which
+  // fires after tabs.js has created NB.tabs. Verify the special tab is
+  // registered by opening it. ---
   console.log("== special-tab registration timing ==");
   {
     // Close any open tabs first so we get clean openSpecial results.
@@ -29867,17 +29711,13 @@ function check(label, cond, extra) {
     await window.NB.tabs.close("§graph", { force: true });
     await tick(10);
 
-    // §search: openSpecial should succeed.
+    // §search was retired with the top-bar search; openSpecial is a no-op.
     await window.NB.tabs.openSpecial("§search");
-    await tick(30);
-    check("registration: §search opens via openSpecial",
-      window.NB.tabs.isOpen("§search") && window.NB.tabs.getActive() === "§search");
-    check("registration: §search container visible",
-      !$("search-results").hidden);
+    await tick(20);
+    check("registration: §search is retired (openSpecial is a no-op)",
+      !window.NB.tabs.isOpen("§search"));
 
-    // Restore: close the search tab and re-open the original file.
-    await window.NB.tabs.close("§search", { force: true });
-    await tick(10);
+    // Restore the original file.
     if (openBefore.length) await window.NB.tabs.open(openBefore[0]);
   }
 
@@ -33410,8 +33250,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v15",
-        /const CACHE = "notebook-v15"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v16",
+        /const CACHE = "notebook-v16"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);
@@ -36615,15 +36455,15 @@ function check(label, cond, extra) {
   {
     FILES["notes/fake-auth-ids.md"] =
       '<div id="auth-overlay">note auth</div>\n\n' +
-      '<div id="search-list">note search</div>\n\n# Auth\n\nbody\n';
+      '<div id="file-tree">note tree</div>\n\n# Auth\n\nbody\n';
     await window.NB.tabs.open("notes/fake-auth-ids.md");
     await tick(40);
     // Colliding raw ids are renamed but keep the authored value on
     // data-nb-id, so the look-alikes stay addressable.
     const noteOverlay = $("viewer-content").querySelector('[data-nb-id="auth-overlay"]');
-    const noteList = $("viewer-content").querySelector('[data-nb-id="search-list"]');
+    const noteList = $("viewer-content").querySelector('[data-nb-id="file-tree"]');
     const shellOverlay = $("auth-overlay");
-    const shellList = $("search-list");
+    const shellList = $("file-tree");
     check("cached refs: note look-alikes are distinct from the shell elements",
       !!noteOverlay && !!noteList &&
       noteOverlay !== shellOverlay && noteList !== shellList);
@@ -36632,15 +36472,15 @@ function check(label, cond, extra) {
     window.NB.auth.hideModal();
     check("cached refs: hideModal hides the shell overlay, not the note clone",
       shellOverlay.hidden === true && noteOverlay.hidden === false);
-    // Show path: the same shell overlay is revealed and the cached search
-    // list is the one cleared by the lock.
+    // Show path: the same shell overlay is revealed and the cached file
+    // tree is the one cleared by the lock.
     window.NB.auth.showModal();
     await tick(20);
     check("cached refs: showModal reveals the shell overlay",
       $("auth-overlay") === shellOverlay && shellOverlay.hidden === false);
-    check("cached refs: lock clears the shell search list, not the note clone",
+    check("cached refs: lock clears the shell file tree, not the note clone",
       shellList.children.length === 0 && shellList.textContent === "" &&
-      noteList.textContent === "note search");
+      noteList.textContent === "note tree");
     window.NB.auth.hideModal();
     await tick(10);
     delete FILES["notes/fake-auth-ids.md"];

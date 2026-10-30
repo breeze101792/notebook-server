@@ -168,14 +168,13 @@ padding shortened `#app` while the rail was fixed to the viewport.
 ### 3.4 What mobile hides (never removes)
 
 `#tab-bar`, `#outline-pane`, `#cm-host`, `#edit-toggle`, `#outline-toggle`,
-`.search-wrap` (the fixed 280 px input, `style.css:177`), `#brand`,
-`.activity-bar-spacer`, `#activity-graph-btn`, `#activity-settings-btn`,
+`#brand`, `.activity-bar-spacer`, `#activity-graph-btn`, `#activity-settings-btn`,
 `#logout-btn`, `[data-view="ai"]` (the rail button and the panel view), plus the
 table-view toolbar. `#edit-bar` and `#hybrid-toggle` are conditional: the pencil
 appears with an editable note and the bar only inside an edit layer (§4.12).
 
 These IDs are read at boot by `tabs.js`, `outline.js`, `viewer.js`,
-`sidebar.js`, `search.js`; hiding is CSS only.
+`sidebar.js`, `activity.js`; hiding is CSS only.
 
 ---
 
@@ -307,9 +306,9 @@ Reuses `#search-view` in the drawer at 100% width, full height.
 
 | Part | Spec |
 |---|---|
-| Header | 52 px: `×` 44 left, title "Search" 16/600, no case toggle (the top-bar `#search-case` is hidden; `search.js` still reads it at boot) |
+| Header | 52 px: `×` 44 left, title "Search" 16/600; the case toggle sits in the input row |
 | Field | 44 px high, 16 px font, `background: var(--bg)`, 1 px `--border`, radius 8; autofocus on open; clear `×` 44 when non-empty |
-| Debounce | 250 ms, already implemented (`search.js:255-256`); no request for an empty query |
+| Debounce | 250 ms, already implemented (`activity.js`, `mountSearch`); no request for an empty query |
 | Results | grouped by file; file header 13 px `--fg-muted`; hit ≥52 px: path 14/500, snippet 13 `--fg-muted`, two lines, `<mark>` on `--accent-soft` |
 | Loading | 13 px "Searching…" under the field; results stay visible |
 | Empty | "No matches for “q”." query retained |
@@ -561,14 +560,13 @@ Design-only list; no implementation beyond the tokens above.
 1. `index.html:5` — add `interactive-widget=resizes-content` to the viewport.
 2. `#topbar` (`:87`) — add `<button id="mobile-title">`, `<button
    id="mobile-capture">`, `<button id="mobile-more">`; move the existing
-   `#hybrid-toggle` before them. Keep `#back-btn`, `#brand`, `.search-wrap`,
-   `#edit-toggle`.
+   `#hybrid-toggle` before them. Keep `#back-btn`, `#brand`, `#edit-toggle`.
 3. Before `#app` closes — add `#mobile-scrim`, `#capture-sheet`, `#mobile-state`
    (all `hidden` initially) and the settings-sheet host.
 4. Add `<script src="/static/js/mobile.js" defer>` before `app.js` (`:1190`).
 
 No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline`,
-`#back-btn`, `#search-case`, `#edit-toggle` stay in the DOM.
+`#back-btn`, `#edit-toggle` stay in the DOM.
 
 ### JS
 
@@ -580,7 +578,7 @@ No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline
 | `static/js/viewer.js` | Back handler (`:1164`) closes the top layer first; set `#mobile-title` on every activate (same place as the tab title). Editing is untouched; CSS hides its entry points. |
 | `static/js/mermaid.js` | Skip the lightbox click and `cursor: zoom-in` on phone. |
 | `static/js/table-view.js`, `table-select.js` | No-op on phone (CSS alone hides the toolbar; guards prevent arming). |
-| `static/js/search.js` | Autofocus the field when opened on phone; debounce 250 ms already exists (`:255`). |
+| Search view in `activity.js` | Autofocus the field when opened on phone; debounce 250 ms already exists. |
 | `static/js/api.js` | Add `appendFile: (path, content, create) => request("POST", "/api/file/append", {path, content, create})`. |
 | `static/js/hybrid.js` | v2 (§4.12): phone-only Done/Save labels, the toolbar touch-selection guard, and the canWrite gate on the pencil. |
 | `static/js/settings.js`, `export.js`, `ai.js`, `graph.js` | No change. Their entry points are hidden or their views unmounted on phone. |

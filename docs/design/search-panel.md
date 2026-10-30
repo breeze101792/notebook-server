@@ -47,10 +47,9 @@ the reason for the change.
   `NB.viewer.jumpToMatch()`.
 - The query, mode, and options survive view switches because the host stays
   mounted in the DOM. They are session state, not a new config key.
-- The top-bar search (`search.js`, the `§search` special tab) is **not**
-  redesigned. It keeps its own keyboard model and results list. The two
-  surfaces stay consistent through the shared tokens and the same
-  `NB.api.search` backend; the side panel is the only one that gains grouping.
+- The top-bar search was removed after this handoff; the side-panel Search is
+  now the only search surface. Any reference below to a second surface is
+  historical.
 
 ### Non-goals
 
@@ -325,8 +324,7 @@ Rows are `<button>` elements with a roving tabindex: the active row has
 | `Escape` | Focus the query and select its text; do not clear it |
 
 `j` / `k` are only handled while a row has focus, so typing in the query still
-inserts letters. The top-bar search keeps its own vim model (including
-`gg` / `G`); the side panel does not need chords.
+inserts letters. There is no second search surface with its own vim model.
 
 On results arrival, `activeIdx = 0` and the first row is highlighted. Tab from
 the Options controls enters the active row. Tab from the active row leaves the
@@ -928,18 +926,17 @@ panel.
 
 ### 10.3 `static/js/api.js`
 
-`search(q, caseSensitive)` gains an optional third argument, so the top-bar
-search call is unchanged:
+`search(q, opts)` takes an options object; a boolean second argument is still
+accepted as `{caseSensitive}` shorthand:
 
 ```js
-search: (q, caseSensitive, opts) => {
-  const o = opts || {};
-  const p = new URLSearchParams({ q, case: caseSensitive ? "1" : "0" });
-  if (o.regex) p.set("regex", "1");
+search: (q, opts) => {
+  const o = (opts && typeof opts === "object") ? opts : { caseSensitive: !!opts };
+  const p = new URLSearchParams({ q, case: o.caseSensitive ? "1" : "0" });
   if (o.unique) p.set("unique", "1");
+  if (o.name) p.set("name", "1");
   if (o.order) p.set("order", o.order);
   if (o.desc) p.set("desc", "1");
-  if (o.limit != null) p.set("limit", String(o.limit));
   return request("GET", "/api/search?" + p.toString());
 }
 ```

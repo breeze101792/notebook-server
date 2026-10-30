@@ -178,24 +178,6 @@ body.topbar-hidden { --topbar-h: 0px; }
 #topbar button.brand:hover { background: transparent; border: none; }
 #topbar select { padding: 4px 6px; }
 
-:where(#topbar) .search-wrap { display: flex; align-items: center; gap: 6px; }
-#search-input {
-  width: 280px;
-  background: var(--bg-elev);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: .93rem;
-}
-#search-input:focus { outline: none; border-color: var(--accent); }
-.case-toggle {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: .86rem; color: var(--fg-muted); cursor: pointer;
-  user-select: none;
-}
-.case-toggle input { cursor: pointer; }
-
 /* ------------------------------------------------------------------ */
 /* Three-column layout                                                 */
 /* ------------------------------------------------------------------ */
@@ -2393,8 +2375,7 @@ body[data-theme="light"] #settings-overlay {
  body.auth-locked #editor-pane,
  body.auth-locked #sidebar,
  body.auth-locked #side-panel,
- body.auth-locked #activity-bar,
- body.auth-locked #search-results { filter: blur(6px); }
+ body.auth-locked #activity-bar { filter: blur(6px); }
 
 /* Passwords section inside the Settings modal. The inputs reuse the
  * .auth-input look from the login modal; we just add a max-width so
@@ -3188,76 +3169,6 @@ body > #nb-menu .submenu.open {
 .outline-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
 /* ------------------------------------------------------------------ */
-/* Search results                                                      */
-/* ------------------------------------------------------------------ */
-.search-results {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  overflow: hidden;
-}
-.search-results[hidden] { display: none; }
-.search-results-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  flex: 0 0 auto;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-  color: var(--fg-muted);
-  font-size: .93rem;
-}
-#search-list {
-  list-style: none;
-  margin: 0;
-  padding: 8px 12px 40px;
-  flex: 1 1 auto;
-  overflow-y: auto;
-  min-height: 0;
-}
-#search-close {
-  background: none; border: 1px solid var(--border);
-  color: var(--fg); border-radius: 6px; padding: 2px 9px; cursor: pointer;
-}
-#search-close:hover { border-color: var(--accent); }
-/* The list is the keyboard-nav container (focused after pressing
- * Enter in the search input). The active hit carries the visual
- * highlight, so the list itself doesn't need a focus ring. */
-#search-list:focus { outline: none; }
-.search-hit {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  cursor: pointer;
-  background: var(--bg-panel);
-}
-.search-hit:hover { border-color: var(--accent); background: var(--accent-soft); }
-/* The "vim cursor" hit -- the one j/k/Enter will act on. A 3px inset
- * accent bar on the left so it stands out from the plain hover state
- * and echoes the file-tree/outline .vim-cursor look. */
-.search-hit.is-active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.search-hit .hit-file { font-weight: 600; color: var(--accent); font-size: .93rem; }
-.search-hit .hit-dir { color: var(--fg-muted); font-weight: 400; }
-.search-hit .hit-meta { color: var(--fg-muted); font-size: 11px; margin-left: 8px; }
-.search-hit .hit-snippet {
-  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
-  font-size: .86rem;
-  margin-top: 4px;
-  color: var(--fg);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.search-hit mark { background: var(--accent); color: #fff; border-radius: 2px; padding: 0 1px; }
-
-/* ------------------------------------------------------------------ */
 /* Rendered markdown                                                   */
 /* ------------------------------------------------------------------ */
 /* Rendered content fills the editor width (the #viewer padding provides the
@@ -3964,8 +3875,8 @@ body > #nb-menu .submenu.open {
 /* ------------------------------------------------------------------ */
 /* Search view (side panel)                                           */
 /* ------------------------------------------------------------------ */
-/* Independent from the top-bar search overlay. Shares the same
- * NB.api.search backend; the UI is self-contained in the side panel. */
+/* Independent search surface in the side panel. Shares the same
+ * NB.api.search backend; the UI is self-contained. */
 #search-view {
   --search-space-1: 4px;
   --search-space-2: 6px;
@@ -6280,7 +6191,6 @@ body[data-theme="light"] #dw-designer-overlay {
   body.topbar-hidden #topbar { display: flex; }
   body.topbar-hidden { --topbar-h: calc(var(--m-topbar-h) + env(safe-area-inset-top)); }
   #brand,
-  :where(#topbar) .search-wrap,
   .topbar-spacer,
   #edit-toggle,
   #outline-toggle,

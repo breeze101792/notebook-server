@@ -1082,7 +1082,7 @@ rendering, keyboard handlers, persistence calls, or `setTimeout(input.focus)`.
 
 - `static/js/api.js`, `app.py`, `templates/index.html`: no change.
 - Persistence keys and request parameters: no change.
-- The top-bar search overlay: no change.
+- The top-bar search was removed; the side-panel Search is the only surface.
 - Result rows and their states: no change.
 
 ### 9.4 Test note

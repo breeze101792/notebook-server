@@ -149,7 +149,6 @@
     return !!(NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
   }
 
-  const caseEl   = document.getElementById("search-case");
   const editBtn  = document.getElementById("edit-toggle");
   // The outer side panel (hosts the active activity view). The old
   // #sidebar is now a view inside it; resize + collapse operate on the
@@ -376,7 +375,6 @@
       ? cfg.searchSort : DEFAULTS.searchSort;
     cfg.searchTarget = SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
       ? cfg.searchTarget : DEFAULTS.searchTarget;
-    caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
     // Hand the loaded bookmarks to the bookmarks module so the list
@@ -510,11 +508,9 @@
       persistConfig();
     });
 
-    // search-case toggle persists config; keep the top-bar checkbox in sync
-    // when the side panel is the surface that changed it.
+    // search-case toggle persists config
     NB.evt.on("search-case-changed", (val) => {
       cfg.searchCaseSensitive = !!val;
-      if (caseEl) caseEl.checked = cfg.searchCaseSensitive;
       persistConfig(["searchCaseSensitive"]);
     });
 
@@ -588,8 +584,7 @@
       NB.shortcuts.install({
         save: () => NB.viewer.save(),
         openSearch: () => {
-          const si = document.getElementById("search-input");
-          if (si) { si.focus(); si.select(); }
+          if (NB.activity && NB.activity.openSearch) NB.activity.openSearch();
         },
         tabPrev: () => NB.vimnav && NB.vimnav.cycleTabWithCommit && NB.vimnav.cycleTabWithCommit("prev"),
         tabNext: () => NB.vimnav && NB.vimnav.cycleTabWithCommit && NB.vimnav.cycleTabWithCommit("next"),

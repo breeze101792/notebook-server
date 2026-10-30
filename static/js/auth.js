@@ -27,8 +27,7 @@
   const logoutEl = document.getElementById("logout-btn");
   const viewerContentEl = document.getElementById("viewer-content");
   const fileTreeEl = document.getElementById("file-tree");
-  const searchListEl = document.getElementById("search-list");
-  const searchSummaryEl = document.getElementById("search-summary");
+  const searchViewEl = document.getElementById("search-view");
 
   // Raw /api/auth response from boot: {enabled, hasAdmin, hasViewer, role}.
   // Kept so synchronous callers (the hybrid context menu builds its items
@@ -60,10 +59,14 @@
       if (viewerContentEl) { viewerContentEl.textContent = ""; viewerContentEl.innerHTML = ""; }
       // File tree (sidebar): the list of notes/folders.
       if (fileTreeEl) fileTreeEl.innerHTML = "";
-      // Search results list.
-      if (searchListEl) searchListEl.innerHTML = "";
-      // Search summary text.
-      if (searchSummaryEl) searchSummaryEl.textContent = "";
+      // Side-panel search results. The view mounts lazily, so its list
+      // and summary are only present after the user has searched.
+      if (searchViewEl) {
+        const searchListEl = searchViewEl.querySelector(".search-panel-list");
+        const searchSummaryEl = searchViewEl.querySelector(".search-panel-summary");
+        if (searchListEl) searchListEl.innerHTML = "";
+        if (searchSummaryEl) searchSummaryEl.textContent = "";
+      }
       // Tabs: leave the tab bar itself (the layout) but clear open
       // files by telling the tabs module to clear its state, so the
       // bar doesn't list paths the user is no longer authorized to

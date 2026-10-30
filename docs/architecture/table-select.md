@@ -331,9 +331,9 @@ Notes:
   open-modal trigger: Ctrl+Comma opens Settings with no mousedown, so nothing
   else clears the rectangle first. This mirrors the yield rule in
   `shortcuts.js:305-309`.
-- `copy` with focus in a non-modal text box (the search input) is already
-  safe: clicking the input is a mousedown, which cleared the rectangle (row
-  1) — by the time Ctrl+C fires, `isActive()` is false and the handler
+- `copy` with focus in a non-modal text box (the side-panel search input) is
+  already safe: clicking the input is a mousedown, which cleared the rectangle
+  (row 1) — by the time Ctrl+C fires, `isActive()` is false and the handler
   declines.
 - Scroll of `#viewer-content` is deliberately NOT a trigger (section 2).
 
@@ -587,7 +587,7 @@ rectangle — the old DOM is gone either way.
 | Drag crossing OVER a grip / overlay control mid-drag | `e.target.closest("td,th")` resolves nothing → rectangle holds at last valid cell (grips live outside cells; the 12 px col-grip overlap on the header is a known dead zone for extending the rectangle) |
 | Modifier+click on a header title (no drag) | no rectangle; the click default is swallowed only for `a,img` targets — `table-view.js`'s sort click behaves exactly as for a plain click (its handler ignores modifier keys, table-view.js:1043-1066) |
 | Ctrl+Comma (Settings opens, no mousedown) | rectangle stays held; Esc and Ctrl+C yield to the modal (rows 9, 10) |
-| Copy while focus is in the topbar search box | moot: the click into the box cleared the rectangle (row 1) |
+| Copy while focus is in the side-panel search input | moot: the click into the box cleared the rectangle (row 1) |
 | Structural edit with a held rectangle (Alt+arrow row move, table menu) | `flushPendingSnapshot`/`pushSnapshot` belt clears before the snapshot (8.2); the rectangle is gone, undo stays clean |
 | Undo/redo | snapshots are class-free by the belt (8.2); restored DOM is clean |
 | External disk change while hybrid-editing | `file:external-change` clears (row 15); the stale guard (8.4) is the belt |
@@ -642,7 +642,7 @@ Copy button click clears the rectangle via its `mousedown` first.
 | --- | --- | --- |
 | New module | `static/js/table-select.js` | create |
 | Script tag | `templates/index.html` — insert between line 962 (`table-view.js`) and 963 (`watcher.js`) | `<script src="/static/js/table-select.js" defer></script>` |
-| Service worker | `static/sw.js` — insert `"/static/js/table-select.js",` between line 50 (`table-view.js`) and 51 (`watcher.js`); **bump `CACHE`** at line 16 from `"notebook-v5"` to the next version (the current cache is `"notebook-v13"`) (a stale precache would serve without the new module) | PRECACHE entry + cache bump |
+| Service worker | `static/sw.js` — insert `"/static/js/table-select.js",` between line 50 (`table-view.js`) and 51 (`watcher.js`); **bump `CACHE`** at line 16 from `"notebook-v5"` to the next version (the current cache is `"notebook-v16"`) (a stale precache would serve without the new module) | PRECACHE entry + cache bump |
 | CSS | `static/css/style.css` — new section after line 935 (end of the `.nb-tv-head-menu` rules) | section 7 |
 | hybrid changes | `static/js/hybrid.js` — (1) strip block in `prepareTurndownClone` after lines 417-420; (2) belt at the top of `pushSnapshot` (3047); (3) token-strip extension in `canonicalSubtree` (730-741) | section 8.7 |
 | Test harness | `tests/dom/test_dom.js` — insert `evalIn(read("static/js/table-select.js"));` after line 1439 (`table-view.js`) | load the module |
@@ -703,7 +703,7 @@ Core behavior:
 13. **Export invariant** — `read("static/js/export.js")` never references
     `nb-ts-` (extends the 9747 pattern).
 14. **Completeness** — index.html + sw.js PRECACHE contain
-    `/static/js/table-select.js`; sw.js `CACHE` is `notebook-v13`.
+    `/static/js/table-select.js`; sw.js `CACHE` is `notebook-v16`.
 
 Review-finding regressions:
 

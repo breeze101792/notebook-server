@@ -86,11 +86,11 @@ console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") +
 process.exit(fail === 0 ? 0 : 1);
 ```
 
-So the exit code is `0` only when every assertion passed. The suite has **118
+So the exit code is `0` only when every assertion passed. The suite has **117
 test sections**, each announced with `console.log("== name ==")`, and about
-4,250 printed checks covering boot, sidebar and tree, theme, viewer and
+4,300 printed checks covering boot, sidebar and tree, theme, viewer and
 outline, the six renderers, the blocks registry, tabs (open/close/reorder/
-pin/ghost animation), top-bar search and the side-panel search options
+pin/ghost animation), the side-panel search options
 (unique mode, sort, caps, keyboard, latest-wins, open-failure), edit and
 save, the edit bar, scroll sync,
 hybrid mode and its round-trip guards, table view, empty-tree create,

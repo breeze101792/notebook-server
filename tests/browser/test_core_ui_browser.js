@@ -589,57 +589,58 @@ async function main() {
 
     // ---------------------------------------------------------------
     console.log("== search ==");
-    await page.fill("#search-input", "needle");
-    await page.press("#search-input", "Enter");
+    await page.evaluate(() => NB.activity.openSearch());
+    await page.fill(".search-panel-input", "needle");
+    await page.press(".search-panel-input", "Enter");
     await page.waitForFunction(() =>
-      !document.getElementById("search-results").hidden &&
-      document.querySelectorAll("#search-list .search-hit").length >= 2,
+      document.querySelectorAll(".search-panel-hit").length >= 2,
       null, { timeout: 10000 });
     const hits = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("#search-list .search-hit")).map((h) => ({
-        file: h.querySelector(".hit-file").textContent,
-        snippet: h.querySelector(".hit-snippet").textContent,
+      Array.from(document.querySelectorAll(".search-panel-hit")).map((h) => ({
+        file: h.querySelector(".search-panel-path").title,
+        snippet: h.querySelector(".search-panel-hit-snippet").textContent,
       })));
     check("search: finds matches in a subfolder",
       hits.some((h) => h.file === "notes/a.md") &&
       hits.some((h) => h.file === "notes/b.md"),
       JSON.stringify(hits));
     check("search: snippet wraps the hit in <mark>",
-      await page.locator("#search-list .search-hit .hit-snippet mark").count() >= 2 &&
-      (await page.locator("#search-list .search-hit .hit-snippet mark").first().textContent())
+      await page.locator(".search-panel-hit .search-panel-hit-snippet mark").count() >= 2 &&
+      (await page.locator(".search-panel-hit .search-panel-hit-snippet mark").first().textContent())
         .toLowerCase().includes("needle"));
     check("search: summary reports the hit count",
-      /match/.test(await page.locator("#search-summary").textContent()),
-      await page.locator("#search-summary").textContent());
+      /match/.test(await page.locator(".search-panel-summary").textContent()),
+      await page.locator(".search-panel-summary").textContent());
 
     check("search: Enter moves focus to the result list",
       await waitFor(() => page.evaluate(() => document.activeElement &&
-        document.activeElement.id === "search-list"), 3000));
+        document.activeElement.classList.contains("search-panel-hit")), 3000));
     const firstActive = await page.evaluate(() => {
-      const hits = Array.from(document.querySelectorAll("#search-list .search-hit"));
+      const hits = Array.from(document.querySelectorAll(".search-panel-hit"));
       return hits.findIndex((h) => h.classList.contains("is-active"));
     });
     await page.keyboard.press("ArrowDown");
     const secondActive = await page.evaluate(() => {
-      const hits = Array.from(document.querySelectorAll("#search-list .search-hit"));
+      const hits = Array.from(document.querySelectorAll(".search-panel-hit"));
       return hits.findIndex((h) => h.classList.contains("is-active"));
     });
     check("search: ArrowDown moves the active result", secondActive === firstActive + 1,
       firstActive + " -> " + secondActive);
     check("search: ArrowUp moves it back",
       await page.keyboard.press("ArrowUp").then(() => page.evaluate(() => {
-        const hits = Array.from(document.querySelectorAll("#search-list .search-hit"));
+        const hits = Array.from(document.querySelectorAll(".search-panel-hit"));
         return hits.findIndex((h) => h.classList.contains("is-active"));
       })).then((i) => i === firstActive));
     await page.keyboard.press("ArrowDown");
     const targetFile = await page.evaluate(() => {
-      const h = document.querySelector("#search-list .search-hit.is-active .hit-file");
-      return h ? h.textContent : null;
+      const h = document.querySelector(".search-panel-hit.is-active .search-panel-path");
+      return h ? h.title : null;
     });
-    await page.keyboard.press("l");
-    check("search: Enter/l opens the active result",
+    await page.keyboard.press("Enter");
+    check("search: Enter opens the active result",
       await waitFor(() => page.evaluate((f) => NB.tabs.getActive() === f, targetFile), 6000),
       targetFile);
+    await page.evaluate(() => NB.activity.activate("explorer", false));
 
     // ---------------------------------------------------------------
     console.log("== bookmarks ==");

@@ -950,7 +950,7 @@ async function main() {
 
     const cacheRoot = await page.evaluate(async () => {
       try {
-        const c = await caches.open("notebook-v15");
+        const c = await caches.open("notebook-v16");
         return !!(await c.match("/"));
       } catch (e) { return false; }
     });

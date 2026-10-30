@@ -151,7 +151,7 @@ its own `<style>` element at runtime — so there is no `visimer.css`.
 registering `/static/sw.js` would limit the worker to `/static/` and break
 offline shell loading.
 
-**`CACHE` version.** `const CACHE = "notebook-v13"`. Bumping this string makes
+**`CACHE` version.** `const CACHE = "notebook-v16"`. Bumping this string makes
 every installed worker re-run `install` (re-precache the current assets) and
 `activate` (delete every cache whose name is not the current `CACHE`). Bump it
 whenever a precached asset changes or a file is added to `PRECACHE`. Without a

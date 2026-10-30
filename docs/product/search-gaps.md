@@ -1,10 +1,9 @@
 # Search gap analysis — daily-use audit
 
 Status: analysis for review. Owner: `product-designer`.
-Applies to: the side-panel Search (`static/js/activity.js`, `mountSearch`), the
-top-bar search (`static/js/search.js`), `/api/search` (`app.py`), the viewer jump
-(`static/js/viewer.js`), the search prefs (`static/js/app.js`), and the tests and
-contracts named below.
+Applies to: the side-panel Search (`static/js/activity.js`, `mountSearch`),
+`/api/search` (`app.py`), the viewer jump (`static/js/viewer.js`), the search
+prefs (`static/js/app.js`), and the tests and contracts named below.
 Related: [search options](search-options.md) is the current spec; the
 [HTTP API](../contracts/http-api.md) and [configuration](../contracts/configuration.md)
 own the wire and config contracts. This document is the audit and the next-step
@@ -43,12 +42,12 @@ inline recovery. Do not rebuild it.
 
 | Rank | Job | How today's search serves it | Verdict |
 |---|---|---|---|
-| 1 | "Find the note I mean" by a word, phrase, or title | Side panel: one row per note, exact count, first snippet. Content and File name are separate modes. No folder scope. Top bar: flat hits only. | Good, with friction |
+| 1 | "Find the note I mean" by a word, phrase, or title | Side panel: one row per note, exact count, first snippet. Content and File name are separate modes. No folder scope. | Good, with friction |
 | 2 | "Find the line I mean" inside a known note | Every-match rows show `line N`, but a click marks the first rendered occurrence, not the selected one. Marks accumulate. | Weak |
 | 3 | "Narrow to where I know it is" (folder, current note, recently modified) | Recently modified sort exists. Folder and current-note scope do not, although `glob=` and `file=` are supported server-side. | Missing |
 | 4 | "Be precise when a word is common" (case, whole word, regex) | Case exists. Matching is a literal substring. Regex is server-side but has no UI. No whole-word. | Partial |
 | 5 | "See enough context to choose the right note" | Unique mode shows only the first occurrence. All matches floods and loses the one-row-per-note view. | Partial |
-| 6 | "Search from the keyboard or phone" | Panel keyboard and phone drawer are good. The global chord opens the weaker top-bar surface. | Partial |
+| 6 | "Search from the keyboard or phone" | Panel keyboard and phone drawer are good. The global chord opens the panel. | Good |
 | 7 | "Trust the result set" | Caps are disclosed, latest-response-wins, open failures recover inline. Search can return files in dot-directories that the tree hides. | Good, one leak |
 
 ### Already good — do not rebuild
@@ -77,7 +76,7 @@ Recommendation values: **do next** (this phase), **later** (a real gap, not now)
 | G1 | Find the line | A result click marks the first rendered occurrence, not the selected one. Old `.search-highlight` marks are never cleared. A mark can survive into hybrid edit mode. | The rank-2 job is "where in this note"; the `line N` label is a promise the click does not keep. Repeated clicks leave several marks. A mark inside the editable DOM can reach a save, breaking the read-only guarantee. | **do next** | Add `occ` server-side and a client jump by ordinal. Some source matches (link URLs, front matter) do not render, so the ordinal can drift; fall back to the first visible occurrence. | Now |
 | G2 | Trust | Search walks dot-directories; the tree and `/api/ls` hide them. | A `.trash` or tool folder can put notes in results that the user cannot see or open from the tree. | **do next** (small) | One prune in `_iter_search_targets`; no result-shape change. | Now |
 | G3 | Find the note / line | No folder scope and no current-note scope in the panel. `glob=` and `file=` already work. | A common word becomes unusable in a growing notebook. Folder is the natural scope; current-note scope is the phone's only "find in note". | **do next** | UI state and a scope chip; `api.js` passes `glob`/`file`; folder menu and tab menu entries; a 404 branch for a scoped note; `fnmatch` metacharacters in folder names. | Now |
-| G4 | Find the note | The global search chord focuses the top-bar input and opens the flat §search tab, bypassing the richer panel. Content and File name are mutually exclusive, so a wrong mode returns zero. | The fastest path leads to the weaker surface. Users may never discover one-per-note or sort. A zero result in the wrong mode looks like "no such note". | **do next** | Re-point the handler (normal and VIM) to activate the Search view; add a one-click fallback on zero results. Low cost, but it changes a learned shortcut. | Now |
+| G4 | Find the note | The global search chord focuses the top-bar input and opens the flat §search tab, bypassing the richer panel. Content and File name are mutually exclusive, so a wrong mode returns zero. | The fastest path leads to the weaker surface. Users may never discover one-per-note or sort. A zero result in the wrong mode looks like "no such note". | **done** | The chord now activates the side-panel Search (normal and VIM); the top-bar input and `§search` tab were removed. The zero-result fallback switches target. | Done |
 | G5 | Find the note | No combined filename + content query. | Rejected: a fallback button (G4) removes the dead end without merging two result shapes or two scans. | **reject** | Two scans or a new server mode; ambiguous ordering between name and content hits. | — |
 | G6 | Precision | No regex UI and no whole-word. `Aa` is the only precision control. | Embedded identifiers and acronyms collide (`SPI` vs `SPIFFS`). Literal substring returns noise. | **later** | A toggle, an invalid-pattern state, docs, and the jump term must be the matched text, not the pattern. Regex is already server-side; whole-word is the smaller first step. | P2 |
 | G7 | Context | Unique mode shows only the first occurrence; there is no expander. Seeing other hits means switching to All matches, which loses the note overview. | The first source occurrence can be a passing mention. The user needs a second look without changing modes. | **later** | One `file=` request per expanded row, or a `snippets=N` server option. Reopens a §8 non-goal; needs confirmation. | P2 |
@@ -146,7 +145,6 @@ word appears."
 - In hybrid edit mode, do not wrap text. Clear marks on `hybrid:will-enter`;
   scroll/select the occurrence without inserting an element. A save must never
   contain a search mark.
-- The top-bar §search tab gets the same behaviour.
 
 **Acceptance criteria.** [B] = backend unittest, [D] = jsdom, [H] = manual.
 
@@ -162,16 +160,14 @@ word appears."
   the note, leaves at most one mark, and throws nothing.
 - F1-AC6 [D] Entering hybrid edit mode clears all search marks; a save after
   that contains no `search-highlight` and no search-inserted `<mark>`.
-- F1-AC7 [D] The top-bar §search tab marks the selected occurrence and clears
-  prior marks.
 - F1-AC8 [H] On a long note, the marked line is in view after the click.
 
 **Files / endpoints.** `app.py` (`_search_match_item`, the every-match and
 unique loops, `search()`), `static/js/api.js` (pass `occ` through),
-`static/js/activity.js` (`openHit`), `static/js/search.js` (`onHitClick`),
-`static/js/viewer.js` (`jumpToOccurrence`, clear marks, `hybrid:will-enter`
-hook), `tests/test_app.py` (`TestSearch`), `tests/dom/test_dom.js` (`== search ==`),
-`docs/contracts/http-api.md` (add `occ`).
+`static/js/activity.js` (`openHit`), `static/js/viewer.js`
+(`jumpToOccurrence`, clear marks, `hybrid:will-enter` hook),
+`tests/test_app.py` (`TestSearch`), `tests/dom/test_dom.js` (side-panel search
+block), `docs/contracts/http-api.md` (add `occ`).
 
 **Risk.** Source matches that do not render can shift the ordinal; the fallback
 is deliberately loose. The edit-mode rule is the important one: search must not
@@ -194,7 +190,6 @@ showing me the rest of the notebook."
   scope; both are existing server parameters. The chip's clear button re-runs
   the current query with no scope.
 - Scope is panel memory only: it survives view switches and is lost on reload.
-  The top bar and §search tab remain all-notes.
 - A scoped note that has vanished returns 404. The panel shows
   `This note no longer exists` and a **Search all notes** action; it does not
   silently fall back. `api.js` must expose the HTTP status on the thrown error
@@ -216,8 +211,7 @@ showing me the rest of the notebook."
   silent all-notes result.
 - F2-AC5 [D] With no note open, **Search in this note** is absent or disabled;
   **Search in this folder** is available.
-- F2-AC6 [D] Switching views keeps the scope; a reload starts at All notes. The
-  top bar and §search tab stay all-notes.
+- F2-AC6 [D] Switching views keeps the scope; a reload starts at All notes.
 - F2-AC7 [H] On the phone drawer, the chip and clear control meet the mobile hit
   target, and a scoped search does not scroll the page sideways.
 - F2-AC8 [D] Searching a folder with `name=1` works; the name request carries
@@ -246,8 +240,8 @@ other kind of match without retyping."
 - The global `openSearch` chord (default `/`, rebindable) activates the
   side-panel Search view, expands a collapsed panel, and focuses the panel's
   input. It sends no request.
-- The VIM `/` binding does the same. The top-bar input remains available by
-  click; it is not removed in this change.
+- The VIM `/` binding does the same. There is no top-bar search input; the
+  side-panel Search is the only search surface.
 - With a content query that returns zero, the empty state shows **No matches
   found.** and a **Search file names** button. Clicking keeps the query, sets
   the target to File name, persists the target, and runs one name search.
@@ -263,8 +257,7 @@ other kind of match without retyping."
 - F3-AC1 [D] In non-VIM mode, the `openSearch` chord from Explorer activates
   Search, expands a collapsed panel, focuses `.search-panel-input`, and sends no
   `/api/search` request.
-- F3-AC2 [D] In VIM mode, `/` does the same and does not focus the hidden
-  top-bar input.
+- F3-AC2 [D] In VIM mode, `/` does the same; no top-bar input exists to focus.
 - F3-AC3 [D] A zero-result content search shows **Search file names**; clicking
   keeps the query, checks the File name radio, persists `searchTarget: "name"`,
   and sends exactly one `name=1` request.
@@ -272,26 +265,23 @@ other kind of match without retyping."
   exactly one request without `name`, with the query unchanged.
 - F3-AC5 [D] The fallback button is reachable by Tab/Enter and is not shown in
   the idle state.
-- F3-AC6 [D] Clicking the top-bar input still runs the existing §search flow;
-  this feature does not break it.
+- F3-AC6 [D] The top-bar search input and `§search` tab are gone; no route or
+  shortcut creates them.
 - F3-AC7 [H] A rebound chord behaves the same; the phone Search rail still opens
   the drawer.
 
 **Files / endpoints.** `static/js/app.js` (`openSearch` handler),
 `static/js/vimnav.js` (`/` binding), `static/js/activity.js` (activation/focus,
-empty-state button), `static/js/search.js` (unchanged top-bar path),
-`tests/dom/test_dom.js`, `static/js/shortcuts.js` (comment/label only if
-needed). No endpoint change.
+empty-state button), `tests/dom/test_dom.js`, `static/js/shortcuts.js`
+(comment/label only if needed). No endpoint change.
 
-**Risk.** The shortcut's meaning changes; confirm it before shipping. If the
-user prefers the top bar, the alternative is to add one-per-note and sort to the
-§search tab instead of re-pointing the chord.
+**Risk.** Shipped: the shortcut now opens the side-panel Search; the top bar
+and `§search` tab were removed.
 
 ## 7. Needs confirmation
 
-- **Q1.** Should the global search chord open the side-panel Search instead of
-  the top-bar input? Recommended yes. If no, the top bar must gain the panel's
-  one-per-note and sort controls instead.
+- **Q1.** Resolved: the global search chord opens the side-panel Search; the
+  top-bar input and `§search` tab were removed.
 - **Q2.** Is a later per-note expander (show the other hits without leaving
   unique mode) worth doing? It reopens a §8 non-goal; the cost is one `file=`
   request per expanded row.
@@ -309,12 +299,10 @@ user prefers the top bar, the alternative is to add one-per-note and sort to the
 
 - A1. The notebook is small enough for a fresh scan per search; no index is
   added. Measure before changing this.
-- A2. The side panel is the "find the note" surface; the top bar is the "find the
-  line" surface. The split is fine, but the keyboard chord must not default to
-  the weaker surface.
+- A2. The side panel is the single search surface; the keyboard chord opens it.
 - A3. Client and server ship together; additive response fields (`occ`) are
   acceptable.
-- A4. Scope is panel-only; the top bar stays all-notes.
+- A4. Scope is panel-only; there is no top bar.
 - A5. No new numeric constants. Reuse `SNIPPET_PAD`, `MAX_TOTAL_MATCHES`,
   `MAX_MATCHES_PER_FILE`, and their ceilings from `app.py`.
 - A6. `search-options.md` is stale in the ways listed in §2; update it with the
@@ -322,8 +310,8 @@ user prefers the top bar, the alternative is to add one-per-note and sort to the
 
 ## 9. Suggested handoff order
 
-1. **F1** — server `occ`, viewer `jumpToOccurrence`/clear, panel and top-bar
-   callers, tests. This is the largest daily win.
+1. **F1** — server `occ`, viewer `jumpToOccurrence`/clear, panel caller, tests.
+   This is the largest daily win.
 2. **F2** — scope state and chip, folder and note entries, `api.js` params and
    error status, 404/empty states, tests.
 3. **F3** — shortcut handlers (normal and VIM), empty-state target fallback,

@@ -613,7 +613,7 @@
     if (!editSplit) return;
     editSplit.querySelectorAll(".special-tab-view").forEach(el => { el.hidden = true; });
   }
-  /* Called by tabs.js when a special tab (§graph, §search) becomes
+  /* Called by tabs.js when the graph special tab (§graph) becomes
    * active. Hides the viewer + welcome + editor so the special view's
    * container (a .special-tab-view sibling inside #edit-split) is the
    * only visible child. The special view's onActivate handler shows
@@ -789,8 +789,8 @@
     showWelcome() { showWelcome(); },
     /* Hide the viewer + welcome + editor so a special tab's content
      * container (a .special-tab-view sibling in #edit-split) becomes
-     * the only visible child. Called by tabs.js when a special tab
-     * (§graph, §search) is activated. */
+     * the only visible child. Called by tabs.js when the graph special
+     * tab (§graph) is activated. */
     showSpecial() { hideDraftBar(); showSpecial(); },
 
     getPath() { return active; },
@@ -1045,7 +1045,7 @@
     },
 
     /* Jump to the first occurrence of `term` in the rendered DOM and
-     * scroll it into view. Used by search.js on result click. */
+     * scroll it into view. Used by the Search panel on result click. */
     jumpToMatch(term, caseSensitive) {
       if (!term) return;
       const flags = caseSensitive ? "" : "i";

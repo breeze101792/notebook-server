@@ -24,7 +24,9 @@
  * already installed workers. */
 /* Bumped v14 -> v15: the shared dialog helper must reach already installed
  * workers. */
-const CACHE = "notebook-v15";
+/* Bumped v15 -> v16: the top-bar search module is gone; the side-panel
+ * Search is the only search surface. */
+const CACHE = "notebook-v16";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -68,7 +70,6 @@ const PRECACHE = [
   "/static/js/watcher.js",
   "/static/js/outline.js",
   "/static/js/sidebar.js",
-  "/static/js/search.js",
   "/static/js/tabs.js",
   "/static/js/windows.js",
   "/static/js/settings.js",

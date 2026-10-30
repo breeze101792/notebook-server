@@ -145,7 +145,7 @@ into the page shell for first paint.
 
 | Key | Effect |
 | --- | --- |
-| `searchCaseSensitive` | Makes `/api/search` matching case-sensitive (`app.js:50`); shared by the top bar and the side-panel Search view |
+| `searchCaseSensitive` | Makes `/api/search` matching case-sensitive (`app.js:50`); used by the side-panel Search view |
 | `searchUnique` | Side-panel Search shows one row per note (`unique=1`). Default `true`; a non-boolean hand-edited value falls back to `true` |
 | `searchSort` | Side-panel Search order: `path`, `mtime`, or `count`. Default `path`; any other value falls back to `path` |
 
@@ -383,7 +383,7 @@ IndexedDB.
 
 `static/manifest.json` declares the app name "Notebook",
 `display: standalone`, and the icon set. `static/sw.js` is served at `/sw.js` (scope `/`) and caches the app shell
-under the cache version `notebook-v13` (`sw.js:22`). Bump that version whenever
+under the cache version `notebook-v16` (`sw.js:29`). Bump that version whenever
 a precached asset changes. The service worker strategy: non-GET requests pass through,
 `/api/*` is network-only and returns a 503 JSON error when offline, and
 everything else is network-first with a cache fallback. A navigation request

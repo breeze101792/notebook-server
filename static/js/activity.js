@@ -225,6 +225,25 @@
     return panelEl && panelEl.classList.contains("collapsed");
   }
 
+  /* Open the side-panel Search view and focus its input. Used by the
+   * app-level openSearch shortcut and the shell VIM keymap. Activating
+   * an already-mounted view only reveals it, so focus is applied here
+   * rather than only in mountSearch. */
+  function openSearch() {
+    activate("search", false);
+    if (isPhone()) {
+      if (NB.mobile && NB.mobile.openDrawer) NB.mobile.openDrawer();
+    } else if (isCollapsed()) {
+      expand();
+    }
+    const host = hostEl("search");
+    const input = host && host.querySelector(".search-panel-input");
+    if (!input) return;
+    requestAnimationFrame(() => {
+      try { input.focus(); input.select(); } catch (_) {}
+    });
+  }
+
   // The boot view is the data-view of the one .side-panel-view host the
   // server rendered without `hidden`. Returns null when no host is
   // visible or the visible one is not a registered view, so the caller
@@ -267,6 +286,7 @@
     activate,
     collapse,
     expand,
+    openSearch,
     getActive,
     isCollapsed,
     makeCollapseBtn,
@@ -403,10 +423,8 @@
 
   /* --- Search view (side panel) ------------------------------------- */
   /* A self-contained search panel in the side panel: its own input,
-   * case-toggle, and results list. Independent from the top-bar search
-   * (which keeps its overlay behavior); both call the same
-   * NB.api.search backend. Clicking a hit opens the file and jumps to
-   * the match via NB.viewer.jumpToMatch.
+   * case-toggle, and results list. Clicking a hit opens the file and
+   * jumps to the match via NB.viewer.jumpToMatch.
    *
    * Mount is lazy: the host is empty until the first time the Search
    * icon is activated. The query + case state survive view switches

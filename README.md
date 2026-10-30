@@ -381,7 +381,7 @@ static/
   vendor/             marked, highlight.js, CodeMirror, Mermaid, WaveDrom, KaTeX,
                       Viz.js, Turndown, Paged.js (vendored, no CDN)
   css/                style.css, vimnav.css
-  sw.js               service worker (cache notebook-v13)
+  sw.js               service worker (cache notebook-v16)
   manifest.json       PWA manifest
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run

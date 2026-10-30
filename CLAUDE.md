@@ -248,12 +248,12 @@ then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
 table-edit.js → list-edit.js → table-view.js → table-select.js → watcher.js →
-outline.js → sidebar.js → search.js → graph.js → tabs.js → windows.js →
+outline.js → sidebar.js → graph.js → tabs.js → windows.js →
 settings.js → export.js → mermaid-designer.js → designer-shell.js →
 dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
 bookmarks.js → shortcuts.js → mobile.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
-`NB.viewer`, `NB.sidebar`, `NB.search`, `NB.outline`, `NB.api`, `NB.auth`,
+`NB.viewer`, `NB.sidebar`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`, `NB.menu`).
 
 **Context menus.** `menu.js` (`NB.menu`) is the one right-click menu renderer: a
@@ -381,8 +381,11 @@ Module responsibilities:
   gesture chrome, stripped by `hybrid.js` in `prepareTurndownClone`, before every
   undo snapshot, and from the change hash, so they never reach the note or an
   export. Merged-cell tables and the live preview never arm.
-- `search.js` — search UI; re-wraps `<<…>>` snippets into `<mark>` via textContent
-  (never `innerHTML` on snippet text).
+- `activity.js` — the activity bar and its side-panel views (Explorer, Pinned,
+  Bookmarks, Recent, Search, AI). The Search view owns the search input, case
+  toggle, target/grouping/sort options, and results; `<<…>>` snippets are
+  re-wrapped into `<mark>` via textContent (never `innerHTML`). `openSearch()`
+  activates the view, expands the panel or phone drawer, and focuses the input.
 - `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount
   host `#ai-view`, `<div id="ai-view" class="side-panel-view" data-view="ai">`
   in `index.html`). Chat streams through `NB.api.aiChat` (SSE; `api.js` parses
@@ -494,7 +497,7 @@ layout on top of the same app: one CSS media query
 `html[data-ui-mode]`) rather than repeating the query. The four-column grid
 becomes a reader column with a fixed bottom activity rail; `#side-panel`
 becomes an off-canvas drawer (`body.drawer-open`) and the tab strip, outline,
-`#brand`, `.search-wrap` and `#edit-toggle` are hidden, never removed. Phone
+`#brand` and `#edit-toggle` are hidden, never removed. Phone
 mode zeroes the desktop body padding and gives each edge layer its own
 safe-area inset (`--topbar-h` includes the top inset; the rail includes the
 bottom), so the shell is edge-to-edge.

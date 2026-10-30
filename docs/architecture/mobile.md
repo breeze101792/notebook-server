@@ -97,9 +97,9 @@ writes (`app.js:352-355`, `activity.js:129-130`, `:143-147`) are never read by a
 phone rule; they keep the desktop variable in sync for mode exit. Every other
 phone rule wins by being the only rule that matches in the phone arm.
 
-Topbar on mobile: hide `.search-wrap` (`style.css:176-185`), `#brand`, and
-`#edit-toggle`; keep `#back-btn` (wired to `goBack()`, `viewer.js:1163-1165`)
-and add `#mobile-title` (button), `#mobile-capture`, `#mobile-more`. The title
+Topbar on mobile: hide `#brand` and `#edit-toggle`; keep `#back-btn` (wired to
+`goBack()`, `viewer.js:1163-1165`) and add `#mobile-title` (button),
+`#mobile-capture`, `#mobile-more`. The title
 shows the active note's basename and opens the drawer; it must not be `#brand`,
 which calls `NB.viewer.reload()` (`viewer.js:1169-1171`).
 
@@ -137,7 +137,7 @@ Every `persistConfig()` path a phone can trigger (all verified):
 | `activity:collapsed`/`expanded` (`app.js:425-431`) | `sidebarCollapsed` | yes (icon toggle / `‹`) | suppress |
 | `activity:changed` (`app.js:435-437`) | `activeView` | yes | suppress |
 | `outline-collapse`/`outline-toggle` (`app.js:439-449`) | `outlineCollapsed` | no (outline hidden) | n/a |
-| `search-case-changed` (`app.js:507-511`) | `searchCaseSensitive` | yes (panel Aa emits; the top-bar search is hidden) | allow (keyed) |
+| `search-case-changed` (`app.js:507-511`) | `searchCaseSensitive` | yes (panel Aa emits) | allow (keyed) |
 | panel search options (`activity.js` → `NB.app.setSearchUnique`/`setSearchSort`) | `searchUnique`, `searchSort` | yes (Search drawer) | allow (keyed) |
 | `setTheme`/`setFontSize` etc. (`app.js:834`) | `theme`, `fontSize`, … | only via Settings modal | allow (server-wide by design) |
 | resize `endDrag` (`app.js:510-519`) | `sidebarWidth`, `outlineWidth` | no (handle hidden, mouse-only) | n/a |

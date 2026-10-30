@@ -39,8 +39,8 @@ registered already.
 ```
 cm-bridge → lightbox → blocks → menu → mermaid → wavedrom → katex → viz →
 htmlpreview → svg → copy-image → viewer → editbar → hybrid → table-edit →
-list-edit → table-view → table-select → watcher → outline → sidebar → search →
-graph → tabs → windows → settings → export → mermaid-designer →
+list-edit → table-view → table-select → watcher → outline → sidebar → graph →
+tabs → windows → settings → export → mermaid-designer →
 designer-shell → dot-designer → wavedrom-designer → vimnav → ai → activity →
 bookmarks → shortcuts → mobile → app
 ```
@@ -135,7 +135,6 @@ implemented today.
 | `watcher.js` | 338 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
 | `outline.js` | 175 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 1589 | `NB.sidebar` | File tree, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). Ctrl/Cmd+click toggles a row and Shift+click selects the visible range; a multi-selection moves together via the row menu's "Move N items to…" or a multi-item drag (the Pinned section has no multi-select). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
-| `search.js` | 339 | `NB.search` | Search UI. Server `<<…>>` snippets rewrapped as `<mark>` via `textContent`. |
 | `graph.js` | 961 | `NB.graph` | Force-directed wikilink graph view on special tab `§graph`. Canvas physics, pan/zoom/filter, optional particles. |
 | `tabs.js` | 934 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
 | `windows.js` | 279 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
@@ -147,7 +146,7 @@ implemented today.
 | `wavedrom-designer.js` | 1588 | `NB.wavedromDesigner` | WaveDrom design window; the parsed object is the model and Apply writes strict JSON. |
 | `vimnav.js` | 564 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
 | `ai.js` | 2687 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; a versioned transcript persisted in `localStorage["nb:aiChat"]`; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
-| `activity.js` | 610 | `NB.activity` | Left activity bar and side-panel view switcher. Registers five views: Explorer, Bookmarks, Recent (fuzzy quick-open), Search, AI. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
+| `activity.js` | 610 | `NB.activity` | Left activity bar and side-panel view switcher. Registers six views: Explorer, Pinned, Bookmarks, Recent (fuzzy quick-open), Search, AI. `openSearch()` activates Search, expands the panel or phone drawer, and focuses the query. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
 | `bookmarks.js` | 373 | `NB.bookmarks` | Bookmarks side-panel view: ordered list, star toggle, drag reorder, context menu, auto-prune, rename re-key. |
 | `shortcuts.js` | 392 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
 | `mobile.js` | 1157 | `NB.mobile` | Phone shell: mode mirror, drawer, Home list, quick capture, mobile settings sheet. |
@@ -235,7 +234,7 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | `sidebarCollapsed` | `false` | |
 | `outlineCollapsed` | `false` | |
 | `activeView` | `"explorer"` | Active side-panel view (explorer / bookmarks / recent / search / ai) |
-| `searchCaseSensitive` | `false` | Shared by the top bar and the side-panel Search view |
+| `searchCaseSensitive` | `false` | Read by the side-panel Search view |
 | `searchUnique` | `true` | Side-panel Search: one row per note (`unique=1`) |
 | `searchSort` | `"path"` | Side-panel Search order: `path` / `mtime` / `count` |
 | `graphParticles` | `false` | |
@@ -284,7 +283,7 @@ PNG). The phone Home Screen icon is `/static/icons/apple-touch-icon-v2.png`
 probes those paths. Without them the SPA catch-all answered with HTML and iOS
 cached a broken icon.
 
-`static/sw.js` uses cache version `notebook-v13` (`sw.js:22`) with three
+`static/sw.js` uses cache version `notebook-v16` (`sw.js:29`) with three
 strategies:
 
 - **Pages and static assets**: network-first. A successful response is
@@ -306,7 +305,7 @@ would add megabytes to the first load. They are fetched on first use and
 mirror into the cache through the network-first handler, so offline works
 once a note has used that renderer.
 
-Change any precached asset and bump `CACHE` in `sw.js:22`. Bumping the
+Change any precached asset and bump `CACHE` in `sw.js:29`. Bumping the
 name makes every installed worker re-run install and activate, refreshing
 the assets and deleting the old cache. Without the bump, a network-first
 asset still updates, but the install-time copy stays stale.
@@ -368,9 +367,8 @@ is no fade or chevron affordance.
 
 Tabs whose id starts with `§` open a non-file view instead of a note
 (`tabs.js:43-45`). Each registers through `NB.tabs.registerSpecial`
-(`tabs.js:861-864`). Two exist:
+(`tabs.js:861-864`). One exists:
 
-- `§search` (`search.js:18`) — search results.
 - `§graph` (`graph.js:36`) — the wikilink graph.
 
 ### Draft recovery on tab switch

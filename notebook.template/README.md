@@ -72,7 +72,7 @@ templates/
   index.html          single page, loads vendored libs + app modules
 static/
   js/                 api.js, auth.js, viewer.js, editbar.js, watcher.js,
-                      outline.js, sidebar.js, search.js, tabs.js,
+                      outline.js, sidebar.js, tabs.js,
                       settings.js, cm-bridge.js, shortcuts.js, vimnav.js,
                       app.js (loaded in dependency order)
   vendor/             marked.js, highlight.js, codemirror (vendored, no CDN)
