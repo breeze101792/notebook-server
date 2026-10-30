@@ -340,6 +340,56 @@ async function main() {
       check(size.name + ": a scrim tap closes the drawer",
         !(await page.evaluate(() => document.body.classList.contains("drawer-open"))));
 
+      // Search drawer: the clear × is a full 44 px target and refocuses.
+      await page.click('#activity-bar .activity-btn[data-view="search"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      await page.waitForSelector(".search-panel-input", { state: "visible" });
+      await page.click(".search-panel-advanced-toggle");
+      const phoneCase = await page.evaluate(() => {
+        const row = document.querySelector(".search-panel-filter--case");
+        const box = row.querySelector(".search-panel-case");
+        return {
+          inAdvanced: !!row.closest("#search-panel-advanced"),
+          label: row.querySelector(".search-panel-filter-label").textContent.trim(),
+          w: getComputedStyle(box).width,
+          h: getComputedStyle(box).height,
+        };
+      });
+      check(size.name + ": Match case sits in Advanced at 44 px",
+        phoneCase.inAdvanced && phoneCase.label === "Match case" &&
+        phoneCase.w === "44px" && phoneCase.h === "44px",
+        JSON.stringify(phoneCase));
+      await page.click(".search-panel-advanced-toggle");
+      await page.fill(".search-panel-input", "TODO");
+      const clearPhone = await page.evaluate(() => {
+        const btn = document.querySelector(".search-panel-clear");
+        const input = document.querySelector(".search-panel-input");
+        return {
+          hidden: btn.hidden,
+          w: getComputedStyle(btn).width,
+          h: getComputedStyle(btn).height,
+          padRight: getComputedStyle(input).paddingRight,
+        };
+      });
+      check(size.name + ": phone search clear is a 44 px target",
+        clearPhone.hidden === false &&
+        clearPhone.w === "44px" && clearPhone.h === "44px",
+        JSON.stringify(clearPhone));
+      check(size.name + ": phone search input reserves a 48 px slot",
+        clearPhone.padRight === "48px", clearPhone.padRight);
+      await page.click(".search-panel-clear");
+      await page.waitForFunction(() =>
+        document.querySelector(".search-panel-input").value === "");
+      check(size.name + ": phone search clear empties and refocuses",
+        await page.evaluate(() => document.activeElement ===
+          document.querySelector(".search-panel-input")));
+      await page.evaluate(() => NB.mobile.closeDrawer());
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.evaluate(() => NB.activity.activate("explorer", false));
+
       // Browser back closes a drawer without leaving the note.
       await openDrawer(page);
       await openFileFromDrawer(page, "Welcome.md");

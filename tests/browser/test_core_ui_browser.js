@@ -590,6 +590,43 @@ async function main() {
     // ---------------------------------------------------------------
     console.log("== search ==");
     await page.evaluate(() => NB.activity.openSearch());
+
+    await page.click(".search-panel-advanced-toggle");
+    const caseLayout = await page.evaluate(() => {
+      const cb = document.querySelector(".search-panel-case input");
+      const row = cb.closest(".search-panel-filter--case");
+      const label = row.querySelector(".search-panel-filter-label");
+      const box = row.querySelector(".search-panel-case");
+      return {
+        inAdvanced: !!cb.closest("#search-panel-advanced"),
+        label: label ? label.textContent.trim() : "",
+        w: getComputedStyle(box).width,
+        h: getComputedStyle(box).height,
+      };
+    });
+    check("search case: Aa sits in Advanced under a Match case label",
+      caseLayout.inAdvanced && caseLayout.label === "Match case",
+      JSON.stringify(caseLayout));
+    check("search case: desktop Aa is 28x32",
+      caseLayout.w === "28px" && caseLayout.h === "32px",
+      JSON.stringify(caseLayout));
+    await page.evaluate(() => {
+      const cb = document.querySelector(".search-panel-case input");
+      cb.checked = true;
+      cb.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.click(".search-panel-advanced-toggle");
+    check("search case: the collapsed summary names Match case",
+      /Match case/.test(await page.locator(".search-panel-advanced-summary").textContent()),
+      await page.locator(".search-panel-advanced-summary").textContent());
+    await page.click(".search-panel-advanced-toggle");
+    await page.evaluate(() => {
+      const cb = document.querySelector(".search-panel-case input");
+      cb.checked = false;
+      cb.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.click(".search-panel-advanced-toggle");
+
     await page.fill(".search-panel-input", "needle");
     await page.press(".search-panel-input", "Enter");
     await page.waitForFunction(() =>
@@ -611,6 +648,47 @@ async function main() {
     check("search: summary reports the hit count",
       /match/.test(await page.locator(".search-panel-summary").textContent()),
       await page.locator(".search-panel-summary").textContent());
+
+    const clearBox = await page.evaluate(() => {
+      const btn = document.querySelector(".search-panel-clear");
+      const input = document.querySelector(".search-panel-input");
+      const cs = getComputedStyle(btn);
+      return {
+        hidden: btn.hidden,
+        w: cs.width,
+        h: cs.height,
+        padRight: getComputedStyle(input).paddingRight,
+        inputWidth: input.getBoundingClientRect().width,
+      };
+    });
+    check("search clear: visible and 22x22 on desktop",
+      clearBox.hidden === false && clearBox.w === "22px" && clearBox.h === "22px",
+      JSON.stringify(clearBox));
+    check("search clear: input reserves a 32px right slot",
+      clearBox.padRight === "32px", clearBox.padRight);
+    await page.click(".search-panel-clear");
+    await page.waitForFunction(() =>
+      document.querySelector(".search-panel-input").value === "");
+    const cleared = await page.evaluate(() => ({
+      hits: document.querySelectorAll(".search-panel-hit").length,
+      summary: document.querySelector(".search-panel-summary").textContent,
+      focused: document.activeElement === document.querySelector(".search-panel-input"),
+      hidden: document.querySelector(".search-panel-clear").hidden,
+      inputWidth: document.querySelector(".search-panel-input").getBoundingClientRect().width,
+    }));
+    check("search clear: click clears the query and results",
+      cleared.hits === 0 && cleared.summary === "" && cleared.hidden === true,
+      JSON.stringify(cleared));
+    check("search clear: focus stays in the input", cleared.focused === true);
+    check("search clear: input width does not shift",
+      cleared.inputWidth === clearBox.inputWidth,
+      clearBox.inputWidth + " -> " + cleared.inputWidth);
+
+    await page.fill(".search-panel-input", "needle");
+    await page.press(".search-panel-input", "Enter");
+    await page.waitForFunction(() =>
+      document.querySelectorAll(".search-panel-hit").length >= 2,
+      null, { timeout: 10000 });
 
     check("search: Enter moves focus to the result list",
       await waitFor(() => page.evaluate(() => document.activeElement &&

@@ -10,6 +10,11 @@ Status: design only. No source files were changed. `web-engineer`
 implements the markup change in `activity.js` and the CSS change in
 `style.css`.
 
+> **Update (2026-10-30):** the `Aa` case toggle moved from the query row into
+> this Advanced panel, under a `Match case` caption. When it is on and the
+> panel is collapsed, the summary and badge name it. Diagrams and sections
+> below that place `Aa` beside the query describe the earlier layout.
+
 Companion: `docs/design/search-panel-controls.md`. **This document
 supersedes its §3 anatomy, §4–§5 control layout, and the always-visible
 statement in §5.** It keeps that document's tokens, result-row styling,

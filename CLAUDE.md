@@ -382,8 +382,10 @@ Module responsibilities:
   undo snapshot, and from the change hash, so they never reach the note or an
   export. Merged-cell tables and the live preview never arm.
 - `activity.js` — the activity bar and its side-panel views (Explorer, Pinned,
-  Bookmarks, Recent, Search, AI). The Search view owns the search input, case
-  toggle, target/grouping/sort options, and results; `<<…>>` snippets are
+  Bookmarks, Recent, Search, AI). The Search view owns the search input, a
+  clear × inside the field (hidden for an empty/whitespace query), an Advanced
+  disclosure holding match case, target, grouping, and sort, and results;
+  `<<…>>` snippets are
   re-wrapped into `<mark>` via textContent (never `innerHTML`). `openSearch()`
   activates the view, expands the panel or phone drawer, and focuses the input.
 - `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount

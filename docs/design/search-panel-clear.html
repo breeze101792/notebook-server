@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search panel — clear control</title>
+<style>
+  /* ---------------------------------------------------------------- */
+  /* App tokens, copied from static/css/style.css (dark default,       */
+  /* light override). The mockup uses them verbatim.                   */
+  /* ---------------------------------------------------------------- */
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+  }
+  body[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --danger: #c0392b;
+  }
+
+  html { font-size: 14px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0d0f14;
+    color: #e6e6ea;
+    font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* ---------------------------- page chrome ----------------------- */
+  .studio-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 24px;
+    padding: 16px 24px;
+    background: #14161c;
+    border-bottom: 1px solid #2a2c36;
+  }
+  .studio-kicker {
+    color: #7c9cff;
+    font-size: 11px;
+    font-weight: 650;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .studio-title { margin: 2px 0 0; color: #f2f3f7; font-size: 20px; font-weight: 650; }
+  .studio-sub { margin: 4px 0 0; max-width: 74ch; color: #a5a8b4; font-size: 12.5px; }
+  .studio-controls { display: flex; align-items: center; gap: 8px; }
+  .mock-chip {
+    padding: 6px 12px;
+    background: #1d1f27;
+    color: #c8cad3;
+    border: 1px solid #343742;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mock-chip:hover { border-color: #7c9cff; color: #f2f3f7; }
+  .mock-chip[aria-pressed="true"] { border-color: #7c9cff; background: rgba(124,156,255,.18); color: #f2f3f7; }
+  .mock-chip:focus-visible { outline: 2px solid #7c9cff; outline-offset: 2px; }
+
+  .studio-stage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 32px 40px;
+    padding: 34px 24px 20px;
+  }
+  .sp-card { margin: 0; }
+  .sp-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    width: 100%;
+    margin-bottom: 10px;
+    color: #a5a8b4;
+    font-size: 12px;
+  }
+  .sp-caption b { color: #e6e6ea; font-weight: 600; }
+  .sp-caption small { flex-basis: 100%; color: #7f838f; font-size: 11.5px; line-height: 1.5; }
+
+  /* ----------------------- panel (current anatomy) ----------------- */
+  .sp-panel {
+    display: flex;
+    flex-direction: column;
+    width: var(--pw, 240px);
+    height: var(--ph, 470px);
+    overflow: hidden;
+    background: var(--bg-panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 18px 44px rgba(0,0,0,.32);
+    container-type: inline-size;
+
+    --search-space-1: 4px;
+    --search-space-2: 6px;
+    --search-space-3: 8px;
+    --search-space-4: 12px;
+    --search-space-5: 16px;
+    --search-radius-sm: 4px;
+    --search-radius-md: 6px;
+    --search-pad-x: 10px;
+    --search-gap: 8px;
+    --search-control-h: 32px;
+    --search-adv-h: 26px;
+    --search-adv-font: .78rem;
+    --search-adv-meta: .72rem;
+    --search-badge-h: 16px;
+    --search-hit-min-h: 32px;
+
+    /* new tokens for this handoff */
+    --search-clear-btn: 22px;
+    --search-clear-inset: 5px;
+    --search-clear-slot: 32px;
+    --search-clear-icon: 12px;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+    padding: 0 var(--search-pad-x);
+    min-height: 40px;
+    color: var(--fg-muted);
+    font-size: .79rem;
+    font-weight: 650;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .collapse-btn {
+    background: none;
+    border: 0;
+    padding: 2px 4px;
+    color: var(--fg-muted);
+    border-radius: 4px;
+    font-size: 1.07rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+  .search-panel-controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-gap);
+    padding: var(--search-space-3) var(--search-pad-x) var(--search-space-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .search-panel-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-2);
+    flex: 0 0 auto;
+  }
+
+  /* wrapper added by this handoff */
+  .search-panel-input-wrap {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .search-panel-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    height: var(--search-control-h);
+    padding: 0 var(--search-space-3);
+    padding-right: var(--search-clear-slot);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    color: var(--fg);
+    font: inherit;
+    font-size: .88rem;
+  }
+  .search-panel-input::placeholder { color: var(--fg-muted); }
+  /* The custom × is the only cancel affordance. */
+  .search-panel-input::-webkit-search-cancel-button,
+  .search-panel-input::-webkit-search-decoration,
+  .search-panel-input::-webkit-search-results-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search-panel-input:focus { outline: none; border-color: var(--accent); }
+  .search-panel-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* the custom clear control */
+  .search-panel-clear {
+    position: absolute;
+    top: 50%;
+    right: var(--search-clear-inset);
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--search-clear-btn);
+    height: var(--search-clear-btn);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--search-radius-sm);
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .search-panel-clear[hidden] { display: none; }
+  .search-panel-clear svg { display: block; width: var(--search-clear-icon); height: var(--search-clear-icon); }
+  .search-panel-clear:hover { color: var(--fg); background: var(--accent-soft); }
+  .search-panel-clear:active { color: var(--fg); background: var(--accent-soft); border-color: var(--accent); }
+  .search-panel-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .search-panel-advanced-row {
+    display: flex;
+    align-items: center;
+    gap: var(--search-gap);
+    min-height: var(--search-adv-h);
+    min-width: 0;
+  }
+  .search-panel-advanced-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--search-space-2);
+    min-height: var(--search-adv-h);
+    margin-left: calc(-1 * var(--search-space-2));
+    padding: 0 var(--search-space-2);
+    background: none;
+    border: 0;
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--search-adv-font);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .search-panel-advanced-toggle:hover { color: var(--fg); background: var(--accent-soft); }
+  .search-panel-advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .search-panel-advanced-chevron {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-1px) rotate(45deg);
+  }
+  .search-panel-advanced-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    font-size: var(--search-adv-meta);
+    text-align: right;
+  }
+
+  .search-panel-summary {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-3);
+    min-height: 26px;
+    padding: var(--search-space-1) var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .78rem;
+  }
+  .search-panel-summary-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-panel-note {
+    flex: 0 0 auto;
+    padding: 0 var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+  }
+  .search-panel-list {
+    flex: 1 1 auto;
+    overflow: auto;
+    min-height: 0;
+    padding: 0 6px 8px;
+    margin-right: 8px;
+  }
+  .search-panel-hit {
+    display: block;
+    width: 100%;
+    min-height: var(--search-hit-min-h);
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .search-panel-hit:hover { background: var(--accent-soft); }
+  .search-panel-hit-file {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    font-size: .78rem;
+  }
+  .search-panel-path { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sp-file { color: var(--fg); font-weight: 600; }
+  .sp-dir { color: var(--fg-muted); }
+  .sp-count { flex: 0 0 auto; color: var(--fg-muted); font-size: .68rem; }
+  .search-panel-hit-snippet {
+    display: block;
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--fg-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-panel-hit-snippet mark { background: var(--accent-soft); color: var(--fg); border-radius: 2px; }
+  .sp-panel.is-idle [data-results] { display: none; }
+
+  /* ----------------------------- phone ---------------------------- */
+  .sp-phone {
+    --pw: 300px;
+    --ph: 540px;
+    --m-hit: 44px;
+    --search-control-h: var(--m-hit);
+    --search-clear-btn: var(--m-hit);
+    --search-clear-inset: 1px;
+    --search-clear-slot: 48px;
+    --search-clear-icon: 14px;
+    --search-pad-x: 12px;
+    border-radius: 18px;
+  }
+  .sp-phone .search-panel-input { height: var(--m-hit); font-size: 16px; border-radius: 8px; }
+  .sp-phone .search-panel-clear { border-radius: 8px; }
+  .sp-phone .panel-header { min-height: 48px; }
+  .sp-phone .search-panel-summary { font-size: 14px; }
+  .sp-phone .search-panel-note { font-size: 13px; }
+  .sp-phone .search-panel-hit { min-height: 52px; padding: 8px; }
+  .sp-phone .search-panel-hit .sp-file { font-size: 15px; }
+  .sp-phone .search-panel-hit-snippet { font-size: 14px; }
+  .sp-phone .sp-count { font-size: 12px; }
+
+  /* --------------------------- state strip ------------------------ */
+  .sp-specs {
+    max-width: 1000px;
+    margin: 10px auto 46px;
+    padding: 0 24px;
+  }
+  .sp-specs-inner {
+    padding: 18px 20px;
+    background: #14161c;
+    border: 1px solid #2a2c36;
+    border-radius: 12px;
+  }
+  .sp-specs h2 { margin: 0 0 14px; color: #e6e6ea; font-size: 13px; font-weight: 650; }
+  .sp-states {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 22px;
+  }
+  .sp-state { display: flex; flex-direction: column; align-items: center; gap: 8px;
+    --search-clear-btn: 22px; --search-clear-icon: 12px; }
+  .sp-state-field {
+    display: flex;
+    align-items: center;
+    width: 186px;
+    height: 32px;
+    padding-right: 5px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .sp-state-field.is-focused { border-color: var(--accent); }
+  .sp-state-field .sp-clear-demo {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .sp-state-label { color: #a5a8b4; font-size: 11.5px; }
+  .sp-state-label code { color: #7c9cff; font-size: 10.5px; }
+  .sp-clear-demo.is-hover { color: var(--fg); background: var(--accent-soft); }
+  .sp-clear-demo.is-active { color: var(--fg); background: var(--accent-soft); border-color: var(--accent); }
+  .sp-clear-demo.is-focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .sp-specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 8px 24px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #2a2c36;
+    color: #8f93a0;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .sp-specs-grid b { color: #e6e6ea; font-weight: 600; }
+  .sp-footnote {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 24px 44px;
+    color: #7f838f;
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .sp-footnote code { padding: 0 4px; background: #1d1f27; border-radius: 3px; font-size: 11px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search-panel-clear { transition: none; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<header class="studio-bar">
+  <div>
+    <div class="studio-kicker">Notebook server · Search side panel</div>
+    <h1 class="studio-title">Clear control for the search field</h1>
+    <p class="studio-sub">The × lives inside the field's right edge and appears only
+      when the trimmed query is non-empty. Type in any field below. The field
+      keeps the same width and padding whether the × is shown or hidden.</p>
+  </div>
+  <div class="studio-controls" role="group" aria-label="Theme preview">
+    <button class="mock-chip" type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    <button class="mock-chip" type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<main class="studio-stage">
+
+  <!-- ---------------------------------------------- desktop populated -->
+  <figure class="sp-card">
+    <figcaption class="sp-caption">
+      <b>Desktop 240 px · populated</b><span>× visible</span>
+      <small>The query is trimmed to decide visibility. The input reserves the
+        32 px slot at all times, so typing never shifts the text or the row.</small>
+    </figcaption>
+    <div class="sp-panel" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <div class="search-panel-input-wrap">
+            <input type="search" class="search-panel-input"
+                   placeholder="Search notebooks…" aria-label="Search notebooks" value="parser">
+            <button type="button" class="search-panel-clear"
+                    aria-label="Clear search" title="Clear search">
+              <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5"
+                      fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle" aria-expanded="false">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary"></span>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text" data-results>3 notes · 6 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+      <div class="search-panel-list" role="listbox" aria-label="Search results" data-results>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">parser-notes.md</span><span class="sp-dir"> (firmware)</span></span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>parser</mark> state machine resets on error.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span></span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">Feed the <mark>parser</mark> one byte at a time.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">notes.md</span><span class="sp-dir"> (imu)</span></span>
+            <span class="sp-count">1 match</span>
+          </span>
+          <span class="search-panel-hit-snippet">A strict <mark>parser</mark> hides the timing bug.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ------------------------------------------------ desktop empty -->
+  <figure class="sp-card">
+    <figcaption class="sp-caption">
+      <b>Desktop 240 px · empty</b><span>× hidden</span>
+      <small>Whitespace-only counts as empty: no ×, no request, the idle state.
+        The reserved slot stays, so the field is exactly the same width.</small>
+    </figcaption>
+    <div class="sp-panel is-idle" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <div class="search-panel-input-wrap">
+            <input type="search" class="search-panel-input"
+                   placeholder="Search notebooks…" aria-label="Search notebooks">
+            <button type="button" class="search-panel-clear"
+                    aria-label="Clear search" title="Clear search" hidden>
+              <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5"
+                      fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle" aria-expanded="false">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary"></span>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text" data-results>2 notes · 4 matches</span>
+      </div>
+      <div class="search-panel-note" hidden>Click a row to open its first match.</div>
+      <div class="search-panel-list" role="listbox" aria-label="Search results" data-results>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">parser-notes.md</span><span class="sp-dir"> (firmware)</span></span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>parser</mark> state machine resets on error.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span></span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">Feed the <mark>parser</mark> one byte at a time.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- --------------------------------------------------------- phone -->
+  <figure class="sp-card">
+    <figcaption class="sp-caption">
+      <b>Phone · 300 px drawer</b><span>44 px target</span>
+      <small>The button fills the 44 px field height. Tapping it keeps focus in
+        the input, so the soft keyboard stays up.</small>
+    </figcaption>
+    <div class="sp-panel sp-phone" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <div class="search-panel-input-wrap">
+            <input type="search" class="search-panel-input"
+                   placeholder="Search notebooks…" aria-label="Search notebooks" value="fix">
+            <button type="button" class="search-panel-clear"
+                    aria-label="Clear search" title="Clear search">
+              <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+                <path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5"
+                      fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle" aria-expanded="false">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary"></span>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text" data-results>2 notes · 4 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+      <div class="search-panel-list" role="listbox" aria-label="Search results" data-results>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">uart-debug.md</span></span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> is in the retry path.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path"><span class="sp-file">notes.md</span></span>
+            <span class="sp-count">1 match</span>
+          </span>
+          <span class="search-panel-hit-snippet">A <mark>fix</mark> may hide the timing issue.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+</main>
+
+<section class="sp-specs" aria-label="Control states">
+  <div class="sp-specs-inner">
+    <h2>Clear-button states · desktop 22 px box, 12 px glyph</h2>
+    <div class="sp-states">
+      <div class="sp-state">
+        <div class="sp-state-field">
+          <button type="button" class="sp-clear-demo search-panel-clear" aria-label="Clear search">
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <span class="sp-state-label">default · <code>--fg-muted</code></span>
+      </div>
+      <div class="sp-state">
+        <div class="sp-state-field">
+          <button type="button" class="sp-clear-demo search-panel-clear is-hover" aria-label="Clear search">
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <span class="sp-state-label">hover · <code>--accent-soft</code></span>
+      </div>
+      <div class="sp-state">
+        <div class="sp-state-field">
+          <button type="button" class="sp-clear-demo search-panel-clear is-active" aria-label="Clear search">
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <span class="sp-state-label">pressed · accent border</span>
+      </div>
+      <div class="sp-state">
+        <div class="sp-state-field is-focused">
+          <button type="button" class="sp-clear-demo search-panel-clear is-focus" aria-label="Clear search">
+            <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <span class="sp-state-label">focus-visible · 2 px ring</span>
+      </div>
+    </div>
+    <div class="sp-specs-grid">
+      <div><b>Placement</b> — absolute inside the wrapper; right: 5 px desktop, 1 px phone; vertically centred.</div>
+      <div><b>Slot</b> — input padding-right 32 px desktop / 48 px phone, always reserved. Never overlapped.</div>
+      <div><b>Phone</b> — 44 × 44 button, 14 px glyph, 8 px radius. Matches <code>--m-hit</code>.</div>
+      <div><b>Visibility</b> — <code>hidden</code> when <code>value.trim() === ""</code>; removed from tab order and a11y tree.</div>
+      <div><b>Focus order</b> — input → × → Advanced toggle. <code>Aa</code> now lives inside Advanced. Focus returns to the input after clearing.</div>
+      <div><b>Native cancel</b> — <code>::-webkit-search-cancel-button</code> hidden; Firefox has none.</div>
+    </div>
+  </div>
+</section>
+
+<p class="sp-footnote">
+  Design reference, not production. Tokens and component metrics are copied from
+  <code>static/css/style.css</code>; the wrapper, clear button, and
+  <code>--search-clear-*</code> tokens are the proposed addition. See
+  <code>docs/design/search-panel-clear.md</code> for the normative spec,
+  including keyboard, screen-reader, native-cancel, and debounce rules.
+</p>
+
+<script>
+(function () {
+  "use strict";
+
+  function syncClear(panel) {
+    var input = panel.querySelector(".search-panel-input");
+    var clear = panel.querySelector(".search-panel-clear");
+    if (!input || !clear) return;
+    var empty = input.value.trim() === "";
+    clear.hidden = empty;
+    panel.classList.toggle("is-idle", empty);
+    var note = panel.querySelector(".search-panel-note");
+    if (note) note.hidden = empty;
+  }
+
+  document.querySelectorAll("[data-panel]").forEach(function (panel) {
+    var input = panel.querySelector(".search-panel-input");
+    var clear = panel.querySelector(".search-panel-clear");
+
+    input.addEventListener("input", function () { syncClear(panel); });
+
+    // Keep focus (and the phone keyboard) in the field on pointer press.
+    clear.addEventListener("pointerdown", function (e) { e.preventDefault(); });
+    clear.addEventListener("click", function () {
+      input.value = "";
+      syncClear(panel);
+      input.focus();
+    });
+
+    syncClear(panel);
+  });
+
+  document.querySelectorAll("[data-theme-btn]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.body.dataset.theme = btn.dataset.themeBtn;
+      document.querySelectorAll("[data-theme-btn]").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b === btn));
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

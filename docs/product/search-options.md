@@ -109,7 +109,7 @@ The result set is a list of notes. Each row is built from the first match in tha
 - **No silent hiding:** a note with at least one returned match appears exactly once. The only thing that can remove a whole note is the file cap; when it does, `truncated` is true and the summary says more results exist. The per-file cap never removes a note.
 - If the response is malformed and lacks `count`, the row shows no count rather than `undefined`, `NaN`, or an invented number.
 
-**Control surface.** Query row (input + `Aa`), then an `Advanced` disclosure, then summary and results. Advanced holds the labelled filters (`Search in` segmented `Content / File name`; `Grouping` segmented `All matches / One per note`; `Sort` select). It starts collapsed; collapsing hides the controls but does not change or disable the persisted settings, and the collapsed row names any non-default option (a count badge below 200 px). In File name mode the Grouping row hides and `Most matches` is disabled. Each control shows its current value (`Path (A–Z)`, `Recently modified`, or `Most matches`).
+**Control surface.** Query row (input with a clear ×), then an `Advanced` disclosure, then summary and results. Advanced holds the labelled filters (`Match case` with the `Aa` toggle; `Search in` segmented `Content / File name`; `Grouping` segmented `All matches / One per note`; `Sort` select). It starts collapsed; collapsing hides the controls but does not change or disable the persisted settings, and the collapsed row names any non-default option (a count badge below 200 px). In File name mode the Grouping row hides and `Most matches` is disabled. Each control shows its current value (`Path (A–Z)`, `Recently modified`, or `Most matches`).
 
 **Server-side, not client-side.** Dedupe runs in `/api/search` behind a new `unique=1` parameter.
 
@@ -154,9 +154,9 @@ No dedupe is applied in this mode.
 
 ### 4.5 Match case (P1, existing)
 
-- Label `Aa`, accessible name "Match case". Off by default.
+- Label `Aa`, accessible name "Match case". Off by default. It lives in the Advanced disclosure with the other match options.
 - One persisted setting, `searchCaseSensitive`.
-- The panel is the only case control. Toggling it re-runs a non-empty query immediately and persists once. Focus does not move.
+- Toggling it re-runs a non-empty query immediately and persists once. Focus does not move. When it is on and Advanced is collapsed, the summary names `Match case` and the badge counts it.
 - With no query, no search request is made.
 - If the panel mounted before the first config load (Search can be the saved view), it syncs its controls when the loaded config arrives. A change the user made in that window is not reverted by the late load.
 
@@ -172,7 +172,7 @@ No dedupe is applied in this mode.
 
 | Where | Keys |
 |---|---|
-| query | Enter: run and move focus to the results list; Esc: clear query and results; arrows keep native caret movement |
+| query | Enter: run and move focus to the results list; Esc: clear query and results; arrows keep native caret movement. A clear × inside the field does the same clear and returns focus to the query |
 | options | native Tab / Shift+Tab; a select keeps its native arrow behaviour; no global key handler may steal keys from a focused control |
 | results | one tab stop; ArrowDown/ArrowUp move the active row, Home/End jump to first/last, Enter opens, Esc returns focus to the query |
 | any | visible focus ring on every control; no keyboard trap |
@@ -205,13 +205,13 @@ Search lives only in the side panel. There is no top-bar search input and no
 
 | ID | Option | Values / default | Phase | Applies to | Decision and rationale |
 |---|---|---|---|---|---|
-| O1 | Query | text, required for a search; trimmed; empty = idle | P1 | both | the one mandatory input; no auto-search on empty |
-| O2 | Match case (`Aa`) | off | P1 (exists) | both | cheap, familiar, already in the server; fix the missing sync and persistence |
+| O1 | Query | text, required for a search; trimmed; empty = idle | P1 | panel | the one mandatory input; no auto-search on empty |
+| O2 | Match case (`Aa`) | off | P1 (exists) | panel (Advanced) | cheap, familiar, already in the server; fix the missing sync and persistence |
 | O3 | One per note | on | P1 | panel | requested; the panel's main job is finding a note; the count and first snippet carry the context |
 | O4 | Sort | `Path (A–Z)` | P1 | panel | one compact select; three orders the server already supports; no asc/desc control |
 | O5 | Scope: this note | off (P2) | P2 | panel | useful for long notes; needs an active-note rule and a 404 path; defer to keep P1's control row small |
 | O6 | Scope: this folder | off (P2) | P2 | panel | best entry is the folder menu ("Search in this folder"), not a folder picker; uses `glob`; P2 |
-| O7 | Regex | off (P2) | P2 | panel first | server already supports it; needs an invalid-pattern state and a literal jump from the matched text; not a P1 default |
+| O7 | Regex | off (P2) | P2 | panel | server already supports it; needs an invalid-pattern state and a literal jump from the matched text; not a P1 default |
 | O8 | Search in: File name | `Content` | P1 (shipped) | panel | matches the basename (`name=1`); one row per note, no snippet; grouping hides and count sort is disabled |
 | O9 | Load more / paging | none | P2 candidate | panel | unique mode caps notes at a number larger than most notebooks; paging needs an offset contract and stable order; only revisit if truncation recurs |
 | O10 | Sort direction (asc/desc) | — | rejected | — | fixed directions are enough for one user; a second control adds ambiguity for no job |
@@ -301,12 +301,14 @@ Search lives only in the side panel. There is no top-bar search input and no
 
 | ID | Scenario | Expected (pass condition) | V |
 |---|---|---|---|
-| AC31 | Keyboard-only | Tab reaches query → Aa → one-per-note → sort → results; arrows/Home/End move the active row; Enter opens; Esc returns to the query (and clears when in the query); every focused control has a visible ring | D, H |
+| AC31 | Keyboard-only | Tab reaches query → clear × → Advanced toggle → [when open] Search in → Grouping → Match case → Sort → results; arrows/Home/End move the active row; Enter opens; Esc returns to the query (and clears when in the query); every focused control has a visible ring | D, H |
 | AC32 | Screen reader semantics | results expose a listbox/option (or equivalent) with the active row announced; summary is a live region; error is an alert; list is busy while running | D |
 | AC33 | Switch to Explorer and back | same query, options, results, and active row; no new request unless a shared case value changed while hidden | D |
 | AC34 | Global search shortcut | Ctrl/Cmd+F, `/`, VIM `/` and `T` open the Search view, expand the panel or phone drawer, and focus the query; no `§search` tab is created | D |
 | AC35 | Phone drawer | search opens focused; controls meet the 44 px target (mobile C3) and do not scroll the page sideways; tap closes the drawer, opens the note, marks the hit; reopening shows the same query/results | H |
 | AC36 | Panel at default 240 px and at the drawer width | long paths ellipsize, snippets wrap, controls do not overlap or clip, no horizontal scroll | H |
+| AC37 | Clear control | × appears only for a non-whitespace query; click or Enter/Space clears the query, summary, and results, keeps focus, sends no request; 22 px desktop / 44 px phone target; input width does not shift | D, H |
+| AC38 | Case in Advanced | `Match case` and its `Aa` toggle render inside Advanced; turning it on adds `Match case` to the collapsed summary and badge count; clearing the query does not reset it | D |
 
 ## 8. Non-goals
 

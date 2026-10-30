@@ -444,21 +444,35 @@
 
     const inputRow = document.createElement("div");
     inputRow.className = "search-panel-input-row";
+    const inputWrap = document.createElement("div");
+    inputWrap.className = "search-panel-input-wrap";
     const input = document.createElement("input");
     input.type = "search";
     input.className = "search-panel-input";
     input.placeholder = "Search notebooks…";
     input.setAttribute("aria-label", "Search notebooks");
-    const caseToggle = document.createElement("label");
-    caseToggle.className = "search-panel-case";
-    caseToggle.title = "Case sensitive";
-    const caseCb = document.createElement("input");
-    caseCb.type = "checkbox";
-    caseCb.setAttribute("aria-label", "Case sensitive");
-    const caseLabel = document.createElement("span");
-    caseLabel.textContent = "Aa";
-    caseToggle.append(caseCb, caseLabel);
-    inputRow.append(input, caseToggle);
+    inputWrap.appendChild(input);
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "search-panel-clear";
+    clearBtn.setAttribute("aria-label", "Clear search");
+    clearBtn.title = "Clear search";
+    clearBtn.hidden = true;
+    const clearSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    clearSvg.setAttribute("viewBox", "0 0 12 12");
+    clearSvg.setAttribute("aria-hidden", "true");
+    clearSvg.setAttribute("focusable", "false");
+    const clearPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    clearPath.setAttribute("d", "M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5");
+    clearPath.setAttribute("fill", "none");
+    clearPath.setAttribute("stroke", "currentColor");
+    clearPath.setAttribute("stroke-width", "1.5");
+    clearPath.setAttribute("stroke-linecap", "round");
+    clearSvg.appendChild(clearPath);
+    clearBtn.appendChild(clearSvg);
+    inputWrap.appendChild(clearBtn);
+    inputRow.append(inputWrap);
+    syncClear();
 
     const controls = document.createElement("div");
     controls.className = "search-panel-controls";
@@ -533,10 +547,27 @@
     });
     const countOption = sortSelect.querySelector('option[value="count"]');
 
+    const caseToggle = document.createElement("label");
+    caseToggle.className = "search-panel-case";
+    caseToggle.title = "Case sensitive";
+    const caseCb = document.createElement("input");
+    caseCb.type = "checkbox";
+    caseCb.setAttribute("aria-label", "Case sensitive");
+    const caseLabel = document.createElement("span");
+    caseLabel.textContent = "Aa";
+    caseToggle.append(caseCb, caseLabel);
+
+    const caseFilter = document.createElement("div");
+    caseFilter.className = "search-panel-filter search-panel-filter--case";
+    const caseFilterLabel = document.createElement("span");
+    caseFilterLabel.className = "search-panel-filter-label";
+    caseFilterLabel.textContent = "Match case";
+
     targetFilter.append(targetFilterLabel, targetGroup);
     groupFilter.append(groupFilterLabel, mode);
+    caseFilter.append(caseFilterLabel, caseToggle);
     sortFilter.append(sortLabel, sortSelect);
-    filters.append(targetFilter, groupFilter, sortFilter);
+    filters.append(targetFilter, groupFilter, caseFilter, sortFilter);
 
     const advancedRow = document.createElement("div");
     advancedRow.className = "search-panel-advanced-row";
@@ -630,6 +661,7 @@
     function advancedSummaryText() {
       const parts = [];
       if (target === "name") parts.push("File name");
+      if (caseSensitive) parts.push("Match case");
       if (target !== "name" && !unique) parts.push("All matches");
       if (sort !== "path") {
         const opt = sortSelect.options[sortSelect.selectedIndex];
@@ -645,6 +677,7 @@
       const active = text !== "";
       let count = 0;
       if (target === "name") count += 1;
+      if (caseSensitive) count += 1;
       if (target !== "name" && !unique) count += 1;
       if (sort !== "path") count += 1;
 
@@ -1124,7 +1157,24 @@
       }
     });
 
+    function syncClear() {
+      clearBtn.hidden = input.value.trim() === "";
+    }
+
+    function clearQuery() {
+      input.value = "";
+      setIdle();
+      syncClear();
+    }
+
+    clearBtn.addEventListener("pointerdown", (e) => e.preventDefault());
+    clearBtn.addEventListener("click", () => {
+      clearQuery();
+      input.focus();
+    });
+
     input.addEventListener("input", () => {
+      syncClear();
       clearTimeout(debounceTimer);
       if (!input.value.trim()) { setIdle(); return; }
       debounceTimer = setTimeout(runSearch, 250);
@@ -1137,8 +1187,7 @@
         if (input.value.trim()) {
           e.preventDefault();
           e.stopPropagation();
-          setIdle();
-          input.value = "";
+          clearQuery();
         }
       }
     });
@@ -1216,6 +1265,7 @@
     caseCb.addEventListener("change", () => {
       caseSensitive = caseCb.checked;
       userChanged.case = true;
+      syncAdvancedSummary();
       NB.evt.emit("search-case-changed", caseSensitive);
       if (input.value.trim()) runSearch();
     });
@@ -1229,6 +1279,7 @@
       caseSensitive = next;
       caseCb.checked = next;
       userChanged.case = true;
+      syncAdvancedSummary();
       if (!changed || !input.value.trim()) return;
       if (panelVisible()) runSearch();
       else pendingCaseRerun = true;

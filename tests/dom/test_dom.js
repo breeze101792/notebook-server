@@ -2117,6 +2117,7 @@ function check(label, cond, extra) {
   {
     const searchView = () => $("search-view");
     const spInputEl = () => searchView().querySelector(".search-panel-input");
+    const spClear = () => searchView().querySelector(".search-panel-clear");
     const spCaseCb = () => searchView().querySelector(".search-panel-case input");
     const spUniqueRadio = () => searchView().querySelector(
       '.search-panel-mode input[value="unique"]');
@@ -2200,6 +2201,9 @@ function check(label, cond, extra) {
     fire(searchBtn, "click");
     await tick(30);
     check("search panel AC1: Aa unchecked", spCaseCb().checked === false);
+    check("search panel AC1: Aa lives in the closed Advanced panel",
+      $("search-panel-advanced").contains(spCaseCb()) &&
+      $("search-panel-advanced").hidden === true);
     check("search panel AC1: One per note checked",
       spUniqueRadio().checked === true && spAllRadio().checked === false);
     check("search panel AC1: Sort defaults to Path (A-Z)",
@@ -2209,6 +2213,46 @@ function check(label, cond, extra) {
       "delta=" + (searchRequests().length - searchBeforeMount));
     check("search panel AC1: the query input is focused",
       window.document.activeElement === spInputEl());
+
+    // Clear control: hidden for empty/whitespace, clears without a request.
+    const clearBefore = searchRequests().length;
+    check("search clear: hidden on an empty query", spClear().hidden === true);
+    check("search clear: wrapped inside the input row",
+      spClear().parentElement.classList.contains("search-panel-input-wrap") &&
+      spClear().parentElement.querySelector(".search-panel-input") === spInputEl());
+    check("search clear: accessible name is Clear search",
+      spClear().getAttribute("aria-label") === "Clear search");
+    check("search clear: the input row no longer holds the case toggle",
+      spInputEl().closest(".search-panel-input-row")
+        .querySelector(".search-panel-case") === null);
+    check("search clear: the clear button follows the input",
+      !!(spInputEl().compareDocumentPosition(spClear()) &
+        window.Node.DOCUMENT_POSITION_FOLLOWING));
+
+    setQuery("   ");
+    check("search clear: hidden for whitespace-only",
+      spClear().hidden === true);
+    idleQuery();
+    setQuery("needle");
+    check("search clear: visible for a query", spClear().hidden === false);
+    spClear().click();
+    await tick(300);
+    check("search clear: clears the input", spInputEl().value === "");
+    check("search clear: hidden again after clearing", spClear().hidden === true);
+    check("search clear: no request on clear",
+      searchRequests().length === clearBefore,
+      "delta=" + (searchRequests().length - clearBefore));
+    check("search clear: focus returns to the input",
+      window.document.activeElement === spInputEl());
+    check("search clear: summary returns to idle", summaryText() === "");
+
+    setQuery("needle");
+    key(spInputEl(), "Escape");
+    await tick(300);
+    check("search clear: Esc clears and hides the control",
+      spInputEl().value === "" && spClear().hidden === true);
+    check("search clear: Esc sends no request",
+      searchRequests().length === clearBefore);
 
     // AC3: a late config load syncs the controls; a user change made in the
     // same window is not reverted by that load.
@@ -2222,6 +2266,9 @@ function check(label, cond, extra) {
       spSort().value === "count", "value=" + spSort().value);
     check("search panel AC3: loaded config sets Aa on",
       spCaseCb().checked === true);
+    check("search panel AC3: the Advanced summary names Match case",
+      /Match case/.test($("search-panel-advanced-summary").textContent),
+      $("search-panel-advanced-summary").textContent);
     setSort("mtime");
     window.NB.evt.emit("config:changed",
       { searchUnique: true, searchSort: "path", searchCaseSensitive: false },
@@ -2793,9 +2840,9 @@ function check(label, cond, extra) {
       !spGrouping().classList.contains("is-hidden"));
     check("search target: count sort is enabled in Content mode",
       spSort().querySelector('option[value="count"]').disabled === false);
-    check("search layout: controls zone holds the input and three filters",
+    check("search layout: controls zone holds the input and four filters",
       !!searchView().querySelector(".search-panel-controls .search-panel-input") &&
-      searchView().querySelectorAll(".search-panel-controls .search-panel-filter").length === 3);
+      searchView().querySelectorAll(".search-panel-controls .search-panel-filter").length === 4);
     check("search layout: each filter has a caption above its control",
       Array.from(searchView().querySelectorAll(".search-panel-filter"))
         .every(f => !!f.querySelector(".search-panel-filter-label")));
