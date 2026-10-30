@@ -219,7 +219,7 @@ fall back to check-then-rename. File copies use `open(..., "xb")`.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/search` (`app.py:2094`) | read | Line-oriented scan of `.md` files. Params below. |
+| GET | `/api/search` (`app.py:2756`) | read | Line-oriented scan of `.md` files. Params below. |
 
 | Param | Default | Meaning |
 | --- | --- | --- |
@@ -228,16 +228,25 @@ fall back to check-then-rename. File copies use `open(..., "xb")`.
 | `case=1` | off (insensitive) | Case-sensitive matching. |
 | `file=<rel>` | — | Scan one file only. 404 if the file is missing. |
 | `glob=<pat>` | — | `fnmatch` filter against the relative path or the basename. |
-| `limit=N` | `MAX_TOTAL_MATCHES` 200 | Total match cap. Ceiling `MAX_TOTAL_MATCHES_CEILING` 2000. |
-| `perFile=N` | `MAX_MATCHES_PER_FILE` 20 | Per-file match cap. Ceiling `MAX_MATCHES_PER_FILE_CEILING` 200. |
+| `limit=N` | `MAX_TOTAL_MATCHES` 200 | Total match cap. Ceiling `MAX_TOTAL_MATCHES_CEILING` 2000. In unique mode it caps notes instead. |
+| `perFile=N` | `MAX_MATCHES_PER_FILE` 20 | Per-file match cap. Ceiling `MAX_MATCHES_PER_FILE_CEILING` 200. Ignored in unique mode. |
+| `unique=1` | off | One result per note, keyed on the exact relative path. Each item also carries `count`, the exact number of occurrences in that file, while `line`/`col`/`snippet` describe the first occurrence. `perFile` is ignored, `perFileTruncated` is false, and `limit` caps notes. All candidates are counted, ordered when `order=` is set, then capped by `limit`. |
+| `name=1` | off | Match `q` against each note's basename instead of its content. Literal substring by default (escaped), `regex=1` uses the pattern as-is, and `case=1` applies. Returns one `{file}` item per matching note — no `line`, `col`, `snippet`, or `count`. `limit` caps notes, `perFileTruncated` is false, and `unique` has no effect. `file=` and `glob=` scope the candidate set as in content search. |
 | `order=` | walk order | `path`, `mtime`, or `count`. Invalid value is 400. |
 | `desc=1` | off | Reverse the chosen order. |
 
-Caps are defined at `app.py:57`. The response is
-`{query, matches: [{file, line, col, snippet}], truncated}`, plus `file` when
-`?file=` was used. `col` is 1-based. Each hit inside a snippet is wrapped in
-`<<...>>` with `SNIPPET_PAD` = 60 characters of context on each side. Ordering
-regroups whole files and never splits a file's matches.
+Caps are defined at `app.py:58`. The response is
+`{query, matches: [{file, line, col, snippet}], truncated, perFileTruncated}`,
+plus `file` when `?file=` was used and `count` on each item in unique mode.
+`perFileTruncated` is true when at least one file had more matches than
+`perFile`; in unique mode `truncated` means more notes matched than were
+returned. In name mode each item is `{file}` only, `perFileTruncated` is
+always false, and `truncated` means more notes matched than were returned.
+`col` is 1-based. Each hit inside a snippet is wrapped in `<<...>>`
+with `SNIPPET_PAD` = 60 characters of context on each side. Ordering regroups
+whole files and never splits a file's matches; in unique mode equal sort keys
+fall back to path A–Z. In name mode every note counts once, so `order=count`
+is path order.
 
 ### Graph
 

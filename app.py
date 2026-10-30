@@ -2631,6 +2631,129 @@ def _bounded_int_arg(name, default, ceiling):
     return max(1, min(val, ceiling))
 
 
+def _iter_search_targets(scoped, glob_pat):
+    """Yield (relative, absolute) for every .md file the search should scan."""
+    if scoped is not None:
+        rel, full = rel_from(scoped), scoped
+        if not glob_pat or (
+                fnmatch.fnmatch(rel, glob_pat)
+                or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
+            yield rel, full
+        return
+    for dirpath, dirs, filenames in os.walk(DATA_DIR):
+        # Match the tree: hidden directories are not browsable, so their
+        # notes must not appear in search results either.
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in sorted(filenames):
+            if name.startswith(".") or not name.lower().endswith(".md"):
+                continue
+            full = os.path.join(dirpath, name)
+            rel = rel_from(full)
+            if glob_pat and not (
+                    fnmatch.fnmatch(rel, glob_pat)
+                    or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
+                continue
+            yield rel, full
+
+
+def _search_match_item(rel, line_no, line, match):
+    """Build one {file, line, col, snippet} item; the hit stays <<wrapped>>."""
+    start, end = match.start(), match.end()
+    lo = max(0, start - SNIPPET_PAD)
+    hi = min(len(line), end + SNIPPET_PAD)
+    snippet = line[lo:hi]
+    # Use offsets within the snippet so we don't corrupt HTML.
+    snippet = (
+        snippet[: start - lo]
+        + "<<"
+        + snippet[start - lo : end - lo]
+        + ">>"
+        + snippet[end - lo :]
+    )
+    return {"file": rel, "line": line_no, "col": start + 1, "snippet": snippet}
+
+
+def _search_unique(pattern, scoped, glob_pat, limit, order, desc):
+    """One bundle per matching note: first hit, exact count, cap notes.
+
+    Unlike every-match mode the cap is a note cap applied after the whole
+    candidate set has been counted and ordered, so ?order=count&desc=1
+    ranks by the true per-file count rather than by the first notes seen.
+    """
+    bundles = []
+    for rel, full in _iter_search_targets(scoped, glob_pat):
+        try:
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        count = 0
+        first = None
+        for line_no, line in enumerate(lines, 1):
+            for match in pattern.finditer(line):
+                if first is None:
+                    first = _search_match_item(rel, line_no, line, match)
+                count += 1
+        if not count:
+            continue
+        try:
+            mtime = os.path.getmtime(full)
+        except OSError:
+            mtime = 0.0
+        first["count"] = count
+        bundles.append((rel, mtime, count, first))
+
+    if order == "mtime":
+        primary = lambda bundle: bundle[1]
+    elif order == "count":
+        primary = lambda bundle: bundle[2]
+    elif order == "path":
+        primary = lambda bundle: bundle[0].lower()
+    else:
+        primary = None
+    if primary is not None:
+        # Stable two-pass sort keeps path A-Z as the deterministic tie-break.
+        bundles.sort(key=lambda bundle: bundle[0].lower())
+        bundles.sort(key=primary, reverse=desc)
+
+    truncated = len(bundles) > limit
+    return [bundle[3] for bundle in bundles[:limit]], truncated
+
+
+def _search_names(pattern, scoped, glob_pat, limit, order, desc):
+    """One {file} item per note whose basename matches the pattern.
+
+    Filename mode never opens a note: the candidate set comes from
+    ``_iter_search_targets`` and only ``os.path.basename(rel)`` is tested.
+    Every note matches at most once, so ``count`` ordering degenerates to
+    path ordering and the note cap is applied after ordering.
+    """
+    bundles = []
+    for rel, full in _iter_search_targets(scoped, glob_pat):
+        if not pattern.search(os.path.basename(rel)):
+            continue
+        try:
+            mtime = os.path.getmtime(full)
+        except OSError:
+            mtime = 0.0
+        bundles.append((rel, mtime))
+
+    if order == "mtime":
+        primary = lambda bundle: bundle[1]
+    elif order in ("path", "count"):
+        # All notes count once, so count ordering is path ordering.
+        primary = lambda bundle: bundle[0].lower()
+    else:
+        primary = None
+    if primary is not None:
+        # Stable two-pass sort keeps path A-Z as the deterministic tie-break.
+        bundles.sort(key=lambda bundle: bundle[0].lower())
+        bundles.sort(key=primary, reverse=desc)
+
+    truncated = len(bundles) > limit
+    return [{"file": bundle[0]} for bundle in bundles[:limit]], truncated
+
+
 @app.route("/api/search", methods=["GET"])
 @read_login_required
 def search():
@@ -2644,17 +2767,30 @@ def search():
       file=rel  scope the scan to this single file (404 if missing)
       glob=p    fnmatch filter on the relative path OR basename,
                 e.g. "notes/*.md" -- other files are not scanned
-      limit=N   total match cap (default 200, ceiling 2000)
-      perFile=N per-file match cap (default 20, ceiling 200)
+      limit=N   total match cap (default 200, ceiling 2000); in unique
+                mode it caps notes instead
+      perFile=N per-file match cap (default 20, ceiling 200); ignored
+                in unique mode
+      unique=1  one result per note (default off): each item also
+                carries count = every occurrence in that file, while
+                line/col/snippet describe the first occurrence
+      name=1    match q against each note's basename instead of its
+                content (default off). Each item is {file} only -- no
+                line/col/snippet/count; unique has no effect. limit
+                caps notes and perFileTruncated is always false.
       order=... reorder result files by "path" | "mtime" | "count"
                 (default keeps root-first walk order); desc=1 reverses.
                 Ordering regroups whole files, never splits a file's
-                matches; caps still apply during the scan.
+                matches; caps still apply during the scan. In unique
+                mode ordering runs over the full note set before limit.
 
     Response shape is unchanged for existing callers:
-      {query, matches: [{file, line, col, snippet}], truncated}
-    plus "file" echoed back when ?file= scoped. The hit inside each
-    snippet stays wrapped in <<...>> so clients can re-highlight safely.
+      {query, matches: [{file, line, col, snippet}], truncated,
+       perFileTruncated}
+    plus "count" on each item in unique mode, and "file" echoed back
+    when ?file= scoped. In name mode each item is {file} only and
+    perFileTruncated is false. The hit inside each snippet stays wrapped
+    in <<...>> so clients can re-highlight safely.
     """
     query = request.args.get("q", "")
     if not query.strip():
@@ -2692,29 +2828,35 @@ def search():
     if order and order not in ("path", "mtime", "count"):
         return err("order must be 'path', 'mtime' or 'count'", 400)
     desc = request.args.get("desc", "0") == "1"
+    unique = request.args.get("unique", "0") == "1"
+    name_mode = request.args.get("name", "0") == "1"
+
+    if name_mode:
+        matches_out, truncated = _search_names(
+            pattern, scoped, glob_pat, limit, order, desc)
+        resp = {"query": query, "matches": matches_out,
+                "truncated": truncated, "perFileTruncated": False}
+        if scoped is not None:
+            resp["file"] = rel_from(scoped)
+        return jsonify(resp)
+
+    if unique:
+        matches_out, truncated = _search_unique(
+            pattern, scoped, glob_pat, limit, order, desc)
+        resp = {"query": query, "matches": matches_out,
+                "truncated": truncated, "perFileTruncated": False}
+        if scoped is not None:
+            resp["file"] = rel_from(scoped)
+        return jsonify(resp)
 
     # Collect per-file bundles, then order + flatten, so ?order= can
     # regroup files without changing the flat match-item shape.
     bundles = []
     total = 0
     truncated = False
+    per_file_truncated = False
 
-    def _targets():
-        if scoped is not None:
-            yield rel_from(scoped), scoped
-            return
-        for dirpath, _dirs, filenames in os.walk(DATA_DIR):
-            for name in sorted(filenames):
-                if name.startswith(".") or not name.lower().endswith(".md"):
-                    continue
-                full = os.path.join(dirpath, name)
-                yield rel_from(full), full
-
-    for rel, full in _targets():
-        if glob_pat and not (
-                fnmatch.fnmatch(rel, glob_pat)
-                or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
-            continue
+    for rel, full in _iter_search_targets(scoped, glob_pat):
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.read().splitlines()
@@ -2722,36 +2864,22 @@ def search():
             continue
         matches_in_file = []
         count_in_file = 0
+        file_capped = False
         for i, line in enumerate(lines, 1):
             for m in pattern.finditer(line):
                 if total >= limit:
                     truncated = True
                     break
                 if count_in_file >= per_file_cap:
+                    file_capped = True
                     break
-                start, end = m.start(), m.end()
-                lo = max(0, start - SNIPPET_PAD)
-                hi = min(len(line), end + SNIPPET_PAD)
-                snippet = line[lo:hi]
-                # Mark the match so the client can re-highlight safely.
-                # Use offsets within the snippet so we don't corrupt HTML.
-                snippet = (
-                    snippet[: start - lo]
-                    + "<<"
-                    + snippet[start - lo : end - lo]
-                    + ">>"
-                    + snippet[end - lo :]
-                )
-                matches_in_file.append({
-                    "file": rel,
-                    "line": i,
-                    "col": start + 1,
-                    "snippet": snippet,
-                })
+                matches_in_file.append(_search_match_item(rel, i, line, m))
                 count_in_file += 1
                 total += 1
             if truncated:
                 break
+        if file_capped:
+            per_file_truncated = True
         if matches_in_file:
             try:
                 mtime = os.path.getmtime(full)
@@ -2773,7 +2901,8 @@ def search():
         bundles.sort(key=key, reverse=desc)
 
     matches_out = [m for _rel, _mtime, ms in bundles for m in ms]
-    resp = {"query": query, "matches": matches_out, "truncated": truncated}
+    resp = {"query": query, "matches": matches_out, "truncated": truncated,
+            "perFileTruncated": per_file_truncated}
     if scoped is not None:
         resp["file"] = rel_from(scoped)
     return jsonify(resp)

@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search panel controls — redesign reference</title>
+<style>
+  /* ================================================================== */
+  /* App tokens, copied verbatim from static/css/style.css.             */
+  /* ================================================================== */
+  html[data-theme="dark"] {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, .15);
+    --page-bg: #0b0d12;
+    --page-fg: #e6e6ea;
+    --page-muted: #8b8d98;
+    --page-card: #14161d;
+    --page-border: #262a35;
+    --page-shadow: 0 18px 44px rgba(0, 0, 0, .45);
+  }
+  html[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --danger: #c0392b;
+    --danger-soft: rgba(192, 57, 43, .12);
+    --page-bg: #eef1f6;
+    --page-fg: #1f2330;
+    --page-muted: #5d6470;
+    --page-card: #ffffff;
+    --page-border: #dbe0e8;
+    --page-shadow: 0 18px 36px rgba(24, 36, 66, .12);
+  }
+
+  * { box-sizing: border-box; }
+  html { font-size: 14px; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 420px at 18% -10%,
+        color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%),
+      var(--page-bg);
+    color: var(--page-fg);
+    font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------------------------- studio chrome ---------------------- */
+  .studio-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px 24px;
+    padding: 14px 22px;
+    background: color-mix(in oklab, var(--page-card) 88%, transparent);
+    border-bottom: 1px solid var(--page-border);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .studio-kicker {
+    margin-bottom: 2px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .studio-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+  }
+  .studio-sub {
+    max-width: 560px;
+    margin: 3px 0 0;
+    color: var(--page-muted);
+    font-size: 12.5px;
+  }
+  .studio-actions { display: flex; align-items: center; gap: 10px; }
+  .theme-switch {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .theme-switch button {
+    min-height: 28px;
+    padding: 0 12px;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .theme-switch button:hover { color: var(--fg); background: var(--accent-soft); }
+  .theme-switch button[aria-pressed="true"] {
+    background: var(--bg-elev);
+    color: var(--fg);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .theme-switch button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ---------------------------- stage ------------------------------ */
+  .sp-stage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 34px 30px;
+    max-width: 1420px;
+    margin: 0 auto;
+    padding: 30px 22px 46px;
+  }
+  .sp-card { display: flex; flex-direction: column; gap: 10px; }
+  .sp-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    max-width: 390px;
+    color: var(--page-muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .sp-size {
+    padding: 1px 7px;
+    border: 1px solid var(--page-border);
+    border-radius: 999px;
+    background: var(--page-card);
+    color: var(--page-fg);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .sp-state { color: var(--page-fg); font-weight: 600; }
+  .sp-caption small { display: block; flex-basis: 100%; color: var(--page-muted); }
+
+  /* ================================================================== */
+  /* The mock panel. Same class names as production; scoped to          */
+  /* .sp-panel because four panels appear on one page.                  */
+  /* ================================================================== */
+  .sp-panel {
+    --search-space-1: 4px;
+    --search-space-2: 6px;
+    --search-space-3: 8px;
+    --search-space-4: 12px;
+    --search-space-5: 16px;
+    --search-radius-sm: 4px;
+    --search-radius-md: 6px;
+    --search-pad-x: 10px;
+    --search-gap: 8px;
+    --search-mode-h: 26px;
+    --search-control-h: 32px;
+    --search-label-size: .66rem;
+    --search-hit-min-h: 32px;
+
+    width: var(--pw);
+    height: var(--ph);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--page-shadow);
+    container-type: inline-size;
+  }
+
+  .sp-panel .panel-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 12px;
+    color: var(--fg-muted);
+    font-size: .79rem;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .sp-panel .panel-title { overflow: hidden; text-overflow: ellipsis; }
+  .sp-panel .collapse-btn {
+    padding: 2px 4px;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    color: var(--fg-muted);
+    font-size: 1.07rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .sp-panel .collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+  /* ---------------------------- controls --------------------------- */
+  .sp-panel .search-panel-controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-gap);
+    padding: var(--search-space-3) var(--search-pad-x) var(--search-space-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .sp-panel .search-panel-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-2);
+    flex: 0 0 auto;
+  }
+  .sp-panel .search-panel-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: var(--search-control-h);
+    padding: 0 var(--search-space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    color: var(--fg);
+    font: inherit;
+    font-size: .88rem;
+  }
+  .sp-panel .search-panel-input::placeholder { color: var(--fg-muted); }
+  .sp-panel .search-panel-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .sp-panel .search-panel-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .sp-panel .search-panel-case {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: var(--search-control-h);
+    cursor: pointer;
+    user-select: none;
+  }
+  .sp-panel .search-panel-case input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sp-panel .search-panel-case span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font-size: .74rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .sp-panel .search-panel-case:hover span {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+  .sp-panel .search-panel-case input:checked + span {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+  .sp-panel .search-panel-case input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .sp-panel .search-panel-filters {
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-gap);
+    min-width: 0;
+  }
+  .sp-panel .search-panel-filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-space-1);
+    min-width: 0;
+  }
+  .sp-panel .search-panel-filter.is-hidden { display: none; }
+  .sp-panel .search-panel-filter-label {
+    color: var(--fg-muted);
+    font-size: var(--search-label-size);
+    font-weight: 600;
+    letter-spacing: .07em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .sp-panel .search-panel-mode {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+  }
+  .sp-panel .search-panel-mode.is-hidden { display: none; }
+  .sp-panel .search-panel-mode-opt {
+    position: relative;
+    display: flex;
+    min-width: 0;
+  }
+  .sp-panel .search-panel-mode-opt input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sp-panel .search-panel-mode-opt span {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--search-mode-h);
+    padding: 0 4px;
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font-size: .78rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background .12s ease, color .12s ease;
+  }
+  .sp-panel .search-panel-mode-opt span:hover {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  .sp-panel .search-panel-mode-opt input:checked + span {
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .sp-panel .search-panel-mode-opt input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .sp-panel .search-panel-select {
+    width: 100%;
+    max-width: none;
+    height: var(--search-control-h);
+    min-height: 0;
+    padding: 0 24px 0 var(--search-space-3);
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    color: var(--fg);
+    font: inherit;
+    font-size: .78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .sp-panel .search-panel-select:hover { border-color: var(--accent); }
+  .sp-panel .search-panel-select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .sp-panel .search-panel-select option:disabled { color: var(--fg-muted); }
+
+  /* ---------------------------- summary / note --------------------- */
+  .sp-panel .search-panel-summary {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-3);
+    min-height: 26px;
+    padding: var(--search-space-1) var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .78rem;
+  }
+  .sp-panel .search-panel-summary-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sp-panel .search-panel-summary.error { flex-wrap: wrap; color: var(--danger); }
+  .sp-panel .search-panel-summary.error .search-panel-summary-text {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+  }
+  .sp-panel .search-panel-note {
+    flex: 0 0 auto;
+    padding: 0 var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+  }
+  .sp-panel .search-panel-note[hidden] { display: none; }
+
+  /* ---------------------------- results ---------------------------- */
+  .sp-panel .search-panel-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding: 0 6px 8px;
+  }
+  .sp-panel .search-panel-hit {
+    display: block;
+    width: 100%;
+    min-height: var(--search-hit-min-h);
+    padding: 5px 8px;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sp-panel .search-panel-hit:hover,
+  .sp-panel .search-panel-hit.is-active { background: var(--accent-soft); }
+  .sp-panel .search-panel-hit:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .sp-panel .search-panel-hit-file {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sp-panel .search-panel-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sp-panel .sp-file { font-weight: 600; font-size: .86rem; }
+  .sp-panel .sp-dir { color: var(--fg-muted); font-weight: 400; }
+  .sp-panel .sp-meta {
+    flex: 0 0 auto;
+    color: var(--fg-muted);
+    font-size: .74rem;
+    white-space: nowrap;
+  }
+  .sp-panel .sp-count {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--fg);
+    font-size: .72rem;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .sp-panel .search-panel-hit-snippet {
+    display: block;
+    margin-top: 2px;
+    color: var(--fg-muted);
+    font-size: .8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .sp-panel .search-panel-hit-snippet mark {
+    padding: 0 1px;
+    background: var(--accent-soft);
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  /* Narrow panel: the only structural change is the track columns. */
+  @container (max-width: 199px) {
+    .sp-panel .search-panel-mode { grid-template-columns: 1fr; }
+    .sp-panel .search-panel-select {
+      font-size: .74rem;
+      padding-right: 20px;
+    }
+  }
+
+  /* ---------------------------- phone ------------------------------ */
+  /* Production achieves this through the phone media query; the mockup  */
+  /* uses a class so a 390px drawer can sit on a desktop page.           */
+  .sp-phone {
+    --search-mode-h: 44px;
+    --search-control-h: 44px;
+    --search-hit-min-h: 52px;
+    --search-pad-x: 12px;
+    --search-gap: 8px;
+    --search-label-size: 12px;
+    border-radius: 20px;
+  }
+  .sp-phone .panel-header {
+    min-height: 52px;
+    padding: 12px 16px;
+    font-size: 12px;
+  }
+  .sp-phone .collapse-btn { min-width: 44px; min-height: 44px; }
+  .sp-phone .search-panel-controls { padding: 8px 12px; }
+  .sp-phone .search-panel-input { height: 44px; font-size: 16px; border-radius: 8px; }
+  .sp-phone .search-panel-case { width: 44px; height: 44px; }
+  .sp-phone .search-panel-case span {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    font-size: 15px;
+  }
+  .sp-phone .search-panel-filter-label { font-size: 12px; letter-spacing: .06em; }
+  .sp-phone .search-panel-mode-opt span { font-size: 15px; }
+  .sp-phone .search-panel-select {
+    height: 44px;
+    padding-right: 28px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+  .sp-phone .search-panel-summary {
+    min-height: 30px;
+    padding: 4px 12px 8px;
+    font-size: 14px;
+  }
+  .sp-phone .search-panel-note { padding: 0 12px 8px; font-size: 13px; }
+  .sp-phone .search-panel-hit { min-height: 52px; padding: 8px; }
+  .sp-phone .search-panel-hit .sp-file { font-size: 15px; }
+  .sp-phone .search-panel-hit-snippet { font-size: 14px; }
+  .sp-phone .sp-count { font-size: 12px; }
+
+  /* ---------------------------- spec strip ------------------------- */
+  .sp-specs {
+    max-width: 1180px;
+    margin: 0 auto 54px;
+    padding: 0 22px;
+  }
+  .sp-specs-inner {
+    padding: 16px 18px;
+    background: var(--page-card);
+    border: 1px solid var(--page-border);
+    border-radius: 12px;
+  }
+  .sp-specs h2 {
+    margin: 0 0 10px;
+    color: var(--page-fg);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: .02em;
+  }
+  .sp-specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px 24px;
+  }
+  .sp-specs-item { color: var(--page-muted); font-size: 12px; line-height: 1.55; }
+  .sp-specs-item b { color: var(--page-fg); font-weight: 600; }
+  .sp-specs-k {
+    display: inline-block;
+    min-width: 78px;
+    color: var(--page-fg);
+    font-weight: 600;
+  }
+  .sp-footnote {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 22px 40px;
+    color: var(--page-muted);
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .sp-footnote code {
+    padding: 0 4px;
+    background: color-mix(in oklab, var(--page-fg) 8%, transparent);
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  @media (max-width: 720px) {
+    .sp-stage { gap: 26px 18px; padding: 20px 12px 36px; }
+    .studio-bar { padding: 12px 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sp-panel .search-panel-case span,
+    .sp-panel .search-panel-mode-opt span { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="studio-bar">
+  <div>
+    <div class="studio-kicker">Notebook server · Search side panel</div>
+    <h1 class="studio-title">Search controls — labelled filter stack</h1>
+    <p class="studio-sub">
+      One full-width row per decision. Nothing wraps; at 140 px the segmented
+      tracks stack their options. Widths are real; controls are live.
+    </p>
+  </div>
+  <div class="studio-actions">
+    <div class="theme-switch" role="group" aria-label="Preview theme">
+      <button type="button" data-set-theme="dark" aria-pressed="true">Dark</button>
+      <button type="button" data-set-theme="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+</header>
+
+<main class="sp-stage">
+
+  <!-- ============================ 240 default ============================ -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">Content · One per note</span>
+      <small>Default panel. Three stable filter rows, then the summary and
+        results. Select a different Search in option to see the layout react.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:240px; --ph:566px" data-panel="default">
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-filters" role="group" aria-label="Search filters">
+          <div class="search-panel-filter">
+            <span class="search-panel-filter-label">Search in</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-default" value="content" data-target checked>
+                <span>Content</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-default" value="name" data-target>
+                <span>File name</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter" data-group-row>
+            <span class="search-panel-filter-label">Grouping</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-default" value="all">
+                <span>All matches</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-default" value="unique" checked>
+                <span>One per note</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter search-panel-filter--sort">
+            <label class="search-panel-filter-label" for="sort-default">Sort</label>
+            <select id="sort-default" class="search-panel-select" title="Path (A–Z)">
+              <option value="path" selected>Path (A–Z)</option>
+              <option value="mtime">Recently modified</option>
+              <option value="count">Most matches</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite"
+           aria-atomic="true">
+        <span class="search-panel-summary-text">6 notes · 14 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="planning/roadmap.md">
+              <span class="sp-file">roadmap.md</span><span class="sp-dir"> (planning)</span>
+            </span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">We still need to <mark>fix</mark> the toolchain.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/kernel-style.md">
+              <span class="sp-file">kernel-style.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-count">1 match</span>
+          </span>
+          <span class="search-panel-hit-snippet">Use the <mark>fix</mark> pattern from the kernel.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/power/budget.md">
+              <span class="sp-file">budget.md</span><span class="sp-dir"> (projects/power)</span>
+            </span>
+            <span class="sp-count">5 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> cut idle current by 1.2 mA.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ============================ 240 file name ========================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">File name</span>
+      <small>Grouping row collapses; count sort is disabled and demoted to Path.
+        Rows show the name and directory only.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:240px; --ph:470px" data-panel="name">
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="parser">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-filters" role="group" aria-label="Search filters">
+          <div class="search-panel-filter">
+            <span class="search-panel-filter-label">Search in</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-name" value="content" data-target>
+                <span>Content</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-name" value="name" data-target checked>
+                <span>File name</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter is-hidden" data-group-row>
+            <span class="search-panel-filter-label">Grouping</span>
+            <div class="search-panel-mode is-hidden" role="radiogroup" aria-label="Result grouping" data-group-mode>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-name" value="all">
+                <span>All matches</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-name" value="unique" checked>
+                <span>One per note</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter search-panel-filter--sort">
+            <label class="search-panel-filter-label" for="sort-name">Sort</label>
+            <select id="sort-name" class="search-panel-select" title="Path (A–Z)">
+              <option value="path" selected>Path (A–Z)</option>
+              <option value="mtime">Recently modified</option>
+              <option value="count" disabled>Most matches</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite"
+           aria-atomic="true">
+        <span class="search-panel-summary-text">9 notes</span>
+      </div>
+      <div class="search-panel-note" hidden>Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-test.md">
+              <span class="sp-file">parser-test.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/parser-design.md">
+              <span class="sp-file">parser-design.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="archive/parser-v1.md">
+              <span class="sp-file">parser-v1.md</span><span class="sp-dir"> (archive)</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ============================ 140 narrow ============================ -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">140 px</span>
+      <span class="sp-state">Content · All matches</span>
+      <small>Resize floor. Only the tracks change: two columns become one.
+        Captions stay put; no horizontal scroll.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:140px; --ph:560px" data-panel="narrow">
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-filters" role="group" aria-label="Search filters">
+          <div class="search-panel-filter">
+            <span class="search-panel-filter-label">Search in</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-narrow" value="content" data-target checked>
+                <span>Content</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-narrow" value="name" data-target>
+                <span>File name</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter" data-group-row>
+            <span class="search-panel-filter-label">Grouping</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-narrow" value="all" checked>
+                <span>All matches</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-narrow" value="unique">
+                <span>One per note</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter search-panel-filter--sort">
+            <label class="search-panel-filter-label" for="sort-narrow">Sort</label>
+            <select id="sort-narrow" class="search-panel-select" title="Path (A–Z)">
+              <option value="path" selected>Path (A–Z)</option>
+              <option value="mtime">Recently modified</option>
+              <option value="count">Most matches</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite"
+           aria-atomic="true">
+        <span class="search-panel-summary-text">14 matches in 6 notes</span>
+      </div>
+      <div class="search-panel-note" hidden>Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (firmware)</span>
+            </span>
+            <span class="sp-meta">line 12</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="planning/roadmap.md">
+              <span class="sp-file">roadmap.md</span><span class="sp-dir"> (planning)</span>
+            </span>
+            <span class="sp-meta">line 4</span>
+          </span>
+          <span class="search-panel-hit-snippet">We still need to <mark>fix</mark> the toolchain.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/kernel-style.md">
+              <span class="sp-file">kernel-style.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-meta">line 31</span>
+          </span>
+          <span class="search-panel-hit-snippet">Use the <mark>fix</mark> pattern.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ============================ 390 phone ============================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">390 px</span>
+      <span class="sp-state">Phone drawer · Content</span>
+      <small>Full-width drawer. 44 px targets, 16 px input, 52 px rows.
+        <code>Aa</code> is shown in its on state.</small>
+    </figcaption>
+    <div class="sp-panel sp-phone" style="--pw:390px; --ph:760px" data-panel="phone">
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Close search">×</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive" checked>
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-filters" role="group" aria-label="Search filters">
+          <div class="search-panel-filter">
+            <span class="search-panel-filter-label">Search in</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-phone" value="content" data-target checked>
+                <span>Content</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="tgt-phone" value="name" data-target>
+                <span>File name</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter" data-group-row>
+            <span class="search-panel-filter-label">Grouping</span>
+            <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-phone" value="all">
+                <span>All matches</span>
+              </label>
+              <label class="search-panel-mode-opt">
+                <input type="radio" name="grp-phone" value="unique" checked>
+                <span>One per note</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="search-panel-filter search-panel-filter--sort">
+            <label class="search-panel-filter-label" for="sort-phone">Sort</label>
+            <select id="sort-phone" class="search-panel-select" title="Recently modified">
+              <option value="path">Path (A–Z)</option>
+              <option value="mtime" selected>Recently modified</option>
+              <option value="count">Most matches</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite"
+           aria-atomic="true">
+        <span class="search-panel-summary-text">6 notes · 14 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="planning/roadmap.md">
+              <span class="sp-file">roadmap.md</span><span class="sp-dir"> (planning)</span>
+            </span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">We still need to <mark>fix</mark> the toolchain.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/power/budget.md">
+              <span class="sp-file">budget.md</span><span class="sp-dir"> (projects/power)</span>
+            </span>
+            <span class="sp-count">5 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> cut idle current by 1.2 mA.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+</main>
+
+<section class="sp-specs" aria-label="Specifications at a glance">
+  <div class="sp-specs-inner">
+    <h2>Specifications at a glance</h2>
+    <div class="sp-specs-grid">
+      <div class="sp-specs-item">
+        <b>240 px default</b><br>
+        <span class="sp-specs-k">Input</span>32 px<br>
+        <span class="sp-specs-k">Segment</span>26 px (track 32)<br>
+        <span class="sp-specs-k">Select</span>32 px<br>
+        <span class="sp-specs-k">Caption</span>9.2 px uppercase
+      </div>
+      <div class="sp-specs-item">
+        <b>140 px floor</b><br>
+        <span class="sp-specs-k">Track</span>1 column, about 60 px tall<br>
+        <span class="sp-specs-k">Input</span>32 px, flexes down<br>
+        <span class="sp-specs-k">Sort</span>full width, long labels ellipsize<br>
+        <span class="sp-specs-k">Scroll</span>none horizontally
+      </div>
+      <div class="sp-specs-item">
+        <b>390 px phone</b><br>
+        <span class="sp-specs-k">Targets</span>44 px minimum<br>
+        <span class="sp-specs-k">Input</span>44 px, 16 px text<br>
+        <span class="sp-specs-k">Segment</span>44 px (track 50)<br>
+        <span class="sp-specs-k">Row</span>52 px minimum
+      </div>
+      <div class="sp-specs-item">
+        <b>States</b><br>
+        Selected segment: fill + 600 weight + accent rail.<br>
+        <code>Aa</code> on: soft accent fill + accent border.<br>
+        Focus: 2 px accent ring, 2 px offset.<br>
+        No control is hover-only.
+      </div>
+    </div>
+  </div>
+</section>
+
+<p class="sp-footnote">
+  The four frames are reference renders at their real widths. The controls are
+  live: Search in hides or restores the Results row and disables the count sort;
+  Sort updates its hover title. Row content and the summary are static
+  illustrations of the result states described in
+  <code>docs/design/search-panel-controls.md</code> §6. Production uses
+  <code>#search-view</code> scoping and the phone media query; this mockup uses
+  <code>.sp-panel</code> and a <code>.sp-phone</code> class so all four widths
+  can appear on one desktop page.
+</p>
+
+<script>
+  (function () {
+    "use strict";
+
+    var root = document.documentElement;
+    var themeButtons = Array.prototype.slice.call(
+      document.querySelectorAll("[data-set-theme]"));
+
+    function setTheme(name) {
+      root.setAttribute("data-theme", name);
+      themeButtons.forEach(function (btn) {
+        btn.setAttribute("aria-pressed",
+          String(btn.getAttribute("data-set-theme") === name));
+      });
+    }
+    themeButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setTheme(btn.getAttribute("data-set-theme"));
+      });
+    });
+    setTheme("dark");
+
+    /* Each panel is its own form group (radio names are unique), so the
+     * layout reactions work independently in all four frames. */
+    Array.prototype.slice.call(document.querySelectorAll(".sp-panel"))
+      .forEach(function (panel) {
+        var targets = Array.prototype.slice.call(
+          panel.querySelectorAll("input[data-target]"));
+        var groupRow = panel.querySelector("[data-group-row]");
+        var groupMode = panel.querySelector("[data-group-mode]");
+        var sort = panel.querySelector("select");
+        var countOption = sort ? sort.querySelector('option[value="count"]') : null;
+
+        function sync() {
+          var checked = targets.filter(function (r) { return r.checked; })[0];
+          var isName = !!checked && checked.value === "name";
+
+          panel.classList.toggle("is-name", isName);
+          if (groupRow) groupRow.classList.toggle("is-hidden", isName);
+          if (groupMode) groupMode.classList.toggle("is-hidden", isName);
+          if (countOption) countOption.disabled = isName;
+          if (isName && sort && sort.value === "count") sort.value = "path";
+          if (sort) {
+            sort.title = sort.options[sort.selectedIndex].text;
+          }
+        }
+
+        targets.forEach(function (radio) {
+          radio.addEventListener("change", sync);
+        });
+        if (sort) sort.addEventListener("change", sync);
+        sync();
+      });
+  })();
+</script>
+
+</body>
+</html>

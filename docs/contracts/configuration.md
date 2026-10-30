@@ -145,7 +145,9 @@ into the page shell for first paint.
 
 | Key | Effect |
 | --- | --- |
-| `searchCaseSensitive` | Makes `/api/search` matching case-sensitive (`app.js:35`) |
+| `searchCaseSensitive` | Makes `/api/search` matching case-sensitive (`app.js:50`); shared by the top bar and the side-panel Search view |
+| `searchUnique` | Side-panel Search shows one row per note (`unique=1`). Default `true`; a non-boolean hand-edited value falls back to `true` |
+| `searchSort` | Side-panel Search order: `path`, `mtime`, or `count`. Default `path`; any other value falls back to `path` |
 
 ### First-paint subset
 

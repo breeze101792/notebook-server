@@ -1582,6 +1582,7 @@ window.fetch = async (url, opts) => {
   const p = u.pathname;
   const method = (opts && opts.method) || "GET";
   fetchLog.push(method + " " + p +
+    (p === "/api/search" ? u.search : "") +
     (p === "/api/config" && method === "POST" ? " " + JSON.stringify(JSON.parse(opts.body || "{}")) : ""));
   let body = {};
   if (p === "/api/config") {
@@ -1621,14 +1622,135 @@ window.fetch = async (url, opts) => {
     }
   } else if (p === "/api/search") {
     const q = u.searchParams.get("q") || "";
-    const matches = [];
-    for (const [file, content] of Object.entries(FILES)) {
-      content.split("\n").forEach((line, i) => {
-        const idx = line.toLowerCase().indexOf(q.toLowerCase());
-        if (idx >= 0 && q) matches.push({ file, line: i + 1, col: idx + 1, snippet: "<<" + q + ">>" });
+    const caseSensitive = u.searchParams.get("case") === "1";
+    const unique = u.searchParams.get("unique") === "1";
+    const order = (u.searchParams.get("order") || "").toLowerCase();
+    const desc = u.searchParams.get("desc") === "1";
+    const limitArg = parseInt(u.searchParams.get("limit") || "", 10);
+    const perFileArg = parseInt(u.searchParams.get("perFile") || "", 10);
+    const limit = Number.isFinite(limitArg) && limitArg > 0 ? limitArg : 200;
+    const perFile = Number.isFinite(perFileArg) && perFileArg > 0
+      ? perFileArg : 20;
+    const bundles = [];
+    let truncated = false;
+    let perFileTruncated = false;
+    let total = 0;
+    const nameOnly = u.searchParams.get("name") === "1";
+
+    // File-name mode: one item per note whose basename contains the query,
+    // no line/col/snippet/count. count order degenerates to path order.
+    if (nameOnly) {
+      const needle = caseSensitive ? q : q.toLowerCase();
+      const notes = [];
+      if (q) {
+        for (const file of Object.keys(FILES)) {
+          const base = file.slice(file.lastIndexOf("/") + 1);
+          const hay = caseSensitive ? base : base.toLowerCase();
+          if (hay.indexOf(needle) >= 0) notes.push({ file });
+        }
+      }
+      notes.sort((a, b) => a.file.toLowerCase()
+        .localeCompare(b.file.toLowerCase()));
+      if (order === "mtime") {
+        notes.sort((a, b) => (MTIMES[a.file] || 0) - (MTIMES[b.file] || 0));
+      }
+      if (desc) notes.reverse();
+      const noteTruncated = notes.length > limit;
+      body = {
+        query: q,
+        matches: notes.slice(0, limit),
+        truncated: noteTruncated,
+        perFileTruncated: false,
+      };
+      return { ok: true, status: 200,
+        text: async () => JSON.stringify(body),
+        json: async () => body };
+    }
+
+    if (q) {
+      const needle = caseSensitive ? q : q.toLowerCase();
+      for (const [file, content] of Object.entries(FILES)) {
+        const lines = content.split("\n");
+        let count = 0;
+        let first = null;
+        const fileMatches = [];
+        let capped = false;
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const hay = caseSensitive ? line : line.toLowerCase();
+          let idx = hay.indexOf(needle);
+          while (idx >= 0) {
+            const hit = {
+              file,
+              line: i + 1,
+              col: idx + 1,
+              snippet: "<<" + q + ">>",
+            };
+            if (unique) {
+              if (!first) first = hit;
+              count += 1;
+            } else {
+              if (total >= limit) { truncated = true; break; }
+              if (count >= perFile) { capped = true; break; }
+              fileMatches.push(hit);
+              count += 1;
+              total += 1;
+            }
+            idx = hay.indexOf(needle, idx + Math.max(1, needle.length));
+          }
+          if (truncated || capped) break;
+        }
+        if (unique) {
+          if (count) {
+            first.count = count;
+            bundles.push({ file, mtime: MTIMES[file] || 0, count, item: first });
+          }
+        } else {
+          if (capped) perFileTruncated = true;
+          if (fileMatches.length) {
+            bundles.push({
+              file,
+              mtime: MTIMES[file] || 0,
+              count: fileMatches.length,
+              items: fileMatches,
+            });
+          }
+        }
+        if (truncated) break;
+      }
+    }
+
+    if (order) {
+      bundles.sort((a, b) => a.file.toLowerCase()
+        .localeCompare(b.file.toLowerCase()));
+      const primary = order === "mtime" ? (b) => b.mtime
+        : order === "count" ? (b) => b.count
+        : (b) => b.file.toLowerCase();
+      bundles.sort((a, b) => {
+        const ka = primary(a);
+        const kb = primary(b);
+        if (ka < kb) return desc ? 1 : -1;
+        if (ka > kb) return desc ? -1 : 1;
+        return 0;
       });
     }
-    body = { query: q, matches, truncated: false };
+
+    if (unique) {
+      const noteTruncated = bundles.length > limit;
+      body = {
+        query: q,
+        matches: bundles.slice(0, limit).map((b) => b.item),
+        truncated: noteTruncated,
+        perFileTruncated: false,
+      };
+    } else {
+      body = {
+        query: q,
+        matches: bundles.reduce((all, b) => all.concat(b.items), []),
+        truncated,
+        perFileTruncated,
+      };
+    }
   } else if (p === "/api/graph") {
     body = buildGraphStub();
   } else if (p === "/api/info") {
@@ -1997,6 +2119,942 @@ function check(label, cond, extra) {
   window.document.dispatchEvent(new window.Event("DOMContentLoaded", { bubbles: true }));
   await tick(120);
   check("no init errors", errors.length === 0, errors.join("; "));
+
+  console.log("== side-panel search options ==");
+  // Covers the D rows of docs/product/search-options.md §7 (AC1-AC7,
+  // AC11-AC26, AC29-AC34). The panel is the Search view in #search-view;
+  // its controls are rebuilt by mountSearch(activity.js) on first activation.
+  {
+    const searchView = () => $("search-view");
+    const spInputEl = () => searchView().querySelector(".search-panel-input");
+    const spCaseCb = () => searchView().querySelector(".search-panel-case input");
+    const spUniqueRadio = () => searchView().querySelector(
+      '.search-panel-mode input[value="unique"]');
+    const spAllRadio = () => searchView().querySelector(
+      '.search-panel-mode input[value="all"]');
+    const spSort = () => $("search-panel-sort");
+    const spSummary = () => searchView().querySelector(".search-panel-summary");
+    const spList = () => searchView().querySelector(".search-panel-list");
+    const spNote = () => searchView().querySelector(".search-panel-note");
+    const summaryText = () => spSummary().textContent.trim();
+    const spRows = () => Array.from(
+      searchView().querySelectorAll(".search-panel-hit"));
+    const rowFile = (row) => {
+      const p = row.querySelector(".search-panel-path");
+      return (p && p.title) || "";
+    };
+    const rowByFile = (file) => spRows().find(r => rowFile(r) === file);
+    const searchRequests = () =>
+      fetchLog.filter(l => l.startsWith("GET /api/search"));
+    const lastSearch = () => {
+      const list = searchRequests();
+      return list[list.length - 1] || "";
+    };
+    const configPosts = () =>
+      fetchLog.filter(l => l.startsWith("POST /api/config"));
+    const lastConfig = () => {
+      const list = configPosts();
+      return list[list.length - 1] || "";
+    };
+    const fire = (el, type, init) =>
+      el.dispatchEvent(new window.Event(type, init || { bubbles: true }));
+    const key = (el, k) => el.dispatchEvent(new window.KeyboardEvent(
+      "keydown", { key: k, bubbles: true, cancelable: true }));
+    const setUnique = (on) => {
+      const r = on ? spUniqueRadio() : spAllRadio();
+      if (!r.checked) { r.checked = true; fire(r, "change"); }
+    };
+    const setSort = (value) => {
+      const s = spSort();
+      if (s.value !== value) { s.value = value; fire(s, "change"); }
+    };
+    const setCase = (on) => {
+      const cb = spCaseCb();
+      if (cb.checked !== on) { cb.checked = on; fire(cb, "change"); }
+    };
+    const resetDefaults = () => { setUnique(true); setSort("path"); setCase(false); };
+    const setQuery = (q, enter) => {
+      const inp = spInputEl();
+      inp.value = q;
+      fire(inp, "input");
+      if (enter) key(inp, "Enter");
+    };
+    const idleQuery = () => {
+      const inp = spInputEl();
+      inp.value = "";
+      fire(inp, "input");
+    };
+    const fakeResponse = (body, status) => ({
+      ok: !status || status < 400,
+      status: status || 200,
+      text: async () => JSON.stringify(body),
+      json: async () => body,
+    });
+    // Replace /api/search for the duration of fn() so a test can hand the
+    // panel a response the FILES fixture cannot produce (truncation, a
+    // malformed count, a vanished path). All other routes stay real.
+    const withSearchResponse = async (body, fn) => {
+      const real = window.fetch;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search") return fakeResponse(body);
+        return real(url, opts);
+      };
+      try { await fn(); } finally { window.fetch = real; }
+    };
+
+    // AC1: fresh config -> defaults, no request, input focused.
+    const searchBeforeMount = searchRequests().length;
+    const searchBtn = window.document.querySelector(
+      '#activity-bar .activity-btn[data-view="search"]');
+    fire(searchBtn, "click");
+    await tick(30);
+    check("search panel AC1: Aa unchecked", spCaseCb().checked === false);
+    check("search panel AC1: One per note checked",
+      spUniqueRadio().checked === true && spAllRadio().checked === false);
+    check("search panel AC1: Sort defaults to Path (A-Z)",
+      spSort().value === "path", "value=" + spSort().value);
+    check("search panel AC1: opening the panel sends no /api/search",
+      searchRequests().length === searchBeforeMount,
+      "delta=" + (searchRequests().length - searchBeforeMount));
+    check("search panel AC1: the query input is focused",
+      window.document.activeElement === spInputEl());
+
+    // AC3: a late config load syncs the controls; a user change made in the
+    // same window is not reverted by that load.
+    window.NB.evt.emit("config:changed",
+      { searchUnique: false, searchSort: "count", searchCaseSensitive: true },
+      { loaded: true });
+    await tick(5);
+    check("search panel AC3: loaded config sets One-per-note off",
+      spAllRadio().checked === true && spUniqueRadio().checked === false);
+    check("search panel AC3: loaded config sets Sort=Most matches",
+      spSort().value === "count", "value=" + spSort().value);
+    check("search panel AC3: loaded config sets Aa on",
+      spCaseCb().checked === true);
+    setSort("mtime");
+    window.NB.evt.emit("config:changed",
+      { searchUnique: true, searchSort: "path", searchCaseSensitive: false },
+      { loaded: true });
+    await tick(5);
+    check("search panel AC3: a user change is not reverted by the late load",
+      spSort().value === "mtime", "value=" + spSort().value);
+    check("search panel AC3: untouched controls still take the late load",
+      spUniqueRadio().checked === true && spCaseCb().checked === false);
+    resetDefaults();
+    await tick(320);
+
+    // AC2: option changes persist through the debounced config POST.
+    const cfgBeforeOpts = configPosts().length;
+    setUnique(false);
+    setSort("count");
+    setCase(true);
+    await tick(330);
+    const optPosts = configPosts().slice(cfgBeforeOpts);
+    check("search panel AC2: option changes share one config POST",
+      optPosts.length === 1, "posts=" + optPosts.length);
+    check("search panel AC2: POST body carries searchUnique=false",
+      /"searchUnique":false/.test(lastConfig()), lastConfig());
+    check("search panel AC2: POST body carries searchSort=count",
+      /"searchSort":"count"/.test(lastConfig()), lastConfig());
+    check("search panel AC2: POST body carries searchCaseSensitive=true",
+      /"searchCaseSensitive":true/.test(lastConfig()), lastConfig());
+    resetDefaults();
+    await tick(330);
+
+    // Controlled fixtures: two notes with 3 and 1 hits ("hit"), plus a solo.
+    FILES["zz-a.md"] = "hit hit\nhit\n";
+    FILES["zz-b.md"] = "hit\n";
+    FILES["zz-solo.md"] = "solo\n";
+    MTIMES["zz-a.md"] = 10;
+    MTIMES["zz-b.md"] = 30;
+    MTIMES["zz-solo.md"] = 20;
+
+    // AC4/AC6/AC19/AC22/AC23: one row per note, exact count, first snippet.
+    setQuery("hit", true);
+    await tick(20);
+    check("search panel AC4: unique mode renders exactly 2 rows",
+      spRows().length === 2, "rows=" + spRows().length);
+    check("search panel AC4: summary is '2 notes · 4 matches'",
+      summaryText() === "2 notes · 4 matches", summaryText());
+    const rowA = rowByFile("zz-a.md");
+    const rowB = rowByFile("zz-b.md");
+    check("search panel AC4: the 3-hit note says '3 matches'",
+      !!rowA && rowA.querySelector(".sp-count").textContent === "3 matches");
+    check("search panel AC4: the 1-hit note says '1 match'",
+      !!rowB && rowB.querySelector(".sp-count").textContent === "1 match");
+    check("search panel AC6: two hits on one line count toward the row",
+      !!rowA && rowA.querySelector(".sp-count").textContent === "3 matches");
+    check("search panel AC6: the row snippet marks the first hit",
+      !!rowA && rowA.querySelectorAll("mark").length === 1 &&
+      rowA.querySelector("mark").textContent === "hit");
+    check("search panel AC22: one row even when the count exceeds perFile",
+      !!rowA && rowA.querySelector(".sp-count").textContent === "3 matches");
+    check("search panel AC23: distinct paths, none repeated",
+      new Set(spRows().map(rowFile)).size === 2);
+    check("search panel AC4: unique rows carry no line label",
+      spRows().every(r => !r.querySelector(".sp-meta")));
+
+    // AC19/AC21: single note, single match; click opens and marks the hit.
+    setQuery("solo", true);
+    await tick(20);
+    check("search panel AC19: '1 note · 1 match'",
+      summaryText() === "1 note · 1 match", summaryText());
+    check("search panel AC19: row reads '1 match'",
+      spRows().length === 1 &&
+      spRows()[0].querySelector(".sp-count").textContent === "1 match");
+    spRows()[0].click();
+    await tick(50);
+    check("search panel AC21: clicking the row opens the note",
+      window.NB.tabs.isOpen("zz-solo.md") &&
+      window.NB.viewer.getPath() === "zz-solo.md");
+    check("search panel AC21: the click marks the first rendered hit",
+      !!window.document.querySelector("#viewer-content mark.search-highlight"));
+    window.NB.tabs.close("zz-solo.md", { force: true });
+    await tick(20);
+
+    // AC5: every-match mode keeps the flat list and line labels; the toggle
+    // persists searchUnique:false.
+    setUnique(false);
+    await tick(20);
+    setQuery("hit", true);
+    await tick(20);
+    check("search panel AC5: every-match renders all 4 occurrences",
+      spRows().length === 4, "rows=" + spRows().length);
+    check("search panel AC5: every-match summary is '4 matches in 2 notes'",
+      summaryText() === "4 matches in 2 notes", summaryText());
+    check("search panel AC5: every-match rows carry line labels",
+      spRows().every(r => {
+        const m = r.querySelector(".sp-meta");
+        return !!m && /^line \d+$/.test(m.textContent);
+      }));
+    await tick(330);
+    check("search panel AC5: changing the mode persists searchUnique:false",
+      /"searchUnique":false/.test(lastConfig()), lastConfig());
+    setUnique(true);
+    await tick(20);
+
+    // AC7: each sort sends its server params and reorders the rows.
+    const sortCases = [
+      ["path", "order=path", false, ["zz-a.md", "zz-b.md"]],
+      ["mtime", "order=mtime&desc=1", true, ["zz-b.md", "zz-a.md"]],
+      ["count", "order=count&desc=1", true, ["zz-a.md", "zz-b.md"]],
+    ];
+    for (const [value, param, hasDesc, files] of sortCases) {
+      setSort(value);
+      await tick(20);
+      const url = lastSearch();
+      check("search panel AC7: sort " + value + " sends " + param,
+        url.indexOf(param) >= 0, url);
+      check("search panel AC7: sort " + value +
+        (hasDesc ? " sends desc=1" : " omits desc"),
+        url.indexOf("desc=1") >= 0 === hasDesc, url);
+      check("search panel AC7: sort " + value + " renders the matching order",
+        spRows().map(rowFile).join(",") === files.join(","),
+        spRows().map(rowFile).join(","));
+    }
+    setSort("path");
+    await tick(20);
+
+    // AC18: truncated responses say how much was left out, without a false
+    // total; every-match mode also discloses the per-file cap.
+    await withSearchResponse({
+      query: "hit",
+      matches: [{ file: "zz-a.md", line: 1, col: 1, snippet: "<<hit>>", count: 3 }],
+      truncated: true,
+      perFileTruncated: false,
+    }, async () => {
+      setQuery("hit", true);
+      await tick(20);
+      check("search panel AC18: unique truncation says 'more results exist'",
+        summaryText() === "1 note shown — more results exist", summaryText());
+    });
+    await withSearchResponse({
+      query: "hit",
+      matches: [
+        { file: "zz-a.md", line: 1, col: 1, snippet: "<<hit>>" },
+        { file: "zz-b.md", line: 1, col: 1, snippet: "<<hit>>" },
+      ],
+      truncated: false,
+      perFileTruncated: true,
+    }, async () => {
+      setUnique(false);
+      await tick(20);
+      check("search panel AC11: per-file cap is disclosed",
+        summaryText() === "2 matches in 2 notes · some notes have more matches",
+        summaryText());
+    });
+    await withSearchResponse({
+      query: "hit",
+      matches: [
+        { file: "zz-a.md", line: 1, col: 1, snippet: "<<hit>>" },
+        { file: "zz-b.md", line: 1, col: 1, snippet: "<<hit>>" },
+      ],
+      truncated: true,
+      perFileTruncated: true,
+    }, async () => {
+      setQuery("hit", true);
+      await tick(20);
+      check("search panel AC18: every-match truncation + cap disclosure",
+        summaryText() ===
+          "2 matches shown — more results exist · some notes have more matches",
+        summaryText());
+    });
+    setUnique(true);
+    await tick(20);
+
+    // AC20: a malformed unique row without count shows no invented number.
+    await withSearchResponse({
+      query: "hit",
+      matches: [{ file: "zz-a.md", line: 1, col: 1, snippet: "<<hit>>" }],
+      truncated: false,
+      perFileTruncated: false,
+    }, async () => {
+      setQuery("hit", true);
+      await tick(20);
+      const row = spRows()[0];
+      check("search panel AC20: missing count omits the count element",
+        !!row && !row.querySelector(".sp-count"));
+      check("search panel AC20: no undefined/NaN in row or summary",
+        !/undefined|NaN/.test(row.textContent) &&
+        !/undefined|NaN/.test(summaryText()));
+    });
+
+    // AC13: whitespace-only query is idle: no request, empty summary/list.
+    const idleBefore = searchRequests().length;
+    setQuery("   ", false);
+    await tick(320);
+    check("search panel AC13: whitespace query sends no request",
+      searchRequests().length === idleBefore,
+      "delta=" + (searchRequests().length - idleBefore));
+    check("search panel AC13: idle clears summary and list",
+      summaryText() === "" && spRows().length === 0 && spNote().hidden);
+
+    // AC16: zero matches keeps the query and offers no Retry.
+    setQuery("zzzznomatch", true);
+    await tick(20);
+    check("search panel AC16: zero matches summary is '0 matches'",
+      summaryText() === "0 matches", summaryText());
+    check("search panel AC16: list shows 'No matches found.'",
+      spRows().length === 0 &&
+      !!searchView().querySelector(".search-panel-empty") &&
+      searchView().querySelector(".search-panel-empty").textContent ===
+        "No matches found.");
+    check("search panel AC16: empty state is presentational inside the listbox",
+      searchView().querySelector(".search-panel-empty").getAttribute("role") ===
+        "presentation");
+    check("search panel AC16: query kept and no Retry button",
+      spInputEl().value === "zzzznomatch" &&
+      !spSummary().querySelector(".search-panel-retry"));
+    check("search panel AC16: zero results offer the other search mode",
+      !!searchView().querySelector(".search-panel-empty-action"));
+
+    // AC14/AC31/AC32: debounce, Enter focus, roving active row, listbox
+    // semantics, Enter opens, Esc returns to the query.
+    const debounceBefore = searchRequests().length;
+    for (const q of ["h", "hi", "hit"]) {
+      const inp = spInputEl();
+      inp.value = q;
+      fire(inp, "input");
+      await tick(100);
+    }
+    await tick(320);
+    check("search panel AC14: quiet typing sends one request",
+      searchRequests().length - debounceBefore === 1,
+      "delta=" + (searchRequests().length - debounceBefore));
+    const navInp = spInputEl();
+    navInp.focus();
+    key(navInp, "Enter");
+    await tick(20);
+    check("search panel AC14: Enter sends one request and focuses row 0",
+      window.document.activeElement === spRows()[0]);
+    check("search panel AC32: results are a listbox of options",
+      spList().getAttribute("role") === "listbox" &&
+      spRows().every(r => r.getAttribute("role") === "option"));
+    check("search panel AC32: active row is announced",
+      spRows()[0].getAttribute("aria-selected") === "true" &&
+      spRows()[0].tabIndex === 0 &&
+      spRows()[1].getAttribute("aria-selected") === "false");
+    check("search panel AC32: summary is a polite live region",
+      spSummary().getAttribute("role") === "status" &&
+      spSummary().getAttribute("aria-live") === "polite");
+    key(spList(), "ArrowDown"); await tick(10);
+    check("search panel AC31: ArrowDown moves the active row",
+      spRows()[1].getAttribute("aria-selected") === "true");
+    key(spList(), "ArrowUp"); await tick(10);
+    check("search panel AC31: ArrowUp moves back",
+      spRows()[0].getAttribute("aria-selected") === "true");
+    key(spList(), "End"); await tick(10);
+    check("search panel AC31: End jumps to the last row",
+      spRows()[1].getAttribute("aria-selected") === "true");
+    key(spList(), "Home"); await tick(10);
+    check("search panel AC31: Home jumps to the first row",
+      spRows()[0].getAttribute("aria-selected") === "true");
+    key(spList(), "Enter");
+    await tick(50);
+    check("search panel AC31: Enter opens the active row",
+      window.NB.tabs.isOpen("zz-a.md") &&
+      window.NB.viewer.getPath() === "zz-a.md");
+    window.NB.tabs.close("zz-a.md", { force: true });
+    await tick(20);
+    key(spList(), "Escape"); await tick(10);
+    check("search panel AC31: Esc returns focus to the query",
+      window.document.activeElement === spInputEl());
+
+    // Regression: list Enter uses the query and case captured at render,
+    // not the live input edited inside the debounce window.
+    {
+      setQuery("solo", true);
+      await tick(20);
+      spInputEl().value = "hit";
+      fire(spInputEl(), "input");
+      key(spList(), "Enter");
+      await tick(50);
+      const mark = window.document.querySelector(
+        "#viewer-content mark.search-highlight");
+      check("search panel: list Enter uses the rendered query",
+        !!mark && mark.textContent === "solo",
+        "mark=" + (mark && mark.textContent));
+      window.NB.tabs.close("zz-solo.md", { force: true });
+      await tick(320);
+    }
+
+    // AC17: while a request is in flight the previous rows stay and the
+    // summary says Searching…; both clear when the response lands.
+    {
+      const real = window.fetch;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search" && u.searchParams.get("q") === "solo") {
+          await tick(80);
+        }
+        return real(url, opts);
+      };
+      try {
+        setQuery("solo", true);
+        await tick(20);
+        check("search panel AC17: summary says 'Searching…'",
+          summaryText() === "Searching…", summaryText());
+        check("search panel AC17: previous rows remain while running",
+          spRows().length === 2, "rows=" + spRows().length);
+        check("search panel AC17: list is aria-busy while running",
+          spList().getAttribute("aria-busy") === "true");
+        await tick(100);
+        check("search panel AC17: response clears busy and replaces rows",
+          spList().getAttribute("aria-busy") === "false" &&
+          spRows().length === 1 && summaryText() === "1 note · 1 match",
+          "busy=" + spList().getAttribute("aria-busy") +
+          " rows=" + spRows().length + " summary=" + summaryText());
+      } finally {
+        window.fetch = real;
+      }
+    }
+
+    // AC15: latest response wins; an older slow response cannot overwrite.
+    {
+      const real = window.fetch;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search" && u.searchParams.get("q") === "hit") {
+          await tick(100);
+        }
+        return real(url, opts);
+      };
+      try {
+        setQuery("hit", true);
+        setQuery("zzzznomatch", true);
+        await tick(180);
+        check("search panel AC15: newest response wins over the slow one",
+          summaryText() === "0 matches" && spRows().length === 0,
+          "summary=" + summaryText() + " rows=" + spRows().length);
+      } finally {
+        window.fetch = real;
+      }
+    }
+    setQuery("hit", true);
+    await tick(20);
+
+    // AC25: a transport failure keeps the query and last good rows, shows
+    // Retry, and a successful Retry replaces the list.
+    {
+      const real = window.fetch;
+      let attempts = 0;
+      let fail = true;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search" && fail) {
+          attempts++;
+          await tick(20);
+          throw new Error("boom");
+        }
+        return real(url, opts);
+      };
+      try {
+        setQuery("hit", true);
+        await tick(50);
+        check("search panel AC25: failure summary says Search error + Retry",
+          summaryText().indexOf("Search error:") === 0 &&
+          summaryText().indexOf("boom") > 0 &&
+          !!searchView().querySelector(".search-panel-retry"), summaryText());
+        check("search panel AC25: last good rows stay on screen",
+          spRows().length === 2, "rows=" + spRows().length);
+        check("search panel AC25: error node is an alert",
+          spSummary().getAttribute("role") === "alert");
+        const retry = searchView().querySelector(".search-panel-retry");
+        const beforeRetry = attempts;
+        retry.click();
+        check("search panel AC25: Retry disables itself while in flight",
+          retry.disabled === true);
+        await tick(50);
+        check("search panel AC25: Retry sends exactly one request",
+          attempts - beforeRetry === 1, "delta=" + (attempts - beforeRetry));
+        fail = false;
+        searchView().querySelector(".search-panel-retry").click();
+        await tick(50);
+        check("search panel AC25: successful Retry replaces the list",
+          summaryText() === "2 notes · 4 matches" && spRows().length === 2,
+          "summary=" + summaryText() + " rows=" + spRows().length);
+      } finally {
+        window.fetch = real;
+      }
+    }
+    await tick(330);
+
+    // AC30: a read-only viewer's refused config POST never surfaces as a
+    // search error and never blocks searching.
+    {
+      await tick(320);
+      const real = window.fetch;
+      let refused = 0;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/config" && opts && opts.method === "POST") {
+          refused++;
+          return fakeResponse({ error: "Admin role required" }, 403);
+        }
+        return real(url, opts);
+      };
+      try {
+        setUnique(false);
+        await tick(20);
+        check("search panel AC30: option change still searches for a viewer",
+          spRows().length === 4 && summaryText() === "4 matches in 2 notes",
+          "rows=" + spRows().length + " summary=" + summaryText());
+        await tick(330);
+        check("search panel AC30: refused config POST was attempted",
+          refused >= 1, "posts=" + refused);
+        check("search panel AC30: 403 on config is not a search error",
+          summaryText().indexOf("Search error") < 0, summaryText());
+      } finally {
+        window.fetch = real;
+      }
+      setUnique(true);
+      await tick(330);
+    }
+
+    // AC34: the top-bar Aa updates the panel, re-runs its query once, keeps
+    // focus, and persists one config POST.
+    {
+      await tick(320);
+      const postsBeforeCase = configPosts().length;
+      spInputEl().focus();
+      const topCase = $("search-case");
+      topCase.checked = true;
+      fire(topCase, "change");
+      await tick(20);
+      check("search panel AC34: panel Aa mirrors the top bar",
+        spCaseCb().checked === true);
+      check("search panel AC34: top bar Aa stays checked",
+        topCase.checked === true);
+      check("search panel AC34: the panel re-runs with case=1",
+        lastSearch().indexOf("case=1") >= 0, lastSearch());
+      check("search panel AC34: focus does not move",
+        window.document.activeElement === spInputEl());
+      await tick(330);
+      check("search panel AC34: one config POST carries the case change",
+        configPosts().length - postsBeforeCase === 1,
+        "posts=" + (configPosts().length - postsBeforeCase));
+      check("search panel AC34: the POST body has searchCaseSensitive=true",
+        /"searchCaseSensitive":true/.test(lastConfig()), lastConfig());
+      topCase.checked = false;
+      fire(topCase, "change");
+      await tick(20);
+      await tick(330);
+    }
+
+    // AC33: switching views keeps the query, options, rows, and active row;
+    // returning does not re-run the query.
+    {
+      key(spList(), "End");
+      await tick(10);
+      const activeBefore = searchView().querySelector(".search-panel-hit.is-active");
+      const activeFile = activeBefore ? rowFile(activeBefore) : null;
+      const rowsBefore = spRows().map(rowFile).join(",");
+      const searchesBefore = searchRequests().length;
+      const explorerBtn = window.document.querySelector(
+        '#activity-bar .activity-btn[data-view="explorer"]');
+      fire(explorerBtn, "click");
+      await tick(30);
+      fire(searchBtn, "click");
+      await tick(30);
+      const activeAfter = searchView().querySelector(".search-panel-hit.is-active");
+      check("search panel AC33: switching views keeps the query and rows",
+        spInputEl().value === "hit" &&
+        spRows().map(rowFile).join(",") === rowsBefore,
+        "query=" + spInputEl().value);
+      check("search panel AC33: the active row survives the switch",
+        !!activeAfter && rowFile(activeAfter) === activeFile);
+      check("search panel AC33: returning does not re-run the query",
+        searchRequests().length === searchesBefore,
+        "delta=" + (searchRequests().length - searchesBefore));
+    }
+
+    // AC29: a hit whose file has vanished shows an inline message, removes
+    // the phantom tab, uses no alert, and Refresh re-runs the query.
+    {
+      const real = window.fetch;
+      let fakeSearches = 0;
+      let alerts = 0;
+      const origAlert = window.alert;
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search") {
+          fakeSearches++;
+          return fakeResponse({
+            query: "ghost",
+            matches: [{ file: "ghost.md", line: 1, col: 1,
+                        snippet: "<<ghost>>", count: 1 }],
+            truncated: false,
+            perFileTruncated: false,
+          });
+        }
+        return real(url, opts);
+      };
+      window.alert = () => { alerts++; };
+      try {
+        setQuery("ghost", true);
+        await tick(20);
+        spRows()[0].click();
+        await tick(60);
+        check("search panel AC29: failed open shows the inline message",
+          summaryText().indexOf(
+            "Could not open “ghost.md”. It may have been moved or deleted.") >= 0,
+          summaryText());
+        check("search panel AC29: failed open offers Refresh results",
+          !!searchView().querySelector(".search-panel-retry") &&
+          searchView().querySelector(".search-panel-retry").textContent ===
+            "Refresh results");
+        check("search panel AC29: no phantom tab is left behind",
+          !window.NB.tabs.isOpen("ghost.md"));
+        check("search panel AC29: no alert is used",
+          alerts === 0, "alerts=" + alerts);
+        const beforeRefresh = fakeSearches;
+        searchView().querySelector(".search-panel-retry").click();
+        await tick(20);
+        check("search panel AC29: Refresh re-runs the query exactly once",
+          fakeSearches - beforeRefresh === 1,
+          "delta=" + (fakeSearches - beforeRefresh));
+        check("search panel AC29: Refresh does not create the missing file",
+          FILES["ghost.md"] === undefined);
+      } finally {
+        window.alert = origAlert;
+        window.fetch = real;
+      }
+    }
+
+    // AC29: a pre-existing tab whose file has vanished is restored after
+    // the failed read, but not activated.
+    {
+      const real = window.fetch;
+      FILES["zz-gone.md"] = "gone\n";
+      MTIMES["zz-gone.md"] = 5;
+      await window.NB.tabs.open("zz-gone.md");
+      await tick(20);
+      await window.NB.tabs.open("zz-b.md");
+      await tick(20);
+      // A restored tab has no cache entry, so drop the one the open above
+      // created while the tab membership stays.
+      window.NB.viewer.close("zz-gone.md");
+      delete FILES["zz-gone.md"];
+      window.fetch = async (url, opts) => {
+        const u = new URL(url, "http://127.0.0.1:5000");
+        if (u.pathname === "/api/search") {
+          return fakeResponse({
+            query: "gone",
+            matches: [{ file: "zz-gone.md", line: 1, col: 1,
+                        snippet: "<<gone>>", count: 1 }],
+            truncated: false,
+            perFileTruncated: false,
+          });
+        }
+        return real(url, opts);
+      };
+      try {
+        setQuery("gone", true);
+        await tick(20);
+        spRows()[0].click();
+        await tick(80);
+        check("search panel AC29: pre-existing tab survives a failed read",
+          window.NB.tabs.isOpen("zz-gone.md"));
+        check("search panel AC29: restored tab is not activated",
+          window.NB.tabs.getActive() === "zz-b.md",
+          "active=" + window.NB.tabs.getActive());
+        check("search panel AC29: failed open still shows the inline message",
+          summaryText().indexOf(
+            "Could not open “zz-gone.md”. It may have been moved or deleted.") >= 0,
+          summaryText());
+      } finally {
+        window.fetch = real;
+        window.NB.tabs.close("zz-gone.md", { force: true });
+        window.NB.tabs.close("zz-b.md", { force: true });
+        delete FILES["zz-gone.md"];
+        delete MTIMES["zz-gone.md"];
+        await tick(20);
+      }
+    }
+
+    // --- Search in: Content | File name ------------------------------
+    // The target control switches the same panel between body search and
+    // basename search (server name=1); file-name rows are one per note.
+    const spTargetRadio = (value) => searchView().querySelector(
+      '.search-panel-mode[aria-label="Search in"] input[value="' + value + '"]');
+    const spGrouping = () => searchView().querySelector(
+      '.search-panel-mode[aria-label="Result grouping"]');
+    const setTarget = (value) => {
+      const r = spTargetRadio(value);
+      if (!r.checked) { r.checked = true; fire(r, "change"); }
+    };
+    idleQuery();
+    await tick(330);
+    check("search target: defaults to Content",
+      spTargetRadio("content").checked === true &&
+      spTargetRadio("name").checked === false);
+    check("search target: grouping is visible in Content mode",
+      !spGrouping().classList.contains("is-hidden"));
+    check("search target: count sort is enabled in Content mode",
+      spSort().querySelector('option[value="count"]').disabled === false);
+    check("search layout: controls zone holds the input and three filters",
+      !!searchView().querySelector(".search-panel-controls .search-panel-input") &&
+      searchView().querySelectorAll(".search-panel-controls .search-panel-filter").length === 3);
+    check("search layout: each filter has a caption above its control",
+      Array.from(searchView().querySelectorAll(".search-panel-filter"))
+        .every(f => !!f.querySelector(".search-panel-filter-label")));
+    check("search layout: summary text is its own span",
+      !!spSummary().querySelector(".search-panel-summary-text"));
+    check("search layout: sort title mirrors the selected label",
+      spSort().title === spSort().selectedOptions[0].textContent);
+
+    // --- Advanced disclosure --------------------------------------
+    const advBtn = () => searchView().querySelector(".search-panel-advanced-toggle");
+    const advPanel = () => $("search-panel-advanced");
+    const advSummary = () => $("search-panel-advanced-summary");
+    check("search advanced: starts collapsed with hidden controls",
+      advPanel().hidden === true &&
+      advBtn().getAttribute("aria-expanded") === "false" &&
+      advBtn().getAttribute("aria-controls") === "search-panel-advanced");
+    advBtn().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(10);
+    check("search advanced: the button expands the panel",
+      advPanel().hidden === false &&
+      advBtn().getAttribute("aria-expanded") === "true");
+    advPanel().dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(10);
+    check("search advanced: Escape collapses and returns focus",
+      advPanel().hidden === true &&
+      window.document.activeElement === advBtn());
+    check("search advanced: defaults show no summary or badge",
+      advSummary().textContent === "" &&
+      !searchView().querySelector(".search-panel-advanced-row")
+        .classList.contains("has-nondefault"));
+    setTarget("name");
+    await tick(20);
+    check("search advanced: a non-default target is named while collapsed",
+      advSummary().textContent === "File name");
+    check("search advanced: the narrow badge counts the non-defaults",
+      searchView().querySelector(".search-panel-advanced-badge").textContent === "1");
+    setTarget("content");
+    await tick(20);
+    setUnique(false);
+    setSort("mtime");
+    await tick(20);
+    check("search advanced: grouping and sort appear in the summary",
+      advSummary().textContent === "All matches · Recently modified",
+      advSummary().textContent);
+    check("search advanced: the badge counts two non-defaults",
+      searchView().querySelector(".search-panel-advanced-badge").textContent === "2");
+    setUnique(true);
+    setSort("path");
+    await tick(20);
+    check("search advanced: back to defaults clears the summary",
+      advSummary().textContent === "" &&
+      searchView().querySelector(".search-panel-advanced-badge").textContent === "");
+
+    // A count sort is demoted to path when the target switches to file name.
+    setSort("count");
+    await tick(20);
+    setTarget("name");
+    await tick(20);
+    check("search target: switching to File name hides grouping",
+      spGrouping().classList.contains("is-hidden"));
+    check("search target: the whole Grouping row is hidden",
+      $("search-group-filter").classList.contains("is-hidden"));
+    check("search target: switching to File name disables the count sort",
+      spSort().querySelector('option[value="count"]').disabled === true);
+    check("search target: a count sort is demoted to path",
+      spSort().value === "path", "value=" + spSort().value);
+    await tick(330);
+    check("search target: the change persists searchTarget=name",
+      /"searchTarget":"name"/.test(lastConfig()), lastConfig());
+    check("search target: the demoted sort persists path",
+      /"searchSort":"path"/.test(lastConfig()), lastConfig());
+
+    // Two notes whose basenames contain the query; one lives in a folder.
+    FILES["zz-hits-a.md"] = "nothing here\n";
+    FILES["sub/zz-hits-b.md"] = "nothing here\n";
+    MTIMES["zz-hits-a.md"] = 5;
+    MTIMES["sub/zz-hits-b.md"] = 8;
+    setQuery("zz-hits", true);
+    await tick(20);
+    check("search target: file-name mode sends name=1",
+      /\bname=1\b/.test(lastSearch()), lastSearch());
+    check("search target: file-name mode omits unique=1",
+      lastSearch().indexOf("unique=1") < 0, lastSearch());
+    check("search target: file-name mode renders one row per note",
+      spRows().length === 2, "rows=" + spRows().length);
+    check("search target: summary counts notes only",
+      summaryText() === "2 notes", summaryText());
+    const nameRowA = rowByFile("zz-hits-a.md");
+    const nameRowB = rowByFile("sub/zz-hits-b.md");
+    check("search target: rows show the bold name and gray directory",
+      !!nameRowA && !!nameRowB &&
+      nameRowA.querySelector(".sp-file").textContent === "zz-hits-a.md" &&
+      nameRowB.querySelector(".sp-file").textContent === "zz-hits-b.md" &&
+      nameRowB.querySelector(".sp-dir").textContent === " (sub)");
+    check("search target: name rows have no snippet, count, or line label",
+      spRows().every(r => !r.querySelector(".search-panel-hit-snippet") &&
+        !r.querySelector(".sp-count") && !r.querySelector(".sp-meta")));
+    check("search target: name rows carry no line data",
+      spRows().every(r => r.dataset.line === undefined));
+    setQuery("zz-no-such-name", true);
+    await tick(20);
+    check("search target: file-name empty summary is '0 notes'",
+      summaryText() === "0 notes", summaryText());
+    check("search target: file-name empty list keeps the empty text",
+      spRows().length === 0 &&
+      searchView().querySelector(".search-panel-empty").textContent ===
+        "No matches found.");
+    const altModeBtn = searchView().querySelector(".search-panel-empty-action");
+    check("search target: zero results offer the other search mode",
+      !!altModeBtn && /Search content instead/.test(altModeBtn.textContent));
+    if (altModeBtn) {
+      altModeBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(40);
+      check("search target: the fallback switches to Content",
+        spTargetRadio("content").checked);
+      check("search target: the fallback re-runs without name=1",
+        !/name=1/.test(lastSearch()), lastSearch());
+    }
+    setTarget("name");
+    await tick(20);
+    setQuery("zz-no-such-name", true);
+    await tick(20);
+
+    // Truncation wording in file-name mode.
+    await withSearchResponse({
+      query: "zz-hits",
+      matches: [{ file: "zz-hits-a.md" }],
+      truncated: true,
+      perFileTruncated: false,
+    }, async () => {
+      setQuery("zz-hits", true);
+      await tick(20);
+      check("search target: file-name truncation says more results exist",
+        summaryText() === "1 note shown — more results exist", summaryText());
+    });
+
+    // A name row without a line field still opens the note, and opening it
+    // must not jump to a content match.
+    const origJumpToMatch = window.NB.viewer.jumpToMatch;
+    let jumpCalls = 0;
+    window.NB.viewer.jumpToMatch = function () {
+      jumpCalls++;
+      return origJumpToMatch.apply(window.NB.viewer, arguments);
+    };
+    try {
+      FILES["zz-hits-click.md"] = "plain\n";
+      MTIMES["zz-hits-click.md"] = 4;
+      await withSearchResponse({
+        query: "zz-hits",
+        matches: [{ file: "zz-hits-click.md" }],
+        truncated: false,
+        perFileTruncated: false,
+      }, async () => {
+        setQuery("zz-hits", true);
+        await tick(20);
+        check("search target: a row without line still renders",
+          spRows().length === 1 &&
+          spRows()[0].dataset.line === undefined);
+        spRows()[0].click();
+        await tick(60);
+        check("search target: clicking a name row opens the note",
+          window.NB.tabs.isOpen("zz-hits-click.md") &&
+          window.NB.viewer.getPath() === "zz-hits-click.md");
+      });
+      check("search target: opening a name row does not jump to a match",
+        jumpCalls === 0, "jumps=" + jumpCalls);
+    } finally {
+      window.NB.viewer.jumpToMatch = origJumpToMatch;
+      window.NB.tabs.close("zz-hits-click.md", { force: true });
+      delete FILES["zz-hits-click.md"];
+      delete MTIMES["zz-hits-click.md"];
+      await tick(20);
+    }
+
+    // Switching back to Content restores grouping, the count option, and
+    // snippet rows, and drops name=1 from the request.
+    setTarget("content");
+    await tick(20);
+    check("search target: switching back restores grouping",
+      !spGrouping().classList.contains("is-hidden"));
+    check("search target: switching back re-enables the count sort",
+      spSort().querySelector('option[value="count"]').disabled === false);
+    setQuery("hit", true);
+    await tick(20);
+    check("search target: content mode omits name=1",
+      lastSearch().indexOf("name=1") < 0, lastSearch());
+    check("search target: content mode sends unique=1 again",
+      lastSearch().indexOf("unique=1") >= 0, lastSearch());
+    check("search target: content rows show snippets again",
+      spRows().length > 0 &&
+      spRows().every(r => !!r.querySelector(".search-panel-hit-snippet")));
+    await tick(330);
+    check("search target: switching back persists searchTarget=content",
+      /"searchTarget":"content"/.test(lastConfig()), lastConfig());
+
+    delete FILES["zz-hits-a.md"];
+    delete FILES["sub/zz-hits-b.md"];
+    delete MTIMES["zz-hits-a.md"];
+    delete MTIMES["sub/zz-hits-b.md"];
+
+    // Restore harness state: drop the temporary notes and tabs, return to
+    // Explorer, and let the last config write settle before later blocks.
+    idleQuery();
+    for (const p of window.NB.tabs.getOpen().filter(p => p.startsWith("zz-"))) {
+      window.NB.tabs.close(p, { force: true });
+    }
+    delete FILES["zz-a.md"];
+    delete FILES["zz-b.md"];
+    delete FILES["zz-solo.md"];
+    delete MTIMES["zz-a.md"];
+    delete MTIMES["zz-b.md"];
+    delete MTIMES["zz-solo.md"];
+    const explorerHome = window.document.querySelector(
+      '#activity-bar .activity-btn[data-view="explorer"]');
+    fire(explorerHome, "click");
+    await tick(20);
+    await tick(330);
+  }
 
   console.log("== menu module ==");
   {
@@ -5624,7 +6682,8 @@ function check(label, cond, extra) {
   check("search: re-Enter -> focus back on #search-list",
     window.document.activeElement === searchListEl);
   fireOnList("j"); await tick(10);
-  const expectedFile = listHits()[1].querySelector(".hit-file").textContent;
+  const expectedHit = listHits()[1].querySelector(".hit-file");
+  const expectedFile = expectedHit.title || expectedHit.textContent;
   fireOnList("Enter"); await tick(50);
   check("search: Enter on list -> overlay closes", $("search-results").hidden);
   check("search: Enter on list -> opens active hit (" + expectedFile + ")",
@@ -5642,6 +6701,43 @@ function check(label, cond, extra) {
   click("search-close");
   await tick(10);
   check("search panel hides on close", $("search-results").hidden);
+
+  // Regression: a response that lands after close() must not reopen the
+  // §search tab or repaint the list.
+  {
+    const real = window.fetch;
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    window.fetch = async (url, opts) => {
+      const u = new URL(url, "http://127.0.0.1:5000");
+      if (u.pathname === "/api/search" &&
+          u.searchParams.get("q") === "deferred") {
+        await gate;
+      }
+      return real(url, opts);
+    };
+    try {
+      si.value = "deferred";
+      si.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(300);   // debounce fired; the response is gated
+      const listBefore = $("search-list").textContent;
+      const summaryBefore = $("search-summary").textContent;
+      click("search-close");
+      await tick(10);
+      release();
+      await tick(30);
+      check("search: late response after close does not reopen the tab",
+        !window.NB.tabs.isOpen("§search"));
+      check("search: late response after close does not repaint the list",
+        $("search-list").textContent === listBefore &&
+        $("search-summary").textContent === summaryBefore &&
+        $("search-results").hidden);
+    } finally {
+      release();
+      window.fetch = real;
+      await tick(20);
+    }
+  }
 
   console.log("== edit + save ==");
   // The previous "dirty dot" test left the active file with unsaved edits
@@ -29176,6 +30272,40 @@ function check(label, cond, extra) {
     window.document.documentElement.style.setProperty("--side-panel-width", widthBefore);
   }
 
+  // --- search panel mounts before app.js defines NB.app --------------
+  // Regression: mountSearch read NB.app at mount time. The saved boot view
+  // is adopted while activity.js evaluates, before app.js runs, so a saved
+  // Search view threw during mount and activate() swallowed it -- leaving an
+  // empty panel that never remounted.
+  console.log("== search panel mounts before app.js ==");
+  {
+    const shell = new JSDOM(
+      '<!doctype html><html><body><div id="activity-bar"></div>' +
+      '<div id="side-panel"><div class="side-panel-view" data-view="search">' +
+      "</div></div></body></html>",
+      { url: "http://localhost/", runScripts: "outside-only" });
+    const w = shell.window;
+    w.matchMedia = () => ({
+      matches: false,
+      addEventListener() {}, removeEventListener() {},
+      addListener() {}, removeListener() {},
+    });
+    w.NB = { evt: { emit() {}, on() {} } };
+    const mountErrors = [];
+    w.console.error = (...args) => mountErrors.push(args.map(String).join(" "));
+    w.eval(read("static/js/activity.js"));
+    const host = w.document.querySelector('#side-panel [data-view="search"]');
+    check("search boot: panel mounts without NB.app",
+      !!host.querySelector(".search-panel-input"));
+    check("search boot: no mount error is swallowed",
+      mountErrors.length === 0, mountErrors.join("; "));
+    check("search boot: defaults to One per note",
+      host.querySelector('input[value="unique"]').checked);
+    check("search boot: defaults to Path sort",
+      host.querySelector("select").value === "path");
+    shell.window.close();
+  }
+
   // --- mermaid visual designer (NB.mermaidDesign) --------------------
   // The Visimer canvas is ESM + DOM and cannot render real mermaid in
   // jsdom, so the bundle is stubbed: NB.lazyload.script resolves and
@@ -34618,8 +35748,10 @@ function check(label, cond, extra) {
       searchHits.every((h) => !!h.querySelector(".sp-file") &&
         !!h.querySelector(".search-panel-hit-snippet")),
       "hits=" + searchHits.length);
-    const aHit = searchHits.find((h) =>
-      (h.querySelector(".sp-file") || {}).textContent === "notes/a.md");
+    const aHit = searchHits.find((h) => {
+      const p = h.querySelector(".search-panel-path");
+      return p && p.title === "notes/a.md";
+    });
     check("mobile: the notes/a.md hit is listed", !!aHit);
     if (aHit) {
       aHit.dispatchEvent(new window.Event("click", { bubbles: true }));

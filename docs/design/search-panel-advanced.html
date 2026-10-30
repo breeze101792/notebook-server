@@ -1,0 +1,1680 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search panel — Advanced disclosure · reference mockup</title>
+<style>
+  /* ================================================================== */
+  /* App tokens, copied from static/css/style.css.                      */
+  /* ================================================================== */
+  html[data-theme="dark"] {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, .15);
+    --page-bg: #0b0d12;
+    --page-fg: #e6e6ea;
+    --page-muted: #8b8d98;
+    --page-card: #14161d;
+    --page-border: #262a35;
+    --page-shadow: 0 18px 44px rgba(0, 0, 0, .45);
+  }
+  html[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --danger: #c0392b;
+    --danger-soft: rgba(192, 57, 43, .12);
+    --page-bg: #eef1f6;
+    --page-fg: #1f2330;
+    --page-muted: #5d6470;
+    --page-card: #ffffff;
+    --page-border: #dbe0e8;
+    --page-shadow: 0 18px 36px rgba(24, 36, 66, .12);
+  }
+
+  * { box-sizing: border-box; }
+  html { font-size: 14px; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+      radial-gradient(900px 420px at 18% -10%,
+        color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%),
+      var(--page-bg);
+    color: var(--page-fg);
+    font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------------------------- studio chrome ---------------------- */
+  .studio-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px 24px;
+    padding: 14px 22px;
+    background: color-mix(in oklab, var(--page-card) 88%, transparent);
+    border-bottom: 1px solid var(--page-border);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+  .studio-kicker {
+    margin-bottom: 2px;
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .studio-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+  }
+  .studio-sub {
+    max-width: 660px;
+    margin: 3px 0 0;
+    color: var(--page-muted);
+    font-size: 12.5px;
+  }
+  .studio-actions { display: flex; align-items: center; gap: 10px; }
+  .theme-switch {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .theme-switch button {
+    min-height: 28px;
+    padding: 0 12px;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .theme-switch button:hover { color: var(--fg); background: var(--accent-soft); }
+  .theme-switch button[aria-pressed="true"] {
+    background: var(--bg-elev);
+    color: var(--fg);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .theme-switch button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ---------------------------- stage ------------------------------ */
+  .sp-stage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 34px 30px;
+    max-width: 1420px;
+    margin: 0 auto;
+    padding: 30px 22px 46px;
+  }
+  .sp-card { display: flex; flex-direction: column; gap: 10px; }
+  .sp-caption {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    max-width: 390px;
+    color: var(--page-muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .sp-size {
+    padding: 1px 7px;
+    border: 1px solid var(--page-border);
+    border-radius: 999px;
+    background: var(--page-card);
+    color: var(--page-fg);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+  }
+  .sp-state { color: var(--page-fg); font-weight: 600; }
+  .sp-caption small { display: block; flex-basis: 100%; color: var(--page-muted); }
+
+  /* ================================================================== */
+  /* The mock panel. Same class names as production; scoped to .sp-panel */
+  /* because several panels appear on one page.                          */
+  /* ================================================================== */
+  .sp-panel {
+    --search-space-1: 4px;
+    --search-space-2: 6px;
+    --search-space-3: 8px;
+    --search-space-4: 12px;
+    --search-space-5: 16px;
+    --search-radius-sm: 4px;
+    --search-radius-md: 6px;
+    --search-pad-x: 10px;
+    --search-gap: 8px;
+    --search-mode-h: 26px;
+    --search-control-h: 32px;
+    --search-label-size: .66rem;
+    --search-hit-min-h: 32px;
+    --search-adv-h: 26px;
+    --search-adv-font: .78rem;
+    --search-adv-meta: .72rem;
+    --search-badge-h: 16px;
+
+    width: var(--pw);
+    height: var(--ph);
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--page-shadow);
+    container-type: inline-size;
+  }
+
+  .sp-panel .panel-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 12px;
+    color: var(--fg-muted);
+    font-size: .79rem;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .sp-panel .panel-title { overflow: hidden; text-overflow: ellipsis; }
+  .sp-panel .collapse-btn {
+    padding: 2px 4px;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    color: var(--fg-muted);
+    font-size: 1.07rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .sp-panel .collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+  /* ---------------------------- controls --------------------------- */
+  .sp-panel .search-panel-controls {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-gap);
+    padding: var(--search-space-3) var(--search-pad-x) var(--search-space-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .sp-panel .search-panel-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-2);
+    flex: 0 0 auto;
+  }
+  .sp-panel .search-panel-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: var(--search-control-h);
+    padding: 0 var(--search-space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    color: var(--fg);
+    font: inherit;
+    font-size: .88rem;
+  }
+  .sp-panel .search-panel-input::placeholder { color: var(--fg-muted); }
+  .sp-panel .search-panel-input:focus { outline: none; border-color: var(--accent); }
+  .sp-panel .search-panel-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .sp-panel .search-panel-case {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: var(--search-control-h);
+    cursor: pointer;
+    user-select: none;
+  }
+  .sp-panel .search-panel-case input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sp-panel .search-panel-case span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 26px;
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-sm);
+    background: var(--bg);
+    color: var(--fg-muted);
+    font-size: .74rem;
+    font-weight: 700;
+    line-height: 1;
+    transition: background .12s ease, color .12s ease, border-color .12s ease;
+  }
+  .sp-panel .search-panel-case:hover span { color: var(--fg); border-color: var(--accent); }
+  .sp-panel .search-panel-case input:checked + span {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+  .sp-panel .search-panel-case input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* ----------------------- advanced disclosure --------------------- */
+  .sp-panel .search-panel-advanced-row {
+    display: flex;
+    align-items: center;
+    gap: var(--search-gap);
+    min-height: var(--search-adv-h);
+    min-width: 0;
+  }
+  .sp-panel .search-panel-advanced-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--search-space-2);
+    min-height: var(--search-adv-h);
+    margin-left: calc(-1 * var(--search-space-2));
+    padding: 0 var(--search-space-2);
+    background: none;
+    border: 0;
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--search-adv-font);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sp-panel .search-panel-advanced-toggle:hover {
+    color: var(--fg);
+    background: var(--accent-soft);
+  }
+  .sp-panel .search-panel-advanced-toggle[aria-expanded="true"] { color: var(--fg); }
+  .sp-panel .search-panel-advanced-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .sp-panel .search-panel-advanced-chevron {
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-1px) rotate(45deg);
+    transition: transform .12s ease;
+  }
+  .sp-panel .search-panel-advanced-toggle[aria-expanded="true"]
+    .search-panel-advanced-chevron {
+    transform: translateY(2px) rotate(-135deg);
+  }
+  .sp-panel .search-panel-advanced-badge {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--search-badge-h);
+    height: var(--search-badge-h);
+    padding: 0 4px;
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--fg);
+    font-size: .66rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .sp-panel .search-panel-advanced-badge:empty { display: none; }
+  .sp-panel .search-panel-advanced-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg-muted);
+    font-size: var(--search-adv-meta);
+    text-align: right;
+  }
+  .sp-panel .search-panel-advanced-summary:empty { display: none; }
+  .sp-panel .search-panel-advanced { display: block; min-width: 0; }
+  .sp-panel .search-panel-advanced[hidden] { display: none; }
+
+  /* ---------------------------- filters ---------------------------- */
+  .sp-panel .search-panel-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--search-gap);
+    min-width: 0;
+  }
+  .sp-panel .search-panel-filter--sort { grid-column: 1 / -1; }
+  .sp-panel .search-panel-filters .search-panel-mode { grid-template-columns: 1fr; }
+  .sp-panel .search-panel-filters.is-name
+    .search-panel-filter:not(.search-panel-filter--sort) {
+    grid-column: 1 / -1;
+  }
+  .sp-panel .search-panel-filters.is-name
+    .search-panel-filter:not(.search-panel-filter--sort) .search-panel-mode {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sp-panel .search-panel-filter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--search-space-1);
+    min-width: 0;
+  }
+  .sp-panel .search-panel-filter.is-hidden { display: none; }
+  .sp-panel .search-panel-filter-label {
+    color: var(--fg-muted);
+    font-size: var(--search-label-size);
+    font-weight: 600;
+    letter-spacing: .07em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .sp-panel .search-panel-mode.is-hidden { display: none; }
+  .sp-panel .search-panel-mode {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+  }
+  .sp-panel .search-panel-mode-opt { position: relative; display: flex; min-width: 0; }
+  .sp-panel .search-panel-mode-opt input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .sp-panel .search-panel-mode-opt span {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--search-mode-h);
+    padding: 0 4px;
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font-size: .78rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background .12s ease, color .12s ease;
+  }
+  .sp-panel .search-panel-filters .search-panel-mode-opt span {
+    padding: 0 2px;
+    font-size: .76rem;
+  }
+  .sp-panel .search-panel-mode-opt span:hover {
+    background: var(--accent-soft);
+    color: var(--fg);
+  }
+  .sp-panel .search-panel-mode-opt input:checked + span {
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .sp-panel .search-panel-mode-opt input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .sp-panel .search-panel-select {
+    width: 100%;
+    max-width: none;
+    height: var(--search-control-h);
+    min-height: 0;
+    padding: 0 24px 0 var(--search-space-3);
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    color: var(--fg);
+    font: inherit;
+    font-size: .78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+  }
+  .sp-panel .search-panel-select:hover { border-color: var(--accent); }
+  .sp-panel .search-panel-select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .sp-panel .search-panel-select option:disabled { color: var(--fg-muted); }
+
+  /* ---------------------------- results ---------------------------- */
+  .sp-panel .search-panel-summary {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--search-space-3);
+    min-height: 26px;
+    padding: var(--search-space-1) var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .78rem;
+  }
+  .sp-panel .search-panel-summary-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sp-panel .search-panel-note {
+    flex: 0 0 auto;
+    padding: 0 var(--search-pad-x) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+  }
+  .sp-panel .search-panel-note[hidden] { display: none; }
+
+  .sp-panel .search-panel-list {
+    flex: 1 1 auto;
+    overflow: auto;
+    min-height: 0;
+    padding: 0 6px 8px;
+    margin-right: 8px;
+  }
+  .sp-panel .search-panel-hit {
+    display: block;
+    width: 100%;
+    min-height: var(--search-hit-min-h);
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sp-panel .search-panel-hit:hover,
+  .sp-panel .search-panel-hit.is-active { background: var(--accent-soft); }
+  .sp-panel .search-panel-hit:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .sp-panel .search-panel-hit-file {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sp-panel .search-panel-path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sp-panel .sp-file { font-weight: 600; font-size: .86rem; }
+  .sp-panel .sp-dir { color: var(--fg-muted); font-weight: 400; }
+  .sp-panel .sp-meta {
+    font-size: .74rem;
+    color: var(--fg-muted);
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .sp-panel .sp-count {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--fg);
+    font-size: .72rem;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .sp-panel .search-panel-hit-snippet {
+    display: block;
+    font-size: .8rem;
+    color: var(--fg-muted);
+    margin-top: 2px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .sp-panel .search-panel-hit-snippet mark {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  /* --------------------- narrow container rules -------------------- */
+  @container (max-width: 227px) {
+    .sp-panel .search-panel-filters { grid-template-columns: 1fr; }
+    .sp-panel .search-panel-filters.is-name
+      .search-panel-filter:not(.search-panel-filter--sort) .search-panel-mode {
+      grid-template-columns: 1fr;
+    }
+  }
+  @container (max-width: 199px) {
+    .sp-panel .search-panel-select {
+      font-size: .74rem;
+      padding-right: 20px;
+    }
+    .sp-panel .search-panel-advanced-summary {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+    .sp-panel .search-panel-advanced-row.has-nondefault
+      .search-panel-advanced-badge {
+      display: inline-flex;
+    }
+  }
+
+  /* ---------------------------- phone ------------------------------ */
+  .sp-panel.sp-phone {
+    --search-mode-h: 44px;
+    --search-control-h: var(--m-hit);
+    --search-hit-min-h: 52px;
+    --search-pad-x: var(--search-space-4);
+    --search-gap: var(--search-space-3);
+    --search-label-size: 12px;
+    --search-adv-h: var(--m-hit);
+    --search-adv-font: 15px;
+    --search-adv-meta: 14px;
+    --search-badge-h: 20px;
+    --m-hit: 44px;
+    border-radius: 18px;
+  }
+  .sp-phone .search-panel-controls { padding: var(--search-space-3) var(--search-pad-x); }
+  .sp-phone .search-panel-input { height: var(--m-hit); font-size: 16px; border-radius: 8px; }
+  .sp-phone .search-panel-case { width: var(--m-hit); height: var(--m-hit); }
+  .sp-phone .search-panel-case span {
+    width: var(--m-hit);
+    height: var(--m-hit);
+    border-radius: 8px;
+    font-size: 15px;
+  }
+  .sp-phone .search-panel-filter-label { letter-spacing: .06em; }
+  .sp-phone .search-panel-filters .search-panel-mode-opt span {
+    padding: 0 6px;
+    font-size: 15px;
+  }
+  .sp-phone .search-panel-select {
+    height: var(--m-hit);
+    padding-right: 28px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+  .sp-phone .search-panel-advanced-row { min-height: var(--search-adv-h); }
+  .sp-phone .search-panel-advanced-toggle {
+    min-height: var(--search-adv-h);
+    padding: 0 var(--search-space-2);
+    margin-left: calc(-1 * var(--search-space-2));
+    font-size: var(--search-adv-font);
+  }
+  .sp-phone .search-panel-advanced-chevron { width: 7px; height: 7px; }
+  .sp-phone .search-panel-advanced-summary { font-size: var(--search-adv-meta); }
+  .sp-phone .search-panel-summary {
+    min-height: 30px;
+    padding: var(--search-space-1) var(--search-pad-x) var(--search-space-2);
+    font-size: 14px;
+  }
+  .sp-phone .search-panel-note {
+    padding: 0 var(--search-pad-x) var(--search-space-2);
+    font-size: 13px;
+  }
+  .sp-phone .search-panel-hit { min-height: 52px; padding: 8px; }
+  .sp-phone .search-panel-hit .sp-file { font-size: 15px; }
+  .sp-phone .search-panel-hit-snippet { font-size: 14px; }
+  .sp-phone .sp-count { font-size: 12px; }
+
+  /* --------------------- scoped dark variant ----------------------- */
+  .sp-panel--dark {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+    border-color: var(--border);
+  }
+
+  /* ---------------------------- spec strip ------------------------- */
+  .sp-specs {
+    max-width: 1180px;
+    margin: 0 auto 54px;
+    padding: 0 22px;
+  }
+  .sp-specs-inner {
+    padding: 16px 18px;
+    background: var(--page-card);
+    border: 1px solid var(--page-border);
+    border-radius: 12px;
+  }
+  .sp-specs h2 {
+    margin: 0 0 10px;
+    color: var(--page-fg);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: .02em;
+  }
+  .sp-specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px 24px;
+  }
+  .sp-specs-item { color: var(--page-muted); font-size: 12px; line-height: 1.55; }
+  .sp-specs-item b { color: var(--page-fg); font-weight: 600; }
+  .sp-specs-k {
+    display: inline-block;
+    min-width: 92px;
+    color: var(--page-fg);
+    font-weight: 600;
+  }
+  .sp-footnote {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 22px 40px;
+    color: var(--page-muted);
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .sp-footnote code {
+    padding: 0 4px;
+    background: color-mix(in oklab, var(--page-fg) 8%, transparent);
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  @media (max-width: 720px) {
+    .sp-stage { gap: 26px 18px; padding: 20px 12px 36px; }
+    .studio-bar { padding: 12px 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sp-panel .search-panel-case span,
+    .sp-panel .search-panel-mode-opt span,
+    .sp-panel .search-panel-advanced-chevron { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="studio-bar">
+  <div>
+    <div class="studio-kicker">Notebook server · Search side panel</div>
+    <h1 class="studio-title">Search controls — Advanced disclosure</h1>
+    <p class="studio-sub">
+      One compact line by default. The filter stack moves behind a real
+      button; the line names any non-default setting, or shows a count badge
+      when the panel is 140 px wide. Widths are real; controls are live.
+    </p>
+  </div>
+  <div class="studio-actions">
+    <div class="theme-switch" role="group" aria-label="Preview theme">
+      <button type="button" data-set-theme="light" aria-pressed="true">Light</button>
+      <button type="button" data-set-theme="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+</header>
+
+<main class="sp-stage">
+
+  <!-- ================= 1. 240 collapsed default ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">Collapsed · default</span>
+      <small>80 px of controls, then the summary and results. This is the
+        default state: query, Aa, Advanced, and nothing else.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:240px; --ph:500px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="false" aria-controls="adv-1">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-1"></span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-1" hidden>
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-1" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-1" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-1" value="all" data-role="group">
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-1" value="unique" data-role="group" checked>
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-1">Sort</label>
+              <select id="sort-1" class="search-panel-select" data-role="sort" title="Path (A–Z)">
+                <option value="path" selected>Path (A–Z)</option>
+                <option value="mtime">Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">6 notes · 14 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/uart-debug.md">
+              <span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> is in the retry path.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/imu/notes.md">
+              <span class="sp-file">notes.md</span><span class="sp-dir"> (projects/imu)</span>
+            </span>
+            <span class="sp-count">1 match</span>
+          </span>
+          <span class="search-panel-hit-snippet">A <mark>fix</mark> may hide the timing issue.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 2. 240 expanded, File name ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">Expanded · File name</span>
+      <small>Two rows of settings. Search in is full width because Grouping is
+        hidden; the count sort is disabled. The summary reads “File name”.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:240px; --ph:600px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="parser">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row has-nondefault">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="true" aria-controls="adv-2"
+                  aria-describedby="advsum-2" title="Search options: File name">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true">1</span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-2"
+                title="File name">File name</span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-2">
+          <div class="search-panel-filters is-name" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-2" value="content" data-role="target">
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-2" value="name" data-role="target" checked>
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter is-hidden" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode is-hidden" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-2" value="all" data-role="group">
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-2" value="unique" data-role="group" checked>
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-2">Sort</label>
+              <select id="sort-2" class="search-panel-select" data-role="sort" title="Path (A–Z)">
+                <option value="path" selected>Path (A–Z)</option>
+                <option value="mtime">Recently modified</option>
+                <option value="count" disabled>Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">9 notes</span>
+      </div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/parser.md">
+              <span class="sp-file">parser.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/imu/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/imu)</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 3. 240 collapsed, non-default ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">Collapsed · non-default</span>
+      <small>All matches + Recently modified. The summary names both; the
+        long pair ellipsizes. Toggling the row never changes the results.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:240px; --ph:480px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="fix">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row has-nondefault">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="false" aria-controls="adv-3"
+                  aria-describedby="advsum-3"
+                  title="Search options: All matches · Recently modified">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true">2</span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-3"
+                title="All matches · Recently modified">All matches · Recently modified</span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-3" hidden>
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-3" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-3" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-3" value="all" data-role="group" checked>
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-3" value="unique" data-role="group">
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-3">Sort</label>
+              <select id="sort-3" class="search-panel-select" data-role="sort" title="Recently modified">
+                <option value="path">Path (A–Z)</option>
+                <option value="mtime" selected>Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">14 matches in 6 notes</span>
+      </div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-meta">line 12</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-meta">line 40</span>
+          </span>
+          <span class="search-panel-hit-snippet">A second <mark>fix</mark> for the framing error.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 4. 140 expanded, non-default ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">140 px</span>
+      <span class="sp-state">Expanded · non-default</span>
+      <small>One column, vertical tracks, full labels. The summary is clipped
+        for assistive tech; the count badge takes its place.</small>
+    </figcaption>
+    <div class="sp-panel" style="--pw:140px; --ph:600px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search note…" aria-label="Search notebooks" value="fix">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row has-nondefault">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="true" aria-controls="adv-4"
+                  aria-describedby="advsum-4"
+                  title="Search options: All matches · Recently modified">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true">2</span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-4"
+                title="All matches · Recently modified">All matches · Recently modified</span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-4">
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-4" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-4" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-4" value="all" data-role="group" checked>
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-4" value="unique" data-role="group">
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-4">Sort</label>
+              <select id="sort-4" class="search-panel-select" data-role="sort" title="Recently modified">
+                <option value="path">Path (A–Z)</option>
+                <option value="mtime" selected>Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">14 matches in 6 notes</span>
+      </div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (fw)</span>
+            </span>
+            <span class="sp-meta">line 12</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/uart-debug.md">
+              <span class="sp-file">uart-debug.md</span>
+            </span>
+            <span class="sp-meta">line 8</span>
+          </span>
+          <span class="search-panel-hit-snippet">Retry <mark>fix</mark>.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 5. 390 phone collapsed ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">390 px</span>
+      <span class="sp-state">Phone · collapsed</span>
+      <small>Fresh mount starts collapsed. 44 px targets; the results summary
+        sits directly under the one-line controls.</small>
+    </figcaption>
+    <div class="sp-panel sp-phone" style="--pw:390px; --ph:620px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Close search">×</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="false" aria-controls="adv-5">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-5"></span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-5" hidden>
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-5" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-5" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-5" value="all" data-role="group">
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-5" value="unique" data-role="group" checked>
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-5">Sort</label>
+              <select id="sort-5" class="search-panel-select" data-role="sort" title="Path (A–Z)">
+                <option value="path" selected>Path (A–Z)</option>
+                <option value="mtime">Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">6 notes · 14 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/uart-debug.md">
+              <span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> is in the retry path.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 6. 390 phone expanded ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">390 px</span>
+      <span class="sp-state">Phone · expanded</span>
+      <small>Two-up filters keep the panel short; every target is 44 px.
+        Opening the disclosure blurs the query so the keyboard retracts.</small>
+    </figcaption>
+    <div class="sp-panel sp-phone" style="--pw:390px; --ph:700px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Close search">×</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="true" aria-controls="adv-6">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true"></span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-6"></span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-6">
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-6" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-6" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-6" value="all" data-role="group">
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-6" value="unique" data-role="group" checked>
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-6">Sort</label>
+              <select id="sort-6" class="search-panel-select" data-role="sort" title="Path (A–Z)">
+                <option value="path" selected>Path (A–Z)</option>
+                <option value="mtime">Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">6 notes · 14 matches</span>
+      </div>
+      <div class="search-panel-note">Click a row to open its first match.</div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-count">3 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/uart-debug.md">
+              <span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-count">2 matches</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> is in the retry path.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+  <!-- ================= 7. 240 dark expanded ================= -->
+  <figure class="sp-card" style="margin:0">
+    <figcaption class="sp-caption">
+      <span class="sp-size">240 px</span>
+      <span class="sp-state">Dark theme · expanded</span>
+      <small>Same tokens, dark values. The badge and summary use existing
+        accent-soft and muted tokens; no new colour.</small>
+    </figcaption>
+    <div class="sp-panel sp-panel--dark" style="--pw:240px; --ph:600px" data-panel>
+      <div class="panel-header">
+        <span class="panel-title">Search</span>
+        <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+      </div>
+
+      <div class="search-panel-controls">
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="fix">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-advanced-row has-nondefault">
+          <button type="button" class="search-panel-advanced-toggle"
+                  aria-expanded="true" aria-controls="adv-7"
+                  aria-describedby="advsum-7"
+                  title="Search options: All matches · Recently modified">
+            <span class="search-panel-advanced-label">Advanced</span>
+            <span class="search-panel-advanced-badge" aria-hidden="true">2</span>
+            <span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+          </button>
+          <span class="search-panel-advanced-summary" id="advsum-7"
+                title="All matches · Recently modified">All matches · Recently modified</span>
+        </div>
+
+        <div class="search-panel-advanced" id="adv-7">
+          <div class="search-panel-filters" role="group" aria-label="Search filters">
+            <div class="search-panel-filter">
+              <span class="search-panel-filter-label">Search in</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-7" value="content" data-role="target" checked>
+                  <span>Content</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="tgt-7" value="name" data-role="target">
+                  <span>File name</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter" data-group-row>
+              <span class="search-panel-filter-label">Grouping</span>
+              <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping" data-group-mode>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-7" value="all" data-role="group" checked>
+                  <span>All matches</span>
+                </label>
+                <label class="search-panel-mode-opt">
+                  <input type="radio" name="grp-7" value="unique" data-role="group">
+                  <span>One per note</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="search-panel-filter search-panel-filter--sort">
+              <label class="search-panel-filter-label" for="sort-7">Sort</label>
+              <select id="sort-7" class="search-panel-select" data-role="sort" title="Recently modified">
+                <option value="path">Path (A–Z)</option>
+                <option value="mtime" selected>Recently modified</option>
+                <option value="count">Most matches</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true">
+        <span class="search-panel-summary-text">14 matches in 6 notes</span>
+      </div>
+
+      <div class="search-panel-list" role="listbox" aria-label="Search results">
+        <button type="button" class="search-panel-hit is-active" role="option" aria-selected="true" tabindex="0">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="projects/firmware/parser-notes.md">
+              <span class="sp-file">parser-notes.md</span><span class="sp-dir"> (projects/firmware)</span>
+            </span>
+            <span class="sp-meta">line 12</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> landed before the demo.</span>
+        </button>
+        <button type="button" class="search-panel-hit" role="option" aria-selected="false" tabindex="-1">
+          <span class="search-panel-hit-file">
+            <span class="search-panel-path" title="notes/uart-debug.md">
+              <span class="sp-file">uart-debug.md</span><span class="sp-dir"> (notes)</span>
+            </span>
+            <span class="sp-meta">line 8</span>
+          </span>
+          <span class="search-panel-hit-snippet">The <mark>fix</mark> is in the retry path.</span>
+        </button>
+      </div>
+    </div>
+  </figure>
+
+</main>
+
+<section class="sp-specs">
+  <div class="sp-specs-inner">
+    <h2>Handoff at a glance</h2>
+    <div class="sp-specs-grid">
+      <div class="sp-specs-item">
+        <b>Collapsed / expanded</b><br>
+        <span class="sp-specs-k">Controls</span>80 px → ≈219 px<br>
+        <span class="sp-specs-k">Trigger</span>26 px; 44 px phone<br>
+        <span class="sp-specs-k">Summary</span>≈140 px at 240 px<br>
+        <span class="sp-specs-k">At 140 px</span>clipped for AT + count badge
+      </div>
+      <div class="sp-specs-item">
+        <b>Behaviour</b><br>
+        <span class="sp-specs-k">Model</span>A — disclosure only<br>
+        <span class="sp-specs-k">Collapse</span>never re-runs or resets<br>
+        <span class="sp-specs-k">Persistence</span>session-only, starts closed<br>
+        <span class="sp-specs-k">Aa</span>stays beside the query
+      </div>
+      <div class="sp-specs-item">
+        <b>Expanded grid</b><br>
+        <span class="sp-specs-k">240 px</span>two columns, vertical tracks<br>
+        <span class="sp-specs-k">File name</span>Search in spans both, horizontal<br>
+        <span class="sp-specs-k">≤227 px</span>one column, vertical tracks<br>
+        <span class="sp-specs-k">Phone</span>two columns, 44 px targets
+      </div>
+      <div class="sp-specs-item">
+        <b>Keyboard &amp; states</b><br>
+        <span class="sp-specs-k">Trigger</span>real button, <code>aria-expanded</code><br>
+        <span class="sp-specs-k">Collapse</span>focus stays on trigger<br>
+        <span class="sp-specs-k">Hidden</span>no filter is tabbable<br>
+        <span class="sp-specs-k">Esc</span>inside panel closes it
+      </div>
+    </div>
+  </div>
+</section>
+
+<p class="sp-footnote">
+  The frames are reference renders at their real widths. The controls are live:
+  toggle <b>Advanced</b>, change Search in / Grouping / Sort, and watch the
+  summary, badge and File-name layout update. The last frame re-declares the
+  dark tokens on the panel so both themes appear on one light page. Production
+  uses <code>#search-view</code> scoping and the phone media query; this mockup
+  uses <code>.sp-panel</code> and <code>.sp-phone</code>. See
+  <code>docs/design/search-panel-advanced.md</code> §8 for the final DOM and
+  CSS.
+</p>
+
+<script>
+  (function () {
+    "use strict";
+
+    var root = document.documentElement;
+    var themeButtons = Array.prototype.slice.call(
+      document.querySelectorAll("[data-set-theme]"));
+
+    function setTheme(name) {
+      root.setAttribute("data-theme", name);
+      themeButtons.forEach(function (btn) {
+        btn.setAttribute("aria-pressed",
+          String(btn.getAttribute("data-set-theme") === name));
+      });
+    }
+    themeButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setTheme(btn.getAttribute("data-set-theme"));
+      });
+    });
+    setTheme("light");
+
+    Array.prototype.slice.call(document.querySelectorAll(".sp-panel"))
+      .forEach(function (panel) {
+        var targets = Array.prototype.slice.call(
+          panel.querySelectorAll('input[data-role="target"]'));
+        var groups = Array.prototype.slice.call(
+          panel.querySelectorAll('input[data-role="group"]'));
+        var sort = panel.querySelector('select[data-role="sort"]');
+        var groupRow = panel.querySelector("[data-group-row]");
+        var groupMode = panel.querySelector("[data-group-mode]");
+        var countOption = sort ? sort.querySelector('option[value="count"]') : null;
+        var filters = panel.querySelector(".search-panel-filters");
+        var advBtn = panel.querySelector(".search-panel-advanced-toggle");
+        var advPanel = panel.querySelector(".search-panel-advanced");
+        var row = panel.querySelector(".search-panel-advanced-row");
+        var summary = panel.querySelector(".search-panel-advanced-summary");
+        var badge = panel.querySelector(".search-panel-advanced-badge");
+
+        function checkedValue(list) {
+          var hit = list.filter(function (r) { return r.checked; })[0];
+          return hit ? hit.value : "";
+        }
+
+        function sync() {
+          var target = checkedValue(targets);
+          var isName = target === "name";
+          var unique = checkedValue(groups) === "unique";
+
+          filters.classList.toggle("is-name", isName);
+          if (groupRow) groupRow.classList.toggle("is-hidden", isName);
+          if (groupMode) groupMode.classList.toggle("is-hidden", isName);
+          if (countOption) countOption.disabled = isName;
+          if (isName && sort && sort.value === "count") sort.value = "path";
+          if (sort) sort.title = sort.options[sort.selectedIndex].text;
+
+          var parts = [];
+          var count = 0;
+          if (isName) {
+            parts.push("File name");
+            count += 1;
+          } else if (!unique) {
+            parts.push("All matches");
+            count += 1;
+          }
+          if (sort && sort.value !== "path") {
+            parts.push(sort.options[sort.selectedIndex].text);
+            count += 1;
+          }
+
+          var text = parts.join(" · ");
+          summary.textContent = text;
+          summary.title = text;
+          badge.textContent = text ? String(count) : "";
+          row.classList.toggle("has-nondefault", !!text);
+          if (text) {
+            advBtn.setAttribute("aria-describedby", summary.id);
+            advBtn.title = "Search options: " + text;
+          } else {
+            advBtn.removeAttribute("aria-describedby");
+            advBtn.removeAttribute("title");
+          }
+        }
+
+        advBtn.addEventListener("click", function () {
+          var open = advBtn.getAttribute("aria-expanded") === "true";
+          advBtn.setAttribute("aria-expanded", String(!open));
+          advPanel.hidden = open;
+        });
+
+        advPanel.addEventListener("keydown", function (e) {
+          if (e.key !== "Escape") return;
+          e.preventDefault();
+          e.stopPropagation();
+          advBtn.setAttribute("aria-expanded", "false");
+          advPanel.hidden = true;
+          advBtn.focus();
+        });
+
+        targets.forEach(function (r) { r.addEventListener("change", sync); });
+        groups.forEach(function (r) { r.addEventListener("change", sync); });
+        if (sort) sort.addEventListener("change", sync);
+        sync();
+      });
+  })();
+</script>
+
+</body>
+</html>

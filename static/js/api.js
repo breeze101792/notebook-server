@@ -59,8 +59,21 @@
     moveItem:      (from, to)   => request("POST", "/api/move",  { from, to }),
     copyItem:      (from, to)   => request("POST", "/api/copy",  { from, to }),
     deleteItem:    (path)      => request("POST", "/api/delete", { path }),
-    search:        (q, caseSensitive) =>
-      request("GET",  "/api/search?q=" + encodeURIComponent(q) + "&case=" + (caseSensitive ? "1" : "0")),
+    // opts = {caseSensitive, unique, order, desc}. A boolean second arg is
+    // the legacy (q, caseSensitive) shape used by the top-bar search.
+    search:        (q, opts) => {
+      const o = (opts && typeof opts === "object")
+        ? opts : { caseSensitive: !!opts };
+      const p = new URLSearchParams({
+        q: String(q == null ? "" : q),
+        case: o.caseSensitive ? "1" : "0",
+      });
+      if (o.unique) p.set("unique", "1");
+      if (o.name) p.set("name", "1");
+      if (o.order) p.set("order", o.order);
+      if (o.desc) p.set("desc", "1");
+      return request("GET", "/api/search?" + p.toString());
+    },
     getGraph:      () => request("GET",  "/api/graph"),
     getConfig:     () => request("GET",  "/api/config"),
     saveConfig:    (cfg)       => request("POST", "/api/config", cfg),

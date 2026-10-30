@@ -25,6 +25,7 @@
   const closeBtn  = document.getElementById("search-close");
 
   let debounceTimer = null;
+  let requestToken = 0;
   // --- search-results list keyboard nav (vim-style) --------------------
   // After pressing Enter in the search input, focus moves to the list
   // and the user can navigate hits with j/k/arrows, open with Enter/l,
@@ -40,6 +41,16 @@
   let listChord = null;
   let lastQuery = "";
   let lastCaseSensitive = false;
+
+  // Rows lead with the file name and show the containing folder in
+  // parentheses; a root-level note has no folder part.
+  function hitPathParts(path) {
+    const p = String(path == null ? "" : path);
+    const i = p.lastIndexOf("/");
+    return i < 0
+      ? { name: p, dir: "" }
+      : { name: p.slice(i + 1), dir: p.slice(0, i) };
+  }
 
   /* Open the search results as a special tab. If the tab isn't open yet,
    * NB.tabs.openSpecial creates it and activates it; if it's already open,
@@ -60,9 +71,18 @@
     }
   }
 
+  /* Invalidate any in-flight search and debounce so a late response can
+   * neither re-render the list nor reopen the closed tab. */
+  function cancelPendingSearch() {
+    requestToken++;
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+
   /* Close the search tab. Called by the × button, Esc from the input,
    * and the auth:locked handler. */
   function close() {
+    cancelPendingSearch();
     if (NB.tabs && NB.tabs.isOpen && NB.tabs.isOpen(TAB_ID)) {
       NB.tabs.close(TAB_ID);
     }
@@ -92,6 +112,7 @@
     }
   }
   function onTabClose() {
+    cancelPendingSearch();
     if (resultsEl) resultsEl.hidden = true;
   }
 
@@ -121,17 +142,20 @@
   async function runSearch() {
     const q = (inputEl && inputEl.value || "").trim();
     const caseSensitive = caseEl ? caseEl.checked : false;
-    if (!q) { close(); return; }
+    if (!q) { requestToken++; close(); return; }
+    const token = ++requestToken;
     lastQuery = q;
     lastCaseSensitive = caseSensitive;
     let data;
     try {
       data = await NB.api.search(q, caseSensitive);
     } catch (e) {
+      if (token !== requestToken) return;
       if (summaryEl) summaryEl.textContent = "Search error: " + e.message;
       await openTab();
       return;
     }
+    if (token !== requestToken) return;
     renderResults(data, q, caseSensitive);
   }
 
@@ -166,7 +190,15 @@
       const fileLine = document.createElement("div");
       const fileSpan = document.createElement("span");
       fileSpan.className = "hit-file";
-      fileSpan.textContent = m.file;
+      const parts = hitPathParts(m.file);
+      fileSpan.textContent = parts.name;
+      fileSpan.title = m.file;
+      if (parts.dir) {
+        const dirSpan = document.createElement("span");
+        dirSpan.className = "hit-dir";
+        dirSpan.textContent = " (" + parts.dir + ")";
+        fileSpan.appendChild(dirSpan);
+      }
       const metaSpan = document.createElement("span");
       metaSpan.className = "hit-meta";
       metaSpan.textContent = "line " + m.line + ", col " + m.col;

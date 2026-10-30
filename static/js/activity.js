@@ -21,6 +21,39 @@
   const barEl = document.getElementById("activity-bar");
   const panelEl = document.getElementById("side-panel");
 
+  // A side-panel view can be adopted while this script evaluates, before
+  // app.js defines NB.app. Read search prefs through these fallbacks; the
+  // config:changed load event syncs the controls once app.js boots.
+  const SEARCH_DEFAULTS = {
+    unique: true, sort: "path", caseSensitive: false, target: "content",
+  };
+  function searchPrefUnique() {
+    if (NB.app && NB.app.getSearchUnique) return NB.app.getSearchUnique();
+    return SEARCH_DEFAULTS.unique;
+  }
+  function searchPrefSort() {
+    if (NB.app && NB.app.getSearchSort) return NB.app.getSearchSort();
+    return SEARCH_DEFAULTS.sort;
+  }
+  function searchPrefCase() {
+    if (NB.app && NB.app.getCfg) return !!NB.app.getCfg().searchCaseSensitive;
+    return SEARCH_DEFAULTS.caseSensitive;
+  }
+  function searchPrefTarget() {
+    if (NB.app && NB.app.getSearchTarget) return NB.app.getSearchTarget();
+    return SEARCH_DEFAULTS.target;
+  }
+
+  // Search rows lead with the file name and show the containing folder in
+  // parentheses; a root-level note has no folder part.
+  function hitPathParts(path) {
+    const p = String(path == null ? "" : path);
+    const i = p.lastIndexOf("/");
+    return i < 0
+      ? { name: p, dir: "" }
+      : { name: p.slice(i + 1), dir: p.slice(0, i) };
+  }
+
   // Registered views, in registration order. Each entry:
   //   { id, icon, label, mount(panelHostEl), unmount?() }
   // mount() is called the first time a view is activated and is expected
@@ -397,110 +430,581 @@
     input.type = "search";
     input.className = "search-panel-input";
     input.placeholder = "Search notebooks…";
+    input.setAttribute("aria-label", "Search notebooks");
     const caseToggle = document.createElement("label");
     caseToggle.className = "search-panel-case";
     caseToggle.title = "Case sensitive";
     const caseCb = document.createElement("input");
     caseCb.type = "checkbox";
+    caseCb.setAttribute("aria-label", "Case sensitive");
     const caseLabel = document.createElement("span");
     caseLabel.textContent = "Aa";
     caseToggle.append(caseCb, caseLabel);
     inputRow.append(input, caseToggle);
-    host.appendChild(inputRow);
+
+    const controls = document.createElement("div");
+    controls.className = "search-panel-controls";
+    controls.appendChild(inputRow);
+
+    const filters = document.createElement("div");
+    filters.className = "search-panel-filters";
+    filters.setAttribute("role", "group");
+    filters.setAttribute("aria-label", "Search filters");
+
+    const targetFilter = document.createElement("div");
+    targetFilter.className = "search-panel-filter";
+    const targetFilterLabel = document.createElement("span");
+    targetFilterLabel.className = "search-panel-filter-label";
+    targetFilterLabel.textContent = "Search in";
+
+    const targetGroup = document.createElement("div");
+    targetGroup.className = "search-panel-mode";
+    targetGroup.setAttribute("role", "radiogroup");
+    targetGroup.setAttribute("aria-label", "Search in");
+    const mode = document.createElement("div");
+    mode.className = "search-panel-mode";
+    mode.setAttribute("role", "radiogroup");
+    mode.setAttribute("aria-label", "Result grouping");
+    function addModeOption(group, radioName, value, text) {
+      const opt = document.createElement("label");
+      opt.className = "search-panel-mode-opt";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = radioName;
+      radio.value = value;
+      const span = document.createElement("span");
+      span.textContent = text;
+      opt.append(radio, span);
+      group.appendChild(opt);
+      return radio;
+    }
+    const contentRadio = addModeOption(
+      targetGroup, "search-panel-target", "content", "Content");
+    const nameRadio = addModeOption(
+      targetGroup, "search-panel-target", "name", "File name");
+    const allRadio = addModeOption(
+      mode, "search-panel-mode", "all", "All matches");
+    const uniqueRadio = addModeOption(
+      mode, "search-panel-mode", "unique", "One per note");
+
+    const groupFilter = document.createElement("div");
+    groupFilter.className = "search-panel-filter";
+    groupFilter.id = "search-group-filter";
+    const groupFilterLabel = document.createElement("span");
+    groupFilterLabel.className = "search-panel-filter-label";
+    groupFilterLabel.textContent = "Grouping";
+
+    const sortFilter = document.createElement("div");
+    sortFilter.className = "search-panel-filter search-panel-filter--sort";
+    const sortLabel = document.createElement("label");
+    sortLabel.className = "search-panel-filter-label";
+    sortLabel.htmlFor = "search-panel-sort";
+    sortLabel.textContent = "Sort";
+    const sortSelect = document.createElement("select");
+    sortSelect.id = "search-panel-sort";
+    sortSelect.className = "search-panel-select";
+    [
+      ["path", "Path (A–Z)"],
+      ["mtime", "Recently modified"],
+      ["count", "Most matches"],
+    ].forEach(([value, text]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      sortSelect.appendChild(opt);
+    });
+    const countOption = sortSelect.querySelector('option[value="count"]');
+
+    targetFilter.append(targetFilterLabel, targetGroup);
+    groupFilter.append(groupFilterLabel, mode);
+    sortFilter.append(sortLabel, sortSelect);
+    filters.append(targetFilter, groupFilter, sortFilter);
+
+    const advancedRow = document.createElement("div");
+    advancedRow.className = "search-panel-advanced-row";
+    const advancedBtn = document.createElement("button");
+    advancedBtn.type = "button";
+    advancedBtn.className = "search-panel-advanced-toggle";
+    advancedBtn.setAttribute("aria-expanded", "false");
+    advancedBtn.setAttribute("aria-controls", "search-panel-advanced");
+    const advancedLabel = document.createElement("span");
+    advancedLabel.className = "search-panel-advanced-label";
+    advancedLabel.textContent = "Advanced";
+    const advancedBadge = document.createElement("span");
+    advancedBadge.className = "search-panel-advanced-badge";
+    advancedBadge.setAttribute("aria-hidden", "true");
+    const advancedChevron = document.createElement("span");
+    advancedChevron.className = "search-panel-advanced-chevron";
+    advancedChevron.setAttribute("aria-hidden", "true");
+    advancedBtn.append(advancedLabel, advancedBadge, advancedChevron);
+    const advancedSummary = document.createElement("span");
+    advancedSummary.className = "search-panel-advanced-summary";
+    advancedSummary.id = "search-panel-advanced-summary";
+    advancedRow.append(advancedBtn, advancedSummary);
+
+    const advanced = document.createElement("div");
+    advanced.className = "search-panel-advanced";
+    advanced.id = "search-panel-advanced";
+    advanced.hidden = true;
+    advanced.appendChild(filters);
+
+    controls.append(advancedRow, advanced);
+    host.appendChild(controls);
 
     const summary = document.createElement("div");
     summary.className = "search-panel-summary";
+    summary.setAttribute("role", "status");
+    summary.setAttribute("aria-live", "polite");
+    summary.setAttribute("aria-atomic", "true");
+    const summaryText = document.createElement("span");
+    summaryText.className = "search-panel-summary-text";
+    summary.appendChild(summaryText);
     host.appendChild(summary);
+
+    const note = document.createElement("div");
+    note.className = "search-panel-note";
+    note.hidden = true;
+    host.appendChild(note);
 
     const list = document.createElement("div");
     list.className = "search-panel-list";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Search results");
+    list.setAttribute("aria-busy", "false");
     host.appendChild(list);
 
     let debounceTimer = null;
+    // Latest-response-wins: every run (and every clear) bumps the token;
+    // a response whose token is stale is discarded.
+    let requestToken = 0;
     let activeIdx = 0;
-    let currentMatches = [];
+    let visibleRows = [];
+    let visibleQuery = "";
+    let visibleCase = false;
+    let visibleTarget = "content";
+    let caseSensitive = searchPrefCase();
+    let unique = searchPrefUnique();
+    let sort = searchPrefSort();
+    let target = searchPrefTarget();
+    let advancedOpen = false;
+    let focusFirstPending = false;
+    let pendingCaseRerun = false;
+    // api.js emits auth:required on 401 before rejecting. The diff lets the
+    // panel discard that response without showing it as a search error.
+    let authFailures = 0;
+    // Set whenever the user changes a control, so a config load that lands
+    // later does not revert it.
+    const userChanged = { case: false, unique: false, sort: false, target: false };
 
-    async function runSearch() {
-      const q = input.value.trim();
-      if (!q) {
-        summary.classList.remove("error");
-        summary.textContent = "";
-        list.innerHTML = "";
-        currentMatches = [];
-        return;
+    function normalizeSort(value) {
+      const valid = Array.from(sortSelect.options, (opt) => opt.value);
+      return valid.indexOf(value) >= 0 ? value : searchPrefSort();
+    }
+
+    // File-name mode has no match counts, so grouping is hidden and the
+    // count sort is unavailable; demote a stored count sort to path.
+    function setAdvancedOpen(open) {
+      advancedOpen = !!open;
+      advanced.hidden = !advancedOpen;
+      advancedBtn.setAttribute("aria-expanded", advancedOpen ? "true" : "false");
+    }
+
+    function advancedSummaryText() {
+      const parts = [];
+      if (target === "name") parts.push("File name");
+      if (target !== "name" && !unique) parts.push("All matches");
+      if (sort !== "path") {
+        const opt = sortSelect.options[sortSelect.selectedIndex];
+        if (opt) parts.push(opt.textContent);
       }
-      const caseSensitive = caseCb.checked;
-      let data;
-      try {
-        data = await NB.api.search(q, caseSensitive);
-      } catch (e) {
-        showSearchError(e.message);
-        return;
+      return parts.join(" · ");
+    }
+
+    // Collapsed options still apply; the summary (or the narrow badge) makes
+    // a non-default state visible while the controls are hidden.
+    function syncAdvancedSummary() {
+      const text = advancedSummaryText();
+      const active = text !== "";
+      let count = 0;
+      if (target === "name") count += 1;
+      if (target !== "name" && !unique) count += 1;
+      if (sort !== "path") count += 1;
+
+      advancedSummary.textContent = text;
+      advancedSummary.title = text;
+      advancedBadge.textContent = active ? String(count) : "";
+      advancedRow.classList.toggle("has-nondefault", active);
+      if (active) {
+        advancedBtn.setAttribute("aria-describedby", advancedSummary.id);
+        advancedBtn.title = "Search options: " + text;
+      } else {
+        advancedBtn.removeAttribute("aria-describedby");
+        advancedBtn.removeAttribute("title");
       }
+    }
+
+    function applyTargetUi() {
+      const isName = target === "name";
+      filters.classList.toggle("is-name", isName);
+      groupFilter.classList.toggle("is-hidden", isName);
+      mode.classList.toggle("is-hidden", isName);
+      countOption.disabled = isName;
+      if (isName && sort === "count") {
+        sort = "path";
+        sortSelect.value = sort;
+        userChanged.sort = true;
+        if (NB.app && NB.app.setSearchSort) NB.app.setSearchSort(sort);
+      }
+      syncSortTitle();
+      syncAdvancedSummary();
+    }
+
+    // A narrow select clips its label; mirror the selected option so the
+    // full text is still reachable on hover.
+    function syncSortTitle() {
+      const opt = sortSelect.options[sortSelect.selectedIndex];
+      sortSelect.title = opt ? opt.textContent : "";
+    }
+
+    function syncControls() {
+      contentRadio.checked = target !== "name";
+      nameRadio.checked = target === "name";
+      allRadio.checked = !unique;
+      uniqueRadio.checked = unique;
+      sortSelect.value = sort;
+      caseCb.checked = caseSensitive;
+      applyTargetUi();
+    }
+
+    function applyConfigSync(cfg, loaded) {
+      if (!cfg) return;
+      if (!loaded || !userChanged.case) {
+        caseSensitive = !!cfg.searchCaseSensitive;
+        caseCb.checked = caseSensitive;
+      }
+      if (!loaded || !userChanged.unique) {
+        unique = (typeof cfg.searchUnique === "boolean")
+          ? cfg.searchUnique : searchPrefUnique();
+        allRadio.checked = !unique;
+        uniqueRadio.checked = unique;
+      }
+      if (!loaded || !userChanged.target) {
+        target = (cfg.searchTarget === "name") ? "name" : "content";
+        contentRadio.checked = target !== "name";
+        nameRadio.checked = target === "name";
+      }
+      if (!loaded || !userChanged.sort) {
+        sort = normalizeSort(cfg.searchSort);
+        sortSelect.value = sort;
+      }
+      applyTargetUi();
+      // The load replaced cfg with the server blob. Re-apply anything the
+      // user changed while the fetch was in flight so it is also persisted,
+      // not just left visible in a control.
+      if (loaded) {
+        if (userChanged.unique && NB.app && NB.app.setSearchUnique) {
+          NB.app.setSearchUnique(unique);
+        }
+        if (userChanged.sort && NB.app && NB.app.setSearchSort) {
+          NB.app.setSearchSort(sort);
+        }
+        if (userChanged.target && NB.app && NB.app.setSearchTarget) {
+          NB.app.setSearchTarget(target);
+        }
+        if (userChanged.case) NB.evt.emit("search-case-changed", caseSensitive);
+      }
+    }
+
+    function plural(n, one, many) {
+      return n + " " + (n === 1 ? one : many);
+    }
+
+    function summaryFor(matches, isUnique, truncated, perFileTruncated) {
+      const n = matches.length;
+      if (isUnique) {
+        if (truncated) {
+          return plural(n, "note", "notes") + " shown — more results exist";
+        }
+        let total = 0;
+        matches.forEach(m => {
+          total += (typeof m.count === "number" && isFinite(m.count) && m.count >= 0)
+            ? m.count : 1;
+        });
+        return plural(n, "note", "notes") + " · " +
+          plural(total, "match", "matches");
+      }
+      const paths = new Set(matches.map(m => m.file));
+      if (truncated) {
+        let s = plural(n, "match", "matches") + " shown — more results exist";
+        if (perFileTruncated) s += " · some notes have more matches";
+        return s;
+      }
+      let s = plural(n, "match", "matches") + " in " +
+        plural(paths.size, "note", "notes");
+      if (perFileTruncated) s += " · some notes have more matches";
+      return s;
+    }
+
+    function summaryForNames(matches, truncated) {
+      const n = matches.length;
+      if (truncated) {
+        return plural(n, "note", "notes") + " shown — more results exist";
+      }
+      return plural(n, "note", "notes");
+    }
+
+    function clearSummaryActions() {
+      summary.querySelectorAll(".search-panel-retry").forEach(el => el.remove());
+    }
+
+    function setSummary(text) {
+      summary.setAttribute("role", "status");
+      summary.setAttribute("aria-live", "polite");
       summary.classList.remove("error");
-      renderResults(data, q, caseSensitive);
+      clearSummaryActions();
+      summaryText.textContent = text;
+      summary.title = text;
+    }
+
+    function setSummaryError(text) {
+      summary.setAttribute("role", "alert");
+      summary.setAttribute("aria-live", "assertive");
+      summary.classList.add("error");
+      clearSummaryActions();
+      summaryText.textContent = text;
+      summary.title = text;
+    }
+
+    function setListBusy(busy) {
+      list.setAttribute("aria-busy", busy ? "true" : "false");
+      list.classList.toggle("is-loading", busy);
+    }
+
+    function setIdle() {
+      requestToken++;
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+      focusFirstPending = false;
+      setSummary("");
+      note.hidden = true;
+      note.textContent = "";
+      list.innerHTML = "";
+      setListBusy(false);
+      visibleRows = [];
+      visibleQuery = "";
+      visibleCase = false;
+      activeIdx = 0;
+    }
+
+    function runSearch(opts) {
+      opts = opts || {};
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+      const q = input.value.trim();
+      if (!q) { setIdle(); return; }
+      const token = ++requestToken;
+      focusFirstPending = !!opts.focusFirst;
+      const runCase = caseSensitive;
+      const runUnique = unique;
+      const runSort = sort;
+      const runTarget = target;
+      const authBefore = authFailures;
+      setSummary("Searching…");
+      setListBusy(true);
+      NB.api.search(q, {
+        caseSensitive: runCase,
+        unique: runTarget === "name" ? false : runUnique,
+        name: runTarget === "name",
+        order: runSort,
+        desc: runSort !== "path",
+      }).then(data => {
+        if (token !== requestToken) return;
+        if (authFailures !== authBefore) {
+          focusFirstPending = false;
+          setListBusy(false);
+          setSummary("");
+          return;
+        }
+        renderResults(data, q, runCase, runUnique, runTarget);
+      }).catch(e => {
+        if (token !== requestToken) return;
+        if (authFailures !== authBefore) {
+          focusFirstPending = false;
+          setListBusy(false);
+          setSummary("");
+          return;
+        }
+        showSearchError(e && e.message ? e.message : "Request failed");
+      });
     }
 
     /* Failure keeps the query and any results already on screen; Retry
      * re-runs the same query once. */
     function showSearchError(message) {
-      summary.classList.add("error");
-      summary.textContent = "Search error: " + message + " ";
+      focusFirstPending = false;
+      setListBusy(false);
+      setSummaryError("Search error: " + message + " ");
       const retry = document.createElement("button");
       retry.type = "button";
       retry.className = "search-panel-retry";
       retry.textContent = "Retry";
       retry.addEventListener("click", () => {
-        summary.classList.remove("error");
-        summary.textContent = "";
+        if (retry.disabled) return;
+        retry.disabled = true;
         runSearch();
       });
       summary.appendChild(retry);
     }
 
-    function renderResults(data, q, caseSensitive) {
+    function showOpenError(path) {
+      setSummaryError(
+        "Could not open “" + path + "”. It may have been moved or deleted. ");
+      const refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.className = "search-panel-retry";
+      refresh.textContent = "Refresh results";
+      refresh.addEventListener("click", () => {
+        if (refresh.disabled) return;
+        refresh.disabled = true;
+        runSearch();
+      });
+      summary.appendChild(refresh);
+    }
+
+    function renderResults(data, q, runCase, isUnique, runTarget) {
+      const isName = runTarget === "name";
+      const matches = Array.isArray(data && data.matches) ? data.matches : [];
+      const truncated = !!(data && data.truncated);
+      const perFileTruncated = !!(data && data.perFileTruncated);
+      const hadFocus = list.contains(document.activeElement);
       list.innerHTML = "";
-      const matches = data.matches || [];
-      const n = matches.length;
-      summary.textContent = data.truncated
-        ? n + "+ matches (truncated)"
-        : n + " match" + (n === 1 ? "" : "es");
-      if (!n) {
+      setListBusy(false);
+      note.hidden = true;
+      note.textContent = "";
+
+      if (!matches.length) {
+        setSummary(isName ? "0 notes" : "0 matches");
         const empty = document.createElement("div");
-        empty.className = "search-panel-empty";
+        empty.className = "search-panel-empty search-panel-state";
+        empty.setAttribute("role", "presentation");
         empty.textContent = "No matches found.";
         list.appendChild(empty);
-        currentMatches = [];
+        // A wrong Content/File name choice looks like "no such note"; offer
+        // the other mode instead of a dead end.
+        const alt = document.createElement("button");
+        alt.type = "button";
+        alt.className = "search-panel-retry search-panel-empty-action";
+        alt.textContent = isName
+          ? "Search content instead"
+          : "Search file names instead";
+        alt.addEventListener("click", () => {
+          target = isName ? "content" : "name";
+          contentRadio.checked = target === "content";
+          nameRadio.checked = target === "name";
+          userChanged.target = true;
+          applyTargetUi();
+          if (NB.app && NB.app.setSearchTarget) NB.app.setSearchTarget(target);
+          runSearch();
+        });
+        note.textContent = "";
+        note.appendChild(alt);
+        note.hidden = false;
+        visibleRows = [];
+        visibleQuery = q;
+        visibleCase = runCase;
+        visibleTarget = runTarget;
         activeIdx = 0;
+        focusFirstPending = false;
         return;
       }
-      matches.forEach(m => {
-        const hit = document.createElement("div");
+
+      setSummary(isName
+        ? summaryForNames(matches, truncated)
+        : summaryFor(matches, isUnique, truncated, perFileTruncated));
+      if (isUnique && !isName) {
+        note.textContent = "Click a row to open its first match.";
+        note.hidden = false;
+      }
+
+      matches.forEach((m, idx) => {
+        const hit = document.createElement("button");
+        hit.type = "button";
         hit.className = "search-panel-hit";
-        const fileLine = document.createElement("div");
+        hit.setAttribute("role", "option");
+        hit.setAttribute("aria-selected", "false");
+        hit.tabIndex = -1;
+        if (m.line != null) hit.dataset.line = String(m.line);
+
+        const fileLine = document.createElement("span");
         fileLine.className = "search-panel-hit-file";
+        const pathWrap = document.createElement("span");
+        pathWrap.className = "search-panel-path";
+        pathWrap.title = m.file;
         const fSpan = document.createElement("span");
         fSpan.className = "sp-file";
-        fSpan.textContent = m.file;
-        const mSpan = document.createElement("span");
-        mSpan.className = "sp-meta";
-        mSpan.textContent = "line " + m.line;
-        fileLine.append(fSpan, mSpan);
-        const snip = document.createElement("div");
-        snip.className = "search-panel-hit-snippet";
-        snip.appendChild(buildSnippet(m.snippet));
-        hit.append(fileLine, snip);
-        hit.addEventListener("click", () => onHitClick(m, q, caseSensitive));
+        const parts = hitPathParts(m.file);
+        fSpan.textContent = parts.name;
+        pathWrap.appendChild(fSpan);
+        if (parts.dir) {
+          const dirSpan = document.createElement("span");
+          dirSpan.className = "sp-dir";
+          dirSpan.textContent = " (" + parts.dir + ")";
+          pathWrap.appendChild(dirSpan);
+        }
+        fileLine.appendChild(pathWrap);
+
+        // File-name rows are one note each: no count, line label, or snippet.
+        if (!isName) {
+          if (isUnique) {
+            if (typeof m.count === "number" && isFinite(m.count) &&
+                m.count >= 0) {
+              const count = document.createElement("span");
+              count.className = "sp-count";
+              count.textContent = plural(m.count, "match", "matches");
+              count.title = "total occurrences in this note";
+              fileLine.appendChild(count);
+            }
+          } else {
+            const mSpan = document.createElement("span");
+            mSpan.className = "sp-meta";
+            mSpan.textContent = "line " + m.line;
+            fileLine.appendChild(mSpan);
+          }
+
+          const snip = document.createElement("span");
+          snip.className = "search-panel-hit-snippet";
+          snip.appendChild(buildSnippet(m.snippet));
+          hit.append(fileLine, snip);
+        } else {
+          hit.appendChild(fileLine);
+        }
+        if (isUnique && !isName) {
+          const sr = document.createElement("span");
+          sr.className = "search-panel-sr";
+          sr.textContent = "Opens at the first match.";
+          hit.appendChild(sr);
+        }
+        hit.addEventListener("click", () => {
+          activeIdx = idx;
+          applyActive();
+          openHit(m, q, runCase, runTarget);
+        });
         list.appendChild(hit);
       });
-      currentMatches = matches;
+
+      visibleRows = matches;
+      visibleQuery = q;
+      visibleCase = runCase;
+      visibleTarget = runTarget;
       activeIdx = 0;
       applyActive();
+      if (hadFocus || focusFirstPending) focusRow(0);
+      focusFirstPending = false;
     }
 
     function buildSnippet(snippet) {
       const frag = document.createDocumentFragment();
-      const parts = String(snippet).split(/(<<|>>)/);
+      const parts = String(snippet == null ? "" : snippet).split(/(<<|>>)/);
       let inMatch = false;
       parts.forEach(part => {
         if (part === "<<") { inMatch = true; return; }
@@ -517,53 +1021,210 @@
     }
 
     function applyActive() {
-      const hits = list.querySelectorAll(".search-panel-hit");
-      if (!hits.length) return;
-      activeIdx = Math.max(0, Math.min(activeIdx, hits.length - 1));
-      hits.forEach((h, i) => h.classList.toggle("is-active", i === activeIdx));
-      const el = hits[activeIdx];
+      const rows = list.querySelectorAll(".search-panel-hit");
+      if (!rows.length) return;
+      activeIdx = Math.max(0, Math.min(activeIdx, rows.length - 1));
+      rows.forEach((row, i) => {
+        const on = i === activeIdx;
+        row.classList.toggle("is-active", on);
+        row.tabIndex = on ? 0 : -1;
+        row.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      const el = rows[activeIdx];
       if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
     }
 
-    async function onHitClick(m, q, caseSensitive) {
-      if (NB.tabs) await NB.tabs.open(m.file);
-      else if (NB.viewer) await NB.viewer.activate(m.file);
+    function focusRow(idx) {
+      const rows = list.querySelectorAll(".search-panel-hit");
+      if (!rows.length) return;
+      activeIdx = Math.max(0, Math.min(idx, rows.length - 1));
+      applyActive();
+      try { rows[activeIdx].focus({ preventScroll: true }); }
+      catch (_) { rows[activeIdx].focus(); }
+    }
+
+    async function openHit(m, q, runCase, runTarget) {
+      const wasOpen = !!(NB.tabs && NB.tabs.isOpen && NB.tabs.isOpen(m.file));
+      let failed = false;
+      try {
+        if (NB.tabs) await NB.tabs.open(m.file);
+        else if (NB.viewer) await NB.viewer.activate(m.file);
+      } catch (_) {
+        failed = true;
+      }
+      // tabs.open swallows a failed read and drops the new tab; checking
+      // isOpen catches that without turning the failure into a rejection.
+      if (!failed && NB.tabs && NB.tabs.isOpen && !NB.tabs.isOpen(m.file)) {
+        failed = true;
+      }
+      if (failed) {
+        if (!wasOpen && NB.tabs && NB.tabs.isOpen && NB.tabs.isOpen(m.file) &&
+            NB.tabs.close) {
+          try { NB.tabs.close(m.file, { force: true }); } catch (_) {}
+        }
+        if (wasOpen && NB.tabs && NB.tabs.isOpen && !NB.tabs.isOpen(m.file) &&
+            NB.tabs.open) {
+          try { await NB.tabs.open(m.file, { activate: false }); } catch (_) {}
+        }
+        showOpenError(m.file);
+        return;
+      }
       requestAnimationFrame(() => {
-        if (NB.viewer && NB.viewer.jumpToMatch) {
-          NB.viewer.jumpToMatch(q, caseSensitive);
+        if (runTarget !== "name" && NB.viewer && NB.viewer.jumpToMatch) {
+          NB.viewer.jumpToMatch(q, runCase);
         }
       });
     }
 
+    function panelVisible() {
+      if (host.hidden) return false;
+      if (NB.activity) {
+        if (NB.activity.getActive && NB.activity.getActive() !== "search") {
+          return false;
+        }
+        if (NB.activity.isCollapsed && NB.activity.isCollapsed()) return false;
+      }
+      if (NB.mobile && NB.mobile.isOn && NB.mobile.isOn() &&
+          NB.mobile.isDrawerOpen && !NB.mobile.isDrawerOpen()) {
+        return false;
+      }
+      return true;
+    }
+
+    advancedBtn.addEventListener("click", () => {
+      setAdvancedOpen(!advancedOpen);
+      if (advancedOpen && NB.mobile && NB.mobile.isOn && NB.mobile.isOn()) {
+        try { input.blur(); } catch (_) {}
+      }
+    });
+    advanced.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setAdvancedOpen(false);
+        advancedBtn.focus();
+      }
+    });
+
     input.addEventListener("input", () => {
       clearTimeout(debounceTimer);
+      if (!input.value.trim()) { setIdle(); return; }
       debounceTimer = setTimeout(runSearch, 250);
     });
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        clearTimeout(debounceTimer);
-        const hits = list.querySelectorAll(".search-panel-hit");
-        if (hits.length) {
-          activeIdx = 0;
-          hits[0].click();
-        } else {
-          runSearch();
+        runSearch({ focusFirst: true });
+      } else if (e.key === "Escape") {
+        if (input.value.trim()) {
+          e.preventDefault();
+          e.stopPropagation();
+          setIdle();
+          input.value = "";
         }
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        activeIdx = Math.min(currentMatches.length - 1, activeIdx + 1);
-        applyActive();
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        activeIdx = Math.max(0, activeIdx - 1);
-        applyActive();
       }
     });
+
+    list.addEventListener("keydown", (e) => {
+      const rows = list.querySelectorAll(".search-panel-hit");
+      if (!rows.length) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          input.focus();
+          input.select();
+        }
+        return;
+      }
+      switch (e.key) {
+        case "ArrowDown":
+        case "j":
+          e.preventDefault();
+          focusRow(activeIdx + 1);
+          return;
+        case "ArrowUp":
+        case "k":
+          e.preventDefault();
+          focusRow(activeIdx - 1);
+          return;
+        case "Home":
+          e.preventDefault();
+          focusRow(0);
+          return;
+        case "End":
+          e.preventDefault();
+          focusRow(rows.length - 1);
+          return;
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          if (visibleRows[activeIdx]) {
+            openHit(visibleRows[activeIdx], visibleQuery, visibleCase,
+              visibleTarget);
+          }
+          return;
+        case "Escape":
+          e.preventDefault();
+          input.focus();
+          input.select();
+          return;
+      }
+    });
+
+    targetGroup.addEventListener("change", (e) => {
+      if (!e.target || e.target.type !== "radio") return;
+      target = nameRadio.checked ? "name" : "content";
+      userChanged.target = true;
+      applyTargetUi();
+      if (NB.app && NB.app.setSearchTarget) NB.app.setSearchTarget(target);
+      if (input.value.trim()) runSearch();
+    });
+    mode.addEventListener("change", (e) => {
+      if (!e.target || e.target.type !== "radio") return;
+      unique = uniqueRadio.checked;
+      userChanged.unique = true;
+      syncAdvancedSummary();
+      if (NB.app && NB.app.setSearchUnique) NB.app.setSearchUnique(unique);
+      if (input.value.trim()) runSearch();
+    });
+    sortSelect.addEventListener("change", () => {
+      sort = normalizeSort(sortSelect.value);
+      sortSelect.value = sort;
+      syncSortTitle();
+      syncAdvancedSummary();
+      userChanged.sort = true;
+      if (NB.app && NB.app.setSearchSort) NB.app.setSearchSort(sort);
+      if (input.value.trim()) runSearch();
+    });
     caseCb.addEventListener("change", () => {
+      caseSensitive = caseCb.checked;
+      userChanged.case = true;
+      NB.evt.emit("search-case-changed", caseSensitive);
       if (input.value.trim()) runSearch();
     });
 
+    NB.evt.on("config:changed", (cfg, meta) => {
+      applyConfigSync(cfg, !!(meta && meta.loaded));
+    });
+    NB.evt.on("search-case-changed", (val) => {
+      const next = !!val;
+      const changed = next !== caseSensitive;
+      caseSensitive = next;
+      caseCb.checked = next;
+      userChanged.case = true;
+      if (!changed || !input.value.trim()) return;
+      if (panelVisible()) runSearch();
+      else pendingCaseRerun = true;
+    });
+    NB.evt.on("activity:changed", (e) => {
+      if (!e || e.id !== "search") return;
+      if (pendingCaseRerun) {
+        pendingCaseRerun = false;
+        if (input.value.trim()) runSearch();
+      }
+    });
+    NB.evt.on("auth:required", () => { authFailures++; });
+
+    syncControls();
     setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
   }
 

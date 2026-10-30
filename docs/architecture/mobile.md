@@ -137,7 +137,8 @@ Every `persistConfig()` path a phone can trigger (all verified):
 | `activity:collapsed`/`expanded` (`app.js:425-431`) | `sidebarCollapsed` | yes (icon toggle / `‹`) | suppress |
 | `activity:changed` (`app.js:435-437`) | `activeView` | yes | suppress |
 | `outline-collapse`/`outline-toggle` (`app.js:439-449`) | `outlineCollapsed` | no (outline hidden) | n/a |
-| `search-case-changed` (`app.js:404-407`) | `searchCaseSensitive` | no (top-bar search hidden; the panel search's Aa does not emit, `activity.js:504-506`) | n/a |
+| `search-case-changed` (`app.js:507-511`) | `searchCaseSensitive` | yes (panel Aa emits; the top-bar search is hidden) | allow (keyed) |
+| panel search options (`activity.js` → `NB.app.setSearchUnique`/`setSearchSort`) | `searchUnique`, `searchSort` | yes (Search drawer) | allow (keyed) |
 | `setTheme`/`setFontSize` etc. (`app.js:834`) | `theme`, `fontSize`, … | only via Settings modal | allow (server-wide by design) |
 | resize `endDrag` (`app.js:510-519`) | `sidebarWidth`, `outlineWidth` | no (handle hidden, mouse-only) | n/a |
 

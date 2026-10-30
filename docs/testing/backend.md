@@ -4,7 +4,7 @@
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **357 test methods across 42 `TestCase` classes**
+The suite currently holds **366 test methods across 42 `TestCase` classes**
 (plus `BaseTest`, which is the shared base and holds no tests). The class
 count and method count below were verified against the file, not copied from
 older notes.
@@ -64,7 +64,7 @@ tests stay fast.
 | 10 | `TestLs` | 5 | `GET /api/ls`: one-folder non-recursive listing of all types, root default, dirs-before-files sort, missing/non-folder paths, and traversal rejection |
 | 11 | `TestAppend` | 6 | `POST /api/file/append`: append to existing, accumulation in order, missing file without `create`, `create` flag, missing parent, and traversal/type rejection |
 | 12 | `TestEdit` | 14 | `POST /api/edit` ordered batch: append/prepend, literal find_replace count and strict/optional modes, regex backrefs, ignore case, line insert/replace/delete, exactly-one-position rule, all-or-nothing batches, unknown ops, missing file/traversal, and trailing-newline normalization |
-| 13 | `TestSearch` | 18 | `/api/search`: case sensitivity, snippet markers, empty query, regex mode and errors, alternation, case flag, single-file scope, glob filter, per-file and total cap overrides, bad caps, and `order=path\|mtime\|count` (+ `desc`) |
+| 13 | `TestSearch` | 27 | `/api/search`: case sensitivity, snippet markers, empty query, regex mode and errors, alternation, case flag, single-file scope, glob filter, per-file and total cap overrides, bad caps, `order=path\|mtime\|count` (+ `desc`), and unique mode (one row per note, exact uncapped `count`, first-occurrence `line`/`col`/`snippet`, note `limit`, ignored `perFile`, `perFileTruncated` disclosure, legacy shape without `unique`, and case-distinct paths) |
 | 14 | `TestGraph` | 9 | `/api/graph`: all files as nodes, node name + degree, wikilink-by-stem edges, relative markdown-link edges, extensionless wikilinks, self-links dropped, undirected dedup, links to missing files dropped, and anchor fragments stripped |
 | 15 | `TestConfig` | 3 | `GET`/`POST /api/config`: default empty, round-trip, and non-object rejection |
 | 16 | `TestInfo` | 1 | `GET /api/info` returns the data and config dirs |

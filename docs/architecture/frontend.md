@@ -235,7 +235,9 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | `sidebarCollapsed` | `false` | |
 | `outlineCollapsed` | `false` | |
 | `activeView` | `"explorer"` | Active side-panel view (explorer / bookmarks / recent / search / ai) |
-| `searchCaseSensitive` | `false` | |
+| `searchCaseSensitive` | `false` | Shared by the top bar and the side-panel Search view |
+| `searchUnique` | `true` | Side-panel Search: one row per note (`unique=1`) |
+| `searchSort` | `"path"` | Side-panel Search order: `path` / `mtime` / `count` |
 | `graphParticles` | `false` | |
 | `hideTopbar` | `false` | |
 | `siteTitle` | `"Notebook"` | |

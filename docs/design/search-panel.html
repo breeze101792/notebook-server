@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search side panel — design reference</title>
+<style>
+  /* ---------------------------------------------------------------- */
+  /* App tokens, copied from static/css/style.css. The mockup uses     */
+  /* them verbatim so the previews match the real app in both themes.  */
+  /* ---------------------------------------------------------------- */
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, .15);
+    --side-panel-width: 240px;
+    --activity-bar-width: 48px;
+  }
+  body[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --danger: #c0392b;
+    --danger-soft: rgba(192, 57, 43, .12);
+  }
+
+  html { font-size: 14px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #0d0f14;
+    color: #e6e6ea;
+    font: 1rem/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* ---------------------------- page chrome ----------------------- */
+  .mock-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 20px;
+    padding: 14px 20px;
+    background: #14161c;
+    border-bottom: 1px solid #2a2d36;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  }
+  .mock-kicker {
+    margin-bottom: 2px;
+    color: #7c9cff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .mock-title { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+  .mock-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+  .mock-group { display: flex; flex-wrap: wrap; gap: 4px; }
+  .mock-chip {
+    min-height: 28px;
+    padding: 0 10px;
+    background: #1c1f27;
+    border: 1px solid #30343f;
+    border-radius: 6px;
+    color: #a7aab5;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .mock-chip:hover { background: #242834; color: #e6e6ea; }
+  .mock-chip[aria-pressed="true"] {
+    background: #7c9cff;
+    border-color: #7c9cff;
+    color: #14151a;
+    font-weight: 600;
+  }
+  .mock-chip:focus-visible { outline: 2px solid #7c9cff; outline-offset: 2px; }
+  .mock-divider { width: 1px; height: 22px; background: #30343f; }
+
+  .mock-stage {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 40px;
+    padding: 36px 24px 64px;
+  }
+  .mock-col { display: flex; flex-direction: column; gap: 10px; }
+  .mock-caption { color: #8b8d98; font-size: 11px; letter-spacing: .04em; }
+  .mock-caption b { color: #c9ccd6; font-weight: 600; }
+
+  /* Simulated app window around the side panel. */
+  .app-shell {
+    display: flex;
+    height: 600px;
+    overflow: hidden;
+    background: var(--bg-panel);
+    border: 1px solid #30333d;
+    border-radius: 10px;
+    box-shadow: 0 22px 50px rgba(0, 0, 0, .45);
+  }
+  body[data-theme="light"] .app-shell {
+    border-color: #b9bfc9;
+    box-shadow: 0 22px 50px rgba(0, 0, 0, .28);
+  }
+  .mock-rail {
+    width: var(--activity-bar-width);
+    flex: 0 0 var(--activity-bar-width);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+  }
+  .mock-rail-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--fg-muted);
+    font-size: 16px;
+    line-height: 1;
+  }
+  .mock-rail-icon.active { color: var(--fg); background: var(--accent-soft); position: relative; }
+  .mock-rail-icon.active::before {
+    content: "";
+    position: absolute;
+    left: -6px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--accent);
+  }
+  .mock-rail-spacer { flex: 1 1 auto; }
+
+  /* ---------------------------------------------------------------- */
+  /* The panel: production class names and values from style.css.      */
+  /* ---------------------------------------------------------------- */
+  #search-view {
+    --search-space-1: 4px;
+    --search-space-2: 6px;
+    --search-space-3: 8px;
+    --search-space-4: 12px;
+    --search-space-5: 16px;
+    --search-radius-sm: 4px;
+    --search-radius-md: 6px;
+    --search-mode-h: 26px;
+    --search-control-h: 26px;
+    --search-hit-min-h: 32px;
+    container-type: inline-size;
+  }
+  .panel {
+    width: var(--side-panel-width);
+    height: 600px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    color: var(--fg);
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 12px;
+    flex: 0 0 auto;
+    min-height: 40px;
+    font-size: .79rem;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+  .panel-title { overflow: hidden; text-overflow: ellipsis; }
+  .collapse-btn {
+    background: none;
+    border: none;
+    color: var(--fg-muted);
+    cursor: pointer;
+    font-size: 1.07rem;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+  .collapse-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .search-panel-input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+  }
+  .search-panel-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    font-size: .9rem;
+  }
+  .search-panel-input:focus { outline: none; border-color: var(--accent); }
+  .search-panel-case {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: .8rem;
+    color: var(--fg-muted);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .search-panel-case input { margin: 0; }
+  .search-panel-case:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  /* Grouping segmented control. */
+  .search-panel-mode {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+    margin: 0 10px var(--search-space-1);
+    padding: 2px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+  }
+  .search-panel-mode-opt { position: relative; display: flex; }
+  .search-panel-mode-opt input {
+    position: absolute;
+    width: 0; height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .search-panel-mode-opt span {
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--search-mode-h);
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font-size: .8rem;
+    cursor: pointer;
+    user-select: none;
+    transition: background .12s ease, color .12s ease;
+  }
+  .search-panel-mode-opt span:hover { background: var(--accent-soft); color: var(--fg); }
+  .search-panel-mode-opt input:checked + span {
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .search-panel-mode-opt input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* Summary row. */
+  .search-panel-meta {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--search-space-3);
+    padding: 0 var(--search-space-4) var(--search-space-1);
+  }
+  .search-panel-summary {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: .78rem;
+    color: var(--fg-muted);
+  }
+  .search-panel-summary.error { color: var(--danger); font-weight: 500; }
+  .search-panel-options-toggle {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    min-height: var(--search-control-h);
+    padding: 0 2px;
+    background: none;
+    border: 0;
+    border-radius: var(--search-radius-sm);
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: .76rem;
+    cursor: pointer;
+  }
+  .search-panel-options-toggle:hover { color: var(--fg); background: var(--accent-soft); }
+  .search-panel-options-toggle[aria-expanded="true"] { color: var(--fg); }
+  .search-panel-options-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .search-panel-chevron { font-size: .9em; line-height: 1; transition: transform .12s ease; }
+  .search-panel-options-toggle[aria-expanded="true"] .search-panel-chevron { transform: rotate(180deg); }
+
+  .search-panel-note {
+    padding: 0 var(--search-space-4) var(--search-space-2);
+    color: var(--fg-muted);
+    font-size: .72rem;
+    line-height: 1.4;
+  }
+  .search-panel-note[hidden] { display: none; }
+
+  /* Options disclosure. */
+  .search-panel-options {
+    margin: 0 10px var(--search-space-2);
+    padding: var(--search-space-2) var(--search-space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-md);
+    display: grid;
+    gap: var(--search-space-2);
+  }
+  .search-panel-options[hidden] { display: none; }
+  .search-panel-opt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--search-space-3);
+    min-height: var(--search-control-h);
+    font-size: .8rem;
+    color: var(--fg);
+  }
+  .search-panel-opt-row label { cursor: pointer; }
+  .search-panel-opt-row input { margin: 0; accent-color: var(--accent); }
+  .search-panel-opt-row input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .search-panel-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 132px;
+    min-height: var(--search-control-h);
+    padding: 2px 4px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--search-radius-sm);
+    color: var(--fg);
+    font: inherit;
+    font-size: .78rem;
+  }
+  .search-panel-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @container (max-width: 200px) {
+    #search-view .search-panel-mode { grid-template-columns: 1fr; }
+    #search-view .search-panel-meta { flex-wrap: wrap; }
+    #search-view .search-panel-options-toggle { margin-left: auto; }
+    #search-view .search-panel-opt-row { flex-wrap: wrap; }
+    #search-view .search-panel-opt-row .search-panel-select {
+      flex-basis: 100%;
+      max-width: none;
+    }
+  }
+
+  /* Results. */
+  .search-panel-list {
+    flex: 1 1 auto;
+    overflow: auto;
+    min-height: 0;
+    padding: 0 6px 8px;
+    margin-right: 8px;
+  }
+  .search-panel-list.is-loading { opacity: .6; }
+  .search-panel-hit {
+    display: block;
+    width: 100%;
+    min-height: var(--search-hit-min-h);
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .search-panel-hit:hover, .search-panel-hit.is-active { background: var(--accent-soft); }
+  .search-panel-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .search-panel-hit-file {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .sp-file { overflow: hidden; text-overflow: ellipsis; font-weight: 500; font-size: .86rem; white-space: nowrap; }
+  .sp-meta { font-size: .74rem; color: var(--fg-muted); flex: 0 0 auto; white-space: nowrap; }
+  .sp-count {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--fg);
+    font-size: .72rem;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  .search-panel-hit-snippet {
+    display: block;
+    margin-top: 2px;
+    color: var(--fg-muted);
+    font-size: .8rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .search-panel-hit-snippet mark {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: 2px;
+    padding: 0 1px;
+  }
+
+  .search-panel-state { padding: 20px 14px; }
+  .search-panel-state-title {
+    margin-bottom: 4px;
+    color: var(--fg);
+    font-size: .86rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .search-panel-state-hint { color: var(--fg-muted); font-size: .78rem; line-height: 1.45; }
+
+  .search-panel-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--search-space-2);
+    margin: 0 0 var(--search-space-3);
+    padding: var(--search-space-3);
+    background: var(--danger-soft);
+    border: 1px solid var(--danger);
+    border-radius: var(--search-radius-md);
+  }
+  .search-panel-error[hidden] { display: none; }
+  .search-panel-error-mark { color: var(--danger); font-weight: 700; line-height: 1.2; }
+  .search-panel-error-body { flex: 1 1 auto; min-width: 0; }
+  .search-panel-error-title { color: var(--fg); font-size: .8rem; font-weight: 600; }
+  .search-panel-error-detail { margin-top: 2px; color: var(--fg-muted); font-size: .74rem; overflow-wrap: anywhere; }
+  .search-panel-retry {
+    flex: 0 0 auto;
+    min-height: 28px;
+    margin-left: 0;
+    padding: 0 10px;
+    background: var(--bg-elev);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font: inherit;
+    font-size: .78rem;
+    cursor: pointer;
+  }
+  .search-panel-retry:hover { background: var(--accent-soft); }
+  .search-panel-retry:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .search-panel-sr {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Phone drawer preview. */
+  .phone-shell {
+    width: 390px;
+    height: 700px;
+    overflow: hidden;
+    border: 1px solid #30333d;
+    border-radius: 24px;
+    background: var(--bg-panel);
+    box-shadow: 0 24px 54px rgba(0, 0, 0, .5);
+  }
+  body[data-theme="light"] .phone-shell {
+    border-color: #b9bfc9;
+    box-shadow: 0 24px 54px rgba(0, 0, 0, .28);
+  }
+  .panel.phone {
+    width: 390px;
+    height: 700px;
+    --search-mode-h: 44px;
+    --search-control-h: 44px;
+    --search-hit-min-h: 52px;
+    border-right: 0;
+  }
+  .panel.phone .panel-header { min-height: 52px; padding: 0 8px 0 16px; }
+  .panel.phone .panel-title { font-size: 12px; letter-spacing: .08em; }
+  .panel.phone .collapse-btn { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .panel.phone .search-panel-input-row { padding: 8px 12px; }
+  .panel.phone .search-panel-input { min-height: 44px; font-size: 16px; border-radius: 8px; }
+  .panel.phone .search-panel-case { min-width: 44px; min-height: 44px; justify-content: center; font-size: .9rem; }
+  .panel.phone .search-panel-case input { width: 18px; height: 18px; }
+  .panel.phone .search-panel-mode { margin: 0 12px var(--search-space-2); }
+  .panel.phone .search-panel-mode-opt span { font-size: .9rem; }
+  .panel.phone .search-panel-meta { padding: 0 12px var(--search-space-2); }
+  .panel.phone .search-panel-options-toggle { font-size: .82rem; padding: 0 8px; }
+  .panel.phone .search-panel-note { font-size: .76rem; padding: 0 12px 6px; }
+  .panel.phone .search-panel-options { margin: 0 12px var(--search-space-3); padding: 4px 10px; }
+  .panel.phone .search-panel-opt-row { font-size: .9rem; }
+  .panel.phone .search-panel-select { font-size: 16px; max-width: 160px; }
+  .panel.phone .search-panel-hit { min-height: 52px; padding: 8px; }
+  .panel.phone .sp-file { font-size: .95rem; }
+  .panel.phone .search-panel-hit-snippet { font-size: .86rem; }
+  .panel.phone .search-panel-list { padding: 0 8px 8px; }
+  .panel.phone .search-panel-state { padding: 20px 14px; }
+  .panel.phone .search-panel-state-title { font-size: .95rem; }
+  .panel.phone .search-panel-state-hint { font-size: .86rem; }
+  .panel.phone .search-panel-error .search-panel-retry { min-height: 44px; }
+
+  @media (max-width: 760px) {
+    .mock-toolbar { align-items: flex-start; flex-direction: column; }
+    .mock-stage { padding: 24px 12px 48px; gap: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .search-panel-mode-opt span,
+    .search-panel-chevron { transition: none; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<header class="mock-toolbar">
+  <div>
+    <div class="mock-kicker">Design reference · not production</div>
+    <h1 class="mock-title">Search side panel</h1>
+  </div>
+  <div class="mock-controls">
+    <div class="mock-group" role="group" aria-label="Preview state">
+      <button class="mock-chip" type="button" data-state-btn="all" aria-pressed="true">All matches</button>
+      <button class="mock-chip" type="button" data-state-btn="options" aria-pressed="false">Options open</button>
+      <button class="mock-chip" type="button" data-state-btn="unique" aria-pressed="false">One per file</button>
+      <button class="mock-chip" type="button" data-state-btn="truncated" aria-pressed="false">Truncated</button>
+      <button class="mock-chip" type="button" data-state-btn="loading" aria-pressed="false">Loading</button>
+      <button class="mock-chip" type="button" data-state-btn="empty" aria-pressed="false">Empty</button>
+      <button class="mock-chip" type="button" data-state-btn="nomatch" aria-pressed="false">No matches</button>
+      <button class="mock-chip" type="button" data-state-btn="error" aria-pressed="false">Error</button>
+    </div>
+    <div class="mock-divider" aria-hidden="true"></div>
+    <div class="mock-group" role="group" aria-label="Theme preview">
+      <button class="mock-chip" type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+      <button class="mock-chip" type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+</header>
+
+<main class="mock-stage">
+  <!-- ------------------------------------------------ desktop panel -->
+  <section class="mock-col" aria-label="Desktop side panel preview">
+    <div class="mock-caption"><b>Desktop</b> · 240 px side panel · state: <span id="state-label">All matches</span></div>
+    <div class="app-shell">
+      <nav class="mock-rail" aria-hidden="true">
+        <span class="mock-rail-icon">📁</span>
+        <span class="mock-rail-icon">📌</span>
+        <span class="mock-rail-icon">🔖</span>
+        <span class="mock-rail-icon">🕒</span>
+        <span class="mock-rail-icon active">🔍</span>
+        <span class="mock-rail-icon">✨</span>
+        <span class="mock-rail-spacer"></span>
+        <span class="mock-rail-icon">⚙</span>
+      </nav>
+
+      <aside id="search-view" class="panel" aria-label="Search side panel">
+        <div class="panel-header">
+          <span class="panel-title">Search</span>
+          <button class="collapse-btn" type="button" aria-label="Collapse side panel">‹</button>
+        </div>
+
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="fix">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping">
+          <label class="search-panel-mode-opt">
+            <input type="radio" name="search-panel-mode" value="all" checked>
+            <span>All matches</span>
+          </label>
+          <label class="search-panel-mode-opt">
+            <input type="radio" name="search-panel-mode" value="unique">
+            <span>One per file</span>
+          </label>
+        </div>
+
+        <div class="search-panel-meta">
+          <div class="search-panel-summary" id="summary" role="status"
+               aria-live="polite" aria-atomic="true">6 matches</div>
+          <button type="button" class="search-panel-options-toggle"
+                  id="options-toggle" aria-expanded="false"
+                  aria-controls="search-panel-options">
+            <span class="search-panel-options-label">Options</span>
+            <span class="search-panel-chevron" aria-hidden="true">⌄</span>
+          </button>
+        </div>
+
+        <div class="search-panel-note" id="note" hidden></div>
+
+        <div class="search-panel-options" id="search-panel-options" hidden>
+          <label class="search-panel-opt-row">
+            <input type="checkbox" id="search-panel-regex" aria-label="Regex"
+                   aria-describedby="search-panel-regex-help">
+            <span>Regex</span>
+            <span id="search-panel-regex-help" class="search-panel-sr">Use a Python regular expression.</span>
+          </label>
+          <div class="search-panel-opt-row">
+            <label for="search-panel-sort">Sort by</label>
+            <select id="search-panel-sort" class="search-panel-select">
+              <option value="most">Most matches</option>
+              <option value="path" selected>Path A–Z</option>
+              <option value="recent">Recently edited</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="search-panel-list" id="list" aria-busy="false">
+          <div class="search-panel-error" id="error-banner" role="alert" hidden>
+            <span class="search-panel-error-mark" aria-hidden="true">!</span>
+            <div class="search-panel-error-body">
+              <div class="search-panel-error-title">Search failed</div>
+              <div class="search-panel-error-detail">Search error: Server Error</div>
+            </div>
+            <button type="button" class="search-panel-retry">Retry</button>
+          </div>
+
+          <!-- All matches -->
+          <div class="view" data-view="all">
+            <button type="button" class="search-panel-hit is-active" tabindex="0">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 4</span>
+              </span>
+              <span class="search-panel-hit-snippet">Remember to <mark>fix</mark> the parser before the demo.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 18</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> for the race was a memory barrier.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 31</span>
+              </span>
+              <span class="search-panel-hit-snippet">Do not ship until the <mark>fix</mark> is verified on target.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/b.md</span>
+                <span class="sp-meta">line 2</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> landed in the last release.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-30.md</span>
+                <span class="sp-meta">line 6</span>
+              </span>
+              <span class="search-panel-hit-snippet">Spent the morning on the <mark>fix</mark>; scope was smaller than expected.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-28.md</span>
+                <span class="sp-meta">line 9</span>
+              </span>
+              <span class="search-panel-hit-snippet">One more <mark>fix</mark> and the board boots.</span>
+            </button>
+          </div>
+
+          <!-- One per file -->
+          <div class="view" data-view="unique" hidden>
+            <button type="button" class="search-panel-hit is-active" tabindex="0">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-count">3 matches</span>
+              </span>
+              <span class="search-panel-hit-snippet">Remember to <mark>fix</mark> the parser before the demo.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/b.md</span>
+                <span class="sp-count">1 match</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> landed in the last release.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-30.md</span>
+                <span class="sp-count">2 matches</span>
+              </span>
+              <span class="search-panel-hit-snippet">Spent the morning on the <mark>fix</mark>; scope was smaller than expected.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+
+          <!-- Idle / empty query -->
+          <div class="view" data-view="idle" hidden>
+            <div class="search-panel-state">
+              <div class="search-panel-state-title">Search your notebooks</div>
+              <div class="search-panel-state-hint">Type a word or phrase to find it in every note.</div>
+            </div>
+          </div>
+
+          <!-- No matches -->
+          <div class="view" data-view="nomatch" hidden>
+            <div class="search-panel-state">
+              <div class="search-panel-state-title">No matches for “regulr expression”</div>
+              <div class="search-panel-state-hint">Check the pattern, or turn off Regex to search plain text.</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------- phone panel -->
+  <section class="mock-col" aria-label="Phone search drawer preview">
+    <div class="mock-caption"><b>Phone</b> · 390 px · full-width search drawer · one per file</div>
+    <div class="phone-shell">
+      <aside class="panel phone" aria-label="Search drawer">
+        <div class="panel-header">
+          <span class="panel-title">Search</span>
+          <button class="collapse-btn" type="button" aria-label="Close search">×</button>
+        </div>
+
+        <div class="search-panel-input-row">
+          <input type="search" class="search-panel-input"
+                 placeholder="Search notebooks…" aria-label="Search notebooks" value="fix">
+          <label class="search-panel-case" title="Case sensitive">
+            <input type="checkbox" aria-label="Case sensitive">
+            <span>Aa</span>
+          </label>
+        </div>
+
+        <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping">
+          <label class="search-panel-mode-opt">
+            <input type="radio" name="phone-mode" value="all">
+            <span>All matches</span>
+          </label>
+          <label class="search-panel-mode-opt">
+            <input type="radio" name="phone-mode" value="unique" checked>
+            <span>One per file</span>
+          </label>
+        </div>
+
+        <div class="search-panel-meta">
+          <div class="search-panel-summary" id="phone-summary" role="status"
+               aria-live="polite" aria-atomic="true">6 matches in 3 files</div>
+          <button type="button" class="search-panel-options-toggle"
+                  aria-expanded="false" aria-controls="phone-options">
+            <span class="search-panel-options-label">Options</span>
+            <span class="search-panel-chevron" aria-hidden="true">⌄</span>
+          </button>
+        </div>
+
+        <div class="search-panel-note" id="phone-note">Click a row to open its first match.</div>
+
+        <div class="search-panel-options" id="phone-options" hidden>
+          <label class="search-panel-opt-row">
+            <input type="checkbox"><span>Regex</span>
+          </label>
+          <div class="search-panel-opt-row">
+            <label for="phone-sort">Sort by</label>
+            <select id="phone-sort" class="search-panel-select">
+              <option>Most matches</option>
+              <option selected>Path A–Z</option>
+              <option>Recently edited</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="search-panel-list">
+          <div data-view="unique">
+            <button type="button" class="search-panel-hit is-active" tabindex="0">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-count">3 matches</span>
+              </span>
+              <span class="search-panel-hit-snippet">Remember to <mark>fix</mark> the parser before the demo.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/b.md</span>
+                <span class="sp-count">1 match</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> landed in the last release.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-30.md</span>
+                <span class="sp-count">2 matches</span>
+              </span>
+              <span class="search-panel-hit-snippet">Spent the morning on the <mark>fix</mark>; scope was smaller than expected.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+          <div data-view="all" hidden>
+            <button type="button" class="search-panel-hit is-active" tabindex="0">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 4</span>
+              </span>
+              <span class="search-panel-hit-snippet">Remember to <mark>fix</mark> the parser before the demo.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 18</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> for the race was a memory barrier.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/a.md</span>
+                <span class="sp-meta">line 31</span>
+              </span>
+              <span class="search-panel-hit-snippet">Do not ship until the <mark>fix</mark> is verified on target.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">projects/notes/b.md</span>
+                <span class="sp-meta">line 2</span>
+              </span>
+              <span class="search-panel-hit-snippet">The <mark>fix</mark> landed in the last release.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-30.md</span>
+                <span class="sp-meta">line 6</span>
+              </span>
+              <span class="search-panel-hit-snippet">Spent the morning on the <mark>fix</mark>; scope was smaller than expected.</span>
+            </button>
+            <button type="button" class="search-panel-hit" tabindex="-1">
+              <span class="search-panel-hit-file">
+                <span class="sp-file">journal/2026-10-28.md</span>
+                <span class="sp-meta">line 9</span>
+              </span>
+              <span class="search-panel-hit-snippet">One more <mark>fix</mark> and the board boots.</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  const panel = document.getElementById("search-view");
+  const summary = document.getElementById("summary");
+  const note = document.getElementById("note");
+  const list = document.getElementById("list");
+  const query = panel.querySelector(".search-panel-input");
+  const errorBanner = document.getElementById("error-banner");
+  const options = document.getElementById("search-panel-options");
+  const optionsToggle = document.getElementById("options-toggle");
+  const regex = document.getElementById("search-panel-regex");
+  const sort = document.getElementById("search-panel-sort");
+  const stateLabel = document.getElementById("state-label");
+  const views = Array.from(panel.querySelectorAll("[data-view]"));
+  const modeRadios = Array.from(panel.querySelectorAll('input[name="search-panel-mode"]'));
+
+  const phonePanel = document.querySelector(".panel.phone");
+  const phoneSummary = document.getElementById("phone-summary");
+  const phoneNote = document.getElementById("phone-note");
+  const phoneViews = Array.from(phonePanel.querySelectorAll("[data-view]"));
+  const phoneModeRadios = Array.from(document.querySelectorAll('input[name="phone-mode"]'));
+
+  // Copy strings are the single source used by the state switcher.
+  const STATES = {
+    all:       { label: "All matches",  summary: "6 matches", note: "", options: false, view: "all",
+                 summaryError: false, loading: false, error: false, mode: "all" },
+    options:   { label: "Options open", summary: "6 matches", note: "", options: true, view: "all",
+                 summaryError: false, loading: false, error: false, mode: "all" },
+    unique:    { label: "One per file", summary: "6 matches in 3 files",
+                 note: "Click a row to open its first match.", options: false, view: "unique",
+                 summaryError: false, loading: false, error: false, mode: "unique" },
+    truncated: { label: "Truncated",    summary: "Showing first 200 matches",
+                 note: "Refine your query to narrow the results.", options: false, view: "all",
+                 summaryError: false, loading: false, error: false, mode: "all" },
+    loading:   { label: "Loading",      summary: "Searching…", note: "", options: false, view: "all",
+                 summaryError: false, loading: true, error: false, mode: "all" },
+    empty:     { label: "Empty query",  summary: "", note: "", options: false, view: "idle",
+                 summaryError: false, loading: false, error: false, mode: "all" },
+    nomatch:   { label: "No matches",   summary: "0 matches", note: "", options: false, view: "nomatch",
+                 summaryError: false, loading: false, error: false, mode: "all" },
+    error:     { label: "Error",        summary: "Search failed", note: "", options: false, view: "all",
+                 summaryError: true, loading: false, error: true, mode: "all" }
+  };
+
+
+  function showView(name) {
+    views.forEach(function (v) {
+      v.hidden = v.dataset.view !== name;
+    });
+  }
+
+  function setOptionsOpen(open) {
+    options.hidden = !open;
+    optionsToggle.setAttribute("aria-expanded", String(open));
+  }
+
+  function updateOptionsCount() {
+    const active = (regex.checked ? 1 : 0) + ((sort.value !== "path") ? 1 : 0);
+    optionsToggle.querySelector(".search-panel-options-label").textContent =
+      active ? "Options (" + active + ")" : "Options";
+    optionsToggle.setAttribute("aria-label",
+      active ? "Search options, " + active + " active" : "Search options");
+  }
+
+  function apply(next) {
+    const s = STATES[next];
+    if (!s) return;
+    summary.textContent = s.summary;
+    summary.classList.toggle("error", !!s.summaryError);
+    note.textContent = s.note;
+    note.hidden = !s.note;
+    setOptionsOpen(!!s.options);
+    errorBanner.hidden = !s.error;
+    list.classList.toggle("is-loading", !!s.loading);
+    list.setAttribute("aria-busy", String(!!s.loading));
+    modeRadios.forEach(function (r) {
+      r.checked = r.value === s.mode;
+    });
+    showView(s.view);
+    query.value = next === "empty" ? "" : (next === "nomatch" ? "regulr expression" : "fix");
+    stateLabel.textContent = s.label;
+    document.querySelectorAll("[data-state-btn]").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.stateBtn === next));
+    });
+  }
+
+  document.querySelectorAll("[data-state-btn]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      apply(btn.dataset.stateBtn);
+    });
+  });
+
+  // One disclosure pattern for the desktop panel and the phone preview.
+  document.querySelectorAll(".search-panel-options-toggle").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      const target = document.getElementById(btn.getAttribute("aria-controls"));
+      if (!target) return;
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      target.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+    });
+  });
+
+  regex.addEventListener("change", updateOptionsCount);
+  sort.addEventListener("change", updateOptionsCount);
+
+  modeRadios.forEach(function (r) {
+    r.addEventListener("change", function () {
+      if (r.checked) apply(r.value === "unique" ? "unique" : "all");
+    });
+  });
+
+  document.querySelectorAll("[data-theme-btn]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.body.dataset.theme = btn.dataset.themeBtn;
+      document.querySelectorAll("[data-theme-btn]").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b === btn));
+      });
+    });
+  });
+
+  // The phone preview switches between its own all-matches and one-per-file
+  // lists without touching the desktop preview.
+  phoneModeRadios.forEach(function (r) {
+    r.addEventListener("change", function () {
+      if (!r.checked) return;
+      const unique = r.value === "unique";
+      phoneViews.forEach(function (v) {
+        v.hidden = v.dataset.view !== (unique ? "unique" : "all");
+      });
+      phoneSummary.textContent = unique ? "6 matches in 3 files" : "6 matches";
+      phoneNote.textContent = unique ? "Click a row to open its first match." : "";
+      phoneNote.hidden = !unique;
+    });
+  });
+
+  updateOptionsCount();
+  apply("all");
+})();
+</script>
+</body>
+</html>

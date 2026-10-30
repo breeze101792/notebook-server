@@ -125,7 +125,16 @@ request via `limit=` / `perFile=` up to the hard ceilings); matches are returned
 with a snippet where the hit is wrapped in `<<…>>` so the client can re-highlight
 safely without parsing HTML. Optional params: `regex=1` (Python regex per line),
 `file=` (scan one specific file only), `glob=` (fnmatch filter on relative path),
-and `order=path|mtime|count` (+ `desc=1`) to reorder result files.
+and `order=path|mtime|count` (+ `desc=1`) to reorder result files. `unique=1`
+returns one item per note with an exact, uncapped `count` and the first
+occurrence's `line`/`col`/`snippet`; there `limit` caps notes and `perFile` is
+ignored. Without `unique`, `perFileTruncated` discloses a hit file clipped by
+the per-file cap. `name=1` matches `q` against each note's basename instead of
+its content and returns one `{file}` per matching note (`limit` caps notes).
+The side-panel Search view sends `unique`/`order`/`desc`/`name` and persists
+`searchUnique` (default `true`), `searchSort` (default `"path"`), and
+`searchTarget` (default `"content"`; `"name"` hides grouping and drops
+snippets).
 
 **Auth (optional two-password gate).** `config/auth.json` (separate from
 `config.json` so the UI-prefs blob can never include hashed credentials) holds

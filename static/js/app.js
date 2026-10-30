@@ -10,6 +10,10 @@
   const AUTOSAVE_DELAY_MIN_S = 1;
   const AUTOSAVE_DELAY_MAX_S = 300;
   const AUTOSAVE_DELAY_DEFAULT_S = 5;
+  // Search sort values accepted from config and the panel (server order=).
+  const SEARCH_SORTS = ["path", "mtime", "count"];
+  // Side-panel search target: note content or file name (server name=1).
+  const SEARCH_TARGETS = ["content", "name"];
 
   const DEFAULTS = {
     theme: "auto",
@@ -46,6 +50,14 @@
     sidebarCollapsed: false,
     outlineCollapsed: false,
     searchCaseSensitive: false,
+    // Side-panel search only: one row per note (unique=1) is the default
+    // because the panel's job is finding the note, not every hit.
+    searchUnique: true,
+    // Side-panel search order: "path" | "mtime" | "count" (server order=).
+    searchSort: "path",
+    // Side-panel search target: "content" searches note bodies, "name"
+    // matches the file basename (server name=1).
+    searchTarget: "content",
     // Ambient background particle drift in the graph view (neural
     // "network" feel). Off by default so it doesn't distract while
     // reading the graph; toggle in Settings -> Appearance.
@@ -356,6 +368,14 @@
     applyWallpaperScroll(cfg.wallpaperScroll || "scroll");
     applyTopbar(!!cfg.hideTopbar);
     applySiteTitle(cfg.siteTitle || "Notebook");
+    // Hand-edited config values are normalised here so every reader sees a
+    // known shape; the normalised value is what the next write persists.
+    cfg.searchUnique = (typeof cfg.searchUnique === "boolean")
+      ? cfg.searchUnique : DEFAULTS.searchUnique;
+    cfg.searchSort = SEARCH_SORTS.indexOf(cfg.searchSort) >= 0
+      ? cfg.searchSort : DEFAULTS.searchSort;
+    cfg.searchTarget = SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
+      ? cfg.searchTarget : DEFAULTS.searchTarget;
     caseEl.checked = !!cfg.searchCaseSensitive;
     applySidebarState();
     applyOutlineState();
@@ -380,6 +400,10 @@
     } else {
       cfg.explorerTop = DEFAULTS.explorerTop;
     }
+    // A view can mount before the async config fetch resolves (Search can
+    // be the saved view). Mark this as the load-time signal so the panel can
+    // sync its controls without undoing a change the user made meanwhile.
+    NB.evt.emit("config:changed", cfg, { loaded: true });
   }
 
   /* Side panel minimize: toggle between the saved width and a thin strip.
@@ -486,10 +510,12 @@
       persistConfig();
     });
 
-    // search-case toggle persists config
+    // search-case toggle persists config; keep the top-bar checkbox in sync
+    // when the side panel is the surface that changed it.
     NB.evt.on("search-case-changed", (val) => {
-      cfg.searchCaseSensitive = val;
-      persistConfig();
+      cfg.searchCaseSensitive = !!val;
+      if (caseEl) caseEl.checked = cfg.searchCaseSensitive;
+      persistConfig(["searchCaseSensitive"]);
     });
 
     // top bar: enter/exit edit mode. The Preview / Save / Close buttons
@@ -993,6 +1019,27 @@
     setTheme: (pref) => { applyTheme(pref); persistConfig(["theme"]); },
     setFontSize: (name) => { applyFontSize(name); persistConfig(["fontSize"]); },
     getFontSize: () => cfg.fontSize || "medium",
+    // Side-panel search prefs. Keyed persists so a phone can write only
+    // these keys through its read-merge-write path.
+    setSearchUnique: (on) => {
+      cfg.searchUnique = (typeof on === "boolean") ? on : DEFAULTS.searchUnique;
+      persistConfig(["searchUnique"]);
+    },
+    getSearchUnique: () => (typeof cfg.searchUnique === "boolean")
+      ? cfg.searchUnique : DEFAULTS.searchUnique,
+    setSearchSort: (sort) => {
+      cfg.searchSort = SEARCH_SORTS.indexOf(sort) >= 0 ? sort : DEFAULTS.searchSort;
+      persistConfig(["searchSort"]);
+    },
+    getSearchSort: () => SEARCH_SORTS.indexOf(cfg.searchSort) >= 0
+      ? cfg.searchSort : DEFAULTS.searchSort,
+    setSearchTarget: (value) => {
+      cfg.searchTarget = SEARCH_TARGETS.indexOf(value) >= 0
+        ? value : DEFAULTS.searchTarget;
+      persistConfig(["searchTarget"]);
+    },
+    getSearchTarget: () => SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
+      ? cfg.searchTarget : DEFAULTS.searchTarget,
     setSettingsModalWidth: (name) => { applySettingsModalWidth(name); persistConfig(); },
     getSettingsModalWidth: () => cfg.settingsModalWidth || "medium",
     setSettingsModalHeight: (name) => { applySettingsModalHeight(name); persistConfig(); },

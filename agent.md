@@ -69,8 +69,8 @@ Tokens never expire but can be revoked individually. Rules that matter to you:
 ### Search
 
 ```
-GET /api/search?q=PATTERN[&case=1][&regex=1][&file=path][&glob=p][&limit=N][&perFile=N][&order=path|mtime|count][&desc=1]
-→ {query, matches: [{file, line, col, snippet}], truncated[, file]}
+GET /api/search?q=PATTERN[&case=1][&regex=1][&file=path][&glob=p][&limit=N][&perFile=N][&unique=1][&name=1][&order=path|mtime|count][&desc=1]
+→ {query, matches: [{file, line, col, snippet[, count]}], truncated, perFileTruncated[, file]}
 ```
 
 - `q` is a **literal substring** by default; `regex=1` treats it as a Python
@@ -81,12 +81,31 @@ GET /api/search?q=PATTERN[&case=1][&regex=1][&file=path][&glob=p][&limit=N][&per
 - `glob=notes/*.md` filters which files are scanned at all (fnmatch against
   the relative path or basename).
 - Caps: `limit` total matches (default 200, max 2000) and `perFile`
-  (default 20, max 200); raise them for big notebooks.
+  (default 20, max 200); raise them for big notebooks. `perFileTruncated` is
+  true when at least one file was clipped by `perFile`.
+- `unique=1` returns **one result per note**, keyed on the exact relative
+  path: `{file, line, col, snippet, count}`. `count` is every occurrence in
+  that file (two hits on one line count two), and `line`/`col`/`snippet`
+  describe the first occurrence. `perFile` is ignored and
+  `perFileTruncated` is false; `limit` now caps **notes**, default 200, max
+  2000. Every candidate is counted, the note set is ordered when `order=` is
+  set, and only then is `limit` applied, so `order=count&desc=1` returns the
+  highest-count notes. `truncated: true` means more notes matched than were
+  returned.
+- `name=1` matches `q` against each note's **basename** instead of its
+  content. Literal substring by default (escaped), `regex=1` uses the pattern
+  as-is, and `case=1` applies, exactly as in content search. Returns one
+  `{file}` item per matching note — no `line`, `col`, `snippet`, or `count`.
+  `limit` caps **notes**, `truncated` means more notes matched than were
+  returned, and `perFileTruncated` is always false. `unique` has no effect.
+  `file=` and `glob=` scope the candidate set the same way as content search.
 - Ordering: default keeps root-first scan order; `order=path|mtime|count`
   sorts files by relative path, modification time, or match count
   respectively. Add `desc=1` to reverse (e.g. newest first with mtime).
-  Ordering regroups whole files; caps still apply during the scan
-  (`truncated: true` means refine your query).
+  Ordering regroups whole files; in every-match mode caps still apply during
+  the scan (`truncated: true` means refine your query). In unique mode equal
+  keys fall back to path A–Z. In name mode every note counts once, so
+  `order=count` is path order.
 - The hit inside each `snippet` is wrapped in `<<`…`>>`.
 
 ### Writes (admin role required when auth is on)

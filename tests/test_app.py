@@ -1378,6 +1378,246 @@ class TestSearch(BaseTest):
         r = self.client.get("/api/search?q=x&order=size")
         self.assertEqual(r.status_code, 400)
 
+    # --- unique mode (AC6-AC12, AC22-AC24) --------------------------------
+    def _write(self, path, content):
+        r = self.post("/api/file", {"path": path, "content": content})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_hidden_directories_are_not_scanned(self):
+        # The tree hides dot-directories; search must not surface notes the
+        # user cannot browse.
+        self._write("visible.md", "zzhidden\n")
+        os.makedirs(os.path.join(nb.DATA_DIR, ".trash"), exist_ok=True)
+        self._write(".trash/gone.md", "zzhidden\n")
+        data = self._matches("zzhidden")
+        self.assertEqual([m["file"] for m in data["matches"]], ["visible.md"])
+        data = self._matches("zzhidden", unique=1)
+        self.assertEqual([m["file"] for m in data["matches"]], ["visible.md"])
+
+    def test_unique_one_row_per_note_exact_count_and_first_hit(self):
+        # AC6/AC10/AC22/AC23: two notes, one with 3 hits (two on one line),
+        # one with a single hit. Unique returns one bundle per path; the
+        # count is every occurrence and line/col/snippet describe the first.
+        self._write("line.md", "zzline zzline\n\nzzline\n")
+        self._write("one.md", "zzline\n")
+        data = self._matches("zzline", unique=1)
+        self.assertFalse(data["truncated"])
+        self.assertFalse(data["perFileTruncated"])
+        self.assertEqual(len(data["matches"]), 2)
+        by_file = {m["file"]: m for m in data["matches"]}
+        self.assertEqual(set(by_file), {"line.md", "one.md"})
+        first = by_file["line.md"]
+        self.assertEqual(first["count"], 3)
+        self.assertEqual(first["line"], 1)
+        self.assertEqual(first["col"], 1)
+        self.assertEqual(first["snippet"].count("<<"), 1)
+        self.assertIn("<<zzline>>", first["snippet"])
+        self.assertEqual(by_file["one.md"]["count"], 1)
+
+    def test_unique_two_hits_on_one_line_counts_two(self):
+        # AC6: two occurrences on one line are two matches, one row.
+        self._write("pair.md", "zztwo zztwo\n")
+        data = self._matches("zztwo", unique=1)
+        self.assertEqual(len(data["matches"]), 1)
+        hit = data["matches"][0]
+        self.assertEqual(hit["file"], "pair.md")
+        self.assertEqual(hit["count"], 2)
+        self.assertEqual(hit["line"], 1)
+        self.assertEqual(hit["col"], 1)
+        self.assertEqual(hit["snippet"].count("<<"), 1)
+
+    def test_unique_per_file_cap_ignored_and_count_uncapped(self):
+        # AC9/AC22: perFile is ignored in unique mode; the count is the true
+        # number of occurrences even above the every-match per-file cap.
+        self._write("many.md", "zzmany\n" * 25)
+        data = self._matches("zzmany", unique=1, perFile=1)
+        self.assertEqual(len(data["matches"]), 1)
+        hit = data["matches"][0]
+        self.assertEqual(hit["file"], "many.md")
+        self.assertEqual(hit["count"], 25)
+        self.assertFalse(data["perFileTruncated"])
+        self.assertFalse(data["truncated"])
+
+    def test_unique_order_count_desc_limit_caps_notes(self):
+        # AC8: ordering runs over the full note set before the note cap, so
+        # the two highest-count notes survive limit=2 and the third is gone.
+        self._write("c1.md", "zzrank\n")
+        self._write("c2.md", "zzrank\n" * 2)
+        self._write("c3.md", "zzrank\n" * 3)
+        data = self._matches("zzrank", unique=1, order="count", desc=1, limit=2)
+        self.assertEqual([m["file"] for m in data["matches"]], ["c3.md", "c2.md"])
+        self.assertEqual([m["count"] for m in data["matches"]], [3, 2])
+        self.assertTrue(data["truncated"])
+        self.assertNotIn("c1.md", {m["file"] for m in data["matches"]})
+        # limit above the note count clears truncated.
+        data = self._matches("zzrank", unique=1, order="count", desc=1, limit=3)
+        self.assertFalse(data["truncated"])
+
+    def test_unique_order_mtime_and_count_tiebreak_path(self):
+        # AC7: unique honours order=mtime&desc=1 and uses path A-Z as the
+        # deterministic tie-break for equal counts.
+        self._write("zzold.md", "zzorder\n")
+        self._write("zznew.md", "zzorder\n")
+        base = time.time()
+        os.utime(os.path.join(nb.DATA_DIR, "zzold.md"), (base - 1000, base - 1000))
+        os.utime(os.path.join(nb.DATA_DIR, "zznew.md"), (base, base))
+        data = self._matches("zzorder", unique=1, order="mtime", desc=1)
+        self.assertEqual([m["file"] for m in data["matches"]],
+                         ["zznew.md", "zzold.md"])
+        data = self._matches("zzorder", unique=1, order="mtime")
+        self.assertEqual([m["file"] for m in data["matches"]],
+                         ["zzold.md", "zznew.md"])
+        # Both notes have one hit: count desc must fall back to path A-Z.
+        data = self._matches("zzorder", unique=1, order="count", desc=1)
+        self.assertEqual([m["file"] for m in data["matches"]],
+                         ["zznew.md", "zzold.md"])
+        data = self._matches("zzorder", unique=1, order="path")
+        self.assertEqual([m["file"] for m in data["matches"]],
+                         ["zznew.md", "zzold.md"])
+
+    def test_every_match_per_file_cap_disclosure_and_unique_false(self):
+        # AC11/AC12: every-match mode flags a clipped file; unique mode
+        # returns perFileTruncated false because the per-file cap is ignored.
+        self._write("many.md", "zzcap\n" * 25)
+        data = self._matches("zzcap")
+        self.assertEqual(len(data["matches"]), 20)
+        self.assertTrue(data["perFileTruncated"])
+        self.assertFalse(data["truncated"])
+        data = self._matches("zzcap", perFile=1)
+        self.assertEqual(len(data["matches"]), 1)
+        self.assertTrue(data["perFileTruncated"])
+        data = self._matches("zzcap", unique=1, perFile=1)
+        self.assertFalse(data["perFileTruncated"])
+        self.assertEqual(data["matches"][0]["count"], 25)
+        # A file under the cap never sets the flag.
+        data = self._matches("fix this")
+        self.assertFalse(data["perFileTruncated"])
+
+    def test_legacy_response_unchanged_when_unique_absent_or_zero(self):
+        # AC12: unique absent and unique=0 are the same legacy shape; count
+        # is additive-only and never appears without unique=1.
+        absent = self._matches("fix this")
+        zero = self._matches("fix this", unique=0)
+        self.assertEqual(absent, zero)
+        self.assertEqual(set(absent),
+                         {"query", "matches", "truncated", "perFileTruncated"})
+        self.assertTrue(absent["matches"])
+        self.assertTrue(all("count" not in m for m in absent["matches"]))
+        self.assertFalse(absent["perFileTruncated"])
+
+    def test_unique_paths_differing_only_by_case_not_merged(self):
+        # AC24: the dedupe key is the exact relative path string.
+        if os.path.normcase("CaseTwin.md") == os.path.normcase("casetwin.md"):
+            self.skipTest("case-insensitive filesystem cannot hold both paths")
+        self._write("CaseTwin.md", "zztwin\n")
+        self._write("casetwin.md", "zztwin\n")
+        data = self._matches("zztwin", unique=1)
+        self.assertEqual(len(data["matches"]), 2)
+        self.assertEqual({m["file"] for m in data["matches"]},
+                         {"CaseTwin.md", "casetwin.md"})
+
+    def test_unique_invalid_input_still_rejected(self):
+        # Invalid input keeps the current 400 shapes in unique mode.
+        for qs in ("q=x&unique=1&order=size",
+                   "q=x&unique=1&limit=abc",
+                   "q=x&unique=1&perFile=abc",
+                   "q=x&unique=1&file=../app.py",
+                   "q=&unique=1"):
+            r = self.client.get("/api/search?" + qs)
+            self.assertEqual(r.status_code, 400, qs)
+
+    # --- name mode (basename search) --------------------------------------
+    def _name_files(self, q, **params):
+        data = self._matches(q, name=1, **params)
+        self.assertFalse(data["perFileTruncated"])
+        self.assertTrue(all(set(m) == {"file"} for m in data["matches"]))
+        return [m["file"] for m in data["matches"]]
+
+    def test_name_matches_basename_not_content(self):
+        # A token in a note's body but in no basename returns nothing; the
+        # same token in the basename returns that note once, with {file} only.
+        self._write("weekly-review.md", "nothing relevant in the body\n")
+        self._write("body-only.md", "weekly review notes in the body\n")
+        self.assertEqual(self._name_files("weekly-review"), ["weekly-review.md"])
+        self.assertEqual(self._name_files("relevant"), [])
+        self.assertEqual(self._name_files("body-only.md"), ["body-only.md"])
+
+    def test_name_case_and_regex_apply_to_basename(self):
+        self._write("NameCase-Report.md", "zz\n")
+        self.assertIn("NameCase-Report.md", self._name_files("namecase"))
+        self.assertNotIn("NameCase-Report.md",
+                         self._name_files("namecase", case=1))
+        self.assertIn("NameCase-Report.md",
+                      self._name_files("NameCase", case=1))
+        self._write("regextarget-42.md", "zz\n")
+        self.assertEqual(self._name_files(r"regextarget-\d\d", regex=1),
+                         ["regextarget-42.md"])
+        # Without regex the same text is a literal substring and misses.
+        self.assertEqual(self._name_files(r"regextarget-\d\d"), [])
+        self.assertEqual(self._name_files(r"REGEXTARGET-\d\d", regex=1,
+                                          case=1), [])
+
+    def test_name_limit_caps_notes_and_truncated(self):
+        for suffix in ("a", "b", "c"):
+            self._write("capname-%s.md" % suffix, "zz\n")
+        self.assertEqual(len(self._name_files("capname", limit=2)), 2)
+        self.assertTrue(self._matches("capname", name=1,
+                                      limit=2)["truncated"])
+        data = self._matches("capname", name=1, limit=3)
+        self.assertEqual(len(data["matches"]), 3)
+        self.assertFalse(data["truncated"])
+
+    def test_name_order_path_mtime_and_count(self):
+        self._write("zorder-b.md", "zz\n")
+        self._write("zorder-a.md", "zz\n")
+        base = time.time()
+        os.utime(os.path.join(nb.DATA_DIR, "zorder-a.md"),
+                 (base - 1000, base - 1000))
+        os.utime(os.path.join(nb.DATA_DIR, "zorder-b.md"), (base, base))
+        self.assertEqual(self._name_files("zorder", order="path"),
+                         ["zorder-a.md", "zorder-b.md"])
+        self.assertEqual(self._name_files("zorder", order="path", desc=1),
+                         ["zorder-b.md", "zorder-a.md"])
+        self.assertEqual(self._name_files("zorder", order="mtime", desc=1),
+                         ["zorder-b.md", "zorder-a.md"])
+        self.assertEqual(self._name_files("zorder", order="mtime"),
+                         ["zorder-a.md", "zorder-b.md"])
+        # Every note counts once, so count ordering is path ordering.
+        self.assertEqual(self._name_files("zorder", order="count"),
+                         self._name_files("zorder", order="path"))
+        self.assertEqual(self._name_files("zorder", order="count", desc=1),
+                         self._name_files("zorder", order="path", desc=1))
+
+    def test_name_glob_and_file_scope(self):
+        self._write("globname-a.md", "zz\n")
+        self._write("globname-b.md", "zz\n")
+        self.assertEqual(self._name_files("globname", glob="globname-a*"),
+                         ["globname-a.md"])
+        self.assertEqual(self._name_files("globname", glob="nope*"), [])
+        self.assertEqual(self._name_files("globname-a", file="globname-a.md"),
+                         ["globname-a.md"])
+        data = self._matches("globname-a", name=1, file="globname-b.md")
+        self.assertEqual(data["matches"], [])
+        self.assertEqual(data.get("file"), "globname-b.md")
+
+    def test_name_absent_keeps_content_search(self):
+        # The basename token does not occur in the body, so the default
+        # content search sees nothing while name mode finds the note.
+        self._write("contentonly-token.md", "plain body\n")
+        data = self._matches("contentonly-token")
+        self.assertEqual(data["matches"], [])
+        self.assertFalse(data["truncated"])
+        self.assertEqual(self._name_files("contentonly-token"),
+                         ["contentonly-token.md"])
+
+    def test_name_invalid_input_still_rejected(self):
+        for qs in ("q=x&name=1&order=size",
+                   "q=x&name=1&limit=abc",
+                   "q=&name=1",
+                   "q=x&name=1&file=../app.py"):
+            r = self.client.get("/api/search?" + qs)
+            self.assertEqual(r.status_code, 400, qs)
+
 
 class TestGraph(BaseTest):
     """The /api/graph endpoint scans .md files for [[wikilinks]] and
