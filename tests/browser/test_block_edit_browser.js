@@ -1273,20 +1273,42 @@ async function main() {
         boxes: document.querySelectorAll(
           '#viewer-content input[type="checkbox"]').length,
         texts: items.map((li) => li.textContent.replace(/\u200B/g, "")),
+        paragraphs: Array.from(
+          document.querySelectorAll("#viewer-content > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "")),
       };
     });
 
+    // The first Backspace at T removes beta's marker and keeps its text as
+    // a paragraph. A second Backspace then performs the native merge into
+    // the item above (docs/product/hybrid-block-marker-backspace.md §3.3,
+    // §7: the merge moved to the second press).
     await boot(TASK_NOTE);
     await placeCaretInText("beta", 0);
     await page.keyboard.press("Backspace");
     await sleep(250);
     let tasks = await taskState();
-    check("task: Backspace merges the second item into the first",
-      tasks.count === 1 && tasks.boxes === 1, JSON.stringify(tasks));
-    check("task: Backspace keeps both words and drops the second box",
-      tasks.texts[0] === "alphabeta", JSON.stringify(tasks));
+    check("task: Backspace at T strips the second item's marker",
+      tasks.count === 1 && tasks.boxes === 1 &&
+        tasks.texts[0] === "alpha" && tasks.paragraphs.includes("beta"),
+      JSON.stringify(tasks));
+    check("task: the first press keeps both words and drops the second box",
+      tasks.texts[0] === "alpha" && tasks.paragraphs.includes("beta"),
+      JSON.stringify(tasks));
     await page.keyboard.press("Control+s");
-    check("task: Backspace saves one task with the joined text",
+    check("task: the first press saves a task plus a bare paragraph",
+      await waitForFile((md) => md.trim() ===
+        "# Tasks\n\n- [ ] alpha\n\nbeta" && !/\[ \] beta/.test(md)),
+      JSON.stringify(readNote()));
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    tasks = await taskState();
+    check("task: a second Backspace merges the stripped text into the item",
+      tasks.count === 1 && tasks.boxes === 1 &&
+        tasks.texts[0] === "alphabeta" && tasks.paragraphs.length === 0,
+      JSON.stringify(tasks));
+    await page.keyboard.press("Control+s");
+    check("task: the second press saves one task with the joined text",
       await waitForFile((md) => md.trim() === "# Tasks\n\n- [ ] alphabeta" &&
         !/\[ \].*\[ \]/.test(md)),
       JSON.stringify(readNote()));
@@ -1306,59 +1328,111 @@ async function main() {
         !/\[ \].*\[ \]/.test(md)),
       JSON.stringify(readNote()));
 
-    // The first item has no previous sibling item: it joins the block
-    // above and gives up its marker.
+    // The first item has no previous sibling item. The first press strips
+    // its marker to a paragraph; the second merges that paragraph into the
+    // block above and gives up the marker.
     await boot("# T\n\nIntro\n\n- [ ] alpha\n- [ ] beta\n");
     await placeCaretInText("alpha", 0);
     await page.keyboard.press("Backspace");
     await sleep(250);
     tasks = await taskState();
-    check("task: the first item joins the preceding block",
+    check("task: the first press strips the first item to a paragraph",
       (await page.evaluate(
-        () => document.querySelector("#viewer-content p").textContent)) ===
+        () => document.querySelector("#viewer-content > p").textContent)) ===
+        "Intro" && tasks.count === 1 && tasks.texts[0] === "beta" &&
+        tasks.paragraphs.includes("alpha"),
+      JSON.stringify(tasks));
+    await page.keyboard.press("Control+s");
+    check("task: the first-item strip saves clean Markdown",
+      await waitForFile((md) => md.trim() ===
+        "# T\n\nIntro\n\nalpha\n\n- [ ] beta"),
+      JSON.stringify(readNote()));
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    tasks = await taskState();
+    check("task: a second Backspace joins the first item to the block above",
+      (await page.evaluate(
+        () => document.querySelector("#viewer-content > p").textContent)) ===
         "Introalpha" && tasks.count === 1 && tasks.texts[0] === "beta",
       JSON.stringify(tasks));
     await page.keyboard.press("Control+s");
     check("task: the first-item merge saves clean Markdown",
-      await waitForFile((md) => md === "# T\n\nIntroalpha\n\n- [ ] beta\n"),
+      await waitForFile((md) => md.trim() ===
+        "# T\n\nIntroalpha\n\n- [ ] beta"),
       JSON.stringify(readNote()));
 
-    // A plain list item has no checkbox: its native merge stays intact.
+    // A plain list item has no checkbox. The first Backspace strips its
+    // marker to a paragraph; the second merges natively.
     await boot("# L\n\n- one\n- two\n");
     await placeCaretInText("two", 0);
     await page.keyboard.press("Backspace");
     await sleep(200);
-    const plainItems = await page.evaluate(
+    let plainItems = await page.evaluate(
       () => Array.from(document.querySelectorAll("#viewer-content li"))
         .map((li) => li.textContent));
-    check("task: plain list items still merge natively",
+    const plainParas = await page.evaluate(
+      () => Array.from(document.querySelectorAll("#viewer-content > p"))
+        .map((p) => p.textContent));
+    check("task: a plain list item's first Backspace strips its marker",
+      plainItems.length === 1 && plainItems[0] === "one" &&
+        plainParas.includes("two"), JSON.stringify({ plainItems, plainParas }));
+    await page.keyboard.press("Backspace");
+    await sleep(200);
+    plainItems = await page.evaluate(
+      () => Array.from(document.querySelectorAll("#viewer-content li"))
+        .map((li) => li.textContent));
+    check("task: plain list items still merge natively on the second press",
       plainItems.length === 1 && plainItems[0] === "onetwo",
       JSON.stringify(plainItems));
 
     // A loose task item's nested list and extra paragraph must survive
-    // the merge, not vanish with the source item.
+    // the marker strip and the following merge, not vanish with the source
+    // item. The first press strips beta and hoists its structure; the
+    // second merges the bare text into alpha.
     await boot("# T\n\n- [ ] alpha\n- [ ] beta\n\n" +
       "  second paragraph\n\n  - [ ] sub\n");
     await placeCaretInText("beta", 0);
     await page.keyboard.press("Backspace");
     await sleep(250);
-    const looseMerge = await page.evaluate(() => {
-      const outer = document.querySelector("#viewer-content > ul > li");
+    const looseStrip = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
       return {
-        text: outer ? outer.textContent.replace(/\u200B/g, "") : "",
-        paragraphs: outer ? Array.from(outer.querySelectorAll(":scope > p"))
-          .map((p) => p.textContent.replace(/\u200B/g, "")) : [],
-        nested: outer ? Array.from(outer.querySelectorAll(":scope > ul > li"))
-          .map((li) => li.textContent.replace(/\u200B/g, "")) : [],
-        topLevelItems: Array.from(
-          document.querySelectorAll("#viewer-content > ul > li"))
-          .map((li) => li.firstChild && li.firstChild.nodeType === 3 ?
-            li.textContent : ""),
+        itemTexts: Array.from(root.querySelectorAll(":scope > ul > li"))
+          .map((li) => li.textContent.replace(/\u200B/g, "")),
+        paragraphs: Array.from(root.querySelectorAll(":scope > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "")),
+        nested: Array.from(root.querySelectorAll("li"))
+          .map((li) => li.textContent.replace(/\u200B/g, "")),
+        boxes: root.querySelectorAll('input[type="checkbox"]').length,
       };
     });
-    check("task loose: the merged item keeps its nested list",
-      looseMerge.nested.includes("sub"), JSON.stringify(looseMerge));
-    check("task loose: the merged item keeps its extra paragraph",
+    check("task loose: the first press keeps the nested list",
+      looseStrip.nested.includes("sub"), JSON.stringify(looseStrip));
+    check("task loose: the first press keeps the extra paragraph",
+      looseStrip.paragraphs.some((p) => /second paragraph/.test(p)),
+      JSON.stringify(looseStrip));
+    check("task loose: the first press keeps both item texts",
+      looseStrip.itemTexts.some((t) => /alpha/.test(t)) &&
+        looseStrip.paragraphs.some((p) => /beta/.test(p)),
+      JSON.stringify(looseStrip));
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    const looseMerge = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      const outer = root.querySelector(":scope > ul > li");
+      return {
+        text: outer ? outer.textContent.replace(/\u200B/g, "") : "",
+        paragraphs: Array.from(root.querySelectorAll(":scope > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "")),
+        nested: Array.from(root.querySelectorAll("li"))
+          .map((li) => li.textContent.replace(/\u200B/g, "")),
+        boxes: root.querySelectorAll('input[type="checkbox"]').length,
+      };
+    });
+    check("task loose: the merge keeps the nested list",
+      looseMerge.nested.includes("sub") && looseMerge.boxes === 2,
+      JSON.stringify(looseMerge));
+    check("task loose: the merge keeps the extra paragraph",
       looseMerge.paragraphs.some((p) => /second paragraph/.test(p)),
       JSON.stringify(looseMerge));
     check("task loose: both item texts survive",
@@ -1366,8 +1440,9 @@ async function main() {
       JSON.stringify(looseMerge));
     await page.keyboard.press("Control+s");
     check("task loose: saving preserves the paragraph and nested item",
-      await waitForFile((md) => /second paragraph/.test(md) &&
-        /sub/.test(md) && !/\[ \] beta/.test(md)),
+      await waitForFile((md) => /alphabeta/.test(md) &&
+        /second paragraph/.test(md) && /- \[ \] sub/.test(md) &&
+        !/\[ \] beta/.test(md)),
       JSON.stringify(readNote()));
 
     // A tight task item with a nested list claims Delete at its content
@@ -1396,24 +1471,34 @@ async function main() {
         /alphabeta/.test(md)),
       JSON.stringify(readNote()));
 
-    // Backspace joins before the target's nested list, so later typing
-    // cannot land inside the child item.
+    // Backspace at beta's T strips beta to a paragraph beside alpha's
+    // nested list, so later typing lands in that paragraph and never
+    // inside the child item.
     await boot(TIGHT_NEST);
     await placeCaretInText("beta", 0);
     await page.keyboard.press("Backspace");
     await sleep(200);
     await page.keyboard.type("Z");
     await sleep(100);
-    nestedState = await page.evaluate(() => ({
-      outer: document.querySelector("#viewer-content > ul > li").textContent
-        .replace(/\u200B/g, ""),
-      nested: Array.from(document.querySelectorAll("#viewer-content li li"))
-        .map((li) => li.textContent.replace(/\u200B/g, "")),
-    }));
-    check("task nested: Backspace joins before the nested list",
-      /alphaZbeta/.test(nestedState.outer), JSON.stringify(nestedState));
+    nestedState = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      return {
+        outer: root.querySelector(":scope > ul > li").textContent
+          .replace(/\u200B/g, ""),
+        paragraph: Array.from(root.querySelectorAll(":scope > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "")).join(""),
+        nested: Array.from(root.querySelectorAll("li li"))
+          .map((li) => li.textContent.replace(/\u200B/g, "")),
+      };
+    });
+    check("task nested: Backspace strips the item beside the nested list",
+      /alpha/.test(nestedState.outer) && /sub/.test(nestedState.outer) &&
+        nestedState.paragraph === "Zbeta",
+      JSON.stringify(nestedState));
     check("task nested: typing does not land in the child item",
-      nestedState.nested.includes("sub"), JSON.stringify(nestedState));
+      nestedState.nested.includes("sub") &&
+        !/Z/.test(nestedState.nested.join("")),
+      JSON.stringify(nestedState));
 
     // The first item of a NESTED list joins its parent item, not the
     // block above the whole outer list.
@@ -1438,7 +1523,8 @@ async function main() {
       JSON.stringify(nestedFirst));
 
     // A non-list target keeps the source's nested list AFTER the block,
-    // never inside its paragraph.
+    // never inside its paragraph. The first press lifts alpha to a
+    // paragraph; the second merges it into Intro.
     await boot("# T\n\nIntro\n\n- [ ] alpha\n\n  - [ ] sub\n");
     await page.waitForFunction(
       () => /Intro/.test(document.getElementById("viewer-content").textContent),
@@ -1446,8 +1532,28 @@ async function main() {
     await placeCaretInText("alpha", 0);
     await page.keyboard.press("Backspace");
     await sleep(250);
-    const firstPara = await page.evaluate(() => {
-      const p = Array.from(document.querySelectorAll("#viewer-content p"))
+    let firstPara = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      const p = Array.from(root.querySelectorAll(":scope > p"))
+        .find((el) => el.textContent === "alpha");
+      return {
+        text: p ? p.textContent : "",
+        nestedInside: p ? p.querySelectorAll("ul,ol").length : -1,
+        siblingList: p && p.nextElementSibling &&
+          p.nextElementSibling.tagName === "UL" ?
+          p.nextElementSibling.textContent.replace(/\u200B/g, "") : "",
+      };
+    });
+    check("task first-item: the first press lifts the text to a paragraph",
+      firstPara.text === "alpha", JSON.stringify(firstPara));
+    check("task first-item: the first press keeps the nested list outside",
+      firstPara.nestedInside === 0 && /sub/.test(firstPara.siblingList),
+      JSON.stringify(firstPara));
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    firstPara = await page.evaluate(() => {
+      const root = document.getElementById("viewer-content");
+      const p = Array.from(root.querySelectorAll(":scope > p"))
         .find((el) => /Introalpha/.test(el.textContent));
       return {
         text: p ? p.textContent : "",
@@ -1457,9 +1563,9 @@ async function main() {
           p.nextElementSibling.textContent.replace(/\u200B/g, "") : "",
       };
     });
-    check("task first-item: the joined text lands in the paragraph",
+    check("task first-item: the merge joins the text into the paragraph",
       firstPara.text === "Introalpha", JSON.stringify(firstPara));
-    check("task first-item: the nested list stays outside the paragraph",
+    check("task first-item: the merge keeps the nested list outside",
       firstPara.nestedInside === 0 && /sub/.test(firstPara.siblingList),
       JSON.stringify(firstPara));
 

@@ -78,6 +78,9 @@ of each harness.
   `TestCase` classes, and the loopback AI stubs.
 - [`frontend.md`](frontend.md) — the jsdom harness, the canned SSE
   mechanism, the registry-completeness guard, and the browser suite.
+- [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) — the
+  pre-change gate for `static/js/hybrid.js`: smoke set, AUTO/MANUAL/GAP
+  checklist, coverage map, and ranked gaps.
 - [`../operations/development.md`](../operations/development.md) — repo
   layout, conventions, and the change checklists.
 - [`../architecture/backend.md`](../architecture/backend.md) — backend
