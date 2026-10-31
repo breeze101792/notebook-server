@@ -39,8 +39,8 @@ registered already.
 ```
 cm-bridge → lightbox → blocks → menu → mermaid → wavedrom → katex → viz →
 htmlpreview → svg → copy-image → viewer → editbar → hybrid → table-edit →
-list-edit → table-view → table-select → watcher → outline → sidebar → graph →
-tabs → windows → settings → export → mermaid-designer →
+list-edit → table-view → table-select → watcher → outline → sidebar →
+graph-2d → graph-3d → graph → tabs → windows → settings → export → mermaid-designer →
 designer-shell → dot-designer → wavedrom-designer → vimnav → ai → activity →
 bookmarks → shortcuts → mobile → app
 ```
@@ -135,7 +135,9 @@ implemented today.
 | `watcher.js` | 338 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
 | `outline.js` | 175 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 1589 | `NB.sidebar` | File tree, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). Ctrl/Cmd+click toggles a row and Shift+click selects the visible range; a multi-selection moves together via the row menu's "Move N items to…" or a multi-item drag (the Pinned section has no multi-select). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
-| `graph.js` | 961 | `NB.graph` | Force-directed wikilink graph view on special tab `§graph`. Canvas physics, pan/zoom/filter, optional particles. |
+| `graph.js` | 276 | `NB.graph` | `§graph` facade: tab/activity wiring, shared header chrome, 2D/3D mode switch, persisted `graphMode`, and the compatibility surface that delegates to the active renderer. |
+| `graph-3d.js` | 2505 | `NB.graph3d` | 3D renderer: perspective orbit camera, canvas-2D projection, force physics, depth spread, hover/selection/filter states, loading/empty/error layers, optional particles. |
+| `graph-2d.js` | 1123 | `NB.graph2d` | Original 2D neural renderer: force layout, pan/zoom, hover/selection, particles, edge pulses, glow. |
 | `tabs.js` | 934 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
 | `windows.js` | 279 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1728 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
@@ -238,6 +240,7 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | `searchUnique` | `true` | Side-panel Search: one row per note (`unique=1`) |
 | `searchSort` | `"path"` | Side-panel Search order: `path` / `mtime` / `count` |
 | `graphParticles` | `false` | |
+| `graphMode` | `"3d"` | Graph renderer: `"2d"` / `"3d"` |
 | `hideTopbar` | `false` | |
 | `siteTitle` | `"Notebook"` | |
 | `bookmarks` | `[]` | Ordered file paths |
@@ -369,7 +372,40 @@ Tabs whose id starts with `§` open a non-file view instead of a note
 (`tabs.js:43-45`). Each registers through `NB.tabs.registerSpecial`
 (`tabs.js:861-864`). One exists:
 
-- `§graph` (`graph.js:36`) — the wikilink graph.
+- `§graph` (`graph.js:19`) — the 2D/3D wikilink graph.
+
+### Graph view
+
+`graph.js` is a thin facade over two renderers: `graph-2d.js` (`NB.graph2d`)
+and `graph-3d.js` (`NB.graph3d`). The header's 2D/3D segmented control
+(`#graph-view-mode-2d`/`-3d`) picks the active one; default **3D**. Only the
+active canvas is visible, and only the active renderer draws or listens.
+`GET /api/graph` still supplies `{nodes, edges}`; the view is read-only.
+
+- **Facade.** Owns the `§graph` tab, activity button, shared header controls,
+  mode UI, and `NB.graph`. `NB.graph` delegates `nodes`/`edges`/`selectedId`/
+  `scale`/`pan`/`width`/`height`/`running` to the active renderer, forwards
+  `setParticleField` to both, and exposes `setMode`/`getMode`.
+- **Persistence.** `graphMode` (`"2d"`/`"3d"`, default `"3d"`) is written
+  through `NB.app.setGraphMode()` → `persistConfig(["graphMode"])`. A saved
+  `§graph` in `openFiles` reopens the graph in the last mode.
+- **3D.** Perspective orbit camera (`yaw`, `pitch`, `dist`, `target`, 50° FOV)
+  projected onto `#graph-view-canvas` with painter ordering. Left-drag empty
+  space orbits, left-drag a node pins it on a camera-facing plane, right/
+  middle/Shift+left-drag pans, wheel/pinch dollies with cursor bias. Depth is
+  carried by perspective size, fog, draw order, edge weight and label
+  attenuation, never hue. Depth spread (`#graph-view-depth`, 0% flat),
+  auto-orbit (`#graph-view-rotate`, off by default, disabled under reduced
+  motion), fit, zoom, refresh, hover/selection heat-map, chip, and
+  loading/empty/error layers. Keyboard map on the focusable host; SR-only note
+  list. Tiers: full ≤300 nodes, reduced 301–800, lite 801–1500; above 1500 a
+  flat layout with a notice.
+- **2D.** Original neural renderer (`#graph-view-canvas-2d`): force layout,
+  pan/zoom, hover/selection, optional particles, edge pulses, glow, warm
+  active-file fill. `fit` re-centers; depth and auto-orbit are hidden in this
+  mode.
+- **Phone.** The graph stays desktop/tablet-only; the existing phone query
+  hides `#activity-graph-btn`.
 
 ### Draft recovery on tab switch
 

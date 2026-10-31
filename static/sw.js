@@ -26,7 +26,9 @@
  * workers. */
 /* Bumped v15 -> v16: the top-bar search module is gone; the side-panel
  * Search is the only search surface. */
-const CACHE = "notebook-v16";
+/* Bumped v16 -> v17: the graph split into graph-2d.js + graph-3d.js, so
+ * already installed workers must re-precache the new renderer modules. */
+const CACHE = "notebook-v17";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -82,6 +84,8 @@ const PRECACHE = [
   "/static/js/activity.js",
   "/static/js/bookmarks.js",
   "/static/js/mobile.js",
+  "/static/js/graph-2d.js",
+  "/static/js/graph-3d.js",
   "/static/js/graph.js",
   "/static/js/vimnav.js",
   "/static/js/shortcuts.js",

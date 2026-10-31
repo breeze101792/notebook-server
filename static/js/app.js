@@ -14,6 +14,9 @@
   const SEARCH_SORTS = ["path", "mtime", "count"];
   // Side-panel search target: note content or file name (server name=1).
   const SEARCH_TARGETS = ["content", "name"];
+  // Persisted graph renderer mode. "3d" is the default.
+  const GRAPH_MODE_2D = "2d";
+  const GRAPH_MODE_3D = "3d";
 
   const DEFAULTS = {
     theme: "auto",
@@ -62,6 +65,9 @@
     // "network" feel). Off by default so it doesn't distract while
     // reading the graph; toggle in Settings -> Appearance.
     graphParticles: false,
+    // Graph renderer: "3d" (the orbit view) or "2d" (the neural view).
+    // Persisted so the graph tab reopens in the mode the user chose.
+    graphMode: GRAPH_MODE_3D,
     // Hide the top bar (brand, search, actions). Toggled live from the
     // Appearance settings tab or the Ctrl+Shift+T shortcut. When on,
     // body gets .topbar-hidden and --topbar-h collapses to 0 so the
@@ -835,8 +841,9 @@
 
     // Restore previously open tabs (filtered to files that still exist),
     // then activate the last active file; fall back to lastFile / first file.
-    const openFiles = (cfg.openFiles || []).filter(p => treeHas(tree, p));
-    const activeFile = cfg.activeFile && treeHas(tree, cfg.activeFile) ? cfg.activeFile : null;
+    const openFiles = (cfg.openFiles || []).filter(p => isSpecialTab(p) || treeHas(tree, p));
+    const activeFile = cfg.activeFile &&
+      (isSpecialTab(cfg.activeFile) || treeHas(tree, cfg.activeFile)) ? cfg.activeFile : null;
     const lastFile = cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile : null;
     const fallback = lastFile || firstFilePath(tree) || null;
     const pinnedFiles = (cfg.pinnedFiles || []).filter(p => openFiles.includes(p));
@@ -892,6 +899,13 @@
     } finally {
       if (NB.mobile && NB.mobile.endBoot) NB.mobile.endBoot();
     }
+  }
+
+  function isSpecialTab(path) {
+    // Special tabs (the graph) carry a "§" id and are not files, so the
+    // boot-time tree filter must let them through. NB.tabs.restore() drops
+    // ids no longer registered.
+    return !!(NB.tabs && NB.tabs.isSpecial && NB.tabs.isSpecial(path));
   }
 
   function treeHas(tree, path) {
@@ -1061,6 +1075,11 @@
       persistConfig();
     },
     getGraphParticles: () => !!cfg.graphParticles,
+    getGraphMode: () => (cfg.graphMode === GRAPH_MODE_2D ? GRAPH_MODE_2D : GRAPH_MODE_3D),
+    setGraphMode: (mode) => {
+      cfg.graphMode = mode === GRAPH_MODE_2D ? GRAPH_MODE_2D : GRAPH_MODE_3D;
+      persistConfig(["graphMode"]);
+    },
     setSiteTitle: (title) => { applySiteTitle(title); persistConfig(); },
     getSiteTitle: () => cfg.siteTitle || "Notebook",
     setVimMode: (on) => {

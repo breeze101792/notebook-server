@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notebook — Graph 3D (design mockup)</title>
+<style>
+  /* ------------------------------------------------------------------ */
+  /* Tokens — copied from static/css/style.css (dark root, light body).  */
+  /* The graph canvas reads the --graph-*-rgb triples at runtime so the  */
+  /* mockup and the production view share one colour contract.           */
+  /* ------------------------------------------------------------------ */
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --bg-elev: #2a2b34;
+    --fg: #e6e6ea;
+    --fg-muted: #8b8d98;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --border: #383a45;
+    --danger: #ff6b6b;
+    --accent-fg: #14151a;
+
+    --graph-node-rgb: 130 168 255;
+    --graph-node-hover-rgb: 150 220 255;
+    --graph-edge-rgb: 124 156 255;
+    --graph-glow-rgb: 150 220 255;
+    --graph-warn-rgb: 243 180 84;
+    --graph-dim-rgb: 80 92 120;
+    --graph-label-rgb: 230 234 245;
+    --graph-pulse-rgb: 180 230 255;
+    --graph-particle-rgb: 130 168 255;
+    --graph-vignette-inner-rgb: 60 90 180;
+    --graph-vignette-edge-rgb: 14 16 24;
+    --graph-bg: #0e1018;
+
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --topbar-h: 0px;
+  }
+  body[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --bg-elev: #eceef2;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --danger: #c0392b;
+    --accent-fg: #ffffff;
+
+    --graph-node-rgb: 60 110 230;
+    --graph-node-hover-rgb: 25 145 230;
+    --graph-edge-rgb: 80 130 230;
+    --graph-glow-rgb: 25 145 230;
+    --graph-warn-rgb: 201 131 29;
+    --graph-dim-rgb: 150 162 184;
+    --graph-label-rgb: 31 35 48;
+    --graph-pulse-rgb: 40 165 240;
+    --graph-particle-rgb: 60 110 230;
+    --graph-vignette-inner-rgb: 200 215 245;
+    --graph-vignette-edge-rgb: 244 246 251;
+    --graph-bg: #f4f6fb;
+  }
+
+  * { box-sizing: border-box; }
+  html { font-size: 14px; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, output { font: inherit; }
+  button { color: inherit; }
+
+  .sr-only {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0);
+    white-space: nowrap; border: 0;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Special-tab content area                                            */
+  /* ------------------------------------------------------------------ */
+  .graph-view {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    background: var(--bg);
+  }
+
+  /* ---- header ------------------------------------------------------ */
+  .graph-header {
+    position: relative;
+    z-index: 5;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px 12px;
+    min-height: 47px;
+    padding: 8px 14px;
+    background: color-mix(in oklab, var(--bg-panel) 86%, transparent);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+  .graph-header::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1px;
+    pointer-events: none;
+    opacity: .55;
+    background: linear-gradient(90deg,
+      transparent 0%,
+      color-mix(in oklab, var(--accent) 35%, transparent) 30%,
+      color-mix(in oklab, var(--accent) 35%, transparent) 70%,
+      transparent 100%);
+  }
+  .graph-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+  }
+  .graph-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .95rem;
+    font-weight: 650;
+    letter-spacing: .01em;
+    white-space: nowrap;
+  }
+  .graph-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent),
+                0 0 14px color-mix(in oklab, var(--accent) 60%, transparent);
+    animation: graph-dot-pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes graph-dot-pulse {
+    0%, 100% { opacity: .55; transform: scale(.9); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+  }
+  .graph-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in oklab, var(--accent) 32%, transparent);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    line-height: 1;
+    transform: translateY(-1px);
+  }
+  .graph-summary {
+    font-size: .78rem;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .graph-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    min-width: 0;
+  }
+
+  /* ---- filter ------------------------------------------------------ */
+  .filter-wrap { position: relative; flex: 0 0 auto; }
+  .filter-wrap > svg {
+    position: absolute;
+    left: 8px; top: 50%;
+    width: 13px; height: 13px;
+    transform: translateY(-50%);
+    color: var(--fg-muted);
+    pointer-events: none;
+  }
+  .graph-filter {
+    width: 160px;
+    height: 30px;
+    padding: 0 8px 0 26px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: .82rem;
+    outline: none;
+  }
+  .graph-filter::placeholder { color: var(--fg-muted); opacity: .9; }
+  .graph-filter::-webkit-search-cancel-button { -webkit-appearance: none; }
+  .graph-filter:focus-visible {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+
+  /* ---- depth spread ------------------------------------------------- */
+  .depth-control {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .depth-control:hover { color: var(--fg); }
+  .depth-control > svg { width: 13px; height: 13px; flex: 0 0 auto; }
+  .depth-range {
+    width: 58px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .depth-range:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
+    border-radius: 4px;
+  }
+  .depth-value {
+    width: 30px;
+    text-align: right;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    color: var(--fg-muted);
+  }
+  .tool-sep {
+    width: 1px;
+    height: 18px;
+    margin: 0 2px;
+    background: var(--border);
+    flex: 0 0 auto;
+  }
+
+  /* ---- icon buttons ------------------------------------------------ */
+  .graph-btn {
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--fg-muted);
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+  }
+  .graph-btn > svg { width: 15px; height: 15px; display: block; }
+  .graph-btn:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .graph-btn:active { transform: translateY(1px); }
+  .graph-btn[aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .graph-btn:focus-visible,
+  .demo-strip button:focus-visible,
+  .demo-strip select:focus-visible,
+  .state-action:focus-visible,
+  .selection-close:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 28%, transparent);
+    border-color: var(--accent);
+  }
+  .graph-filter:disabled,
+  .depth-control:has(input:disabled),
+  .graph-btn:disabled,
+  .state-action:disabled {
+    opacity: .42;
+    cursor: not-allowed;
+  }
+  .graph-btn.is-spinning > svg { animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- canvas host -------------------------------------------------- */
+  .graph-host {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 50% 45%,
+        color-mix(in oklab, var(--graph-bg) 88%, var(--accent) 12%) 0%,
+        var(--graph-bg) 62%);
+    outline: none;
+  }
+  .graph-host:focus-visible {
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--accent) 72%, transparent);
+  }
+  #graph-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .graph-host.is-grabbing #graph-canvas { cursor: grabbing; }
+
+  /* ---- camera hint --------------------------------------------------- */
+  .camera-hint {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translate(-50%, 0);
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    max-width: calc(100% - 32px);
+    padding: 7px 12px;
+    border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--bg-panel) 82%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--fg-muted);
+    font-size: 11.5px;
+    line-height: 1.2;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity .38s ease, transform .38s ease;
+  }
+  .camera-hint .hint-sep { opacity: .55; }
+  .camera-hint.is-hidden {
+    opacity: 0;
+    transform: translate(-50%, -5px);
+  }
+  .camera-hint .hint-touch { display: none; }
+  body.touch-ui .camera-hint .hint-desktop { display: none; }
+  body.touch-ui .camera-hint .hint-touch { display: inline; }
+  @media (max-width: 720px) {
+    .camera-hint {
+      top: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      white-space: normal;
+      text-align: center;
+      gap: 4px 6px;
+      font-size: 11px;
+      border-radius: 12px;
+    }
+  }
+
+  /* ---- selection chip ------------------------------------------------ */
+  .selection-chip {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 14;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 32px);
+    padding: 7px 8px 7px 11px;
+    border: 1px solid color-mix(in oklab, var(--border) 86%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--bg-panel) 90%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+  .selection-chip[hidden] { display: none; }
+  .selection-dot {
+    width: 6px; height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: rgb(var(--graph-warn-rgb));
+    box-shadow: 0 0 8px rgb(var(--graph-warn-rgb) / .5);
+  }
+  .selection-name {
+    color: var(--fg);
+    font-weight: 600;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .selection-meta {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .selection-close {
+    width: 22px; height: 22px;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .selection-close:hover { background: var(--accent-soft); color: var(--fg); }
+  .selection-close > svg { width: 11px; height: 11px; }
+
+  /* ---- toast --------------------------------------------------------- */
+  .toast {
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    z-index: 16;
+    transform: translate(-50%, 8px);
+    max-width: min(520px, calc(100% - 32px));
+    padding: 8px 13px;
+    border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--bg-panel) 92%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    color: var(--fg);
+    font-size: 12px;
+    text-align: center;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+    opacity: 0;
+    transition: opacity .18s ease, transform .18s ease;
+    pointer-events: none;
+  }
+  .toast[hidden] { display: none; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---- loading / empty / error -------------------------------------- */
+  .state-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 18;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: color-mix(in oklab, var(--graph-bg) 66%, transparent);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
+  .state-layer[hidden] { display: none; }
+  .state-card {
+    width: min(360px, 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 26px 28px 24px;
+    border: 1px solid color-mix(in oklab, var(--border) 86%, transparent);
+    border-radius: 14px;
+    background: color-mix(in oklab, var(--bg-panel) 84%, transparent);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, .22);
+  }
+  .state-art { height: 56px; margin-bottom: 14px; display: flex; align-items: center; justify-content: center; }
+  .state-art > * { display: none; }
+  .state-art[data-kind="loading"] .orbit-art { display: block; }
+  .state-art[data-kind="empty"] .constellation-art { display: block; }
+  .state-art[data-kind="error"] .broken-art { display: block; }
+
+  .orbit-art {
+    position: relative;
+    width: 52px; height: 52px;
+  }
+  .orbit-art::before,
+  .orbit-art::after {
+    content: "";
+    position: absolute;
+    border-radius: 50%;
+  }
+  .orbit-art::before {
+    inset: 6px;
+    border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--border));
+  }
+  .orbit-art::after {
+    inset: 6px;
+    background: conic-gradient(from 0deg, transparent 0 64%, var(--accent) 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+    animation: spin 1.35s linear infinite;
+  }
+  .orbit-art span {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 4px; height: 4px;
+    margin: -2px 0 0 -2px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .constellation-art, .broken-art { width: 68px; height: 58px; overflow: visible; }
+  .state-title {
+    margin: 0;
+    font-size: .98rem;
+    font-weight: 650;
+    color: var(--fg);
+  }
+  .state-body {
+    margin: 6px 0 0;
+    max-width: 30ch;
+    font-size: .82rem;
+    line-height: 1.5;
+    color: var(--fg-muted);
+  }
+  .state-body code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    font-size: .92em;
+    color: var(--fg);
+  }
+  .state-action {
+    margin-top: 16px;
+    height: 30px;
+    padding: 0 14px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-size: .8rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .state-action:hover { filter: brightness(1.06); }
+
+  /* ------------------------------------------------------------------ */
+  /* Mockup-only preview strip (not app chrome)                          */
+  /* ------------------------------------------------------------------ */
+  .demo-strip {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 40;
+    max-width: calc(100vw - 32px);
+    padding: 9px 10px 10px;
+    border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+    border-radius: 12px;
+    background: color-mix(in oklab, var(--bg-panel) 92%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, .3);
+  }
+  .demo-caption {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--fg-muted);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .demo-caption::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .demo-sub {
+    margin-left: auto;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: .01em;
+    text-transform: none;
+    opacity: .7;
+  }
+  .demo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .seg {
+    display: flex;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+  }
+  .seg button {
+    height: 24px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fg-muted);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .seg button:hover { color: var(--fg); }
+  .seg button[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .demo-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--fg-muted);
+    font-size: 11px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .demo-toggle input {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .demo-toggle .switch {
+    position: relative;
+    width: 28px; height: 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-elev);
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .demo-toggle .switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--fg-muted);
+    transition: transform .15s ease, background .15s ease;
+  }
+  .demo-toggle input:checked + .switch {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .demo-toggle input:checked + .switch::after {
+    transform: translateX(12px);
+    background: var(--accent);
+  }
+  .demo-toggle input:focus-visible + .switch {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+  .demo-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--fg-muted);
+    font-size: 11px;
+  }
+  .demo-state select {
+    height: 26px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Narrow desktop / small window                                       */
+  /* ------------------------------------------------------------------ */
+  @media (max-width: 980px) {
+    .graph-summary { display: none; }
+  }
+  @media (max-width: 820px) {
+    .graph-header { gap: 8px 10px; }
+    .graph-tools { flex-wrap: wrap; }
+  }
+  @media (max-width: 720px) {
+    .demo-strip { left: 12px; bottom: 12px; right: 12px; max-width: none; }
+    .selection-chip { right: 12px; bottom: 128px; }
+    .toast { bottom: 78px; }
+    .depth-control { display: none; }
+    .selection-meta { display: none; }
+  }
+  @media (max-width: 520px) {
+    .graph-header { padding: 8px 10px; flex-wrap: wrap; }
+    .graph-heading { width: 100%; }
+    .graph-tools { width: 100%; }
+    .filter-wrap { min-width: 0; }
+    .graph-title { font-size: .9rem; }
+    .graph-btn { width: 32px; height: 32px; }
+    .graph-filter { height: 32px; }
+    .demo-row { gap: 8px; }
+    .demo-sub { display: none; }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Coarse pointer / tablet: keep 44px targets when 3D is reachable     */
+  /* ------------------------------------------------------------------ */
+  @media (pointer: coarse) and (min-width: 1024px) {
+    .graph-header { min-height: 60px; padding-top: 8px; padding-bottom: 8px; }
+    .graph-btn { width: 44px; height: 44px; }
+    .graph-btn > svg { width: 17px; height: 17px; }
+    .graph-filter, .depth-control { height: 44px; }
+    .graph-filter { width: 190px; }
+    .depth-range { width: 72px; }
+    .selection-close { width: 32px; height: 32px; }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reduced motion                                                      */
+  /* ------------------------------------------------------------------ */
+  body.reduce-motion .graph-dot { animation: none; opacity: .85; }
+  body.reduce-motion .orbit-art::after { animation: none; opacity: .55; }
+  body.reduce-motion .graph-btn.is-spinning > svg { animation: none; }
+  body.reduce-motion .camera-hint,
+  body.reduce-motion .toast,
+  body.reduce-motion .seg button,
+  body.reduce-motion .demo-toggle .switch,
+  body.reduce-motion .demo-toggle .switch::after {
+    transition: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .graph-dot { animation: none; opacity: .85; }
+    .orbit-art::after { animation: none; }
+  }
+</style>
+</head>
+<body data-theme="dark">
+<script>
+  /* Set the system theme before the first body paint to avoid a dark flash
+     on a light desktop. The main script repeats this once the tokens exist. */
+  (function () {
+    try {
+      if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
+        document.body.dataset.theme = "light";
+      }
+    } catch (_) {}
+  })();
+</script>
+
+  <div class="graph-view" id="graph-view">
+    <header class="graph-header">
+      <div class="graph-heading">
+        <span class="graph-title">
+          <span class="graph-dot" aria-hidden="true"></span>
+          Graph
+          <span class="graph-badge" aria-hidden="true">3D</span>
+        </span>
+        <span class="graph-summary" id="graph-summary">45 notes · 75 links</span>
+      </div>
+
+      <div class="graph-tools">
+        <div class="filter-wrap">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <circle cx="6.7" cy="6.7" r="4.4"></circle>
+            <path d="M10 10l3.2 3.2"></path>
+          </svg>
+          <input id="graph-filter" class="graph-filter" type="search"
+                 placeholder="Filter notes…" aria-label="Filter notes"
+                 autocomplete="off" spellcheck="false">
+        </div>
+
+        <label class="depth-control" title="Depth spread — how far notes sit in front of and behind each other">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <rect x="2" y="4.5" width="8" height="8" rx="1.4"></rect>
+            <path d="M6 2h7a1 1 0 0 1 1 1v7"></path>
+          </svg>
+          <input id="depth-range" class="depth-range" type="range"
+                 min="0" max="100" step="5" value="100"
+                 aria-label="Depth spread" aria-valuetext="100 percent">
+          <output id="depth-value" class="depth-value" for="depth-range">100%</output>
+        </label>
+
+        <span class="tool-sep" aria-hidden="true"></span>
+
+        <button class="graph-btn" id="btn-rotate" type="button"
+                aria-label="Auto-orbit" aria-pressed="false"
+                title="Auto-orbit (R)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <ellipse cx="8" cy="8" rx="5.6" ry="2.9" transform="rotate(-28 8 8)"></ellipse>
+            <circle cx="12.4" cy="5.2" r="1.35" fill="currentColor" stroke="none"></circle>
+          </svg>
+        </button>
+
+        <button class="graph-btn" id="btn-fit" type="button"
+                aria-label="Reset camera and fit graph" title="Reset camera and fit graph (Home)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"></path>
+          </svg>
+        </button>
+
+        <button class="graph-btn" id="btn-zoom-in" type="button"
+                aria-label="Zoom in" title="Zoom in (+)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <path d="M8 3.5v9M3.5 8h9"></path>
+          </svg>
+        </button>
+
+        <button class="graph-btn" id="btn-zoom-out" type="button"
+                aria-label="Zoom out" title="Zoom out (−)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <path d="M3.5 8h9"></path>
+          </svg>
+        </button>
+
+        <button class="graph-btn" id="btn-refresh" type="button"
+                aria-label="Refresh graph" title="Refresh graph">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <path d="M12.8 6.1A5 5 0 1 0 13 9.6"></path>
+            <path d="M13 3.2v3h-3"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="graph-host" id="graph-host" tabindex="0" role="application"
+         aria-label="3D graph of 45 notes and 75 links. Drag to orbit. Scroll to zoom. Right-drag to pan. Click a note to select it. Double-click a note to open it. Press left and right bracket to move the selection, Enter to open, Escape to clear, Home to reset the camera.">
+      <canvas id="graph-canvas" aria-hidden="true"></canvas>
+
+      <div class="camera-hint" id="camera-hint" aria-hidden="true">
+        <span class="hint-desktop">Drag to orbit</span>
+        <span class="hint-desktop hint-sep">·</span>
+        <span class="hint-desktop">Scroll to zoom</span>
+        <span class="hint-desktop hint-sep">·</span>
+        <span class="hint-desktop">Right-drag to pan</span>
+        <span class="hint-desktop hint-sep">·</span>
+        <span class="hint-desktop">Double-click a note to open</span>
+
+        <span class="hint-touch">Drag to orbit</span>
+        <span class="hint-touch hint-sep">·</span>
+        <span class="hint-touch">Pinch to zoom</span>
+        <span class="hint-touch hint-sep">·</span>
+        <span class="hint-touch">Two-finger drag to pan</span>
+        <span class="hint-touch hint-sep">·</span>
+        <span class="hint-touch">Double-tap a note to open</span>
+      </div>
+
+      <div class="state-layer" id="state-layer" hidden>
+        <div class="state-card" id="state-card" role="status" aria-live="polite">
+          <div class="state-art" id="state-art" data-kind="loading" aria-hidden="true">
+            <div class="orbit-art"><span></span></div>
+
+            <svg class="constellation-art" viewBox="0 0 68 58" fill="none" aria-hidden="true" focusable="false">
+              <path d="M13 34 31 17l18 11M31 17l6-9M49 28l7 14M31 17l-6 25 24 0"
+                    stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".45"></path>
+              <circle cx="13" cy="34" r="3.4" fill="currentColor" opacity=".65"></circle>
+              <circle cx="31" cy="17" r="4.4" fill="currentColor"></circle>
+              <circle cx="49" cy="28" r="3.2" fill="currentColor" opacity=".8"></circle>
+              <circle cx="37" cy="8" r="2.6" fill="currentColor" opacity=".55"></circle>
+              <circle cx="56" cy="42" r="2.4" fill="currentColor" opacity=".45"></circle>
+              <circle cx="25" cy="42" r="2.2" fill="currentColor" opacity=".4"></circle>
+            </svg>
+
+            <svg class="broken-art" viewBox="0 0 68 58" fill="none" aria-hidden="true" focusable="false">
+              <path d="M12 38 29 22M50 20l6-6M55 38l6 6"
+                    stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity=".4"></path>
+              <path d="M29 22l7 4M46 30l4 8" stroke="currentColor" stroke-width="1.2"
+                    stroke-linecap="round" stroke-dasharray="2.5 3.5" opacity=".6"></path>
+              <circle cx="12" cy="38" r="3.4" fill="currentColor" opacity=".6"></circle>
+              <circle cx="55" cy="38" r="3.4" fill="currentColor" opacity=".6"></circle>
+              <circle cx="29" cy="22" r="4.2" fill="currentColor" opacity=".8"></circle>
+              <circle cx="50" cy="20" r="2.6" fill="currentColor" opacity=".5"></circle>
+              <circle cx="50" cy="38" r="2.8" fill="var(--danger)"></circle>
+              <circle cx="50" cy="38" r="7" stroke="var(--danger)" stroke-width="1" opacity=".35"></circle>
+            </svg>
+          </div>
+
+          <h2 class="state-title" id="state-title">Mapping your notebook…</h2>
+          <p class="state-body" id="state-body">Reading links from your notes.</p>
+          <button class="state-action" id="state-action" type="button" hidden>Refresh</button>
+        </div>
+      </div>
+
+      <div class="selection-chip" id="selection-chip" hidden>
+        <span class="selection-dot" aria-hidden="true"></span>
+        <span class="selection-name" id="selection-name"></span>
+        <span class="selection-meta" id="selection-meta"></span>
+        <button class="selection-close" id="selection-close" type="button"
+                aria-label="Clear selection" title="Clear selection (Esc)">
+          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    </div>
+  </div>
+
+  <!-- Mockup-only preview controls. Not part of the production view. -->
+  <div class="demo-strip" role="group" aria-label="Mockup preview controls">
+    <div class="demo-caption"><span>Mockup controls</span><span class="demo-sub">preview only</span></div>
+    <div class="demo-row">
+      <div class="seg" role="group" aria-label="Preview theme">
+        <button type="button" data-theme="dark" aria-pressed="true">Dark</button>
+        <button type="button" data-theme="light" aria-pressed="false">Light</button>
+      </div>
+
+      <label class="demo-toggle">
+        <input type="checkbox" id="demo-reduce">
+        <span class="switch" aria-hidden="true"></span>
+        <span>Reduce motion</span>
+      </label>
+
+      <label class="demo-state">
+        <span>State</span>
+        <select id="demo-state" aria-label="Preview graph state">
+          <option value="ready">Ready</option>
+          <option value="loading">Loading</option>
+          <option value="empty">Empty</option>
+          <option value="error">Error</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="sr-only" id="sr-live" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TAU = Math.PI * 2;
+  var ACTIVE_ID = "search-panel";
+  var LABEL_FONT = '500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  var LABEL_FONT_STRONG = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+  // --- plausible notebook graph -------------------------------------
+  // Cluster centres are in world units. Hubs sit near the cluster centre so
+  // the 3D structure reads as lobes joined by a few high-degree notes.
+  var CLUSTERS = {
+    core:   { x:    0, y:   10, z:   35, r:  62 },
+    arch:   { x: -195, y:   58, z:  -35, r: 100 },
+    design: { x:  178, y:   28, z:   98, r:  86 },
+    product:{ x:   58, y:  158, z: -152, r:  76 },
+    mod:    { x:  -12, y: -128, z:   92, r: 118 },
+    infra:  { x: -165, y: -112, z: -158, r:  82 },
+    ops:    { x:  198, y:  118, z:  -86, r:  76 }
+  };
+
+  var NODE_SPEC = [
+    { id:"Welcome", name:"Welcome", cluster:"core", hub:true },
+    { id:"README", name:"README", cluster:"core" },
+    { id:"roadmap", name:"roadmap", cluster:"core" },
+    { id:"changelog", name:"changelog", cluster:"core" },
+    { id:"glossary", name:"glossary", cluster:"core" },
+
+    { id:"architecture/frontend", name:"architecture/frontend", cluster:"arch", hub:true },
+    { id:"architecture/backend", name:"architecture/backend", cluster:"arch", hub:true },
+    { id:"architecture/markdown", name:"architecture/markdown", cluster:"arch" },
+    { id:"architecture/ai-assistant", name:"architecture/ai-assistant", cluster:"arch" },
+    { id:"architecture/context-menus", name:"architecture/context-menus", cluster:"arch" },
+    { id:"architecture/mobile", name:"architecture/mobile", cluster:"arch" },
+    { id:"architecture/testing", name:"architecture/testing", cluster:"arch" },
+
+    { id:"design/mobile-shell", name:"design/mobile-shell", cluster:"design", hub:true },
+    { id:"design/search-panel", name:"design/search-panel", cluster:"design" },
+    { id:"design/settings-modal", name:"design/settings-modal", cluster:"design" },
+    { id:"design/graph-3d", name:"design/graph-3d", cluster:"design", hub:true },
+    { id:"design/graph-3d-notes", name:"design/graph-3d-notes", cluster:"design" },
+    { id:"design/edit-bar", name:"design/edit-bar", cluster:"design" },
+    { id:"design/tab-system", name:"design/tab-system", cluster:"design" },
+
+    { id:"product/mobile", name:"product/mobile", cluster:"product", hub:true },
+    { id:"product/notebook", name:"product/notebook", cluster:"product" },
+    { id:"product/auth", name:"product/auth", cluster:"product" },
+    { id:"product/export", name:"product/export", cluster:"product" },
+    { id:"product/bookmarks", name:"product/bookmarks", cluster:"product" },
+
+    { id:"viewer", name:"viewer", cluster:"mod", hub:true },
+    { id:"hybrid-editing", name:"hybrid-editing", cluster:"mod", hub:true },
+    { id:"table-view", name:"table-view", cluster:"mod" },
+    { id:"table-select", name:"table-select", cluster:"mod" },
+    { id:"bookmarks", name:"bookmarks", cluster:"mod", hub:true },
+    { id:"graph", name:"graph", cluster:"mod", hub:true },
+    { id:"search-panel", name:"search-panel", cluster:"mod", hub:true },
+    { id:"outline", name:"outline", cluster:"mod" },
+    { id:"ai-panel", name:"ai-panel", cluster:"mod" },
+    { id:"export", name:"export", cluster:"mod" },
+
+    { id:"api", name:"api", cluster:"infra" },
+    { id:"auth", name:"auth", cluster:"infra" },
+    { id:"safe-path", name:"safe-path", cluster:"infra" },
+    { id:"atomic-write", name:"atomic-write", cluster:"infra" },
+    { id:"watcher", name:"watcher", cluster:"infra" },
+    { id:"seeding", name:"seeding", cluster:"infra" },
+
+    { id:"vault-format", name:"vault-format", cluster:"ops" },
+    { id:"keyboard-shortcuts", name:"keyboard-shortcuts", cluster:"ops" },
+    { id:"theme-tokens", name:"theme-tokens", cluster:"ops" },
+    { id:"performance-budget", name:"performance-budget", cluster:"ops" },
+    { id:"open-questions", name:"open-questions", cluster:"ops" }
+  ];
+
+  var EDGE_SPEC = [
+    ["Welcome","README"], ["Welcome","roadmap"], ["Welcome","product/notebook"],
+    ["Welcome","architecture/frontend"], ["Welcome","graph"], ["Welcome","search-panel"],
+    ["Welcome","glossary"], ["README","roadmap"], ["README","product/notebook"],
+    ["roadmap","product/mobile"], ["roadmap","architecture/mobile"], ["changelog","roadmap"],
+    ["changelog","design/graph-3d-notes"], ["glossary","architecture/backend"],
+    ["glossary","vault-format"], ["architecture/frontend","viewer"],
+    ["architecture/frontend","hybrid-editing"], ["architecture/frontend","design/tab-system"],
+    ["architecture/frontend","architecture/testing"], ["architecture/backend","api"],
+    ["architecture/backend","safe-path"], ["architecture/backend","atomic-write"],
+    ["architecture/backend","auth"], ["architecture/backend","seeding"],
+    ["architecture/markdown","viewer"], ["architecture/markdown","hybrid-editing"],
+    ["architecture/markdown","table-select"], ["architecture/ai-assistant","ai-panel"],
+    ["architecture/ai-assistant","api"], ["architecture/context-menus","viewer"],
+    ["architecture/context-menus","bookmarks"], ["architecture/mobile","design/mobile-shell"],
+    ["architecture/mobile","product/mobile"], ["architecture/testing","performance-budget"],
+    ["design/mobile-shell","product/mobile"], ["design/search-panel","search-panel"],
+    ["design/search-panel","architecture/frontend"], ["design/settings-modal","theme-tokens"],
+    ["design/graph-3d","graph"], ["design/graph-3d","design/graph-3d-notes"],
+    ["design/edit-bar","viewer"], ["design/tab-system","viewer"],
+    ["product/notebook","product/bookmarks"], ["product/auth","auth"],
+    ["product/export","export"], ["product/bookmarks","bookmarks"],
+    ["viewer","hybrid-editing"], ["viewer","outline"], ["hybrid-editing","table-view"],
+    ["hybrid-editing","table-select"], ["table-view","table-select"],
+    ["bookmarks","search-panel"], ["graph","architecture/frontend"],
+    ["graph","performance-budget"], ["search-panel","architecture/frontend"],
+    ["search-panel","viewer"], ["ai-panel","api"], ["ai-panel","search-panel"],
+    ["export","viewer"], ["api","auth"], ["api","safe-path"],
+    ["atomic-write","hybrid-editing"], ["watcher","api"], ["watcher","viewer"],
+    ["seeding","vault-format"], ["design/graph-3d-notes","graph"],
+    ["design/graph-3d-notes","performance-budget"], ["vault-format","architecture/backend"],
+    ["keyboard-shortcuts","viewer"], ["keyboard-shortcuts","design/edit-bar"],
+    ["theme-tokens","product/notebook"], ["performance-budget","search-panel"],
+    ["open-questions","design/graph-3d"], ["open-questions","product/notebook"],
+    ["open-questions","roadmap"]
+  ];
+
+  // --- graph model ---------------------------------------------------
+  var nodes = [];
+  var edges = [];
+  var byId = new Map();
+
+  NODE_SPEC.forEach(function (spec) {
+    var node = {
+      id: spec.id, name: spec.name, cluster: spec.cluster, hub: !!spec.hub,
+      degree: 0, neighbors: new Set(),
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+      fx: 0, fy: 0, fz: 0, fixed: false
+    };
+    nodes.push(node);
+    byId.set(node.id, node);
+  });
+
+  (function buildEdges() {
+    var seen = new Set();
+    EDGE_SPEC.forEach(function (pair) {
+      var a = byId.get(pair[0]), b = byId.get(pair[1]);
+      if (!a || !b || a === b) return;
+      var key = a.id < b.id ? a.id + "\u0000" + b.id : b.id + "\u0000" + a.id;
+      if (seen.has(key)) return;
+      seen.add(key);
+      var edge = { source: a, target: b, phase: (edges.length * 0.61803398875) % 1 };
+      edges.push(edge);
+      a.degree += 1; b.degree += 1;
+      a.neighbors.add(b.id); b.neighbors.add(a.id);
+    });
+  })();
+
+  // --- view state ----------------------------------------------------
+  var state = {
+    hoverId: null,
+    selectedId: null,
+    selectedDist: null,
+    filter: "",
+    filterSet: null,
+    depthScale: 1,
+    autoRotate: false,
+    reducedMotion: false,
+    theme: "dark",
+    ready: "ready",
+    draggingNode: null,
+    simRunning: false,
+    dirty: true,
+    lastGestureMoved: false
+  };
+
+  var cam = {
+    target: { x: 0, y: 0, z: 0 },
+    yaw: -0.52,
+    pitch: 0.30,
+    dist: 900,
+    fov: 50 * Math.PI / 180
+  };
+  var DEFAULT_YAW = -0.52;
+  var DEFAULT_PITCH = 0.30;
+  var camTween = null;
+
+  var width = 1, height = 1, dpr = 1, focal = 500;
+  var canvas, ctx;
+  var palette = null;
+  var spriteCache = new Map();
+  var vignette = null;
+  var basis = null;
+  var projection = new Map();
+  var labelWidthCache = new Map();
+  var lastTap = { t: 0, x: 0, y: 0, id: null };
+  var toastTimer = null;
+
+  // --- DOM -----------------------------------------------------------
+  var el = {};
+  function cacheEls() {
+    el.view = document.getElementById("graph-view");
+    el.host = document.getElementById("graph-host");
+    el.canvas = document.getElementById("graph-canvas");
+    el.summary = document.getElementById("graph-summary");
+    el.filter = document.getElementById("graph-filter");
+    el.depth = document.getElementById("depth-range");
+    el.depthValue = document.getElementById("depth-value");
+    el.rotate = document.getElementById("btn-rotate");
+    el.fit = document.getElementById("btn-fit");
+    el.zoomIn = document.getElementById("btn-zoom-in");
+    el.zoomOut = document.getElementById("btn-zoom-out");
+    el.refresh = document.getElementById("btn-refresh");
+    el.hint = document.getElementById("camera-hint");
+    el.stateLayer = document.getElementById("state-layer");
+    el.stateCard = document.getElementById("state-card");
+    el.stateArt = document.getElementById("state-art");
+    el.stateTitle = document.getElementById("state-title");
+    el.stateBody = document.getElementById("state-body");
+    el.stateAction = document.getElementById("state-action");
+    el.chip = document.getElementById("selection-chip");
+    el.chipName = document.getElementById("selection-name");
+    el.chipMeta = document.getElementById("selection-meta");
+    el.chipClose = document.getElementById("selection-close");
+    el.toast = document.getElementById("toast");
+    el.srLive = document.getElementById("sr-live");
+    el.demoState = document.getElementById("demo-state");
+    el.demoReduce = document.getElementById("demo-reduce");
+    el.themeButtons = Array.prototype.slice.call(document.querySelectorAll(".seg button[data-theme]"));
+    canvas = el.canvas;
+    try { ctx = canvas.getContext("2d"); } catch (_) { ctx = null; }
+  }
+
+  // --- seeded layout -------------------------------------------------
+  function mulberry32(seed) {
+    var a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function seedLayout() {
+    var rand = mulberry32(0x51CE7A11);
+    nodes.forEach(function (n) {
+      var c = CLUSTERS[n.cluster] || CLUSTERS.core;
+      // Hub notes sit near the lobe centre; leaves fill the lobe volume.
+      var r = (n.hub ? 0.24 : 0.86) * Math.cbrt(rand()) * c.r;
+      var theta = rand() * TAU;
+      var phi = Math.acos(2 * rand() - 1);
+      n.x = c.x + Math.sin(phi) * Math.cos(theta) * r;
+      n.y = c.y + Math.cos(phi) * r;
+      n.z = c.z + Math.sin(phi) * Math.sin(theta) * r;
+      n.vx = n.vy = n.vz = 0;
+      n.fixed = false;
+    });
+  }
+
+  // --- 3D force simulation -------------------------------------------
+  var REPULSION = 5200;
+  var SPRING_LEN = 66;
+  var SPRING_K = 0.011;
+  var CLUSTER_K = 0.0024;
+  var CENTER_K = 0.0005;
+  var DAMPING = 0.85;
+  var MAX_SPEED = 7;
+  var SLEEP_EPS = 0.006;
+
+  function stepPhysics() {
+    var i, j, n = nodes.length;
+    for (i = 0; i < n; i++) { nodes[i].fx = 0; nodes[i].fy = 0; nodes[i].fz = 0; }
+
+    for (i = 0; i < n; i++) {
+      var a = nodes[i];
+      for (j = i + 1; j < n; j++) {
+        var b = nodes[j];
+        var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+        var d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < 100) d2 = 100;
+        var inv = 1 / Math.sqrt(d2);
+        var f = REPULSION / d2;
+        var fx = dx * inv * f, fy = dy * inv * f, fz = dz * inv * f;
+        a.fx += fx; a.fy += fy; a.fz += fz;
+        b.fx -= fx; b.fy -= fy; b.fz -= fz;
+      }
+    }
+
+    for (i = 0; i < edges.length; i++) {
+      var e = edges[i], s = e.source, t = e.target;
+      var sx = t.x - s.x, sy = t.y - s.y, sz = t.z - s.z;
+      var d = Math.sqrt(sx * sx + sy * sy + sz * sz) || 0.01;
+      var spring = SPRING_K * (d - SPRING_LEN);
+      var ux = sx / d, uy = sy / d, uz = sz / d;
+      s.fx += ux * spring; s.fy += uy * spring; s.fz += uz * spring;
+      t.fx -= ux * spring; t.fy -= uy * spring; t.fz -= uz * spring;
+    }
+
+    var energy = 0;
+    for (i = 0; i < n; i++) {
+      var node = nodes[i];
+      var c = CLUSTERS[node.cluster] || CLUSTERS.core;
+      node.fx += (c.x - node.x) * CLUSTER_K;
+      node.fy += (c.y - node.y) * CLUSTER_K;
+      node.fz += (c.z - node.z) * CLUSTER_K;
+      node.fx -= node.x * CENTER_K;
+      node.fy -= node.y * CENTER_K;
+      node.fz -= node.z * CENTER_K;
+
+      if (node.fixed || node === state.draggingNode) {
+        node.vx = node.vy = node.vz = 0;
+        continue;
+      }
+      node.vx = (node.vx + node.fx) * DAMPING;
+      node.vy = (node.vy + node.fy) * DAMPING;
+      node.vz = (node.vz + node.fz) * DAMPING;
+      var speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy + node.vz * node.vz);
+      if (speed > MAX_SPEED) {
+        var k = MAX_SPEED / speed;
+        node.vx *= k; node.vy *= k; node.vz *= k;
+        speed = MAX_SPEED;
+      }
+      node.x += node.vx; node.y += node.vy; node.z += node.vz;
+      energy += speed * speed;
+    }
+    if (!state.draggingNode && energy / n < SLEEP_EPS) state.simRunning = false;
+  }
+
+  function warmUp() {
+    for (var i = 0; i < 500; i++) stepPhysics();
+    nodes.forEach(function (n) { n.vx = n.vy = n.vz = 0; });
+    state.simRunning = false;
+  }
+
+  // --- colour utilities ----------------------------------------------
+  function parseTriplet(s) {
+    var m = String(s || "").trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
+    return m ? [+m[1], +m[2], +m[3]] : null;
+  }
+  function parseColor(s) {
+    s = String(s || "").trim();
+    var m = s.match(/^#([0-9a-f]{3})$/i);
+    if (m) {
+      return [parseInt(m[1][0], 16) * 17, parseInt(m[1][1], 16) * 17, parseInt(m[1][2], 16) * 17];
+    }
+    m = s.match(/^#([0-9a-f]{6})$/i);
+    if (m) {
+      return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16)];
+    }
+    m = s.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+    if (m) return [+m[1], +m[2], +m[3]];
+    return null;
+  }
+  function rgba(triple, alpha) {
+    if (!triple) return "rgba(0,0,0," + alpha + ")";
+    return "rgba(" + triple[0] + "," + triple[1] + "," + triple[2] + "," + alpha + ")";
+  }
+  function mix(a, b, t) {
+    if (!a) return b;
+    if (!b) return a;
+    return [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function readPalette() {
+    var cs = getComputedStyle(document.body);
+    var get = function (name) { return cs.getPropertyValue(name).trim(); };
+    palette = {
+      node: parseTriplet(get("--graph-node-rgb")) || [130, 168, 255],
+      hover: parseTriplet(get("--graph-node-hover-rgb")) || [150, 220, 255],
+      edge: parseTriplet(get("--graph-edge-rgb")) || [124, 156, 255],
+      glow: parseTriplet(get("--graph-glow-rgb")) || [150, 220, 255],
+      warn: parseTriplet(get("--graph-warn-rgb")) || [243, 180, 84],
+      dim: parseTriplet(get("--graph-dim-rgb")) || [80, 92, 120],
+      label: parseTriplet(get("--graph-label-rgb")) || [230, 234, 245],
+      pulse: parseTriplet(get("--graph-pulse-rgb")) || [180, 230, 255],
+      vinIn: parseTriplet(get("--graph-vignette-inner-rgb")) || [60, 90, 180],
+      vinOut: parseTriplet(get("--graph-vignette-edge-rgb")) || [14, 16, 24],
+      bg: get("--graph-bg") || "#0e1018",
+      bgTriple: parseColor(get("--graph-bg")) || [14, 16, 24],
+      panel: parseColor(get("--bg-panel")) || [34, 35, 42],
+      border: parseColor(get("--border")) || [56, 58, 69]
+    };
+  }
+
+  // --- sprites -------------------------------------------------------
+  function sphereSprite(color) {
+    var key = "sphere:" + color.join(",");
+    var hit = spriteCache.get(key);
+    if (hit) return hit;
+    var c = document.createElement("canvas");
+    c.width = c.height = 64;
+    var g = c.getContext("2d");
+    var grad = g.createRadialGradient(24, 21, 2, 32, 33, 33);
+    grad.addColorStop(0, rgba(mix(color, [255, 255, 255], 0.42), 1));
+    grad.addColorStop(0.52, rgba(color, 1));
+    grad.addColorStop(1, rgba(mix(color, [0, 0, 0], 0.34), 1));
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(32, 32, 32, 0, TAU); g.fill();
+    spriteCache.set(key, c);
+    return c;
+  }
+
+  function glowSprite(color) {
+    var key = "glow:" + color.join(",");
+    var hit = spriteCache.get(key);
+    if (hit) return hit;
+    var c = document.createElement("canvas");
+    c.width = c.height = 64;
+    var g = c.getContext("2d");
+    var grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    grad.addColorStop(0, rgba(color, 0.55));
+    grad.addColorStop(0.35, rgba(color, 0.20));
+    grad.addColorStop(1, rgba(color, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    spriteCache.set(key, c);
+    return c;
+  }
+
+  function buildVignette() {
+    if (!palette || !width || !height) { vignette = null; return; }
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(width));
+    c.height = Math.max(1, Math.round(height));
+    var g = c.getContext("2d");
+    var cx = width * 0.5, cy = height * 0.46;
+    var grad = g.createRadialGradient(
+      cx, cy, Math.min(width, height) * 0.05,
+      cx, height * 0.52, Math.max(width, height) * 0.80
+    );
+    grad.addColorStop(0, rgba(palette.vinIn, 0.22));
+    grad.addColorStop(0.5, rgba(palette.vinIn, 0.07));
+    grad.addColorStop(1, rgba(palette.vinOut, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, width, height);
+    vignette = c;
+  }
+
+  // --- canvas sizing + projection ------------------------------------
+  function sizeCanvas() {
+    if (!el.host || !canvas) return;
+    var rect = el.host.getBoundingClientRect();
+    width = Math.max(1, rect.width);
+    height = Math.max(1, rect.height);
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    var bw = Math.round(width * dpr), bh = Math.round(height * dpr);
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+    }
+    focal = (Math.min(width, height) / 2) / Math.tan(cam.fov / 2);
+    if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildVignette();
+    state.dirty = true;
+  }
+
+  function computeBasis() {
+    var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    var dir = { x: cp * sy, y: sp, z: cp * cy };
+    var pos = {
+      x: cam.target.x + dir.x * cam.dist,
+      y: cam.target.y + dir.y * cam.dist,
+      z: cam.target.z + dir.z * cam.dist
+    };
+    var fwd = { x: -dir.x, y: -dir.y, z: -dir.z };
+    var rx = -fwd.z, ry = 0, rz = fwd.x;
+    var rl = Math.hypot(rx, rz) || 1;
+    rx /= rl; rz /= rl;
+    var ux = ry * fwd.z - rz * fwd.y;
+    var uy = rz * fwd.x - rx * fwd.z;
+    var uz = rx * fwd.y - ry * fwd.x;
+    basis = {
+      pos: pos, fwd: fwd,
+      right: { x: rx, y: ry, z: rz },
+      up: { x: ux, y: uy, z: uz }
+    };
+    return basis;
+  }
+
+  function dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+  function projectPoint(p, b) {
+    var rel = { x: p.x - b.pos.x, y: p.y - b.pos.y, z: p.z - b.pos.z };
+    var cz = dot(rel, b.fwd);
+    if (cz <= 12) return null;
+    var cx = dot(rel, b.right);
+    var cy = dot(rel, b.up);
+    return {
+      x: width / 2 + (cx / cz) * focal,
+      y: height / 2 - (cy / cz) * focal,
+      depth: cz,
+      scale: focal / cz
+    };
+  }
+
+  function displayPos(n) {
+    return { x: n.x, y: n.y, z: n.z * state.depthScale };
+  }
+
+  function projectNode(n, b) {
+    return projectPoint(displayPos(n), b);
+  }
+
+  function worldRadius(n) {
+    return 6.2 + Math.min(9.5, Math.sqrt(n.degree) * 2.2);
+  }
+
+  function fitCamera(animate) {
+    var b = computeBasis();
+    var pts = nodes.map(displayPos);
+    var cx = 0, cy = 0, cz = 0;
+    pts.forEach(function (p) { cx += p.x; cy += p.y; cz += p.z; });
+    cx /= pts.length; cy /= pts.length; cz /= pts.length;
+    var radius = 60;
+    pts.forEach(function (p) {
+      var d = Math.hypot(p.x - cx, p.y - cy, p.z - cz);
+      if (d > radius) radius = d;
+    });
+    var dist = clamp(radius / Math.sin(cam.fov / 2) * 1.12, 260, 2800);
+    var to = {
+      yaw: DEFAULT_YAW, pitch: DEFAULT_PITCH, dist: dist,
+      target: { x: cx, y: cy, z: cz }
+    };
+    if (!animate || state.reducedMotion) {
+      setCamera(to);
+      camTween = null;
+    } else {
+      camTween = {
+        t0: performance.now(), dur: 440,
+        from: { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist,
+                target: { x: cam.target.x, y: cam.target.y, z: cam.target.z } },
+        to: to
+      };
+    }
+    state.dirty = true;
+  }
+
+  function setCamera(to) {
+    cam.yaw = to.yaw;
+    cam.pitch = to.pitch;
+    cam.dist = to.dist;
+    cam.target.x = to.target.x;
+    cam.target.y = to.target.y;
+    cam.target.z = to.target.z;
+  }
+
+  function advanceTween(now) {
+    if (!camTween) return false;
+    var k = clamp((now - camTween.t0) / camTween.dur, 0, 1);
+    var e = 1 - Math.pow(1 - k, 3);
+    var f = camTween.from, t = camTween.to;
+    cam.yaw = lerp(f.yaw, t.yaw, e);
+    cam.pitch = lerp(f.pitch, t.pitch, e);
+    cam.dist = lerp(f.dist, t.dist, e);
+    cam.target.x = lerp(f.target.x, t.target.x, e);
+    cam.target.y = lerp(f.target.y, t.target.y, e);
+    cam.target.z = lerp(f.target.z, t.target.z, e);
+    if (k >= 1) camTween = null;
+    state.dirty = true;
+    return true;
+  }
+
+  // --- screen / world conversion -------------------------------------
+  function localPos(ev) {
+    var r = canvas.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+
+  function rayFromScreen(sx, sy, b) {
+    var nx = (sx - width / 2) / focal;
+    var ny = -(sy - height / 2) / focal;
+    var dir = {
+      x: b.fwd.x + b.right.x * nx + b.up.x * ny,
+      y: b.fwd.y + b.right.y * nx + b.up.y * ny,
+      z: b.fwd.z + b.right.z * nx + b.up.z * ny
+    };
+    var l = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    dir.x /= l; dir.y /= l; dir.z /= l;
+    return dir;
+  }
+
+  function pointOnPlane(sx, sy, planePoint, b) {
+    var dir = rayFromScreen(sx, sy, b);
+    var denom = dot(dir, b.fwd);
+    if (Math.abs(denom) < 0.0001) return null;
+    var t = dot({
+      x: planePoint.x - b.pos.x,
+      y: planePoint.y - b.pos.y,
+      z: planePoint.z - b.pos.z
+    }, b.fwd) / denom;
+    return {
+      x: b.pos.x + dir.x * t,
+      y: b.pos.y + dir.y * t,
+      z: b.pos.z + dir.z * t
+    };
+  }
+
+  function panByPixels(dx, dy) {
+    var b = computeBasis();
+    var wpp = (2 * cam.dist * Math.tan(cam.fov / 2)) / Math.max(1, height);
+    cam.target.x -= b.right.x * dx * wpp;
+    cam.target.y -= b.right.y * dx * wpp;
+    cam.target.z -= b.right.z * dx * wpp;
+    cam.target.x += b.up.x * dy * wpp;
+    cam.target.y += b.up.y * dy * wpp;
+    cam.target.z += b.up.z * dy * wpp;
+    state.dirty = true;
+  }
+
+  function zoomAt(sx, sy, factor, bias) {
+    var b = computeBasis();
+    var anchor = pointOnPlane(sx, sy, cam.target, b);
+    var newDist = clamp(cam.dist * factor, 230, 3000);
+    if (anchor) {
+      var k = 1 - newDist / cam.dist;
+      cam.target.x += (anchor.x - cam.target.x) * k * bias;
+      cam.target.y += (anchor.y - cam.target.y) * k * bias;
+      cam.target.z += (anchor.z - cam.target.z) * k * bias;
+    }
+    cam.dist = newDist;
+    state.dirty = true;
+  }
+
+  // --- picking -------------------------------------------------------
+  function pick(sx, sy, touch) {
+    var b = computeBasis();
+    var best = null, bestDepth = Infinity, bestScore = Infinity;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var p = projectNode(n, b);
+      if (!p) continue;
+      var sr = clamp(worldRadius(n) * p.scale, 2.4, 28);
+      var hit = Math.max(touch ? 14 : 7, sr * 1.2 + 4);
+      var d = Math.hypot(p.x - sx, p.y - sy);
+      if (d > hit) continue;
+      // Among overlapping hitboxes, prefer the node drawn on top (nearest).
+      if (p.depth < bestDepth - 0.5) {
+        best = n; bestDepth = p.depth; bestScore = d;
+      } else if (Math.abs(p.depth - bestDepth) <= 0.5 && d < bestScore) {
+        best = n; bestScore = d;
+      }
+    }
+    return best;
+  }
+
+  // --- selection -----------------------------------------------------
+  function distanceMap(startId) {
+    var dist = new Map();
+    dist.set(startId, 0);
+    var queue = [startId];
+    while (queue.length) {
+      var cur = queue.shift();
+      var d = dist.get(cur);
+      var neighbors = byId.get(cur) ? byId.get(cur).neighbors : null;
+      if (!neighbors) continue;
+      neighbors.forEach(function (id) {
+        if (!dist.has(id)) { dist.set(id, d + 1); queue.push(id); }
+      });
+    }
+    return dist;
+  }
+
+  function selectNode(id) {
+    if (!byId.has(id)) return;
+    state.selectedId = id;
+    state.selectedDist = distanceMap(id);
+    updateChip();
+    announceSelection();
+    state.dirty = true;
+  }
+
+  function clearSelection() {
+    if (!state.selectedId) return;
+    state.selectedId = null;
+    state.selectedDist = null;
+    updateChip();
+    el.srLive.textContent = "Selection cleared.";
+    state.dirty = true;
+  }
+
+  function updateChip() {
+    if (!state.selectedId) {
+      el.chip.hidden = true;
+      return;
+    }
+    var n = byId.get(state.selectedId);
+    var hop1 = 0, hop2 = 0;
+    state.selectedDist.forEach(function (d, id) {
+      if (id === state.selectedId) return;
+      if (d === 1) hop1 += 1;
+      else if (d === 2) hop2 += 1;
+    });
+    el.chipName.textContent = n.name;
+    el.chipMeta.textContent = n.degree + (n.degree === 1 ? " link" : " links") +
+      " · " + hop1 + " at hop 1" + (hop2 ? " · " + hop2 + " at hop 2" : "");
+    el.chip.hidden = false;
+  }
+
+  function announceSelection() {
+    if (!state.selectedId) { el.srLive.textContent = "Selection cleared."; return; }
+    var n = byId.get(state.selectedId);
+    var hop1 = 0, hop2 = 0;
+    state.selectedDist.forEach(function (d, id) {
+      if (id === state.selectedId) return;
+      if (d === 1) hop1 += 1;
+      else if (d === 2) hop2 += 1;
+    });
+    el.srLive.textContent = "Selected " + n.name + ", " + n.degree +
+      (n.degree === 1 ? " link" : " links") + ". " + hop1 +
+      " direct " + (hop1 === 1 ? "neighbour" : "neighbours") + ", " + hop2 +
+      " at two hops. Press Enter to open it, Escape to clear.";
+  }
+
+  function cycleSelection(dir) {
+    var sorted = nodes.slice().sort(function (a, b) { return a.name.localeCompare(b.name); });
+    var idx = sorted.findIndex(function (n) { return n.id === state.selectedId; });
+    if (idx < 0) idx = dir > 0 ? -1 : 0;
+    idx = (idx + dir + sorted.length) % sorted.length;
+    var n = sorted[idx];
+    selectNode(n.id);
+    var p = projectNode(n, computeBasis());
+    if (!p || p.x < 24 || p.x > width - 24 || p.y < 24 || p.y > height - 24) {
+      var to = {
+        yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist,
+        target: { x: n.x, y: n.y, z: n.z * state.depthScale }
+      };
+      if (state.reducedMotion) { setCamera(to); camTween = null; }
+      else {
+        camTween = {
+          t0: performance.now(), dur: 320,
+          from: { yaw: cam.yaw, pitch: cam.pitch, dist: cam.dist,
+                  target: { x: cam.target.x, y: cam.target.y, z: cam.target.z } },
+          to: to
+        };
+      }
+    }
+    state.dirty = true;
+  }
+
+  // --- filter --------------------------------------------------------
+  function updateFilter() {
+    state.filter = (el.filter.value || "").trim().toLowerCase();
+    if (!state.filter) {
+      state.filterSet = null;
+    } else {
+      var set = new Set();
+      nodes.forEach(function (n) {
+        if (n.name.toLowerCase().indexOf(state.filter) >= 0 ||
+            n.id.toLowerCase().indexOf(state.filter) >= 0) set.add(n.id);
+      });
+      state.filterSet = set;
+    }
+    updateSummary();
+    state.dirty = true;
+  }
+
+  function updateSummary() {
+    if (state.ready === "loading") { el.summary.textContent = "Reading links…"; return; }
+    if (state.ready === "error") { el.summary.textContent = "Not connected"; return; }
+    if (state.ready === "empty") { el.summary.textContent = "0 notes · 0 links"; return; }
+    var text = nodes.length + " notes · " + edges.length + " links";
+    if (state.filter) {
+      var k = state.filterSet ? state.filterSet.size : 0;
+      text += " · " + k + (k === 1 ? " match" : " matches");
+    }
+    el.summary.textContent = text;
+  }
+
+  // --- theme / motion ------------------------------------------------
+  function setTheme(theme) {
+    state.theme = theme === "light" ? "light" : "dark";
+    document.body.dataset.theme = state.theme;
+    el.themeButtons.forEach(function (btn) {
+      btn.setAttribute("aria-pressed", btn.dataset.theme === state.theme ? "true" : "false");
+    });
+    readPalette();
+    spriteCache.clear();
+    buildVignette();
+    state.dirty = true;
+  }
+
+  function setReducedMotion(on) {
+    state.reducedMotion = !!on;
+    document.body.classList.toggle("reduce-motion", state.reducedMotion);
+    el.demoReduce.checked = state.reducedMotion;
+    if (state.reducedMotion) {
+      state.autoRotate = false;
+      updateRotateButton();
+    }
+    el.rotate.disabled = state.reducedMotion || state.ready !== "ready";
+    el.rotate.title = state.reducedMotion
+      ? "Auto-orbit is off while reduced motion is on"
+      : "Auto-orbit (R)";
+    state.dirty = true;
+  }
+
+  function updateRotateButton() {
+    el.rotate.setAttribute("aria-pressed", state.autoRotate ? "true" : "false");
+    el.rotate.setAttribute("aria-label", state.autoRotate ? "Pause auto-orbit" : "Start auto-orbit");
+  }
+
+  // --- ready / loading / empty / error -------------------------------
+  var STATE_COPY = {
+    loading: {
+      title: "Mapping your notebook…",
+      body: "Reading links from your notes.",
+      action: null
+    },
+    empty: {
+      title: "Nothing to map yet",
+      body: "Notes appear here once they exist. Link them with wikilinks or Markdown links to draw edges.",
+      action: "Refresh"
+    },
+    error: {
+      title: "Couldn’t load the graph",
+      body: "The server didn’t answer. Check that the notebook is running, then try again.",
+      action: "Retry"
+    }
+  };
+
+  function setReady(kind) {
+    state.ready = kind;
+    el.demoState.value = kind;
+    var ready = kind === "ready";
+    el.stateLayer.hidden = ready;
+    el.filter.disabled = !ready;
+    el.depth.disabled = !ready;
+    el.fit.disabled = !ready;
+    el.zoomIn.disabled = !ready;
+    el.zoomOut.disabled = !ready;
+    el.rotate.disabled = !ready || state.reducedMotion;
+    el.refresh.disabled = kind === "loading";
+
+    if (!ready) {
+      var copy = STATE_COPY[kind];
+      el.stateArt.dataset.kind = kind;
+      el.stateTitle.textContent = copy.title;
+      el.stateBody.textContent = copy.body;
+      if (copy.action) {
+        el.stateAction.hidden = false;
+        el.stateAction.textContent = copy.action;
+      } else {
+        el.stateAction.hidden = true;
+      }
+      el.chip.hidden = true;
+    } else if (!state.selectedId) {
+      el.chip.hidden = true;
+    } else {
+      updateChip();
+    }
+
+    if (kind === "error") {
+      el.stateCard.setAttribute("role", "alert");
+    } else {
+      el.stateCard.setAttribute("role", "status");
+    }
+    updateSummary();
+    state.dirty = true;
+  }
+
+  function simulateRefresh() {
+    if (state.ready === "loading") return;
+    setReady("loading");
+    el.refresh.classList.add("is-spinning");
+    window.setTimeout(function () {
+      el.refresh.classList.remove("is-spinning");
+      fitCamera(false);
+      setReady("ready");
+      showToast("Graph refreshed · " + nodes.length + " notes · " + edges.length + " links");
+    }, state.reducedMotion ? 320 : 850);
+  }
+
+  // --- toast / hint --------------------------------------------------
+  function showToast(message) {
+    el.toast.textContent = message;
+    el.toast.hidden = false;
+    window.requestAnimationFrame(function () { el.toast.classList.add("show"); });
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(function () {
+      el.toast.classList.remove("show");
+      window.setTimeout(function () { el.toast.hidden = true; }, state.reducedMotion ? 0 : 200);
+    }, 3200);
+  }
+
+  var hintHidden = false;
+  function hideHint() {
+    if (hintHidden) return;
+    hintHidden = true;
+    el.hint.classList.add("is-hidden");
+    window.setTimeout(function () { el.hint.hidden = true; }, state.reducedMotion ? 0 : 420);
+  }
+
+  // --- pointer interaction -------------------------------------------
+  var pointers = new Map();
+  var gesture = null;         // orbit | pan | node | pinch
+  var downInfo = null;
+  var pinchPrev = null;
+  var last = { x: 0, y: 0 };
+
+  function setHover(id) {
+    if (state.hoverId === id) return;
+    state.hoverId = id;
+    state.dirty = true;
+  }
+
+  function startNodeDrag(n, pos) {
+    state.draggingNode = n;
+    n.fixed = true;
+    state.simRunning = true;
+    dragNodeTo(pos);
+  }
+
+  function dragNodeTo(pos) {
+    var n = state.draggingNode;
+    if (!n) return;
+    var b = computeBasis();
+    var planePoint = { x: n.x, y: n.y, z: n.z * state.depthScale };
+    var hit = pointOnPlane(pos.x, pos.y, planePoint, b);
+    if (!hit) return;
+    n.x = hit.x;
+    n.y = hit.y;
+    n.z = state.depthScale > 0.02 ? hit.z / state.depthScale : 0;
+    n.vx = n.vy = n.vz = 0;
+    state.simRunning = true;
+    state.dirty = true;
+  }
+
+  function releaseNodeDrag() {
+    if (!state.draggingNode) return;
+    state.draggingNode.fixed = false;
+    state.draggingNode = null;
+    state.simRunning = true;
+    state.dirty = true;
+  }
+
+  function onPointerDown(ev) {
+    if (state.ready !== "ready") return;
+    if (ev.button !== undefined && ev.button > 2) return;
+    el.host.focus({ preventScroll: true });
+    hideHint();
+    camTween = null;
+
+    var pos = localPos(ev);
+    last = pos;
+    try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
+    pointers.set(ev.pointerId, { x: pos.x, y: pos.y, type: ev.pointerType });
+
+    if (pointers.size === 2) {
+      if (gesture === "node") releaseNodeDrag();
+      gesture = "pinch";
+      pinchPrev = pinchInfo();
+      state.lastGestureMoved = true;
+      el.host.classList.add("is-grabbing");
+      ev.preventDefault();
+      return;
+    }
+
+    var panButton = ev.button === 2 || ev.button === 1 || (ev.button === 0 && ev.shiftKey);
+    var hit = panButton ? null : pick(pos.x, pos.y, ev.pointerType !== "mouse");
+
+    if (panButton) {
+      gesture = "pan";
+    } else if (hit) {
+      gesture = "node";
+      startNodeDrag(hit, pos);
+      if (ev.pointerType !== "mouse") setHover(hit.id);
+    } else {
+      gesture = "orbit";
+      if (ev.pointerType !== "mouse") setHover(null);
+    }
+
+    downInfo = {
+      x: pos.x, y: pos.y, button: ev.button || 0,
+      moved: false, pointerType: ev.pointerType,
+      startedOn: hit ? hit.id : null
+    };
+    state.lastGestureMoved = false;
+    el.host.classList.add("is-grabbing");
+  }
+
+  function pinchInfo() {
+    var pts = Array.from(pointers.values());
+    if (pts.length < 2) return null;
+    var ax = pts[0].x, ay = pts[0].y, bx = pts[1].x, by = pts[1].y;
+    return {
+      dist: Math.hypot(ax - bx, ay - by) || 1,
+      cx: (ax + bx) / 2,
+      cy: (ay + by) / 2
+    };
+  }
+
+  function onPointerMove(ev) {
+    var pos = localPos(ev);
+
+    if (!pointers.has(ev.pointerId)) {
+      if (ev.pointerType === "mouse" && !gesture && state.ready === "ready") {
+        var h = pick(pos.x, pos.y, false);
+        setHover(h ? h.id : null);
+        canvas.style.cursor = h ? "pointer" : "grab";
+      }
+      return;
+    }
+    pointers.set(ev.pointerId, { x: pos.x, y: pos.y, type: ev.pointerType });
+
+    if (gesture === "pinch") {
+      var cur = pinchInfo();
+      if (cur && pinchPrev) {
+        var factor = pinchPrev.dist / cur.dist;
+        zoomAt(cur.cx, cur.cy, factor, 0.3);
+        panByPixels(cur.cx - pinchPrev.cx, cur.cy - pinchPrev.cy);
+      }
+      pinchPrev = cur;
+      state.lastGestureMoved = true;
+      state.dirty = true;
+      return;
+    }
+
+    var dx = pos.x - last.x, dy = pos.y - last.y;
+    if (downInfo && Math.abs(pos.x - downInfo.x) + Math.abs(pos.y - downInfo.y) > 4) {
+      downInfo.moved = true;
+      state.lastGestureMoved = true;
+    }
+
+    if (gesture === "orbit") {
+      cam.yaw -= dx * 0.005;
+      cam.pitch = clamp(cam.pitch + dy * 0.004, -1.22, 1.22);
+      computeBasis();
+      state.dirty = true;
+    } else if (gesture === "pan") {
+      panByPixels(dx, dy);
+    } else if (gesture === "node") {
+      dragNodeTo(pos);
+    }
+
+    last = pos;
+    state.dirty = true;
+  }
+
+  function onPointerUp(ev) {
+    if (!pointers.has(ev.pointerId)) return;
+    var wasGesture = gesture;
+    var info = downInfo;
+    var pos = localPos(ev);
+    pointers.delete(ev.pointerId);
+
+    if (wasGesture === "node") releaseNodeDrag();
+
+    if (pointers.size === 0) {
+      el.host.classList.remove("is-grabbing");
+      if (wasGesture === "pinch") {
+        gesture = null; downInfo = null; pinchPrev = null;
+        state.dirty = true;
+        return;
+      }
+      if (info && !info.moved && info.button === 0) {
+        var hit = pick(pos.x, pos.y, info.pointerType !== "mouse");
+        if (hit) {
+          selectNode(hit.id);
+          handleTap(hit, info);
+        } else {
+          clearSelection();
+        }
+      }
+      gesture = null;
+      downInfo = null;
+      pinchPrev = null;
+      if (info && info.pointerType === "mouse") {
+        var hover = pick(pos.x, pos.y, false);
+        setHover(hover ? hover.id : null);
+      } else {
+        setHover(null);
+      }
+      state.dirty = true;
+    } else if (pointers.size === 1) {
+      // Stay in pinch mode until every finger is lifted, so the remaining
+      // finger cannot accidentally orbit after a pinch.
+      gesture = "pinch";
+      pinchPrev = null;
+    }
+  }
+
+  function handleTap(node, info) {
+    var now = performance.now();
+    if (now - lastTap.t < 320 &&
+        Math.hypot(info.x - lastTap.x, info.y - lastTap.y) < 26 &&
+        lastTap.id === node.id) {
+      showToast("Would open “" + node.name + "” in a new tab.");
+      lastTap = { t: 0, x: 0, y: 0, id: null };
+    } else {
+      lastTap = { t: now, x: info.x, y: info.y, id: node.id };
+    }
+  }
+
+
+  function onWheel(ev) {
+    if (state.ready !== "ready") return;
+    ev.preventDefault();
+    hideHint();
+    camTween = null;
+    var pos = localPos(ev);
+    var factor = Math.exp(ev.deltaY * 0.0012);
+    zoomAt(pos.x, pos.y, factor, 0.35);
+  }
+
+  // --- drawing -------------------------------------------------------
+  function textWidth(text, strong) {
+    var key = (strong ? "s:" : "n:") + text;
+    var w = labelWidthCache.get(key);
+    if (w == null) {
+      ctx.font = strong ? LABEL_FONT_STRONG : LABEL_FONT;
+      w = ctx.measureText(text).width;
+      labelWidthCache.set(key, w);
+    }
+    return w;
+  }
+
+  function roundRect(g, x, y, w, h, r) {
+    var rr = Math.min(r, w / 2, h / 2);
+    g.beginPath();
+    g.moveTo(x + rr, y);
+    g.arcTo(x + w, y, x + w, y + h, rr);
+    g.arcTo(x + w, y + h, x, y + h, rr);
+    g.arcTo(x, y + h, x, y, rr);
+    g.arcTo(x, y, x + w, y, rr);
+    g.closePath();
+  }
+
+  function draw(now) {
+    if (!ctx || !palette || !width || !height) return;
+    var b = computeBasis();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.fillStyle = palette.bg;
+    ctx.fillRect(0, 0, width, height);
+    if (vignette) ctx.drawImage(vignette, 0, 0, width, height);
+
+    var hoverId = state.hoverId;
+    var selectedId = state.selectedId;
+    var selDist = selectedId ? state.selectedDist : null;
+    var filterSet = state.filterSet;
+    var hoverSet = hoverId && byId.get(hoverId) ? byId.get(hoverId).neighbors : null;
+
+    // Project every node once.
+    var projected = [];
+    projection.clear();
+    var minD = Infinity, maxD = -Infinity;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var p = projectNode(n, b);
+      if (!p) continue;
+      var sr = clamp(worldRadius(n) * p.scale, 2.4, 28);
+      var rec = {
+        n: n, x: p.x, y: p.y, depth: p.depth, sr: sr,
+        fog: 0, alpha: 1, color: palette.node, drawR: sr,
+        label: null, labelBox: null
+      };
+      projected.push(rec);
+      projection.set(n.id, rec);
+      if (p.depth < minD) minD = p.depth;
+      if (p.depth > maxD) maxD = p.depth;
+    }
+    var fogSpan = Math.max(1, maxD - minD);
+
+    // Resolve per-node style.
+    for (i = 0; i < projected.length; i++) {
+      rec = projected[i];
+      n = rec.n;
+      rec.fog = clamp((rec.depth - minD) / fogSpan, 0, 1);
+      var sel = selDist ? selDist.get(n.id) : undefined;
+      var inHover = !hoverId || n.id === hoverId || (hoverSet && hoverSet.has(n.id));
+      var inSel = sel !== undefined && sel <= 2;
+      var matches = !filterSet || filterSet.has(n.id);
+
+      var dim = 1;
+      if (filterSet && !matches) dim *= 0.14;
+      if (hoverId && !inHover) dim *= inSel ? 0.58 : 0.16;
+
+      var color = palette.node;
+      if (n.id === selectedId) {
+        color = palette.warn;
+      } else if (selDist && sel === undefined) {
+        color = mix(palette.node, palette.dim, 0.48);
+        dim *= 0.26;
+      } else if (sel === 1) {
+        color = mix(palette.node, palette.warn, 0.82);
+      } else if (sel === 2) {
+        color = mix(palette.node, palette.warn, 0.44);
+      } else if (sel !== undefined && sel >= 3 && sel < Infinity) {
+        color = mix(palette.node, palette.dim, 0.52);
+      } else if (n.id === hoverId) {
+        color = palette.hover;
+      } else if (hoverSet && hoverSet.has(n.id)) {
+        color = mix(palette.node, palette.hover, 0.44);
+      }
+
+      var fogAlpha = 1 - 0.5 * Math.pow(rec.fog, 1.25);
+      rec.alpha = clamp(dim * fogAlpha, 0.04, 1);
+      if (n.id === selectedId) rec.alpha = Math.max(rec.alpha, (filterSet && !matches) ? 0.45 : 0.72);
+      rec.color = color;
+      rec.drawR = rec.sr * (n.id === selectedId ? 1.14 : n.id === hoverId ? 1.1 : 1);
+    }
+
+    // --- edges (painter's order: far to near) ------------------------
+    var edgeRecs = [];
+    for (i = 0; i < edges.length; i++) {
+      var e = edges[i];
+      var ra = projection.get(e.source.id);
+      var rb = projection.get(e.target.id);
+      if (!ra || !rb) continue;
+      edgeRecs.push({ e: e, a: ra, b: rb, depth: (ra.depth + rb.depth) / 2 });
+    }
+    edgeRecs.sort(function (x, y) { return y.depth - x.depth; });
+
+    ctx.lineCap = "round";
+    for (i = 0; i < edgeRecs.length; i++) {
+      var er = edgeRecs[i];
+      var style = edgeStyle(er.e, er.a, er.b, hoverId, hoverSet, selDist, filterSet);
+      if (style.alpha <= 0.012) continue;
+      if (style.glow) {
+        ctx.globalAlpha = style.alpha * 0.22;
+        ctx.strokeStyle = rgba(style.color, 1);
+        ctx.lineWidth = style.width + 4;
+        ctx.beginPath();
+        ctx.moveTo(er.a.x, er.a.y);
+        ctx.lineTo(er.b.x, er.b.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = style.alpha;
+      ctx.strokeStyle = rgba(style.color, 1);
+      ctx.lineWidth = style.width;
+      ctx.beginPath();
+      ctx.moveTo(er.a.x, er.a.y);
+      ctx.lineTo(er.b.x, er.b.y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // --- signal pulses (focus only; capped) --------------------------
+    if (!state.reducedMotion && state.ready === "ready") {
+      var pulses = [];
+      for (i = 0; i < edges.length && pulses.length < 12; i++) {
+        var pe = edges[i];
+        var focusEdge = false;
+        if (selDist) {
+          var ds = selDist.get(pe.source.id);
+          var dt = selDist.get(pe.target.id);
+          focusEdge = ds === 1 || dt === 1;
+        }
+        if (!focusEdge && hoverId) {
+          focusEdge = pe.source.id === hoverId || pe.target.id === hoverId;
+        }
+        if (!focusEdge && state.draggingNode) {
+          focusEdge = pe.source === state.draggingNode || pe.target === state.draggingNode;
+        }
+        if (focusEdge) pulses.push(pe);
+      }
+      for (i = 0; i < pulses.length; i++) {
+        var pe2 = pulses[i];
+        var pa = projection.get(pe2.source.id);
+        var pb = projection.get(pe2.target.id);
+        if (!pa || !pb) continue;
+        var t = ((now / 2600) + pe2.phase) % 1;
+        var hx = lerp(pa.x, pb.x, t);
+        var hy = lerp(pa.y, pb.y, t);
+        var tx = lerp(pa.x, pb.x, Math.max(0, t - 0.07));
+        var ty = lerp(pa.y, pb.y, Math.max(0, t - 0.07));
+        var depthFade = 1 - 0.4 * ((pa.fog + pb.fog) / 2);
+        ctx.globalAlpha = 0.55 * depthFade;
+        ctx.strokeStyle = rgba(palette.pulse, 1);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(tx, ty);
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+        ctx.globalAlpha = 0.95 * depthFade;
+        ctx.fillStyle = rgba(palette.pulse, 1);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 1.9, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // --- nodes (far to near) -----------------------------------------
+    projected.sort(function (x, y) { return y.depth - x.depth; });
+    var breath = state.reducedMotion ? 0.38 : (Math.sin(now / 420) + 1) / 2;
+    var warnInk = state.theme === "light" ? mix(palette.warn, palette.label, 0.30) : palette.warn;
+
+    for (i = 0; i < projected.length; i++) {
+      rec = projected[i];
+      n = rec.n;
+      var sr = rec.drawR;
+      var alpha = rec.alpha;
+      var isSel = n.id === selectedId;
+      var isHover = n.id === hoverId;
+
+      // Glow: depth falloff substitutes for a blur pass.
+      var glowAlpha = alpha * (isSel ? 0.85 : isHover ? 0.72 : (0.5 - 0.26 * rec.fog));
+      if (glowAlpha > 0.02) {
+        ctx.globalAlpha = glowAlpha;
+        var gs = glowSprite(rec.color);
+        var gr = sr * 3.4;
+        ctx.drawImage(gs, rec.x - gr, rec.y - gr, gr * 2, gr * 2);
+      }
+
+      // Core sphere.
+      ctx.globalAlpha = alpha;
+      var ss = sphereSprite(rec.color);
+      ctx.drawImage(ss, rec.x - sr, rec.y - sr, sr * 2, sr * 2);
+
+      // Active-file halo: a thin amber ring, never a fill, so it cannot be
+      // confused with the click-selection heat map.
+      if (n.id === ACTIVE_ID && !isSel) {
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.strokeStyle = rgba(warnInk, 1);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(rec.x, rec.y, sr + 2.4, 0, TAU);
+        ctx.stroke();
+      }
+
+      if (isHover && !isSel) {
+        ctx.globalAlpha = Math.max(0.8, alpha);
+        ctx.strokeStyle = rgba(palette.glow, 1);
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(rec.x, rec.y, sr + 4, 0, TAU);
+        ctx.stroke();
+      }
+
+      if (isSel) {
+        // Steady inner ring + breathing outer ring.
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = rgba(warnInk, state.theme === "light" ? 0.95 : 0.9);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(rec.x, rec.y, sr + 3.2, 0, TAU);
+        ctx.stroke();
+
+        ctx.strokeStyle = rgba(warnInk, 0.16 + 0.4 * breath);
+        ctx.lineWidth = 1.2 + 1.6 * breath;
+        ctx.beginPath();
+        ctx.arc(rec.x, rec.y, sr + 5 + 8.5 * breath, 0, TAU);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // --- labels ------------------------------------------------------
+    drawLabels(projected, hoverId, hoverSet, selDist, filterSet, now);
+  }
+
+  function edgeStyle(e, a, b, hoverId, hoverSet, selDist, filterSet) {
+    var ds = selDist ? (selDist.get(e.source.id) === undefined ? Infinity : selDist.get(e.source.id)) : Infinity;
+    var dt = selDist ? (selDist.get(e.target.id) === undefined ? Infinity : selDist.get(e.target.id)) : Infinity;
+    var hop = Math.min(ds, dt);
+    var hoverIncident = hoverId && (e.source.id === hoverId || e.target.id === hoverId);
+    var hoverIn = hoverId && hoverSet &&
+      (e.source.id === hoverId || hoverSet.has(e.source.id)) &&
+      (e.target.id === hoverId || hoverSet.has(e.target.id));
+
+    var alpha, width, color = palette.edge, glow = false;
+    if (selDist) {
+      if (hop === 1) { alpha = 0.88; width = 2.0; color = mix(palette.edge, palette.warn, 0.34); glow = true; }
+      else if (hop === 2) { alpha = 0.52; width = 1.5; color = mix(palette.edge, palette.warn, 0.16); }
+      else if (hop === 3) { alpha = 0.32; width = 1.2; color = mix(palette.edge, palette.dim, 0.24); }
+      else { alpha = 0.055; width = 1.0; color = palette.dim; }
+      if (hoverIncident) {
+        alpha = Math.max(alpha, 0.92); width = 2.1; glow = true;
+        color = mix(palette.edge, palette.glow, 0.42);
+      }
+    } else if (hoverId) {
+      if (hoverIncident) { alpha = 0.92; width = 1.9; color = mix(palette.edge, palette.glow, 0.34); glow = true; }
+      else if (hoverIn) { alpha = 0.38; width = 1.2; }
+      else { alpha = 0.055; width = 1.0; color = palette.dim; }
+    } else {
+      alpha = 0.44 * (1 - 0.5 * b.fog);
+      width = 1.15;
+    }
+
+    if (filterSet) {
+      var ms = filterSet.has(e.source.id), mt = filterSet.has(e.target.id);
+      if (!ms && !mt) alpha *= 0.12;
+      else if (!ms || !mt) alpha *= 0.34;
+    }
+    alpha *= (1 - 0.3 * ((a.fog + b.fog) / 2));
+    return { alpha: clamp(alpha, 0, 1), width: width, color: color, glow: glow };
+  }
+
+  function labelsFor(projected, hoverId, hoverSet, selDist, filterSet) {
+    var out = [];
+    for (var i = 0; i < projected.length; i++) {
+      var rec = projected[i];
+      var n = rec.n;
+      if (rec.x < -80 || rec.x > width + 80 || rec.y < -80 || rec.y > height + 80) continue;
+      if (filterSet && !filterSet.has(n.id)) continue;
+
+      var isSel = n.id === state.selectedId;
+      if (selDist && !isSel && selDist.get(n.id) === undefined) continue;
+      var isHover = n.id === hoverId;
+      var isHoverNb = hoverSet && hoverSet.has(n.id);
+      var sel = selDist ? selDist.get(n.id) : undefined;
+      var isSelNb = sel === 1;
+      var isHub = n.degree >= 6;
+      var forced = isSel || isHover;
+
+      var show;
+      if (hoverId) {
+        show = isHover || isHoverNb || isSel || isSelNb;
+      } else if (selDist) {
+        show = isSel || isSelNb || isHub;
+      } else if (filterSet) {
+        show = filterSet.size <= 12 || isHub || rec.fog < 0.38;
+      } else {
+        show = isHub || rec.fog < 0.46;
+      }
+      if (!show) continue;
+      if (!forced && rec.fog > 0.78) continue;
+
+      out.push({
+        rec: rec, text: n.name.replace(/\.md$/i, ""), forced: forced,
+        priority: forced ? 0 : (isHub ? 1 : 2) + rec.fog
+      });
+    }
+    return out;
+  }
+
+  function drawLabels(projected, hoverId, hoverSet, selDist, filterSet, now) {
+    var warnInk = state.theme === "light" ? mix(palette.warn, palette.label, 0.30) : palette.warn;
+    var candidates = labelsFor(projected, hoverId, hoverSet, selDist, filterSet);
+    if (!candidates.length) return;
+
+    // Near labels reserve space first; near depth ascending.
+    candidates.sort(function (a, b) {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return a.rec.depth - b.rec.depth;
+    });
+    var cap = state.filter || hoverId || state.selectedId ? 22 : 16;
+    if (candidates.length > cap) candidates.length = cap;
+
+    var placed = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      var strong = c.forced;
+      var text = c.text;
+      if (text.length > 30) text = text.slice(0, 29) + "…";
+      var w = textWidth(text, strong);
+      var boxW = w + 10;
+      var boxH = 17;
+      var gap = c.rec.drawR + 7;
+      var cy = c.rec.y;
+      var tries = [
+        { x: c.rec.x + gap, y: cy },
+        { x: c.rec.x - gap - boxW, y: cy },
+        { x: c.rec.x - boxW / 2, y: cy - c.rec.drawR - 7 - boxH / 2 },
+        { x: c.rec.x - boxW / 2, y: cy + c.rec.drawR + 7 + boxH / 2 }
+      ];
+      var chosen = null;
+      for (var t = 0; t < tries.length; t++) {
+        var x = clamp(tries[t].x, 8, width - boxW - 8);
+        var y = clamp(tries[t].y, boxH / 2 + 8, height - boxH / 2 - 8);
+        var rect = { x: x, y: y - boxH / 2, w: boxW, h: boxH };
+        if (!overlapsAny(placed, rect)) { chosen = { x: x, y: y, rect: rect }; break; }
+      }
+      if (!chosen && c.forced) {
+        var x2 = clamp(tries[0].x, 8, width - boxW - 8);
+        var y2 = clamp(cy, boxH / 2 + 8, height - boxH / 2 - 8);
+        chosen = { x: x2, y: y2, rect: { x: x2, y: y2 - boxH / 2, w: boxW, h: boxH } };
+      }
+      if (!chosen) continue;
+      placed.push(chosen.rect);
+      c.box = chosen;
+    }
+
+    // Draw far to near so near labels sit on top.
+    var drawables = candidates.filter(function (c) { return !!c.box; });
+    drawables.sort(function (a, b) { return b.rec.depth - a.rec.depth; });
+
+    for (i = 0; i < drawables.length; i++) {
+      c = drawables[i];
+      var rec = c.rec;
+      var box = c.box;
+      var isFocus = c.forced;
+      var isSel = rec.n.id === state.selectedId;
+      var isHover = rec.n.id === hoverId;
+      var alpha = clamp(rec.alpha * 1.35, 0.12, 1);
+      if (isFocus) alpha = 1;
+
+      ctx.font = isFocus ? LABEL_FONT_STRONG : LABEL_FONT;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+
+      if (isFocus) {
+        ctx.globalAlpha = 1;
+        roundRect(ctx, box.x, box.y, box.w, box.h, 5);
+        ctx.fillStyle = rgba(palette.panel, state.theme === "light" ? 0.94 : 0.9);
+        ctx.fill();
+        ctx.strokeStyle = isSel
+          ? rgba(warnInk, state.theme === "light" ? 0.9 : 0.62)
+          : rgba(palette.glow, 0.48);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = rgba(palette.label, 1);
+        ctx.fillText(c.text.length > 30 ? c.text.slice(0, 29) + "…" : c.text, box.x + 5, box.y + box.h / 2 + 0.5);
+      } else {
+        var textOut = c.text.length > 30 ? c.text.slice(0, 29) + "…" : c.text;
+        ctx.globalAlpha = alpha;
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = rgba(palette.bgTriple, state.theme === "light" ? 0.9 : 0.86);
+        ctx.lineWidth = 3;
+        ctx.strokeText(textOut, box.x + 5, box.y + box.h / 2 + 0.5);
+        ctx.fillStyle = rgba(palette.label, 1);
+        ctx.fillText(textOut, box.x + 5, box.y + box.h / 2 + 0.5);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function overlapsAny(list, r) {
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (r.x < p.x + p.w + 2 && r.x + r.w + 2 > p.x &&
+          r.y < p.y + p.h + 2 && r.y + r.h + 2 > p.y) return true;
+    }
+    return false;
+  }
+
+  // --- frame loop ----------------------------------------------------
+  var lastT = 0;
+  function loop(now) {
+    window.requestAnimationFrame(loop);
+    if (!lastT) lastT = now;
+    var dt = Math.min(0.05, (now - lastT) / 1000 || 0.016);
+    lastT = now;
+
+    var active = false;
+    if (advanceTween(now)) active = true;
+    if (state.autoRotate && !state.reducedMotion && !gesture) {
+      cam.yaw += 0.075 * dt;
+      active = true;
+    }
+    if (state.simRunning) {
+      stepPhysics();
+      active = true;
+    }
+    if (state.ready === "ready") {
+      var ambient = !state.reducedMotion && (state.hoverId || state.selectedId);
+      if (active || state.dirty || ambient) {
+        draw(now);
+        state.dirty = false;
+      }
+    }
+  }
+
+  // --- event wiring --------------------------------------------------
+  function bindEvents() {
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("pointerleave", function () {
+      if (!gesture) { setHover(null); canvas.style.cursor = "grab"; }
+    });
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("contextmenu", function (ev) { ev.preventDefault(); });
+
+    el.filter.addEventListener("input", updateFilter);
+    el.filter.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape") {
+        ev.stopPropagation();
+        if (el.filter.value) {
+          el.filter.value = "";
+          updateFilter();
+        } else {
+          el.host.focus();
+        }
+      }
+    });
+
+    el.depth.addEventListener("input", function () {
+      var v = clamp(parseFloat(el.depth.value) || 0, 0, 100);
+      var next = v / 100;
+      var old = state.depthScale;
+      if (old > 0.001) cam.target.z *= next / old;
+      state.depthScale = next;
+      el.depthValue.textContent = v + "%";
+      el.depth.setAttribute("aria-valuetext", v + " percent");
+      state.dirty = true;
+    });
+
+    el.rotate.addEventListener("click", function () {
+      if (state.reducedMotion || state.ready !== "ready") return;
+      state.autoRotate = !state.autoRotate;
+      updateRotateButton();
+      state.dirty = true;
+    });
+
+    el.fit.addEventListener("click", function () { fitCamera(true); });
+    el.zoomIn.addEventListener("click", function () { zoomAt(width / 2, height / 2, 1 / 1.2, 0); });
+    el.zoomOut.addEventListener("click", function () { zoomAt(width / 2, height / 2, 1.2, 0); });
+    el.refresh.addEventListener("click", simulateRefresh);
+    el.stateAction.addEventListener("click", simulateRefresh);
+    el.chipClose.addEventListener("click", function () {
+      clearSelection();
+      el.host.focus({ preventScroll: true });
+    });
+
+    el.themeButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        setTheme(btn.dataset.theme);
+        buildVignette();
+      });
+    });
+
+    el.demoReduce.addEventListener("change", function () {
+      el.demoReduce.dataset.touched = "1";
+      setReducedMotion(el.demoReduce.checked);
+      buildVignette();
+      state.dirty = true;
+    });
+
+    el.demoState.addEventListener("change", function () {
+      setReady(el.demoState.value);
+    });
+
+    el.host.addEventListener("keydown", onHostKeyDown);
+
+    if (window.ResizeObserver && el.host) {
+      try {
+        new ResizeObserver(function () {
+          sizeCanvas();
+          state.dirty = true;
+        }).observe(el.host);
+      } catch (_) {}
+    }
+    window.addEventListener("resize", function () {
+      sizeCanvas();
+      state.dirty = true;
+    });
+
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { state.dirty = true; lastT = 0; }
+    });
+  }
+
+  function onHostKeyDown(ev) {
+    if (state.ready !== "ready") return;
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    var k = ev.key;
+
+    if (k === "ArrowLeft" || k === "ArrowRight" || k === "ArrowUp" || k === "ArrowDown") {
+      ev.preventDefault();
+      hideHint();
+      camTween = null;
+      var step = 0.075;
+      if (ev.shiftKey) {
+        var panStep = 26;
+        if (k === "ArrowLeft") panByPixels(panStep, 0);
+        else if (k === "ArrowRight") panByPixels(-panStep, 0);
+        else if (k === "ArrowUp") panByPixels(0, panStep);
+        else panByPixels(0, -panStep);
+      } else {
+        if (k === "ArrowLeft") cam.yaw += step;
+        else if (k === "ArrowRight") cam.yaw -= step;
+        else if (k === "ArrowUp") cam.pitch = clamp(cam.pitch - step, -1.22, 1.22);
+        else cam.pitch = clamp(cam.pitch + step, -1.22, 1.22);
+      }
+      state.dirty = true;
+      return;
+    }
+
+    if (k === "+" || k === "=" || k === "-" || k === "_") {
+      ev.preventDefault();
+      hideHint();
+      camTween = null;
+      zoomAt(width / 2, height / 2, (k === "+" || k === "=") ? 1 / 1.18 : 1.18, 0);
+      return;
+    }
+
+    if (k === "Home" || k === "0") {
+      ev.preventDefault();
+      fitCamera(true);
+      return;
+    }
+
+    if (k === "/") {
+      ev.preventDefault();
+      el.filter.focus();
+      el.filter.select();
+      return;
+    }
+
+    if (k === "r" || k === "R") {
+      ev.preventDefault();
+      if (!state.reducedMotion) {
+        state.autoRotate = !state.autoRotate;
+        updateRotateButton();
+        state.dirty = true;
+      }
+      return;
+    }
+
+    if (k === "[" || k === "]") {
+      ev.preventDefault();
+      hideHint();
+      cycleSelection(k === "]" ? 1 : -1);
+      return;
+    }
+
+    if (k === "Enter") {
+      ev.preventDefault();
+      if (state.selectedId) {
+        showToast("Would open “" + byId.get(state.selectedId).name + "” in a new tab.");
+      } else {
+        el.srLive.textContent = "No note selected. Use the left and right bracket keys to choose one.";
+      }
+      return;
+    }
+
+    if (k === "Escape") {
+      ev.preventDefault();
+      clearSelection();
+    }
+  }
+
+  // --- boot ----------------------------------------------------------
+  function boot() {
+    cacheEls();
+    if (!ctx) {
+      el.stateLayer.hidden = false;
+      el.stateArt.dataset.kind = "error";
+      el.stateTitle.textContent = "Canvas unavailable";
+      el.stateBody.textContent = "This browser cannot create a 2D canvas, so the graph cannot render.";
+      return;
+    }
+
+    var prefersLight = false;
+    var mqLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)");
+    if (mqLight) prefersLight = mqLight.matches;
+    setTheme(prefersLight ? "light" : "dark");
+
+    var mqReduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReducedMotion(mqReduce ? mqReduce.matches : false);
+    if (mqReduce && mqReduce.addEventListener) {
+      mqReduce.addEventListener("change", function (e) {
+        // The demo switch is the explicit override; only follow the OS while
+        // the user has not touched it.
+        if (!el.demoReduce.dataset.touched) setReducedMotion(e.matches);
+      });
+    }
+
+    var mqTouch = window.matchMedia && window.matchMedia("(pointer: coarse)");
+    if (mqTouch && mqTouch.matches) document.body.classList.add("touch-ui");
+
+    seedLayout();
+    warmUp();
+    bindEvents();
+    sizeCanvas();
+    fitCamera(false);
+    updateRotateButton();
+    updateSummary();
+    el.host.setAttribute("aria-label",
+      "3D graph of " + nodes.length + " notes and " + edges.length + " links. " +
+      "Drag to orbit. Scroll to zoom. Right-drag to pan. Click a note to select it. " +
+      "Double-click a note to open it. Press left and right bracket to move the selection, " +
+      "Enter to open, Escape to clear, Home to reset the camera.");
+
+    window.requestAnimationFrame(function () {
+      sizeCanvas();
+      fitCamera(false);
+      state.dirty = true;
+    });
+    window.requestAnimationFrame(loop);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>

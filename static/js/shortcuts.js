@@ -61,6 +61,13 @@
     toggleTopbar: "Mod+Shift+T",
     openSettings: "Mod+comma",
   };
+  // Bare keys the graph canvas host consumes itself. The global dispatcher
+  // yields only these, so a user-rebound bare letter still works.
+  const GRAPH_HOST_KEYS = new Set([
+    "arrowleft", "arrowright", "arrowup", "arrowdown",
+    "home", "0", "r", "[", "]", "enter", "escape",
+    "+", "=", "-", "_", "/",
+  ]);
   const ACTION_LABELS = {
     save:         "Save current file",
     openSearch:   "Open search",
@@ -295,6 +302,13 @@
     // so things like Ctrl+L (focus address bar) and Ctrl+F (find)
     // keep working as long as the user hasn't rebound them.
     if (!matchAction) return;
+    // The graph host owns its bare keys (/ to filter, Home, arrows, ...).
+    // A document-capture listener runs before the host's own handler, so
+    // yield here instead of stealing "/" for the Search panel.
+    const graphHost = e.target && e.target.closest
+      ? e.target.closest("#graph-view-canvas-host") : null;
+    if (graphHost && chordHasNoModifiers(matchChord) &&
+        GRAPH_HOST_KEYS.has(String(e.key).toLowerCase())) return;
     // Typing guard: a modifierless chord in a text input is the user
     // typing, not invoking a shortcut. Don't claim (no preventDefault)
     // and don't fire -- the keystroke passes through to the input.

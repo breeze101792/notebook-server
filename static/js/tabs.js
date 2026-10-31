@@ -848,6 +848,9 @@
    * open yet. */
   async function restore(openFiles, activeFile, fallback, pinnedFiles) {
     (openFiles || []).forEach(p => {
+      // A saved special tab whose module no longer registers (e.g. a
+      // retired §search) would show a blank content area. Drop it.
+      if (isSpecial(p) && !specialTabs.has(p)) return;
       if (!openSet.has(p)) { openSet.add(p); ordered.push(p); }
     });
     (pinnedFiles || []).forEach(p => { if (openSet.has(p)) pinned.add(p); });

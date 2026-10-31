@@ -35,8 +35,10 @@ Desktop file tree and context menus (create file/folder, rename/move,
 copy, delete, disk assertions), tabs (open, switch, close, drag reorder, pin, dirty-switch draft
 and Recover), real `/api/search` with `<mark>` snippets and keyboard navigation,
 bookmarks (star, panel, drag reorder, remove), outline (list, jump,
-scroll-spy), graph canvas and node open, settings (theme, font size,
-close), watcher (external tree change).
+scroll-spy), the 3D graph (canvas pixels, orbit/wheel/pan camera,
+keyboard select + Enter, projected double-click, filter, depth spread,
+theme repaint, `§graph` reload restore, reduced-motion auto-orbit),
+settings (theme, font size, close), watcher (external tree change).
 
 ### Auth / export / PWA — `test_auth_export_browser.js`
 

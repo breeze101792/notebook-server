@@ -112,6 +112,11 @@ function buildGraphStub() {
   return { nodes, edges };
 }
 let config = {};
+// /api/graph override. null -> buildGraphStub(); an object is returned
+// verbatim; the string "error" makes the stub answer 500 so the graph's
+// loading/empty/error/toast states can be driven deterministically.
+let graphResponse = null;
+let graphDelayMs = 0;
 let promptValue = null;
 const fetchLog = [];
 // Auth state used by the fake /api/auth + /api/login + /api/logout stubs.
@@ -324,20 +329,73 @@ const html = `<!DOCTYPE html><html><head>
             </div>
           </div>
           <div id="graph-view" class="graph-view special-tab-view" hidden>
-            <div class="graph-view-header">
-              <span class="graph-view-title">Graph</span>
-              <span class="graph-view-summary" id="graph-view-summary"></span>
-              <div class="graph-view-controls">
-                <input type="search" id="graph-view-filter" class="graph-view-filter" placeholder="Filter notes…">
-                <button id="graph-view-recenter" class="graph-view-btn" title="Re-center">⊞</button>
-                <button id="graph-view-zoom-in" class="graph-view-btn" title="Zoom in">+</button>
-                <button id="graph-view-zoom-out" class="graph-view-btn" title="Zoom out">−</button>
-                <button id="graph-view-refresh" class="graph-view-btn" title="Refresh graph">↻</button>
+            <header class="graph-view-header">
+              <div class="graph-view-heading">
+                <span class="graph-view-title">
+                  <span class="graph-view-dot" aria-hidden="true"></span>
+                  Graph
+                  <span class="graph-view-badge" id="graph-view-mode-badge" aria-hidden="true">3D</span>
+                </span>
+                <span class="graph-view-summary" id="graph-view-summary"></span>
               </div>
+              <div class="graph-view-tools">
+                <div class="graph-view-mode" id="graph-view-mode" role="group" aria-label="Graph mode">
+                  <button id="graph-view-mode-2d" type="button" aria-pressed="false" title="2D graph">2D</button>
+                  <button id="graph-view-mode-3d" type="button" aria-pressed="true" title="3D graph">3D</button>
+                </div>
+                <div class="graph-view-filter-wrap">
+                  <input id="graph-view-filter" class="graph-view-filter" type="search"
+                         placeholder="Filter notes…" aria-label="Filter notes"
+                         autocomplete="off" spellcheck="false">
+                </div>
+                <label class="graph-view-depth">
+                  <input id="graph-view-depth" class="graph-view-depth-range" type="range"
+                         min="0" max="100" step="5" value="100"
+                         aria-label="Depth spread" aria-valuetext="100 percent">
+                  <output id="graph-view-depth-value" class="graph-view-depth-value" for="graph-view-depth">100%</output>
+                </label>
+                <span class="graph-view-sep" aria-hidden="true"></span>
+                <button class="graph-view-btn" id="graph-view-rotate" type="button"
+                        aria-label="Start auto-orbit" aria-pressed="false"
+                        title="Auto-orbit (R)">⟳</button>
+                <button class="graph-view-btn" id="graph-view-fit" type="button"
+                        aria-label="Reset camera and fit graph" title="Reset camera and fit graph (Home)">⊞</button>
+                <button class="graph-view-btn" id="graph-view-zoom-in" type="button"
+                        aria-label="Zoom in" title="Zoom in (+)">+</button>
+                <button class="graph-view-btn" id="graph-view-zoom-out" type="button"
+                        aria-label="Zoom out" title="Zoom out (−)">−</button>
+                <button class="graph-view-btn" id="graph-view-refresh" type="button"
+                        aria-label="Refresh graph" title="Refresh graph">↻</button>
+              </div>
+            </header>
+            <div class="graph-view-host" id="graph-view-canvas-host" tabindex="0"
+                 role="application" aria-label="3D graph. Drag to orbit. Scroll to zoom. Right-drag to pan.">
+              <canvas id="graph-view-canvas" class="graph-view-canvas" aria-hidden="true"></canvas>
+              <canvas id="graph-view-canvas-2d" class="graph-view-canvas" aria-hidden="true" hidden></canvas>
+              <div class="graph-view-hint" id="graph-view-hint" aria-hidden="true">
+                <span class="hint-desktop">Drag to orbit</span>
+                <span class="hint-desktop">Scroll to zoom</span>
+                <span class="hint-touch">Drag to orbit</span>
+              </div>
+              <div class="graph-view-state" id="graph-view-state" hidden>
+                <div class="graph-view-state-card" id="graph-view-state-card" role="status" aria-live="polite">
+                  <div class="graph-view-state-art" id="graph-view-state-art" data-kind="loading" aria-hidden="true"></div>
+                  <h2 class="graph-view-state-title" id="graph-view-state-title">Mapping your notebook…</h2>
+                  <p class="graph-view-state-body" id="graph-view-state-body">Reading links from your notes.</p>
+                  <button class="graph-view-state-action" id="graph-view-state-action" type="button" hidden>Refresh</button>
+                </div>
+              </div>
+              <div class="graph-view-chip" id="graph-view-chip" hidden>
+                <span class="graph-view-chip-dot" aria-hidden="true"></span>
+                <span class="graph-view-chip-name" id="graph-view-chip-name"></span>
+                <span class="graph-view-chip-meta" id="graph-view-chip-meta"></span>
+                <button class="graph-view-chip-close" id="graph-view-chip-close" type="button"
+                        aria-label="Clear selection" title="Clear selection (Esc)">×</button>
+              </div>
+              <div class="graph-view-toast" id="graph-view-toast" role="status" aria-live="polite" hidden></div>
             </div>
-            <div class="graph-view-host" id="graph-view-canvas-host">
-              <canvas id="graph-view-canvas" class="graph-view-canvas"></canvas>
-            </div>
+            <div class="sr-only" id="graph-view-sr-live" role="status" aria-live="polite"></div>
+            <ul class="sr-only" id="graph-view-sr-list" aria-label="Notes in the graph"></ul>
           </div>
         </div>
       </section>
@@ -1490,18 +1548,41 @@ function makeFakeCtx(canvasEl) {
     current: { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 },
     fills: new Set(),         // every fillStyle string seen across draws
     strokes: new Set(),       // every strokeStyle string seen across draws
+    strokeEvents: [],         // {alpha,lineWidth,strokeStyle,hasArc,segments}
     gradients: { radial: 0, linear: 0 },  // gradient objects created
     gradientStops: [],        // every [type,x,y,stop,color] recorded
+    texts: [],                // every fillText string (label-filter assertions)
   };
   // Track each fillStyle/strokeStyle write into a Set so a test can
   // assert "the canvas used the dark-theme accent" without coupling
-  // to the order of operations inside draw().
+  // to the order of operations inside draw(). Also track the live path
+  // so stroke() can record alpha/width plus the line segments it drew;
+  // the graph selection tests use that to identify an edge's band.
   const fillProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; if (typeof v === "string") log.fills.add(v); } };
   const strokeProxy = { _last: "", get value() { return this._last; }, set value(v) { this._last = v; if (typeof v === "string") log.strokes.add(v); } };
+  const paint = { lineWidth: 1, globalAlpha: 1 };
+  const path = { segments: [], hasArc: false, start: null };
   const apply = (name) => (...args) => {
     log.calls.push(name);
     log.ops[name] = (log.ops[name] || 0) + 1;
     if (name === "clearRect") log.clears++;
+    if (name === "beginPath") { path.segments = []; path.hasArc = false; path.start = null; }
+    if (name === "moveTo") path.start = { x: args[0], y: args[1] };
+    if (name === "lineTo") {
+      if (path.start) path.segments.push({ x1: path.start.x, y1: path.start.y, x2: args[0], y2: args[1] });
+      path.start = { x: args[0], y: args[1] };
+    }
+    if (name === "arc") path.hasArc = true;
+    if (name === "stroke") {
+      log.strokeEvents.push({
+        alpha: paint.globalAlpha,
+        lineWidth: paint.lineWidth,
+        strokeStyle: strokeProxy._last,
+        hasArc: path.hasArc,
+        segments: path.segments.map((s) => ({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 })),
+      });
+      if (log.strokeEvents.length > 8000) log.strokeEvents.splice(0, log.strokeEvents.length - 8000);
+    }
     const t = log.current;
     if (name === "translate") {
       t.e += args[0] * t.a + args[1] * t.c;
@@ -1526,13 +1607,28 @@ function makeFakeCtx(canvasEl) {
     set fillStyle(v)  { fillProxy._last = v; if (typeof v === "string") log.fills.add(v); },
     get strokeStyle() { return strokeProxy._last; },
     set strokeStyle(v){ strokeProxy._last = v; if (typeof v === "string") log.strokes.add(v); },
-    lineWidth: 1, font: "",
+    font: "",
+    // The 3D graph renderer writes these directly. Back them with the
+    // paint state so stroke() records the values actually in effect.
+    get lineWidth() { return paint.lineWidth; },
+    set lineWidth(v) { paint.lineWidth = v; },
+    get globalAlpha() { return paint.globalAlpha; },
+    set globalAlpha(v) { paint.globalAlpha = v; },
+    lineCap: "butt", lineJoin: "miter",
+    textAlign: "start", textBaseline: "alphabetic",
     save: apply("save"), restore: apply("restore"),
     translate: apply("translate"), scale: apply("scale"), setTransform: apply("setTransform"),
-    clearRect: apply("clearRect"),
+    clearRect: apply("clearRect"), fillRect: apply("fillRect"),
     beginPath: apply("beginPath"), moveTo: apply("moveTo"), lineTo: apply("lineTo"),
-    arc: apply("arc"), fill: apply("fill"), stroke: apply("stroke"),
-    fillText: apply("fillText"),
+    arc: apply("arc"), arcTo: apply("arcTo"), closePath: apply("closePath"),
+    fill: apply("fill"), stroke: apply("stroke"), drawImage: apply("drawImage"),
+    fillText: (text, x, y) => { log.texts.push(String(text)); apply("fillText")(text, x, y); },
+    strokeText: apply("strokeText"),
+    measureText: (text) => {
+      log.calls.push("measureText");
+      log.ops.measureText = (log.ops.measureText || 0) + 1;
+      return { width: String(text == null ? "" : text).length * 7 };
+    },
     // Gradient stubs. The neural styling uses radial gradients (node
     // bloom + vignette) and linear gradients (edge signal pulses); the
     // real production code guards on 'typeof createRadialGradient ===
@@ -1743,7 +1839,13 @@ window.fetch = async (url, opts) => {
       };
     }
   } else if (p === "/api/graph") {
-    body = buildGraphStub();
+    if (graphDelayMs) await new Promise((r) => setTimeout(r, graphDelayMs));
+    if (graphResponse === "error") {
+      return { ok: false, status: 500,
+        text: async () => JSON.stringify({ error: "Graph unavailable" }),
+        json: async () => ({ error: "Graph unavailable" }) };
+    }
+    body = graphResponse || buildGraphStub();
   } else if (p === "/api/info") {
     body = { data_dir: "/tmp/test/data", config_dir: "/tmp/test/config" };
   } else if (p === "/api/create") {
@@ -2064,6 +2166,8 @@ evalIn(read("static/vendor/highlight.min.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
+evalIn(read("static/js/graph-2d.js"));
+evalIn(read("static/js/graph-3d.js"));
 evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/windows.js"));
@@ -17694,8 +17798,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v16",
-      /const CACHE = "notebook-v16"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v17",
+      /const CACHE = "notebook-v17"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -18296,722 +18400,1799 @@ function check(label, cond, extra) {
   }
 
   console.log("== graph view ==");
-  // CSS sanity for the neural-network redesign tokens: they must exist in
-  // style.css for both themes so resolveColors() has real values to read
-  // (the canvas can't read var() directly; it depends on these triples).
+  // The 3D renderer reads every canvas colour from a --graph-*-rgb token,
+  // so both the dark root block and the light body block must declare them,
+  // and the host must paint --graph-bg behind the canvas.
   const graphCss = read("static/css/style.css");
-  check("graph: neural-effect CSS tokens are declared (root)",
-    /--graph-pulse-rgb/.test(graphCss) && /--graph-pulse-rgb/.test(graphCss),
-    "no --graph-pulse-rgb in style.css");
-  check("graph: vignette CSS tokens are declared (root)",
-    /--graph-vignette-inner-rgb/.test(graphCss) && /--graph-vignette-edge-rgb/.test(graphCss),
-    "no vignette tokens in style.css");
-  check("graph: particle token + host bg are declared",
-    /--graph-particle-rgb/.test(graphCss) && /\.graph-view-host\s*\{[^}]*--graph-bg/.test(graphCss),
-    "missing particle token or host bg");
+  const graphRootBlock = graphCss.slice(0, graphCss.indexOf('body[data-theme="light"]'));
+  const graphLightBlock = graphCss.slice(graphCss.indexOf('body[data-theme="light"]'));
+  check("graph: dark root declares the node/edge/label/depth tokens",
+    /--graph-node-rgb/.test(graphRootBlock) &&
+    /--graph-edge-rgb/.test(graphRootBlock) &&
+    /--graph-label-rgb/.test(graphRootBlock) &&
+    /--graph-bg/.test(graphRootBlock),
+    "missing a --graph-*-rgb or --graph-bg token");
+  check("graph: light body overrides the node/edge/label tokens",
+    /--graph-node-rgb/.test(graphLightBlock) &&
+    /--graph-edge-rgb/.test(graphLightBlock) &&
+    /--graph-label-rgb/.test(graphLightBlock) &&
+    /--graph-bg/.test(graphLightBlock),
+    "light theme is missing a graph token override");
+  check("graph: particle + vignette tokens are declared",
+    /--graph-particle-rgb/.test(graphCss) &&
+    /--graph-vignette-inner-rgb/.test(graphCss) &&
+    /--graph-vignette-edge-rgb/.test(graphCss),
+    "missing particle or vignette tokens");
+  check("graph: host uses --graph-bg as its canvas backdrop",
+    /\.graph-view-host\s*\{[^}]*--graph-bg/.test(graphCss),
+    "no --graph-bg on .graph-view-host");
   check("graph: Settings toggle for background particles exists",
     /settings-graph-particles/.test(read("templates/index.html")),
     "no settings-graph-particles checkbox in index.html");
-  // The graph opens as a special tab (§graph) in the tab bar, not as a
-  // side-panel view or a content-area overlay. The 🕸 activity-bar button
-  // triggers NB.tabs.openSpecial("§graph"), which creates a tab with a
-  // custom icon + label and activates it.
+
+  // The new 3D control surface: fit replaced recenter, plus depth,
+  // auto-orbit, hint, chip, state, and screen-reader layers.
+  const graphTpl = read("templates/index.html");
+  for (const id of ["graph-view-fit", "graph-view-depth", "graph-view-depth-value",
+                    "graph-view-rotate", "graph-view-hint", "graph-view-chip",
+                    "graph-view-state", "graph-view-sr-live", "graph-view-sr-list",
+                    "graph-view-mode", "graph-view-mode-2d", "graph-view-mode-3d",
+                    "graph-view-mode-badge", "graph-view-canvas-2d"]) {
+    check("graph: template ships #" + id, graphTpl.indexOf('id="' + id + '"') !== -1);
+  }
+  check("graph: the old 2D recenter button is gone from the template",
+    graphTpl.indexOf('id="graph-view-recenter"') === -1);
+
+  // The renderer split: graph-2d.js + graph-3d.js are the two
+  // implementations, graph.js is the facade. Both renderers must load
+  // before the facade (its module refs are resolved at evaluation) and
+  // both must be precached so an offline boot still has them.
+  const graphSw = read("static/sw.js");
+  check("graph: index.html loads graph-2d.js before graph-3d.js before graph.js",
+    graphTpl.indexOf("/static/js/graph-2d.js") !== -1 &&
+    graphTpl.indexOf("/static/js/graph-3d.js") !== -1 &&
+    graphTpl.indexOf("/static/js/graph-2d.js") < graphTpl.indexOf("/static/js/graph-3d.js") &&
+    graphTpl.indexOf("/static/js/graph-3d.js") < graphTpl.indexOf("/static/js/graph.js"));
+  check("graph: sw.js PRECACHE includes graph-2d.js",
+    graphSw.indexOf('"/static/js/graph-2d.js"') !== -1);
+  check("graph: sw.js PRECACHE includes graph-3d.js",
+    graphSw.indexOf('"/static/js/graph-3d.js"') !== -1);
+  check("graph: the harness loaded both renderers before the facade",
+    !!window.NB.graph2d && !!window.NB.graph3d &&
+    typeof window.NB.graph2d.activate === "function" &&
+    typeof window.NB.graph3d.activate === "function");
+
+  // Blocker regression: the screen-reader live region and note list must be
+  // visually hidden without taking layout space. .sr-only has to be the
+  // standard clip rule -- display:none would also hide it from assistive
+  // technology, which defeats the purpose.
+  const srOnlyRule = (graphCss.match(/\.sr-only\s*\{([^}]*)\}/) || [])[1] || "";
+  check("graph: .sr-only is position:absolute",
+    /position\s*:\s*absolute/.test(srOnlyRule), srOnlyRule.trim());
+  check("graph: .sr-only is a clipped 1px box",
+    /width\s*:\s*1px/.test(srOnlyRule) && /height\s*:\s*1px/.test(srOnlyRule) &&
+    (/clip\s*:\s*rect\(/.test(srOnlyRule) || /clip-path\s*:\s*inset\(/.test(srOnlyRule)),
+    srOnlyRule.trim());
+  check("graph: .sr-only is not display:none",
+    !/display\s*:\s*none/.test(srOnlyRule), srOnlyRule.trim());
+  const srLiveEl = $("graph-view-sr-live");
+  const srListEl = $("graph-view-sr-list");
+  check("graph: live region uses .sr-only",
+    !!srLiveEl && srLiveEl.classList.contains("sr-only"),
+    "class=" + (srLiveEl && srLiveEl.className));
+  check("graph: note list uses .sr-only",
+    !!srListEl && srListEl.classList.contains("sr-only"),
+    "class=" + (srListEl && srListEl.className));
+  check("graph: template marks both screen-reader layers .sr-only",
+    /class="sr-only"[^>]*id="graph-view-sr-live"/.test(graphTpl) &&
+    /class="sr-only"[^>]*id="graph-view-sr-list"/.test(graphTpl),
+    "template missing .sr-only on a graph SR layer");
+
+  // Controllable reduced-motion stub. graph.js reads matchMedia at mount
+  // and subscribes to its change event, so a matches:false stub cannot
+  // flip the mode mid-test. Delegate every other query to the real stub
+  // and restore it when the graph block ends.
+  const realMatchMedia = window.matchMedia;
+  let reduceMotion = false;
+  const reduceListeners = [];
+  window.matchMedia = (q) => {
+    if (/prefers-reduced-motion/.test(q)) {
+      return {
+        matches: reduceMotion, media: q, onchange: null,
+        addEventListener(type, cb) { if (type === "change") reduceListeners.push(cb); },
+        removeEventListener() {},
+        addListener(cb) { reduceListeners.push(cb); },
+        removeListener() {},
+        dispatchEvent() { return false; },
+      };
+    }
+    return realMatchMedia(q);
+  };
+
+  // Opening the tab paints the loading layer while the fetch is in flight.
+  graphDelayMs = 120;
   const graphBtn = window.document.getElementById("activity-graph-btn");
   check("graph toggle button in activity bar", !!graphBtn);
-  if (graphBtn) {
-    const graphFetchesBefore = fetchLog.filter(x => x === "GET /api/graph").length;
-    graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-    await tick(50);
-    // A special tab should appear in the tab bar with the §graph id.
-    const graphTab = window.document.querySelector('.tab[data-path="§graph"]');
-    check("graph tab created in tab bar", !!graphTab);
-    check("graph tab is active", graphTab && graphTab.classList.contains("active"),
-      "classes=" + (graphTab ? graphTab.classList.toString() : "n/a"));
-    check("graph tab has special icon", graphTab && !!graphTab.querySelector(".tab-special-icon"),
-      "label=" + (graphTab ? graphTab.querySelector(".tab-label").textContent : "n/a"));
-    // The graph-view container should be visible (unhidden).
-    check("graph-view container visible", !$("graph-view").hidden);
-    // The viewer should be hidden (special tab takes the content area).
-    check("viewer hidden when graph tab active", $("viewer").hidden);
-    check("/api/graph fetched on tab open",
-      fetchLog.filter(x => x === "GET /api/graph").length - graphFetchesBefore >= 1);
-    // The overlay ships with a header, summary, controls, and canvas host.
-    const gv = $("graph-view");
-    check("graph header rendered", !!gv.querySelector(".graph-view-header"));
-    check("graph canvas rendered", !!gv.querySelector(".graph-view-canvas"));
-    check("graph summary element exists", !!gv.querySelector(".graph-view-summary"));
-    // The fixture accumulates files from earlier tests; node count must
-    // match Object.keys(FILES).length. Edges are 0 (no links in fixtures).
-    await tick(50);
-    const expectedNodes = Object.keys(FILES).length;
-    check("graph node count matches FILES (" + expectedNodes + ")",
-      window.NB.graph && Array.isArray(window.NB.graph.nodes) ? window.NB.graph.nodes.length === expectedNodes : false,
-      "nodes=" + (window.NB.graph && window.NB.graph.nodes ? window.NB.graph.nodes.length : "n/a") + " expected=" + expectedNodes);
-    check("graph loaded 0 edges (fixture has no links)", window.NB.graph && Array.isArray(window.NB.graph.edges) ? window.NB.graph.edges.length === 0 : false,
-      "edges=" + (window.NB.graph && window.NB.graph.edges ? window.NB.graph.edges.length : "n/a"));
-    // Close the graph tab via the tab's × button; the tab should
-    // disappear and the viewer should reappear (falling back to the
-    // previously-active file tab, or the welcome page).
-    const graphCloseBtn = graphTab && graphTab.querySelector(".tab-close");
-    if (graphCloseBtn) {
-      graphCloseBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(30);
-      check("graph tab removed after close", !window.document.querySelector('.tab[data-path="§graph"]'));
-      check("graph-view container hidden after close", $("graph-view").hidden);
-    }
+  graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(20);
+  check("graph: loading layer shows while the fetch is in flight",
+    !$("graph-view-state").hidden &&
+    $("graph-view-state-title").textContent === "Mapping your notebook…" &&
+    $("graph-view-summary").textContent === "Reading links…",
+    "stateHidden=" + $("graph-view-state").hidden +
+    " title=" + $("graph-view-state-title").textContent +
+    " summary=" + $("graph-view-summary").textContent);
+  await tick(220);
+  graphDelayMs = 0;
+
+  const graphTab = window.document.querySelector('.tab[data-path="§graph"]');
+  check("graph tab created in tab bar", !!graphTab);
+  check("graph tab is active", graphTab && graphTab.classList.contains("active"),
+    "classes=" + (graphTab ? graphTab.classList.toString() : "n/a"));
+  check("graph tab has the special icon", graphTab && !!graphTab.querySelector(".tab-special-icon"));
+  check("graph-view container visible", !$("graph-view").hidden);
+  check("viewer hidden when graph tab active", $("viewer").hidden);
+  check("/api/graph fetched on tab open",
+    fetchLog.filter((x) => x === "GET /api/graph").length >= 1);
+
+  const graphGv = $("graph-view");
+  check("graph header rendered", !!graphGv.querySelector(".graph-view-header"));
+  check("graph canvas rendered", !!graphGv.querySelector(".graph-view-canvas"));
+
+  const stubGraph = buildGraphStub();
+  const expectedNodes = stubGraph.nodes.length;
+  const expectedEdges = stubGraph.edges.length;
+  check("graph node count matches /api/graph (" + expectedNodes + ")",
+    window.NB.graph && window.NB.graph.nodes.length === expectedNodes,
+    "nodes=" + (window.NB.graph ? window.NB.graph.nodes.length : "n/a"));
+  check("graph edge count matches /api/graph (" + expectedEdges + ")",
+    window.NB.graph && window.NB.graph.edges.length === expectedEdges,
+    "edges=" + (window.NB.graph ? window.NB.graph.edges.length : "n/a"));
+  const expectedSummary = expectedNodes + " note" + (expectedNodes === 1 ? "" : "s") +
+    " · " + expectedEdges + " link" + (expectedEdges === 1 ? "" : "s");
+  check("graph: summary reports node and edge counts",
+    $("graph-view-summary").textContent === expectedSummary,
+    "summary=" + $("graph-view-summary").textContent + " expected=" + expectedSummary);
+  check("graph: ready hides the state layer", $("graph-view-state").hidden);
+  check("graph: screen-reader list has one entry per node",
+    $("graph-view-sr-list").querySelectorAll("li").length === expectedNodes,
+    "items=" + $("graph-view-sr-list").querySelectorAll("li").length);
+  check("graph: host aria-label describes the 3D interactions",
+    /3D graph of \d+ note/.test($("graph-view-canvas-host").getAttribute("aria-label") || "") &&
+    /Drag to orbit/.test($("graph-view-canvas-host").getAttribute("aria-label") || ""),
+    $("graph-view-canvas-host").getAttribute("aria-label"));
+
+  // --- default mode on the first activation -------------------------
+  // 3D is the default. The facade reports it, the mode UI reflects it,
+  // and only the 3D canvas is visible.
+  check("graph: default mode is 3D",
+    window.NB.graph.getMode() === "3d",
+    "mode=" + window.NB.graph.getMode());
+  check("graph: 3D canvas is visible and the 2D canvas is hidden",
+    $("graph-view-canvas").hidden === false &&
+    $("graph-view-canvas-2d").hidden === true,
+    "3dHidden=" + $("graph-view-canvas").hidden +
+    " 2dHidden=" + $("graph-view-canvas-2d").hidden);
+  check("graph: depth and auto-orbit controls exist for 3D",
+    !!$("graph-view-depth") && !!$("graph-view-rotate") &&
+    $("graph-view-depth").hidden === false && $("graph-view-rotate").hidden === false);
+  check("graph: 3D mode button is pressed and 2D is not",
+    $("graph-view-mode-3d").getAttribute("aria-pressed") === "true" &&
+    $("graph-view-mode-2d").getAttribute("aria-pressed") === "false",
+    "3d=" + $("graph-view-mode-3d").getAttribute("aria-pressed") +
+    " 2d=" + $("graph-view-mode-2d").getAttribute("aria-pressed"));
+  check("graph: badge reads 3D",
+    $("graph-view-mode-badge").textContent === "3D",
+    $("graph-view-mode-badge").textContent);
+  check("graph: view carries data-graph-mode=3d",
+    $("graph-view").dataset.graphMode === "3d",
+    "mode=" + $("graph-view").dataset.graphMode);
+
+  // Close via the tab's ×; the view hides and the tab disappears.
+  const graphCloseBtn = graphTab && graphTab.querySelector(".tab-close");
+  if (graphCloseBtn) {
+    graphCloseBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(30);
+    check("graph tab removed after close", !window.document.querySelector('.tab[data-path="§graph"]'));
+    check("graph-view container hidden after close", $("graph-view").hidden);
   }
 
-  // --- graph interactions: verify event handlers actually fire and
-  // mutate the simulation/zoom state. If these pass in jsdom, the
-  // handlers are wired correctly; if a real browser still doesn't
-  // react, the cause is CSS/layout (e.g. zero-size canvas host). ---
   console.log("== graph interactions ==");
-  // Re-open the graph tab for interaction testing.
-  graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
-  await tick(50);
-  const canvasEl = $("graph-view-canvas");
+  // Deterministic data with real edges so degree/hop assertions are exact.
+  // Every id exists in FILES, so Enter and double-click can open it.
+  const G_NODES = [
+    { id: "Welcome.md", name: "Welcome.md", links: 1 },
+    { id: "notes/a.md", name: "a.md", links: 2 },
+    { id: "notes/b.md", name: "b.md", links: 1 },
+  ];
+  const G_EDGES = [
+    { source: "Welcome.md", target: "notes/a.md" },
+    { source: "notes/a.md", target: "notes/b.md" },
+  ];
+  graphResponse = { nodes: G_NODES, edges: G_EDGES };
+
+  // Give the graph a real canvas geometry; jsdom returns a 0x0 rect, which
+  // would collapse every projected node onto one pixel.
+  const gRect = {
+    left: 0, top: 0, right: 800, bottom: 600,
+    width: 800, height: 600, x: 0, y: 0, toJSON() { return {}; },
+  };
   const canvasHostEl = $("graph-view-canvas-host");
-  check("graph canvas element exists for interaction test", !!canvasEl);
-  check("graph canvas host exists", !!canvasHostEl);
-  if (canvasEl && canvasHostEl && window.NB.graph) {
-    // --- wheel zoom ---
-    const scaleBefore = window.NB.graph.scale;
-    const wheelEvt = new window.WheelEvent("wheel", {
-      deltaY: -120, bubbles: true, cancelable: true, clientX: 50, clientY: 50,
-    });
-    canvasEl.dispatchEvent(wheelEvt);
-    const scaleAfterZoomIn = window.NB.graph.scale;
-    check("graph: wheel up (deltaY<0) zooms in", scaleAfterZoomIn > scaleBefore,
-      "before=" + scaleBefore.toFixed(3) + " after=" + scaleAfterZoomIn.toFixed(3));
-    // defaultPrevented confirms preventDefault() ran (stops page scroll).
-    check("graph: wheel handler calls preventDefault", wheelEvt.defaultPrevented);
-    // The wheel zoom was reverted to a fixed 1.15x factor per notch (the
-    // earlier delta-proportional change was reverted). Assert the exact
-    // ratio so a regression back to proportional zoom is caught.
-    check("graph: wheel zoom factor is fixed 1.15x per notch",
-      Math.abs(scaleAfterZoomIn / scaleBefore - 1.15) < 0.001,
-      "ratio=" + (scaleAfterZoomIn / scaleBefore).toFixed(4));
-    // Zoom out.
-    const wheelOut = new window.WheelEvent("wheel", {
-      deltaY: 120, bubbles: true, cancelable: true, clientX: 50, clientY: 50,
-    });
-    canvasEl.dispatchEvent(wheelOut);
-    const scaleAfterZoomOut = window.NB.graph.scale;
-    check("graph: wheel down (deltaY>0) zooms out", scaleAfterZoomOut < scaleAfterZoomIn,
-      "after zoom-out=" + scaleAfterZoomOut.toFixed(3));
-    check("graph: zoom-out wheel preventDefault", wheelOut.defaultPrevented);
-    check("graph: wheel zoom-out factor is 1/1.15 per notch",
-      Math.abs(scaleAfterZoomOut / scaleAfterZoomIn - (1 / 1.15)) < 0.001,
-      "ratio=" + (scaleAfterZoomOut / scaleAfterZoomIn).toFixed(4));
+  const canvasEl = $("graph-view-canvas");
+  canvasHostEl.getBoundingClientRect = () => gRect;
+  canvasEl.getBoundingClientRect = () => gRect;
 
-    // --- mousedown / mousemove / mouseup: background pan ---
-    const panBefore = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
-    const md = new window.MouseEvent("mousedown", {
-      bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 100,
-    });
-    canvasEl.dispatchEvent(md);
-    const mm = new window.MouseEvent("mousemove", {
-      bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 120,
-    });
-    canvasEl.dispatchEvent(mm);
-    const mu = new window.MouseEvent("mouseup", {
-      bubbles: true, cancelable: true, button: 0, clientX: 150, clientY: 120,
-    });
-    window.document.dispatchEvent(mu);
-    check("graph: background drag changes pan.x",
-      window.NB.graph.pan.x !== panBefore.x || window.NB.graph.pan.y !== panBefore.y,
-      "before=" + JSON.stringify(panBefore) + " after=" + JSON.stringify(window.NB.graph.pan));
+  graphBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(80);
+  window.dispatchEvent(new window.Event("resize"));
+  await tick(40);
+  // The module keeps its nodes across tab switches, so re-opening reuses
+  // the previous data. Refresh explicitly to load the deterministic fixture.
+  $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(100);
+  check("graph: canvas sized from the host rect",
+    window.NB.graph.width === 800 && window.NB.graph.height === 600,
+    "w=" + window.NB.graph.width + " h=" + window.NB.graph.height);
+  check("graph: deterministic fixture loaded",
+    window.NB.graph.nodes.length === 3 && window.NB.graph.edges.length === 2,
+    "nodes=" + window.NB.graph.nodes.length + " edges=" + window.NB.graph.edges.length);
+  check("graph: summary reflects the deterministic fixture",
+    $("graph-view-summary").textContent === "3 notes · 2 links",
+    $("graph-view-summary").textContent);
+  check("graph: controls enabled once ready",
+    !$("graph-view-filter").disabled && !$("graph-view-fit").disabled &&
+    !$("graph-view-zoom-in").disabled && !$("graph-view-depth").disabled,
+    "filter=" + $("graph-view-filter").disabled + " fit=" + $("graph-view-fit").disabled);
 
-    // --- touch: one-finger pan + two-finger pinch zoom --------------
-    {
-      const touch = (x, y) => ({ clientX: x, clientY: y });
-      const fireTouch = (type, touches) => {
-        const e = new window.Event(type, { bubbles: true, cancelable: true });
-        Object.defineProperty(e, "touches", { value: touches });
-        canvasEl.dispatchEvent(e);
-        return e;
-      };
-      const panBeforeTouch = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
-      fireTouch("touchstart", [touch(100, 100)]);
-      const tm = fireTouch("touchmove", [touch(140, 130)]);
-      check("graph touch: one-finger drag pans the view",
-        window.NB.graph.pan.x !== panBeforeTouch.x ||
-        window.NB.graph.pan.y !== panBeforeTouch.y,
-        "before=" + JSON.stringify(panBeforeTouch) +
-        " after=" + JSON.stringify(window.NB.graph.pan));
-      check("graph touch: a one-finger move preventDefaults (no page scroll)",
-        tm.defaultPrevented);
-      fireTouch("touchend", []);
+  // --- idle loop: stop scheduling frames once nothing is moving ---------
+  // The renderer must not run rAF forever: once the camera tween, physics,
+  // hover/selection ambient effects and the pending draw are all done the
+  // loop sets running=false. A fresh input wakes it and auto-orbit keeps it
+  // awake while the toggle is on.
+  {
+    const waitGraph = async (pred, timeoutMs) => {
+      const deadline = Date.now() + (timeoutMs || 3000);
+      while (Date.now() < deadline) {
+        if (pred()) return true;
+        await tick(25);
+      }
+      return pred();
+    };
+    const idle = await waitGraph(() => window.NB.graph.running === false);
+    check("graph: idle loop stops once the camera and physics settle",
+      idle, "running=" + window.NB.graph.running);
 
-      const scaleBeforePinch = window.NB.graph.scale;
-      fireTouch("touchstart", [touch(100, 100), touch(200, 100)]);
-      const pm = fireTouch("touchmove", [touch(50, 100), touch(250, 100)]);
-      check("graph touch: a spreading pinch zooms in",
-        window.NB.graph.scale > scaleBeforePinch,
-        scaleBeforePinch + " -> " + window.NB.graph.scale);
-      check("graph touch: a pinch move preventDefaults",
-        pm.defaultPrevented);
-      const scaleBeforePinchOut = window.NB.graph.scale;
-      fireTouch("touchmove", [touch(125, 100), touch(175, 100)]);
-      check("graph touch: a closing pinch zooms out",
-        window.NB.graph.scale < scaleBeforePinchOut,
-        scaleBeforePinchOut + " -> " + window.NB.graph.scale);
-      fireTouch("touchend", []);
-      check("graph: the public width/height getters mirror the canvas size",
-        typeof window.NB.graph.width === "number" &&
-        typeof window.NB.graph.height === "number" &&
-        window.NB.graph.width === canvasEl.width &&
-        window.NB.graph.height === canvasEl.height,
-        "w=" + window.NB.graph.width + " h=" + window.NB.graph.height);
+    canvasEl.dispatchEvent(new window.WheelEvent("wheel", {
+      deltaY: 120, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+    }));
+    check("graph: wheel wakes the idle loop",
+      window.NB.graph.running === true,
+      "running=" + window.NB.graph.running);
+    await waitGraph(() => window.NB.graph.running === false);
+    check("graph: idle loop sleeps again after the wheel settles",
+      window.NB.graph.running === false,
+      "running=" + window.NB.graph.running);
+
+    $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(120);
+    check("graph: auto-orbit keeps the loop running while on",
+      window.NB.graph.running === true &&
+      $("graph-view-rotate").getAttribute("aria-pressed") === "true",
+      "running=" + window.NB.graph.running +
+      " pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+    $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+    const sleptAfterOrbit = await waitGraph(() => window.NB.graph.running === false);
+    check("graph: turning auto-orbit off lets the loop sleep",
+      sleptAfterOrbit && $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+      "running=" + window.NB.graph.running);
+  }
+
+  const cam0 = window.NB.graph.getCamera();
+  check("graph: camera exposes yaw/pitch/dist/target/fov",
+    typeof cam0.yaw === "number" && typeof cam0.pitch === "number" &&
+    typeof cam0.dist === "number" && cam0.target &&
+    Math.abs(cam0.fov - 50 * Math.PI / 180) < 1e-9,
+    JSON.stringify(cam0));
+
+  // --- wheel dolly ---
+  const wheelIn = new window.WheelEvent("wheel", {
+    deltaY: -240, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+  });
+  canvasEl.dispatchEvent(wheelIn);
+  const distAfterIn = window.NB.graph.getCamera().dist;
+  check("graph: wheel up dollies the camera in",
+    distAfterIn < cam0.dist,
+    "before=" + cam0.dist.toFixed(2) + " after=" + distAfterIn.toFixed(2));
+  check("graph: wheel handler calls preventDefault", wheelIn.defaultPrevented);
+  const wheelOut = new window.WheelEvent("wheel", {
+    deltaY: 240, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+  });
+  canvasEl.dispatchEvent(wheelOut);
+  check("graph: wheel down dollies the camera out",
+    window.NB.graph.getCamera().dist > distAfterIn,
+    "after=" + window.NB.graph.getCamera().dist.toFixed(2));
+
+  // A DOM_DELTA_LINE wheel (Firefox mouse wheels) reports 3 lines, not
+  // pixels. Treating it as 3px would zoom by ~0.4%; it must be scaled to
+  // pixels so the same gesture is a meaningful dolly.
+  const distBeforeLine = window.NB.graph.getCamera().dist;
+  const lineWheel = new window.WheelEvent("wheel", {
+    deltaY: -3, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+  });
+  try {
+    Object.defineProperty(lineWheel, "deltaMode", { value: 1, configurable: true });
+  } catch (_) {}
+  canvasEl.dispatchEvent(lineWheel);
+  const distAfterLine = window.NB.graph.getCamera().dist;
+  const lineZoomPct = (distBeforeLine - distAfterLine) / distBeforeLine;
+  check("graph: line-mode wheel (deltaMode=1) dollies by more than 2%",
+    lineZoomPct > 0.02,
+    "before=" + distBeforeLine.toFixed(2) + " after=" + distAfterLine.toFixed(2) +
+    " change=" + (lineZoomPct * 100).toFixed(2) + "%");
+  check("graph: line-mode wheel calls preventDefault", lineWheel.defaultPrevented);
+  // Restore the pre-line-test distance so later assertions start clean.
+  canvasEl.dispatchEvent(new window.WheelEvent("wheel", {
+    deltaY: 3, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+  }));
+
+  // --- left-drag empty space orbits; right/Shift drag pans ---
+  const drag = (from, to, opts) => {
+    const o = opts || {};
+    canvasEl.dispatchEvent(new window.MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, button: o.button || 0,
+      shiftKey: !!o.shiftKey, clientX: from.x, clientY: from.y,
+    }));
+    window.dispatchEvent(new window.MouseEvent("mousemove", {
+      bubbles: true, cancelable: true, button: o.button || 0,
+      clientX: to.x, clientY: to.y,
+    }));
+    window.dispatchEvent(new window.MouseEvent("mouseup", {
+      bubbles: true, cancelable: true, button: o.button || 0,
+      clientX: to.x, clientY: to.y,
+    }));
+  };
+  const beforeOrbit = window.NB.graph.getCamera();
+  drag({ x: 6, y: 6 }, { x: 86, y: 46 });
+  const afterOrbit = window.NB.graph.getCamera();
+  check("graph: left-drag on empty space changes yaw",
+    Math.abs(afterOrbit.yaw - beforeOrbit.yaw) > 0.01,
+    "before=" + beforeOrbit.yaw.toFixed(3) + " after=" + afterOrbit.yaw.toFixed(3));
+  check("graph: left-drag changes pitch",
+    Math.abs(afterOrbit.pitch - beforeOrbit.pitch) > 0.01,
+    "before=" + beforeOrbit.pitch.toFixed(3) + " after=" + afterOrbit.pitch.toFixed(3));
+
+  const beforePan = window.NB.graph.getCamera().target;
+  drag({ x: 400, y: 300 }, { x: 470, y: 350 }, { button: 2 });
+  const afterPan = window.NB.graph.getCamera().target;
+  check("graph: right-drag pans the camera target",
+    afterPan.x !== beforePan.x || afterPan.y !== beforePan.y || afterPan.z !== beforePan.z,
+    "before=" + JSON.stringify(beforePan) + " after=" + JSON.stringify(afterPan));
+
+  const beforeShift = window.NB.graph.getCamera().target;
+  drag({ x: 400, y: 300 }, { x: 330, y: 260 }, { shiftKey: true });
+  const afterShift = window.NB.graph.getCamera().target;
+  check("graph: Shift-drag pans the camera target",
+    afterShift.x !== beforeShift.x || afterShift.y !== beforeShift.y || afterShift.z !== beforeShift.z,
+    "before=" + JSON.stringify(beforeShift) + " after=" + JSON.stringify(afterShift));
+
+  // --- fit resets the camera (tween) ---
+  $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(700);
+  const fitted = window.NB.graph.getCamera();
+  check("graph: fit resets yaw to the default",
+    Math.abs(fitted.yaw - (-0.52)) < 0.02, "yaw=" + fitted.yaw.toFixed(3));
+  check("graph: fit resets pitch to the default",
+    Math.abs(fitted.pitch - 0.30) < 0.02, "pitch=" + fitted.pitch.toFixed(3));
+  check("graph: fit keeps a valid dolly distance",
+    fitted.dist >= 230 && fitted.dist <= 3000, "dist=" + fitted.dist.toFixed(1));
+
+  // A toolbar zoom must cancel an in-flight fit tween. Start the fit
+  // (which only sets the tween), immediately zoom, then let the tween's
+  // window elapse: the distance must stay at the zoomed value instead of
+  // being overwritten by the fit target.
+  const distBeforeFitTween = window.NB.graph.getCamera().dist;
+  $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+  const distAtFitStart = window.NB.graph.getCamera().dist;   // tween not applied yet
+  $("graph-view-zoom-in").dispatchEvent(new window.Event("click", { bubbles: true }));
+  const distAfterZoomCancel = window.NB.graph.getCamera().dist;
+  await tick(700);
+  const distAfterTweenWindow = window.NB.graph.getCamera().dist;
+  check("graph: toolbar zoom cancels an in-flight fit tween",
+    Math.abs(distAfterTweenWindow - distAfterZoomCancel) <
+      Math.max(0.5, distAfterZoomCancel * 0.02) &&
+    distAfterTweenWindow < distAtFitStart * 0.95,
+    "fitStart=" + distAtFitStart.toFixed(1) +
+    " zoomed=" + distAfterZoomCancel.toFixed(1) +
+    " settled=" + distAfterTweenWindow.toFixed(1) +
+    " (before=" + distBeforeFitTween.toFixed(1) + ")");
+
+  // --- toolbar dolly ---
+  const distBeforeBtn = window.NB.graph.getCamera().dist;
+  $("graph-view-zoom-in").dispatchEvent(new window.Event("click", { bubbles: true }));
+  check("graph: zoom-in button decreases distance",
+    window.NB.graph.getCamera().dist < distBeforeBtn,
+    "before=" + distBeforeBtn.toFixed(1) + " after=" + window.NB.graph.getCamera().dist.toFixed(1));
+  const distBeforeOut = window.NB.graph.getCamera().dist;
+  $("graph-view-zoom-out").dispatchEvent(new window.Event("click", { bubbles: true }));
+  check("graph: zoom-out button increases distance",
+    window.NB.graph.getCamera().dist > distBeforeOut,
+    "before=" + distBeforeOut.toFixed(1) + " after=" + window.NB.graph.getCamera().dist.toFixed(1));
+
+  // --- keyboard orbit + Home ---
+  canvasHostEl.focus();
+  const kb0 = window.NB.graph.getCamera();
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "ArrowLeft", bubbles: true, cancelable: true,
+  }));
+  const kb1 = window.NB.graph.getCamera();
+  check("graph: ArrowLeft yaws the camera",
+    Math.abs(kb1.yaw - (kb0.yaw + 0.075)) < 0.01,
+    "before=" + kb0.yaw.toFixed(3) + " after=" + kb1.yaw.toFixed(3));
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "ArrowUp", bubbles: true, cancelable: true,
+  }));
+  check("graph: ArrowUp pitches the camera up",
+    window.NB.graph.getCamera().pitch < kb1.pitch,
+    "before=" + kb1.pitch.toFixed(3) + " after=" + window.NB.graph.getCamera().pitch.toFixed(3));
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Home", bubbles: true, cancelable: true,
+  }));
+  await tick(700);
+  check("graph: Home resets the camera",
+    Math.abs(window.NB.graph.getCamera().yaw - (-0.52)) < 0.02 &&
+    Math.abs(window.NB.graph.getCamera().pitch - 0.30) < 0.02,
+    JSON.stringify(window.NB.graph.getCamera()));
+
+  // --- depth spread ---
+  $("graph-view-depth").value = "0";
+  $("graph-view-depth").dispatchEvent(new window.Event("input", { bubbles: true }));
+  check("graph: depth range 0 flattens the z-axis",
+    window.NB.graph.getDepthSpread() === 0,
+    "spread=" + window.NB.graph.getDepthSpread());
+  check("graph: depth label reads 0%",
+    $("graph-view-depth-value").textContent === "0%" &&
+    $("graph-view-depth").getAttribute("aria-valuetext") === "0 percent",
+    "text=" + $("graph-view-depth-value").textContent +
+    " aria=" + $("graph-view-depth").getAttribute("aria-valuetext"));
+  $("graph-view-depth").value = "100";
+  $("graph-view-depth").dispatchEvent(new window.Event("input", { bubbles: true }));
+  check("graph: depth range restores to 100%",
+    window.NB.graph.getDepthSpread() === 1 &&
+    $("graph-view-depth-value").textContent === "100%",
+    "spread=" + window.NB.graph.getDepthSpread());
+
+  // --- auto-orbit toggle ---
+  check("graph: auto-orbit starts unpressed and enabled",
+    !$("graph-view-rotate").disabled &&
+    $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+    "disabled=" + $("graph-view-rotate").disabled +
+    " pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+  $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+  check("graph: auto-orbit click sets aria-pressed",
+    $("graph-view-rotate").getAttribute("aria-pressed") === "true" &&
+    /Pause/.test($("graph-view-rotate").getAttribute("aria-label")),
+    "pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+  $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+  check("graph: auto-orbit click toggles back off",
+    $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+    "pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+
+  // --- auto-orbit deactivates while a file tab is active ---
+  // File tabs hide #graph-view through viewer.showViewer(), which does
+  // not call onTabClose. The loop must treat that as a deactivation and
+  // stop advancing the camera; returning to §graph resumes it.
+  const orbitFile = "Welcome.md";
+  const hadOrbitFile = window.NB.tabs.isOpen(orbitFile);
+  if (!hadOrbitFile) await window.NB.tabs.open(orbitFile, { activate: false });
+  await tick(20);
+  const graphTabForOrbit = window.document.querySelector('.tab[data-path="§graph"]');
+  if (graphTabForOrbit) graphTabForOrbit.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(30);
+  $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+  const yawOrbitStart = window.NB.graph.getCamera().yaw;
+  await tick(160);
+  const yawAfterOrbit = window.NB.graph.getCamera().yaw;
+  check("graph: auto-orbit advances the yaw while §graph is active",
+    Math.abs(yawAfterOrbit - yawOrbitStart) > 0.002,
+    "before=" + yawOrbitStart.toFixed(4) + " after=" + yawAfterOrbit.toFixed(4));
+
+  await window.NB.tabs.activate(orbitFile);
+  await tick(50);                         // let the loop observe the hidden view
+  const yawWhenFileActive = window.NB.graph.getCamera().yaw;
+  await tick(240);
+  const yawWhileFileActive = window.NB.graph.getCamera().yaw;
+  check("graph: auto-orbit stops while a file tab is active",
+    Math.abs(yawWhileFileActive - yawWhenFileActive) < 1e-6,
+    "atSwitch=" + yawWhenFileActive.toFixed(5) +
+    " later=" + yawWhileFileActive.toFixed(5));
+
+  const graphTabResume = window.document.querySelector('.tab[data-path="§graph"]');
+  if (graphTabResume) graphTabResume.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(50);
+  const yawOnReturn = window.NB.graph.getCamera().yaw;
+  await tick(240);
+  const yawAfterReturn = window.NB.graph.getCamera().yaw;
+  check("graph: returning to §graph resumes auto-orbit",
+    Math.abs(yawAfterReturn - yawOnReturn) > 0.002,
+    "onReturn=" + yawOnReturn.toFixed(4) + " after=" + yawAfterReturn.toFixed(4));
+  // Leave auto-orbit off for the remaining tests.
+  $("graph-view-rotate").dispatchEvent(new window.Event("click", { bubbles: true }));
+  if (!hadOrbitFile) window.NB.tabs.close(orbitFile, { force: true });
+  await tick(30);
+  check("graph: auto-orbit is off again after the file-switch check",
+    $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+    "pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+
+  // --- reduced motion forces auto-orbit off and disables the toggle ---
+  reduceMotion = true;
+  reduceListeners.forEach((cb) => cb({ matches: true }));
+  check("graph: reduced motion disables the auto-orbit control",
+    $("graph-view-rotate").disabled === true &&
+    $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+    "disabled=" + $("graph-view-rotate").disabled +
+    " pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "r", bubbles: true, cancelable: true,
+  }));
+  check("graph: reduced motion ignores the R auto-orbit shortcut",
+    $("graph-view-rotate").getAttribute("aria-pressed") === "false",
+    "pressed=" + $("graph-view-rotate").getAttribute("aria-pressed"));
+  reduceMotion = false;
+  reduceListeners.forEach((cb) => cb({ matches: false }));
+  check("graph: leaving reduced motion re-enables auto-orbit",
+    $("graph-view-rotate").disabled === false,
+    "disabled=" + $("graph-view-rotate").disabled);
+
+  // --- filter ---
+  const filterEl = $("graph-view-filter");
+  filterEl.value = "wel";
+  filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+  check("graph: filter appends the match count to the summary",
+    /3 notes · 2 links · 1 match$/.test($("graph-view-summary").textContent),
+    "summary=" + $("graph-view-summary").textContent);
+  filterEl.value = "notes/";
+  filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+  check("graph: filter matches note paths as well as labels",
+    /· 2 matches$/.test($("graph-view-summary").textContent),
+    "summary=" + $("graph-view-summary").textContent);
+  filterEl.value = "";
+  filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+  check("graph: clearing the filter restores the plain summary",
+    $("graph-view-summary").textContent === "3 notes · 2 links",
+    "summary=" + $("graph-view-summary").textContent);
+  // Typing in the filter must not reach the host's camera shortcuts.
+  const yawBeforeType = window.NB.graph.getCamera().yaw;
+  const typeEvt = new window.KeyboardEvent("keydown", {
+    key: "ArrowLeft", bubbles: true, cancelable: true,
+  });
+  filterEl.dispatchEvent(typeEvt);
+  check("graph: typing in the filter is not hijacked by camera keys",
+    Math.abs(window.NB.graph.getCamera().yaw - yawBeforeType) < 1e-9 &&
+    typeEvt.defaultPrevented === false,
+    "yaw=" + window.NB.graph.getCamera().yaw);
+  const activityBeforeSlash = window.NB.activity.getActive();
+  canvasHostEl.focus();
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "/", bubbles: true, cancelable: true,
+  }));
+  check("graph: / focuses the filter input",
+    window.document.activeElement === filterEl,
+    "active=" + (window.document.activeElement && window.document.activeElement.id));
+  // Regression: the document-capture shortcut listener runs before the
+  // host handler, so "/" must yield to the graph host instead of opening
+  // the Search side panel.
+  check("graph: / does not open the Search side panel",
+    window.NB.activity.getActive() === activityBeforeSlash &&
+    window.NB.activity.getActive() !== "search" &&
+    $("search-view").hidden,
+    "active=" + window.NB.activity.getActive() +
+    " searchHidden=" + $("search-view").hidden);
+
+  // Project a node exactly the way the renderer does so a real
+  // mousedown/mouseup can hit it. The camera exposes yaw/pitch/dist/
+  // target/fov; the canvas size comes from the host rect.
+  function projectNodeToScreen(n) {
+    const cam = window.NB.graph.getCamera();
+    const rect = canvasHostEl.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    const focal = (Math.min(W, H) / 2) / Math.tan(cam.fov / 2);
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    const dir = { x: cp * sy, y: sp, z: cp * cy };
+    const pos = {
+      x: cam.target.x + dir.x * cam.dist,
+      y: cam.target.y + dir.y * cam.dist,
+      z: cam.target.z + dir.z * cam.dist,
+    };
+    const fwd = { x: -dir.x, y: -dir.y, z: -dir.z };
+    let rx = -fwd.z, ry = 0, rz = fwd.x;
+    const rl = Math.hypot(rx, rz) || 1;
+    rx /= rl; rz /= rl;
+    const right = { x: rx, y: ry, z: rz };
+    const up = {
+      x: ry * fwd.z - rz * fwd.y,
+      y: rz * fwd.x - rx * fwd.z,
+      z: rx * fwd.y - ry * fwd.x,
+    };
+    const dz = window.NB.graph.getDepthSpread();
+    const p = { x: n.x, y: n.y, z: n.z * dz };
+    const rel = { x: p.x - pos.x, y: p.y - pos.y, z: p.z - pos.z };
+    const depth = rel.x * fwd.x + rel.y * fwd.y + rel.z * fwd.z;
+    if (depth <= 12) return null;
+    const cx = rel.x * right.x + rel.y * right.y + rel.z * right.z;
+    const uy = rel.x * up.x + rel.y * up.y + rel.z * up.z;
+    return {
+      x: rect.left + W / 2 + (cx / depth) * focal,
+      y: rect.top + H / 2 - (uy / depth) * focal,
+      depth: depth,
+    };
+  }
+
+  // The camera basis and the screen-ray/plane intersection, mirroring
+  // graph.js pointOnPlane. Used to prove a drag applies the pointer delta
+  // instead of snapping the node centre onto the cursor.
+  function graphCameraBasis() {
+    const cam = window.NB.graph.getCamera();
+    const rect = canvasHostEl.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    const focal = (Math.min(W, H) / 2) / Math.tan(cam.fov / 2);
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+    const dir = { x: cp * sy, y: sp, z: cp * cy };
+    const pos = {
+      x: cam.target.x + dir.x * cam.dist,
+      y: cam.target.y + dir.y * cam.dist,
+      z: cam.target.z + dir.z * cam.dist,
+    };
+    const fwd = { x: -dir.x, y: -dir.y, z: -dir.z };
+    let rx = -fwd.z, ry = 0, rz = fwd.x;
+    const rl = Math.hypot(rx, rz) || 1;
+    rx /= rl; rz /= rl;
+    const right = { x: rx, y: ry, z: rz };
+    const up = {
+      x: ry * fwd.z - rz * fwd.y,
+      y: rz * fwd.x - rx * fwd.z,
+      z: rx * fwd.y - ry * fwd.x,
+    };
+    return { W, H, focal, pos, fwd, right, up };
+  }
+
+  function worldOnPlane(sx, sy, plane) {
+    const b = graphCameraBasis();
+    const nx = (sx - b.W / 2) / b.focal;
+    const ny = -(sy - b.H / 2) / b.focal;
+    const raw = {
+      x: b.fwd.x + b.right.x * nx + b.up.x * ny,
+      y: b.fwd.y + b.right.y * nx + b.up.y * ny,
+      z: b.fwd.z + b.right.z * nx + b.up.z * ny,
+    };
+    const l = Math.hypot(raw.x, raw.y, raw.z) || 1;
+    const dir = { x: raw.x / l, y: raw.y / l, z: raw.z / l };
+    const denom = dir.x * b.fwd.x + dir.y * b.fwd.y + dir.z * b.fwd.z;
+    if (Math.abs(denom) < 0.0001) return null;
+    const t = ((plane.x - b.pos.x) * b.fwd.x +
+      (plane.y - b.pos.y) * b.fwd.y +
+      (plane.z - b.pos.z) * b.fwd.z) / denom;
+    return {
+      x: b.pos.x + dir.x * t,
+      y: b.pos.y + dir.y * t,
+      z: b.pos.z + dir.z * t,
+    };
+  }
+
+  const tap = (x, y) => {
+    canvasEl.dispatchEvent(new window.MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y,
+    }));
+    window.dispatchEvent(new window.MouseEvent("mouseup", {
+      bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y,
+    }));
+  };
+
+  // --- click a node selects it; chip + live region update ---
+  const welcomeNode = window.NB.graph.nodes.find((n) => n.id === "Welcome.md");
+  const welcomePt = welcomeNode && projectNodeToScreen(welcomeNode);
+  check("graph: node projection is inside the canvas",
+    !!welcomePt && welcomePt.x >= 0 && welcomePt.x <= 800 &&
+    welcomePt.y >= 0 && welcomePt.y <= 600,
+    JSON.stringify(welcomePt));
+  if (welcomePt) {
+    tap(welcomePt.x, welcomePt.y);
+    await tick(30);
+    check("graph: clicking a node selects it",
+      window.NB.graph.selectedId === "Welcome.md",
+      "selected=" + window.NB.graph.selectedId);
+    check("graph: selection chip appears with the note name",
+      !$("graph-view-chip").hidden &&
+      $("graph-view-chip-name").textContent === "Welcome",
+      "hidden=" + $("graph-view-chip").hidden +
+      " name=" + $("graph-view-chip-name").textContent);
+    check("graph: chip meta reports degree and hop counts",
+      /^1 link · 1 at hop 1 · 1 at hop 2$/.test($("graph-view-chip-meta").textContent),
+      "meta=" + $("graph-view-chip-meta").textContent);
+    check("graph: selection is announced in the live region",
+      /^Selected Welcome, 1 link\. 1 direct neighbour/.test($("graph-view-sr-live").textContent),
+      "live=" + $("graph-view-sr-live").textContent);
+  }
+  // Click empty space clears it.
+  tap(5, 5);
+  await tick(30);
+  check("graph: clicking empty space clears the selection",
+    window.NB.graph.selectedId === null && $("graph-view-chip").hidden,
+    "selected=" + window.NB.graph.selectedId + " chipHidden=" + $("graph-view-chip").hidden);
+  check("graph: clearing announces to the live region",
+    $("graph-view-sr-live").textContent === "Selection cleared.",
+    "live=" + $("graph-view-sr-live").textContent);
+
+  // --- keyboard selection: ] / [ cycle, Enter opens, Escape clears ---
+  canvasHostEl.focus();
+  const key = (k) => canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: k, bubbles: true, cancelable: true,
+  }));
+  key("]");
+  const firstSel = window.NB.graph.selectedId;
+  check("graph: ] selects the first note alphabetically", firstSel === "notes/a.md",
+    "selected=" + firstSel);
+  key("]");
+  check("graph: ] advances the selection", window.NB.graph.selectedId !== firstSel,
+    "selected=" + window.NB.graph.selectedId);
+  key("[");
+  check("graph: [ walks the selection back", window.NB.graph.selectedId === firstSel,
+    "selected=" + window.NB.graph.selectedId);
+  check("graph: keyboard selection shows the chip",
+    !$("graph-view-chip").hidden && $("graph-view-chip-name").textContent === "a",
+    "chip=" + $("graph-view-chip-name").textContent);
+  key("Enter");
+  await tick(120);
+  check("graph: Enter opens the selected note",
+    window.NB.tabs.getActive() === "notes/a.md",
+    "active=" + window.NB.tabs.getActive());
+  // Re-activate the graph tab for the remaining interaction tests.
+  const graphTabNow = window.document.querySelector('.tab[data-path="§graph"]');
+  if (graphTabNow) graphTabNow.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(60);
+  check("graph: re-activation returns to the graph view", !$("graph-view").hidden);
+  canvasHostEl.focus();
+  key("Escape");
+  check("graph: Escape clears the selection",
+    window.NB.graph.selectedId === null,
+    "selected=" + window.NB.graph.selectedId);
+
+  // --- double-click opens a projected node ---
+  // Pick the first node whose projection actually lands on the canvas;
+  // the fit distance does not guarantee every node is on-screen.
+  let dblNode = null;
+  let dblPt = null;
+  for (const n of window.NB.graph.nodes) {
+    const pt = projectNodeToScreen(n);
+    if (pt && pt.x >= 0 && pt.x <= 800 && pt.y >= 0 && pt.y <= 600) {
+      dblNode = n;
+      dblPt = pt;
+      break;
     }
+  }
+  if (dblNode && dblPt) {
+    tap(dblPt.x, dblPt.y);
+    tap(dblPt.x, dblPt.y);
+    await tick(140);
+    check("graph: double-click opens the note",
+      window.NB.tabs.getActive() === dblNode.id,
+      "expected=" + dblNode.id + " active=" + window.NB.tabs.getActive());
+  } else {
+    check("graph: double-click target projects onto the canvas", false, JSON.stringify(dblPt));
+  }
+  const graphTabAfterDbl = window.document.querySelector('.tab[data-path="§graph"]');
+  if (graphTabAfterDbl) graphTabAfterDbl.dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(60);
+  // The double-click left its node selected and hovered; clear both so the
+  // theme pass paints raw edge tokens instead of the warn/hover blends.
+  canvasEl.dispatchEvent(new window.MouseEvent("mousemove", {
+    bubbles: true, cancelable: true, button: 0, clientX: 5, clientY: 5,
+  }));
+  canvasHostEl.focus();
+  canvasHostEl.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(40);
+  check("graph: selection cleared before the theme pass",
+    window.NB.graph.selectedId === null,
+    "selected=" + window.NB.graph.selectedId);
 
-    // --- zoom-in button ---
-    const scaleBeforeBtn = window.NB.graph.scale;
-    $("graph-view-zoom-in").dispatchEvent(new window.Event("click", { bubbles: true }));
-    check("graph: zoom-in button increases scale",
-      window.NB.graph.scale > scaleBeforeBtn,
-      "before=" + scaleBeforeBtn.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
-    // --- zoom-out button ---
-    const scaleBeforeBtn2 = window.NB.graph.scale;
-    $("graph-view-zoom-out").dispatchEvent(new window.Event("click", { bubbles: true }));
-    check("graph: zoom-out button decreases scale",
-      window.NB.graph.scale < scaleBeforeBtn2,
-      "before=" + scaleBeforeBtn2.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
+  // --- node drag: threshold + pointer delta, never a centre snap ---
+  {
+    const startPositions = new Map(window.NB.graph.nodes.map((n) => [n.id, { x: n.x, y: n.y, z: n.z }]));
+    const targetNode = window.NB.graph.nodes.find((n) => n.id === "Welcome.md") ||
+      window.NB.graph.nodes[0];
+    const targetPt = targetNode && projectNodeToScreen(targetNode);
+    if (targetPt) {
+      const grab = { x: targetPt.x + 5, y: targetPt.y };
+      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", {
+        bubbles: true, cancelable: true, button: 0, clientX: grab.x, clientY: grab.y,
+      }));
+      const dragged = window.NB.graph.nodes.find((n) => n.fixed);
+      check("graph: mousedown on a node starts a node drag", !!dragged,
+        "fixedNodes=" + window.NB.graph.nodes.filter((n) => n.fixed).length);
+      if (dragged) {
+        const start = startPositions.get(dragged.id);
+        // 2px of travel is below the 4px threshold: no world movement.
+        window.dispatchEvent(new window.MouseEvent("mousemove", {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: grab.x + 2, clientY: grab.y,
+        }));
+        check("graph: drag below the 4px threshold leaves the node in place",
+          Math.abs(dragged.x - start.x) < 1e-9 &&
+          Math.abs(dragged.y - start.y) < 1e-9 &&
+          Math.abs(dragged.z - start.z) < 1e-9,
+          "start=" + JSON.stringify(start) +
+          " now=" + JSON.stringify({ x: dragged.x, y: dragged.y, z: dragged.z }));
 
-    // --- canvas transform: the bug that hid drag/zoom was that draw()
-    // never applied pan/scale to the canvas. jsdom stubs the 2D context,
-    // so we can inspect the recorded transform matrix after a redraw
-    // and confirm it actually reflects the view state. ---
-    // Force a redraw: pan to a known offset, then ask the graph to
-    // draw again via the public surface.
-    window.NB.graph.pan.x = 200;
-    window.NB.graph.pan.y = 150;
-    window.NB.graph.refresh(); // re-loads data; resets pan via onTabActivate path only on tab open
-    await tick(50);
-    // After refresh, the recorded ctx should have at least one frame
-    // that translated by pan and scaled by scale. setTransform is
-    // called in sizeCanvas() (for dpr), save/translate/scale/restore
-    // wrap the draw block. Look for save followed by translate+scale.
-    const ctx = canvasEl.__fakeCtx;
-    if (ctx) {
-      check("graph: ctx was used (calls recorded)", ctx.log.calls.length > 0,
-        "callCount=" + ctx.log.calls.length);
-      check("graph: ctx has had at least one clearRect", ctx.log.clears > 0,
-        "clears=" + ctx.log.clears);
-      // After a save + translate + scale + restore, the current
-      // transform should match the transform on the stack at the
-      // save point (which is dpr scaling, identity for dpr=1).
-      check("graph: ctx recorded save/restore pairs",
-        ctx.log.ops.save === ctx.log.ops.restore,
-        "save=" + ctx.log.ops.save + " restore=" + ctx.log.ops.restore);
-      check("graph: ctx recorded translate calls", ctx.log.ops.translate > 0,
-        "translate=" + ctx.log.ops.translate);
-      check("graph: ctx recorded scale calls (for zoom)", ctx.log.ops.scale > 0,
-        "scale=" + ctx.log.ops.scale);
-      check("graph: ctx drew node arcs", ctx.log.ops.arc > 0,
-        "arc=" + ctx.log.ops.arc);
-
-      // --- theme-aware colors flip with body[data-theme] ---
-      // Snapshot the colors draw() wrote while the body is "dark".
-      // Then flip body[data-theme] to "light" and confirm the next
-      // draw writes the light-theme palette (the dark-mode literal
-      // "rgba(124,156,255,0.8)" must no longer appear). This is the
-      // bug that hid the graph on the light theme: draw() painted
-      // dark-mode accents (light blue + near-white labels) on a
-      // white canvas, producing near-invisible dots and unreadable
-      // text.
-      const hasFill = (re) => Array.from(ctx.log.fills).some(s => re.test(s));
-      const hasStroke = (re) => Array.from(ctx.log.strokes).some(s => re.test(s));
-      check("graph: dark-mode default node fill uses dark accent",
-        hasFill(/124\s*,\s*156\s*,\s*255/),
-        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
-      check("graph: dark-mode label fill uses near-white",
-        hasFill(/230\s*,\s*230\s*,\s*234/),
-        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
-      // Reset the recorder so we only look at colors from the light pass.
-      ctx.log.fills.clear();
-      ctx.log.strokes.clear();
-      // The jsdom test runner doesn't link static/css/style.css, so
-      // CSS custom properties aren't defined on any element. Mirror
-      // the graph tokens inline so resolveColors() has something to
-      // read -- this is exactly what the linked stylesheet does in
-      // production, just expressed inline.
-      const GRAPH_DARK_TOKENS = {
-        "--graph-node-rgb": "124 156 255",
-        "--graph-node-hover-rgb": "124 156 255",
-        "--graph-edge-rgb": "124 156 255",
-        "--graph-glow-rgb": "124 156 255",
-        "--graph-warn-rgb": "243 180 84",
-        "--graph-dim-rgb": "127 140 160",
-        "--graph-label-rgb": "230 230 234",
-      };
-      const GRAPH_LIGHT_TOKENS = {
-        "--graph-node-rgb": "47 95 208",
-        "--graph-node-hover-rgb": "47 95 208",
-        "--graph-edge-rgb": "47 95 208",
-        "--graph-glow-rgb": "47 95 208",
-        "--graph-warn-rgb": "201 131 29",
-        "--graph-dim-rgb": "93 100 112",
-        "--graph-label-rgb": "31 35 48",
-      };
-      function setTokens(map) {
-        for (const [k, v] of Object.entries(map)) {
-          window.document.body.style.setProperty(k, v);
+        // Cross the threshold. The node must move by the pointer delta,
+        // measured from the mousedown origin, not jump to the cursor.
+        const move = { x: grab.x + 60, y: grab.y };
+        window.dispatchEvent(new window.MouseEvent("mousemove", {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: move.x, clientY: move.y,
+        }));
+        const zScale = window.NB.graph.getDepthSpread();
+        const plane = { x: start.x, y: start.y, z: start.z * zScale };
+        const from = worldOnPlane(grab.x, grab.y, plane);
+        const to = worldOnPlane(move.x, move.y, plane);
+        check("graph: drag plane math is representable", !!from && !!to);
+        if (from && to) {
+          const expected = {
+            x: start.x + (to.x - from.x),
+            y: start.y + (to.y - from.y),
+            z: zScale > 0.02 ? start.z + (to.z - from.z) / zScale : 0,
+          };
+          check("graph: crossing the drag threshold moves the node by the pointer delta",
+            Math.hypot(dragged.x - expected.x, dragged.y - expected.y,
+              dragged.z - expected.z) < 0.75,
+            "expected=" + JSON.stringify(expected) +
+            " now=" + JSON.stringify({ x: dragged.x, y: dragged.y, z: dragged.z }));
+          check("graph: the dragged node does not teleport to the cursor",
+            Math.hypot(dragged.x - to.x, dragged.y - to.y) > 0.5,
+            "cursorWorld=" + JSON.stringify({ x: to.x, y: to.y }) +
+            " node=" + JSON.stringify({ x: dragged.x, y: dragged.y }));
         }
       }
-      // Set dark tokens first so the previous (pre-flip) draws still
-      // match what the assertion expects.
-      setTokens(GRAPH_DARK_TOKENS);
-      // Flip to light: change body[data-theme] AND swap the tokens so
-      // getComputedStyle(body) returns the light values.
-      window.document.body.dataset.theme = "light";
-      setTokens(GRAPH_LIGHT_TOKENS);
-      // Force a redraw regardless of the loop state by nudging pan;
-      // any draw() pass (idle requestRedraw or running rAF tick) will
-      // repaint with the resolved palette.
-      window.NB.graph.pan.x += 0.001;
-      // Wait long enough for the MO microtask + several rAF frames.
-      await tick(200);
-      // Surface whether a draw fired at all after the flip so a
-      // silent regression doesn't masquerade as a wrong-color failure.
-      check("graph: light theme drew at all after theme flip",
-        ctx.log.fills.size > 0,
-        "fills.size=" + ctx.log.fills.size + " contents=" + JSON.stringify(Array.from(ctx.log.fills)));
-      check("graph: light theme uses the light accent for nodes",
-        hasFill(/47\s*,\s*95\s*,\s*208/),
-        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
-      check("graph: light theme label fill is dark text",
-        hasFill(/31\s*,\s*35\s*,\s*48/),
-        "fills=" + JSON.stringify(Array.from(ctx.log.fills)));
-      check("graph: light theme does NOT paint the dark accent",
-        !hasFill(/124\s*,\s*156\s*,\s*255/) && !hasStroke(/124\s*,\s*156\s*,\s*255/),
-        "fills=" + JSON.stringify(Array.from(ctx.log.fills)) +
-        " strokes=" + JSON.stringify(Array.from(ctx.log.strokes)));
-      // Restore dark for the rest of the suite.
-      window.document.body.dataset.theme = "dark";
-      setTokens(GRAPH_DARK_TOKENS);
+      window.dispatchEvent(new window.MouseEvent("mouseup", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: grab.x + 60, clientY: grab.y,
+      }));
+      // Releasing over a node leaves it hovered; clear that so the theme
+      // pass below paints raw edge tokens, not hover blends.
+      canvasEl.dispatchEvent(new window.MouseEvent("mouseleave", { bubbles: true }));
       await tick(20);
     } else {
-      check("graph: ctx was created on canvas", false,
-        "no __fakeCtx attached to " + (canvasEl && canvasEl.id));
-    }
-
-    // --- pickNode + drag actually moves a node in world space ---
-    // Place a known node near the cursor and verify dragging the node
-    // updates its world coords (so the rendering would follow the
-    // cursor). pickNode runs in screen space at the current scale, so
-    // the world coord it stores should match the screen point.
-    const someNode = window.NB.graph.nodes[0];
-    if (someNode) {
-      // Put the node at world (0, 0) so we know its screen position
-      // exactly: it will be drawn at (pan.x, pan.y).
-      someNode.x = 0;
-      someNode.y = 0;
-      // Wait for next draw frame so pickNode sees the new layout.
-      await tick(20);
-      // Cursor at the screen point where the node should appear:
-      // (pan.x + 0 * scale, pan.y + 0 * scale) = (pan.x, pan.y).
-      const mdAtNode = new window.MouseEvent("mousedown", {
-        bubbles: true, cancelable: true, button: 0,
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-      });
-      canvasEl.dispatchEvent(mdAtNode);
-      // Move the cursor 30 px right / 20 px down; the node should
-      // follow in world space: x = (30)/scale, y = (20)/scale.
-      const mm = new window.MouseEvent("mousemove", {
-        bubbles: true, cancelable: true, button: 0,
-        clientX: window.NB.graph.pan.x + 30, clientY: window.NB.graph.pan.y + 20,
-      });
-      canvasEl.dispatchEvent(mm);
-      const expectedX = 30 / window.NB.graph.scale;
-      const expectedY = 20 / window.NB.graph.scale;
-      check("graph: dragging node updates world x with current scale",
-        Math.abs(someNode.x - expectedX) < 0.01,
-        "got x=" + someNode.x.toFixed(3) + " expected=" + expectedX.toFixed(3) +
-        " (scale=" + window.NB.graph.scale.toFixed(3) + ")");
-      check("graph: dragging node updates world y with current scale",
-        Math.abs(someNode.y - expectedY) < 0.01,
-        "got y=" + someNode.y.toFixed(3) + " expected=" + expectedY.toFixed(3) +
-        " (scale=" + window.NB.graph.scale.toFixed(3) + ")");
-      // Release the mouse so subsequent tests aren't affected.
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", {
-        bubbles: true, cancelable: true, button: 0,
-        clientX: window.NB.graph.pan.x + 30, clientY: window.NB.graph.pan.y + 20,
-      }));
-    }
-
-    // --- single-click does NOT open, double-click opens ---
-    // A node placed at world (0,0) renders at screen (pan.x, pan.y).
-    const clickNode = window.NB.graph.nodes[0];
-    if (clickNode) {
-      clickNode.x = 0;
-      clickNode.y = 0;
-      await tick(20);
-      const atNode = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      const activeBefore = window.document.querySelector(".tab.active");
-      const activeBeforePath = activeBefore ? activeBefore.dataset.path : null;
-      // A fresh mousedown/mouseup resets the dragMoved guard so the
-      // click handler runs (a real click always follows a mousedown).
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atNode));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atNode));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atNode));
-      await tick(20);
-      const activeAfterClick = window.document.querySelector(".tab.active");
-      const activeAfterClickPath = activeAfterClick ? activeAfterClick.dataset.path : null;
-      check("graph: single click does not open the node",
-        activeAfterClickPath === activeBeforePath,
-        "before=" + activeBeforePath + " after=" + activeAfterClickPath);
-      check("graph: single click selects the node",
-        window.NB.graph.selectedId === clickNode.id,
-        "expected=" + clickNode.id + " got=" + window.NB.graph.selectedId);
-      // Clicking empty space clears the selection.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      await tick(20);
-      check("graph: clicking empty space clears selection",
-        window.NB.graph.selectedId === null,
-        "got=" + window.NB.graph.selectedId);
-      // A fresh mousedown/mouseup resets the dragMoved guard (a real
-      // double-click always follows a mousedown), so the dblclick fires.
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atNode));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atNode));
-      canvasEl.dispatchEvent(new window.MouseEvent("dblclick", atNode));
-      await tick(40);
-      const activeAfterDbl = window.document.querySelector(".tab.active");
-      const activeAfterDblPath = activeAfterDbl ? activeAfterDbl.dataset.path : null;
-      check("graph: double click opens the node",
-        activeAfterDblPath === clickNode.id,
-        "expected=" + clickNode.id + " got=" + activeAfterDblPath);
-    }
-
-    // --- neighbor highlight colors ---
-    // The fixture has no edges, so synthesize one to exercise the
-    // neighbor-highlight path in draw(). The selected node is painted
-    // with the warn color (243,180,84 in dark theme) and its direct
-    // neighbors with the hover color (124,156,255, alpha 1). The default
-    // node fill is the SAME rgb as hover but at alpha 0.8, so the
-    // assertions must match the full rgba string (including alpha) to
-    // prove the neighbor actually got the distinct highlight.
-    const selA = window.NB.graph.nodes[0];
-    const selB = window.NB.graph.nodes[1];
-    if (selA && selB) {
-      // Clear the active-file highlight so the warn color is unambiguous
-      // (activeFile also paints warnFill). Emitting file:open with null
-      // clears graph.js's activeFile.
-      window.NB.evt.emit("file:open", null);
-      // Add a synthetic edge A<->B so B is a direct neighbor of A.
-      window.NB.graph.edges.push({ source: selA, target: selB });
-      await tick(20);
-      // Reset the color recorder so we only see colors from this pass.
-      ctx.log.fills.clear();
-      // Click node A (placed at world origin -> screen pan).
-      selA.x = 0; selA.y = 0;
-      await tick(20);
-      const atA = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atA));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atA));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atA));
-      await tick(20);
-      const fills = () => Array.from(ctx.log.fills);
-      const hasFill = (re) => fills().some(s => re.test(s));
-      // Selected node uses the warn color (243,180,84 in dark theme).
-      check("graph: selected node painted with warn color",
-        hasFill(/243\s*,\s*180\s*,\s*84/),
-        "fills=" + JSON.stringify(fills()));
-      // Its direct (hop-1) neighbor is coloured as the warm distance
-      // blend: mixTriple(hover, warn, 0.85) = rgba(225,176,110,0.95),
-      // distinct from the selected warn and from the default node fill.
-      check("graph: neighbor node painted with warm distance blend",
-        hasFill(/225\s*,\s*176\s*,\s*110\s*,\s*0\.95/),
-        "fills=" + JSON.stringify(fills()));
-      // The selected color must differ from the neighbor color.
-      check("graph: selected color differs from neighbor color",
-        hasFill(/243\s*,\s*180\s*,\s*84/) && hasFill(/225\s*,\s*176\s*,\s*110/),
-        "fills=" + JSON.stringify(fills()));
-      // Remove the synthetic edge so later tests see the real (empty) graph.
-      window.NB.graph.edges.length = 0;
-      // Clicking empty space clears selection.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      await tick(20);
-      check("graph: neighbor test clears selection",
-        window.NB.graph.selectedId === null,
-        "got=" + window.NB.graph.selectedId);
-    }
-
-    // --- clicking a node with no neighbors ---
-    // With the synthetic edge removed, every node is isolated. Selecting
-    // one must still set selectedId (warn color) but paint NO neighbor
-    // highlight (no alpha-1 hover color), since neighbourSet() returns
-    // an empty set for an isolated node.
-    const isoNode = window.NB.graph.nodes[0];
-    if (isoNode) {
-      isoNode.x = 0; isoNode.y = 0;
-      await tick(20);
-      ctx.log.fills.clear();
-      const isoFills = () => Array.from(ctx.log.fills);
-      const isoHasFill = (re) => isoFills().some(s => re.test(s));
-      const atIso = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atIso));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atIso));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atIso));
-      await tick(20);
-      check("graph: isolated node still selects (selectedId set)",
-        window.NB.graph.selectedId === isoNode.id,
-        "expected=" + isoNode.id + " got=" + window.NB.graph.selectedId);
-      // No neighbor highlight: the alpha-1 hover color must not appear
-      // (the default node fill is the same rgb at alpha 0.8, so matching
-      // the full string proves no neighbor got the highlight).
-      check("graph: isolated node paints no neighbor highlight",
-        !isoHasFill(/124\s*,\s*156\s*,\s*255,\s*1/),
-        "fills=" + JSON.stringify(isoFills()));
-      // Clear selection for the re-activation test below.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      await tick(20);
-    }
-
-    // --- re-activation preserves view state ---
-    // The user's bug: zoom in, switch away to a file tab, switch back,
-    // and the graph snaps back to its initial zoom + center. The view
-    // state (pan, scale) must be preserved when the tab is reactivated,
-    // not silently reset.
-    const panBeforeReopen = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
-    const scaleBeforeReopen = window.NB.graph.scale;
-    // Pick a non-graph tab that's already open and activate it. The
-    // boot block restored "Welcome.md" so it's safe to use.
-    const welcomeTab = window.document.querySelector('.tab[data-path="Welcome.md"]');
-    if (welcomeTab) {
-      welcomeTab.dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(40);
-      // Now click the graph tab again to re-activate it.
-      const graphTab = window.document.querySelector('.tab[data-path="§graph"]');
-      if (graphTab) {
-        graphTab.dispatchEvent(new window.Event("click", { bubbles: true }));
-        await tick(40);
-      }
-    }
-    check("graph: re-activation preserves pan",
-      Math.abs(window.NB.graph.pan.x - panBeforeReopen.x) < 0.001 &&
-      Math.abs(window.NB.graph.pan.y - panBeforeReopen.y) < 0.001,
-      "before=" + JSON.stringify(panBeforeReopen) + " after=" + JSON.stringify(window.NB.graph.pan));
-    check("graph: re-activation preserves scale",
-      Math.abs(window.NB.graph.scale - scaleBeforeReopen) < 0.001,
-      "before=" + scaleBeforeReopen.toFixed(3) + " after=" + window.NB.graph.scale.toFixed(3));
-
-    // --- selection persists across re-activation ---
-    // Select a node, switch away to a file tab, switch back, and the
-    // selection (selectedId) must survive -- the highlight the user
-    // chose is part of the view state, like pan/scale.
-    const persistNode = window.NB.graph.nodes[0];
-    if (persistNode) {
-      persistNode.x = 0; persistNode.y = 0;
-      await tick(20);
-      const atPersist = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atPersist));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atPersist));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atPersist));
-      await tick(20);
-      check("graph: selection set before re-activation",
-        window.NB.graph.selectedId === persistNode.id,
-        "expected=" + persistNode.id + " got=" + window.NB.graph.selectedId);
-      // Switch to a file tab and back to the graph.
-      const welcomeTab2 = window.document.querySelector('.tab[data-path="Welcome.md"]');
-      if (welcomeTab2) {
-        welcomeTab2.dispatchEvent(new window.Event("click", { bubbles: true }));
-        await tick(40);
-        const graphTab2 = window.document.querySelector('.tab[data-path="§graph"]');
-        if (graphTab2) {
-          graphTab2.dispatchEvent(new window.Event("click", { bubbles: true }));
-          await tick(40);
-        }
-      }
-      check("graph: selection persists across re-activation",
-        window.NB.graph.selectedId === persistNode.id,
-        "expected=" + persistNode.id + " got=" + window.NB.graph.selectedId);
-      // Clear the selection so the recenter/close steps below are clean.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      await tick(20);
-    }
-
-    // --- selection survives a graph reload (refresh) ---
-    // The refresh button re-fetches /api/graph and rebuilds nodes/edges.
-    // A selected node that still exists in the fresh data must keep its
-    // highlight (selectedId is part of the view state, like pan/scale).
-    const reloadNode = window.NB.graph.nodes[0];
-    if (reloadNode) {
-      reloadNode.x = 0; reloadNode.y = 0;
-      await tick(20);
-      const atReload = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atReload));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atReload));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atReload));
-      await tick(20);
-      check("graph: selection set before refresh",
-        window.NB.graph.selectedId === reloadNode.id,
-        "expected=" + reloadNode.id + " got=" + window.NB.graph.selectedId);
-      // Trigger a reload via the refresh button (same path as the toolbar).
-      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(50);
-      check("graph: selection survives graph reload",
-        window.NB.graph.selectedId === reloadNode.id,
-        "expected=" + reloadNode.id + " got=" + window.NB.graph.selectedId);
-      // Clear the selection for the recenter/close steps below.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      await tick(20);
-    }
-
-    // --- stale selection is cleared when the node disappears ---
-    // If the selected file is deleted, a reload rebuilds nodes without
-    // it. The stale selectedId must be cleared (not linger pointing at a
-    // node that no longer exists), otherwise the highlight silently
-    // never renders.
-    const staleNode = window.NB.graph.nodes[0];
-    if (staleNode) {
-      staleNode.x = 0; staleNode.y = 0;
-      await tick(20);
-      const atStale = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atStale));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atStale));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atStale));
-      await tick(20);
-      check("graph: stale-selection set before delete",
-        window.NB.graph.selectedId === staleNode.id,
-        "expected=" + staleNode.id + " got=" + window.NB.graph.selectedId);
-      // Remove the file from the fixture so the next /api/graph fetch
-      // no longer includes it, then reload.
-      const stalePath = staleNode.id;
-      const hadFile = FILES[stalePath] !== undefined;
-      delete FILES[stalePath];
-      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(50);
-      check("graph: stale selection cleared after node disappears",
-        window.NB.graph.selectedId === null,
-        "expected=null got=" + window.NB.graph.selectedId);
-      // Restore the fixture so later tests see the original file set.
-      if (hadFile) FILES[stalePath] = "";
-    }
-
-    // Re-center button is still available for users who want to reset.
-    const panBeforeRecenter = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
-    $("graph-view-recenter").dispatchEvent(new window.Event("click", { bubbles: true }));
-    check("graph: recenter button still resets pan/scale",
-      window.NB.graph.pan.x !== panBeforeRecenter.x ||
-      window.NB.graph.pan.y !== panBeforeRecenter.y ||
-      Math.abs(window.NB.graph.scale - 1) > 0.001,
-      "after recenter pan=" + JSON.stringify(window.NB.graph.pan) +
-      " scale=" + window.NB.graph.scale.toFixed(3));
-
-    // --- particle field toggle ---
-    // The ambient background particle drift is off by default and is
-    // toggled via Settings -> Appearance (NB.app.setGraphParticles ->
-    // NB.graph.setParticleField). Verify the public surface routes the
-    // setting through and that enabling it is observable.
-    const hadParticles = !!window.NB.graph.getParticleField();
-    window.NB.app && window.NB.app.setGraphParticles ? window.NB.app.setGraphParticles(true) : window.NB.graph.setParticleField(true);
-    await tick(20);
-    check("graph: particle field can be enabled",
-      !!window.NB.graph.getParticleField(),
-      "particleField=" + window.NB.graph.getParticleField());
-    window.NB.app && window.NB.app.setGraphParticles ? window.NB.app.setGraphParticles(false) : window.NB.graph.setParticleField(false);
-    await tick(20);
-    check("graph: particle field can be disabled",
-      !window.NB.graph.getParticleField(),
-      "particleField=" + window.NB.graph.getParticleField());
-    if (hadParticles) window.NB.graph.setParticleField(true);
-
-    // --- neural-network effects: bloom + vignette + edge pulses ---
-    // These tests exercise the new draw() passes. They build a small
-    // graph with synthetic edges so the pulse path, node bloom, and
-    // radial vignette all run against the recorded gradient stub. The
-    // effects are gated on gradient factories existing, which the stub
-    // now provides, so the assertions prove the effects actually fire.
-    const effectA = window.NB.graph.nodes[0];
-    const effectB = window.NB.graph.nodes[1];
-    if (effectA && effectB && ctx) {
-      // Record a before-pass count of gradient objects.
-      const g0 = ctx.log.gradients.radial + ctx.log.gradients.linear;
-      // Build a tiny A<->B edge so pulseSpeedFor() has a hop-1 link.
-      window.NB.graph.edges.push({ source: effectA, target: effectB });
-      effectA.x = 0; effectA.y = 0;
-      effectB.x = 30; effectB.y = 30;
-      // Select A so pulsing activates on the hop-1 edge.
-      ctx.log.fills.clear();
-      await tick(20);
-      const atE = {
-        clientX: window.NB.graph.pan.x, clientY: window.NB.graph.pan.y,
-        bubbles: true, cancelable: true, button: 0,
-      };
-      canvasEl.dispatchEvent(new window.MouseEvent("mousedown", atE));
-      window.document.dispatchEvent(new window.MouseEvent("mouseup", atE));
-      canvasEl.dispatchEvent(new window.MouseEvent("click", atE));
-      await tick(40);
-      const gAfter = ctx.log.gradients.radial + ctx.log.gradients.linear;
-      check("graph: neural effects create gradient objects (bloom/pulse/vignette)",
-        gAfter > g0,
-        "before=" + g0 + " after=" + gAfter +
-        " radial=" + ctx.log.gradients.radial + " linear=" + ctx.log.gradients.linear);
-      // The vignette always runs a radial gradient centered on the canvas.
-      check("graph: vignette paints a radial gradient",
-        ctx.log.gradients.radial > 0,
-        "radial=" + ctx.log.gradients.radial);
-      // Node bloom (radial) + edge pulses (linear) both fire when a
-      // node is selected (bloom on every non-dimmed node, pulse on the
-      // hop-1 edge). With A selected, we expect at least one radial
-      // AND one linear gradient from this frame's effects.
-      check("graph: selecting a node fires bloom radials + edge-pulse linears",
-        ctx.log.gradients.radial > 0 && ctx.log.gradients.linear > 0,
-        "radial=" + ctx.log.gradients.radial + " linear=" + ctx.log.gradients.linear);
-      // A pulse's linear gradient fades 0 -> ~1 -> 0 along its length so
-      // the head brightens and the tail recedes; capture a linear stop
-      // set and confirm it has a mid (≈0.95) brightness stop.
-      const linearStops = ctx.log.gradientStops.filter(s => s[0] === "linear");
-      const hasMidPulse = linearStops.some(s => s[1] > 0.4 && s[1] < 0.6 && /0\.9/.test(s[2]) || /180\s*,\s*230\s*,\s*255/.test(s[2]));
-      check("graph: edge pulse gradient has a bright mid stop",
-        hasMidPulse,
-        "stops=" + JSON.stringify(linearStops.slice(0, 6)));
-      // Clean up: clear selection + remove the synthetic edge.
-      canvasEl.dispatchEvent(new window.MouseEvent("click", {
-        clientX: 5, clientY: 5, bubbles: true, cancelable: true, button: 0,
-      }));
-      window.NB.graph.edges.length = 0;
-      await tick(20);
-    }
-
-    // Close the graph tab before subsequent tests run so it doesn't
-    // interfere with tab-close / restore assertions below.
-    const graphTabEl = window.document.querySelector('.tab[data-path="§graph"]');
-    const gClose = graphTabEl && graphTabEl.querySelector(".tab-close");
-    if (gClose) {
-      gClose.dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(20);
+      check("graph: drag target projects onto the canvas", false, JSON.stringify(targetPt));
     }
   }
+
+  // --- theme: canvas repaints with the light graph tokens ---
+  const mainCtx = canvasEl.__fakeCtx;
+  check("graph: the renderer bound a 2D context", !!mainCtx);
+  if (mainCtx) {
+    const hasFill = (re) => Array.from(mainCtx.log.fills).some((s) => re.test(s));
+    const hasStroke = (re) => Array.from(mainCtx.log.strokes).some((s) => re.test(s));
+    window.dispatchEvent(new window.Event("resize"));
+    await tick(80);
+    check("graph: dark theme paints labels with the dark token",
+      hasFill(/230\s*,\s*234\s*,\s*245/),
+      "fills=" + JSON.stringify(Array.from(mainCtx.log.fills)));
+    const DARK_TOKENS = {
+      "--graph-node-rgb": "130 168 255",
+      "--graph-edge-rgb": "124 156 255",
+      "--graph-label-rgb": "230 234 245",
+      "--graph-bg": "#0e1018",
+    };
+    const LIGHT_TOKENS = {
+      "--graph-node-rgb": "60 110 230",
+      "--graph-edge-rgb": "80 130 230",
+      "--graph-label-rgb": "31 35 48",
+      "--graph-bg": "#f4f6fb",
+    };
+    const setTokens = (map) => {
+      for (const [k, v] of Object.entries(map)) {
+        window.document.body.style.setProperty(k, v);
+      }
+    };
+    setTokens(DARK_TOKENS);
+    window.document.body.dataset.theme = "dark";
+    await tick(20);
+    mainCtx.log.fills.clear();
+    mainCtx.log.strokes.clear();
+    setTokens(LIGHT_TOKENS);
+    window.document.body.dataset.theme = "light";
+    await tick(40);                       // MutationObserver -> rebuildVisuals
+    window.dispatchEvent(new window.Event("resize"));
+    await tick(120);
+    check("graph: light theme repaints with the light label token",
+      hasFill(/31\s*,\s*35\s*,\s*48/),
+      "fills=" + JSON.stringify(Array.from(mainCtx.log.fills)));
+    check("graph: light theme repaints edges with the light edge token",
+      hasStroke(/80\s*,\s*130\s*,\s*230/),
+      "strokes=" + JSON.stringify(Array.from(mainCtx.log.strokes)));
+    check("graph: light theme does not reuse the dark label token",
+      !hasFill(/230\s*,\s*234\s*,\s*245/),
+      "fills=" + JSON.stringify(Array.from(mainCtx.log.fills)));
+    setTokens(DARK_TOKENS);
+    window.document.body.dataset.theme = "dark";
+    await tick(60);
+    for (const k of Object.keys(LIGHT_TOKENS)) window.document.body.style.removeProperty(k);
+  }
+
+  // --- selection edge bands: the farthest endpoint decides the hop ---
+  // Chain A-B-C-D-E, select B. A-B and B-C are hop 1 (the selected node
+  // is an endpoint, so max(0,1)=1, NOT the disconnected hop-0 style),
+  // C-D is hop 2, D-E is hop 3 (dim-but-visible). Matching the recorded
+  // line segments to the projected node pairs keeps the assertion tied
+  // to the real draw calls without depending on pixel output.
+  {
+    graphResponse = {
+      nodes: [
+        { id: "A.md", name: "A.md", links: 1 },
+        { id: "B.md", name: "B.md", links: 2 },
+        { id: "C.md", name: "C.md", links: 2 },
+        { id: "D.md", name: "D.md", links: 2 },
+        { id: "E.md", name: "E.md", links: 1 },
+      ],
+      edges: [
+        { source: "A.md", target: "B.md" },
+        { source: "B.md", target: "C.md" },
+        { source: "C.md", target: "D.md" },
+        { source: "D.md", target: "E.md" },
+      ],
+    };
+    $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(160);
+    $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(700);
+    const bandNodes = {};
+    window.NB.graph.nodes.forEach((n) => { bandNodes[n.id] = n; });
+    const bNode = bandNodes["B.md"];
+    const bPoint = bNode ? projectNodeToScreen(bNode) : null;
+    if (bPoint) {
+      tap(bPoint.x, bPoint.y);
+      await tick(30);
+      // Tapping selects the node and leaves it hovered; drop the hover so
+      // the hover-incident styling does not mask the hop bands.
+      canvasEl.dispatchEvent(new window.MouseEvent("mouseleave", { bubbles: true }));
+      // The tap's release restarts the physics; let it settle before we
+      // read the projection and capture one draw.
+      await tick(300);
+    }
+    check("graph: chain selection picks B", window.NB.graph.selectedId === "B.md",
+      "selected=" + window.NB.graph.selectedId);
+
+    const posById = {};
+    window.NB.graph.nodes.forEach((n) => { posById[n.id] = projectNodeToScreen(n); });
+    const nearPoint = (x, y, p) => Math.hypot(x - p.x, y - p.y) <= 1.5;
+    const segmentMatches = (seg, p1, p2) =>
+      (nearPoint(seg.x1, seg.y1, p1) && nearPoint(seg.x2, seg.y2, p2)) ||
+      (nearPoint(seg.x1, seg.y1, p2) && nearPoint(seg.x2, seg.y2, p1));
+    const edgeEvents = (id1, id2) => {
+      const p1 = posById[id1], p2 = posById[id2];
+      if (!p1 || !p2 || !mainCtx) return [];
+      return mainCtx.log.strokeEvents.filter((ev) => !ev.hasArc &&
+        ev.segments.some((seg) => segmentMatches(seg, p1, p2)));
+    };
+    const bandFor = (evs, minW, maxW) =>
+      evs.find((ev) => ev.lineWidth >= minW && ev.lineWidth <= maxW) || null;
+
+    mainCtx.log.strokeEvents.length = 0;
+    await tick(60);                       // selection keeps the loop ambient
+    const abEvs = edgeEvents("A.md", "B.md");
+    const bcEvs = edgeEvents("B.md", "C.md");
+    const cdEvs = edgeEvents("C.md", "D.md");
+    const deEvs = edgeEvents("D.md", "E.md");
+
+    const abHop1 = bandFor(abEvs, 1.8, 2.2);
+    const bcHop1 = bandFor(bcEvs, 1.8, 2.2);
+    const cdHop2 = bandFor(cdEvs, 1.4, 1.6);
+    const deHop3 = bandFor(deEvs, 1.1, 1.3);
+    check("graph: selected→hop-1 edges use the hop-1 band",
+      !!abHop1 && !!bcHop1 && abHop1.alpha > 0.45 && bcHop1.alpha > 0.45,
+      "A-B=" + JSON.stringify(abHop1 && { w: abHop1.lineWidth, a: abHop1.alpha }) +
+      " B-C=" + JSON.stringify(bcHop1 && { w: bcHop1.lineWidth, a: bcHop1.alpha }));
+    check("graph: a hop-2 edge uses the hop-2 band",
+      !!cdHop2 && cdHop2.alpha > 0.35 && cdHop2.alpha < 0.7,
+      "C-D=" + JSON.stringify(cdHop2 && { w: cdHop2.lineWidth, a: cdHop2.alpha }));
+    check("graph: a hop-3 edge uses the dim-but-visible band",
+      !!deHop3 && deHop3.alpha > 0.14 && deHop3.alpha < 0.5,
+      "D-E=" + JSON.stringify(deHop3 && { w: deHop3.lineWidth, a: deHop3.alpha }));
+    check("graph: no selected-chain edge falls back to the disconnected style",
+      [abEvs, bcEvs, cdEvs, deEvs].every((evs) =>
+        !evs.some((ev) => ev.lineWidth <= 1.05 && ev.alpha < 0.1)),
+      "widths=" + JSON.stringify([abEvs, bcEvs, cdEvs, deEvs].map((evs) =>
+        evs.map((ev) => [ev.lineWidth, Number(ev.alpha.toFixed(3))]))));
+
+    graphResponse = { nodes: G_NODES, edges: G_EDGES };
+    $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(120);
+  }
+
+  // --- 2D/3D mode switch, persistence, and renderer isolation ------
+  // The facade stops the old renderer before starting the new one, so
+  // only one canvas draws at a time. The 2D renderer has its own
+  // pan/zoom view; the 3D camera stays put across the switch.
+  {
+    const waitMode = async (pred, timeoutMs) => {
+      const deadline = Date.now() + (timeoutMs || 4000);
+      while (Date.now() < deadline) {
+        if (pred()) return true;
+        await tick(25);
+      }
+      return pred();
+    };
+    const canvas2dEl = $("graph-view-canvas-2d");
+    const canvas3dEl = $("graph-view-canvas");
+    canvas2dEl.getBoundingClientRect = () => gRect;
+
+    // Let the 3D physics settle before snapshotting the camera.
+    await waitMode(() => window.NB.graph3d.running === false);
+    const cameraBefore = window.NB.graph.getCamera();
+    check("graph mode: 3D is the active renderer before the switch",
+      window.NB.graph.getMode() === "3d" && window.NB.graph3d.running === false,
+      "mode=" + window.NB.graph.getMode() +
+      " running=" + window.NB.graph3d.running);
+
+    // The global particle flag must reach both renderers, including the
+    // one that is currently asleep.
+    window.NB.graph.setParticleField(true);
+    await tick(20);
+    check("graph mode: particle flag reaches the inactive 2D renderer",
+      window.NB.graph2d.getParticleField() === true &&
+      window.NB.graph3d.getParticleField() === true,
+      "2d=" + window.NB.graph2d.getParticleField() +
+      " 3d=" + window.NB.graph3d.getParticleField());
+    // Settings persists the preference too (setParticleField then
+    // app.setGraphParticles); mirror that so a fresh mount honours it.
+    window.NB.app.setGraphParticles(true);
+    await tick(20);
+
+    // --- switch to 2D ---
+    $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("graph mode: clicking 2D switches the facade",
+      window.NB.graph.getMode() === "2d",
+      "mode=" + window.NB.graph.getMode());
+    check("graph mode: 2D canvas visible and 3D canvas hidden",
+      canvas2dEl.hidden === false && canvas3dEl.hidden === true,
+      "2dHidden=" + canvas2dEl.hidden + " 3dHidden=" + canvas3dEl.hidden);
+    check("graph mode: the 3D loop is stopped",
+      window.NB.graph3d.running === false,
+      "running=" + window.NB.graph3d.running);
+    check("graph mode: view carries data-graph-mode=2d",
+      $("graph-view").dataset.graphMode === "2d",
+      "mode=" + $("graph-view").dataset.graphMode);
+    check("graph mode: 2D mode button is pressed and 3D is not",
+      $("graph-view-mode-2d").getAttribute("aria-pressed") === "true" &&
+      $("graph-view-mode-3d").getAttribute("aria-pressed") === "false",
+      "2d=" + $("graph-view-mode-2d").getAttribute("aria-pressed") +
+      " 3d=" + $("graph-view-mode-3d").getAttribute("aria-pressed"));
+    check("graph mode: badge reads 2D",
+      $("graph-view-mode-badge").textContent === "2D",
+      $("graph-view-mode-badge").textContent);
+    check("graph mode: fit becomes Re-center graph",
+      $("graph-view-fit").getAttribute("aria-label") === "Re-center graph",
+      $("graph-view-fit").getAttribute("aria-label"));
+    check("graph mode: the data-graph-mode=2d rule hides depth and orbit",
+      /#graph-view\[data-graph-mode="2d"\]\s+\.graph-view-depth/.test(graphCss) &&
+      /#graph-view\[data-graph-mode="2d"\]\s+#graph-view-rotate/.test(graphCss));
+
+    const loaded2d = await waitMode(() => window.NB.graph2d.nodes.length === 3, 3000);
+    check("graph mode: the 2D renderer loads the graph data",
+      loaded2d, "nodes=" + window.NB.graph2d.nodes.length);
+    check("graph mode: particle flag survives the switch to 2D",
+      window.NB.graph.getParticleField() === true,
+      "particleField=" + window.NB.graph.getParticleField());
+
+    // Switching mode persists the choice through app.js.
+    await tick(400);
+    const graph2dCfgPost = fetchLog.filter((x) => x.startsWith("POST /api/config")).pop() || "";
+    check("graph mode: switching to 2D persists graphMode",
+      /"graphMode":"2d"/.test(graph2dCfgPost) &&
+      window.NB.app.getGraphMode() === "2d",
+      graph2dCfgPost.slice(0, 200));
+
+    // --- renderer isolation: only the active canvas draws ---
+    const draw3dBefore = canvas3dEl.__fakeCtx ? canvas3dEl.__fakeCtx.log.calls.length : 0;
+    await tick(160);
+    check("graph mode: the inactive 3D canvas gets no new draw calls",
+      (canvas3dEl.__fakeCtx ? canvas3dEl.__fakeCtx.log.calls.length : draw3dBefore) === draw3dBefore,
+      "before=" + draw3dBefore +
+      " after=" + (canvas3dEl.__fakeCtx ? canvas3dEl.__fakeCtx.log.calls.length : "n/a"));
+    check("graph mode: the active 2D canvas receives draw calls",
+      !!canvas2dEl.__fakeCtx && canvas2dEl.__fakeCtx.log.calls.length > 0 &&
+      canvas2dEl.__fakeCtx.log.clears > 0,
+      canvas2dEl.__fakeCtx
+        ? "calls=" + canvas2dEl.__fakeCtx.log.calls.length +
+          " clears=" + canvas2dEl.__fakeCtx.log.clears
+        : "no ctx");
+
+    // --- 2D interactions: wheel zoom keeps the 1.15 notch ---
+    const scaleBefore = window.NB.graph.scale;
+    const wheel2d = new window.WheelEvent("wheel", {
+      deltaY: -1, bubbles: true, cancelable: true, clientX: 400, clientY: 300,
+    });
+    canvas2dEl.dispatchEvent(wheel2d);
+    check("graph mode: 2D wheel zoom applies the 1.15 notch",
+      Math.abs(window.NB.graph.scale / scaleBefore - 1.15) < 1e-9 &&
+      wheel2d.defaultPrevented,
+      "before=" + scaleBefore.toFixed(4) +
+      " after=" + window.NB.graph.scale.toFixed(4) +
+      " prevented=" + wheel2d.defaultPrevented);
+
+    // --- 2D background drag pans ---
+    const panBefore = { x: window.NB.graph.pan.x, y: window.NB.graph.pan.y };
+    canvas2dEl.dispatchEvent(new window.MouseEvent("mousedown", {
+      bubbles: true, cancelable: true, button: 0, clientX: 5, clientY: 5,
+    }));
+    canvas2dEl.dispatchEvent(new window.MouseEvent("mousemove", {
+      bubbles: true, cancelable: true, button: 0, clientX: 85, clientY: 45,
+    }));
+    window.dispatchEvent(new window.MouseEvent("mouseup", {
+      bubbles: true, cancelable: true, button: 0, clientX: 85, clientY: 45,
+    }));
+    const panAfter = window.NB.graph.pan;
+    check("graph mode: 2D background drag pans the view",
+      Math.abs(panAfter.x - panBefore.x) > 1 && Math.abs(panAfter.y - panBefore.y) > 1,
+      "before=" + JSON.stringify(panBefore) +
+      " after=" + JSON.stringify({ x: panAfter.x, y: panAfter.y }));
+
+    // --- 2D click selects a node (screen = pan + node * scale) ---
+    const clickTarget2d = (() => {
+      const p = window.NB.graph.pan;
+      const s = window.NB.graph.scale;
+      for (const n of window.NB.graph.nodes) {
+        const x = p.x + n.x * s;
+        const y = p.y + n.y * s;
+        if (x > 20 && x < 780 && y > 20 && y < 580) return { id: n.id, x: x, y: y };
+      }
+      return null;
+    })();
+    if (clickTarget2d) {
+      canvas2dEl.dispatchEvent(new window.MouseEvent("click", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: clickTarget2d.x, clientY: clickTarget2d.y,
+      }));
+      check("graph mode: 2D click selects a node",
+        window.NB.graph.selectedId === clickTarget2d.id,
+        "expected=" + clickTarget2d.id + " selected=" + window.NB.graph.selectedId);
+    } else {
+      check("graph mode: a 2D node projects onto the canvas", false);
+    }
+
+    // --- 2D filter updates the summary ---
+    const filter2d = $("graph-view-filter");
+    filter2d.value = "wel";
+    filter2d.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(40);
+    check("graph mode: 2D filter appends the match count to the summary",
+      /· 1 match$/.test($("graph-view-summary").textContent),
+      "summary=" + $("graph-view-summary").textContent);
+    filter2d.value = "";
+    filter2d.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(20);
+
+    // --- 2D fit re-centers the view ---
+    $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("graph mode: 2D fit re-centers the pan and resets zoom",
+      window.NB.graph.scale === 1 &&
+      Math.abs(window.NB.graph.pan.x - window.NB.graph.width / 2) < 1e-9 &&
+      Math.abs(window.NB.graph.pan.y - window.NB.graph.height / 2) < 1e-9,
+      "scale=" + window.NB.graph.scale +
+      " pan=" + JSON.stringify(window.NB.graph.pan) +
+      " w=" + window.NB.graph.width + " h=" + window.NB.graph.height);
+
+    // --- 2D double-click opens the note ---
+    const dblTarget2d = (() => {
+      const p = window.NB.graph.pan;
+      const s = window.NB.graph.scale;
+      for (const n of window.NB.graph.nodes) {
+        const x = p.x + n.x * s;
+        const y = p.y + n.y * s;
+        if (x > 20 && x < 780 && y > 20 && y < 580) return { id: n.id, x: x, y: y };
+      }
+      return null;
+    })();
+    if (dblTarget2d) {
+      canvas2dEl.dispatchEvent(new window.MouseEvent("dblclick", {
+        bubbles: true, cancelable: true, button: 0,
+        clientX: dblTarget2d.x, clientY: dblTarget2d.y,
+      }));
+      await tick(140);
+      check("graph mode: 2D double-click opens the note",
+        window.NB.tabs.getActive() === dblTarget2d.id,
+        "expected=" + dblTarget2d.id + " active=" + window.NB.tabs.getActive());
+    } else {
+      check("graph mode: a 2D double-click target projects onto the canvas", false);
+    }
+    // Re-activate §graph; the persisted 2D mode must come back.
+    const graphTab2d = window.document.querySelector('.tab[data-path="§graph"]');
+    if (graphTab2d) graphTab2d.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("graph mode: returning to §graph keeps 2D active",
+      !$("graph-view").hidden && window.NB.graph.getMode() === "2d" &&
+      canvas2dEl.hidden === false && canvas3dEl.hidden === true,
+      "mode=" + window.NB.graph.getMode() +
+      " 2dHidden=" + canvas2dEl.hidden + " 3dHidden=" + canvas3dEl.hidden);
+
+    // --- switch back to 3D ---
+    $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    check("graph mode: clicking 3D switches back",
+      window.NB.graph.getMode() === "3d",
+      "mode=" + window.NB.graph.getMode());
+    check("graph mode: 3D canvas visible and 2D canvas hidden",
+      canvas3dEl.hidden === false && canvas2dEl.hidden === true,
+      "3dHidden=" + canvas3dEl.hidden + " 2dHidden=" + canvas2dEl.hidden);
+    check("graph mode: the 2D loop is stopped",
+      window.NB.graph2d.running === false,
+      "running=" + window.NB.graph2d.running);
+    check("graph mode: badge reads 3D again",
+      $("graph-view-mode-badge").textContent === "3D",
+      $("graph-view-mode-badge").textContent);
+    check("graph mode: 3D mode button is pressed again",
+      $("graph-view-mode-3d").getAttribute("aria-pressed") === "true" &&
+      $("graph-view-mode-2d").getAttribute("aria-pressed") === "false");
+    check("graph mode: fit label returns to camera reset",
+      /Reset camera/.test($("graph-view-fit").getAttribute("aria-label") || ""),
+      $("graph-view-fit").getAttribute("aria-label"));
+    const cameraAfter = window.NB.graph.getCamera();
+    check("graph mode: switching back preserves the 3D camera",
+      !!cameraAfter && !!cameraBefore &&
+      Math.abs(cameraAfter.yaw - cameraBefore.yaw) < 1e-9 &&
+      Math.abs(cameraAfter.pitch - cameraBefore.pitch) < 1e-9 &&
+      Math.abs(cameraAfter.dist - cameraBefore.dist) < 1e-9 &&
+      Math.abs(cameraAfter.target.x - cameraBefore.target.x) < 1e-9 &&
+      Math.abs(cameraAfter.target.y - cameraBefore.target.y) < 1e-9 &&
+      Math.abs(cameraAfter.target.z - cameraBefore.target.z) < 1e-9,
+      "before=" + JSON.stringify(cameraBefore) +
+      " after=" + JSON.stringify(cameraAfter));
+
+    await waitMode(() => window.NB.graph3d.running === false);
+    const draw2dBefore = canvas2dEl.__fakeCtx ? canvas2dEl.__fakeCtx.log.calls.length : 0;
+    await tick(160);
+    check("graph mode: the inactive 2D canvas gets no new draw calls",
+      (canvas2dEl.__fakeCtx ? canvas2dEl.__fakeCtx.log.calls.length : draw2dBefore) === draw2dBefore,
+      "before=" + draw2dBefore +
+      " after=" + (canvas2dEl.__fakeCtx ? canvas2dEl.__fakeCtx.log.calls.length : "n/a"));
+
+    // Turning the global particle flag off while 3D is active must also
+    // reach the sleeping 2D renderer.
+    window.NB.graph.setParticleField(false);
+    await tick(20);
+    check("graph mode: particle off reaches both renderers",
+      window.NB.graph2d.getParticleField() === false &&
+      window.NB.graph3d.getParticleField() === false,
+      "2d=" + window.NB.graph2d.getParticleField() +
+      " 3d=" + window.NB.graph3d.getParticleField());
+    window.NB.app.setGraphParticles(false);
+    await tick(20);
+
+    // --- persistence + fallback ---
+    await tick(400);
+    const graph3dCfgPost = fetchLog.filter((x) => x.startsWith("POST /api/config")).pop() || "";
+    check("graph mode: switching back to 3D persists graphMode",
+      /"graphMode":"3d"/.test(graph3dCfgPost) &&
+      window.NB.app.getGraphMode() === "3d",
+      graph3dCfgPost.slice(0, 200));
+    window.NB.app.setGraphMode("sideways");
+    check("graph mode: an invalid config value falls back to 3D",
+      window.NB.app.getGraphMode() === "3d" &&
+      window.NB.graph.getMode() === "3d",
+      "app=" + window.NB.app.getGraphMode() + " facade=" + window.NB.graph.getMode());
+    window.NB.app.setGraphMode(undefined);
+    check("graph mode: a missing config value falls back to 3D",
+      window.NB.app.getGraphMode() === "3d",
+      "app=" + window.NB.app.getGraphMode());
+    check("graph mode: the facade is back on the 3D renderer",
+      window.NB.graph3d.nodes.length === 3 &&
+      $("graph-view").dataset.graphMode === "3d" &&
+      canvas3dEl.hidden === false && canvas2dEl.hidden === true,
+      "3dNodes=" + window.NB.graph3d.nodes.length +
+      " mode=" + $("graph-view").dataset.graphMode);
+
+    // Direct facade forwarding on an already-mounted inactive renderer:
+    // set the flag while 3D is active, activate 2D, and read it back.
+    // (A first mount re-reads the persisted preference, which the real
+    // Settings path updates via NB.app.setGraphParticles.)
+    window.NB.graph.setParticleField(true);
+    check("graph mode: direct particle flag reaches the mounted 2D renderer",
+      window.NB.graph2d.getParticleField() === true,
+      "2d=" + window.NB.graph2d.getParticleField());
+    $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("graph mode: an inactive-renderer toggle applies on activation",
+      window.NB.graph.getMode() === "2d" &&
+      window.NB.graph.getParticleField() === true,
+      "mode=" + window.NB.graph.getMode() +
+      " particleField=" + window.NB.graph.getParticleField());
+    window.NB.graph.setParticleField(false);
+    $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("graph mode: 3D is active again after the particle check",
+      window.NB.graph.getMode() === "3d" && canvas3dEl.hidden === false &&
+      canvas2dEl.hidden === true,
+      "mode=" + window.NB.graph.getMode());
+  }
+
+  // --- regressions: graph split review fixes -------------------------
+  // These cover the fixes on the 2D/3D split: active-file highlight on
+  // entry, shared-control enablement, filter round-trips, the duplicate
+  // fetch guard, 2D keyboard handling, hidden-view cleanup, and the 3D
+  // host label counts after a mode round trip.
+  {
+    const waitGraphMode = async (pred, timeoutMs) => {
+      const deadline = Date.now() + (timeoutMs || 4000);
+      while (Date.now() < deadline) {
+        if (pred()) return true;
+        await tick(25);
+      }
+      return pred();
+    };
+    const graphTabEl = () =>
+      window.document.querySelector('.tab[data-path="§graph"]');
+    const clickGraphTab = () => {
+      const t = graphTabEl();
+      if (t) t.dispatchEvent(new window.Event("click", { bubbles: true }));
+    };
+    const canvas2dEl = $("graph-view-canvas-2d");
+    const canvas3dEl = $("graph-view-canvas");
+    const hostEl = $("graph-view-canvas-host");
+    const filterEl = $("graph-view-filter");
+    const sharedControlIds = ["graph-view-filter", "graph-view-fit",
+      "graph-view-zoom-in", "graph-view-zoom-out", "graph-view-refresh"];
+    const sharedControlsEnabled = () =>
+      sharedControlIds.every((id) => !$(id).disabled);
+    const summaryText = () => $("graph-view-summary").textContent;
+    const keyOn = (target, k) => target.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: k, bubbles: true, cancelable: true,
+      }));
+
+    // --- active-file highlight survives graph entry -------------------
+    // Opening a note emits file:open while the graph is hidden. The
+    // facade remembers it as lastNotePath and pushes it into the newly
+    // activated renderer, so the graph never highlights "§graph".
+    {
+      const note = "notes/a.md";
+      await window.NB.tabs.open(note);
+      await tick(40);
+      check("graph regression: opening a note hides the graph view",
+        $("graph-view").hidden === true);
+      clickGraphTab();
+      await tick(120);
+      check("graph regression: 3D entry keeps the active-file highlight",
+        window.NB.graph.getMode() === "3d" &&
+        window.NB.graph3d.activeFile === note,
+        "mode=" + window.NB.graph.getMode() +
+        " active=" + window.NB.graph3d.activeFile);
+      check("graph regression: facade exposes the active file in 3D",
+        window.NB.graph.activeFile === note,
+        "NB.graph.activeFile=" + window.NB.graph.activeFile);
+
+      $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(100);
+      check("graph regression: 2D switch keeps the active-file highlight",
+        window.NB.graph.getMode() === "2d" &&
+        window.NB.graph2d.activeFile === note,
+        "mode=" + window.NB.graph.getMode() +
+        " active=" + window.NB.graph2d.activeFile);
+      check("graph regression: facade exposes the active file in 2D",
+        window.NB.graph.activeFile === note,
+        "NB.graph.activeFile=" + window.NB.graph.activeFile);
+
+      $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(100);
+      check("graph regression: the active-file highlight survives a mode switch",
+        window.NB.graph3d.activeFile === note &&
+        window.NB.graph.getMode() === "3d",
+        "mode=" + window.NB.graph.getMode() +
+        " active=" + window.NB.graph3d.activeFile);
+    }
+
+    // --- shared controls are enabled in 2D after a 3D load/error ------
+    {
+      // A delayed 3D refresh disables the shared refresh button while the
+      // request is in flight. Switching to 2D must re-enable every shared
+      // control even though 3D has not settled yet.
+      graphDelayMs = 300;
+      const draws2dBefore = canvas2dEl.__fakeCtx
+        ? canvas2dEl.__fakeCtx.log.calls.length : 0;
+      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("graph regression: 3D loading disables refresh",
+        $("graph-view-refresh").disabled === true);
+      $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(40);
+      check("graph regression: 2D enables shared controls while a 3D fetch is delayed",
+        window.NB.graph.getMode() === "2d" && sharedControlsEnabled(),
+        "filter=" + filterEl.disabled + " fit=" + $("graph-view-fit").disabled +
+        " zoomIn=" + $("graph-view-zoom-in").disabled +
+        " zoomOut=" + $("graph-view-zoom-out").disabled +
+        " refresh=" + $("graph-view-refresh").disabled);
+      await tick(360);
+      graphDelayMs = 0;
+      await tick(80);
+      check("graph regression: 2D renders after the delayed 3D fetch",
+        !!canvas2dEl.__fakeCtx &&
+        canvas2dEl.__fakeCtx.log.calls.length > draws2dBefore,
+        canvas2dEl.__fakeCtx
+          ? "before=" + draws2dBefore + " after=" + canvas2dEl.__fakeCtx.log.calls.length
+          : "no ctx");
+
+      // Force a 3D empty then error state. 2D keeps its own layout, so
+      // the shared controls must be enabled again on the switch back.
+      $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(100);
+      graphResponse = { nodes: [], edges: [] };
+      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(120);
+      check("graph regression: empty 3D load disables shared controls",
+        $("graph-view-fit").disabled === true && filterEl.disabled === true);
+      graphResponse = "error";
+      $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(140);
+      check("graph regression: 3D error keeps the shared controls disabled",
+        $("graph-view-state-title").textContent === "Couldn’t load the graph" &&
+        $("graph-view-fit").disabled === true && filterEl.disabled === true,
+        "title=" + $("graph-view-state-title").textContent);
+      $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(100);
+      check("graph regression: 2D enables shared controls after a 3D error",
+        window.NB.graph.getMode() === "2d" && sharedControlsEnabled(),
+        "filter=" + filterEl.disabled + " fit=" + $("graph-view-fit").disabled +
+        " zoomIn=" + $("graph-view-zoom-in").disabled +
+        " zoomOut=" + $("graph-view-zoom-out").disabled +
+        " refresh=" + $("graph-view-refresh").disabled);
+      check("graph regression: 2D kept its own nodes through the 3D error",
+        window.NB.graph2d.nodes.length === G_NODES.length,
+        "nodes=" + window.NB.graph2d.nodes.length);
+
+      // Restore 3D with the deterministic fixture.
+      graphResponse = { nodes: G_NODES, edges: G_EDGES };
+      $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      const restored3d = await waitGraphMode(() =>
+        window.NB.graph.getMode() === "3d" &&
+        window.NB.graph3d.nodes.length === G_NODES.length &&
+        $("graph-view-state").hidden, 4000);
+      check("graph regression: 3D reloads after the forced error",
+        restored3d,
+        "nodes=" + window.NB.graph3d.nodes.length +
+        " stateHidden=" + $("graph-view-state").hidden);
+    }
+
+    // --- filter survives a mode switch --------------------------------
+    // The filter input is shared; each renderer resyncs from it on
+    // activation and derives its own match count.
+    {
+      $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(120);
+      filterEl.value = "wel";
+      filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(40);
+      check("graph regression: 2D summary reports the filter count",
+        /3 notes · 2 links · 1 match$/.test(summaryText()),
+        "summary=" + summaryText());
+
+      $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(120);
+      check("graph regression: 3D keeps the filter typed in 2D",
+        filterEl.value === "wel" && /3 notes · 2 links · 1 match$/.test(summaryText()),
+        "value=" + filterEl.value + " summary=" + summaryText());
+
+      // Prove 3D filtered the same notes: with a one-node match set every
+      // drawn label belongs to a matching note ("Welcome").
+      $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(700);
+      const ctx3 = canvas3dEl.__fakeCtx;
+      if (ctx3) ctx3.log.texts.length = 0;
+      window.dispatchEvent(new window.Event("resize"));
+      await tick(180);
+      const labels3 = ctx3 ? ctx3.log.texts.slice() : [];
+      check("graph regression: 3D dims the non-matching notes",
+        labels3.length > 0 && labels3.every((t) => /wel/i.test(t)),
+        "labels=" + JSON.stringify(labels3));
+
+      // 3D's own Escape clears the filter and restores the summary.
+      keyOn(filterEl, "Escape");
+      await tick(40);
+      check("graph regression: 3D Escape in the filter clears it",
+        filterEl.value === "" && summaryText() === "3 notes · 2 links",
+        "value=" + filterEl.value + " summary=" + summaryText());
+
+      // Re-type in 3D; the inactive 2D surface must not clear it.
+      filterEl.value = "notes/";
+      filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(40);
+      check("graph regression: 3D summary reports the plural count",
+        /3 notes · 2 links · 2 matches$/.test(summaryText()),
+        "summary=" + summaryText());
+      keyOn(canvas2dEl, "Escape");
+      await tick(20);
+      check("graph regression: inactive 2D Escape does not clear the 3D filter",
+        filterEl.value === "notes/" && /2 matches$/.test(summaryText()),
+        "value=" + filterEl.value + " summary=" + summaryText());
+
+      $("graph-view-mode-2d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(120);
+      check("graph regression: 2D keeps the filter typed in 3D",
+        filterEl.value === "notes/" && /3 notes · 2 links · 2 matches$/.test(summaryText()),
+        "value=" + filterEl.value + " summary=" + summaryText());
+      check("graph regression: 2D summary reports the plural filter count",
+        /3 notes · 2 links · 2 matches$/.test(summaryText()),
+        "summary=" + summaryText());
+
+      // Inactive 3D host Escape must not clear the active 2D filter.
+      keyOn(hostEl, "Escape");
+      await tick(20);
+      check("graph regression: inactive 3D Escape does not clear the 2D filter",
+        filterEl.value === "notes/" && /2 matches$/.test(summaryText()),
+        "value=" + filterEl.value + " summary=" + summaryText());
+
+      // 2D's own Escape clears the filter and restores the summary.
+      keyOn(filterEl, "Escape");
+      await tick(40);
+      check("graph regression: 2D Escape in the filter clears it",
+        filterEl.value === "" && summaryText() === "3 notes · 2 links",
+        "value=" + filterEl.value + " summary=" + summaryText());
+    }
+
+    // --- duplicate-fetch guard on rapid 2D activation ------------------
+    // Each activation asks for {refresh:true}; the in-flight `fetching`
+    // flag must collapse two quick activations into one GET.
+    {
+      await tick(250);
+      const fetchCount = () =>
+        fetchLog.filter((x) => x === "GET /api/graph").length;
+      const before = fetchCount();
+      graphDelayMs = 300;
+      const p1 = window.NB.tabs.activate("§graph");
+      const p2 = window.NB.tabs.activate("§graph");
+      await Promise.all([p1, p2]);
+      await tick(80);
+      check("graph regression: two rapid 2D activations issue one GET",
+        fetchCount() - before === 1,
+        "requests=" + (fetchCount() - before));
+      await tick(360);
+      check("graph regression: no duplicate GET after both activations settle",
+        fetchCount() - before === 1,
+        "requests=" + (fetchCount() - before));
+      graphDelayMs = 0;
+    }
+
+    // --- 2D keyboard map ----------------------------------------------
+    {
+      $("graph-view-fit").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(40);
+      hostEl.focus();
+      keyOn(hostEl, "/");
+      check("graph regression: / on the 2D host focuses the filter",
+        window.document.activeElement === filterEl,
+        "active=" + (window.document.activeElement &&
+          window.document.activeElement.id));
+
+      filterEl.value = "wel";
+      filterEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(30);
+      check("graph regression: 2D filter text updates the summary",
+        /· 1 match$/.test(summaryText()), "summary=" + summaryText());
+      keyOn(filterEl, "Escape");
+      await tick(30);
+      check("graph regression: 2D Escape in the filter restores the summary",
+        filterEl.value === "" && summaryText() === "3 notes · 2 links",
+        "value=" + filterEl.value + " summary=" + summaryText());
+
+      // Click a node, then Escape on the host clears the selection.
+      const target2d = (() => {
+        const p = window.NB.graph.pan;
+        const s = window.NB.graph.scale;
+        for (const n of window.NB.graph.nodes) {
+          const x = p.x + n.x * s;
+          const y = p.y + n.y * s;
+          if (x > 20 && x < 780 && y > 20 && y < 580) return { id: n.id, x: x, y: y };
+        }
+        return null;
+      })();
+      if (target2d) {
+        canvas2dEl.dispatchEvent(new window.MouseEvent("click", {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: target2d.x, clientY: target2d.y,
+        }));
+        check("graph regression: 2D click selects a node for the Escape test",
+          window.NB.graph.selectedId === target2d.id,
+          "expected=" + target2d.id + " selected=" + window.NB.graph.selectedId);
+        hostEl.focus();
+        keyOn(hostEl, "Escape");
+        check("graph regression: 2D Escape on the host clears the selection",
+          window.NB.graph.selectedId === null,
+          "selected=" + window.NB.graph.selectedId);
+      } else {
+        check("graph regression: a 2D node projects for the Escape test", false);
+      }
+    }
+
+    // --- hidden-view cleanup and resume -------------------------------
+    {
+      const target2d = (() => {
+        const p = window.NB.graph.pan;
+        const s = window.NB.graph.scale;
+        for (const n of window.NB.graph.nodes) {
+          const x = p.x + n.x * s;
+          const y = p.y + n.y * s;
+          if (x > 20 && x < 780 && y > 20 && y < 580) return { id: n.id, x: x, y: y };
+        }
+        return null;
+      })();
+      if (target2d) {
+        canvas2dEl.dispatchEvent(new window.MouseEvent("mousemove", {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: target2d.x, clientY: target2d.y,
+        }));
+        await tick(20);
+        check("graph regression: 2D hover sets the pointer cursor",
+          canvas2dEl.style.cursor === "pointer",
+          "cursor=" + canvas2dEl.style.cursor);
+        canvas2dEl.dispatchEvent(new window.MouseEvent("mousedown", {
+          bubbles: true, cancelable: true, button: 0,
+          clientX: target2d.x, clientY: target2d.y,
+        }));
+        check("graph regression: 2D drag pins the node",
+          window.NB.graph2d.nodes.some((n) => n.fixed),
+          "fixed=" + window.NB.graph2d.nodes.filter((n) => n.fixed).length);
+
+        await window.NB.tabs.activate("Welcome.md");
+        await tick(120);
+        check("graph regression: a file tab stops both renderers",
+          window.NB.graph2d.running === false &&
+          window.NB.graph3d.running === false,
+          "2d=" + window.NB.graph2d.running + " 3d=" + window.NB.graph3d.running);
+        check("graph regression: a file tab clears the 2D drag state",
+          !window.NB.graph2d.nodes.some((n) => n.fixed) &&
+          canvas2dEl.style.cursor === "",
+          "fixed=" + window.NB.graph2d.nodes.filter((n) => n.fixed).length +
+          " cursor=" + canvas2dEl.style.cursor);
+
+        const drawsBeforeReturn = canvas2dEl.__fakeCtx
+          ? canvas2dEl.__fakeCtx.log.calls.length : 0;
+        clickGraphTab();
+        await tick(220);
+        check("graph regression: returning to the graph resumes 2D drawing",
+          !!canvas2dEl.__fakeCtx &&
+          canvas2dEl.__fakeCtx.log.calls.length > drawsBeforeReturn,
+          canvas2dEl.__fakeCtx
+            ? "before=" + drawsBeforeReturn +
+              " after=" + canvas2dEl.__fakeCtx.log.calls.length
+            : "no ctx");
+        check("graph regression: the returned graph keeps the active-file highlight",
+          window.NB.graph2d.activeFile === "Welcome.md",
+          "active=" + window.NB.graph2d.activeFile);
+      } else {
+        check("graph regression: a 2D node projects for the cleanup test", false);
+      }
+    }
+
+    // --- 3D host label counts after a mode round trip ------------------
+    {
+      $("graph-view-mode-3d").dispatchEvent(new window.Event("click", { bubbles: true }));
+      const labelled = await waitGraphMode(() =>
+        window.NB.graph.getMode() === "3d" &&
+        window.NB.graph3d.nodes.length === G_NODES.length &&
+        /3 notes and 2 links/.test(
+          $("graph-view-canvas-host").getAttribute("aria-label") || ""), 4000);
+      check("graph regression: 3D host label carries the counts after a round trip",
+        labelled,
+        "label=" + $("graph-view-canvas-host").getAttribute("aria-label"));
+      check("graph regression: 3D host label is not left as the generic facade label",
+        !/3D graph of linked notes/.test(
+          $("graph-view-canvas-host").getAttribute("aria-label") || ""),
+        "label=" + $("graph-view-canvas-host").getAttribute("aria-label"));
+    }
+  }
+
+  // --- states: empty, error, retry, refresh-failure toast ---
+  graphResponse = { nodes: [], edges: [] };
+  $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(80);
+  check("graph: empty response shows the empty state",
+    !$("graph-view-state").hidden &&
+    $("graph-view-state-title").textContent === "Nothing to map yet" &&
+    $("graph-view-state-action").textContent === "Refresh" &&
+    !$("graph-view-state-action").hidden,
+    "title=" + $("graph-view-state-title").textContent);
+  check("graph: empty summary reads zero",
+    $("graph-view-summary").textContent === "0 notes · 0 links",
+    $("graph-view-summary").textContent);
+  check("graph: empty state disables the camera controls",
+    $("graph-view-fit").disabled && $("graph-view-zoom-in").disabled &&
+    $("graph-view-depth").disabled,
+    "fit=" + $("graph-view-fit").disabled + " depth=" + $("graph-view-depth").disabled);
+
+  graphResponse = "error";
+  $("graph-view-state-action").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(100);
+  check("graph: failed first load shows the error state",
+    !$("graph-view-state").hidden &&
+    $("graph-view-state-title").textContent === "Couldn’t load the graph" &&
+    $("graph-view-state-action").textContent === "Retry",
+    "title=" + $("graph-view-state-title").textContent);
+  check("graph: error state uses role=alert",
+    $("graph-view-state-card").getAttribute("role") === "alert",
+    "role=" + $("graph-view-state-card").getAttribute("role"));
+  check("graph: error summary reads 'Not connected'",
+    $("graph-view-summary").textContent === "Not connected",
+    $("graph-view-summary").textContent);
+  check("graph: error art swaps to the error kind",
+    $("graph-view-state-art").dataset.kind === "error",
+    "kind=" + $("graph-view-state-art").dataset.kind);
+
+  graphResponse = { nodes: G_NODES, edges: G_EDGES };
+  $("graph-view-state-action").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(120);
+  check("graph: Retry recovers into the ready state",
+    $("graph-view-state").hidden && window.NB.graph.nodes.length === 3,
+    "stateHidden=" + $("graph-view-state").hidden +
+    " nodes=" + window.NB.graph.nodes.length);
+
+  graphResponse = "error";
+  $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(100);
+  check("graph: failed refresh keeps the last graph",
+    window.NB.graph.nodes.length === 3 && $("graph-view-state").hidden,
+    "nodes=" + window.NB.graph.nodes.length);
+  check("graph: failed refresh shows the toast",
+    !$("graph-view-toast").hidden &&
+    /Couldn’t refresh the graph/.test($("graph-view-toast").textContent),
+    "toast=" + $("graph-view-toast").textContent);
+
+  // --- particles round-trip ---
+  graphResponse = { nodes: G_NODES, edges: G_EDGES };
+  $("graph-view-refresh").dispatchEvent(new window.Event("click", { bubbles: true }));
+  await tick(100);
+  const hadParticles = !!window.NB.graph.getParticleField();
+  window.NB.graph.setParticleField(true);
+  await tick(20);
+  check("graph: particle field can be enabled",
+    !!window.NB.graph.getParticleField(),
+    "particleField=" + window.NB.graph.getParticleField());
+  window.NB.graph.setParticleField(false);
+  await tick(20);
+  check("graph: particle field can be disabled",
+    !window.NB.graph.getParticleField(),
+    "particleField=" + window.NB.graph.getParticleField());
+  if (hadParticles) window.NB.graph.setParticleField(true);
+
+  // --- boot restore: a saved §graph id is a valid special tab id ---
+  const graphTabRestore = window.document.querySelector('.tab[data-path="§graph"]');
+  const restoreClose = graphTabRestore && graphTabRestore.querySelector(".tab-close");
+  if (restoreClose) {
+    restoreClose.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(30);
+  }
+  check("graph: NB.tabs treats §graph as a special tab id",
+    window.NB.tabs.isSpecial("§graph") === true);
+  await window.NB.tabs.restore(["§graph"], "§graph", null, []);
+  await tick(60);
+  check("graph: restoring openFiles:['§graph'] reopens and activates the graph",
+    window.NB.tabs.getActive() === "§graph" && !$("graph-view").hidden,
+    "active=" + window.NB.tabs.getActive() + " hidden=" + $("graph-view").hidden);
+  // app.js is what keeps a special id through the boot tree filter; guard
+  // the source shape because the boot path itself runs only once.
+  check("graph: app.js preserves special tab ids through the boot filter",
+    /const openFiles\s*=\s*\(cfg\.openFiles \|\| \[\]\)\.filter\(p => isSpecialTab\(p\) \|\| treeHas\(tree, p\)\)/
+      .test(read("static/js/app.js")));
+
+  const graphTabFinal = window.document.querySelector('.tab[data-path="§graph"]');
+  if (graphTabFinal) {
+    const finalClose = graphTabFinal.querySelector(".tab-close");
+    if (finalClose) finalClose.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+  }
+  graphResponse = null;
+  graphDelayMs = 0;
+  window.matchMedia = realMatchMedia;
 
   console.log("== sidebar: collapse-all folders from root context menu ==");
   // Build a nested-folder tree, open the root context menu (right-click
@@ -19914,6 +21095,29 @@ function check(label, cond, extra) {
   check("close last tab -> edit bar hidden", $("edit-bar").hidden);
   check("close last tab -> WYSIWYG toggle hidden (empty state)", $("hybrid-toggle").hidden);
   check("close last tab -> no active", window.NB.tabs.getActive() === null && !activeTabPath());
+
+  // A saved special tab whose module no longer registers (the retired
+  // §search) must be dropped instead of creating a blank content area.
+  // A registered special tab (§graph) still restores.
+  await window.NB.tabs.restore(["§search"], null, null);
+  await tick(20);
+  check("tabs: restore drops an unregistered § id",
+    !window.NB.tabs.getOpen().includes("§search") && window.NB.tabs.getOpen().length === 0,
+    "open=" + JSON.stringify(window.NB.tabs.getOpen()));
+  check("tabs: dropping the stale § id leaves the welcome page visible",
+    !$("welcome").hidden && $("viewer").hidden,
+    "welcomeHidden=" + $("welcome").hidden + " viewerHidden=" + $("viewer").hidden);
+
+  await window.NB.tabs.restore(["§graph", "§search"], "§graph", null);
+  await tick(80);
+  check("tabs: restore keeps a registered §graph while dropping §search",
+    window.NB.tabs.isOpen("§graph") &&
+    !window.NB.tabs.isOpen("§search") &&
+    window.NB.tabs.getActive() === "§graph",
+    "open=" + JSON.stringify(window.NB.tabs.getOpen()) +
+    " active=" + window.NB.tabs.getActive());
+  window.NB.tabs.close("§graph", { force: true });
+  await tick(20);
 
   // restore() reads openFiles/activeFile back from config (round-trip).
   await window.NB.tabs.restore(["notes/a.md", "Welcome.md"], "Welcome.md", null);
@@ -33906,8 +35110,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v16",
-        /const CACHE = "notebook-v16"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v17",
+        /const CACHE = "notebook-v17"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);

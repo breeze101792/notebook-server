@@ -248,13 +248,38 @@ then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
 table-edit.js → list-edit.js → table-view.js → table-select.js → watcher.js →
-outline.js → sidebar.js → graph.js → tabs.js → windows.js →
+outline.js → sidebar.js → graph-2d.js → graph-3d.js → graph.js → tabs.js → windows.js →
 settings.js → export.js → mermaid-designer.js → designer-shell.js →
 dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
 bookmarks.js → shortcuts.js → mobile.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`, `NB.menu`).
+
+**Graph view (2D/3D).** The `§graph` special tab has two renderers and a
+persisted mode switch, default **3D**:
+
+- `static/js/graph.js` — facade: owns the tab, activity button, shared header
+  chrome, and mode persistence. `NB.graph` delegates to the active renderer.
+- `static/js/graph-3d.js` (`NB.graph3d`) — perspective orbit camera
+  (yaw/pitch/distance/target, 50° FOV) on a 2D canvas with painter ordering;
+  depth via perspective size, fog, draw order, edge weight and label
+  attenuation, never hue. Depth spread (`#graph-view-depth`, 0% flat),
+  auto-orbit (`#graph-view-rotate`, off by default, disabled under reduced
+  motion), fit, zoom, refresh, hover/selection heat-map, chip, loading/empty/
+  error layers, tiers.
+- `static/js/graph-2d.js` (`NB.graph2d`) — the original neural 2D renderer:
+  force layout, pan/zoom, particles, edge pulses, glow, warm active-file fill.
+
+The header's 2D/3D segmented control (`#graph-view-mode-2d`/`-3d`) switches
+renderers; only the active one draws or listens. `fit` resets the camera in 3D
+and re-centers in 2D; depth and auto-orbit are 3D-only. Mode is saved as
+`graphMode` (`"2d"`/`"3d"`, default `"3d"`). Large graphs drop to reduced/lite
+tiers and above 1500 nodes render a flat layout with a notice. The graph stays
+desktop/tablet-only (phones already hide `#activity-graph-btn`).
+`GET /api/graph` is unchanged. A saved `§graph` in `openFiles` survives
+`app.js`'s boot tree filter and reopens in the last mode.
+Design: `docs/design/graph-3d.md`; tests: `docs/testing/frontend.md`.
 
 **Context menus.** `menu.js` (`NB.menu`) is the one right-click menu renderer: a
 singleton `#nb-menu` on `document.body`, descriptor-driven items
@@ -531,7 +556,7 @@ Docs: `docs/architecture/mobile.md`, `docs/design/mobile-shell.md`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `activeView`,
 `sidebarWidth`, `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`,
 `searchCaseSensitive`, `pinnedFolders`, `explorerTop` (`"pinned"`,
-`"bookmarks"`, or `"none"`).
+`"bookmarks"`, or `"none"`), `graphMode` (`"2d"` or `"3d"`, default `"3d"`).
 `fontSize` ∈ {`"small"`, `"medium"`, `"large"`, `"xlarge"`} drives the
 `--font-scale` CSS variable (0.9 / 1.0 / 1.15 / 1.3); the resolved value applies
 to the whole app via rem-ified chrome. The code-block syntax theme is **not**

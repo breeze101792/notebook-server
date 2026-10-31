@@ -343,6 +343,7 @@ async function main() {
         linkLines: link ? link.getClientRects().length : 0,
         paragraphRight: paraBox ? paraBox.right : 0,
         codeRight: code ? code.getBoundingClientRect().right : 0,
+        preRight: pre ? pre.getBoundingClientRect().right : 0,
         viewerRight: box.right,
         preOwnScroller: !!codeScroller && codeScroller.scrollWidth > codeScroller.clientWidth,
         preScrolled: !!codeScroller && codeScroller.scrollLeft > 0,
@@ -367,8 +368,12 @@ async function main() {
     check("preview overflow: long inline code stays inside the viewer",
       overflow.codeRight <= overflow.viewerRight + 1,
       JSON.stringify({ code: overflow.codeRight, viewer: overflow.viewerRight }));
-    check("preview overflow: a fenced block keeps its own horizontal scroller",
-      overflow.preOwnScroller && overflow.preScrolled,
+    // Code blocks wrap (style.css: "Code blocks wrap long lines; the note
+    // page owns the only scrollbar"), so the fence must not grow its own
+    // horizontal scroller and must stay inside the viewer's clip edge.
+    check("preview overflow: a fenced block wraps inside the viewer (no inner scroller)",
+      !overflow.preOwnScroller && !overflow.preScrolled &&
+      overflow.preRight <= overflow.viewerRight + 1,
       JSON.stringify(overflow));
     check("preview overflow: a wide table keeps its own horizontal scroller",
       overflow.tableOwnScroller, JSON.stringify(overflow));
@@ -840,11 +845,46 @@ async function main() {
     await page.click("#activity-graph-btn");
     await page.waitForFunction(() =>
       !document.getElementById("graph-view").hidden &&
-      window.NB.graph && NB.graph.nodes.length > 0,
+      window.NB.graph && NB.graph.nodes.length > 0 &&
+      document.getElementById("graph-view-state").hidden,
       null, { timeout: 10000 });
-    await sleep(1600);
-    check("graph: summary reports nodes",
-      /\d+ notes?/.test(await page.locator("#graph-view-summary").textContent()),
+    // Let the initial physics warm-up settle before measuring geometry.
+    await sleep(1200);
+
+    // Blocker regression: the screen-reader layers are visually hidden and
+    // must not consume layout space, and the canvas host must still own the
+    // full height after notes populate.
+    const srLayout = await page.evaluate(() => {
+      const live = document.getElementById("graph-view-sr-live");
+      const list = document.getElementById("graph-view-sr-list");
+      const host = document.getElementById("graph-view-canvas-host");
+      const lr = live.getBoundingClientRect();
+      const ur = list.getBoundingClientRect();
+      const hr = host.getBoundingClientRect();
+      const liveCs = getComputedStyle(live);
+      const listCs = getComputedStyle(list);
+      return {
+        liveW: lr.width, liveH: lr.height,
+        listW: ur.width, listH: ur.height,
+        hostH: hr.height,
+        livePos: liveCs.position, listPos: listCs.position,
+        liveClip: liveCs.clip, listClipPath: listCs.clipPath,
+      };
+    });
+    check("graph: sr-only live region takes no layout space",
+      srLayout.liveW <= 1 && srLayout.liveH <= 1 &&
+      srLayout.livePos === "absolute" &&
+      (srLayout.liveClip !== "auto" || srLayout.listClipPath !== "none"),
+      JSON.stringify(srLayout));
+    check("graph: sr-only note list takes no layout space",
+      srLayout.listW <= 1 && srLayout.listH <= 1 &&
+      srLayout.listPos === "absolute",
+      JSON.stringify(srLayout));
+    check("graph: canvas host keeps a non-zero height with notes populated",
+      srLayout.hostH > 50, JSON.stringify(srLayout));
+
+    check("graph: summary reports nodes and links",
+      /\d+ notes? · \d+ links?/.test(await page.locator("#graph-view-summary").textContent()),
       await page.locator("#graph-view-summary").textContent());
     const canvasData = await page.evaluate(() => {
       const c = document.getElementById("graph-view-canvas");
@@ -863,26 +903,630 @@ async function main() {
     check("graph: canvas is non-blank and non-uniform",
       canvasData.opaque > 100 && canvasData.colors > 4, JSON.stringify(canvasData));
 
-    await page.click("#graph-view-recenter");
-    await sleep(250);
-    const target = await page.evaluate(() => {
+    const camInit = await page.evaluate(() => NB.graph.getCamera());
+    check("graph: camera exposes yaw/pitch/dist/target/fov",
+      typeof camInit.yaw === "number" && typeof camInit.pitch === "number" &&
+      typeof camInit.dist === "number" && !!camInit.target &&
+      Math.abs(camInit.fov - 50 * Math.PI / 180) < 1e-9,
+      JSON.stringify(camInit));
+
+    const canvasBox = await page.locator("#graph-view-canvas").boundingBox();
+
+    // Orbit: drag empty space near the bottom-left corner.
+    const orbitX = canvasBox.x + 14;
+    const orbitY = canvasBox.y + canvasBox.height - 14;
+    const yawBefore = await page.evaluate(() => NB.graph.getCamera().yaw);
+    await page.mouse.move(orbitX, orbitY);
+    await page.mouse.down();
+    await page.mouse.move(orbitX + 90, orbitY - 55, { steps: 8 });
+    await page.mouse.up();
+    await sleep(120);
+    const yawAfter = await page.evaluate(() => NB.graph.getCamera().yaw);
+    check("graph: left-drag orbits the camera (yaw changes)",
+      Math.abs(yawAfter - yawBefore) > 0.02,
+      "before=" + yawBefore.toFixed(3) + " after=" + yawAfter.toFixed(3));
+
+    // Wheel: dolly distance changes in the right direction.
+    const distBefore = await page.evaluate(() => NB.graph.getCamera().dist);
+    await page.mouse.move(canvasBox.x + canvasBox.width / 2,
+      canvasBox.y + canvasBox.height / 2);
+    await page.mouse.wheel(0, -400);
+    await sleep(150);
+    const distAfter = await page.evaluate(() => NB.graph.getCamera().dist);
+    check("graph: wheel changes the dolly distance",
+      distAfter < distBefore,
+      "before=" + distBefore.toFixed(1) + " after=" + distAfter.toFixed(1));
+
+    // Right-drag pans the camera target.
+    const targetBefore = await page.evaluate(() => NB.graph.getCamera().target);
+    await page.mouse.move(canvasBox.x + canvasBox.width / 2,
+      canvasBox.y + canvasBox.height / 2);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(canvasBox.x + canvasBox.width / 2 + 70,
+      canvasBox.y + canvasBox.height / 2 + 40, { steps: 6 });
+    await page.mouse.up({ button: "right" });
+    await sleep(120);
+    const targetAfter = await page.evaluate(() => NB.graph.getCamera().target);
+    check("graph: right-drag pans the camera target",
+      targetAfter.x !== targetBefore.x || targetAfter.y !== targetBefore.y ||
+      targetAfter.z !== targetBefore.z,
+      "before=" + JSON.stringify(targetBefore) +
+      " after=" + JSON.stringify(targetAfter));
+
+    // Fit resets yaw/pitch to the defaults.
+    await page.click("#graph-view-fit");
+    await sleep(700);
+    const fitCam = await page.evaluate(() => NB.graph.getCamera());
+    check("graph: fit resets yaw and pitch",
+      Math.abs(fitCam.yaw - (-0.52)) < 0.03 &&
+      Math.abs(fitCam.pitch - 0.30) < 0.03,
+      JSON.stringify(fitCam));
+
+    // Keyboard select, chip, Enter-opens.
+    await page.locator("#graph-view-canvas-host").focus();
+    await page.keyboard.press("]");
+    await sleep(200);
+    const sel = await page.evaluate(() => ({
+      id: NB.graph.selectedId,
+      chipHidden: document.getElementById("graph-view-chip").hidden,
+      name: document.getElementById("graph-view-chip-name").textContent,
+      meta: document.getElementById("graph-view-chip-meta").textContent,
+      live: document.getElementById("graph-view-sr-live").textContent,
+    }));
+    check("graph: ] selects a note and shows the chip",
+      !!sel.id && sel.chipHidden === false && !!sel.name && /link/.test(sel.meta),
+      JSON.stringify(sel));
+    check("graph: selection is announced to screen readers",
+      sel.live.indexOf("Selected ") === 0, sel.live);
+    await page.keyboard.press("Enter");
+    check("graph: Enter opens the selected note",
+      await waitFor(() => page.evaluate((id) => NB.tabs.getActive() === id, sel.id), 8000),
+      sel.id);
+    await page.click('#tab-bar .tab[data-path="§graph"]');
+    await page.waitForFunction(() => NB.tabs.getActive() === "§graph", null, { timeout: 5000 });
+    await sleep(300);
+
+    // Regression: "/" on the graph host focuses the filter and must not
+    // open the Search side panel (the document shortcut listener yields).
+    const activityBeforeSlash = await page.evaluate(() => NB.activity.getActive());
+    await page.locator("#graph-view-canvas-host").focus();
+    await page.keyboard.press("/");
+    await sleep(150);
+    const slashState = await page.evaluate(() => ({
+      activeElement: document.activeElement && document.activeElement.id,
+      activity: NB.activity.getActive(),
+      searchHidden: document.getElementById("search-view").hidden,
+    }));
+    check("graph: / focuses the filter input",
+      slashState.activeElement === "graph-view-filter", JSON.stringify(slashState));
+    check("graph: / does not open the Search side panel",
+      slashState.activity !== "search" &&
+      slashState.activity === activityBeforeSlash && slashState.searchHidden === true,
+      JSON.stringify(slashState));
+
+    // Double-click a projected node. The test mirrors the renderer's
+    // projection from the public camera API; the old pan + x*scale math
+    // no longer applies.
+    const dbl = await page.evaluate(() => {
       const g = NB.graph;
-      const n = g.nodes.find((x) => x.id === "notes/a.md") || g.nodes[0];
-      const r = document.getElementById("graph-view-canvas").getBoundingClientRect();
+      const host = document.getElementById("graph-view-canvas-host");
+      const r = host.getBoundingClientRect();
+      const W = r.width, H = r.height;
+      const cam = g.getCamera();
+      const focal = (Math.min(W, H) / 2) / Math.tan(cam.fov / 2);
+      const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+      const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+      const dir = { x: cp * sy, y: sp, z: cp * cy };
+      const pos = {
+        x: cam.target.x + dir.x * cam.dist,
+        y: cam.target.y + dir.y * cam.dist,
+        z: cam.target.z + dir.z * cam.dist,
+      };
+      const fwd = { x: -dir.x, y: -dir.y, z: -dir.z };
+      let rx = -fwd.z, ry = 0, rz = fwd.x;
+      const rl = Math.hypot(rx, rz) || 1;
+      rx /= rl; rz /= rl;
+      const right = { x: rx, y: ry, z: rz };
+      const up = {
+        x: ry * fwd.z - rz * fwd.y,
+        y: rz * fwd.x - rx * fwd.z,
+        z: rx * fwd.y - ry * fwd.x,
+      };
+      const dz = g.getDepthSpread();
+      const project = (n) => {
+        const p = { x: n.x, y: n.y, z: n.z * dz };
+        const rel = { x: p.x - pos.x, y: p.y - pos.y, z: p.z - pos.z };
+        const depth = rel.x * fwd.x + rel.y * fwd.y + rel.z * fwd.z;
+        if (depth <= 12) return null;
+        const cx = rel.x * right.x + rel.y * right.y + rel.z * right.z;
+        const uy = rel.x * up.x + rel.y * up.y + rel.z * up.z;
+        return {
+          x: r.left + W / 2 + (cx / depth) * focal,
+          y: r.top + H / 2 - (uy / depth) * focal,
+        };
+      };
+      for (const n of g.nodes) {
+        const pt = project(n);
+        // Keep clear of the chip (bottom-right) and the edges.
+        if (pt && pt.x > r.left + 30 && pt.x < r.right - 260 &&
+            pt.y > r.top + 30 && pt.y < r.bottom - 120) {
+          return { id: n.id, x: pt.x, y: pt.y };
+        }
+      }
+      return null;
+    });
+    if (dbl) {
+      await page.mouse.dblclick(dbl.x, dbl.y);
+      check("graph: double-click opens a projected node",
+        await waitFor(() => page.evaluate((id) => NB.tabs.getActive() === id, dbl.id), 8000),
+        dbl.id);
+      await page.click('#tab-bar .tab[data-path="§graph"]');
+      await page.waitForFunction(() => NB.tabs.getActive() === "§graph", null, { timeout: 5000 });
+      await sleep(300);
+    } else {
+      check("graph: a projected node lands on the canvas", false);
+    }
+
+    // Filter: a known label narrows the summary and appends the count.
+    const filterQuery = await page.evaluate(() => {
+      const n = NB.graph.nodes.find((x) => x.id === "Welcome.md") || NB.graph.nodes[0];
+      return (n.label || n.id).replace(/\.md$/i, "");
+    });
+    await page.fill("#graph-view-filter", filterQuery);
+    await sleep(250);
+    check("graph: filter appends a match count to the summary",
+      /· \d+ match(?:es)?$/.test(await page.locator("#graph-view-summary").textContent()),
+      await page.locator("#graph-view-summary").textContent());
+    await page.fill("#graph-view-filter", "");
+    await sleep(150);
+
+    // Regression: at ~900px the summary must stay visible (the 980px rule
+    // only ellipsises it) and the filter's match count must still update.
+    await page.setViewportSize({ width: 900, height: VIEW.height });
+    await sleep(300);
+    const narrowSummary = await page.evaluate(() => {
+      const s = document.getElementById("graph-view-summary");
+      const cs = getComputedStyle(s);
+      const r = s.getBoundingClientRect();
+      const heading = s.closest(".graph-view-heading");
+      const header = s.closest(".graph-view-header");
+      const tools = header && header.querySelector(".graph-view-tools");
       return {
-        id: n.id,
-        x: r.left + g.pan.x + n.x * g.scale,
-        y: r.top + g.pan.y + n.y * g.scale,
-        left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+        display: cs.display, visibility: cs.visibility,
+        width: r.width, height: r.height, text: s.textContent,
+        scrollWidth: s.scrollWidth, maxWidth: cs.maxWidth, flexShrink: cs.flexShrink,
+        headingW: heading ? heading.getBoundingClientRect().width : -1,
+        headerW: header ? header.getBoundingClientRect().width : -1,
+        toolsW: tools ? tools.getBoundingClientRect().width : -1,
+        sidePanelW: document.getElementById("side-panel").getBoundingClientRect().width,
+        viewport: window.innerWidth,
       };
     });
-    check("graph: target node is inside the canvas",
-      target.x > target.left && target.x < target.right &&
-      target.y > target.top && target.y < target.bottom, JSON.stringify(target));
-    await page.mouse.dblclick(target.x, target.y);
-    check("graph: double-clicking a node opens its note",
-      await waitFor(() => page.evaluate((id) => NB.tabs.getActive() === id, target.id), 6000),
-      target.id);
+    check("graph: summary is not display:none at 900px",
+      narrowSummary.display !== "none" && narrowSummary.visibility !== "hidden" &&
+      narrowSummary.height > 0,
+      JSON.stringify(narrowSummary));
+    // The 980px rule only caps/ellipsises the summary; it must still own a
+    // readable box. At 900px the header is squeezed by the side panel and
+    // outline, so this guards against the flex item collapsing to 0 width.
+    check("graph: summary keeps a readable width at 900px",
+      narrowSummary.width > 0,
+      JSON.stringify(narrowSummary));
+    await page.fill("#graph-view-filter", filterQuery);
+    await sleep(250);
+    check("graph: filter match count still updates at 900px",
+      /· \d+ match(?:es)?$/.test(await page.locator("#graph-view-summary").textContent()),
+      await page.locator("#graph-view-summary").textContent());
+    await page.fill("#graph-view-filter", "");
+    await sleep(150);
+    await page.setViewportSize({ width: VIEW.width, height: VIEW.height });
+    await page.waitForFunction(() => window.innerWidth === 1280, null, { timeout: 5000 });
+    await sleep(250);
+
+    // Depth spread: 0 flattens the field, 100 restores it.
+    await page.locator("#graph-view-depth").evaluate((el) => {
+      el.value = "0";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await sleep(200);
+    check("graph: depth 0% flattens the z-axis",
+      await page.evaluate(() => NB.graph.getDepthSpread() === 0 &&
+        document.getElementById("graph-view-depth-value").textContent === "0%" &&
+        document.getElementById("graph-view-depth").getAttribute("aria-valuetext") === "0 percent"));
+    await page.locator("#graph-view-depth").evaluate((el) => {
+      el.value = "100";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await sleep(200);
+    check("graph: depth returns to 100%",
+      await page.evaluate(() => NB.graph.getDepthSpread() === 1 &&
+        document.getElementById("graph-view-depth-value").textContent === "100%"));
+
+    // Theme: the canvas repaints with the light tokens and the chrome
+    // reads the light graph variables.
+    const sampleCanvas = () => page.evaluate(() => {
+      const c = document.getElementById("graph-view-canvas");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      const out = [];
+      const step = Math.max(4, Math.floor(d.length / 4 / 500)) * 4;
+      for (let i = 0; i < d.length; i += step) out.push(d[i], d[i + 1], d[i + 2], d[i + 3]);
+      return out.join(",");
+    });
+    // Force dark first: Playwright's default color scheme makes "auto"
+    // resolve to light, so the light switch must start from a known dark
+    // body for the repaint comparison to be meaningful.
+    await page.click("#activity-settings-btn");
+    await page.waitForFunction(() => !document.getElementById("settings-overlay").hidden,
+      null, { timeout: 5000 });
+    await page.click('.settings-nav-item[data-tab="appearance"]');
+    await page.locator('input[name="theme"][value="dark"]').check();
+    await page.waitForFunction(() => document.body.dataset.theme === "dark",
+      null, { timeout: 4000 });
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.getElementById("settings-overlay").hidden,
+      null, { timeout: 4000 });
+    await sleep(400);
+    const sampleBeforeTheme = await sampleCanvas();
+    await page.click("#activity-settings-btn");
+    await page.waitForFunction(() => !document.getElementById("settings-overlay").hidden,
+      null, { timeout: 5000 });
+    await page.click('.settings-nav-item[data-tab="appearance"]');
+    await page.locator('input[name="theme"][value="light"]').check();
+    await page.waitForFunction(() => document.body.dataset.theme === "light",
+      null, { timeout: 4000 });
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.getElementById("settings-overlay").hidden,
+      null, { timeout: 4000 });
+    await sleep(600);
+    const lightTokens = await page.evaluate(() => {
+      const cs = getComputedStyle(document.body);
+      return {
+        theme: document.body.dataset.theme,
+        label: cs.getPropertyValue("--graph-label-rgb").trim(),
+        edge: cs.getPropertyValue("--graph-edge-rgb").trim(),
+      };
+    });
+    const sampleAfterTheme = await sampleCanvas();
+    check("graph: light theme uses the light graph tokens",
+      lightTokens.theme === "light" && lightTokens.label === "31 35 48" &&
+      lightTokens.edge === "80 130 230",
+      JSON.stringify(lightTokens));
+    check("graph: theme switch repaints the canvas",
+      sampleAfterTheme !== sampleBeforeTheme,
+      "sample unchanged after theme flip");
+
+    // Reload with the graph tab open: app.js must keep the § id through
+    // the boot tree filter so NB.tabs.restore reopens and activates it.
+    await page.click('#tab-bar .tab[data-path="§graph"]');
+    await page.waitForFunction(() => NB.tabs.getActive() === "§graph", null, { timeout: 5000 });
+    check("graph: config persists §graph in openFiles and activeFile",
+      await waitFor(() => {
+        const c = readConfig();
+        return !!c && Array.isArray(c.openFiles) && c.openFiles.includes("§graph") &&
+          c.activeFile === "§graph";
+      }, 6000),
+      JSON.stringify(readConfig()));
+    await page.reload();
+    await page.waitForFunction(() => window.NB && NB.tabs && NB.graph, null, { timeout: 20000 });
+    check("graph: reload restores and activates the §graph tab",
+      await waitFor(() => page.evaluate(() =>
+        NB.tabs.getActive() === "§graph" &&
+        !document.getElementById("graph-view").hidden &&
+        NB.graph.nodes.length > 0), 15000),
+      await page.evaluate(() => ({ active: NB.tabs.getActive(),
+        nodes: NB.graph ? NB.graph.nodes.length : -1 })));
+
+    // Reduced motion: auto-orbit is forced off and the toggle is disabled.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await page.waitForFunction(() => window.NB && NB.tabs && NB.graph &&
+      NB.graph.nodes.length > 0 && !document.getElementById("graph-view").hidden,
+      null, { timeout: 20000 });
+    await sleep(400);
+    const rmState = await page.evaluate(() => ({
+      disabled: document.getElementById("graph-view-rotate").disabled,
+      pressed: document.getElementById("graph-view-rotate").getAttribute("aria-pressed"),
+      label: document.getElementById("graph-view-rotate").getAttribute("aria-label"),
+    }));
+    check("graph: reduced motion disables auto-orbit",
+      rmState.disabled === true && rmState.pressed === "false",
+      JSON.stringify(rmState));
+    await page.locator("#graph-view-canvas-host").focus();
+    await page.keyboard.press("r");
+    await sleep(150);
+    check("graph: reduced motion ignores the R auto-orbit shortcut",
+      await page.evaluate(() =>
+        document.getElementById("graph-view-rotate").getAttribute("aria-pressed") === "false"));
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await sleep(250);
+    check("graph: leaving reduced motion re-enables auto-orbit",
+      await page.evaluate(() => document.getElementById("graph-view-rotate").disabled === false));
+
+    // ---------------------------------------------------------------
+    console.log("== graph mode switch ==");
+    // 3D is the default mode. Only the 3D canvas is visible and the
+    // depth/orbit chrome belongs to it.
+    await page.waitForFunction(() =>
+      !document.getElementById("graph-view").hidden &&
+      window.NB.graph && NB.graph.getMode() === "3d" && NB.graph3d.nodes.length > 0,
+      null, { timeout: 15000 });
+    await sleep(500);
+    const mode3d = await page.evaluate(() => ({
+      mode: NB.graph.getMode(),
+      canvas3dHidden: document.getElementById("graph-view-canvas").hidden,
+      canvas2dHidden: document.getElementById("graph-view-canvas-2d").hidden,
+      depth: getComputedStyle(document.getElementById("graph-view-depth")).display,
+      rotate: getComputedStyle(document.getElementById("graph-view-rotate")).display,
+      pressed3d: document.getElementById("graph-view-mode-3d").getAttribute("aria-pressed"),
+      badge: document.getElementById("graph-view-mode-badge").textContent,
+    }));
+    check("graph mode: default is 3D with only the 3D canvas visible",
+      mode3d.mode === "3d" && mode3d.canvas3dHidden === false &&
+      mode3d.canvas2dHidden === true && mode3d.depth !== "none" &&
+      mode3d.rotate !== "none" && mode3d.pressed3d === "true" &&
+      mode3d.badge === "3D",
+      JSON.stringify(mode3d));
+
+    // Real click into 2D.
+    await page.click("#graph-view-mode-2d");
+    await page.waitForFunction(() =>
+      NB.graph.getMode() === "2d" && NB.graph2d.nodes.length > 0,
+      null, { timeout: 15000 });
+    await sleep(900);                       // let the 2D layout settle
+    const mode2d = await page.evaluate(() => {
+      const depth = document.getElementById("graph-view-depth");
+      const label = depth.closest(".graph-view-depth");
+      return {
+        mode: NB.graph.getMode(),
+        canvas3dHidden: document.getElementById("graph-view-canvas").hidden,
+        canvas2dHidden: document.getElementById("graph-view-canvas-2d").hidden,
+        depth: getComputedStyle(depth).display,
+        rotate: getComputedStyle(document.getElementById("graph-view-rotate")).display,
+        depthLabel: label ? getComputedStyle(label).display : "missing",
+        attr: document.getElementById("graph-view").dataset.graphMode,
+        pressed2d: document.getElementById("graph-view-mode-2d").getAttribute("aria-pressed"),
+        badge: document.getElementById("graph-view-mode-badge").textContent,
+        fitLabel: document.getElementById("graph-view-fit").getAttribute("aria-label"),
+        running3d: NB.graph3d.running,
+      };
+    });
+    check("graph mode: 2D click swaps the canvases and the badge",
+      mode2d.mode === "2d" && mode2d.canvas3dHidden === true &&
+      mode2d.canvas2dHidden === false && mode2d.attr === "2d" &&
+      mode2d.pressed2d === "true" && mode2d.badge === "2D",
+      JSON.stringify(mode2d));
+    // The wrapper is display:none, so the range input's own computed
+    // display stays inline-block; the label geometry is what matters.
+    check("graph mode: 2D hides the depth and orbit controls",
+      mode2d.depthLabel === "none" && mode2d.rotate === "none" &&
+      mode2d.fitLabel === "Re-center graph" && mode2d.running3d === false,
+      JSON.stringify(mode2d));
+
+    const box2d = await page.locator("#graph-view-canvas-2d").boundingBox();
+    check("graph mode: the 2D canvas has a real box",
+      !!box2d && box2d.width > 100 && box2d.height > 100,
+      JSON.stringify(box2d));
+
+    // 2D wheel zoom.
+    const scaleBefore2d = await page.evaluate(() => NB.graph.scale);
+    await page.mouse.move(box2d.x + box2d.width / 2, box2d.y + box2d.height / 2);
+    await page.mouse.wheel(0, -200);
+    await sleep(180);
+    const scaleAfter2d = await page.evaluate(() => NB.graph.scale);
+    check("graph mode: 2D wheel zooms in",
+      scaleAfter2d > scaleBefore2d * 1.05,
+      "before=" + scaleBefore2d.toFixed(3) + " after=" + scaleAfter2d.toFixed(3));
+
+    // 2D background drag pans.
+    const panBefore2d = await page.evaluate(() =>
+      ({ x: NB.graph.pan.x, y: NB.graph.pan.y }));
+    const px2d = box2d.x + 20;
+    const py2d = box2d.y + box2d.height - 20;
+    await page.mouse.move(px2d, py2d);
+    await page.mouse.down();
+    await page.mouse.move(px2d + 70, py2d - 40, { steps: 8 });
+    await page.mouse.up();
+    await sleep(180);
+    const panAfter2d = await page.evaluate(() =>
+      ({ x: NB.graph.pan.x, y: NB.graph.pan.y }));
+    check("graph mode: 2D background drag pans the view",
+      Math.abs(panAfter2d.x - panBefore2d.x) > 1 ||
+      Math.abs(panAfter2d.y - panBefore2d.y) > 1,
+      "before=" + JSON.stringify(panBefore2d) +
+      " after=" + JSON.stringify(panAfter2d));
+
+    // 2D click selects, double-click opens. Screen = pan + node * scale.
+    const target2d = await page.evaluate(() => {
+      const p = NB.graph.pan;
+      const s = NB.graph.scale;
+      const host = document.getElementById("graph-view-canvas-host").getBoundingClientRect();
+      for (const n of NB.graph.nodes) {
+        const x = host.left + p.x + n.x * s;
+        const y = host.top + p.y + n.y * s;
+        if (x > host.left + 30 && x < host.right - 30 &&
+            y > host.top + 30 && y < host.bottom - 30) {
+          return { id: n.id, x: x, y: y };
+        }
+      }
+      return null;
+    });
+    check("graph mode: a 2D node projects onto the canvas",
+      !!target2d, JSON.stringify(target2d));
+    if (target2d) {
+      await page.mouse.click(target2d.x, target2d.y);
+      await sleep(200);
+      check("graph mode: 2D click selects a node",
+        await page.evaluate((id) => NB.graph.selectedId === id, target2d.id),
+        await page.evaluate(() => "selected=" + NB.graph.selectedId));
+      await page.mouse.dblclick(target2d.x, target2d.y);
+      check("graph mode: 2D double-click opens the note",
+        await waitFor(() => page.evaluate((id) => NB.tabs.getActive() === id, target2d.id), 8000),
+        target2d.id);
+      await page.click('#tab-bar .tab[data-path="§graph"]');
+      await page.waitForFunction(() => NB.tabs.getActive() === "§graph" &&
+        !document.getElementById("graph-view").hidden && NB.graph.getMode() === "2d",
+        null, { timeout: 10000 });
+      await sleep(400);
+    }
+
+    // 2D fit re-centers the pan/zoom view.
+    await page.click("#graph-view-fit");
+    await sleep(200);
+    const fit2d = await page.evaluate(() => ({
+      scale: NB.graph.scale,
+      pan: { x: NB.graph.pan.x, y: NB.graph.pan.y },
+      w: NB.graph.width, h: NB.graph.height,
+    }));
+    check("graph mode: 2D fit re-centers the view",
+      fit2d.scale === 1 &&
+      Math.abs(fit2d.pan.x - fit2d.w / 2) < 1 &&
+      Math.abs(fit2d.pan.y - fit2d.h / 2) < 1,
+      JSON.stringify(fit2d));
+
+    // Back to 3D: the 2D loop stops and orbit still works.
+    await page.click("#graph-view-mode-3d");
+    await page.waitForFunction(() => NB.graph.getMode() === "3d" && !NB.graph2d.running,
+      null, { timeout: 10000 });
+    await sleep(300);
+    const back3d = await page.evaluate(() => ({
+      mode: NB.graph.getMode(),
+      canvas3dHidden: document.getElementById("graph-view-canvas").hidden,
+      canvas2dHidden: document.getElementById("graph-view-canvas-2d").hidden,
+      depth: getComputedStyle(document.getElementById("graph-view-depth")).display,
+      rotate: getComputedStyle(document.getElementById("graph-view-rotate")).display,
+      pressed3d: document.getElementById("graph-view-mode-3d").getAttribute("aria-pressed"),
+      badge: document.getElementById("graph-view-mode-badge").textContent,
+      running2d: NB.graph2d.running,
+    }));
+    check("graph mode: switching back restores 3D and stops the 2D loop",
+      back3d.mode === "3d" && back3d.canvas3dHidden === false &&
+      back3d.canvas2dHidden === true && back3d.depth !== "none" &&
+      back3d.rotate !== "none" && back3d.pressed3d === "true" &&
+      back3d.badge === "3D" && back3d.running2d === false,
+      JSON.stringify(back3d));
+
+    const box3d = await page.locator("#graph-view-canvas").boundingBox();
+    const yawBeforeRoundTrip = await page.evaluate(() => NB.graph.getCamera().yaw);
+    await page.mouse.move(box3d.x + 14, box3d.y + box3d.height - 14);
+    await page.mouse.down();
+    await page.mouse.move(box3d.x + 104, box3d.y + box3d.height - 69, { steps: 8 });
+    await page.mouse.up();
+    await sleep(180);
+    const yawAfterRoundTrip = await page.evaluate(() => NB.graph.getCamera().yaw);
+    check("graph mode: 3D orbit still works after the mode round-trip",
+      Math.abs(yawAfterRoundTrip - yawBeforeRoundTrip) > 0.02,
+      "before=" + yawBeforeRoundTrip.toFixed(3) +
+      " after=" + yawAfterRoundTrip.toFixed(3));
+
+    // Persistence: choose 2D, reload with §graph open, and the tab must
+    // come back in 2D.
+    await page.click("#graph-view-mode-2d");
+    await page.waitForFunction(() => NB.graph.getMode() === "2d" &&
+      NB.graph2d.nodes.length > 0, null, { timeout: 15000 });
+    check("graph mode: the 2D choice persists to config",
+      await waitConfig((c) => c.graphMode === "2d"), JSON.stringify(readConfig()));
+    check("graph mode: config keeps §graph open and active for the reload",
+      await waitFor(() => {
+        const c = readConfig();
+        return !!c && Array.isArray(c.openFiles) && c.openFiles.includes("§graph") &&
+          c.activeFile === "§graph";
+      }, 6000),
+      JSON.stringify(readConfig()));
+    await page.reload();
+    await page.waitForFunction(() =>
+      window.NB && NB.tabs && NB.graph && NB.graph2d, null, { timeout: 20000 });
+    const restored2d = await waitFor(() => page.evaluate(() =>
+      NB.tabs.getActive() === "§graph" &&
+      !document.getElementById("graph-view").hidden &&
+      NB.graph.getMode() === "2d" &&
+      NB.graph2d.nodes.length > 0 &&
+      document.getElementById("graph-view").dataset.graphMode === "2d" &&
+      document.getElementById("graph-view-canvas-2d").hidden === false &&
+      document.getElementById("graph-view-canvas").hidden === true), 15000);
+    check("graph mode: reload restores and activates 2D",
+      restored2d, await page.evaluate(() => ({
+        active: NB.tabs.getActive(),
+        mode: NB.graph.getMode(),
+        nodes: NB.graph2d ? NB.graph2d.nodes.length : -1,
+      })));
+
+    // Leave the app in 3D so the later sections are unaffected.
+    await page.click("#graph-view-mode-3d");
+    await page.waitForFunction(() => NB.graph.getMode() === "3d" &&
+      !document.getElementById("graph-view-canvas").hidden && !NB.graph2d.running,
+      null, { timeout: 10000 });
+    check("graph mode: back to 3D for the remaining sections",
+      await waitConfig((c) => c.graphMode === "3d"), JSON.stringify(readConfig()));
+
+    // ---------------------------------------------------------------
+    console.log("== graph tab return refresh ==");
+    // A tab activation refreshes the graph, so a note added or deleted
+    // while the graph sits in the background must show up on return.
+    {
+      const added = "graph-return-" + Date.now() + ".md";
+      const base = await page.evaluate(() => ({
+        mode: NB.graph.getMode(),
+        nodes: NB.graph3d.nodes.length,
+        edges: NB.graph3d.edges.length,
+        summary: document.getElementById("graph-view-summary").textContent,
+      }));
+
+      // 3D: add a note while the graph is hidden, then return.
+      await row("Welcome.md").click();
+      check("graph return: a file tab takes the graph into the background",
+        await waitFor(() => page.evaluate(() =>
+          NB.tabs.getActive() === "Welcome.md" &&
+          document.getElementById("graph-view").hidden === true), 8000));
+      fs.writeFileSync(path.join(DATA, added),
+        "# Graph return\n\nAdded while the graph was hidden.\n");
+      await page.click('#tab-bar .tab[data-path="§graph"]');
+      check("graph return: 3D refresh picks up a note added while hidden",
+        await waitFor(() => page.evaluate((n) =>
+          NB.tabs.getActive() === "§graph" &&
+          NB.graph.getMode() === "3d" &&
+          NB.graph3d.nodes.length === n, base.nodes + 1), 15000),
+        await page.evaluate(() => "nodes=" + NB.graph3d.nodes.length));
+      check("graph return: 3D summary reflects the added note",
+        await waitFor(() => page.evaluate((expected) =>
+          document.getElementById("graph-view-summary").textContent === expected,
+          (base.nodes + 1) + " notes · " + base.edges + " links"), 5000),
+        await page.locator("#graph-view-summary").textContent());
+
+      // 2D: bring its copy up to date, then delete the note while hidden.
+      await page.click("#graph-view-mode-2d");
+      await waitFor(() => page.evaluate(() => NB.graph.getMode() === "2d"), 10000);
+      await page.click("#graph-view-refresh");
+      check("graph return: 2D refresh picks up the added note",
+        await waitFor(() => page.evaluate((n) =>
+          NB.graph.getMode() === "2d" && NB.graph2d.nodes.length === n,
+          base.nodes + 1), 15000),
+        await page.evaluate(() => "nodes=" + NB.graph2d.nodes.length));
+      await row("Welcome.md").click();
+      await waitFor(() => page.evaluate(() => NB.tabs.getActive() === "Welcome.md"), 8000);
+      fs.unlinkSync(path.join(DATA, added));
+      await page.click('#tab-bar .tab[data-path="§graph"]');
+      check("graph return: 2D refresh drops a note deleted while hidden",
+        await waitFor(() => page.evaluate((n) =>
+          NB.tabs.getActive() === "§graph" &&
+          NB.graph.getMode() === "2d" &&
+          NB.graph2d.nodes.length === n, base.nodes), 15000),
+        await page.evaluate(() => "nodes=" + NB.graph2d.nodes.length));
+      check("graph return: 2D summary reflects the deleted note",
+        await waitFor(() => page.evaluate((expected) =>
+          document.getElementById("graph-view-summary").textContent === expected,
+          base.nodes + " notes · " + base.edges + " links"), 5000),
+        await page.locator("#graph-view-summary").textContent());
+
+      // Restore the baseline for the sections that follow.
+      await page.click("#graph-view-mode-3d");
+      await waitFor(() => page.evaluate(() => NB.graph.getMode() === "3d"), 10000);
+      await page.click("#graph-view-refresh");
+      check("graph return: 3D is restored to the baseline",
+        await waitFor(() => page.evaluate((n) =>
+          NB.graph.getMode() === "3d" && !NB.graph2d.running &&
+          NB.graph3d.nodes.length === n, base.nodes), 15000),
+        await page.evaluate(() => "nodes=" + NB.graph3d.nodes.length));
+    }
 
     // ---------------------------------------------------------------
     console.log("== settings ==");

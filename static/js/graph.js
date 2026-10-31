@@ -1,174 +1,171 @@
-/* graph.js -- a force-directed graph view of how notes link together.
+/* graph.js -- the §graph special tab facade and 2D/3D mode switch.
  *
- * Renders an interactive, canvas-based "brain" of the notebook as a
- * special tab (§graph) in the tab bar. The backend /api/graph endpoint
- * parses [[wikilinks]] and standard [text](x.md) links out of every .md
- * file and returns nodes + edges; this module lays them out with a
- * simple force simulation (repulsion between every pair of nodes,
- * spring attraction along edges, gentle centering gravity) and draws
- * them on a <canvas>.
+ * The renderers themselves live in graph-2d.js (NB.graph2d) and
+ * graph-3d.js (NB.graph3d). This module owns the tab registration, the
+ * activity-bar button, the shared header chrome, and the persisted
+ * mode. Only one renderer is active at a time: switching mode
+ * deactivates the old renderer before activating the new one.
  *
- * The graph lives as a .special-tab-view sibling of #viewer inside
- * #edit-split. NB.tabs owns the tab lifecycle (open/activate/close);
- * this module registers a special-tab factory that shows/hides the
- * #graph-view container and runs the simulation when activated.
- *
- * Interaction:
- *   - hover a node -> highlights it + its neighbours, dims the rest
- *   - click a node -> opens the file as a new file tab
- *   - drag a node   -> pins it at the cursor until release
- *   - drag the background -> pans the view
- *   - wheel / pinch -> zooms in / out around the cursor
- *   - toolbar: refresh (re-fetch), re-center, zoom +/-, filter input
- *
- * The simulation is a fixed-step integrator running on
- * requestAnimationFrame. It settles naturally; once the total kinetic
- * energy drops below a threshold the loop idles (only re-drawing, not
- * stepping physics) until something moves it (drag, resize, new data).
- * jsdom has no real canvas so every getContext / draw call is guarded
- * by a ctx null check; the module still mounts and fetches so the view
- * is testable without a rendering surface.
+ * The public NB.graph surface is kept for compatibility (settings.js,
+ * app.js, and the browser tests read it) and delegates to the active
+ * renderer. Mode-specific camera helpers only make sense in 3D; in 2D
+ * they return null / 1 / "2d".
  */
 (function () {
   "use strict";
+
   window.NB = window.NB || {};
 
   const TAB_ID = "§graph";
+  const MODE_2D = "2d";
+  const MODE_3D = "3d";
+  const DEFAULT_MODE = MODE_3D;
+  const VALID_MODES = [MODE_2D, MODE_3D];
 
-  // --- physics constants (tuned for small single-user notebooks) -------
-  const REPULSION = 2200;
-  const SPRING_LEN = 90;
-  const SPRING_K = 0.01;
-  const CENTER_K = 0.012;
-  const DAMPING = 0.82;
-  const SLEEP_EPS = 0.4;
-  const MAX_SPEED = 16;
-  const MIN_SCALE = 0.2;
-  const MAX_SCALE = 5;
+  const HOST_LABEL_2D =
+    "2D graph of linked notes. Drag to pan. Scroll to zoom. " +
+    "Click a note to select it. Double-click a note to open it.";
+  const HOST_LABEL_3D =
+    "3D graph of linked notes. Drag to orbit. Scroll to zoom. " +
+    "Right-drag to pan. Click a note to select it. Double-click a note to open it.";
 
-  // --- view state -----------------------------------------------------
-  let nodes = [];
-  let edges = [];
-  let byId = {};
-  let running = false;
-  let rafId = null;
-  let simulating = true;
-  let canvas, ctx, dpr;
-  let hoverId = null;
-  let dragNode = null;
-  let pan = { x: 0, y: 0 };
-  let scale = 1;
-  let panning = false;
-  let lastMouse = { x: 0, y: 0 };
-  let filterQuery = "";
-  let width = 0, height = 0;
-  let activeFile = null;
-  let selectedId = null;
-  let mounted = false;
-  let reducedMotion = false;
-  let particleFieldEnabled = false;
-  let particles = null;
+  const el = {
+    view: document.getElementById("graph-view"),
+    host: document.getElementById("graph-view-canvas-host"),
+    canvas2d: document.getElementById("graph-view-canvas-2d"),
+    canvas3d: document.getElementById("graph-view-canvas"),
+    badge: document.getElementById("graph-view-mode-badge"),
+    mode2dBtn: document.getElementById("graph-view-mode-2d"),
+    mode3dBtn: document.getElementById("graph-view-mode-3d"),
+    fit: document.getElementById("graph-view-fit"),
+  };
 
-  // --- DOM refs (resolved at load, before any note is rendered) --------
-  // A rendered note can carry an element with one of these ids; resolving
-  // lazily on first mount would then bind the note's copy instead.
-  const viewEl = document.getElementById("graph-view");
-  const canvasHostEl = document.getElementById("graph-view-canvas-host");
-  const canvasEl = document.getElementById("graph-view-canvas");
-  const summaryEl = document.getElementById("graph-view-summary");
-  const filterEl = document.getElementById("graph-view-filter");
+  let wired = false;
+  let tabActive = false;
+  let currentMode = DEFAULT_MODE;
+  // The last real note the user had open. `cfg.activeFile` becomes "§graph"
+  // while the graph tab is active, so it cannot drive the active-file ring.
+  let lastNotePath = null;
 
-  function fetchGraph() { return NB.api.getGraph(); }
-
-  /* --- mount: wire up the static HTML structure. Called the first time
-   * the graph tab is activated. The header + controls + canvas host ship
-   * in index.html so the layout exists before the module boots; this
-   * attaches listeners to the refs captured at load. */
-  function mount() {
-    if (mounted) return;
-    mounted = true;
-    canvas = canvasEl;
-    try { ctx = canvas.getContext("2d"); } catch (_) { ctx = null; }
-    dpr = (window.devicePixelRatio || 1);
-
-    resolveColors();
-    // Re-resolve on theme change so the canvas picks up new colors
-    // without needing every draw to read computed style (cheap, but
-    // only fires when the user actually toggles theme).
-    try {
-      const body = document.body;
-      if (body && typeof MutationObserver === "function") {
-        new MutationObserver(() => {
-    resolveColors();
-    // Respect the user's system-level reduced-motion preference: it gates
-    // the breathing ring, particle drift, and fast edge pulses.
-    try {
-      reducedMotion = window.matchMedia &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (_) { reducedMotion = false; }
-    // Honour the persisted "background particles" preference (Settings ->
-    // Appearance). Default stays off when NB.app is unavailable (tests).
-    if (window.NB && NB.app && NB.app.getCfg) {
-      particleFieldEnabled = !!NB.app.getCfg().graphParticles;
-    }
-          requestRedraw();
-        }).observe(body, { attributes: true, attributeFilter: ["data-theme"] });
-      }
-    } catch (_) {}
-    sizeCanvas();
-    if (window.ResizeObserver && canvasHostEl) {
-      try {
-        const ro = new ResizeObserver(() => { sizeCanvas(); requestRedraw(); });
-        ro.observe(canvasHostEl);
-      } catch (_) {}
-    }
-    window.addEventListener("resize", () => { sizeCanvas(); requestRedraw(); });
-
-    // Controls
-    if (filterEl) filterEl.addEventListener("input", () => {
-      filterQuery = (filterEl.value || "").trim().toLowerCase();
-      requestRedraw();
-    });
-    bindBtn("graph-view-recenter", () => { resetView(); wake(); });
-    bindBtn("graph-view-zoom-in", () => { zoomBy(1.2, width / 2, height / 2); });
-    bindBtn("graph-view-zoom-out", () => { zoomBy(1 / 1.2, width / 2, height / 2); });
-    bindBtn("graph-view-refresh", () => { loadGraph(); });
-
-    // Canvas interaction
-    if (canvasEl) {
-      canvasEl.addEventListener("mousedown", onPointerDown);
-      canvasEl.addEventListener("mousemove", onPointerMove);
-      window.addEventListener("mouseup", onPointerUp);
-      canvasEl.addEventListener("wheel", onWheel, { passive: false });
-      canvasEl.addEventListener("mouseleave", () => {
-        hoverId = null;
-        if (canvasEl) canvasEl.style.cursor = "";
-        requestRedraw();
-      });
-      canvasEl.addEventListener("dblclick", onCanvasDblClick);
-      canvasEl.addEventListener("click", onCanvasClick);
-      canvasEl.addEventListener("touchstart", onTouchStart, { passive: false });
-      canvasEl.addEventListener("touchmove", onTouchMove, { passive: false });
-      canvasEl.addEventListener("touchend", onTouchEnd);
-    }
-
-    // Re-highlight the active file's node when the open file changes.
-    NB.evt.on("file:open", (path) => {
-      activeFile = path || null;
-      requestRedraw();
-    });
-    // Re-fetch when the tree changes so the graph stays in sync.
-    NB.evt.on("tree:refreshed", () => { if (viewEl && !viewEl.hidden) loadGraph(); });
+  function isNotePath(path) {
+    return typeof path === "string" && path.length > 0 &&
+      path.charAt(0) !== "§";
   }
 
-  /* Register the special tab + wire the toggle button immediately on
-   * module load (not inside mount()). The tab system needs the
-   * registration in place before tabs.restore() runs on boot, in case
-   * §graph is in the persisted openFiles. The DOM wiring (canvas
-   * listeners, resize observer) still happens lazily in mount() on
-   * first activation, but the special-tab factory must be registered
-   * early so activate("§graph") finds it. */
+  function currentNotePath() {
+    if (isNotePath(lastNotePath)) return lastNotePath;
+    try {
+      if (NB.app && NB.app.getCfg) {
+        const cfg = NB.app.getCfg();
+        if (isNotePath(cfg.lastFile)) return cfg.lastFile;
+        if (isNotePath(cfg.activeFile)) return cfg.activeFile;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function normalizeMode(mode) {
+    return VALID_MODES.indexOf(mode) >= 0 ? mode : DEFAULT_MODE;
+  }
+
+  function rendererFor(mode) {
+    return mode === MODE_2D ? window.NB.graph2d : window.NB.graph3d;
+  }
+
+  function activeRenderer() {
+    return rendererFor(currentMode);
+  }
+
+  function otherMode(mode) {
+    return mode === MODE_2D ? MODE_3D : MODE_2D;
+  }
+
+  function getMode() {
+    try {
+      if (NB.app && NB.app.getGraphMode) return normalizeMode(NB.app.getGraphMode());
+      if (NB.app && NB.app.getCfg) return normalizeMode(NB.app.getCfg().graphMode);
+    } catch (_) {}
+    return DEFAULT_MODE;
+  }
+
+  function applyModeUi(mode) {
+    if (el.view) el.view.dataset.graphMode = mode;
+    if (el.canvas2d) el.canvas2d.hidden = mode !== MODE_2D;
+    if (el.canvas3d) el.canvas3d.hidden = mode !== MODE_3D;
+    if (el.mode2dBtn) {
+      el.mode2dBtn.setAttribute("aria-pressed", mode === MODE_2D ? "true" : "false");
+    }
+    if (el.mode3dBtn) {
+      el.mode3dBtn.setAttribute("aria-pressed", mode === MODE_3D ? "true" : "false");
+    }
+    if (el.badge) el.badge.textContent = mode === MODE_2D ? "2D" : "3D";
+    if (el.fit) {
+      // The same control resets the orbit camera in 3D and re-centers
+      // the pan/zoom view in 2D.
+      if (mode === MODE_2D) {
+        el.fit.setAttribute("aria-label", "Re-center graph");
+        el.fit.title = "Re-center graph";
+      } else {
+        el.fit.setAttribute("aria-label", "Reset camera and fit graph");
+        el.fit.title = "Reset camera and fit graph (Home)";
+      }
+    }
+    if (el.host) {
+      // Safe default for both modes. The 3D renderer claims `application`
+      // only once its canvas is interactive; its loading/empty/error card
+      // must stay a normal status region.
+      el.host.setAttribute("role", "group");
+      el.host.setAttribute("aria-label", mode === MODE_2D ? HOST_LABEL_2D : HOST_LABEL_3D);
+    }
+  }
+
+  function activateMode(mode, options) {
+    const r = rendererFor(mode);
+    if (!r) return;
+    if (r.setActiveFile) r.setActiveFile(currentNotePath());
+    if (r.activate) r.activate(options);
+  }
+
+  function deactivateMode(mode) {
+    const r = rendererFor(mode);
+    if (r && r.deactivate) r.deactivate();
+  }
+
+  function setMode(mode) {
+    const next = normalizeMode(mode);
+    if (next === currentMode) return;
+    // Stop the old renderer before starting the new one so they never
+    // draw or listen together.
+    deactivateMode(currentMode);
+    currentMode = next;
+    applyModeUi(next);
+    try {
+      if (NB.app && NB.app.setGraphMode) NB.app.setGraphMode(next);
+    } catch (_) {}
+    if (tabActive) activateMode(next);
+  }
+
+  function onTabActivate() {
+    tabActive = true;
+    currentMode = getMode();
+    applyModeUi(currentMode);
+    if (el.view) el.view.hidden = false;
+    // Returning to a background graph tab must re-read the tree, so a
+    // tab activation refreshes. A mode switch reuses the target's layout.
+    deactivateMode(otherMode(currentMode));
+    activateMode(currentMode, { refresh: true });
+  }
+
+  function onTabClose() {
+    tabActive = false;
+    deactivateMode(MODE_2D);
+    deactivateMode(MODE_3D);
+    if (el.view) el.view.hidden = true;
+  }
+
   function registerOnLoad() {
+    if (wired) return;
+    wired = true;
     if (NB.tabs && NB.tabs.registerSpecial) {
       NB.tabs.registerSpecial({
         id: TAB_ID,
@@ -181,783 +178,99 @@
     const toggleBtn = document.getElementById("activity-graph-btn");
     if (toggleBtn && !toggleBtn.dataset.graphWired) {
       toggleBtn.dataset.graphWired = "1";
-      toggleBtn.addEventListener("click", () => {
-        mount();
+      toggleBtn.addEventListener("click", function () {
+        currentMode = getMode();
+        applyModeUi(currentMode);
         if (NB.tabs && NB.tabs.openSpecial) NB.tabs.openSpecial(TAB_ID);
       });
     }
+    if (el.mode2dBtn) {
+      el.mode2dBtn.addEventListener("click", function () { setMode(MODE_2D); });
+    }
+    if (el.mode3dBtn) {
+      el.mode3dBtn.addEventListener("click", function () { setMode(MODE_3D); });
+    }
+    currentMode = getMode();
+    lastNotePath = currentNotePath();
+    applyModeUi(currentMode);
   }
+
   if (NB.tabs && NB.tabs.registerSpecial) {
     registerOnLoad();
-  } else if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", registerOnLoad);
+  } else if (document.readyState === "complete") {
+    registerOnLoad();
   } else {
-    document.addEventListener("DOMContentLoaded", registerOnLoad);
+    // This module loads before tabs.js (both deferred), so the tab API
+    // does not exist yet. Register once the deferred modules have all
+    // executed.
+    document.addEventListener("DOMContentLoaded", registerOnLoad, { once: true });
   }
 
-  function bindBtn(id, fn) {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("click", fn);
-  }
-
-  function sizeCanvas() {
-    if (!canvasHostEl || !canvas) return;
-    const rect = canvasHostEl.getBoundingClientRect();
-    width = rect.width || 600;
-    height = Math.max(rect.height || 0, 200);
-    // Only resize the canvas backing store if the dimensions actually
-    // changed -- resizing clears the canvas, so doing it every frame
-    // (e.g. from the rAF loop) would flicker.
-    const w = Math.floor(width * dpr);
-    const h = Math.floor(height * dpr);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-      if (canvas.style) {
-        canvas.style.width = width + "px";
-        canvas.style.height = height + "px";
-      }
-      if (ctx && dpr !== 1) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    }
-  }
-
-  // --- special-tab lifecycle ------------------------------------------
-  function onTabActivate() {
-    // Ensure the DOM is wired (canvas listeners, resize observer) even
-    // if this is a boot-restore activation (mount() hasn't been called
-    // yet because the user didn't click the button -- the tab was
-    // restored from config). mount() is idempotent.
-    mount();
-    if (viewEl) viewEl.hidden = false;
-    // Defer sizing + simulation start to the next frame. The element
-    // was just unhidden; getBoundingClientRect() returns zeros until
-    // the browser runs layout. requestAnimationFrame fires after the
-    // next layout pass so sizeCanvas() sees real dimensions.
-    requestAnimationFrame(() => {
-      sizeCanvas();
-      // Re-center only when we have no view to preserve. On the first
-      // activation nodes is empty (or freshly seeded from a prior
-      // session) and pan defaults to (0, 0) -- without resetView() the
-      // world origin would land at the canvas top-left. On every
-      // subsequent re-activation, keep the user's pan/scale and let
-      // them stay zoomed into the layout they were looking at.
-      const hasLayout = nodes.length > 0;
-      if (!hasLayout) resetView();
-      loadGraph();
-      if (hasLayout) wake();
+  // Keep the facade asleep when the viewer hides the graph for a file
+  // tab. The renderers stop themselves too; this covers a renderer that
+  // is not mounted yet and keeps tabActive honest.
+  if (NB.evt && NB.evt.on) {
+    NB.evt.on("file:open", function (path) {
+      if (isNotePath(path)) lastNotePath = path;
+      if (el.view && !el.view.hidden) return;
+      tabActive = false;
+      deactivateMode(MODE_2D);
+      deactivateMode(MODE_3D);
     });
   }
-  function onTabClose() {
-    if (viewEl) viewEl.hidden = true;
-    sleep();
+
+  function activeValue(key, fallback) {
+    const r = activeRenderer();
+    return r ? r[key] : fallback;
   }
 
-  // --- data fetch + layout seed ----------------------------------------
-  async function loadGraph() {
-    let data;
-    try { data = await fetchGraph(); }
-    catch (e) { console.warn("graph fetch failed", e); return; }
-    const incoming = (data && data.nodes) || [];
-    const inEdges = (data && data.edges) || [];
-    const prev = {};
-    for (const n of nodes) prev[n.id] = { x: n.x, y: n.y };
-    byId = {};
-    nodes = incoming.map((n, i) => {
-      const prevPos = prev[n.id];
-      const seed = prevPos || seedAround(i, incoming.length);
-      const node = {
-        id: n.id,
-        name: n.name || n.id,
-        links: n.links || 0,
-        degree: n.links || 0,
-        x: prevPos ? prevPos.x : seed.x,
-        y: prevPos ? prevPos.y : seed.y,
-        vx: 0,
-        vy: 0,
-        fixed: false,
-      };
-      byId[n.id] = node;
-      return node;
-    });
-    edges = inEdges
-      .map(e => ({ source: byId[e.source], target: byId[e.target] }))
-      .filter(e => e.source && e.target);
-    // Drop any selection / active-file highlight that points at a node
-    // that no longer exists in the fresh data (e.g. the file was deleted
-    // or renamed). A stale id would otherwise linger and the highlight
-    // would silently never render.
-    if (selectedId && !byId[selectedId]) selectedId = null;
-    if (activeFile && !byId[activeFile]) activeFile = null;
-    // Very dense graphs lose the ambient particle drift field entirely
-    // (bloom + pulses remain) to protect the frame budget.
-    if (nodes.length + edges.length > 500 && particleFieldEnabled) {
-      particleFieldEnabled = false;
-      if (NB.evt) NB.evt.emit("graph:pardensity", false);
-    }
-    if (summaryEl) {
-      const n = nodes.length, e = edges.length;
-      summaryEl.textContent = n + " note" + (n === 1 ? "" : "s") + " · " +
-        e + " link" + (e === 1 ? "" : "s");
-    }
-    simulating = true;
-    wake();
-  }
-
-  function seedAround(i, n) {
-    const r = Math.min(width, height) * 0.35 || 120;
-    const a = (i / Math.max(1, n)) * Math.PI * 2;
-    return { x: Math.cos(a) * r, y: Math.sin(a) * r };
-  }
-
-  function resetView() {
-    // World-space: nodes live around (0, 0). The view is positioned so
-    // (0, 0) lands at the canvas center.
-    scale = 1;
-    pan = { x: width / 2, y: height / 2 };
-    nodes.forEach((n, i) => {
-      const s = seedAround(i, nodes.length);
-      n.x = s.x; n.y = s.y; n.vx = 0; n.vy = 0;
-    });
-    simulating = true;
-  }
-
-  // --- physics step -----------------------------------------------------
-  function step() {
-    if (!nodes.length) return;
-    // World-space: the centering force pulls nodes toward world (0, 0).
-    let maxSpeed = 0;
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      let fx = 0, fy = 0;
-      for (let j = 0; j < nodes.length; j++) {
-        if (i === j) continue;
-        const b = nodes[j];
-        let dx = a.x - b.x;
-        let dy = a.y - b.y;
-        let d2 = dx * dx + dy * dy;
-        if (d2 < 0.01) { dx = (Math.random() - 0.5) * 2; dy = (Math.random() - 0.5) * 2; d2 = dx * dx + dy * dy; }
-        const d = Math.sqrt(d2);
-        const f = REPULSION / d2;
-        fx += (dx / d) * f;
-        fy += (dy / d) * f;
-      }
-      a._fx = fx;
-      a._fy = fy;
-    }
-    for (const e of edges) {
-      const a = e.source, b = e.target;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-      const f = SPRING_K * (d - SPRING_LEN);
-      const ux = dx / d, uy = dy / d;
-      a._fx += ux * f;
-      a._fy += uy * f;
-      b._fx -= ux * f;
-      b._fy -= uy * f;
-    }
-    for (const n of nodes) {
-      n._fx += -n.x * CENTER_K;
-      n._fy += -n.y * CENTER_K;
-      if (n.fixed || n === dragNode) {
-        n.vx = 0; n.vy = 0;
-        continue;
-      }
-      n.vx = (n.vx + n._fx) * DAMPING;
-      n.vy = (n.vy + n._fy) * DAMPING;
-      const sp = Math.sqrt(n.vx * n.vx + n.vy * n.vy);
-      if (sp > MAX_SPEED) {
-        n.vx = (n.vx / sp) * MAX_SPEED;
-        n.vy = (n.vy / sp) * MAX_SPEED;
-      }
-      if (sp > maxSpeed) maxSpeed = sp;
-      n.x += n.vx;
-      n.y += n.vy;
-    }
-    if (maxSpeed < SLEEP_EPS) simulating = false;
-  }
-
-  // --- draw ------------------------------------------------------------
-  function draw() {
-    if (!ctx) return;
-    // Re-sync the canvas size before drawing in case the container was
-    // resized without sizeCanvas being called (e.g. window resize while
-    // the graph tab is active but the ResizeObserver hasn't fired yet).
-    // This is cheap (no-op if dimensions haven't changed) and ensures
-    // the canvas backing store matches the CSS pixel dimensions, so
-    // pointer-event picking math stays correct.
-    sizeCanvas();
-    if (!_palette) resolveColors();
-    // dpr scaling was set once in sizeCanvas(); don't reset to identity
-    // or the dpr multiplier would be lost.
-    ctx.clearRect(0, 0, width, height);
-    // Color fallbacks match the previous (dark-mode) hardcoded values
-    // so the canvas still looks sensible if the CSS tokens are missing
-    // (e.g. tests or a stray custom stylesheet).
-    const p = _palette || {};
-    // Screen-space ambient layers (drawn BEFORE the world transform so
-    // they cover the whole canvas and never follow pan/zoom).
-    const W = width, H = height;
-    // 1. Radial vignette: faint depth glow at the centre of the canvas.
-    const cx = W * 0.5, cy = H * 0.5;
-    const r0 = Math.min(W, H) * 0.10;
-    const r1 = Math.max(W, H) * 0.75;
-    const vinIn  = p.vinIn  && rgba(p.vinIn,  0.40);
-    const vinOut = p.vinOut && rgba(p.vinOut, 0.00);
-    if (vinIn && vinOut && typeof ctx.createRadialGradient === "function") {
-      const vg = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
-      vg.addColorStop(0, vinIn);
-      vg.addColorStop(1, vinOut);
-      ctx.fillStyle = vg;
-      ctx.fillRect(0, 0, W, H);
-    }
-    // 2. Optional background particle field (Settings toggle, default
-    // off). Drifts in normalised [0..1] canvas space so it stays put
-    // while the user pans/zooms the graph.
-    if (particleFieldEnabled && !reducedMotion) drawParticles();
-    // Apply the view transform: world (n.x, n.y) -> screen pixels.
-    // ctx is already scaled by dpr, so on top of that we translate by
-    // pan and scale by `scale`.
-    ctx.save();
-    ctx.translate(pan.x, pan.y);
-    ctx.scale(scale, scale);
-    const dimStroke    = rgbaOrFallback(p.dim,   0.07, "rgba(127,140,160,0.07)");
-    const activeEdge   = rgbaOrFallback(p.edge,  0.5,  "rgba(124,156,255,0.5)");
-    const dimFill      = rgbaOrFallback(p.dim,   0.18, "rgba(127,140,160,0.18)");
-    const warnFill     = rgbaOrFallback(p.warn,  1,    "#f3b454");
-    const hoverFill    = rgbaOrFallback(p.hover, 1,    "#7c9cff");
-    const nodeFill     = rgbaOrFallback(p.node,  0.8,  "rgba(124,156,255,0.8)");
-    const glowActive   = rgbaOrFallback(p.warn,  0.4,  "rgba(243,180,84,0.4)");
-    const glowHover    = rgbaOrFallback(p.glow,  0.4,  "rgba(124,156,255,0.4)");
-    const labelDim     = rgbaOrFallback(p.dim,   0.4,  "rgba(127,140,160,0.4)");
-    const labelNormal  = rgbaOrFallback(p.label, 0.92, "rgba(230,230,234,0.92)");
-    const neighbours = hoverId ? neighbourSet(hoverId) : null;
-    const selectedDist = selectedId ? distanceMap(selectedId) : null;
-    const selectedEdge1   = rgbaOrFallback(mixTriple(p.edge, p.warn, 0.15), 0.75, activeEdge);
-    const selectedEdge2   = rgbaOrFallback(mixTriple(p.edge, p.dim, 0.3),  0.55, activeEdge);
-    const selectedEdge3   = rgbaOrFallback(mixTriple(p.edge, p.dim, 0.55), 0.4,  activeEdge);
-    for (const e of edges) {
-      let stroke = null, lw = 1.5;
-      if (selectedId) {
-        // Fade edges out by hop distance from the clicked node: direct
-        // links burn brightest, links between 2nd-hop nodes dimmer, and
-        // anything outside the selected component recedes to the dim line.
-        const ds = selectedDist.get(e.source.id);
-        const dt = selectedDist.get(e.target.id);
-        const d = Math.min(ds === undefined ? Infinity : ds,
-                           dt === undefined ? Infinity : dt);
-        if (d === 1)      { stroke = selectedEdge1; lw = 2; }
-        else if (d === 2) { stroke = selectedEdge2; lw = 1.6; }
-        else if (d === 3) { stroke = selectedEdge3; lw = 1.3; }
-        else if (d === Infinity) { stroke = dimStroke; lw = 1; }
-        else              { stroke = selectedEdge3; lw = 1.1; }
-      } else if (hoverId && e.source.id !== hoverId && e.target.id !== hoverId) {
-        stroke = dimStroke; lw = 1;
-      } else {
-        stroke = activeEdge; lw = 1.5;
-      }
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lw / scale;
-      ctx.beginPath();
-      ctx.moveTo(e.source.x, e.source.y);
-      ctx.lineTo(e.target.x, e.target.y);
-      ctx.stroke();
-      // Animated signal pulses on top of the base line. Which edges
-      // pulse + how fast is decided by pulseSpeedFor(); the resting
-      // state is quiet (see §4.6 in the design).
-      if (!reducedMotion) {
-        const pspeed = pulseSpeedFor(e, selectedDist);
-        if (pspeed) drawEdgePulse(e, lw, pspeed);
-      }
-    }
-    for (const n of nodes) {
-      const dim = hoverId && hoverId !== n.id && !neighbours.has(n.id);
-      const isFiltered = filterQuery && !n.id.toLowerCase().includes(filterQuery);
-      const isDragged = (n === dragNode);
-      const isSelected = n.id === selectedId;
-      const selDist = selectedDist ? selectedDist.get(n.id) : undefined;
-      const isSelectedNeighbour = selectedId && !isSelected && selDist !== undefined;
-      let r = 4 + Math.min(10, Math.sqrt(n.degree) * 2);
-      if (n.id === hoverId) r += 2;
-      if (n.id === activeFile) r += 2;
-      if (isSelected) r += 2;
-      if (isDragged) r += 3;
-      let fill;
-      if (dim || isFiltered) {
-        fill = dimFill;
-      } else if (n.id === activeFile) {
-        fill = warnFill;
-      } else if (isDragged) {
-        fill = warnFill;
-      } else if (isSelected) {
-        fill = warnFill;
-      } else if (isSelectedNeighbour) {
-        // Colour connected nodes by hop distance: direct neighbours glow
-        // amber-ish, 2nd-hop and beyond fade toward the dim tone so the
-        // graph reads as a heat-map radiating from the clicked node.
-        if (selDist === 1) {
-          fill = rgbaOrFallback(mixTriple(p.node, p.warn, 0.85), 0.95, hoverFill);
-        } else if (selDist === 2) {
-          fill = rgbaOrFallback(mixTriple(p.node, p.warn, 0.5), 0.9, nodeFill);
-        } else {
-          fill = rgbaOrFallback(mixTriple(p.node, p.dim, 0.55), 0.65, nodeFill);
-        }
-      } else if (n.id === hoverId) {
-        fill = hoverFill;
-      } else {
-        fill = nodeFill;
-      }
-      // Bloom: a soft additive radial gradient under the core so every
-      // node glows like a synapse. Skipped on dimmed/filtered nodes to
-      // avoid visual noise. Guarded so reduced 2D contexts (jsdom) no-op.
-      if (!dim && !isFiltered && typeof ctx.createRadialGradient === "function") {
-        const bt = tripletFromRgba(fill);
-        if (bt) {
-          const bloom = ctx.createRadialGradient(n.x, n.y, r * 0.5, n.x, n.y, r * 4);
-          bloom.addColorStop(0, rgba(bt, 0.35));
-          bloom.addColorStop(1, rgba(bt, 0.00));
-          ctx.fillStyle = bloom;
-          ctx.beginPath();
-          ctx.arc(n.x, n.y, r * 4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      // Glow ring for hovered / dragged / selected nodes for clearer feedback.
-      if (n.id === hoverId || isDragged || isSelected) {
-        ctx.strokeStyle = isDragged ? glowActive : glowHover;
-        ctx.lineWidth = 2 / scale;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      // Breathing ring on the selected node: a soft pulse that eases
-      // in/out so the selection reads as "live". Static under
-      // prefers-reduced-motion.
-      if (isSelected) {
-        const phase = reducedMotion ? 0.5 : (Math.sin(performance.now() / 380) + 1) * 0.5;
-        ctx.strokeStyle = rgba(p.warn, 0.25 + 0.4 * phase);
-        ctx.lineWidth = (2 + 4 * phase) / scale;
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, r + 4 + 12 * phase, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = fill;
-      ctx.fill();
-      if (n.id === hoverId || n.degree >= 3 || (nodes.length <= 30 && !filterQuery)) {
-        const label = n.name.replace(/\.md$/i, "");
-        // Font size + label offset stay in screen pixels: undo the
-        // scale so a 12px font reads as 12px regardless of zoom.
-        ctx.font = (12 / scale) + "px -apple-system, sans-serif";
-        ctx.fillStyle = dim || isFiltered ? labelDim : labelNormal;
-        ctx.fillText(label, n.x + r + 4 / scale, n.y + 4 / scale);
-      }
-    }
-    ctx.restore();
-  }
-
-  function neighbourSet(id) {
-    const s = new Set();
-    for (const e of edges) {
-      if (e.source.id === id) s.add(e.target.id);
-      else if (e.target.id === id) s.add(e.source.id);
-    }
-    return s;
-  }
-
-  // BFS hop distance from a starting node to every reachable node
-  // (component). Nodes outside the component are absent from the map.
-  // Used to colour the selection as a heat-map radiating from the click.
-  function distanceMap(startId) {
-    const dist = new Map([[startId, 0]]);
-    const queue = [startId];
-    while (queue.length) {
-      const cur = queue.shift();
-      const d = dist.get(cur);
-      for (const e of edges) {
-        const nxt = e.source.id === cur ? e.target.id
-                  : e.target.id === cur ? e.source.id : null;
-        if (nxt && !dist.has(nxt)) {
-          dist.set(nxt, d + 1);
-          queue.push(nxt);
-        }
-      }
-    }
-    return dist;
-  }
-
-  // Linear blend between two [r,g,b] triplets (t=0 -> a, t=1 -> b).
-  function mixTriple(a, b, t) {
-    if (!a || !b) return a || b || null;
-    return [
-      Math.round(a[0] + (b[0] - a[0]) * t),
-      Math.round(a[1] + (b[1] - a[1]) * t),
-      Math.round(a[2] + (b[2] - a[2]) * t),
-    ];
-  }
-
-  // --- theme-aware colors ----------------------------------------------
-  // draw() runs on the canvas, which can't read CSS var() directly, so we
-  // resolve the graph color tokens out of computed styles on every draw
-  // and assemble rgba() strings. The values come from CSS tokens that
-  // flip with body[data-theme]; resolveColors() always picks up the
-  // current theme so a theme switch repaints with no manual hookup.
-  function parseRgbTriplet(s) {
-    const m = String(s || "").trim().match(/^(\d+)\s+(\d+)\s+(\d+)$/);
-    if (!m) return null;
-    return [+m[1], +m[2], +m[3]];
-  }
-  function rgba(triple, a) {
-    if (!triple) return null;
-    return "rgba(" + triple[0] + "," + triple[1] + "," + triple[2] + "," + a + ")";
-  }
-  // Extract an [r,g,b] triplet from an rgba()/rgb() color string (used
-  // to derive the bloom gradient triple from a node's fill color).
-  function tripletFromRgba(s) {
-    const m = String(s || "").match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
-    if (!m) return null;
-    return [+m[1], +m[2], +m[3]];
-  }
-  let _palette = null;
-  function resolveColors() {
-    // Real browsers cascade :root + body[data-theme] into a single
-    // computed style. jsdom doesn't merge custom properties the same
-    // way -- :root vars only show up on the document element and
-    // body[data-theme] overrides only show up on body -- so read both
-    // and let the body value win for each var (which matches the
-    // browser's cascade behavior).
-    const cs = (typeof getComputedStyle === "function") ? getComputedStyle : null;
-    const rootEl = document.documentElement;
-    const bodyEl = document.body;
-    const read = (name) => {
-      if (!cs) return "";
-      const fromBody = bodyEl ? cs(bodyEl).getPropertyValue(name).trim() : "";
-      if (fromBody) return fromBody;
-      return rootEl ? cs(rootEl).getPropertyValue(name).trim() : "";
-    };
-    _palette = {
-      node:    parseRgbTriplet(read("--graph-node-rgb")),
-      hover:   parseRgbTriplet(read("--graph-node-hover-rgb")),
-      edge:    parseRgbTriplet(read("--graph-edge-rgb")),
-      glow:    parseRgbTriplet(read("--graph-glow-rgb")),
-      warn:    parseRgbTriplet(read("--graph-warn-rgb")),
-      dim:     parseRgbTriplet(read("--graph-dim-rgb")),
-      label:   parseRgbTriplet(read("--graph-label-rgb")),
-      pulse:    parseRgbTriplet(read("--graph-pulse-rgb")),
-      particle: parseRgbTriplet(read("--graph-particle-rgb")),
-      vinIn:    parseRgbTriplet(read("--graph-vignette-inner-rgb")),
-      vinOut:   parseRgbTriplet(read("--graph-vignette-edge-rgb")),
-    };
-  }
-  function rgbaOrFallback(triple, a, fallback) {
-    const v = rgba(triple, a);
-    return v || fallback;
-  }
-
-  // --- neural pulse + particle effects --------------------------------
-
-  // Return the pulse speed (px/ms) if the edge should carry a travelling
-  // signal right now, else 0 (resting state = no pulses). Priority: the
-  // most interesting trigger wins. selectedDist is the BFS hop map from
-  // the clicked node, or null.
-  function pulseSpeedFor(e, selectedDist) {
-    if (dragNode && (e.source === dragNode || e.target === dragNode)) return 0.018;
-    if (selectedDist !== null) {
-      const ds = selectedDist.get(e.source.id);
-      const dt = selectedDist.get(e.target.id);
-      // Only direct (hop-1) links off the selection carry the energetic
-      // signal; outer links stay quiet so the eye follows the burst.
-      if (ds === 1 || dt === 1) return 0.020;
-    }
-    if (hoverId && (e.source.id === hoverId || e.target.id === hoverId)) return 0.012;
-    if (activeFile && (e.source.id === activeFile || e.target.id === activeFile)) return 0.012;
-    return 0;
-  }
-
-  // Draw one or more short, bright, travelling signal segments along an
-  // edge from source -> target. Each edge's world length, in canvas
-  // pixels, is `len` (the sim keeps edges ~SPRING_LEN world units which
-  // the scale transform stretches into screen space).
-  function drawEdgePulse(e, baseLw, speed) {
-    const sx = e.source.x, sy = e.source.y;
-    const tx = e.target.x, ty = e.target.y;
-    let dx = tx - sx, dy = ty - sy;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    if (len < 1) return;
-    const ux = dx / len, uy = dy / len;
-    const segLen = Math.min(36, len * 0.35);
-    const period = 80;
-    // The leading edge of the first pulse travels forward in time from
-    // the source end. Speed is normalised to world px/ms; the gradient is
-    // drawn in world space so it scales with zoom like the edge itself.
-    const tNow = performance.now();
-    const lead = -segLen + tNow * speed;
-    const startPhase = lead % period;
-    const first = startPhase - period;  // leftmost pulse offset < len
-    ctx.lineWidth = (baseLw + 1.4) / scale;
-    for (let off = first; off < len + segLen; off += period) {
-      const pStart = Math.max(0, off);
-      const pEnd = Math.min(len, off + segLen);
-      if (pEnd <= 0 || pStart >= len) continue;
-      const ax = sx + ux * pStart;
-      const ay = sy + uy * pStart;
-      const bx = sx + ux * pEnd;
-      const by = sy + uy * pEnd;
-      const g = ctx.createLinearGradient(ax, ay, bx, by);
-      if (typeof g.addColorStop === "function" && typeof g.addColorStop === "function") {
-        g.addColorStop(0,   rgbaOrFallback(_palette && _palette.pulse, 0.00, "rgba(180,230,255,0.00)"));
-        g.addColorStop(0.5, rgbaOrFallback(_palette && _palette.pulse, 0.95, "rgba(180,230,255,0.95)"));
-        g.addColorStop(1,   rgbaOrFallback(_palette && _palette.pulse, 0.00, "rgba(180,230,255,0.00)"));
-        ctx.strokeStyle = g;
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(bx, by);
-        ctx.stroke();
-      }
-    }
-  }
-
-  // Lazy particle drift field. Runs in normalised [0..1] canvas space so
-  // it covers the viewport regardless of pan/zoom and never follows the
-  // world transform.
-  function initParticles() {
-    if (particles) return;
-    const count = Math.min(100, Math.max(60, Math.round((width * height) / 24000)));
-    particles = new Array(count);
-    for (let i = 0; i < count; i++) {
-      particles[i] = {
-        x: Math.random(),
-        y: Math.random(),
-        vx: (Math.random() - 0.5) * 0.0004,
-        vy: (Math.random() - 0.5) * 0.0004,
-      };
-    }
-  }
-  function drawParticles() {
-    initParticles();
-    const W = width || 1, H = height || 1;
-    const part = (_palette && _palette.particle) || [130, 168, 255];
-    for (let i = 0; i < particles.length; i++) {
-      const a = particles[i];
-      // Advance + wrap.
-      a.x = (a.x + a.vx + 1) % 1;
-      a.y = (a.y + a.vy + 1) % 1;
-      const ax = a.x * W, ay = a.y * H;
-      ctx.fillStyle = rgba(part, 0.20);
-      ctx.beginPath();
-      ctx.arc(ax, ay, 1, 0, Math.PI * 2);
-      ctx.fill();
-      for (let j = i + 1; j < particles.length; j++) {
-        const b = particles[j];
-        let ddx = a.x - b.x, ddy = a.y - b.y;
-        const d2 = ddx * ddx + ddy * ddy;
-        if (d2 > 0.01) continue;   // proximity radius = 10% of side
-        const d = Math.sqrt(d2);
-        const t = 1 - d / 0.1;
-        ctx.strokeStyle = rgba(part, 0.06 + 0.10 * t);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(b.x * W, b.y * H);
-        ctx.stroke();
-      }
-    }
-  }
-  function setParticleField(on) {
-    particleFieldEnabled = !!on;
-    if (particleFieldEnabled && !reducedMotion) {
-      initParticles();
-      requestRedraw();
-    } else {
-      requestRedraw();
-    }
-  }
-
-  // --- rAF loop --------------------------------------------------------
-  function loop() {
-    if (!running) return;
-    if (simulating) step();
-    draw();
-    rafId = requestAnimationFrame(loop);
-  }
-  function wake() {
-    if (running) return;
-    running = true;
-    rafId = requestAnimationFrame(loop);
-  }
-  function sleep() {
-    running = false;
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = null;
-  }
-  function requestRedraw() {
-    if (!ctx) return;
-    if (!running) draw();
-  }
-
-  // --- picking + pointer interaction ------------------------------------
-  function eventPos(e) {
-    const rect = canvasEl.getBoundingClientRect();
-    return { x: (e.clientX - rect.left), y: (e.clientY - rect.top) };
-  }
-  function worldFromScreen(sx, sy) {
-    return { x: (sx - pan.x) / scale, y: (sy - pan.y) / scale };
-  }
-  function pickNode(e) {
-    if (!nodes.length) return null;
-    const p = eventPos(e);
-    // Pick in screen space so the click hitbox matches the visible
-    // radius at any zoom level. Each node has a baseline world radius
-    // (4 + small boost by degree); multiplied by `scale` gives its
-    // current on-screen radius.
-    let best = null, bestD = Infinity;
-    for (const n of nodes) {
-      const sx = pan.x + n.x * scale;
-      const sy = pan.y + n.y * scale;
-      const dx = sx - p.x, dy = sy - p.y;
-      const r = (5 + Math.min(10, Math.sqrt(n.degree) * 2) + 3) * scale;
-      const d = dx * dx + dy * dy;
-      if (d < r * r && d < bestD) { best = n; bestD = d; }
-    }
-    return best;
-  }
-
-  let dragMoved = false;
-  function onPointerDown(e) {
-    const n = pickNode(e);
-    const p = eventPos(e);
-    lastMouse = p;
-    dragMoved = false;
-    if (n) {
-      dragNode = n;
-      n.fixed = true;
-      const w = worldFromScreen(p.x, p.y);
-      n.x = w.x; n.y = w.y; n.vx = 0; n.vy = 0;
-      simulating = true; wake();
-    } else {
-      panning = true;
-    }
-    if (canvasEl) canvasEl.style.cursor = "grabbing";
-  }
-  function onPointerMove(e) {
-    const p = eventPos(e);
-    if (dragNode) {
-      const w = worldFromScreen(p.x, p.y);
-      const dx = p.x - lastMouse.x, dy = p.y - lastMouse.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
-      dragNode.x = w.x; dragNode.y = w.y;
-      dragNode.vx = 0; dragNode.vy = 0;
-      simulating = true; wake();
-    } else if (panning) {
-      // Pan moves the view, not the nodes: shift pan by the screen
-      // pixel delta and nodes follow via draw().
-      pan.x += p.x - lastMouse.x;
-      pan.y += p.y - lastMouse.y;
-      // Use requestRedraw so the panned view repaints immediately even
-      // if the physics loop has settled. This keeps the drag feeling
-      // 1:1 with the mouse instead of lagging behind the next sim step.
-      requestRedraw();
-    } else {
-      const n = pickNode(e);
-      const newHover = n ? n.id : null;
-      if (newHover !== hoverId) {
-        hoverId = newHover;
-        if (canvasEl) canvasEl.style.cursor = n ? "pointer" : "";
-        requestRedraw();
-      }
-    }
-    lastMouse = p;
-  }
-  function onPointerUp() {
-    if (dragNode) { dragNode.fixed = false; dragNode = null; simulating = true; wake(); }
-    panning = false;
-    if (canvasEl) canvasEl.style.cursor = hoverId ? "pointer" : "";
-  }
-  function onCanvasDblClick(e) {
-    if (dragMoved) { dragMoved = false; return; }
-    const n = pickNode(e);
-    // Double-clicking a node opens the file as a normal file tab.
-    if (n) NB.evt.emit("file:open-request", n.id);
-  }
-  function onCanvasClick(e) {
-    if (dragMoved) { dragMoved = false; return; }
-    const n = pickNode(e);
-    // Single-clicking a node highlights it (and clears the highlight
-    // when clicking empty space).
-    selectedId = n ? n.id : null;
-    requestRedraw();
-  }
-  function onWheel(e) {
-    e.preventDefault();
-    const p = eventPos(e);
-    // A single wheel notch zooms ~15%; keep the zoom anchored on the
-    // cursor so the point under the mouse stays fixed.
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    zoomBy(factor, p.x, p.y);
-    // Wake the draw loop so the zoomed view repaints immediately, even
-    // if the physics simulation has settled (running=false).
-    requestRedraw();
-  }
-  function zoomBy(factor, sx, sy) {
-    // Anchor the zoom on the world point under the cursor: solve for
-    // the new pan so (sx, sy) maps to the same world coords as before.
-    const wx = (sx - pan.x) / scale;
-    const wy = (sy - pan.y) / scale;
-    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale * factor));
-    scale = newScale;
-    pan.x = sx - wx * scale;
-    pan.y = sy - wy * scale;
-    requestRedraw();
-  }
-
-  // Touch
-  let pinchStart = null;
-  function onTouchStart(e) {
-    if (e.touches.length === 1) onPointerDown(e.touches[0]);
-    else if (e.touches.length === 2) pinchStart = pinchState(e);
-  }
-  function onTouchMove(e) {
-    if (e.touches.length === 1) {
-      e.preventDefault();
-      onPointerMove(e.touches[0]);
-    } else if (e.touches.length === 2 && pinchStart) {
-      e.preventDefault();
-      const cur = pinchState(e);
-      const factor = cur.dist / pinchStart.dist;
-      zoomBy(factor, pinchStart.cx, pinchStart.cy);
-      pinchStart = cur;
-    }
-  }
-  function onTouchEnd() {
-    onPointerUp();
-    pinchStart = null;
-  }
-  function pinchState(e) {
-    const a = e.touches[0], b = e.touches[1];
-    const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
-    const rect = canvasEl.getBoundingClientRect();
-    return {
-      dist: Math.sqrt(dx * dx + dy * dy),
-      cx: (a.clientX + b.clientX) / 2 - rect.left,
-      cy: (a.clientY + b.clientY) / 2 - rect.top,
-    };
-  }
-
-  // --- public surface -------------------------------------------------
+  // --- public compatibility surface -----------------------------------
   NB.graph = {
-    mount,
-    loadGraph,
-    refresh: loadGraph,
-    get nodes() { return nodes; },
-    get edges() { return edges; },
-    get scale() { return scale; },
-    get selectedId() { return selectedId; },
-    get pan() { return pan; },
-    get width() { return width; },
-    get height() { return height; },
-    setParticleField,
-    getParticleField: () => particleFieldEnabled,
-    TAB_ID,
+    mount: function () {
+      const r = activeRenderer();
+      if (r && r.mount) r.mount();
+    },
+    loadGraph: function (options) {
+      const r = activeRenderer();
+      return r && r.loadGraph ? r.loadGraph(options) : Promise.resolve();
+    },
+    refresh: function (options) {
+      const r = activeRenderer();
+      return r && r.loadGraph ? r.loadGraph(options) : Promise.resolve();
+    },
+    get nodes() { return activeValue("nodes", []); },
+    get edges() { return activeValue("edges", []); },
+    get selectedId() { return activeValue("selectedId", null); },
+    get activeFile() { return activeValue("activeFile", null); },
+    get scale() { return activeValue("scale", 1); },
+    get pan() { return activeValue("pan", { x: 0, y: 0 }); },
+    get width() { return activeValue("width", 0); },
+    get height() { return activeValue("height", 0); },
+    get running() { return !!activeValue("running", false); },
+    setParticleField: function (on) {
+      // The setting is global, so both renderers keep the flag even
+      // while one of them is inactive.
+      if (NB.graph2d && NB.graph2d.setParticleField) NB.graph2d.setParticleField(on);
+      if (NB.graph3d && NB.graph3d.setParticleField) NB.graph3d.setParticleField(on);
+    },
+    getParticleField: function () {
+      const r = activeRenderer();
+      return r && r.getParticleField ? r.getParticleField() : false;
+    },
+    getCamera: function () {
+      return (currentMode === MODE_3D && NB.graph3d && NB.graph3d.getCamera)
+        ? NB.graph3d.getCamera() : null;
+    },
+    getDepthSpread: function () {
+      return (currentMode === MODE_3D && NB.graph3d && NB.graph3d.getDepthSpread)
+        ? NB.graph3d.getDepthSpread() : 1;
+    },
+    getTier: function () {
+      return (currentMode === MODE_3D && NB.graph3d && NB.graph3d.getTier)
+        ? NB.graph3d.getTier() : "2d";
+    },
+    setMode: setMode,
+    getMode: getMode,
+    TAB_ID: TAB_ID,
   };
 })();

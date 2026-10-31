@@ -94,7 +94,7 @@ pin/ghost animation), clear-text control, case in Advanced, the side-panel searc
 (unique mode, sort, caps, keyboard, latest-wins, open-failure), edit and
 save, the edit bar, scroll sync,
 hybrid mode and its round-trip guards, table view, empty-tree create,
-collapse/expand, recent files, graph view and interactions, bookmarks,
+collapse/expand, recent files, the 3D graph view and interactions, bookmarks,
 watcher polling and tree sync, settings, auth, passwords, tokens, export,
 wallpaper, welcome, deep links, wikilinks, vim mode and vimrc, keyboard
 scroll, AI, the mermaid visual designer, lazy vendor loading, and
@@ -138,6 +138,53 @@ It then runs the **registry-completeness guard**
 This keeps `index.html`, `sw.js`, `ai.js`, and `agent.md` in sync with the
 registry, so a renderer cannot be registered without also being shipped and
 documented. Adding a renderer means the guard picks it up automatically.
+
+### The graph (`== graph view ==` / `== graph interactions ==`)
+
+`static/js/graph.js` is the facade; `static/js/graph-2d.js` (`NB.graph2d`)
+and `static/js/graph-3d.js` (`NB.graph3d`) are the two renderers. The
+harness evaluates `graph-2d.js` then `graph-3d.js` before `graph.js`, in
+`index.html` order. The 3D renderer (perspective orbit camera, canvas-2D
+projection, painter ordering, depth fog) is the default; the 2D renderer
+(pan/zoom matrix, force layout) is opt-in. The graph tests drive the
+active renderer through the facade (`NB.graph.getCamera()`,
+`getDepthSpread()`, `getMode()`, `NB.graph3d.running`, and the 2D
+`scale`/`pan` getters). The canvas stub implements the 2D methods both
+renderers guard on (`fillRect`, `drawImage`, `arcTo`, `measureText`,
+`strokeText`, `createRadialGradient`), so each draw pass runs and records
+calls without a real canvas.
+
+`== graph view ==` covers the tab lifecycle and loading layer, node/edge
+counts against the `/api/graph` fixture, the summary, the screen-reader
+list and host label, the control ids (`#graph-view-fit`,
+`#graph-view-depth`, `#graph-view-rotate`, mode buttons, badge, both
+canvases, chip, state, live regions), the CSS token contract for both
+themes, and the `sw.js` precache + script order for the two renderers.
+
+`== graph interactions ==` injects a deterministic three-note graph
+(`graphResponse`) and stubs an 800x600 canvas rect so projection is exact.
+It covers wheel dolly, left-drag orbit, right/Shift-drag pan, fit reset,
+toolbar dolly, arrow-key orbit and Home, depth spread (0% flatten), the
+auto-orbit toggle and reduced-motion disable, the filter match summary and
+non-hijacked typing, `/` focus, click selection with chip + live region,
+empty-click clear, `[`/`]` cycling, Enter open, Escape clear, double-click
+open, the light/dark canvas repaint, empty/error/retry/toast states, the
+particle-field round trip, and a `NB.tabs.restore(["§graph"])` boot-restore
+case. The mode block adds the default 3D state, the real 2D/3D button
+switches, canvas swap and chrome hiding, 2D wheel/pan/click/double-click/
+filter/fit, the stopped inactive loop, per-renderer draw isolation, camera
+preservation across a round trip, particle forwarding, `graphMode`
+persistence, and invalid/missing-config fallback to 3D. The app.js
+special-id boot filter is guarded by a source-shape check because the real
+boot path runs once per page; the browser suite covers the real reload.
+
+The regression additions cover the screen-reader contract (`.sr-only` is a
+clipped 1px box, and the live region and note list both use it), `/` on the
+canvas host focusing the filter without opening the Search panel, and the
+idle loop (`NB.graph.running` goes false once the camera tween and physics
+settle, a wheel wakes it, and auto-orbit keeps it awake). The browser suite
+checks the sr-only bounding rects and the non-zero canvas host height after
+notes populate, plus the summary and filter match count at a 900px viewport.
 
 ### The mermaid designer (`== mermaid designer ==`)
 
@@ -279,8 +326,14 @@ the note `…` menu), and a real capture append to `Inbox.md` on disk.
 The audit suites cover the rest of the app end to end:
 
 - `test_core_ui_browser.js` — desktop tree and context menus with disk
-  assertions, tabs, real search, graph, bookmarks, outline scroll-spy,
-  settings, the watcher, and the draft Recover bar on a tab switch.
+  assertions, tabs, real search, bookmarks, outline scroll-spy, settings,
+  the watcher, the draft Recover bar on a tab switch, and the graph: 3D
+  canvas pixels, orbit/wheel/pan through `getCamera()`, fit reset,
+  keyboard select + Enter, projected double-click, filter count, depth 0%
+  and 100%, a real theme repaint, reload with `§graph` in `openFiles`,
+  reduced-motion auto-orbit disable, and the 2D/3D mode switch (real
+  clicks, canvas swap, 2D wheel/pan/click/double-click/fit, 3D orbit after
+  the round trip, and a 2D-mode reload restore).
 - `test_auth_export_browser.js` — auth off/on, admin and viewer identities,
   the login rate limiter, tokens, HTML download, PDF pagination, service
   worker scope/cache/offline reload.
