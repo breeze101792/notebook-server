@@ -8917,14 +8917,18 @@ function check(label, cond, extra) {
         s.addRange(r);
         const ev = press("Backspace");
         await tick(20);
-        check("hybrid hr: Backspace inside the first list item keeps the rule",
-          !ev.defaultPrevented && !!vc.querySelector("hr") && !!vc.querySelector("li"),
+        // A list item is not an edge the rule model acts on, so the marker
+        // strip claims the key: the bullet goes, the rule stays.
+        check("hybrid hr: Backspace at a list item after a rule strips the bullet",
+          ev.defaultPrevented && !!vc.querySelector("hr") && !vc.querySelector("li") &&
+          Array.from(vc.querySelectorAll("p")).some((p) => p.textContent === "item"),
           "prevented=" + ev.defaultPrevented +
           " html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
         press("x");
         await tick(20);
-        check("hybrid hr: typing inside the first list item keeps its structure",
-          !!vc.querySelector("li") && !vc.querySelector("p[data-hybrid-caret]"),
+        check("hybrid hr: typing beside the stripped item keeps the rule",
+          !!vc.querySelector("hr") &&
+          Array.from(vc.querySelectorAll("p")).some((p) => p.textContent === "item"),
           "html=" + vc.innerHTML.replace(/\n/g, "").slice(0, 80));
       }
       // A rule NESTED in a blockquote (marked renders `> ---` that way)
@@ -11445,6 +11449,611 @@ function check(label, cond, extra) {
       check("chords: Mod+\\ clears inline emphasis inside a table cell",
         !!vc.querySelector("td") && !vc.querySelector("strong"),
         "html=" + vc.innerHTML);
+    }
+
+    // --- block-marker removal at T (Backspace; Delete only when empty) --
+    // A heading/list/quote/task marker is one unit immediately left of
+    // the caret; Backspace at the first content position removes one
+    // layer and keeps the text. Forward Delete is claimed only on an
+    // empty block. Every case reloads from FILES so the splice baseline
+    // is real.
+    {
+      const loadNote = async (source) => {
+        if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+        FILES["notes/a.md"] = source;
+        window.NB.viewer.close("notes/a.md");
+        await window.NB.tabs.open("notes/a.md");
+        await tick(20);
+        await window.NB.hybrid.enter();
+        await tick(20);
+      };
+      const key = (target, k, opts) => press(target || vc,
+        Object.assign({ key: k }, opts || {}));
+      const top = () => vc.firstElementChild;
+      const paragraph = () => top() && top().tagName === "P" ? top() : null;
+
+      // Heading: text kept, marker gone, caret at T, one dirty event and
+      // one undo restores the original element.
+      await loadNote("## Title\n");
+      {
+        const h = vc.querySelector("h2");
+        caret(h.firstChild, 0);
+        let dirty = 0;
+        const onDirty = (info) => { if (info && info.dirty) dirty += 1; };
+        window.NB.evt.on("viewer:dirty-changed", onDirty);
+        const ev = key(h, "Backspace");
+        window.NB.evt.off("viewer:dirty-changed", onDirty);
+        check("hybrid marker: Backspace at a heading's T makes a paragraph",
+          ev.defaultPrevented && paragraph() &&
+          paragraph().textContent === "Title" && !vc.querySelector("h2"),
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the heading strip marks the note dirty once",
+          dirty === 1 && window.NB.hybrid.isDirty(), "dirty events=" + dirty);
+        const sel = window.getSelection();
+        check("hybrid marker: the caret lands at the new paragraph's start",
+          !!paragraph() && sel.anchorNode === paragraph().firstChild &&
+          sel.anchorOffset === 0,
+          "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) +
+          " off=" + sel.anchorOffset);
+        check("hybrid marker: the heading strip saves without '#'",
+          !/#/.test(md()) && norm(md()) === "Title", JSON.stringify(md()));
+        vc.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+        await tick(50);
+        check("hybrid marker: one undo restores the heading",
+          !!vc.querySelector("h2") && vc.querySelector("h2").textContent === "Title",
+          "html=" + vc.innerHTML);
+      }
+
+      // Bullet: single item and middle of a list.
+      await loadNote("- item\n");
+      {
+        const li = vc.querySelector("li");
+        caret(li.firstChild, 0);
+        const ev = key(li, "Backspace");
+        check("hybrid marker: a single bullet becomes a paragraph",
+          ev.defaultPrevented && !vc.querySelector("ul") && paragraph() &&
+          paragraph().textContent === "item", "html=" + vc.innerHTML);
+        check("hybrid marker: the single bullet saves as bare text",
+          norm(md()) === "item", JSON.stringify(md()));
+      }
+      await loadNote("- a\n- b\n- c\n");
+      {
+        const second = vc.querySelector("ul").children[1];
+        caret(second.firstChild, 0);
+        let dirty = 0;
+        const onDirty = (info) => { if (info && info.dirty) dirty += 1; };
+        window.NB.evt.on("viewer:dirty-changed", onDirty);
+        const ev = key(second, "Backspace");
+        window.NB.evt.off("viewer:dirty-changed", onDirty);
+        const lists = vc.querySelectorAll("ul");
+        const mid = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "b");
+        check("hybrid marker: a middle bullet splits around a paragraph",
+          ev.defaultPrevented && lists.length === 2 &&
+          lists[0].textContent.trim() === "a" && lists[1].textContent.trim() === "c" &&
+          !!mid, "html=" + vc.innerHTML);
+        check("hybrid marker: the list split marks the note dirty once",
+          dirty === 1 && window.NB.hybrid.isDirty(), "dirty events=" + dirty);
+        const saved = md();
+        check("hybrid marker: the middle bullet's neighbours stay bullets",
+          /^-\s+a$/m.test(saved) && /^-\s+c$/m.test(saved) &&
+          !/^-\s+b$/m.test(saved) && !!mid,
+          JSON.stringify(saved));
+      }
+
+      // Ordered middle item: the trailing half keeps its displayed number.
+      await loadNote("1. a\n2. b\n3. c\n");
+      {
+        const second = vc.querySelector("ol").children[1];
+        caret(second.firstChild, 0);
+        const ev = key(second, "Backspace");
+        const lists = vc.querySelectorAll("ol");
+        check("hybrid marker: an ordered middle item splits and keeps the trail number",
+          ev.defaultPrevented && lists.length === 2 &&
+          lists[0].textContent.trim() === "a" && lists[1].textContent.trim() === "c" &&
+          lists[1].getAttribute("start") === "3",
+          "html=" + vc.innerHTML);
+        const saved = md();
+        check("hybrid marker: the ordered split saves 1. a and 3. c",
+          /^1\.\s+a$/m.test(saved) && /^3\.\s+c$/m.test(saved) &&
+          !/^2\.\s+b$/m.test(saved), JSON.stringify(saved));
+      }
+
+      // Task: checkbox and class go with the marker; checked state is
+      // discarded rather than toggled to unchecked.
+      await loadNote("- [ ] task one\n");
+      {
+        const li = vc.querySelector("li");
+        const cb = li.querySelector('input[type="checkbox"]');
+        caret(cb.nextSibling, 0);
+        const ev = key(li, "Backspace");
+        check("hybrid marker: a task item drops its checkbox and class",
+          ev.defaultPrevented && !vc.querySelector("input") &&
+          !vc.querySelector(".task-list-item") && paragraph() &&
+          paragraph().textContent === "task one", "html=" + vc.innerHTML);
+        check("hybrid marker: the task save has no checkbox marker",
+          norm(md()) === "task one" && !/\[[ xX]\]/.test(md()),
+          JSON.stringify(md()));
+      }
+      await loadNote("- [x] done\n");
+      {
+        const li = vc.querySelector("li");
+        const cb = li.querySelector('input[type="checkbox"]');
+        caret(cb.nextSibling, 0);
+        key(li, "Backspace");
+        check("hybrid marker: a checked task loses its state with the box",
+          norm(md()) === "done" && !/\[[ xX]\]/.test(md()),
+          JSON.stringify(md()));
+      }
+      // A loose item wraps its content in a <p>; the lift unwraps it so
+      // the result is not <p><p>…</p></p>.
+      await loadNote("- [ ] loose one\n\n- [ ] loose two\n");
+      {
+        const li = vc.querySelector("li");
+        const cb = li.querySelector('input[type="checkbox"]');
+        caret(cb.nextSibling, 0);
+        key(li, "Backspace");
+        const p = Array.from(vc.querySelectorAll("p"))
+          .find((el) => el.textContent.indexOf("loose one") !== -1);
+        check("hybrid marker: a loose item's paragraph is not nested",
+          !!p && !p.querySelector("p") && p.textContent.indexOf("loose one") !== -1 &&
+          !p.querySelector("input") && !!vc.querySelector("ul"),
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the loose task saves bare text",
+          /^loose one$/m.test(md()) &&
+          !/^-\s+\[[ xX]\]\s+loose one$/m.test(md()),
+          JSON.stringify(md()));
+      }
+
+      // Quote: one line, and a multi-line quote where only the caret's
+      // line is lifted.
+      await loadNote("> quote\n");
+      {
+        const bq = vc.querySelector("blockquote");
+        caret(bq.querySelector("p").firstChild, 0);
+        const ev = key(bq, "Backspace");
+        check("hybrid marker: a one-line quote lifts its line",
+          ev.defaultPrevented && !vc.querySelector("blockquote") &&
+          paragraph() && paragraph().textContent === "quote",
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the lifted quote saves bare text",
+          norm(md()) === "quote", JSON.stringify(md()));
+      }
+      await loadNote("> a\n>\n> b\n");
+      {
+        const bq = vc.querySelector("blockquote");
+        caret(bq.querySelectorAll("p")[0].firstChild, 0);
+        const ev = key(bq, "Backspace");
+        const rest = vc.querySelector("blockquote");
+        check("hybrid marker: a multi-line quote lifts only the caret's line",
+          ev.defaultPrevented && paragraph() && paragraph().textContent === "a" &&
+          !!rest && rest.textContent.trim() === "b", "html=" + vc.innerHTML);
+        const saved = md();
+        check("hybrid marker: the multi-line quote keeps the second quoted",
+          /^a$/m.test(saved) && /^> b$/m.test(saved), JSON.stringify(saved));      }
+
+      // Nested formats: > # Title -> > Title -> Title, one layer per press.
+      await loadNote("> # Title\n");
+      {
+        const h = vc.querySelector("h1");
+        caret(h.firstChild, 0);
+        const ev = key(h, "Backspace");
+        const quoted = vc.querySelector("blockquote");
+        check("hybrid marker: a quoted heading peels to a quoted paragraph",
+          ev.defaultPrevented && !!quoted && !vc.querySelector("h1") &&
+          !!quoted.querySelector("p") && quoted.textContent.trim() === "Title",
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the quoted heading saves as '> Title'",
+          norm(md()) === "> Title", JSON.stringify(md()));
+        const p = vc.querySelector("blockquote > p");
+        caret(p.firstChild, 0);
+        const ev2 = key(p, "Backspace");
+        check("hybrid marker: a second Backspace lifts the quote",
+          ev2.defaultPrevented && !vc.querySelector("blockquote") &&
+          paragraph() && paragraph().textContent === "Title",
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the second press saves bare Title",
+          norm(md()) === "Title", JSON.stringify(md()));
+      }
+
+      // Empty formatted blocks: one empty paragraph, no marker, no merge.
+      const emptyCases = [
+        ["###\n", "h3", "empty heading"],
+        ["-\n", "ul", "empty bullet item"],
+        ["1.\n", "ol", "empty ordered item"],
+        [">\n", "blockquote", "empty quote"],
+        ["- [ ] \n", "input", "empty task item"],
+      ];
+      for (const [source, sel, label] of emptyCases) {
+        await loadNote(source);
+        let block = null;
+        let host = null;
+        if (sel === "input") {
+          const cb = vc.querySelector('input[type="checkbox"]');
+          block = cb.closest("li");
+          host = cb.nextSibling || cb;
+        } else if (sel === "ul" || sel === "ol") {
+          block = vc.querySelector(sel);
+          host = block.querySelector("li");
+        } else {
+          block = vc.querySelector(sel);
+          host = block;
+        }
+        caret(host, 0);
+        const ev = key(block, "Backspace");
+        const p = paragraph();
+        check("hybrid marker: Backspace on an " + label + " leaves one empty paragraph",
+          ev.defaultPrevented && vc.children.length === 1 && !!p &&
+          p.textContent.replace(/\u200B/g, "") === "" &&
+          !!p.querySelector("[data-hybrid-caret-br]"),
+          "html=" + vc.innerHTML);
+        const saved = md();
+        check("hybrid marker: the " + label + " saves no marker or HTML",
+          saved.trim() === "" &&
+          !/#|>|\u200B|\b1\.|\[[ xX]\]/.test(saved) &&
+          !/<\/?[a-z]/i.test(saved),
+          JSON.stringify(saved));
+      }
+
+      // Forward Delete: a non-empty block is a native character delete;
+      // an empty block strips the marker like Backspace.
+      await loadNote("## Title\n");
+      {
+        const h = vc.querySelector("h2");
+        caret(h.firstChild, 0);
+        const ev = key(h, "Delete");
+        check("hybrid marker: forward Delete on a non-empty heading is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("h2") &&
+          vc.querySelector("h2").textContent === "Title",
+          "prevented=" + ev.defaultPrevented + " html=" + vc.innerHTML);
+      }
+      await loadNote("###\n");
+      {
+        const h = vc.querySelector("h3");
+        caret(h, 0);
+        const ev = key(h, "Delete");
+        const p = paragraph();
+        check("hybrid marker: forward Delete on an empty heading strips it",
+          ev.defaultPrevented && !!p &&
+          p.textContent.replace(/\u200B/g, "") === "" &&
+          !/###/.test(md()), "html=" + vc.innerHTML + " md=" + JSON.stringify(md()));
+      }
+
+      // Trigger guards: selection, modifier, mid-text, table, fence,
+      // atomic block.
+      await loadNote("## Title\n");
+      {
+        let h = vc.querySelector("h2");
+        select(h.firstChild, 0, 2);
+        let ev = key(h, "Backspace");
+        check("hybrid marker: a non-collapsed selection is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("h2"),
+          "prevented=" + ev.defaultPrevented);
+
+        await loadNote("## Title\n");
+        h = vc.querySelector("h2");
+        caret(h.firstChild, 0);
+        ev = key(h, "Backspace", { shiftKey: true });
+        check("hybrid marker: a held modifier is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("h2"),
+          "prevented=" + ev.defaultPrevented);
+
+        await loadNote("## Title\n");
+        h = vc.querySelector("h2");
+        caret(h.firstChild, 2);
+        ev = key(h, "Backspace");
+        check("hybrid marker: a mid-text caret is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("h2"),
+          "prevented=" + ev.defaultPrevented);
+
+        await loadNote("| a |\n| --- |\n| b |\n");
+        const cell = vc.querySelector("td");
+        caret(cell.firstChild, 0);
+        ev = key(cell, "Backspace");
+        check("hybrid marker: a table cell caret is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("table") &&
+          !!vc.querySelector("td"),
+          "prevented=" + ev.defaultPrevented);
+
+        await loadNote("```\ncode\n```\n");
+        const code = vc.querySelector("pre code");
+        caret(code.firstChild, 0);
+        ev = key(code, "Backspace");
+        check("hybrid marker: a fence caret is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("pre"),
+          "prevented=" + ev.defaultPrevented);
+
+        await loadNote("## Title\n");
+        const atomic = doc.createElement("div");
+        atomic.setAttribute("data-hybrid-atomic", "1");
+        atomic.innerHTML = "<h2>Atomic</h2>";
+        vc.appendChild(atomic);
+        const ah = atomic.querySelector("h2");
+        caret(ah.firstChild, 0);
+        ev = key(ah, "Backspace");
+        check("hybrid marker: an atomic block's caret is not claimed",
+          !ev.defaultPrevented && !!atomic.querySelector("h2"),
+          "prevented=" + ev.defaultPrevented);
+      }
+
+      // Neighbours: the DOM and the saved bytes outside the split list
+      // are unchanged (a setext heading would canonicalize if the whole
+      // document were re-serialized).
+      await loadNote("Alpha\n=====\n\n- a\n- b\n- c\n\nOmega\n=====\n");
+      {
+        const heads = vc.querySelectorAll("h1");
+        const beforeAlpha = heads[0].outerHTML;
+        const beforeOmega = heads[1].outerHTML;
+        const second = vc.querySelector("ul").children[1];
+        caret(second.firstChild, 0);
+        key(second, "Backspace");
+        const afterHeads = vc.querySelectorAll("h1");
+        check("hybrid marker: neighbours' DOM is unchanged",
+          afterHeads.length === 2 &&
+          afterHeads[0].outerHTML === beforeAlpha &&
+          afterHeads[1].outerHTML === beforeOmega,
+          "heads=" + afterHeads.length);
+        const saved = md();
+        check("hybrid marker: neighbours' saved bytes are unchanged",
+          saved.indexOf("Alpha\n=====") !== -1 &&
+          saved.indexOf("Omega\n=====") !== -1 &&
+          !/^#\s+Alpha$/m.test(saved) && !/^#\s+Omega$/m.test(saved),
+          JSON.stringify(saved));
+      }
+
+      // Innermost marker wins: a heading or quote inside an item peels
+      // first, then the item's own bullet.
+      await loadNote("- # Head\n");
+      {
+        const h = vc.querySelector("li h1");
+        check("hybrid marker: '- # Head' renders the heading inside the item", !!h);
+        caret(h.firstChild, 0);
+        let ev = key(h, "Backspace");
+        const li = vc.querySelector("li");
+        check("hybrid marker: '- # Head' peels the heading before the bullet",
+          ev.defaultPrevented && !!li && !vc.querySelector("h1") &&
+          !!li.querySelector("p") && li.textContent.trim() === "Head" &&
+          !vc.querySelector("p > h1"), "html=" + vc.innerHTML);
+        check("hybrid marker: '- # Head' still saves a bullet after the first press",
+          /^-\s+Head$/m.test(md()), JSON.stringify(md()));
+        const p = li.querySelector("p");
+        caret(p.firstChild, 0);
+        ev = key(p, "Backspace");
+        check("hybrid marker: a second Backspace peels the item's bullet",
+          ev.defaultPrevented && !vc.querySelector("li") && paragraph() &&
+          paragraph().textContent === "Head", "html=" + vc.innerHTML);
+        check("hybrid marker: the twice-peeled heading saves bare text",
+          norm(md()) === "Head", JSON.stringify(md()));
+      }
+      await loadNote("- > quote\n");
+      {
+        const qp = vc.querySelector("li blockquote p");
+        check("hybrid marker: '- > quote' renders the quote inside the item", !!qp);
+        caret(qp.firstChild, 0);
+        let ev = key(qp, "Backspace");
+        const li = vc.querySelector("li");
+        check("hybrid marker: '- > quote' peels the quote before the bullet",
+          ev.defaultPrevented && !!li && !vc.querySelector("blockquote") &&
+          !!li.querySelector("p") && li.textContent.trim() === "quote" &&
+          !vc.querySelector("p > blockquote"), "html=" + vc.innerHTML);
+        check("hybrid marker: '- > quote' still saves a bullet after the first press",
+          /^-\s+quote$/m.test(md()), JSON.stringify(md()));
+        const p = li.querySelector("p");
+        caret(p.firstChild, 0);
+        ev = key(p, "Backspace");
+        check("hybrid marker: a second Backspace peels the item's bullet after a quote",
+          ev.defaultPrevented && !vc.querySelector("li") && paragraph() &&
+          paragraph().textContent === "quote", "html=" + vc.innerHTML);
+      }
+
+      // A loose item with two paragraphs: no nested <p>; the second block
+      // follows the lifted paragraph and the rest of the list follows it.
+      await loadNote("- one\n\n  two\n\n- c\n");
+      {
+        const li = vc.querySelector("li");
+        caret(li.querySelector("p").firstChild, 0);
+        const ev = key(li, "Backspace");
+        const first = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "one");
+        const next = first && first.nextElementSibling;
+        check("hybrid marker: a loose item's two paragraphs are not nested",
+          ev.defaultPrevented && !!first && first.parentElement === vc &&
+          !vc.querySelector("p p") && !first.querySelector("p") &&
+          !!next && next.tagName === "P" && next.textContent === "two",
+          "html=" + vc.innerHTML);
+        const saved = md();
+        check("hybrid marker: the loose two-paragraph item saves both lines",
+          /^one$/m.test(saved) && /^two$/m.test(saved), JSON.stringify(saved));
+      }
+
+      // A list item inside a quote peels before the quote; the quote then
+      // lifts on the second press.
+      await loadNote("> - item\n");
+      {
+        const li = vc.querySelector("blockquote li");
+        caret(li.firstChild, 0);
+        let ev = key(li, "Backspace");
+        const bq = vc.querySelector("blockquote");
+        check("hybrid marker: '> - item' peels the item before the quote",
+          ev.defaultPrevented && !!bq && !vc.querySelector("li") &&
+          !!bq.querySelector("p") && bq.textContent.trim() === "item",
+          "html=" + vc.innerHTML);
+        check("hybrid marker: '> - item' saves as '> item'",
+          norm(md()) === "> item", JSON.stringify(md()));
+        const p = bq.querySelector("p");
+        caret(p.firstChild, 0);
+        ev = key(p, "Backspace");
+        check("hybrid marker: a second Backspace lifts the quoted item",
+          ev.defaultPrevented && !vc.querySelector("blockquote") && paragraph() &&
+          paragraph().textContent === "item", "html=" + vc.innerHTML);
+        check("hybrid marker: the lifted quoted item saves bare text",
+          norm(md()) === "item", JSON.stringify(md()));
+      }
+
+      // Nested list: the parent's subtree survives after the paragraph.
+      await loadNote("- parent\n  - child\n- sibling\n");
+      {
+        const li = vc.querySelector("ul > li");
+        caret(li.firstChild, 0);
+        const ev = key(li, "Backspace");
+        const parent = Array.from(vc.querySelectorAll("p"))
+          .find((p) => p.textContent === "parent");
+        const nested = parent && parent.nextElementSibling;
+        check("hybrid marker: a nested list is hoisted after the new paragraph",
+          ev.defaultPrevented && !!parent && !!nested &&
+          nested.tagName === "UL" && nested.textContent.trim() === "child" &&
+          !!vc.querySelector("li"), "html=" + vc.innerHTML);
+        const saved = md();
+        check("hybrid marker: the hoisted nested list keeps its child",
+          /^parent$/m.test(saved) && /child/.test(saved), JSON.stringify(saved));
+      }
+
+      // Nested quotes peel one layer per press.
+      await loadNote("> > q\n");
+      {
+        const p = vc.querySelector("blockquote blockquote p");
+        caret(p.firstChild, 0);
+        let ev = key(p, "Backspace");
+        check("hybrid marker: '> > q' peels one quote layer",
+          ev.defaultPrevented && vc.querySelectorAll("blockquote").length === 1 &&
+          vc.querySelector("blockquote").textContent.trim() === "q",
+          "html=" + vc.innerHTML);
+        check("hybrid marker: '> > q' saves as '> q'",
+          norm(md()) === "> q", JSON.stringify(md()));
+        const inner = vc.querySelector("blockquote > p");
+        caret(inner.firstChild, 0);
+        ev = key(inner, "Backspace");
+        check("hybrid marker: a second Backspace removes the last quote layer",
+          ev.defaultPrevented && !vc.querySelector("blockquote") && paragraph() &&
+          paragraph().textContent === "q", "html=" + vc.innerHTML);
+        check("hybrid marker: the twice-peeled quote saves bare text",
+          norm(md()) === "q", JSON.stringify(md()));
+      }
+
+      // A leading image is content, not the marker.
+      await loadNote("# ![img](i.png) text\n");
+      {
+        const h = vc.querySelector("h1");
+        caret(h, 0);
+        const ev = key(h, "Backspace");
+        const p = paragraph();
+        check("hybrid marker: a leading image survives the heading strip",
+          ev.defaultPrevented && !!p && !!p.querySelector("img") &&
+          p.textContent.indexOf("text") !== -1 && !vc.querySelector("h1"),
+          "html=" + vc.innerHTML);
+        check("hybrid marker: the leading image is still saved",
+          /!\[img\]\(i\.png\)/.test(md()), JSON.stringify(md()));
+      }
+
+      // Leading whitespace is not content: T is still the start.
+      await loadNote("<h2>  Title</h2>\n");
+      {
+        const h = vc.querySelector("h2");
+        caret(h.firstChild, 0);
+        const ev = key(h, "Backspace");
+        const p = paragraph();
+        check("hybrid marker: leading whitespace is not content at T",
+          ev.defaultPrevented && !!p && p.textContent === "  Title" &&
+          !vc.querySelector("h2"), "html=" + vc.innerHTML);
+      }
+
+      // An IME composition owns the key.
+      await loadNote("## Title\n");
+      {
+        const h = vc.querySelector("h2");
+        caret(h.firstChild, 0);
+        const ev = key(h, "Backspace", { isComposing: true });
+        check("hybrid marker: an IME composition is not claimed",
+          !ev.defaultPrevented && !!vc.querySelector("h2"),
+          "prevented=" + ev.defaultPrevented);
+      }
+
+      // The item lift must never discard a child it did not fold into
+      // the paragraph: a lazy-continuation text node, an inline sibling,
+      // or a block tag outside LIST_BLOCK_TAGS.
+      await loadNote("- # Head\n\n  tail\n");
+      {
+        const h = vc.querySelector("li h1");
+        caret(h.firstChild, 0);
+        key(h, "Backspace");
+        const p = vc.querySelector("li p");
+        caret(p.firstChild, 0);
+        const ev = key(p, "Backspace");
+        const saved = md();
+        check("hybrid marker: a lazy continuation survives both presses",
+          ev.defaultPrevented && /Head/.test(saved) && /tail/.test(saved),
+          JSON.stringify(saved));
+        check("hybrid marker: the lazy continuation is not nested or dropped",
+          !vc.querySelector("li") && !vc.querySelector("p p") &&
+          vc.textContent.indexOf("tail") !== -1, "html=" + vc.innerHTML);
+      }
+      await loadNote("- > q\n\n  tail\n");
+      {
+        const q = vc.querySelector("li blockquote p");
+        caret(q.firstChild, 0);
+        key(q, "Backspace");
+        const p = vc.querySelector("li p");
+        caret(p.firstChild, 0);
+        const ev = key(p, "Backspace");
+        const saved = md();
+        check("hybrid marker: a lazy continuation after a quote survives",
+          ev.defaultPrevented && /q/.test(saved) && /tail/.test(saved),
+          JSON.stringify(saved));
+        check("hybrid marker: the quoted lazy continuation stays in the document",
+          !vc.querySelector("li") && vc.textContent.indexOf("tail") !== -1,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("- <p>keep</p><code>CODEZ</code>\n");
+      {
+        const li = vc.querySelector("li");
+        caret(li.querySelector("p").firstChild, 0);
+        const ev = key(li, "Backspace");
+        const saved = md();
+        check("hybrid marker: an inline sibling survives the item lift",
+          ev.defaultPrevented && /keep/.test(saved) && /CODEZ/.test(saved),
+          JSON.stringify(saved));
+        check("hybrid marker: the inline sibling stays in the DOM",
+          !vc.querySelector("li") && !vc.querySelector("p p") &&
+          vc.textContent.indexOf("CODEZ") !== -1, "html=" + vc.innerHTML);
+      }
+      // A standalone <li> has no list to split: the lift must fail before
+      // touching the checkbox, so the key falls through unmutated.
+      await loadNote("## Title\n");
+      {
+        const orphan = doc.createElement("li");
+        orphan.innerHTML = '<input type="checkbox">orphan';
+        vc.appendChild(orphan);
+        caret(orphan.querySelector("input").nextSibling, 0);
+        const ev = key(orphan, "Backspace");
+        check("hybrid marker: a list item with no list is not mutated",
+          !ev.defaultPrevented && !!orphan.querySelector("input") &&
+          orphan.isConnected, "html=" + vc.innerHTML);
+      }
+
+      // Delete on an empty block whose line box is a PLAIN <br> (the
+      // normal browser shape after deleting the text) must also strip.
+      const plainBrCases = [
+        { source: "-\n", label: "empty bullet item", selector: "li" },
+        { source: "1.\n", label: "empty ordered item", selector: "li" },
+        { source: ">\n", label: "empty quote", selector: "blockquote" },
+        { source: "##\n", label: "empty heading", selector: "h2" },
+        { source: "- [ ] \n", label: "empty task item", selector: "li", task: true },
+      ];
+      for (const c of plainBrCases) {
+        await loadNote(c.source);
+        const block = vc.querySelector(c.selector);
+        block.innerHTML = c.task
+          ? '<input type="checkbox"><br>' : "<br>";
+        caret(block, c.task ? 1 : 0);
+        const ev = key(block, "Delete");
+        const p = paragraph();
+        check("hybrid marker: Delete on an " + c.label + " with a plain <br> strips it",
+          ev.defaultPrevented && !!p && vc.children.length === 1 &&
+          p.textContent.replace(/\u200B/g, "") === "" &&
+          !!p.querySelector("[data-hybrid-caret-br]"),
+          "html=" + vc.innerHTML);
+      }
     }
 
     // --- AC7/AC8: link create -------------------------------------------

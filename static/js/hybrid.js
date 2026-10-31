@@ -2377,6 +2377,9 @@
     if (!li) return null;
     const list = li.closest("ul,ol");
     if (!list) return null;
+    // The item's position in the list decides the trailing half's numbers
+    // after the split (see the `start` write below).
+    const itemIndex = Array.prototype.indexOf.call(list.children, li);
     // The items after the caret's item move to a second list, so the
     // paragraph can sit between the two halves.
     let after = null;
@@ -2394,7 +2397,17 @@
     });
     li.remove();
     list.after(p);
-    if (after) p.after(after);
+    if (after) {
+      // An ordered list restarts at 1 after the split. Give the trailing
+      // half the ordinal the first moved item displayed before the lift,
+      // so the numbers on both sides of the paragraph stay put.
+      if (list.tagName === "OL") {
+        const base = Number(list.getAttribute("start")) || 1;
+        const ordinal = base + itemIndex + 1;
+        if (ordinal > 1) after.setAttribute("start", String(ordinal));
+      }
+      p.after(after);
+    }
     if (!list.firstElementChild) list.remove();
     // Hoist nested lists: they follow the paragraph (with its split).
     nested.forEach((n) => p.after(n));
@@ -4391,6 +4404,319 @@
     onContentChange();
   }
 
+  /* --- removing a block marker at the content start (T) ----------------
+   * Backspace at the first content position of a formatted block deletes
+   * that block's own marker (`#`, bullet, number, `>`, checkbox) and keeps
+   * the text. Forward Delete is claimed only on an EMPTY block: on a block
+   * with content it must stay a forward character delete. One press peels
+   * one layer, innermost first, and never touches a neighbouring block.
+   *
+   * These helpers run before the task-merge / rule / atomic delete claims,
+   * so the marker wins at T; the guards here keep them out of a table, a
+   * fence, an atomic block, a top-level heading's rule edge, and any
+   * selection that is not a collapsed caret. */
+
+  /* Like rangeHasContent, but an empty block's editing artifacts do not
+   * count: the zero-width list placeholder and a <br> line box. A <br>
+   * that follows real text is a hard break, but the text check below has
+   * already returned true for that case, so any <br> left here is the
+   * browser's empty-line marker (marked or unmarked). */
+  function rangeHasBlockContent(range) {
+    if (!range || range.collapsed) return false;
+    if (range.toString().replace(/[\s\u200B]/g, "") !== "") return true;
+    const frag = range.cloneContents();
+    frag.querySelectorAll("[" + CARET_BR_ATTR + "]").forEach((br) => br.remove());
+    return !!frag.querySelector(EMBEDDED_CONTENT_SELECTOR);
+  }
+
+  /* True when nothing but marker artifacts precedes the caret inside
+   * `el`. Unlike caretAtBlockStart this ignores the marked caret <br>, so
+   * an empty heading with its line box still counts as at the start. */
+  function caretAtOwnBlockStart(el, range) {
+    const before = document.createRange();
+    try {
+      before.selectNodeContents(el);
+      before.setEnd(range.startContainer, range.startOffset);
+    } catch (_) {
+      return false;
+    }
+    return !rangeHasBlockContent(before);
+  }
+
+  /* True when the block has no text and no embedded content after the
+   * caret. Used for the Delete-on-empty row of the key matrix. */
+  function emptyAfterCaret(el, range) {
+    const after = document.createRange();
+    try {
+      after.selectNodeContents(el);
+      after.setStart(range.startContainer, range.startOffset);
+    } catch (_) {
+      return false;
+    }
+    return !rangeHasBlockContent(after);
+  }
+
+  /* True when the item's OWN content (not a nested list, not the
+   * checkbox, not the zero-width caret host) is empty after the caret. */
+  function listItemEmptyAfterCaret(li, range) {
+    const end = listItemOwnContentEndRange(li);
+    const after = document.createRange();
+    try {
+      after.setStart(range.startContainer, range.startOffset);
+      after.setEnd(end.startContainer, end.endOffset);
+    } catch (_) {
+      return false;
+    }
+    return !rangeHasBlockContent(after);
+  }
+
+  /* The block whose marker a delete key removes, or null. Only a
+   * collapsed caret at the caret's own T qualifies. */
+  function blockMarkerStripTarget(key) {
+    if (!active) return null;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    if (insideProtectedBlock(node)) return null;
+    if (node.closest && (
+      node.closest("[" + ATOMIC_BLOCK_MARKER + "]") ||
+      (PLUGIN_CONTAINER_SELECTOR && node.closest(PLUGIN_CONTAINER_SELECTOR)))) {
+      return null;
+    }
+    // Walk outward and take the FIRST marker ancestor, so the innermost
+    // marker peels first: a heading or quote inside a list item wins over
+    // the item's bullet, and a list item inside a quote wins over the
+    // quote. This keeps `- # Head` from becoming <p><h1>…</h1></p>.
+    for (let el = node; el && el !== viewerContentEl; el = el.parentElement) {
+      if (HEADING_TAG_RE.test(el.tagName)) {
+        if (!caretAtOwnBlockStart(el, range)) return null;
+        if (key === "Delete" && !emptyAfterCaret(el, range)) return null;
+        // Keep the rule's own delete claim at a TOP-LEVEL heading edge.
+        // A heading inside a quote or list is not a rule edge.
+        if (el.parentElement === viewerContentEl) {
+          const neighbour = key === "Backspace"
+            ? el.previousElementSibling : el.nextElementSibling;
+          if (neighbour && neighbour.tagName === "HR") return null;
+        }
+        return { kind: "heading", node: el };
+      }
+      if (el.tagName === "BLOCKQUOTE") {
+        let line = node === el ? el : node;
+        while (line !== el && line && line.parentElement !== el) {
+          line = line.parentElement;
+        }
+        if (!line) return null;
+        // An empty quote line renders no direct child block, only the
+        // caret line box. The quote itself is the marker to remove.
+        if (line === el) {
+          if (!caretAtOwnBlockStart(el, range) ||
+              !emptyAfterCaret(el, range)) return null;
+          return { kind: "quoteEmpty", node: el };
+        }
+        if (line.parentElement !== el || line.tagName !== "P") return null;
+        if (!caretAtOwnBlockStart(line, range)) return null;
+        if (key === "Delete" && !emptyAfterCaret(line, range)) return null;
+        return { kind: "quote", node: line, quote: el };
+      }
+      if (el.tagName === "LI") {
+        if (!caretAtListItemStart(el, range)) return null;
+        // S (before the checkbox) is a different position, not T.
+        if (taskCheckboxOf(el) && range.startContainer === el &&
+            range.startOffset === 0) return null;
+        const empty = listItemEmptyAfterCaret(el, range);
+        if (key === "Delete" && !empty) return null;
+        return { kind: "list", node: el };
+      }
+    }
+    return null;
+  }
+
+  /* Remove a task checkbox and its class before the item leaves the list,
+   * so the marker never reaches the paragraph. */
+  function stripTaskItemMarker(li) {
+    const cb = taskCheckboxOf(li);
+    if (!cb) return;
+    cb.remove();
+    li.classList.remove("task-list-item");
+  }
+
+  /* Drop the zero-width caret host and a lone unmarked <br> from a
+   * paragraph a lift produced. Both are editing artifacts, and an empty
+   * result must get the marked line box from caretToStart rather than
+   * look non-empty or already boxed. */
+  function stripCaretPlaceholders(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((node) => {
+      node.nodeValue = node.nodeValue.replace(/\u200B/g, "");
+      if (node.nodeValue === "") node.remove();
+    });
+    if (root.textContent.replace(/\u200B/g, "").trim() === "" &&
+        !root.querySelector(EMBEDDED_CONTENT_SELECTOR)) {
+      root.querySelectorAll("br").forEach((br) => br.remove());
+    }
+  }
+
+  /* Take a list item out of its list as one paragraph built from its own
+   * inline content. Every remaining child (extra paragraphs, nested lists,
+   * bare text, inline elements) follows it in document order, then the
+   * rest of the list. Unlike listItemToParagraph this never folds a block
+   * child into the new paragraph, so a loose item cannot become
+   * <p><p>…</p></p>, and it never discards a child. */
+  function stripListItemToParagraph(li) {
+    if (!li) return null;
+    const list = li.closest("ul,ol");
+    if (!list) return null;
+    const itemIndex = Array.prototype.indexOf.call(list.children, li);
+    const host = listItemPrimaryHost(li);
+    const p = document.createElement("p");
+    listItemPrimaryNodes(li).forEach((node) => p.appendChild(node));
+    // Everything the primary pick did not take must be hoisted, in
+    // document order: a lazy-continuation text node, an inline <code>, a
+    // comment, or a block tag outside LIST_BLOCK_TAGS would otherwise be
+    // lost when the <li> is removed. Skip only the now-empty primary host
+    // and formatting whitespace.
+    const leftovers = Array.from(li.childNodes).filter((node) => {
+      if (node === host) return false;
+      if (node.nodeType === Node.TEXT_NODE &&
+          !node.nodeValue.replace(/\u200B/g, "").trim()) return false;
+      return true;
+    });
+    // The items after the caret's item move to a second list.
+    let after = null;
+    if (list.lastElementChild !== li) {
+      after = document.createElement(list.tagName);
+      let cur = li.nextElementSibling;
+      while (cur) { const nx = cur.nextElementSibling; after.appendChild(cur); cur = nx; }
+    }
+    list.after(p);
+    let tail = p;
+    leftovers.forEach((node) => { tail.after(node); tail = node; });
+    li.remove();
+    if (after) {
+      // An ordered list restarts at 1 after the split. Give the trailing
+      // half the ordinal its first item displayed before the lift.
+      if (list.tagName === "OL") {
+        const base = Number(list.getAttribute("start")) || 1;
+        const ordinal = base + itemIndex + 1;
+        if (ordinal > 1) after.setAttribute("start", String(ordinal));
+      }
+      tail.after(after);
+    }
+    if (!list.firstElementChild) list.remove();
+    return p;
+  }
+
+  /* Take a list item out of its list as a plain paragraph, keeping every
+   * leftover child and the remaining list items. Check the preconditions
+   * before touching the DOM, so a failed lift cannot remove the checkbox
+   * and then fall through to a native delete. */
+  function stripListItemMarker(li) {
+    if (!li || !li.parentElement || !li.closest("ul,ol")) return null;
+    stripTaskItemMarker(li);
+    return stripListItemToParagraph(li);
+  }
+
+  /* Lift one direct child out of the nearest blockquote, splitting the
+   * quote around it. A quoted line thus loses only its own marker; the
+   * lines above and below stay quoted. */
+  function liftQuoteLine(line, bq) {
+    if (!line || !bq || line.parentElement !== bq) return null;
+    const parent = bq.parentNode;
+    if (!parent) return null;
+    const before = document.createDocumentFragment();
+    const after = document.createDocumentFragment();
+    let tail = false;
+    Array.from(bq.childNodes).forEach((child) => {
+      if (child === line) { tail = true; return; }
+      (tail ? after : before).appendChild(child);
+    });
+    const hasContent = (frag) => Array.from(frag.childNodes).some((node) =>
+      node.nodeType === Node.ELEMENT_NODE ||
+      (node.nodeType === Node.TEXT_NODE && /\S/.test(node.nodeValue)));
+    const beforeHasContent = hasContent(before);
+    const afterHasContent = hasContent(after);
+    parent.insertBefore(line, bq);
+    if (beforeHasContent) {
+      const head = bq.cloneNode(false);
+      head.appendChild(before);
+      parent.insertBefore(head, line);
+    }
+    if (afterHasContent) {
+      const rest = bq.cloneNode(false);
+      rest.appendChild(after);
+      parent.insertBefore(rest, line.nextSibling);
+    }
+    bq.remove();
+    return line;
+  }
+
+  /* Put the caret at the block's first content position for a lift. An
+   * element boundary has no line box in some engines, so when the leading
+   * run is a text node (possibly inside an inline wrapper) the caret goes
+   * inside it; a leading void (image, marked <br>) keeps the boundary.
+   * An empty block gets the marked line box from caretToStart. */
+  function caretToFirstContent(el) {
+    if (!el) return;
+    if (!el.textContent && !el.querySelector("img,br,canvas,svg,iframe")) {
+      caretToStart(el);
+      return;
+    }
+    let blocked = false;
+    const leading = (parent) => {
+      for (const node of parent.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          if (node.nodeValue.length) return node;
+          continue;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (node.tagName === "BR" || node.matches(EMBEDDED_CONTENT_SELECTOR)) {
+          blocked = true;
+          return null;
+        }
+        const found = leading(node);
+        if (found || blocked) return found;
+      }
+      return null;
+    };
+    const text = leading(el);
+    const sel = window.getSelection();
+    const r = document.createRange();
+    if (text) r.setStart(text, 0);
+    else r.selectNodeContents(el);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* Replace a formatted block with a plain paragraph that keeps its
+   * content, then put the caret at T. Exactly one onContentChange. */
+  function stripBlockMarker(target) {
+    let p = null;
+    if (target.kind === "heading") {
+      p = document.createElement("p");
+      while (target.node.firstChild) p.appendChild(target.node.firstChild);
+      target.node.replaceWith(p);
+    } else if (target.kind === "list") {
+      p = stripListItemMarker(target.node);
+    } else if (target.kind === "quote") {
+      p = liftQuoteLine(target.node, target.quote);
+    } else if (target.kind === "quoteEmpty") {
+      p = document.createElement("p");
+      target.node.replaceWith(p);
+    }
+    if (!p) return false;
+    stripCaretPlaceholders(p);
+    caretToFirstContent(p);
+    viewerContentEl.focus({ preventScroll: true });
+    onContentChange();
+    return true;
+  }
+
   /* The direct child of #viewer-content that contains `node`, or null for
    * the root itself. */
   function topLevelChildFor(node) {
@@ -4967,6 +5293,20 @@
         deleteListSelection()) {
       e.preventDefault();
       return;
+    }
+    // A collapsed caret at the first content position (T) of a formatted
+    // block deletes that block's own marker and keeps its text. Delete
+    // does so only when the block is empty, so a forward delete in a
+    // non-empty block stays a character delete. This runs before the
+    // task-merge / rule / atomic branches, so the marker wins at T.
+    if ((e.key === "Backspace" || e.key === "Delete") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        !e.isComposing) {
+      const target = blockMarkerStripTarget(e.key);
+      if (target && stripBlockMarker(target)) {
+        e.preventDefault();
+        return;
+      }
     }
     // A GFM table cell is one line. The native Enter inserts a newline
     // into the cell, and turndown emits it as a real line break, which

@@ -2423,6 +2423,98 @@ async function main() {
     check("real browser clipboard: no uncaught page errors",
       pageErrors.length === 0, pageErrors.join(" | "));
 
+    // --- block-marker Backspace / forward Delete at T -----------------
+    // The jsdom suite pins the DOM; only the real engine can prove that
+    // forward Delete still eats the first character and that the second
+    // Backspace merges natively.
+    async function caretAtTextStart(selector) {
+      await page.evaluate((selector) => {
+        const vc = document.getElementById("viewer-content");
+        const el = vc.querySelector(selector);
+        vc.focus();
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node = null;
+        while (walker.nextNode()) {
+          if (walker.currentNode.nodeValue.length) { node = walker.currentNode; break; }
+        }
+        const r = document.createRange();
+        if (node) { r.setStart(node, 0); }
+        else { r.selectNodeContents(el); }
+        r.collapse(true);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }, selector);
+    }
+
+    writeNote("notes/markerdelete.md", "alpha\n\n## Beta\n\nomega\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/markerdelete.md"));
+    await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await caretAtTextStart("#viewer-content h2");
+    await page.keyboard.press("Delete");
+    {
+      const state = await page.evaluate(() => {
+        const h = document.querySelector("#viewer-content h2");
+        const p = document.querySelector("#viewer-content p");
+        return { heading: h ? h.textContent : null, firstP: p ? p.textContent : null };
+      });
+      check("real browser Delete at T: the heading survives",
+        state.heading === "eta", JSON.stringify(state));
+      check("real browser Delete at T: the first character is eaten",
+        state.heading === "eta", JSON.stringify(state));
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const delSaved = readNote("notes/markerdelete.md");
+      check("real browser Delete at T: the save keeps the heading marker",
+        delSaved.indexOf("## eta") !== -1, JSON.stringify(delSaved));
+    }
+
+    writeNote("notes/markerbackspace.md", "alpha\n\n## Beta\n\nomega\n");
+    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/markerbackspace.md"));
+    await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await caretAtTextStart("#viewer-content h2");
+    await page.keyboard.press("Backspace");
+    {
+      const first = await page.evaluate(() => {
+        const h = document.querySelector("#viewer-content h2");
+        const ps = Array.from(document.querySelectorAll("#viewer-content p"))
+          .map((p) => p.textContent);
+        return { heading: !!h, paragraphs: ps };
+      });
+      check("real browser Backspace at T: the heading peels to a paragraph",
+        !first.heading && first.paragraphs.indexOf("Beta") !== -1,
+        JSON.stringify(first));
+      await page.keyboard.press("Backspace");
+      const merged = await page.evaluate(() => {
+        const ps = Array.from(document.querySelectorAll("#viewer-content p"))
+          .map((p) => p.textContent);
+        return { paragraphs: ps, headings: document.querySelectorAll("#viewer-content h2").length };
+      });
+      check("real browser a second Backspace merges natively",
+        merged.headings === 0 &&
+        merged.paragraphs.some((t) => t.indexOf("alphaBeta") !== -1),
+        JSON.stringify(merged));
+      await saveAndExit(page);
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      const bsSaved = readNote("notes/markerbackspace.md");
+      check("real browser a second Backspace saves the merged line",
+        bsSaved.indexOf("alphaBeta") !== -1 && bsSaved.indexOf("## Beta") === -1,
+        JSON.stringify(bsSaved));
+    }
+
+    check("real browser marker keys: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();
