@@ -140,6 +140,10 @@
    *                  errorClass identity when absent)
    *   sourceClass    class of the <pre> holding the source inside the
    *                  error box (null when errorClass is null)
+   *   untrustedSafe  false when the module's source parser executes its
+   *                  input (wavedrom's eval fallback). A render root that
+   *                  is not the user's own file (the AI panel) skips it;
+   *                  defaults to true.
    */
   function register(desc) {
     if (!desc || !desc.mod || !desc.containerClass || !desc.renderAll) {
@@ -273,7 +277,7 @@
    * 1rem on desktop and 16px * --font-scale on the phone (the CSS token
    * --nb-ref-size mirrors that). */
   const CSS_BASE_PX = 14;          // the app's medium font size / design base
-  const VIEWPORT_RATIO = 0.7;      // share of #viewer-content height
+  const VIEWPORT_RATIO = 0.7;      // share of the figure host height
   const TALL_MAX_VIEWS = 3;        // taller than this -> shrink-to-fit
   const VIEWPORT_CLASS = "nb-figure-viewport";
   const FIGURE_SELECTOR =
@@ -287,8 +291,9 @@
   const EX_RATIO = 0.5;
 
   let relayoutTimer = 0;
-  let relayoutRoot = null;
+  const pendingRoots = new Set();
   let resizeObserver = null;
+  const observedHosts = new Set();
 
   function px(n) {
     return String(n) + "px";
@@ -660,17 +665,33 @@
     vp.dataset.nbMode = plan.mode;
   }
 
-  function measureViewportH() {
-    const viewer = document.getElementById("viewer-content");
-    if (!viewer || !(viewer.clientHeight > 0)) return 0;
-    return viewer.clientHeight * VIEWPORT_RATIO;
+  function measureViewportH(host) {
+    const el = host || document.getElementById("viewer-content");
+    if (!el || !(el.clientHeight > 0)) return 0;
+    return el.clientHeight * VIEWPORT_RATIO;
+  }
+
+  /* hostOf(el) -> the nearest scrolling ancestor that bounds a figure's
+   * viewport: #viewer-content for a note, .ai-chat-log for an AI reply.
+   * Found by shape (a scroll container) so a new render root needs no
+   * registration here. The height is not required, so a host that is
+   * collapsed at first layout is still returned -- and observed -- and
+   * fits its figures when it is revealed. Falls back to the viewer. */
+  function hostOf(el) {
+    let node = el && el.nodeType === 1 ? el : null;
+    while (node && node !== document.body) {
+      const oy = window.getComputedStyle(node).overflowY;
+      if (oy === "auto" || oy === "scroll" || oy === "overlay") return node;
+      node = node.parentElement;
+    }
+    return document.getElementById("viewer-content");
   }
 
   /* layoutFigure(card[, metrics]) -- apply the matrix to one card.
    * metrics is a test seam: { contentW, ref, viewportH, remPx, emPx }.
    * remPx/emPx may be numbers or (for the app's shared per-pass rem)
-   * getters; in the app the values are measured from the viewport,
-   * #viewer-content, and the document root. */
+   * getters; in the app the values are measured from the card's host
+   * (see hostOf) and the document root. */
   function layoutFigure(card, metrics) {
     if (!card) return;
     const vp = card.querySelector(":scope > ." + VIEWPORT_CLASS);
@@ -724,11 +745,9 @@
 
   /* Normalise a scheduling root to the scope that actually needs a scan.
    * Cards inside the viewer always schedule the viewer (one pass covers
-   * every figure); a card prepared before insertion resolves to the
-   * viewer too, so the timer still catches it after insertion. A render
-   * root outside the viewer (if one ever exists) is scanned directly.
-   * Detached export hosts intentionally resolve to the viewer: they keep
-   * their CSS-only baseline and never need JS layout. */
+   * every note figure). A render root outside the viewer (the AI panel's
+   * chat log) is scanned directly, and a detached export host resolves to
+   * the viewer: it keeps its CSS-only baseline and never needs JS layout. */
   function resolveRelayoutScope(root) {
     const viewer = document.getElementById("viewer-content");
     if (!root || root === document || root === document.documentElement ||
@@ -751,8 +770,6 @@
     // recomputes on resize, font-size, and disclosure changes. Hidden or
     // detached containers skip themselves on clientWidth 0.
     if (NB.katex && NB.katex.fitAll) NB.katex.fitAll(scope);
-    const viewportH = measureViewportH();
-    if (!(viewportH > 0)) return;
     const cards = [];
     if (scope.nodeType === 1 && scope.matches && scope.matches(FIGURE_SELECTOR)) {
       cards.push(scope);
@@ -764,67 +781,118 @@
     }
     if (!cards.length) return;
 
-    // The prose reference is one value for the whole pass. The cards
-    // inherit it from the viewer; a render root outside the viewer is its
-    // own source. rem is resolved lazily (once) only if a card's explicit
-    // unit actually asks for it.
-    const viewer = document.getElementById("viewer-content");
-    let refHost = null;
-    if (viewer && (scope === viewer ||
-        (scope.nodeType === 1 && viewer.contains(scope)))) {
-      refHost = viewer;
-    }
-    if (!refHost && scope.nodeType === 1) refHost = scope;
-    const refPx = readRefPx(refHost || cards[0]);
+    /* Metrics are host-local: a card in the AI panel fits the chat log and
+     * a card in a note fits the note page, in one pass. The reference font
+     * is the prose font at the first card of a host (cards in one host
+     * share it), so a 0.9rem reply and a 1rem note each fit their own
+     * text. rem is resolved lazily (once) only if a card's explicit unit
+     * actually asks for it. */
     let rootPx = 0;
     const remPx = () => {
-      if (!(rootPx > 0)) rootPx = readRootFontPx(refPx);
+      if (!(rootPx > 0)) rootPx = readRootFontPx(CSS_BASE_PX);
       return rootPx;
     };
+    const hosts = new Map();
     for (const card of cards) {
-      layoutFigure(card, { viewportH: viewportH, ref: refPx, remPx: remPx });
+      const host = hostOf(card);
+      let metrics = hosts.get(host);
+      if (!metrics) {
+        observeHost(host);
+        metrics = {
+          viewportH: measureViewportH(host),
+          ref: readRefPx(card),
+          remPx: remPx,
+        };
+        hosts.set(host, metrics);
+      }
+      if (!(metrics.viewportH > 0)) continue;
+      layoutFigure(card, metrics);
     }
   }
 
   /* scheduleRelayout(scope) -- trailing debounce. Each call resets the
-   * timer and remembers the (normalised) pending scope, so a burst of
-   * renders/resizes yields one pass after the burst. The pass scans the
-   * viewer or the passed render root, never the whole document. */
+   * timer and remembers the pending scope, so a burst of renders/resizes
+   * yields one pass after the burst. Every distinct scope is kept: two
+   * hosts (a note and the AI panel) usually resize in the same burst, and
+   * one would otherwise keep a stale figure size. The passes scan the
+   * passed render roots or the viewer, never the whole document. */
   function scheduleRelayout(root) {
-    relayoutRoot = resolveRelayoutScope(root);
+    pendingRoots.add(root || null);
     if (relayoutTimer) window.clearTimeout(relayoutTimer);
     relayoutTimer = window.setTimeout(() => {
       relayoutTimer = 0;
-      const scope = relayoutRoot;
-      relayoutRoot = null;
-      if (scope) layoutAll(scope);
+      const roots = Array.from(pendingRoots);
+      pendingRoots.clear();
+      for (const pending of roots) {
+        if (pending) layoutAll(pending);
+        else layoutAllHosts();
+      }
     }, RELAYOUT_DEBOUNCE_MS);
   }
 
+  /* layoutAllHosts() -- the no-root pass: a font-size change, a window
+   * resize, or the phone/desktop flip re-fits every observing host, so a
+   * note and an AI reply follow the setting alike. */
+  function layoutAllHosts() {
+    const viewer = document.getElementById("viewer-content") || document;
+    layoutAll(viewer);
+    for (const host of observedHosts) {
+      if (host === viewer || !host.isConnected) continue;
+      layoutAll(host);
+    }
+  }
+
   function relayout(root) {
-    layoutAll(root || defaultRelayoutScope());
+    if (root) layoutAll(root);
+    else layoutAllHosts();
   }
 
   function ensureResizeObserver() {
-    if (resizeObserver || typeof window.ResizeObserver !== "function") return;
-    const viewer = document.getElementById("viewer-content");
-    if (!viewer) return;
-    resizeObserver = new window.ResizeObserver(() => scheduleRelayout());
-    resizeObserver.observe(viewer);
+    if (resizeObserver || typeof window.ResizeObserver !== "function") {
+      return resizeObserver;
+    }
+    resizeObserver = new window.ResizeObserver((entries) => {
+      /* Re-fit the host that changed size, not just the viewer, so a
+       * resized AI panel re-fits its own figures. */
+      for (const entry of entries) scheduleRelayout(entry.target);
+    });
+    observeHost(document.getElementById("viewer-content"));
+    return resizeObserver;
   }
 
-  /* renderAll(container) -- run every registered renderer's renderAll.
+  /* Observe one figure host so a sidebar / outline / panel drag or a
+   * split-pane change re-fits the figures it contains. Hosts are observed
+   * on demand: the AI panel's chat log mounts after load, so the viewer
+   * alone is not enough. */
+  function observeHost(host) {
+    if (!host || host.nodeType !== 1 || observedHosts.has(host)) return;
+    const ro = ensureResizeObserver();
+    if (!ro) return;
+    observedHosts.add(host);
+    ro.observe(host);
+  }
+
+  /* renderAll(container[, opts]) -- run every registered renderer's
+   * renderAll.
    *
    * Each renderer owns its own lazy gate and sequential per-block loop;
    * we run the modules concurrently (Promise.all), exactly as the viewer
    * already fired them (viewer.js previously called each renderAll
    * without awaiting). Export awaits the aggregate, which is a superset
-   * of its previous sequential awaits. */
-  function renderAll(container) {
+   * of its previous sequential awaits.
+   *
+   * opts.untrusted marks a render root whose content is not the user's
+   * own file (the AI panel renders model output). A descriptor that
+   * declares untrustedSafe: false is skipped there, so a source parser
+   * that executes JavaScript never sees third-party input; its fence
+   * stays a plain code block. */
+  function renderAll(container, opts) {
+    const untrusted = !!(opts && opts.untrusted);
     const passes = [];
     for (const d of registry) {
+      if (untrusted && d.untrustedSafe === false) continue;
       try {
-        passes.push(Promise.resolve(d.renderAll(container)));
+        passes.push(Promise.resolve(d.renderAll(container, opts)));
       } catch (_) {
         /* one renderer failing must not stop the others */
       }
@@ -920,11 +988,11 @@
   };
 
   /* Recompute on the events the app does not route through a render:
-   * window resize, a sidebar/outline drag or split-pane change (one
-   * guarded observer on the viewer), the phone/desktop flip, and the
+   * window resize, a sidebar/outline/panel drag or split-pane change (one
+   * guarded observer per figure host), the phone/desktop flip, and the
    * explicit font-size change (app.js calls scheduleRelayout()). */
   ensureResizeObserver();
-  window.addEventListener("resize", scheduleRelayout);
+  window.addEventListener("resize", () => scheduleRelayout());
   // `toggle` does not bubble; capture it so a figure inside a closed
   // <details> gets laid out the moment the disclosure opens. While it was
   // closed its card had no measurable width and layout correctly skipped.
@@ -934,6 +1002,6 @@
     scheduleRelayout(el);
   }, true);
   if (NB.evt && NB.evt.on) {
-    NB.evt.on("mobile:mode", scheduleRelayout);
+    NB.evt.on("mobile:mode", () => scheduleRelayout());
   }
 })();

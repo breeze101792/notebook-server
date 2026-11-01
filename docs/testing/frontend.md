@@ -22,6 +22,7 @@ node tests/browser/test_dw_designer_browser.js # Playwright, Graphviz + WaveDrom
 node tests/browser/test_block_edit_browser.js  # hybrid fence editor
 node tests/browser/test_hybrid_blocks_browser.js # lists, tasks, tables
 node tests/browser/test_table_editor_browser.js  # the "Edit table" modal
+node tests/browser/test_ai_blocks_browser.js   # AI panel special fences
 ```
 
 ## The jsdom DOM harness
@@ -341,6 +342,17 @@ The audit suites cover the rest of the app end to end:
 - `test_ai_editor_browser.js` — CodeMirror editing, undo/redo, per-file
   draft recovery, VIM mode, the AI tool loop with a local stub provider, and
   ACP with the stub agent.
+- `test_ai_blocks_browser.js` — the AI panel's reply bubbles render the
+  shared special fences like a note: one streamed reply carries all six
+  (mermaid, wavedrom, math, dot, svg, html-live) and five become their
+  container while ```wavedrom stays a plain code block (the panel passes
+  `{untrusted:true}`; wavedrom's eval fallback is skipped on model output)
+  although the note still renders it; it also pins the chat figure to the
+  chat log's width instead of `#viewer-content`, the per-host relayout on a
+  two-root burst and a window resize, one image copy button on a chat
+  diagram, the click-to-zoom lightbox from the chat (and no lightbox from a
+  click outside the reading roots), the prose ```js fence's single text
+  button, and that an `nb-tool` fence renders nothing.
 - `test_block_edit_browser.js` — every fence-editor gesture: the language
   chip, bare fences, rich and multi-line paste, Enter, Tab, native undo, Esc,
   save mid-edit, the tilde fence, plugin re-render and plugin multi-line paste,

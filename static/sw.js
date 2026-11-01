@@ -29,7 +29,9 @@
 /* Bumped v16 -> v17: the graph split into graph-2d.js + graph-3d.js, so
  * already installed workers must re-precache the new renderer modules. */
 /* Bumped v17 -> v18: the new table-editor.js must reach already installed workers. */
-const CACHE = "notebook-v18";
+/* Bumped v18 -> v19: the vendored DOMPurify bundle (AI reply sanitizer) joins
+ * the precache. */
+const CACHE = "notebook-v19";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -47,6 +49,7 @@ const PRECACHE = [
   "/static/css/vimnav.css",
   "/static/vendor/marked.min.js",
   "/static/vendor/highlight.min.js",
+  "/static/vendor/purify.min.js",
   "/static/vendor/turndown.browser.js",
   "/static/vendor/turndown-plugin-gfm.browser.js",
   "/static/js/api.js",

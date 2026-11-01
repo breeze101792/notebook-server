@@ -180,6 +180,12 @@ the single source for three consumers:
 - `pluginTypes()` (`blocks.js:182`) derives the hybrid click-to-edit type
   table, replacing the hard-coded list hybrid.js used to carry.
 
+The note viewer, the hybrid editor, the exporter, and the AI panel
+(`ai.js`, per assistant reply) all run `renderAll` on their own render
+root. Figure sizing is host-local: each card measures its nearest
+scrolling ancestor, so an AI reply fits the chat log and a note fits
+`#viewer-content` in the same pass.
+
 ### The six renderers
 
 | Fence | Library | Notes |

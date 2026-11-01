@@ -2103,20 +2103,34 @@ window.fetch = async (url, opts) => {
     // SSE relay stub: /api/ai/chat returns a byte stream (resp.body),
     // which api.js's aiChat reads with getReader(). Records the request
     // and plays the queued chunks (aiChatStreams entries: arrays of SSE
-    // frames) so tests can script the "stream".
+    // frames) so tests can script the "stream". An entry may also be
+    // {frames, gapMs}: the frames then arrive one per gapMs so a test can
+    // observe the panel while the stream is still open.
     const d = JSON.parse(opts.body || "{}");
     aiChatLog.push(d);
-    const frames = aiChatStreams.shift();
-    if (!frames) {
+    const queued = aiChatStreams.shift();
+    if (!queued) {
       return { ok: false, status: 400,
         text: async () => JSON.stringify({ error: "no queued ai chat stream" }),
         json: async () => ({ error: "no queued ai chat stream" }) };
     }
+    const frames = Array.isArray(queued) ? queued : queued.frames;
+    const gapMs = Array.isArray(queued) ? 0 : (queued.gapMs || 0);
     const enc = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        for (const frame of frames) controller.enqueue(enc.encode(frame));
-        controller.close();
+        if (!gapMs) {
+          for (const frame of frames) controller.enqueue(enc.encode(frame));
+          controller.close();
+          return;
+        }
+        let i = 0;
+        const step = () => {
+          if (i >= frames.length) { controller.close(); return; }
+          controller.enqueue(enc.encode(frames[i++]));
+          setTimeout(step, gapMs);
+        };
+        step();
       },
     });
     return { ok: true, status: 200, body: stream };
@@ -2286,6 +2300,7 @@ const errors = [];
 window.addEventListener("error", (e) => errors.push("window error: " + (e.error ? e.error.stack : e.message)));
 evalIn(read("static/vendor/marked.min.js"));
 evalIn(read("static/vendor/highlight.min.js"));
+evalIn(read("static/vendor/purify.min.js"));
   evalIn(read("static/vendor/codemirror.bundle.js"));
   evalIn(read("static/vendor/turndown.browser.js"));
   evalIn(read("static/vendor/turndown-plugin-gfm.browser.js"));
@@ -18758,8 +18773,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v18",
-      /const CACHE = "notebook-v18"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v19",
+      /const CACHE = "notebook-v19"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -32486,6 +32501,292 @@ function check(label, cond, extra) {
     window.NB.ai._resetImageCodec();
   }
 
+  console.log("== ai block enrichment ==");
+  // A reply bubble runs the shared block registry (NB.blocks), so a
+  // special fenced block in a reply renders as it does in a note -- except
+  // the renderers whose source parser executes its input: the panel passes
+  // {untrusted:true} and ```wavedrom stays a code block. jsdom has no
+  // layout, so this block covers the container swap, the streaming
+  // debounce, the untrusted exclusion, restored history, and the
+  // copy-button scan; the pixel sizing and the per-host relayout live in
+  // tests/browser/test_ai_blocks_browser.js.
+  {
+    const beLog = () => window.document.getElementById("ai-chat-log");
+    const beBubbles = () =>
+      Array.from(beLog().querySelectorAll(".ai-msg-assistant"));
+    const beLast = () => {
+      const b = beBubbles();
+      return b[b.length - 1] || null;
+    };
+    const beReset = async () => {
+      const clearBtn = window.document.querySelector("#ai-view .ai-clear");
+      if (clearBtn) {
+        clearBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      }
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+      await tick(10);
+    };
+    const beFire = (text) => { aiInput().value = text; aiSend(); };
+
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (B1) a streamed reply's fences become diagram containers once the
+    // turn ends, except ```wavedrom (the panel renders untrusted output).
+    {
+      await beReset();
+      aiChatStreams.push([
+        sseFrame("Here are the blocks:\n\n```mermaid\ngraph TD; A-->B;\n```\n\n" +
+          "```math\n\\int_0^1 x\\,dx\n```\n\n" +
+          "```wavedrom\n{signal:[{name:\"clk\",wave:\"p.....|...\"}]}\n```\n"),
+      ]);
+      beFire("blocks: plain stream");
+      await tick(200);
+      const bubble = beLast();
+      check("ai blocks: a streamed mermaid fence renders .mermaid-container",
+        !!bubble && bubble.querySelectorAll(".mermaid-container").length === 1 &&
+        !bubble.querySelector("pre > code.language-mermaid"),
+        "cards=" + (bubble ? bubble.querySelectorAll(".mermaid-container").length : -1));
+      check("ai blocks: a streamed math fence renders .katex-container",
+        !!bubble && bubble.querySelectorAll(".katex-container").length === 1 &&
+        !bubble.querySelector("pre > code.language-math"),
+        "cards=" + (bubble ? bubble.querySelectorAll(".katex-container").length : -1));
+      check("ai blocks: a streamed ```wavedrom fence in a reply stays raw",
+        !!bubble && bubble.querySelectorAll(".wavedrom-container").length === 0 &&
+        bubble.querySelectorAll("pre > code.language-wavedrom").length === 1,
+        "cards=" + (bubble ? bubble.querySelectorAll(".wavedrom-container").length : -1) +
+        " raw=" + (bubble ? bubble.querySelectorAll("pre > code.language-wavedrom").length : -1));
+    }
+
+    // (B2) the enrich pass is skipped while the reply ends in a fence that
+    // has not been closed yet: a partial diagram is never parsed, and the
+    // debounce cannot render it mid-stream.
+    {
+      await beReset();
+      aiChatStreams.push({
+        gapMs: 100,
+        frames: [
+          sseFrame("Slow diagram:\n\n```mermaid\ngraph TD; C-->D;\n"),
+          sseFrame("\n  C-->E;\n"),
+          sseFrame("```\n"),
+          sseFrame("Closing words.\n"),
+        ],
+      });
+      beFire("blocks: slow stream");
+      await tick(250);
+      const mid = beLast();
+      check("ai blocks: an open fence keeps the reply raw while streaming",
+        !!mid && !!mid.querySelector("pre > code.language-mermaid") &&
+        !mid.querySelector(".mermaid-container"),
+        "cards=" + (mid ? mid.querySelectorAll(".mermaid-container").length : -1) +
+        " raw=" + (mid ? mid.querySelectorAll("pre > code.language-mermaid").length : -1));
+      await tick(700);
+      const settled = beLast();
+      check("ai blocks: the fence renders once the stream settles",
+        !!settled && settled.querySelectorAll(".mermaid-container").length === 1 &&
+        !settled.querySelector("pre > code.language-mermaid"),
+        "cards=" + (settled ? settled.querySelectorAll(".mermaid-container").length : -1));
+    }
+
+    // (B3) the exclusion is panel-only: a note render (renderAll with no
+    // opts, the viewer's own call) still runs every descriptor.
+    {
+      const raw = '<pre><code class="language-wavedrom">' +
+        '{signal:[{name:"clk",wave:"p.....|..."}]}' + "</code></pre>";
+      const noteHost = window.document.createElement("div");
+      noteHost.innerHTML = raw;
+      await window.NB.blocks.renderAll(noteHost);
+      await tick(50);
+      check("ai blocks: the note path still renders a ```wavedrom fence",
+        noteHost.querySelectorAll(".wavedrom-container").length === 1 &&
+        noteHost.querySelectorAll("pre > code.language-wavedrom").length === 0,
+        "cards=" + noteHost.querySelectorAll(".wavedrom-container").length +
+        " raw=" + noteHost.querySelectorAll("pre > code.language-wavedrom").length);
+      const panelHost = window.document.createElement("div");
+      panelHost.innerHTML = raw;
+      await window.NB.blocks.renderAll(panelHost, { untrusted: true });
+      await tick(50);
+      check("ai blocks: renderAll({untrusted:true}) skips the wavedrom parser",
+        panelHost.querySelectorAll(".wavedrom-container").length === 0 &&
+        panelHost.querySelectorAll("pre > code.language-wavedrom").length === 1,
+        "cards=" + panelHost.querySelectorAll(".wavedrom-container").length +
+        " raw=" + panelHost.querySelectorAll("pre > code.language-wavedrom").length);
+    }
+
+    // (B4) a restored transcript's assistant fence enriches on mount.
+    {
+      await beReset();
+      window.localStorage.setItem("nb:aiChat", JSON.stringify({
+        v: 1,
+        conversation: [
+          { role: "user", content: "blocks: restored prompt" },
+          { role: "assistant",
+            content: "Restored diagram:\n\n```mermaid\ngraph TD; R-->S;\n```\n" },
+        ],
+        toolFlags: [false, false],
+        lastPrompt: "blocks: restored prompt",
+      }));
+      const before = beLog().querySelectorAll(".mermaid-container").length;
+      window.NB.ai._resetMemoryForTests();
+      window.NB.ai._restoreHistoryForTests(beLog());
+      await tick(150);
+      const restored = beLast();
+      check("ai blocks: a restored assistant fence enriches on mount",
+        beLog().querySelectorAll(".mermaid-container").length === before + 1 &&
+        !!restored && restored.querySelectorAll(".mermaid-container").length === 1,
+        "cards=" + beLog().querySelectorAll(".mermaid-container").length +
+        " before=" + before);
+    }
+
+    // (B5) the shared copy-button scan covers the reply's cards and is
+    // idempotent, so a second enrich pass adds no second button.
+    {
+      const cards = Array.from(beLog().querySelectorAll(".mermaid-container"));
+      const perCard = () => cards
+        .map((c) => c.querySelectorAll(".code-copy-btn.nb-copy-img-btn").length)
+        .join(",");
+      check("ai blocks: NB.copyButton.scan is exported",
+        typeof window.NB.copyButton.scan === "function");
+      const beforeScan = perCard();
+      check("ai blocks: every enriched diagram card carries one image copy button",
+        cards.length >= 1 && beforeScan.split(",").every((n) => n === "1"),
+        "cards=" + cards.length + " perCard=" + beforeScan);
+      const bubble = cards.length
+        ? cards[0].closest(".ai-msg-assistant") : null;
+      window.NB.copyButton.scan(bubble);
+      window.NB.copyButton.scan(bubble);
+      await tick(20);
+      check("ai copy: scan(reply bubble) is idempotent",
+        perCard() === beforeScan,
+        "before=" + beforeScan + " after=" + perCard());
+    }
+
+    // (B6) the reply is sanitized: raw HTML from the model cannot act, and
+    // the legitimate markdown survives intact.
+    {
+      await beReset();
+      aiChatStreams.push([sseFrame(
+        "Hostile **bold** reply.\n\n" +
+        '<img src="x" onerror="window.__aiPwned = 1">\n\n' +
+        "[bad link](javascript:alert('x'))\n\n" +
+        '<form action="#"><input type="password" name="pw"></form>\n\n' +
+        "- item one\n- item two\n\n" +
+        "```js\nconsole.log(1);\n```\n\n" +
+        "| h1 | h2 |\n| -- | -- |\n| a | b |\n\n" +
+        "- [ ] open task\n- [x] done task\n\n" +
+        "See [[a]] for context.\n")]);
+      beFire("blocks: hostile reply");
+      await tick(150);
+      const bubble = beLast();
+      const hrefs = bubble
+        ? Array.from(bubble.querySelectorAll("a"))
+          .map((a) => a.getAttribute("href") || "") : [];
+      check("ai sanitize: an on* handler from the reply is stripped",
+        !!bubble && bubble.querySelector("[onerror]") === null &&
+        bubble.querySelector("script") === null &&
+        !!bubble.querySelector("img[src]"),
+        "onerror=" + (bubble ? bubble.querySelectorAll("[onerror]").length : -1) +
+        " img=" + (bubble ? bubble.querySelectorAll("img[src]").length : -1));
+      check("ai sanitize: a javascript: link is stripped",
+        hrefs.every((h) => !/^\s*javascript:/i.test(h)), JSON.stringify(hrefs));
+      check("ai sanitize: no form and no non-checkbox input survives",
+        !!bubble && bubble.querySelector("form") === null &&
+        bubble.querySelectorAll("input:not([type=checkbox])").length === 0,
+        "forms=" + (bubble ? bubble.querySelectorAll("form").length : -1) +
+        " inputs=" + (bubble ? bubble.querySelectorAll("input").length : -1));
+      check("ai sanitize: the legitimate markdown still renders",
+        !!bubble && !!bubble.querySelector("strong") &&
+        !!bubble.querySelector("ul li") &&
+        !!bubble.querySelector("pre code.hljs") &&
+        !!bubble.querySelector("table th") && !!bubble.querySelector("table td"),
+        "children=" + (bubble ? bubble.children.length : -1));
+      check("ai sanitize: task-list checkboxes survive the input filter",
+        !!bubble && bubble.querySelectorAll('input[type="checkbox"]').length === 2,
+        "boxes=" + (bubble ?
+          bubble.querySelectorAll('input[type="checkbox"]').length : -1));
+      const wiki = bubble && bubble.querySelector('a[data-wikilink="1"]');
+      check("ai sanitize: a [[wikilink]] keeps its data-wikilink attribute",
+        !!wiki && wiki.textContent === "a",
+        wiki ? JSON.stringify({ text: wiki.textContent,
+          href: wiki.getAttribute("href") }) : "no wikilink");
+    }
+
+    // (B7) fail closed: without the sanitizer the reply is plain text, so
+    // model HTML can never reach the panel through a missing bundle.
+    {
+      await beReset();
+      const savedPurify = window.DOMPurify;
+      delete window.DOMPurify;
+      try {
+        aiChatStreams.push([sseFrame("Fail-closed **bold** reply.")]);
+        beFire("blocks: no sanitizer");
+        await tick(150);
+        const bubble = beLast();
+        check("ai sanitize: without DOMPurify the reply renders as plain text",
+          !!bubble && !bubble.querySelector("strong") &&
+          !bubble.querySelector("p") &&
+          /Fail-closed \*\*bold\*\* reply\./.test(bubble.textContent),
+          bubble ? JSON.stringify(bubble.textContent.slice(0, 60)) : "no bubble");
+      } finally {
+        window.DOMPurify = savedPurify;
+      }
+      check("ai sanitize: the sanitizer is restored for the next reply",
+        window.DOMPurify === savedPurify &&
+        typeof window.DOMPurify.sanitize === "function");
+    }
+
+    // (B8) rendered SVG output is sanitized after the renderer swaps it in:
+    // the inline-svg renderer keeps SMIL nodes, so this pass must drop them
+    // while the sizing data-* attributes the layout reads survive.
+    {
+      await beReset();
+      const ATTACK_SVG = [
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 60" width="120" height="60">',
+        "  <script>window.__aiPwned = 1;</script>",
+        '  <animate attributeName="href" values="javascript:alert(1)"/>',
+        '  <rect x="1" y="1" width="118" height="58" fill="none" stroke="currentColor"/>',
+        "</svg>",
+      ].join("\n");
+      aiChatStreams.push([sseFrame(
+        "Drawing:\n\n```svg\n" + ATTACK_SVG + "\n```\n")]);
+      beFire("blocks: hostile svg");
+      await tick(250);
+      const bubble = beLast();
+      const card = bubble && bubble.querySelector(".svg-container");
+      const svg = card && card.querySelector("svg");
+      check("ai sanitize: the reply's ```svg fence renders a .svg-container",
+        !!svg, "cards=" + (bubble ?
+          bubble.querySelectorAll(".svg-container").length : -1));
+      check("ai sanitize: the rendered SVG drops script and SMIL animation",
+        !!svg && svg.querySelectorAll("script, animate, set, discard").length === 0,
+        "left=" + (svg ? svg.querySelectorAll("script, animate, set, discard").length : -1));
+      check("ai sanitize: the SVG keeps its sizing data-* attributes",
+        !!svg && !!svg.dataset.nbSizing,
+        "sizing=" + (svg ? svg.dataset.nbSizing : "n/a"));
+    }
+
+    // (B9) the sanitizer bundle is wired into the boot list and the offline
+    // precache, next to the other always-needed vendored libs.
+    {
+      const idxHtml = read("templates/index.html");
+      const swJs = read("static/sw.js");
+      const tag = "/static/vendor/purify.min.js";
+      check("ai sanitize: index.html loads purify.min.js after highlight.min.js",
+        idxHtml.indexOf(tag) !== -1 &&
+        idxHtml.indexOf(tag) > idxHtml.indexOf("/static/vendor/highlight.min.js"));
+      check("ai sanitize: sw.js PRECACHE lists purify.min.js",
+        swJs.indexOf(tag) !== -1);
+    }
+
+    // Leave the panel idle and the storage clean for later blocks.
+    await beReset();
+  }
+
   console.log("== side-panel AI collapse button ==");
   // The AI view is mounted (with its test config) by the block above;
   // assert its header carries a ‹ collapse button that closes the panel.
@@ -36070,8 +36371,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v18",
-        /const CACHE = "notebook-v18"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v19",
+        /const CACHE = "notebook-v19"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);

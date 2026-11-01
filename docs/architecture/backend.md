@@ -326,10 +326,13 @@ package file, then updating the version strings in `ai.js` and `agent.md`
 in the same change.
 
 **Un-sanitized Markdown.** Notebooks are the user's own files, so
-`viewer.js` renders them un-sanitized. If untrusted content is introduced,
-vendored DOMPurify must be added before `innerHTML`. The `html-live`
-renderer is the exception: it runs in a sandboxed iframe with
-`allow-scripts` and no `allow-same-origin`.
+`viewer.js` renders them un-sanitized. The one untrusted render path is the
+AI panel: `ai.js` sanitizes an assistant reply's marked HTML with the
+vendored DOMPurify 3.4.12 (`static/vendor/purify.min.js`) before `innerHTML`
+and sanitizes model-authored `svg`/`dot` output after its renderer runs. A
+new untrusted path must sanitize the same way. The `html-live` renderer is
+the other exception: it runs in a sandboxed iframe with `allow-scripts` and
+no `allow-same-origin`.
 
 ## 10. Directory map
 

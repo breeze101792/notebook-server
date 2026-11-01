@@ -25,7 +25,8 @@
  * and gets back { openLightbox, closeLightbox, zoomIn, zoomOut, fitToPage }.
  * The factory wires the overlay's buttons, backdrop click, mouse wheel,
  * and the global Escape / Ctrl++ / Ctrl+- keybindings, and installs a
- * delegated click handler on #viewer-content for `containerSelector`.
+ * delegated click handler on the reading roots (#viewer-content and the
+ * AI panel's .ai-chat-log) for `containerSelector`.
  *
  * Each instance keeps its own open/zoom state, so multiple diagram types
  * can each have a lightbox without interfering.
@@ -37,6 +38,11 @@
   const ZOOM_STEP = 0.25;
   const ZOOM_MIN  = 0.25;
   const ZOOM_MAX  = 5;
+
+  /* Reading roots whose diagram cards are click-to-zoom: the note viewer
+   * and the AI panel's chat log. Matched by shape so a root mounted after
+   * load (the AI panel) needs no re-wiring. */
+  const LIGHTBOX_ROOT_SELECTOR = "#viewer-content, .ai-chat-log";
 
   function create(cfg) {
     const overlay = document.getElementById(cfg.overlayId);
@@ -271,28 +277,32 @@
       }
     });
 
-    /* Delegated click handler on #viewer-content: clicking any rendered
-     * diagram container (e.g. .mermaid-container) opens the lightbox. We
-     * skip clicks on <a> elements inside the SVG (be defensive). */
-    const viewerContent = document.getElementById("viewer-content");
-    if (viewerContent) {
-      viewerContent.addEventListener("click", (e) => {
-        // In hybrid (WYSIWYG) mode a click on a block means "edit it"
-        // (hybrid.js swaps it to an editable source fence); the
-        // lightbox only opens in preview mode.
-        if (window.NB && NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
-        const container = e.target.closest(cfg.containerSelector);
-        if (!container) return;
-        if (e.target.closest("a")) return;
-        // Prefer the diagram inside the sizing wrapper: the copy-image
-        // button is also an <svg> and can follow the diagram in the card.
-        const svg = container.querySelector(".nb-figure-viewport > svg") ||
-          container.querySelector("svg");
-        if (!svg) return;
-        e.stopPropagation();
-        openLightbox(svg);
-      });
-    }
+    /* Delegated click handler: clicking any rendered diagram container
+     * (e.g. .mermaid-container) inside a reading root opens the lightbox.
+     * The roots are matched by shape (the note viewer and the AI panel's
+     * chat log), and the handler sits on the body so a root mounted after
+     * load needs no re-wiring. Clicks on <a> elements inside the SVG are
+     * skipped (be defensive). The event is left to propagate: at body level
+     * a stop would also suppress the document-level listeners (context-menu
+     * close) for a diagram click. */
+    document.body.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target || typeof target.closest !== "function") return;
+      if (!target.closest(LIGHTBOX_ROOT_SELECTOR)) return;
+      // In hybrid (WYSIWYG) mode a click on a block means "edit it"
+      // (hybrid.js swaps it to an editable source fence); the
+      // lightbox only opens in preview mode.
+      if (window.NB && NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
+      const container = target.closest(cfg.containerSelector);
+      if (!container) return;
+      if (target.closest("a")) return;
+      // Prefer the diagram inside the sizing wrapper: the copy-image
+      // button is also an <svg> and can follow the diagram in the card.
+      const svg = container.querySelector(".nb-figure-viewport > svg") ||
+        container.querySelector("svg");
+      if (!svg) return;
+      openLightbox(svg);
+    });
 
     return { openLightbox, closeLightbox, zoomIn, zoomOut, fitToPage };
   }

@@ -294,7 +294,9 @@ The six code-block renderers (`mermaid.js`, `wavedrom.js`, `katex.js`,
 `viz.js`, `htmlpreview.js`, `svg.js`) each register a descriptor with `blocks.js` at
 load. `NB.blocks` owns the one authoritative renderer list and drives the
 render pipeline (`renderAll`, called by `viewer.js` / `hybrid.js` /
-`export.js`), the hybrid Save round-trip (`restoreForMarkdown`, replacing
+`export.js` / `ai.js`; `ai.js` asks for `{untrusted: true}`, which skips a
+descriptor marked `untrustedSafe: false` such as the eval-based wavedrom
+parser), the hybrid Save round-trip (`restoreForMarkdown`, replacing
 each rendered container or error box with its fenced source so turndown
 doesn't strip the SVG/HTML), and the hybrid click-to-edit type table
 (`pluginTypes`). Each descriptor names a `marker` attribute/value pair the
@@ -348,7 +350,11 @@ Module responsibilities:
   bar. A dirty tab switch stores the buffer on the cache entry; returning shows
   the saved preview plus a Recover bar (source recovery is Ctrl+Z undoable). Notebooks are the user's own files in
   `notebook/`, so they are rendered **un-sanitized**; if untrusted content is ever
-  introduced, add vendored DOMPurify and sanitize before `innerHTML`.
+  introduced, add vendored DOMPurify and sanitize before `innerHTML`. The one
+  untrusted path that does so today is `ai.js`: an assistant reply is model
+  output, so its marked HTML is sanitized with the vendored DOMPurify 3.4.12
+  before it enters the panel (and model-authored `svg`/`dot` output after the
+  renderer swaps it in); a missing bundle falls back to plain text.
 - `tabs.js` — top-bar file tabs; owns the ordered open set + active file, coordinates
   with `viewer.js` (a dirty switch stashes the buffer instead of prompting; the
   cache keeps it and the tab stays marked), and persists `openFiles`/`activeFile`
@@ -435,7 +441,10 @@ Module responsibilities:
 - `ai.js` — AI assistant side-panel view (✨ in the activity bar; lazy-mount
   host `#ai-view`, `<div id="ai-view" class="side-panel-view" data-view="ai">`
   in `index.html`). Chat streams through `NB.api.aiChat` (SSE; `api.js` parses
-  OpenAI-style `delta.content` frames). It is an **agentic tool loop**, not a
+  OpenAI-style `delta.content` frames). Replies render with the viewer's
+  markdown parser and the shared block registry (`NB.blocks.renderAll` in its
+  untrusted mode, sanitized with DOMPurify), so a fence the model writes
+  renders as it would in a note. It is an **agentic tool loop**, not a
   context-free chat:
 
   - **Six tools** are declared in `systemPrompt()` and called by the model as

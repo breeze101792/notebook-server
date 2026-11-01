@@ -287,6 +287,11 @@
       errorMarker: { attr: "data-wavedrom", value: "error" },
       sourceClass: "wavedrom-source",
       design: "wavedromDesign",
+      /* parseSource falls back to eval for WaveDrom's unquoted keys, which
+       * is fine for a note (the user's own file) and not for model output.
+       * NB.blocks.renderAll({untrusted:true}) skips this descriptor; the
+       * fence stays a code block until the parser is JSON-only. */
+      untrustedSafe: false,
       renderAll,
     });
   }

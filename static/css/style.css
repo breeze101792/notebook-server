@@ -5118,6 +5118,18 @@ body > #nb-menu .submenu.open {
   margin: .8em 0;
 }
 .ai-prose-span img { max-width: 100%; }
+/* Rendered blocks (mermaid / wavedrom / graphviz / svg / math) arrive
+ * through NB.blocks like they do in a note. The panel is narrow, so the
+ * card chrome gives back its horizontal padding; the figure still fits
+ * the chat log through the shared sizing pass, and the lightbox is the
+ * detail view. */
+.ai-prose-span .mermaid-container,
+.ai-prose-span .wavedrom-container,
+.ai-prose-span .viz-container,
+.ai-prose-span .svg-container,
+.ai-prose-span .katex-container {
+  padding: 8px 10px;
+}
 
 /* Turn controls under the newest turn: quiet text affordances, not
  * buttons. No fill or border at rest; hover/focus reveals the accent.

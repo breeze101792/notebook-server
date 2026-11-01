@@ -27,10 +27,28 @@ then the post-processing runs in order:
 3. `NB.blocks.renderAll()` runs the six special block renderers (call at
    `viewer.js:297-299`, registry at `static/js/blocks.js`).
 
-Markdown is rendered **un-sanitized**. The notes are the user's own files,
-so there is no third-party content in the render path
-(`viewer.js:5-7`). If untrusted content is ever introduced, a vendored
-DOMPurify pass is required before `innerHTML`.
+The AI panel runs the same parser and the same block registry on every
+assistant reply (`ai.js` `renderMarkdown` + `enrichBlocks`), so a fence the
+model writes renders as it would in a note. A streaming reply rebuilds its
+prose on every delta, so the block pass is debounced, skipped while a fence
+is still open, and run immediately when the turn ends. The reply is model
+output, so the pass asks for `renderAll(container, { untrusted: true })`,
+which skips a descriptor marked `untrustedSafe: false` (today `wavedrom`,
+whose parser evals unquoted keys); its fence stays a code block in the
+panel.
+
+Markdown is rendered **un-sanitized** for notes. The notes are the user's
+own files, so there is no third-party content in that render path
+(`viewer.js:5-7`). The one untrusted render path is the AI panel: an
+assistant reply is model output and its marked HTML is sanitized with the
+vendored DOMPurify 3.4.12 (`static/js/ai.js` `AI_SANITIZE_CONFIG`) before it
+enters the panel. That config keeps headings, tables, task lists, code
+fences, and the wikilink anchors and `data-*` attributes; it drops script,
+styles, frames, forms, event handlers, and `javascript:` URLs. Without the
+bundle the reply is shown as plain text (fail closed). Model-authored
+```svg / ```dot output is sanitized after the renderer swaps it in
+(`AI_SANITIZE_SVG_CONFIG`): the drawing and its `data-*` survive, SMIL
+animation, CSS, `foreignObject`, and script do not.
 
 Because `breaks` is off, a single newline does not start a new paragraph.
 There is no emoji shortcode plugin, so `:smile:` stays literal text.
@@ -163,7 +181,9 @@ stretch the drawing's internal text to the reading column. Unknown sizes
 stay on the safe intrinsic-CSS fallback.
 
 The matrix is measured at layout time from the card's content width and
-70% of `#viewer-content.clientHeight`:
+70% of the nearest scrolling host's `clientHeight` — `#viewer-content` for a
+note, `.ai-chat-log` for an AI reply — found by shape, so a render root
+outside the viewer fits its own pane.
 
 - **normal** — the diagram fits the width and the measured viewport.
 - **tall** — it fits the width but is taller than the viewport, up to
@@ -179,9 +199,10 @@ The card itself stays at the reading measure; `width: fit-content` is not
 used because it collapses a viewBox-only SVG or live HTML. The
 `.nb-figure-viewport` wrapper only sizes and centres the SVG; it never
 sets a height cap or `overflow`. Layout recomputes after each render and
-on window resize, a guarded `ResizeObserver` on `#viewer-content`
-(sidebar/outline drags and split-pane changes), font-size changes, the
-phone/desktop flip, and a `<details>` open. The exported HTML carries the
+on window resize, a guarded `ResizeObserver` on each figure host (the
+viewer and the AI chat log: sidebar/outline/panel drags and split-pane
+changes), font-size changes, the phone/desktop flip, and a `<details>`
+open. The exported HTML carries the
 same wrapper and tokens (its body prose is 16px, so that is its
 reference); on screen a tall figure grows the exported page, and in print
 a 180mm page cap scales the whole figure to fit. KaTeX fits a wide

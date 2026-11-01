@@ -773,8 +773,9 @@
     btn.appendChild(buildIcon());
     btn.addEventListener("click", (e) => {
       // Both are required: preventDefault stops the anchor/button default,
-      // stopPropagation stops the delegated lightbox click handler on
-      // #viewer-content from also opening the full-screen overlay.
+      // stopPropagation stops the delegated lightbox click handler (on the
+      // document body, scoped to the reading roots) from also opening the
+      // full-screen overlay.
       e.preventDefault();
       e.stopPropagation();
       onClick();
@@ -806,16 +807,21 @@
     scan();
   }
 
-  /* scan() -- inject the right button into every rendered block: an image
+  /* scan(root) -- inject the right button into every rendered block: an image
    * button into each SVG diagram container and each html-live card, a text
    * button into the katex container. Skipped in hybrid mode and in the live
    * preview; the buttons are view-only chrome and must never enter the
-   * editable / serialized DOM. */
-  function scan() {
-    if (livePreview) return;
-    if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
-    const host = document.getElementById(VIEWER_CONTENT_ID);
+   * editable / serialized DOM. `root` defaults to the note viewer; a caller
+   * passing another reading root (the AI panel's chat log) covers blocks the
+   * viewer-scoped MutationObserver cannot see. */
+  function scan(root) {
+    const viewerHost = document.getElementById(VIEWER_CONTENT_ID);
+    const host = (root && root.nodeType === 1) ? root : viewerHost;
     if (!host) return;
+    if (host === viewerHost) {
+      if (livePreview) return;
+      if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
+    }
     host.querySelectorAll(IMAGE_CONTAINER_SELECTOR).forEach(attachImageCopy);
     host.querySelectorAll(HTMLPREVIEW_CONTAINER_SELECTOR).forEach(attachHtmlImageCopy);
     // Only offer the text button when there is a source to copy, so a
@@ -832,17 +838,21 @@
     if (!host) return;
 
     if (typeof window.MutationObserver === "function") {
-      new MutationObserver(scan).observe(host, { childList: true, subtree: true });
+      // scan() reads an optional render root as its first argument, so the
+      // observer's records array and the event payloads below are wrapped:
+      // the default root stays the viewer.
+      new MutationObserver(() => scan()).observe(host, { childList: true, subtree: true });
     }
     NB.evt.on("viewer:rendered", onRendered);
     NB.evt.on("hybrid:will-enter", removeAll);
     NB.evt.on("hybrid:entered", removeAll);
-    NB.evt.on("hybrid:exited", scan);
+    NB.evt.on("hybrid:exited", () => scan());
     scan();
   }
 
   NB.copyButton = {
     attachTextCopy, attachImageCopy, attachHtmlImageCopy, copySvgToPng, copyHtmlToPng,
+    scan,
   };
 
   if (document.readyState === "loading") {

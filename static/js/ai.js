@@ -85,6 +85,13 @@
    * max-height in style.css. */
   const AI_INPUT_MAX_HEIGHT = 160;
 
+  /* A reply re-parses its prose on every delta, so running the shared
+   * block renderers (mermaid / wavedrom / math / graphviz / html-live /
+   * svg) per delta would render a diagram per token. The enrich pass
+   * waits this long for the stream to settle instead; a finished turn
+   * enriches immediately. */
+  const AI_BLOCK_ENRICH_MS = 400;
+
   /* Attachments: local text files inlined into the user turn, and local
    * images sent as content parts. The slot count and the per-file source
    * cap are reserved synchronously at selection time so an in-flight read
@@ -872,6 +879,9 @@
   let mountSyncAttachAffordance = null;
   /* One inline ACP image notice per turn, however many rounds/requests. */
   let acpImageNoticeShown = false;
+  /* Pending debounced block-render pass for a streaming reply bubble. */
+  let enrichTimer = 0;
+  let enrichTarget = null;
 
   function currentPath() {
     return NB.viewer.getPath() || "";
@@ -1158,6 +1168,9 @@
     span.className = "ai-prose-span";
     span.appendChild(renderMarkdown(prose));
     bubble.appendChild(span);
+    /* Restored bubbles are static, so the block renderer pass can run
+     * right away (the bubble is already in the log). */
+    enrichBlocks(bubble);
   }
 
   /* Remove the inline "[Attached file: NAME (SIZE)]...[/Attached file:
@@ -1248,24 +1261,100 @@
     log.scrollTop = log.scrollHeight;
   }
 
-  /* Render a prose blob as markdown (same pipeline as the viewer:
-   * marked + highlight.js, then post-process). Return a fragment.
-   * Falls back to a plain-text node when marked is unavailable so the
-   * message never disappears. Not sanitized -- same trust model as the
-   * notebook itself (the user's own files), per the viewer's note. */
+  /* The reply is model output, not the user's own note, so the marked HTML
+   * is sanitized before it enters the panel. The note viewer stays
+   * unsanitized (its files are the user's own); this is the untrusted path
+   * that markdown.md names. DOMPurify keeps headings, tables, task lists,
+   * code fences and the wikilink anchors/data attributes, and drops raw
+   * HTML that can act on its own: script, styles, frames, forms, event
+   * handlers, and javascript: URLs. Without the bundle the reply is shown
+   * as plain text (fail closed). */
+  const AI_SANITIZE_CONFIG = {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: [
+      "script", "style", "iframe", "object", "embed", "form", "button",
+      "textarea", "select", "link", "meta", "base", "template",
+    ],
+    FORBID_ATTR: ["style", "formaction"],
+  };
+
+  /* Model-authored ```svg / ```dot output is sanitized after the renderer
+   * has swapped it in. DOMPurify keeps the drawing and its data-*
+   * attributes (the sizing pass and the copy button read them), and drops
+   * script, foreignObject, CSS (a style can fetch a remote URL), and SMIL
+   * animation (which can rewrite an href after load). The sizing wrapper
+   * around the SVG is left in place. */
+  const AI_SANITIZE_SVG_CONFIG = {
+    USE_PROFILES: { svg: true, svgFilters: true },
+    FORBID_TAGS: [
+      "script", "foreignObject", "style", "animate", "animateTransform",
+      "animateMotion", "set", "discard",
+    ],
+    FORBID_ATTR: ["style"],
+  };
+  const AI_SANITIZED_BLOCK_SELECTOR = ".svg-container, .viz-container";
+
+  /* A reply is not a form: only a task list's checkbox survives. A bare
+   * password or email field in a model reply is a phishing affordance, so
+   * every other input is dropped by the hook installed once at load. */
+  const AI_SANITIZE_INPUT_TAG = "input";
+  const AI_SANITIZE_INPUT_KEEP_TYPE = "checkbox";
+
+  function installSanitizeHooks() {
+    if (!window.DOMPurify || typeof window.DOMPurify.addHook !== "function") {
+      return;
+    }
+    window.DOMPurify.addHook("uponSanitizeElement", (node, data) => {
+      if (data.tagName !== AI_SANITIZE_INPUT_TAG) return;
+      const type = node.getAttribute ? node.getAttribute("type") : null;
+      if (type === AI_SANITIZE_INPUT_KEEP_TYPE) return;
+      if (node.parentNode) node.parentNode.removeChild(node);
+    });
+  }
+  installSanitizeHooks();
+
+  function sanitizeAiHtml(html) {
+    if (!window.DOMPurify || typeof window.DOMPurify.sanitize !== "function") {
+      return null;
+    }
+    return window.DOMPurify.sanitize(html, AI_SANITIZE_CONFIG);
+  }
+
+  function sanitizeRenderedBlocks(bubble) {
+    if (!bubble || !window.DOMPurify) return;
+    bubble.querySelectorAll(AI_SANITIZED_BLOCK_SELECTOR).forEach((card) => {
+      const svg = card.querySelector("svg");
+      if (!svg) return;
+      const host = document.createElement("div");
+      host.innerHTML = window.DOMPurify.sanitize(
+        svg.outerHTML, AI_SANITIZE_SVG_CONFIG);
+      const clean = host.querySelector("svg");
+      if (clean) svg.replaceWith(clean);
+    });
+  }
+
+  /* Render a prose blob as markdown (same parser as the viewer: marked +
+   * highlight.js). The special code-block renderers (mermaid, wavedrom,
+   * math, graphviz, html-live, svg) run later, per bubble, through
+   * enrichBlocks -- a streaming reply rebuilds its prose on every delta,
+   * so they cannot run here without rendering a diagram per token.
+   * Falls back to a plain-text node when marked or the sanitizer is
+   * unavailable so the message never disappears. */
   function renderMarkdown(text) {
     const frag = document.createDocumentFragment();
     const host = document.createElement("div");
     frag.appendChild(host);
-    if (window.marked) {
-      host.innerHTML = marked.parse(text, { gfm: true, breaks: false });
-    } else {
+    const html = window.marked
+      ? sanitizeAiHtml(marked.parse(text, { gfm: true, breaks: false }))
+      : null;
+    if (html == null) {
       const span = document.createElement("span");
       span.className = "ai-prose-span";
       span.textContent = text;
       host.appendChild(span);
       return frag;
     }
+    host.innerHTML = html;
     if (window.hljs) {
       host.querySelectorAll("pre code").forEach(el => {
         try { hljs.highlightElement(el); }
@@ -1284,7 +1373,8 @@
 
   /* Streaming bubble renderer: re-parses the whole text on every delta;
    * when the structure is unchanged, updates only the last prose node.
-   * Prose renders as markdown (headings, lists, code fences, tables). */
+   * Prose renders as markdown (headings, lists, code fences, tables) and
+   * its special fences are enriched through the shared block registry. */
   function renderAssistantContent(bubble, fullText, state) {
     const parsed = parseProposals(fullText);
     const shape = parsed.segments.map(s =>
@@ -1300,6 +1390,7 @@
         }
       }
       scrollLog(bubble.parentNode);
+      if (!hasOpenFence(fullText)) scheduleEnrich(bubble);
       return;
     }
     state.lastShape = shape;
@@ -1317,6 +1408,57 @@
       // tool segments render nothing here; the tool loop handles them
     }
     scrollLog(bubble.parentNode);
+    if (!hasOpenFence(fullText)) scheduleEnrich(bubble);
+  }
+
+  /* A fence that has not been closed yet is partial source: rendering it
+   * would run the block parser on half a diagram every time the stream
+   * pauses, and a parse error would raise a toast the next delta makes
+   * meaningless. Only enrich between fences while streaming; the turn-end
+   * pass renders whatever the reply actually contains. */
+  function hasOpenFence(text) {
+    const fences = String(text || "").match(/^[ \t]*```/gm);
+    return !!(fences && fences.length % 2 === 1);
+  }
+
+  /* Run the shared block renderers over a reply bubble, so a fence the
+   * model writes renders as it would in a note. The reply is model output,
+   * not the user's own file, so the registry runs in its untrusted mode: a
+   * renderer whose source parser executes JavaScript (the ```wavedrom
+   * module falls back to eval for unquoted keys) instead leaves its fence
+   * as a plain code block. The pass is idempotent, so a repeat costs only a
+   * query. */
+  function enrichBlocks(bubble) {
+    if (enrichTimer) {
+      window.clearTimeout(enrichTimer);
+      enrichTimer = 0;
+    }
+    enrichTarget = null;
+    if (!bubble || !NB.blocks || !NB.blocks.renderAll) return;
+    const done = NB.blocks.renderAll(bubble, { untrusted: true });
+    /* Sanitize model-authored SVG output, then inject the image / math
+     * copy buttons -- the same post-render scan the viewer gets, after the
+     * async renderers have swapped their containers in. */
+    if (done && typeof done.then === "function") {
+      done.then(() => {
+        sanitizeRenderedBlocks(bubble);
+        if (NB.copyButton && NB.copyButton.scan) NB.copyButton.scan(bubble);
+      });
+    }
+  }
+
+  /* Debounced enrich for a streaming reply. Each delta re-renders the
+   * prose, so a diagram rendered mid-stream is thrown away by the next
+   * delta; waiting for the stream to settle renders each fence once. */
+  function scheduleEnrich(bubble) {
+    enrichTarget = bubble;
+    if (enrichTimer) window.clearTimeout(enrichTimer);
+    enrichTimer = window.setTimeout(() => {
+      enrichTimer = 0;
+      const target = enrichTarget;
+      enrichTarget = null;
+      if (target) enrichBlocks(target);
+    }, AI_BLOCK_ENRICH_MS);
   }
 
   /* Legacy single-op nb-edit block (no tool call): still renders a
@@ -1620,6 +1762,9 @@
         break;
       }
       renderAssistantContent(bubble, text, state);
+      /* The stream settled: render its special fences now instead of on
+       * the debounce (which may be mid-flight for this bubble). */
+      enrichBlocks(bubble);
       if (aborted) break;
 
       /* Extract nb-tool calls from the reply. */
@@ -2120,6 +2265,12 @@
       systemCache = null;
       regenerating = false;
       log.innerHTML = "";
+      /* The bubble a pending enrich pass was waiting for is gone. */
+      if (enrichTimer) {
+        window.clearTimeout(enrichTimer);
+        enrichTimer = 0;
+      }
+      enrichTarget = null;
       clearAttachments();
       removeTurnControls(log);
       lastSentPrompt = "";

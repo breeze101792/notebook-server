@@ -214,9 +214,11 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
   anchor returns HTTP 400 and rejects the whole batch untouched.
 - **Writes are blocked on existing paths.** The assistant's `write` cannot
   overwrite; the owner or model must use `patch` instead.
-- **Markdown is rendered un-sanitized.** Notes are the owner's own files. If
-  untrusted content is ever introduced, a vendored DOMPurify pass is required
-  before `innerHTML`.
+- **Notes are rendered un-sanitized; the AI panel is not.** Notes are the
+  owner's own files. An assistant reply is model output and is sanitized with
+  the vendored DOMPurify before it enters the panel (script, styles, frames,
+  forms, event handlers, and `javascript:` URLs are dropped). Any new
+  untrusted render path must do the same.
 - **`html-live` is the one sandboxed exception.** It runs in an iframe with
   `allow-scripts` and without `allow-same-origin`: an opaque origin with no
   access to cookies, storage, the parent DOM, or `/api/*`.

@@ -305,6 +305,41 @@ surface as Apply/Reject cards.
 - Rejecting records the outcome in the conversation so the model knows the
   proposal was declined.
 
+## Message rendering
+
+An assistant reply renders with the same pipeline as a note: marked in GFM
+mode for the prose, highlight.js for code fences, and `NB.blocks.renderAll`
+for the special fences (`mermaid`, `wavedrom`, `math`, `graphviz`,
+`html-live`, `svg`). The block pass runs per bubble, debounced 400 ms while
+a reply streams and immediately when the turn ends, because every delta
+re-renders the prose and a diagram rendered mid-stream would be discarded
+by the next delta. A reply whose fence is still open is not enriched, so a
+half-written diagram never runs the parser or raises its error toast.
+Restored history enriches each bubble the same way.
+
+The reply is model output, not the user's own file, so the pass runs
+`renderAll(container, { untrusted: true })`. A descriptor that declares
+`untrustedSafe: false` is skipped there; today that is `wavedrom`, whose
+source parser falls back to `eval` for WaveDrom's unquoted keys. A
+```wavedrom fence in a reply therefore stays a highlighted code block, and
+the note viewer still renders it as a diagram. Making the WaveDrom parser
+JSON-only would lift the exclusion.
+
+The reply HTML is untrusted, so it is sanitized before it enters the panel:
+`marked.parse()` feeds the vendored DOMPurify 3.4.12 (`static/vendor/
+purify.min.js`) with `AI_SANITIZE_CONFIG`, which forbids script, style,
+frames, forms, and `javascript:` URLs while keeping the markdown shapes,
+task-list checkboxes, and wikilink data attributes. A missing bundle fails
+closed: the reply renders as plain text. Model-authored `svg` and `dot`
+output is sanitized separately after rendering (`AI_SANITIZE_SVG_CONFIG`),
+because those renderers build their own `<svg>` from the fence source.
+
+Rendered blocks in the panel keep the note affordances: the shared figure
+sizing fits each diagram to the chat log (not to `#viewer-content`), the
+copy buttons come from the same `copy-image.js` owner, and clicking a
+diagram opens its lightbox. The `nb-tool` and `nb-edit` fences are stripped
+before rendering, so a tool call never appears as a block.
+
 ## Conversation memory
 
 `ai.js` owns the full transcript in `conversation`: the system prompt,
