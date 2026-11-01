@@ -5936,6 +5936,32 @@ body > #nb-menu .submenu.open {
 .table-editor-modal .te-cell.is-sel-bottom { --te-sel-b: -1px; }
 .table-editor-modal .te-cell.is-sel-left { --te-sel-l: 1px; }
 .table-editor-modal .te-cell.is-sel-right { --te-sel-r: -1px; }
+
+/* Fill handle on the selection's bottom-right corner: the pointer path
+ * for extending a series. 8px inside the cell, never over its text. */
+.table-editor-modal .te-fill-handle {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 1px solid var(--bg-panel);
+  border-radius: 2px;
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 4;
+}
+.table-editor-modal .te-cell.is-fill-preview {
+  background-image: linear-gradient(var(--te-sel-fill), var(--te-sel-fill));
+}
+.table-editor-modal .te-cell.is-fill-preview:not(.is-selected) {
+  box-shadow:
+    inset 0 var(--te-sel-t, 0px) 0 0 var(--accent),
+    inset 0 var(--te-sel-b, 0px) 0 0 var(--accent),
+    inset var(--te-sel-l, 0px) 0 0 0 var(--accent),
+    inset var(--te-sel-r, 0px) 0 0 0 var(--accent);
+}
 .table-editor-modal .te-clip-group .te-tool:active {
   background: var(--accent-soft);
   color: var(--accent);

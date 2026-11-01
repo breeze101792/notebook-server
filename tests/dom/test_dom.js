@@ -11480,6 +11480,73 @@ function check(label, cond, extra) {
           if (vc.contains(tSel)) tSel.remove();
         }
 
+        // --- fill handle: series, repeat, growth, Ctrl+D --------------
+        {
+          const tFill = mkTe(
+            "<thead><tr><th>N</th></tr></thead>" +
+            "<tbody><tr><td>1</td></tr><tr><td>2</td></tr>" +
+            "<tr><td>3</td></tr><tr><td>4</td></tr></tbody>");
+          window.NB.tableEditor.open(tFill);
+          window.NB.tableEditor._fill(
+            { r0: 1, r1: 4, c0: 0, c1: 0 },
+            { r0: 1, r1: 7, c0: 0, c1: 0 });
+          const filled = window.NB.tableEditor.getState();
+          check("table editor: the fill handle continues a numeric series",
+            ["5", "6", "7"].every((n, i) =>
+              filled.rows[5 + i].cells[0].html === n) &&
+            filled.rows[4].cells[0].html === "4",
+            JSON.stringify(filled.rows.map((r) => r.cells[0].html)));
+          check("table editor: the filled block stays selected",
+            JSON.stringify(window.NB.tableEditor.getSelection()) ===
+              JSON.stringify({ r0: 1, r1: 7, c0: 0, c1: 0 }) &&
+            /^Filled 3 cells$/.test($("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+          window.NB.tableEditor._cancel();
+          if (vc.contains(tFill)) tFill.remove();
+
+          const tText = mkTe(
+            "<thead><tr><th>T</th></tr></thead>" +
+            "<tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody>");
+          window.NB.tableEditor.open(tText);
+          window.NB.tableEditor._fill(
+            { r0: 1, r1: 2, c0: 0, c1: 0 },
+            { r0: 1, r1: 5, c0: 0, c1: 0 });
+          const repeated = window.NB.tableEditor.getState();
+          check("table editor: a non-numeric block repeats in order",
+            ["a", "b", "a"].every((v, i) =>
+              repeated.rows[3 + i].cells[0].html === v),
+            JSON.stringify(repeated.rows.map((r) => r.cells[0].html)));
+          const dirtyBeforeNoop = window.NB.hybrid.isDirty();
+          window.NB.tableEditor._fill(
+            { r0: 1, r1: 5, c0: 0, c1: 0 },
+            { r0: 1, r1: 5, c0: 0, c1: 0 });
+          check("table editor: a fill with no target cells changes nothing",
+            /Nothing to fill/.test($("table-editor-status").textContent) &&
+            window.NB.hybrid.isDirty() === dirtyBeforeNoop);
+          window.NB.tableEditor._cancel();
+          if (vc.contains(tText)) tText.remove();
+
+          // Ctrl+D copies the selection's first row down.
+          const tDown = mkTe(
+            "<thead><tr><th>D</th></tr></thead>" +
+            "<tbody><tr><td>7</td></tr><tr><td></td></tr>" +
+            "<tr><td></td></tr></tbody>");
+          window.NB.tableEditor.open(tDown);
+          window.NB.tableEditor._select(1, 0, 3, 0);
+          const downEv = new window.KeyboardEvent("keydown",
+            { key: "d", ctrlKey: true, bubbles: true, cancelable: true });
+          TE_GRID.querySelector('.te-cell[data-row="1"][data-col="0"]')
+            .dispatchEvent(downEv);
+          const downState = window.NB.tableEditor.getState();
+          check("table editor: Ctrl+D fills the selection from its first row",
+            downEv.defaultPrevented &&
+            downState.rows[2].cells[0].html === "7" &&
+            downState.rows[3].cells[0].html === "7",
+            JSON.stringify(downState.rows.map((r) => r.cells[0].html)));
+          window.NB.tableEditor._cancel();
+          if (vc.contains(tDown)) tDown.remove();
+        }
+
         // Merged cells: open refuses, read-only grid, Cancel only.
         const tSpan = mkTe(
           "<thead><tr><th>A</th><th>B</th></tr></thead>" +

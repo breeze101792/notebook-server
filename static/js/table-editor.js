@@ -124,6 +124,23 @@
       td.classList.toggle("is-sel-left", on && col === r.c0);
       td.classList.toggle("is-sel-right", on && col === r.c1);
     });
+    updateFillHandle();
+  }
+
+  /* One 8px handle on the selection's bottom-right corner: the pointer
+   * path for extending a series. It sits inside the cell, never inside
+   * .te-cell-text, so the model never sees it. */
+  function updateFillHandle() {
+    if (!gridEl || !state) return;
+    gridEl.querySelectorAll(".te-fill-handle").forEach((n) => n.remove());
+    if (readOnly) return;
+    const r = selRect();
+    const td = cellAt(r.r1, r.c1);
+    if (!td) return;
+    const handle = document.createElement("span");
+    handle.className = "te-fill-handle";
+    handle.setAttribute("aria-hidden", "true");
+    td.appendChild(handle);
   }
 
   /* --- model snapshot ----------------------------------------------- */
@@ -524,6 +541,14 @@
           focusCell(activeRow, state.cols - 1, true);
         }
         break;
+      case "d":
+      case "D":
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          fillSelectionDown();
+        }
+        break;
       case "a":
       case "A":
         if (e.ctrlKey || e.metaKey) {
@@ -554,6 +579,12 @@
     if (e.key !== "Escape") return;
     e.preventDefault();
     e.stopPropagation();
+    if (fill) {
+      fill = null;
+      clearFillPreview();
+      paintSelection();
+      return;
+    }
     cancel();
   }
 
@@ -944,6 +975,192 @@
     state.changed = true;
   }
 
+  /* --- fill handle -------------------------------------------------- */
+  /* Dragging the selection's handle extends the block along one axis.
+   * A run of two or more numbers with an even step continues the series
+   * (1, 2, 3, 4 -> 5, 6, 7); anything else repeats the block in order,
+   * which is what a spreadsheet does for constants and text. */
+
+  function numericSeries(cells) {
+    if (cells.length < 2) return null;
+    const raws = cells.map((c) => htmlToText(c.html).trim());
+    const nums = raws.map((t) => parseNumber(t));
+    if (nums.some((n) => n === null)) return null;
+    const step = nums[1] - nums[0];
+    if (!Number.isFinite(step) || step === 0) return null;
+    for (let i = 2; i < nums.length; i++) {
+      if (Math.abs((nums[i] - nums[i - 1]) - step) > 1e-9) return null;
+    }
+    const decimals = raws.reduce((m, t) => {
+      const dot = t.indexOf(".");
+      return Math.max(m, dot < 0 ? 0 : t.length - dot - 1);
+    }, 0);
+    return { step, decimals, last: nums[nums.length - 1] };
+  }
+
+  function formatSeriesNumber(n, decimals) {
+    if (decimals > 0) return n.toFixed(Math.min(decimals, 10));
+    return String(Number(n.toFixed(10)));
+  }
+
+  /* The values that continue `cells` for `count` more positions. */
+  function extendSeries(cells, count) {
+    const series = numericSeries(cells);
+    const out = [];
+    for (let k = 1; k <= count; k++) {
+      if (series) {
+        const value = formatSeriesNumber(series.last + series.step * k,
+          series.decimals);
+        out.push({ html: cellHtmlFromText(value) });
+      } else {
+        out.push({ html: cells[(k - 1) % cells.length].html });
+      }
+    }
+    return out;
+  }
+
+  function setCellHtml(row, col, html) {
+    const cell = state.rows[row] && state.rows[row].cells[col];
+    if (!cell || cell.html === html) return false;
+    cell.html = html;
+    return true;
+  }
+
+  /* Fill `target` from the series in `src`, growing the grid as needed.
+   * Both rectangles share one edge; only the cells outside `src` change. */
+  function fillRect(src, target) {
+    if (readOnly || !state) return false;
+    while (target.r1 > state.rows.length - 1) state.rows.push(emptyRow());
+    while (target.c1 > state.cols - 1) {
+      state.rows.forEach((row) => {
+        row.cells.push({ html: "&nbsp;", align: "left" });
+      });
+      state.cols += 1;
+    }
+    let changed = false;
+    let count = 0;
+    if (target.r1 > src.r1) {
+      for (let col = src.c0; col <= src.c1; col++) {
+        const cells = [];
+        for (let row = src.r0; row <= src.r1; row++) {
+          cells.push(state.rows[row].cells[col] || { html: "" });
+        }
+        extendSeries(cells, target.r1 - src.r1).forEach((cell, i) => {
+          if (setCellHtml(src.r1 + 1 + i, col, cell.html)) changed = true;
+          count += 1;
+        });
+      }
+    } else if (target.c1 > src.c1) {
+      for (let row = src.r0; row <= src.r1; row++) {
+        const cells = [];
+        for (let col = src.c0; col <= src.c1; col++) {
+          cells.push(state.rows[row].cells[col] || { html: "" });
+        }
+        extendSeries(cells, target.c1 - src.c1).forEach((cell, i) => {
+          if (setCellHtml(row, src.c1 + 1 + i, cell.html)) changed = true;
+          count += 1;
+        });
+      }
+    }
+    if (changed) markChanged();
+    anchorRow = target.r1;
+    anchorCol = target.c1;
+    activeRow = src.r0;
+    activeCol = src.c0;
+    finishStructure(true);
+    setStatusMessage(count
+      ? "Filled " + count + (count === 1 ? " cell" : " cells")
+      : "Nothing to fill");
+    return changed;
+  }
+
+  /* Ctrl+D: the selection's first row is the source, the rest is filled. */
+  function fillSelectionDown() {
+    if (readOnly || !state) return;
+    const r = selRect();
+    if (r.r1 <= r.r0) {
+      setStatusMessage("Select the source row and the rows to fill.");
+      return;
+    }
+    commitEdit();
+    fillRect({ r0: r.r0, r1: r.r0, c0: r.c0, c1: r.c1 }, r);
+  }
+
+  function fillTargetRect() {
+    const f = fill;
+    if (!f.axis) return { r0: f.r0, r1: f.r1, c0: f.c0, c1: f.c1 };
+    if (f.axis === "row") {
+      return { r0: f.r0, r1: Math.max(f.r1, f.end), c0: f.c0, c1: f.c1 };
+    }
+    return { r0: f.r0, r1: f.r1, c0: f.c0, c1: Math.max(f.c1, f.end) };
+  }
+
+  function paintFillPreview() {
+    if (!gridEl) return;
+    gridEl.querySelectorAll(".te-cell.is-fill-preview").forEach((td) => {
+      td.classList.remove("is-fill-preview",
+        "is-sel-top", "is-sel-bottom", "is-sel-left", "is-sel-right");
+    });
+    if (!fill || !fill.axis) return;
+    const t = fillTargetRect();
+    for (let row = t.r0; row <= t.r1; row++) {
+      for (let col = t.c0; col <= t.c1; col++) {
+        if (row >= fill.r0 && row <= fill.r1 &&
+            col >= fill.c0 && col <= fill.c1) continue;
+        const td = cellAt(row, col);
+        if (!td) continue;
+        td.classList.add("is-fill-preview");
+        if (row === t.r0) td.classList.add("is-sel-top");
+        if (row === t.r1) td.classList.add("is-sel-bottom");
+        if (col === t.c0) td.classList.add("is-sel-left");
+        if (col === t.c1) td.classList.add("is-sel-right");
+      }
+    }
+  }
+
+  function clearFillPreview() {
+    if (!gridEl) return;
+    gridEl.querySelectorAll(".te-cell.is-fill-preview").forEach((td) => {
+      td.classList.remove("is-fill-preview",
+        "is-sel-top", "is-sel-bottom", "is-sel-left", "is-sel-right");
+    });
+  }
+
+  function updateFillPreview(e) {
+    const td = cellUnder(e);
+    if (!td) return;
+    const row = Number(td.getAttribute("data-row"));
+    const col = Number(td.getAttribute("data-col"));
+    const f = fill;
+    const down = Math.max(0, row - f.r1);
+    const right = Math.max(0, col - f.c1);
+    let axis = null;
+    let end = 0;
+    if (down > 0 || right > 0) {
+      if (down >= right) { axis = "row"; end = row; }
+      else { axis = "col"; end = col; }
+    }
+    if (f.axis === axis && f.end === end) return;
+    f.axis = axis;
+    f.end = end;
+    paintFillPreview();
+  }
+
+  function applyFill() {
+    const f = fill;
+    fill = null;
+    clearFillPreview();
+    if (!f || !f.axis) { paintSelection(); return; }
+    fillRect({ r0: f.r0, r1: f.r1, c0: f.c0, c1: f.c1 }, fillTargetRectOf(f));
+  }
+
+  function fillTargetRectOf(f) {
+    if (f.axis === "row") {
+      return { r0: f.r0, r1: Math.max(f.r1, f.end), c0: f.c0, c1: f.c1 };
+    }
+    return { r0: f.r0, r1: f.r1, c0: f.c0, c1: Math.max(f.c1, f.end) };
+  }
+
   /* --- grid drag reordering ---------------------------------------- */
   /* Pointer path for moving a row or a column. The grips are the only
    * draggable nodes; the drop target is read from the cell under the
@@ -952,6 +1169,7 @@
 
   let drag = null;   // { axis: "row"|"col", from, pos }
   let press = null;  // { row, col, x, y, shift, moved, pressAt, longTimer }
+  let fill = null;   // { r0, c0, r1, c1, axis, end } while the handle drags
 
   const DROP_CLASSES = ["is-drop-before", "is-drop-after",
     "is-drop-left", "is-drop-right"];
@@ -982,6 +1200,16 @@
 
   function onGridPointerDown(e) {
     if (readOnly || e.button !== 0) return;
+    const fillHandle = e.target.closest &&
+      e.target.closest(".te-fill-handle");
+    if (fillHandle) {
+      const r = selRect();
+      e.preventDefault();
+      commitEdit();
+      fill = { r0: r.r0, c0: r.c0, r1: r.r1, c1: r.c1, axis: null, end: 0 };
+      if (gridEl.setPointerCapture) gridEl.setPointerCapture(e.pointerId);
+      return;
+    }
     const grip = e.target.closest &&
       e.target.closest(".te-row-grip,.te-col-grip");
     if (grip) {
@@ -1029,6 +1257,7 @@
   }
 
   function onGridPointerMove(e) {
+    if (fill) { updateFillPreview(e); return; }
     if (press) {
       const dx = Math.abs(e.clientX - press.x);
       const dy = Math.abs(e.clientY - press.y);
@@ -1065,6 +1294,7 @@
   }
 
   function onGridPointerUp() {
+    if (fill) { applyFill(); return; }
     if (press) {
       const p = press;
       press = null;
@@ -1101,6 +1331,7 @@
     drag = null;
     if (press) clearTimeout(press.longTimer);
     press = null;
+    if (fill) { fill = null; clearFillPreview(); paintSelection(); }
     clearDropMarks();
   }
 
@@ -1897,6 +2128,8 @@
     _parseClipboard: parseClipboard,
     getSelection() { return selRect(); },
     // Test hook: set both corners (the keyboard path is exercised too).
+    _fill: fillRect,
+    _fillDown: fillSelectionDown,
     _select(r0, c0, r1, c1) {
       if (!state || readOnly) return;
       anchorRow = clamp(r0, 0, Math.max(0, state.rows.length - 1));

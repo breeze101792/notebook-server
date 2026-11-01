@@ -18,7 +18,7 @@ Audience: the single notebook owner in an admin session, on desktop with a point
 
 - formulas, number formatting, column resize, merged cells, per-cell colour or style, conditional formatting;
 - paste that tiles a multi-cell block to fill a larger selection;
-- a drag-fill handle; fill-down and fill-right as named commands;
+- named fill commands beyond Ctrl/Cmd+D (fill right has no chord);
 - aggregates in the status line (no sum, count, or average);
 - dragging a multi-row selection to move it;
 - selection across two tables, or two tables in one modal;
@@ -28,7 +28,7 @@ Audience: the single notebook owner in an admin session, on desktop with a point
 - auto-scroll while a drag is held at the viewport edge (Shift+click after scrolling reaches the far corner);
 - PageUp / PageDown, Ctrl+Home / Ctrl+End.
 
-**Supersedes:** `table-editor.md` §2 lists "multi-cell range selection" and "clipboard range paste" as out of scope. This document brings both in. CSV import stays out.
+**Supersedes:** `table-editor.md` §2 lists "multi-cell range selection" and "clipboard range paste" as out of scope. This document brings both in, plus the fill handle. CSV import stays out.
 
 **Amends** these parent criteria, and only these:
 
@@ -39,7 +39,7 @@ Audience: the single notebook owner in an admin session, on desktop with a point
 
 In AC6, AC7 and AC8, "the focused cell" means the active cell defined in §3.1.
 
-**MVP line:** §3–§11 work and AC19–AC40 pass. Nothing else.
+**MVP line:** §3–§11 work and AC19–AC44 pass. Nothing else.
 
 ## 3. Functional flows
 
@@ -134,15 +134,41 @@ The existing toolbar Delete row and Delete column buttons become selection-aware
 
 This is the only extra operation. Rejected as well: fill down and fill right as named commands (pasting one cell into a range fills it, §4.4), applying sort or alignment to a sub-range, and merging selected cells.
 
-### 3.9 Structural operations and the selection
+### 3.9 Fill
+
+The selection shows one **fill handle**: an 8px square on the bottom-right
+corner of its last cell. Dragging it extends the block along one axis — down or
+right, never up or left and never shrinking the grid.
+
+- **Source.** The rectangle selected when the drag starts. Only cells outside
+  it are written.
+- **Target.** The rectangle extended to the row (down) or column (right) under
+  the pointer. When the pointer is past the selection in both directions, the
+  axis it moved further along wins; the other dimension keeps the source width.
+  A pointer inside or up/left of the selection gives no target and nothing is
+  filled.
+- **Series.** When the source holds two or more cells along the fill axis whose
+  values all parse as numbers and whose consecutive differences are equal, the
+  step is continued: `1, 2, 3, 4` filled three cells gives `5, 6, 7`. The number
+  format follows the source's decimal places. Any other source repeats its cells
+  in order, cyclically — text, mixed values, one number, or an uneven step.
+- **One mutation.** The whole target is written in one pass, then the grid is
+  repainted once. The extended block stays selected with the source's top-left
+  cell active, and the status line reports `Filled 3 cells`.
+- **Ctrl/Cmd+D** fills the selection down from its first row, using the same
+  series and repeat rules. It is the keyboard path for the same operation.
+- **Escape** during the drag cancels it and leaves the selection as it was.
+- All of it acts on the working copy: Apply writes one table, Cancel discards.
+
+### 3.10 Structural operations and the selection
 
 Insert, add, delete, move, sort, transpose and delete-table change the grid's shape. After any of them the range collapses to the active cell, clamped into the new grid, and the status line reports that cell. Cell-content operations (copy, cut, paste, clear) keep the rectangle.
 
-### 3.10 Apply and Cancel
+### 3.11 Apply and Cancel
 
 Unchanged. Every selection and clipboard operation acts on the working copy only. Apply writes one GFM table as one undo step. Cancel discards. There is no undo inside the modal, and Ctrl+Z or Ctrl+Shift+Z inside the modal must not reach the document underneath.
 
-### 3.11 Merged-cell refusal state
+### 3.12 Merged-cell refusal state
 
 §7.
 
@@ -255,7 +281,9 @@ A table with merged cells opens read-only, as today. In that state:
 - The keyboard clipboard path uses native `copy`, `cut` and `paste` events. The toolbar Copy and Paste use the async clipboard API when the context is secure and the user grants access; otherwise they degrade — Copy writes `text/plain` only and says so, Paste announces "Press Ctrl+V to paste" and changes nothing.
 - Touch long-press is the platform convention, about half a second, one named constant, cancelled by movement beyond a small slop.
 - Text in a cell in navigate mode is not selectable by the browser, so a drag paints the range instead of selecting cell text. Text in edit mode selects natively.
-- The long-press threshold and the two paste-degradation messages are the only new user-visible constants; each is a named value in one place.
+- The long-press threshold, the fill handle size, and the two paste-degradation
+  messages are the only new user-visible constants; each is a named value in one
+  place.
 
 ## 11. Acceptance criteria
 
@@ -283,6 +311,11 @@ AC1–AC18 of `docs/product/table-editor.md` remain in force, with the four amen
 20. **AC38** In the merged-cell refusal state the grid has no `aria-multiselectable` and no `aria-selected` cell, the clipboard controls are `aria-disabled` with the merged-cells reason, no selection gesture or key changes anything, and only Cancel closes the window.
 21. **AC39** In the editable state the grid has `aria-multiselectable="true"`, every cell has `aria-selected`, `aria-rowindex` and `aria-colindex`, the clipboard group's four controls are reachable by Tab and activate by Enter or Space with an accessible name, a keyboard-only user can select, copy and paste with the grid focused, focus after paste is on the written rectangle's top-left, and the status line announces every range change and every operation result.
 22. **AC40** A 10 × 3 block pasted into an empty 1 × 1 grid produces exactly 10 rows and 3 columns, applies in one mutation, and one Apply writes one table with the pasted content; no fixed row or column limit exists in the code path; a paste that fails to allocate leaves the grid and the working copy unchanged and reports the refusal.
+
+23. **AC41** Selecting `1, 2, 3, 4` in one column and dragging the fill handle three cells down writes `5, 6, 7`, leaves the four source cells byte-identical, selects the extended block with the source's top-left active, and announces "Filled 3 cells".
+24. **AC42** A source whose values are not an even numeric run (text, one number, mixed values, or an uneven step) repeats its cells in order across the target; a fill whose target is empty or inside the selection writes nothing and announces "Nothing to fill".
+25. **AC43** While the handle drags, the target cells are marked before release; releasing writes the block; Escape and pointercancel drop the drag with the grid and the selection unchanged; dragging up or left fills nothing and grows nothing.
+26. **AC44** Ctrl/Cmd+D with a multi-row selection fills every row below the first from the first row, using the same series and repeat rules, and marks the working copy changed only when a cell's content differs.
 
 ## 12. Open questions
 

@@ -581,6 +581,68 @@ async function main() {
         { r0: 1, r1: 2, c0: 0, c1: 1 }) && /Pasted 2 × 2/.test(pasted.status),
       pasted.status);
 
+    // --- fill handle: drag the corner to continue a series -------------
+    // Grow the working grid first so the drag has rows to land on.
+    await page.evaluate(() => {
+      const add = document.getElementById("te-add-row");
+      while (window.NB.tableEditor.getState().rows.length < 6) add.click();
+    });
+    const seedFill = await page.evaluate(() => {
+      window.NB.tableEditor._select(1, 1, 1, 1);
+      window.NB.tableEditor.pasteBlock([
+        [{ html: "1" }], [{ html: "2" }],
+      ]);
+      window.NB.tableEditor._select(1, 1, 2, 1);
+      return window.NB.tableEditor.getSelection();
+    });
+    check("real browser: the fill seed block is selected",
+      JSON.stringify(seedFill) === JSON.stringify(
+        { r0: 1, r1: 2, c0: 1, c1: 1 }), JSON.stringify(seedFill));
+    const handleBox = await page.locator("#table-editor-grid .te-fill-handle")
+      .boundingBox();
+    const targetPoint = await cellPoint(5, 1);
+    if (handleBox) {
+      await page.mouse.move(handleBox.x + handleBox.width / 2,
+        handleBox.y + handleBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(targetPoint.x, targetPoint.y, { steps: 8 });
+      const preview = await page.evaluate(() => document.querySelectorAll(
+        "#table-editor-grid .te-cell.is-fill-preview").length);
+      await page.mouse.up();
+      const filled = await page.evaluate(() => {
+        const state = window.NB.tableEditor.getState();
+        return {
+          col: state.rows.map((r) => (r.cells[1] || { html: "" }).html),
+          sel: window.NB.tableEditor.getSelection(),
+          status: document.getElementById("table-editor-status").textContent,
+          preview: document.querySelectorAll(
+            "#table-editor-grid .te-cell.is-fill-preview").length,
+        };
+      });
+      check("real browser: dragging the handle previews the target cells",
+        preview > 0, String(preview));
+      check("real browser: the handle continues 1, 2 as 3, 4, 5",
+        filled.col[3] === "3" && filled.col[4] === "4" &&
+        filled.col[5] === "5", JSON.stringify(filled.col));
+      check("real browser: a fill keeps the extended block selected",
+        JSON.stringify(filled.sel) === JSON.stringify(
+          { r0: 1, r1: 5, c0: 1, c1: 1 }) &&
+        /^Filled 3 cells$/.test(filled.status) && filled.preview === 0,
+        JSON.stringify(filled));
+    } else {
+      check("real browser: dragging the handle previews the target cells",
+        false, "no handle box");
+      check("real browser: the handle continues 1, 2 as 3, 4, 5",
+        false, "no handle box");
+      check("real browser: a fill keeps the extended block selected",
+        false, "no handle box");
+    }
+    // Esc during a fill drag cancels the drag, not the modal.
+    const handleBox2 = await page.locator(
+      "#table-editor-grid .te-fill-handle").count();
+    check("real browser: the fill handle rides the selection corner",
+      handleBox2 === 1, String(handleBox2));
+
     await page.click("#table-editor-cancel");
     await page.waitForFunction(
       () => document.getElementById("table-editor-overlay").hidden,

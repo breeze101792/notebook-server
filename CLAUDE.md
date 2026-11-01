@@ -424,8 +424,9 @@ Module responsibilities:
   column alignment, sorts body rows stably (numeric-aware, empty last both ways),
   transposes, and deletes the table. Row and column grips reorder by pointer drag.
   A rectangular range selection supports copy/cut/paste/clear (TSV plus a
-  sanitized HTML table, growth only at the bottom and right), and Delete
-  row/column act on every row or column the range touches.
+  sanitized HTML table, growth only at the bottom and right), a fill handle that
+  continues a numeric series or repeats a block (Ctrl+D is the keyboard path),
+  and Delete row/column act on every row or column the range touches.
   Apply rebuilds one GFM table (single tbody, row 0 th), flushes the pending undo
   snapshot first, replaces the source table, and calls `onContentChange()`; an
   unchanged table closes without a write. Merged-cell tables open refused and

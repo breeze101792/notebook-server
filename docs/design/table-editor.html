@@ -148,6 +148,14 @@
   .te-col-grip { top: 1px; left: 50%; width: 16px; height: 10px; transform: translateX(-50%); }
   .te-col-grip svg { transform: rotate(90deg); }
   tr:hover .te-row-grip, thead .te-cell:hover .te-col-grip { opacity: .65; }
+  .te-fill-handle {
+    position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px;
+    background: var(--accent); border: 1px solid var(--bg-panel);
+    border-radius: 2px; cursor: crosshair; z-index: 4;
+  }
+  .te-cell.is-fill-preview {
+    background-image: linear-gradient(var(--te-sel-fill), var(--te-sel-fill));
+  }
   .te-tool {
     display: inline-flex; align-items: center; justify-content: center;
     width: var(--te-tool); height: var(--te-tool); padding: 0;
@@ -612,7 +620,7 @@
                   <tr role="row">
                     <td class="te-cell is-selected is-sel-top is-sel-left is-active" role="gridcell" tabindex="0" aria-selected="true">
                       <span class="te-cell-text">CTRL</span>
-                    </td>
+                    <span class="te-fill-handle" aria-hidden="true"></span></td>
                     <td class="te-cell is-selected is-sel-top" role="gridcell" tabindex="-1" aria-selected="true"><span class="te-cell-text">0x4001_0000</span></td>
                     <td class="te-cell is-selected is-sel-top is-sel-right" role="gridcell" tabindex="-1" aria-selected="true"><span class="te-cell-text">32</span></td>
                     <td class="te-cell" role="gridcell" tabindex="-1"><span class="te-cell-text">0x0000_0000</span></td>

@@ -45,6 +45,24 @@ the cells outside it.
 
 `.te-status` is not written while a drag is live; it announces once, on pointerup.
 
+## 3b. Fill handle
+
+One 8 × 8px square on the last selected cell's bottom-right corner, 1px inside
+the cell box so a scroller clip cannot shave it.
+
+| Property | Spec |
+| --- | --- |
+| Size and shape | `8px × 8px`, `border-radius: 2px`, 1px `--bg-panel` border so it reads over the wash and the zebra |
+| Fill | `--accent`, `z-index: 4`, `cursor: crosshair`, `touch-action: none` |
+| Position | `right: -1px; bottom: -1px` inside `.te-cell`, which is already `position: relative` |
+| Visibility | Always while the selection exists in the editable state; none in the blocked state, none while a cell is being edited |
+| Preview | the target cells take the same wash and 1px edge as the selection (`.is-fill-preview`), so the drag reads as the rectangle growing, not as a second colour |
+| Release | the rectangle stays as the selection; the handle moves to its new corner |
+| No new state | no dashed outline, no tooltip, no counter chip; the status line reports the result after release |
+
+The handle is pointer-only (`aria-hidden`, no tab stop). Ctrl/Cmd+D is the
+keyboard path for the same operation, so nothing is gesture-only.
+
 ## 4. Clipboard group
 
 A fifth `.te-group` between **Columns** and **Column alignment**, followed by the

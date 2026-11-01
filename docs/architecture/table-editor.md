@@ -182,6 +182,16 @@ Every existing verb keeps addressing the focus cell.
   column the rectangle touches, refuse at the one-row/one-column minimum, and
   report the count. Structural verbs collapse the range; clipboard verbs keep
   it (`finishStructure(true)`).
+- **Fill** — `paintSelection()` also places one `.te-fill-handle` in the
+  last selected cell. Dragging it (`fill` state) extends the rectangle down or
+  right to the cell under the pointer, previews the target with
+  `.is-fill-preview`, and on release calls `fillRect(src, target)`. `fillRect`
+  grows the grid at the bottom/right, then per column (or row) continues the
+  source with `extendSeries`: an even numeric run keeps its step and the source's
+  decimal places (`1,2,3,4` → `5,6,7`), anything else repeats the block
+  cyclically. Ctrl/Cmd+D calls the same function with the selection's first row
+  as the source. One pass, one repaint, `changed` only when a cell's HTML
+  differs. Escape and pointercancel drop the drag.
 - **Toolbar** — a `.te-clip-group` (Cut, Copy, Paste, Clear) between Columns and
   Alignment. The async clipboard is used when available; otherwise Copy writes
   text only and Paste says "Press Ctrl+V to paste". In the blocked state the
@@ -262,8 +272,8 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
   (`elementFromPoint` and cell geometry are missing), so the model verbs
   `moveRowTo`/`moveColTo`/`insertRowAt`/`insertColAt` carry the assertions;
   pointer painting is driven through `_select(r0,c0,r1,c1)` and the exported
-  `selectionPayload()`/`pasteBlock()`/`clearSelection()`; `elementFromPoint`
-  is missing in jsdom, so the drag itself is browser-only.
+  `selectionPayload()`/`pasteBlock()`/`clearSelection()`/`_fill()`; `elementFromPoint`
+  is missing in jsdom, so the handle drag itself is browser-only.
 - Wiring guard (the `check()` pattern at `test_dom.js:3420-3430`): index.html
   loads `table-editor.js`; sw.js PRECACHE includes it.
 - Chromium (`tests/browser/test_table_editor_browser.js`, new file —
