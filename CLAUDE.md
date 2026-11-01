@@ -247,7 +247,7 @@ apply.
 then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
-table-edit.js → list-edit.js → table-view.js → table-select.js → watcher.js →
+table-edit.js → list-edit.js → table-view.js → table-select.js → table-editor.js → watcher.js →
 outline.js → sidebar.js → graph-2d.js → graph-3d.js → graph.js → tabs.js → windows.js →
 settings.js → export.js → mermaid-designer.js → designer-shell.js →
 dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
@@ -406,6 +406,25 @@ Module responsibilities:
   gesture chrome, stripped by `hybrid.js` in `prepareTurndownClone`, before every
   undo snapshot, and from the change hash, so they never reach the note or an
   export. Merged-cell tables and the live preview never arm.
+- `table-edit.js` — hybrid-only "Edit table" control: one 24px button in the
+  active table's left gutter, centred on the header row, outside the table's
+  content box. Hover/caret tracking picks the table; the overlay is a child of
+  `#viewer`, so no save, export, or undo snapshot sees it. Opens
+  `NB.tableEditor`. It owns no table operation: row/column work lives in the
+  modal.
+- `table-editor.js` — hybrid-only "Edit table" modal (`#table-editor-overlay`):
+  a spreadsheet-style grid over a snapshot of the table's cell HTML and per-cell
+  alignment. Toolbar moves, inserts, adds and deletes rows and columns, cycles
+  column alignment, sorts body rows stably (numeric-aware, empty last both ways),
+  transposes, and deletes the table. Row and column grips reorder by pointer drag.
+  A rectangular range selection supports copy/cut/paste/clear (TSV plus a
+  sanitized HTML table, growth only at the bottom and right), and Delete
+  row/column act on every row or column the range touches.
+  Apply rebuilds one GFM table (single tbody, row 0 th), flushes the pending undo
+  snapshot first, replaces the source table, and calls `onContentChange()`; an
+  unchanged table closes without a write. Merged-cell tables open refused and
+  read-only. Entry points are the hybrid context menu's `Edit table…` item and
+  the table-edit.js overlay button.
 - `activity.js` — the activity bar and its side-panel views (Explorer, Pinned,
   Bookmarks, Recent, Search, AI). The Search view owns the search input, a
   clear × inside the field (hidden for an empty/whitespace query), an Advanced

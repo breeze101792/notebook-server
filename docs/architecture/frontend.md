@@ -39,7 +39,8 @@ registered already.
 ```
 cm-bridge → lightbox → blocks → menu → mermaid → wavedrom → katex → viz →
 htmlpreview → svg → copy-image → viewer → editbar → hybrid → table-edit →
-list-edit → table-view → table-select → watcher → outline → sidebar →
+list-edit → table-view → table-select → table-editor → watcher → outline →
+sidebar →
 graph-2d → graph-3d → graph → tabs → windows → settings → export → mermaid-designer →
 designer-shell → dot-designer → wavedrom-designer → vimnav → ai → activity →
 bookmarks → shortcuts → mobile → app
@@ -128,10 +129,11 @@ implemented today.
 | `viewer.js` | 1537 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension, and the stashed-draft Recover/Discard bar. |
 | `editbar.js` | 1073 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 8028 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, the in-place fence editor, undo snapshots, raw-HTML preservation, table mutation API, and draft stash/recover. See [hybrid-editing.md](hybrid-editing.md). |
-| `table-edit.js` | 806 | `NB.tableEdit` | Hybrid-mode table drag handles overlaid outside the `contentEditable` subtree. Row/column reorder via Pointer Events. |
+| `table-edit.js` | 212 | `NB.tableEdit` | Hybrid-mode "Edit table" control: one 24px button in the active table's left gutter, outside the table's content box and `contentEditable` subtree. Picks the table from the pointer or the caret; opens `table-editor.js`. It owns no table operation. |
 | `list-edit.js` | 647 | `NB.listEdit` | Hybrid-mode list-item drag handles and reorder overlay (Pointer Events, outside the contentEditable subtree). |
 | `table-view.js` | 1242 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v2). An entry applies only when header, full-cell hash and same-header ordinal all match; otherwise it is ignored. Tears down before hybrid edit. |
 | `table-select.js` | 433 | `NB.tableSelect` | Ctrl+drag (Cmd on macOS) over table cells paints a rectangle; Ctrl+C copies it as TSV (`text/plain`) plus an HTML `<table>` (`text/html`). One engine for preview and hybrid edit. The selection classes are transient chrome, stripped before serialization and undo snapshots. |
+| `table-editor.js` | 1907 | `NB.tableEditor` | Hybrid-only "Edit table" modal (`#table-editor-overlay`, a static `.settings-overlay`): spreadsheet grid over a snapshot of the table's cell HTML and per-cell alignment. Moves, inserts, adds and deletes rows and columns (buttons and pointer drag on the row/column grips), cycles column alignment, sorts body rows stably, transposes, deletes the table. Apply rebuilds one GFM table, flushes the pending undo snapshot first, replaces the source node, and calls `onContentChange()`; an unchanged table closes without a write. Merged-cell tables open read-only with a notice. |
 | `watcher.js` | 338 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
 | `outline.js` | 175 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 1589 | `NB.sidebar` | File tree, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). Ctrl/Cmd+click toggles a row and Shift+click selects the visible range; a multi-selection moves together via the row menu's "Move N items to…" or a multi-item drag (the Pinned section has no multi-select). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
@@ -452,8 +454,13 @@ the sort (none/descending -> ascending, ascending -> descending); the one
 icon at the right of the title opens the column menu (sort
 ascending/descending, clear sort, hide column) and doubles as the sort
 indicator (up/down glyph, accent-coloured). Hiding is class-based;
-sorting moves `<tr>` nodes. Table edit (`table-edit.js`) overlays drag
-handles outside the `contentEditable` subtree for row/column reorder.
+sorting moves `<tr>` nodes. Table edit (`table-edit.js`) overlaid one
+"Edit table" control outside the `contentEditable` subtree, in the table's
+left gutter; it opens the modal spreadsheet editor (`table-editor.js`) that
+owns every structural operation (row and column move, insert, delete, add,
+alignment, sort, transpose, delete table) and writes one table back as one
+undoable GFM replacement. Hybrid's Table submenu is gone: the context menu
+carries a single top-level `Edit table…` item.
 Table select (`table-select.js`) adds rectangular cell selection in both
 preview and hybrid edit: a platform modifier + drag over an eligible table
 paints an inclusive rectangle, and Ctrl+C copies it as TSV plus an HTML

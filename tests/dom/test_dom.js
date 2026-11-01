@@ -854,6 +854,153 @@ const html = `<!DOCTYPE html><html><head>
       </div>
     </div>
   </div>
+  <!-- Table editor modal (hybrid mode only). -->
+  <div id="table-editor-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal table-editor-modal" role="dialog" aria-modal="true"
+         aria-labelledby="table-editor-title" tabindex="-1">
+      <div class="settings-header">
+        <h2 id="table-editor-title">Edit table</h2>
+        <button id="table-editor-close" class="icon-btn" type="button"
+                title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="te-body">
+        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
+          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
+          <div>
+            <p>This table has merged cells and cannot be edited here.</p>
+            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
+          </div>
+        </div>
+        <div id="table-editor-toolbar" class="te-toolbar" role="toolbar" aria-label="Table tools">
+          <div class="te-group" role="group" aria-label="Rows">
+            <button id="te-move-row-up" class="te-tool" type="button"
+                    title="Move row up" aria-label="Move row up">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 11V4M5 7l3-3 3 3"/></svg>
+            </button>
+            <button id="te-move-row-down" class="te-tool" type="button"
+                    title="Move row down" aria-label="Move row down">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 5v7M5 9l3 3 3-3"/></svg>
+            </button>
+            <span class="te-gap" aria-hidden="true"></span>
+            <button id="te-insert-row-above" class="te-tool" type="button"
+                    title="Insert row above" aria-label="Insert row above">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h10"/><path d="M8 9v4M6 11h4"/></svg>
+            </button>
+            <button id="te-insert-row-below" class="te-tool" type="button"
+                    title="Insert row below" aria-label="Insert row below">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10h10"/><path d="M8 2v4M6 4h4"/></svg>
+            </button>
+            <button id="te-add-row" class="te-tool" type="button"
+                    title="Add row at the end" aria-label="Add row at the end">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M8 10v4M6 12h4"/></svg>
+            </button>
+            <button id="te-delete-row" class="te-tool is-danger" type="button"
+                    title="Delete row" aria-label="Delete row">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M6 12.5h4"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Columns">
+            <button id="te-move-col-left" class="te-tool" type="button"
+                    title="Move column left" aria-label="Move column left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4M7 5 4 8l3 3"/></svg>
+            </button>
+            <button id="te-move-col-right" class="te-tool" type="button"
+                    title="Move column right" aria-label="Move column right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8M9 5l3 3-3 3"/></svg>
+            </button>
+            <span class="te-gap" aria-hidden="true"></span>
+            <button id="te-insert-col-left" class="te-tool" type="button"
+                    title="Insert column left" aria-label="Insert column left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 3v10"/><path d="M8 8h5M10.5 5.5v5"/></svg>
+            </button>
+            <button id="te-insert-col-right" class="te-tool" type="button"
+                    title="Insert column right" aria-label="Insert column right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M11 3v10"/><path d="M3 8h5M5.5 5.5v5"/></svg>
+            </button>
+            <button id="te-add-col" class="te-tool" type="button"
+                    title="Add column at the right" aria-label="Add column at the right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M11 8h4M13 6v4"/></svg>
+            </button>
+            <button id="te-delete-col" class="te-tool is-danger" type="button"
+                    title="Delete column" aria-label="Delete column">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M10 8h4"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group te-clip-group" role="group" aria-label="Clipboard">
+            <button id="te-cut" class="te-tool" type="button"
+                    title="Cut" aria-label="Cut">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.5 3l7 7M11.5 3l-7 7"/><circle cx="3.5" cy="12" r="1.6"/><circle cx="12.5" cy="12" r="1.6"/></svg>
+            </button>
+            <button id="te-copy" class="te-tool" type="button"
+                    title="Copy" aria-label="Copy">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="9"/><path d="M2.5 5.5v8h8"/></svg>
+            </button>
+            <button id="te-paste" class="te-tool" type="button"
+                    title="Paste" aria-label="Paste">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3.5" width="10" height="10"/><path d="M6 3.5V2h4v1.5M5 8h6M5 11h4"/></svg>
+            </button>
+            <button id="te-clear" class="te-tool" type="button"
+                    title="Clear contents" aria-label="Clear contents">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10.5l6-6 3 3-6 6z"/><path d="M9.5 4.5l2-2 3 3-2 2"/><path d="M2 14h12"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Column alignment">
+            <button id="te-align-col" class="te-tool" type="button"
+                    title="Cycle column alignment (left)" aria-label="Cycle column alignment">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 7.5h7M2 11h12"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Sort">
+            <span class="te-sort-label" aria-hidden="true">Sort</span>
+            <select id="te-sort-col" class="te-sort-col" aria-label="Sort by column">
+              <option value="">Sort by…</option>
+            </select>
+            <button id="te-sort-dir" class="te-tool" type="button" aria-pressed="true"
+                    title="Sort ascending" aria-label="Sort ascending">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5"/></svg>
+            </button>
+          </div>
+
+          <div class="te-spacer"></div>
+
+          <div class="te-group" role="group" aria-label="Table">
+            <button id="te-transpose" class="te-tool" type="button"
+                    title="Transpose table (resets column alignment)" aria-label="Transpose table">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5h7M7 2.5 9.5 5 7 7.5"/><path d="M13.5 11h-7M9 8.5 6.5 11 9 13.5"/></svg>
+            </button>
+            <button id="te-delete-table" class="te-tool is-danger" type="button"
+                    title="Delete table (one undo step)" aria-label="Delete table">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="te-scroll">
+          <table id="table-editor-grid" class="te-grid" role="grid"
+                 aria-label="Table cells"></table>
+        </div>
+      </div>
+      <div class="settings-footer te-footer">
+        <span id="table-editor-status" class="te-status" role="status"
+              aria-live="polite" aria-atomic="true"></span>
+        <span class="te-hint" aria-hidden="true">Esc cancels</span>
+        <button id="table-editor-cancel" class="settings-action" type="button">Cancel</button>
+        <button id="table-editor-apply" class="settings-action settings-action--primary" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
   <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
        "Design diagram…" item. Carries class="settings-overlay" so the app's
        keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
@@ -2163,6 +2310,7 @@ evalIn(read("static/vendor/highlight.min.js"));
   evalIn(read("static/js/list-edit.js"));
   evalIn(read("static/js/table-view.js"));
   evalIn(read("static/js/table-select.js"));
+  evalIn(read("static/js/table-editor.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
 evalIn(read("static/js/sidebar.js"));
@@ -10844,349 +10992,1161 @@ function check(label, cond, extra) {
         window.NB.hybrid.tableHasSpans(spanTbl) === true &&
         window.NB.hybrid.moveCol(spanTbl, 0, 1) === false);
 
-      // The overlay renders the merged-cell note instead of grips, and
-      // grips exist with aria labels for normal tables.
-      window.NB.tableEdit.reveal(spanTbl);
-      window.NB.tableEdit.renderGrips();
-      check("hybrid tables: merged-cell table renders a note, no grips",
-        overlayEl.textContent.includes("Merged cells") &&
-        overlayEl.querySelectorAll(".nb-row-grip").length === 0,
-        "overlay=" + JSON.stringify(overlayEl.innerHTML).slice(0, 120));
-      window.NB.tableEdit.hide();
+      // The overlay is one "Edit table" button in the left gutter: no
+      // grips, no per-line +/- pairs (row/column work lives in the modal).
+      window.NB.tableEdit.reveal(tbl);
+      const openBtn0 = overlayEl.querySelector(".nb-te-open");
+      check("hybrid tables: the overlay renders one Edit table control",
+        !!openBtn0 && overlayEl.childElementCount === 1 &&
+        openBtn0.getAttribute("aria-label") === "Edit table" &&
+        openBtn0.title === "Edit table");
+      check("hybrid tables: no row/column grips or pair buttons remain",
+        overlayEl.querySelectorAll(
+          ".nb-row-grip,.nb-col-grip,.nb-pair,.nb-add-btn,.nb-del-btn"
+        ).length === 0);
+      check("hybrid tables: the control is placed in the left gutter",
+        openBtn0.style.left !== "" && openBtn0.style.top !== "" &&
+        openBtn0.style.right === "",
+        "left=" + openBtn0.style.left + " top=" + openBtn0.style.top);
+      check("hybrid tables: hide() clears the overlay",
+        (window.NB.tableEdit.hide(), overlayEl.textContent === ""));
+      tbl.remove();
       spanTbl.remove();
 
-      // Layout (design2 spec, §3): grips own the margins, insert/delete
-      // own the roomy sides. jsdom gives zeroed rects, so the pairs are
-      // exercised via the setActiveLine hook; the geometry (no-overlap,
-      // clamping, corner nudge) is covered by the real-browser check.
-      window.NB.tableEdit.reveal(tbl);
-      // Point at body row 0, column 0.
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const grips = overlayEl.querySelectorAll(".nb-row-grip");
-      const colGrips = overlayEl.querySelectorAll(".nb-col-grip");
-      // jsdom rects are zero-height -> denseRows is TRUE -> only the
-      // header grip and the active row's grip render (design2 §4).
-      check("hybrid tables: grips rendered for the active table (dense fallback)",
-        grips.length === 2 &&
-        colGrips.length === 1,
-        "row grips=" + grips.length + " col grips=" + colGrips.length);
-      check("hybrid tables: header grip is disabled, body grips enabled",
-        grips[0].getAttribute("aria-disabled") === "true" &&
-        grips[1] && grips[1].getAttribute("aria-disabled") === null &&
-        grips[1].getAttribute("aria-label") !== null);
-      // Exactly ONE pair per axis, two buttons each.
-      const rowPairs = overlayEl.querySelectorAll(".nb-pair.is-row");
-      const colPairs = overlayEl.querySelectorAll(".nb-pair.is-col");
-      check("hybrid tables: exactly one pair per axis (active line only)",
-        rowPairs.length === 1 && colPairs.length === 1 &&
-        rowPairs[0].querySelectorAll("button").length === 2 &&
-        colPairs[0].querySelectorAll("button").length === 2,
-        "row pairs=" + rowPairs.length + " col pairs=" + colPairs.length);
-      window.NB.tableEdit.hide();
-      check("hybrid tables: hide() clears the overlay",
-        overlayEl.textContent === "");
-
-      // GFM round-trip after the row+column moves: the live table is
-      // [B|A header] with body [b|2, a|1, c|3], align ":--" on col 0,
-      // and the separator row still separates header from body.
-      const mdMoved = window.NB.hybrid.domToMarkdown();
-      const moveRows = mdMoved.split("\n").filter((l) => /^\|/.test(l));
-      const tail = moveRows.slice(-5);
-      check("hybrid tables: reordered table saves valid GFM",
-        /^\| B \| A \|$/.test(tail[0]) &&
-        /^\| :-- \| --- \|$/.test(tail[1].trim()) &&
-        /^\| b \| 2 \|$/.test(tail[2]) &&
-        /^\| a \| 1 \|$/.test(tail[3]) &&
-        /^\| c \| 3 \|$/.test(tail[4]),
-        JSON.stringify(moveRows.slice(-6)));
-      tbl.remove();
-
-      // Click-to-insert "+" and click-to-delete "-" via the pairs.
-      // Layout: row pair = vertical rail RIGHT of the active row's
-      // cells; column pair = horizontal strip BELOW the table under the
-      // active column. The header has no pair (GFM keeps the header
-      // first, and a Markdown table cannot insert above it).
-      const tPlus = window.document.createElement("table");
-      tPlus.innerHTML = "<thead><tr><th>H</th></tr></thead>" +
-        "<tbody><tr><td>1</td></tr><tr><td>2</td></tr></tbody>";
-      vc.appendChild(tPlus);
-      window.NB.hybrid.flattenTheads();
-      window.NB.tableEdit.reveal(tPlus);
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const rowPair = overlayEl.querySelector(".nb-pair.is-row");
-      const colPair = overlayEl.querySelector(".nb-pair.is-col");
-      const addRows = rowPair.querySelectorAll(".nb-add-row");
-      const delRows = rowPair.querySelectorAll(".nb-del-row");
-      const addCols = colPair.querySelectorAll(".nb-add-col");
-      const delCols = colPair.querySelectorAll(".nb-del-col");
-      check("hybrid tables: + / - pair rendered for the active row and column",
-        addRows.length === 1 && delRows.length === 1 &&
-        addCols.length === 1 && delCols.length === 1,
-        "row+= " + addRows.length + " row-=" + delRows.length +
-        " col+= " + addCols.length + " col-=" + delCols.length);
-      // No control in the removed slots: no per-line buttons left over.
-      check("hybrid tables: no per-line +/- buttons outside the pairs",
-        overlayEl.querySelectorAll(".nb-add-row").length === 1 &&
-        overlayEl.querySelectorAll(".nb-del-row").length === 1 &&
-        overlayEl.querySelectorAll(".nb-add-col-end").length === 0,
-        "add-row=" + overlayEl.querySelectorAll(".nb-add-row").length +
-        " del-row=" + overlayEl.querySelectorAll(".nb-del-row").length +
-        " append=" + overlayEl.querySelectorAll(".nb-add-col-end").length);
-      addRows[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      // jsdom never sets activeElement for <td>, so we assert the DOM
-      // facts (row inserted below, cell seeded) — the caret-follows
-      // behaviour is covered by the real-browser check.
-      check("hybrid tables: row + inserts a row below",
-        tPlus.rows.length === 4 &&
-        tPlus.rows[2].cells[0].textContent !== "" &&
-        tPlus.rows[2].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
-        "rows=" + tPlus.rows.length + " cell=" +
-        JSON.stringify(tPlus.rows[2].cells[0] && tPlus.rows[2].cells[0].innerHTML));
-      // Delete: re-render (row count changed) with the active line
-      // still 0, then click the pair's "-". After [H][1][nbsp][2],
-      // deleting "1" leaves [H][nbsp][2].
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const delRows2 = overlayEl.querySelector(".nb-pair.is-row")
-        .querySelector(".nb-del-row");
-      delRows2.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      check("hybrid tables: row - deletes that row",
-        tPlus.rows.length === 3 &&
-        tPlus.rows[1].cells[0].innerHTML.indexOf("&nbsp;") !== -1 &&
-        tPlus.rows[2].cells[0].textContent === "2",
-        "rows=" + tPlus.rows.length + " order=" +
-        Array.from(tPlus.rows).map((r) => r.cells[0].textContent).join(","));
-      // Column pair: point at column 0, insert right of it.
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const colPair2 = overlayEl.querySelector(".nb-pair.is-col");
-      colPair2.querySelector(".nb-add-col").dispatchEvent(
-        new window.MouseEvent("click", { bubbles: true }));
-      check("hybrid tables: column + inserts right of that column (th/td kept)",
-        tPlus.rows[0].cells.length === 2 &&
-        tPlus.rows[0].cells[1].tagName === "TH" &&
-        tPlus.rows[1].cells[1].tagName === "TD",
-        tPlus.rows[0].outerHTML + " | " + tPlus.rows[1].outerHTML);
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const colPair3 = overlayEl.querySelector(".nb-pair.is-col");
-      // Column 0 is "H": deleting it must leave the nbsp column.
-      colPair3.querySelector(".nb-del-col").dispatchEvent(
-        new window.MouseEvent("click", { bubbles: true }));
-      check("hybrid tables: column - deletes that column",
-        tPlus.rows[0].cells.length === 1 &&
-        tPlus.rows[0].cells[0].innerHTML.indexOf("&nbsp;") !== -1,
-        tPlus.rows[0].outerHTML);
-      check("hybrid tables: + / - insert/delete mark the note dirty",
-        window.NB.hybrid.isDirty());
-      // Minimum-shape guards: strip the table down to header + ONE body
-      // row (delete body row 1 = "2" via its pair), then the last body
-      // row's "-" is aria-disabled and a click must not change the
-      // table; same for the single column's "-".
-      window.NB.tableEdit.setActiveLine(1, 0);
-      window.NB.tableEdit.renderGrips();
-      const pairDelLast = overlayEl.querySelector(".nb-pair.is-row .nb-del-row");
-      pairDelLast.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      window.NB.tableEdit.setActiveLine(0, 0);
-      window.NB.tableEdit.renderGrips();
-      const pairDelRow = overlayEl.querySelector(".nb-pair.is-row .nb-del-row");
-      const rowsBefore = tPlus.rows.length;
-      check("hybrid tables: last body row's - is aria-disabled",
-        tPlus.rows.length === 2 &&
-        pairDelRow.getAttribute("aria-disabled") === "true",
-        "rows=" + tPlus.rows.length);
-      pairDelRow.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      check("hybrid tables: last body row cannot be deleted",
-        tPlus.rows.length === rowsBefore);
-      window.NB.tableEdit.renderGrips();
-      const pairDelCol = overlayEl.querySelector(".nb-pair.is-col .nb-del-col");
-      const colsBefore = tPlus.rows[0].cells.length;
-      check("hybrid tables: last column's - is aria-disabled",
-        pairDelCol.getAttribute("aria-disabled") === "true");
-      pairDelCol.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-      check("hybrid tables: last column cannot be deleted",
-        tPlus.rows[0].cells.length === colsBefore);
-      window.NB.tableEdit.hide();
-      tPlus.remove();
-
-      // --- pointer drag state machine (table-edit.js) -----------------
-      // The overlay's geometry is browser-only, but the state machine
-      // (start -> move -> commit/cancel, ghost/proxy/drop-line, pointer
-      // capture) is plain DOM + rect maths. Stub the rects and drive the
-      // exported start hooks and the real pointer listeners on #viewer.
+      // --- table editor modal (table-editor.js) ----------------------
+      // jsdom has no layout engine, so this drives the model, the built
+      // table, the no-op/apply/cancel paths, and the DOM keyboard/focus
+      // model. Real caret typing and window geometry are browser-only.
       {
-        const dragTable = window.document.createElement("table");
-        dragTable.innerHTML =
-          "<thead><tr><th>A</th><th>B</th></tr></thead>" +
-          "<tbody><tr><td>r1a</td><td>r1b</td></tr>" +
-          "<tr><td>r2a</td><td>r2b</td></tr>" +
-          "<tr><td>r3a</td><td>r3b</td></tr></tbody>";
-        vc.appendChild(dragTable);
-        window.NB.hybrid.flattenTheads();
-        const rectFor = (el) => {
-          if (el === dragTable) return { left: 0, top: 0, right: 200, bottom: 80,
-            width: 200, height: 80, x: 0, y: 0, toJSON() {} };
-          if (el === $("viewer")) return { left: 0, top: 0, right: 800, bottom: 600,
-            width: 800, height: 600, x: 0, y: 0, toJSON() {} };
-          if (el.tagName === "TR") {
-            const i = Array.from(dragTable.rows).indexOf(el);
-            return { left: 0, top: i * 20, right: 200, bottom: i * 20 + 20,
-              width: 200, height: 20, x: 0, y: i * 20, toJSON() {} };
-          }
-          if (el.tagName === "TD" || el.tagName === "TH") {
-            const ci = el.cellIndex;
-            const ri = Array.from(el.parentNode.parentNode.rows)
-              .indexOf(el.parentNode);
-            return { left: ci * 100, top: ri * 20, right: ci * 100 + 100,
-              bottom: ri * 20 + 20, width: 100, height: 20,
-              x: ci * 100, y: ri * 20, toJSON() {} };
-          }
-          return { left: 0, top: 0, right: 800, bottom: 600,
-            width: 800, height: 600, x: 0, y: 0, toJSON() {} };
+        const idxHtml = read("templates/index.html");
+        check("table editor: index loads table-editor.js after table-select.js",
+          idxHtml.indexOf("/static/js/table-editor.js") !== -1 &&
+          idxHtml.indexOf("/static/js/table-editor.js") >
+            idxHtml.indexOf("/static/js/table-select.js"));
+        check("table editor: sw.js precaches table-editor.js",
+          read("static/sw.js").includes('"/static/js/table-editor.js"'));
+        check("table editor: module + overlay loaded",
+          !!window.NB.tableEditor && !!$("table-editor-overlay"));
+
+        const mkTe = (inner) => {
+          const t = window.document.createElement("table");
+          t.innerHTML = inner;
+          vc.appendChild(t);
+          window.NB.hybrid.flattenTheads();
+          return t;
         };
-        const patched = [];
-        const patchRect = (el) => {
-          if (el.__dragRectPatched) return;
-          el.__dragRectPatched = true;
-          el.getBoundingClientRect = () => rectFor(el);
-          patched.push(el);
+        const TE_GRID = $("table-editor-grid");
+        // A press and release on one cell: the pointer path's click.
+        const tePress = (row, col, opts) => {
+          const td = TE_GRID.querySelector(
+            '.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+          const base = { bubbles: true, cancelable: true, button: 0,
+            clientX: 1, clientY: 1 };
+          Object.assign(base, opts || {});
+          td.dispatchEvent(new window.MouseEvent("pointerdown", base));
+          TE_GRID.dispatchEvent(new window.MouseEvent("pointerup", base));
+          return td;
         };
-        patchRect($("viewer"));
-        patchRect(dragTable);
-        Array.from(dragTable.rows).forEach((r) => {
-          patchRect(r);
-          Array.from(r.cells).forEach(patchRect);
-        });
-        const grip = { setPointerCapture() {}, releasePointerCapture() {} };
-        const dragEv = (x, y, id) => ({
-          pointerId: id == null ? 1 : id,
-          clientX: x, clientY: y,
-          preventDefault() {}, stopPropagation() {},
-          currentTarget: grip,
-        });
-        const overlayEl2 = $("viewer").querySelector(".nb-table-overlay");
-        const order = () => Array.from(dragTable.rows).map((r) =>
-          Array.from(r.cells).map((c) => c.textContent).join("|"));
-        try {
-          window.NB.tableEdit.reveal(dragTable);
-          // Start a row drag with the pointer over the row itself: the drop
-          // line must stay hidden (a no-op position).
-          window.NB.tableEdit.startRowDrag(dragEv(120, 45), dragTable.rows[2]);
-          check("table-edit drag: pointerdown starts a row drag with chrome",
-            !!window.NB.tableEdit.drag &&
-            window.NB.tableEdit.drag.kind === "row" &&
-            window.document.body.classList.contains("nb-table-drag") &&
-            overlayEl2.querySelectorAll(".nb-drag-ghost").length === 1 &&
-            overlayEl2.querySelectorAll(".nb-drag-proxy").length === 1,
-            "drag=" + JSON.stringify(window.NB.tableEdit.drag && window.NB.tableEdit.drag.kind));
-          check("table-edit drag: the proxy names the dragged row",
-            overlayEl2.querySelector(".nb-drag-proxy").textContent ===
-            "Row: r2a · r2b",
-            overlayEl2.querySelector(".nb-drag-proxy").textContent);
-          check("table-edit drag: a drop on the row itself hides the line",
-            overlayEl2.querySelector(".nb-drop-line").style.display === "none");
-          check("table-edit drag: a self-drop sets the no-op flag (null means append)",
-            window.NB.tableEdit.drag && window.NB.tableEdit.drag.noop === true);
-          window.NB.tableEdit._endDrag(false);
-          check("table-edit drag: cancel removes the chrome and body class",
-            !window.NB.tableEdit.drag &&
-            !window.document.body.classList.contains("nb-table-drag") &&
-            overlayEl2.querySelectorAll(
-              ".nb-drag-ghost,.nb-drag-proxy,.nb-drop-line").length === 0);
+        const teBuilt = () => window.NB.tableEditor.rebuildTable();
+        const teRowsText = (built) =>
+          Array.from(built.rows).map((r) =>
+            Array.from(r.cells).map((c) => c.textContent));
 
-          // Committing the self-drop must not append the row at the end:
-          // drag.before is null there, which endDrag also reads as "append".
-          const selfOrder = JSON.stringify(order());
-          const selfMd = window.NB.hybrid.domToMarkdown();
-          const selfDirty = window.NB.hybrid.isDirty();
-          window.NB.tableEdit.startRowDrag(dragEv(120, 45), dragTable.rows[2]);
-          const selfUp = new window.MouseEvent("pointerup", { bubbles: true });
-          Object.defineProperty(selfUp, "pointerId", { value: 1 });
-          $("viewer").dispatchEvent(selfUp);
-          check("table-edit drag: committing a self-drop leaves the DOM order unchanged",
-            JSON.stringify(order()) === selfOrder, JSON.stringify(order()));
-          check("table-edit drag: committing a self-drop saves the same markdown",
-            window.NB.hybrid.domToMarkdown() === selfMd);
-          check("table-edit drag: committing a self-drop leaves the dirty flag unchanged",
-            window.NB.hybrid.isDirty() === selfDirty);
+        // Snapshot + no-op Apply: the source node survives, nothing is
+        // written, and the modal closes.
+        const tNoop = mkTe(
+          "<thead><tr><th>Name</th><th align=\"center\">Qty</th><th>Note</th></tr></thead>" +
+          "<tbody><tr><td><b>Bolt</b></td><td>10</td><td></td></tr>" +
+          "<tr><td>Nut</td><td>2</td><td>fine</td></tr></tbody>");
+        const mdNoop = window.NB.hybrid.domToMarkdown();
+        check("table editor: opens for a live hybrid table",
+          window.NB.tableEditor.open(tNoop) === true &&
+          window.NB.tableEditor.isOpen());
+        const snap = window.NB.tableEditor.getState();
+        check("table editor: snapshot keeps align and inline HTML",
+          snap.cols === 3 && snap.rows.length === 3 &&
+          snap.rows[0].cells[1].align === "center" &&
+          snap.rows[1].cells[0].html.indexOf("<b>Bolt</b>") !== -1,
+          JSON.stringify(snap.rows[0]));
+        window.NB.tableEditor._apply();
+        check("table editor: no-op Apply writes nothing and keeps the node",
+          !window.NB.tableEditor.isOpen() && vc.contains(tNoop) &&
+          window.NB.hybrid.domToMarkdown() === mdNoop);
 
-          // A real move: drop row 3 above row 1, commit through pointerup.
-          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[3]);
-          const line = overlayEl2.querySelector(".nb-drop-line");
-          check("table-edit drag: the drop line is visible at a real boundary",
-            line.style.display !== "none" && parseFloat(line.style.width) > 0);
-          check("table-edit drag: a real boundary clears the no-op flag",
-            window.NB.tableEdit.drag && window.NB.tableEdit.drag.noop === false);
-          const up = new window.MouseEvent("pointerup", { bubbles: true });
-          Object.defineProperty(up, "pointerId", { value: 1 });
-          $("viewer").dispatchEvent(up);
-          check("table-edit drag: pointerup commits the row move",
-            JSON.stringify(order()) ===
-              JSON.stringify(["A|B", "r3a|r3b", "r1a|r1b", "r2a|r2b"]),
-            JSON.stringify(order()));
-          check("table-edit drag: a committed move clears the drag state",
-            !window.NB.tableEdit.drag &&
-            !window.document.body.classList.contains("nb-table-drag"));
+        // Ragged rows pad in the grid but an untouched table is never
+        // rewritten (product AC11).
+        const tRag = mkTe(
+          "<thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>" +
+          "<tbody><tr><td>only</td></tr></tbody>");
+        const mdRag = window.NB.hybrid.domToMarkdown();
+        window.NB.tableEditor.open(tRag);
+        const ragState = window.NB.tableEditor.getState();
+        window.NB.tableEditor._apply();
+        check("table editor: ragged rows pad the model but stay unwritten",
+          ragState.cols === 3 && ragState.rows[1].cells.length === 3 &&
+          !window.NB.tableEditor.isOpen() && vc.contains(tRag) &&
+          window.NB.hybrid.domToMarkdown() === mdRag);
+        tRag.remove();
 
-          // Column drag: x between the two header cells -> destIndex 1.
-          window.NB.tableEdit.reveal(dragTable);
-          window.NB.tableEdit.startColDrag(dragEv(150, 10), 0);
-          check("table-edit drag: a column drag builds a column proxy",
-            !!window.NB.tableEdit.drag &&
-            window.NB.tableEdit.drag.kind === "col" &&
-            window.NB.tableEdit.drag.destIndex === 1 &&
-            /^Column: /.test(overlayEl2.querySelector(".nb-drag-proxy").textContent),
-            "dest=" + (window.NB.tableEdit.drag && window.NB.tableEdit.drag.destIndex));
-          const up2 = new window.MouseEvent("pointerup", { bubbles: true });
-          Object.defineProperty(up2, "pointerId", { value: 1 });
-          $("viewer").dispatchEvent(up2);
-          check("table-edit drag: pointerup commits the column move",
-            order()[0] === "B|A", order()[0]);
+        // Changed Apply replaces the source table and writes GFM only.
+        const tApply = mkTe(
+          "<thead><tr><th>Part</th><th>Qty</th></tr></thead>" +
+          "<tbody><tr><td>Bolt</td><td>1</td></tr></tbody>");
+        window.NB.tableEditor.open(tApply);
+        const applyState = window.NB.tableEditor.getState();
+        applyState.rows[1].cells[0].html = "<b>Bolt M3</b>";
+        applyState.changed = true;
+        window.NB.tableEditor._apply();
+        const mdApplied = window.NB.hybrid.domToMarkdown();
+        const appliedTable = Array.from(vc.querySelectorAll("table"))
+          .find((t) => /Bolt M3/.test(t.textContent));
+        check("table editor: changed Apply replaces the source table",
+          !window.NB.tableEditor.isOpen() && !vc.contains(tApply) &&
+          !!appliedTable && appliedTable.rows[1].cells[0].tagName === "TD");
+        check("table editor: Apply writes GFM, never a raw HTML table",
+          mdApplied.indexOf("Bolt M3") !== -1 && !/<table/i.test(mdApplied) &&
+          /\|\s*\*\*Bolt M3\*\*\s*\|/.test(mdApplied),
+          JSON.stringify(mdApplied.split("\n").filter((l) => l.indexOf("Bolt") !== -1)));
+        if (appliedTable) appliedTable.remove();
 
-          // Escape and pointercancel both cancel without mutating.
-          const beforeCancel = JSON.stringify(order());
-          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[2]);
-          window.document.dispatchEvent(new window.KeyboardEvent("keydown",
-            { key: "Escape", bubbles: true, cancelable: true }));
-          check("table-edit drag: Esc cancels without mutating",
-            !window.NB.tableEdit.drag && JSON.stringify(order()) === beforeCancel);
-          window.NB.tableEdit.startRowDrag(dragEv(120, 25), dragTable.rows[2]);
-          const cancel = new window.MouseEvent("pointercancel", { bubbles: true });
-          Object.defineProperty(cancel, "pointerId", { value: 1 });
-          $("viewer").dispatchEvent(cancel);
-          check("table-edit drag: pointercancel cancels without mutating",
-            !window.NB.tableEdit.drag && JSON.stringify(order()) === beforeCancel);
-          // Hover/reveal/hide: the overlay follows the pointer and hides
-          // after the grace period when the pointer leaves the table.
-          window.NB.tableEdit.reveal(dragTable);
-          dragTable.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
-            "mouseover", { bubbles: true, clientX: 50, clientY: 25 }));
-          await tick(20);
-          check("table-edit hover: a pointer over a cell reveals its grips",
-            overlayEl2.querySelectorAll(".nb-row-grip").length >= 1 &&
-            overlayEl2.querySelectorAll(".nb-col-grip").length >= 1,
-            "rows=" + overlayEl2.querySelectorAll(".nb-row-grip").length +
-            " cols=" + overlayEl2.querySelectorAll(".nb-col-grip").length);
-          window.NB.tableEdit.hide();
-          dragTable.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
-            "mouseover", { bubbles: true, clientX: 50, clientY: 25 }));
-          await tick(20);
-          dragTable.dispatchEvent(new window.MouseEvent("mouseout",
-            { bubbles: true, relatedTarget: $("viewer") }));
-          await tick(150);
-          check("table-edit hover: leaving the table hides the overlay after the grace",
-            overlayEl2.textContent === "",
-            "overlay=" + JSON.stringify(overlayEl2.textContent.slice(0, 40)));
-        } finally {
-          patched.forEach((el) => {
-            delete el.getBoundingClientRect;
-            delete el.__dragRectPatched;
-          });
-          window.NB.tableEdit.hide();
-          dragTable.remove();
+        // Tab/arrow/Enter navigate the focused-cell model; a printable
+        // key starts editing without wiping the cell.
+        window.NB.tableEditor.open(tNoop);
+        const c00 = TE_GRID.querySelector('.te-cell[data-row="0"][data-col="0"]');
+        const c10 = TE_GRID.querySelector('.te-cell[data-row="0"][data-col="1"]');
+        c00.focus();
+        c00.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "ArrowRight", bubbles: true, cancelable: true }));
+        check("table editor: ArrowRight moves the active cell",
+          c10.classList.contains("is-active") &&
+          !c00.classList.contains("is-active"));
+        // Tab at the last column stops there (no wrap to the next row).
+        const cLast = TE_GRID.querySelector(
+          '.te-cell[data-row="0"][data-col="2"]');
+        cLast.focus();
+        cLast.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Tab", bubbles: true, cancelable: true }));
+        check("table editor: Tab stops at the row edge (no wrap)",
+          cLast.classList.contains("is-active"));
+        // Enter starts edit mode; Esc is Cancel at the overlay level.
+        cLast.dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Enter", bubbles: true, cancelable: true }));
+        check("table editor: Enter enables contenteditable on the cell",
+          cLast.querySelector(".te-cell-text")
+            .getAttribute("contenteditable") === "true");
+        $("table-editor-overlay").dispatchEvent(new window.KeyboardEvent(
+          "keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        check("table editor: Esc cancels and keeps the source table",
+          !window.NB.tableEditor.isOpen() && vc.contains(tNoop));
+
+        // Cancel discards model changes with no write.
+        const mdCancel = window.NB.hybrid.domToMarkdown();
+        window.NB.tableEditor.open(tNoop);
+        window.NB.tableEditor.getState().rows[1].cells[0].html = "Zap";
+        window.NB.tableEditor._cancel();
+        check("table editor: Cancel discards and writes nothing",
+          !window.NB.tableEditor.isOpen() && vc.contains(tNoop) &&
+          window.NB.hybrid.domToMarkdown() === mdCancel);
+
+        // Alignment cycle: left (null) -> center -> right -> left.
+        window.NB.tableEditor.open(tNoop);
+        $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const align1 = window.NB.tableEditor.getState().rows[0].cells[0].align;
+        $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const align2 = window.NB.tableEditor.getState().rows[0].cells[0].align;
+        $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const align3 = window.NB.tableEditor.getState().rows[0].cells[0].align;
+        const alignBuilt = teBuilt();
+        check("table editor: alignment cycles left -> center -> right -> left",
+          align1 === "center" && align2 === "right" && align3 === "left" &&
+          alignBuilt.rows[0].cells[0].getAttribute("align") === "left");
+        window.NB.tableEditor._cancel();
+
+        // Sort: body only, stable, numeric-aware, empty last BOTH ways.
+        const tSort = mkTe(
+          "<thead><tr><th>Name</th><th>Qty</th><th>Note</th></tr></thead>" +
+          "<tbody><tr><td>Bolt</td><td>10</td><td></td></tr>" +
+          "<tr><td>Nut</td><td>2</td><td>fine</td></tr>" +
+          "<tr><td>Washer</td><td>10</td><td> </td></tr></tbody>");
+        window.NB.tableEditor.open(tSort);
+        $("te-sort-col").value = "1";
+        $("te-sort-col").dispatchEvent(new window.Event("change", { bubbles: true }));
+        let sorted = teRowsText(teBuilt()).slice(1).map((r) => r[0]);
+        check("table editor: sort is numeric-aware and stable (asc)",
+          JSON.stringify(sorted) === JSON.stringify(["Nut", "Bolt", "Washer"]),
+          JSON.stringify(sorted));
+        $("te-sort-dir").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        sorted = teRowsText(teBuilt()).slice(1).map((r) => r[0]);
+        check("table editor: sort descending is stable over equal keys",
+          JSON.stringify(sorted) === JSON.stringify(["Bolt", "Washer", "Nut"]),
+          JSON.stringify(sorted));
+        // Note column: one non-empty, two whitespace-only/empty cells.
+        $("te-sort-col").value = "2";
+        $("te-sort-col").dispatchEvent(new window.Event("change", { bubbles: true }));
+        let noteOrder = teRowsText(teBuilt()).slice(1).map((r) => r[2]);
+        check("table editor: empty cells sort last (asc)",
+          noteOrder[0] === "fine" && noteOrder[1].trim() === "" &&
+          noteOrder[2].trim() === "", JSON.stringify(noteOrder));
+        $("te-sort-dir").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        noteOrder = teRowsText(teBuilt()).slice(1).map((r) => r[2]);
+        check("table editor: empty cells sort last (desc)",
+          noteOrder[0] === "fine" && noteOrder[1].trim() === "" &&
+          noteOrder[2].trim() === "", JSON.stringify(noteOrder));
+        window.NB.tableEditor._cancel();
+        tSort.remove();
+
+        // Sort direction with no column chosen toggles the control but
+        // must not reorder the body rows.
+        {
+          const tNoCol = mkTe(
+            "<thead><tr><th>Name</th><th>Qty</th></tr></thead>" +
+            "<tbody><tr><td>B</td><td>2</td></tr>" +
+            "<tr><td>A</td><td>1</td></tr></tbody>");
+          window.NB.tableEditor.open(tNoCol);
+          const beforeNoCol = JSON.stringify(teRowsText(teBuilt()));
+          $("te-sort-dir").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: sort direction with no column selected does not reorder",
+            JSON.stringify(teRowsText(teBuilt())) === beforeNoCol &&
+            $("te-sort-dir").getAttribute("aria-pressed") === "false",
+            JSON.stringify(teRowsText(teBuilt())));
+          window.NB.tableEditor._cancel();
+          tNoCol.remove();
         }
+
+        // Transpose: new[r][c] = old[c][r]; alignment resets.
+        const tTrans = mkTe(
+          "<thead><tr><th>Name</th><th>Qty</th><th>Note</th></tr></thead>" +
+          "<tbody><tr><td>Bolt</td><td>10</td><td></td></tr>" +
+          "<tr><td>Nut</td><td>2</td><td>fine</td></tr></tbody>");
+        window.NB.tableEditor.open(tTrans);
+        $("te-transpose").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        const trState = window.NB.tableEditor.getState();
+        const trBuilt = teBuilt();
+        check("table editor: transpose applies new[r][c] = old[c][r]",
+          trState.cols === 3 && trState.rows.length === 3 &&
+          JSON.stringify(teRowsText(trBuilt)[0]) ===
+            JSON.stringify(["Name", "Bolt", "Nut"]) &&
+          JSON.stringify(teRowsText(trBuilt)[1]) ===
+            JSON.stringify(["Qty", "10", "2"]) &&
+          JSON.stringify(teRowsText(trBuilt)[2]) ===
+            JSON.stringify(["Note", "", "fine"]),
+          JSON.stringify(teRowsText(trBuilt)));
+        check("table editor: transpose resets alignment and makes row 0 th",
+          trState.rows.every((r) => r.cells.every((c) => c.align === null)) &&
+          Array.from(trBuilt.rows[0].cells).every((c) => c.tagName === "TH") &&
+          Array.from(trBuilt.rows[1].cells).every((c) => c.tagName === "TD"));
+        window.NB.tableEditor._cancel();
+        tTrans.remove();
+
+        // Add/delete guards.
+        window.NB.tableEditor.open(tNoop);
+        $("te-delete-row").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: Delete row is disabled on the header",
+          window.NB.tableEditor.getState().rows.length === 3 &&
+          $("te-delete-row").getAttribute("aria-disabled") === "true" &&
+          /header row/i.test($("table-editor-status").textContent),
+          $("table-editor-status").textContent);
+        $("te-add-row").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: Add row appends one empty body row",
+          window.NB.tableEditor.getState().rows.length === 4 &&
+          window.NB.tableEditor.getState()
+            .rows[3].cells[0].html.indexOf("&nbsp;") !== -1);
+        $("te-delete-row").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: Delete row removes the focused body row",
+          window.NB.tableEditor.getState().rows.length === 3);
+        $("te-add-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: Add column appends a left-aligned column",
+          window.NB.tableEditor.getState().cols === 4 &&
+          window.NB.tableEditor.getState()
+            .rows[0].cells[3].align === "left");
+        window.NB.tableEditor._cancel();
+
+        const tOne = mkTe(
+          "<thead><tr><th>Solo</th></tr></thead><tbody><tr><td>1</td></tr></tbody>");
+        window.NB.tableEditor.open(tOne);
+        $("te-delete-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: Delete column is disabled for the last column",
+          window.NB.tableEditor.getState().cols === 1 &&
+          $("te-delete-col").getAttribute("aria-disabled") === "true" &&
+          /at least one column/i.test($("table-editor-status").textContent));
+        window.NB.tableEditor._cancel();
+        tOne.remove();
+
+        // --- Move / insert: the structural operations now live here ---
+        {
+          const tOps = mkTe(
+            "<thead><tr><th>H1</th><th>H2</th></tr></thead>" +
+            "<tbody><tr><td>r1</td><td>x1</td></tr>" +
+            "<tr><td>r2</td><td>x2</td></tr>" +
+            "<tr><td>r3</td><td>x3</td></tr></tbody>");
+          window.NB.tableEditor.open(tOps);
+          const cell = (row, col) => TE_GRID.querySelector(
+            '.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+          const order = () => teRowsText(teBuilt());
+          tePress(3, 0);
+          $("te-move-row-up").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Move row up moves the focused body row",
+            JSON.stringify(order()) === JSON.stringify(
+              [["H1", "H2"], ["r1", "x1"], ["r3", "x3"], ["r2", "x2"]]),
+            JSON.stringify(order()));
+          $("te-move-row-down").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Move row down moves it back",
+            JSON.stringify(order()) === JSON.stringify(
+              [["H1", "H2"], ["r1", "x1"], ["r2", "x2"], ["r3", "x3"]]),
+            JSON.stringify(order()));
+          $("te-insert-row-above").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Insert row above seeds a row at the focused index",
+            order().length === 5 &&
+            order()[3].every((t) => t.trim() === "") &&
+            order()[2][0] === "r2" && order()[4][0] === "r3",
+            JSON.stringify(order()));
+          $("te-insert-row-below").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Insert row below seeds the next row",
+            order().length === 6 &&
+            order()[4].every((t) => t.trim() === "") &&
+            order()[5][0] === "r3",
+            JSON.stringify(order()));
+          window.NB.tableEditor._cancel();
+          tOps.remove();
+        }
+
+        {
+          const tCols = mkTe(
+            "<thead><tr><th>H1</th><th>H2</th></tr></thead>" +
+            "<tbody><tr><td>a</td><td>b</td></tr></tbody>");
+          window.NB.tableEditor.open(tCols);
+          const colOrder = () => teRowsText(teBuilt())[0];
+          $("te-move-col-right").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Move column right reorders every row",
+            JSON.stringify(colOrder()) === JSON.stringify(["H2", "H1"]) &&
+            JSON.stringify(teRowsText(teBuilt())[1]) === JSON.stringify(["b", "a"]),
+            JSON.stringify(teRowsText(teBuilt())));
+          $("te-insert-col-left").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Insert column left seeds a column at the focused index",
+            teRowsText(teBuilt())[0].length === 3 &&
+            teRowsText(teBuilt())[0][1].trim() === "" &&
+            teRowsText(teBuilt())[1][1].trim() === "",
+            JSON.stringify(teRowsText(teBuilt())));
+          // The header is fixed in both directions.
+          tePress(0, 0);
+          check("table editor: the header row's Move up is disabled",
+            $("te-move-row-up").getAttribute("aria-disabled") === "true" &&
+            /header row/i.test($("te-move-row-up").title));
+          $("te-move-row-up").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: the header row cannot be moved",
+            teRowsText(teBuilt())[0][0] === "H2");
+          window.NB.tableEditor._cancel();
+          tCols.remove();
+        }
+
+        // --- AC19–AC40: selection, clipboard, selection-aware delete ---
+        {
+          const tSel = mkTe(
+            "<thead><tr><th>S1</th><th>S2</th><th>S3</th></tr></thead>" +
+            "<tbody><tr><td>a</td><td>b</td><td>c</td></tr>" +
+            "<tr><td>d</td><td>e</td><td>f</td></tr>" +
+            "<tr><td>g</td><td>h</td><td>i</td></tr></tbody>");
+          window.NB.tableEditor.open(tSel);
+          const sel = () => window.NB.tableEditor.getSelection();
+          const keyOn = (row, col, key, mods) => {
+            const td = TE_GRID.querySelector(
+              '.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+            const ev = new window.KeyboardEvent("keydown", Object.assign(
+              { key, bubbles: true, cancelable: true }, mods || {}));
+            td.dispatchEvent(ev);
+            return ev;
+          };
+          const cellOf = (row, col) => TE_GRID.querySelector(
+            '.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+          check("table editor: the grid is multiselectable in the editable state",
+            TE_GRID.getAttribute("aria-multiselectable") === "true" &&
+            cellOf(0, 0).getAttribute("aria-rowindex") === "1" &&
+            cellOf(0, 0).getAttribute("aria-colindex") === "1" &&
+            cellOf(0, 0).getAttribute("aria-selected") === "true");
+
+          keyOn(0, 0, "ArrowRight", { shiftKey: true });
+          check("table editor: Shift+ArrowRight extends the range",
+            JSON.stringify(sel()) === JSON.stringify(
+              { r0: 0, r1: 0, c0: 0, c1: 1 }) &&
+            cellOf(0, 1).getAttribute("aria-selected") === "true" &&
+            cellOf(1, 1).getAttribute("aria-selected") === "false" &&
+            /^1 × 2 selected, rows 1–1, columns 1–2$/.test(
+              $("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+          keyOn(0, 1, "ArrowDown", { shiftKey: true });
+          check("table editor: Shift+ArrowDown extends the focus corner",
+            JSON.stringify(sel()) === JSON.stringify(
+              { r0: 0, r1: 1, c0: 0, c1: 1 }) &&
+            cellOf(1, 1).classList.contains("is-selected") &&
+            cellOf(1, 1).classList.contains("is-sel-bottom") &&
+            cellOf(1, 1).classList.contains("is-sel-right"),
+            JSON.stringify(sel()));
+          keyOn(1, 1, "Escape");
+          check("table editor: Esc collapses a range and keeps the modal open",
+            window.NB.tableEditor.isOpen() &&
+            JSON.stringify(sel()) === JSON.stringify(
+              { r0: 1, r1: 1, c0: 1, c1: 1 }));
+          keyOn(1, 1, "a", { ctrlKey: true });
+          check("table editor: Ctrl+A selects the whole grid",
+            JSON.stringify(sel()) === JSON.stringify(
+              { r0: 0, r1: 3, c0: 0, c1: 2 }) &&
+            /^4 × 3 selected/.test($("table-editor-status").textContent));
+          keyOn(0, 0, "ArrowRight");
+          check("table editor: a bare Arrow collapses the range",
+            JSON.stringify(sel()) === JSON.stringify(
+              { r0: 3, r1: 3, c0: 2, c1: 2 }), JSON.stringify(sel()));
+
+          // Copy payload: TSV plus an HTML table, <th> only for row 0.
+          window.NB.tableEditor._select(0, 1, 1, 1);
+          const payload = window.NB.tableEditor.selectionPayload();
+          check("table editor: Copy emits TSV and an HTML table",
+            payload.text === "S2\nb" &&
+            /<thead><tr><th>S2<\/th><\/tr><\/thead>/.test(payload.html) &&
+            /<tbody><tr><td>b<\/td><\/tr><\/tbody>/.test(payload.html),
+            payload.text + " | " + payload.html);
+
+          // Clear: every cell in the range, no rows or columns removed.
+          window.NB.tableEditor._select(1, 1, 1, 2);
+          keyOn(1, 2, "Delete");
+          check("table editor: Delete clears every cell in the range",
+            window.NB.tableEditor.getState().rows[1].cells[1].html === "" &&
+            window.NB.tableEditor.getState().rows[1].cells[2].html === "" &&
+            window.NB.tableEditor.getState().rows.length === 4 &&
+            window.NB.tableEditor.getState().cols === 3 &&
+            /^Cleared 1 × 2$/.test($("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+
+          // Paste 1 × 1 into a range fills it (AC30).
+          window.NB.tableEditor._select(2, 0, 2, 1);
+          window.NB.tableEditor.pasteBlock([[{ html: "Z" }]]);
+          const filled = window.NB.tableEditor.getState();
+          check("table editor: a 1 × 1 paste fills the selection",
+            filled.rows[2].cells[0].html === "Z" &&
+            filled.rows[2].cells[1].html === "Z" &&
+            /Pasted 1 cell into 2 cells/.test($("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+          window.NB.tableEditor._cancel();
+
+          // Growth at the bottom and the right only (AC31).
+          const tGrow = mkTe(
+            "<thead><tr><th>G1</th><th>G2</th></tr></thead>" +
+            "<tbody><tr><td>g</td><td>h</td></tr></tbody>");
+          window.NB.tableEditor.open(tGrow);
+          window.NB.tableEditor._select(1, 1, 1, 1);
+          window.NB.tableEditor.pasteBlock([
+            [{ html: "p" }, { html: "q" }],
+            [{ html: "r" }, { html: "s" }],
+          ]);
+          const grown = window.NB.tableEditor.getState();
+          check("table editor: paste grows the grid down and right, never shrinks",
+            grown.rows.length === 3 && grown.cols === 3 &&
+            grown.rows[2].cells[2].html === "s" &&
+            grown.rows[0].cells[2].html === "&nbsp;" &&
+            /Pasted 2 × 2/.test($("table-editor-status").textContent),
+            JSON.stringify(grown.rows.map((r) => r.cells.map((c) => c.html))));
+          window.NB.tableEditor._cancel();
+          if (vc.contains(tGrow)) tGrow.remove();
+
+          // Selection-aware Delete row / Delete column (AC35).
+          window.NB.tableEditor.open(tSel);
+          window.NB.tableEditor._select(1, 0, 2, 0);
+          $("te-delete-row").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Delete row removes every selected body row",
+            window.NB.tableEditor.getState().rows.length === 2 &&
+            /Deleted 2 rows/.test($("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+          window.NB.tableEditor._select(1, 1, 1, 2);
+          $("te-delete-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Delete column removes every selected column",
+            window.NB.tableEditor.getState().cols === 1 &&
+            /Deleted 2 columns/.test($("table-editor-status").textContent),
+            $("table-editor-status").textContent);
+          window.NB.tableEditor._cancel();
+          if (vc.contains(tSel)) tSel.remove();
+        }
+
+        // Merged cells: open refuses, read-only grid, Cancel only.
+        const tSpan = mkTe(
+          "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+          "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>");
+        const spanOpen = window.NB.tableEditor.open(tSpan);
+        const spanGrid = $("table-editor-grid");
+        check("table editor: merged cells open refused and read-only",
+          spanOpen === true && window.NB.tableEditor.isBlocked() &&
+          window.NB.tableEditor.isOpen() &&
+          $("table-editor-notice").hidden === false &&
+          $("table-editor-apply").hidden === true &&
+          spanGrid.getAttribute("aria-readonly") === "true" &&
+          spanGrid.querySelectorAll(".te-cell[tabindex='0']").length === 0 &&
+          Array.from($("table-editor-toolbar").querySelectorAll(".te-tool"))
+            .every((n) => n.getAttribute("aria-disabled") === "true"));
+        check("table editor: merged cells disable the clipboard with a reason",
+          Array.from($("table-editor-toolbar")
+            .querySelectorAll(".te-clip-group .te-tool"))
+            .every((n) => n.getAttribute("aria-disabled") === "true" &&
+              /merged cells/i.test(n.title)) &&
+          spanGrid.querySelectorAll(".te-cell.is-selected,.te-cell.is-active")
+            .length === 0 &&
+          !spanGrid.getAttribute("aria-multiselectable"));
+        $("te-copy").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: an inert clipboard control explains the refusal",
+          /merged cells/i.test($("table-editor-status").textContent),
+          $("table-editor-status").textContent);
+        window.NB.tableEditor._cancel();
+        check("table editor: merged-cell refusal makes no write",
+          vc.contains(tSpan) && window.NB.hybrid.tableHasSpans(tSpan));
+
+        // Entry control: present for a normal table and for a merged-cell
+        // table, where it opens the read-only refusal state (AC2, AC13).
+        window.NB.tableEdit.hide();
+        window.NB.tableEdit.reveal(tNoop);
+        const teOpenBtn = overlayEl.querySelector(".nb-te-open");
+        check("table editor: overlay entry control exists and is labelled",
+          !!teOpenBtn && teOpenBtn.getAttribute("aria-label") === "Edit table");
+        window.NB.tableEdit.hide();
+        window.NB.tableEdit.reveal(tSpan);
+        const spanOpenBtn = overlayEl.querySelector(".nb-te-open");
+        check("table editor: the merged-cell table still shows the entry control",
+          !!spanOpenBtn);
+        if (spanOpenBtn) spanOpenBtn.dispatchEvent(
+          new window.MouseEvent("click", { bubbles: true }));
+        check("table editor: merged-cell overlay control shows the blocked modal",
+          window.NB.tableEditor.isOpen() && window.NB.tableEditor.isBlocked() &&
+          $("table-editor-notice").hidden === false);
+        window.NB.tableEditor._cancel();
+        window.NB.tableEdit.hide();
+        tSpan.remove();
+        tNoop.remove();
+
+        // --- AC3: grid shape and roles --------------------------------
+        {
+          const tGrid = mkTe(
+            "<thead><tr><th>H1</th><th>H2</th></tr></thead>" +
+            "<tbody><tr><td>a</td><td>b</td></tr>" +
+            "<tr><td>c</td><td>d</td></tr></tbody>");
+          window.NB.tableEditor.open(tGrid);
+          const grid = $("table-editor-grid");
+          const thead = grid.querySelector("thead");
+          const tbody = grid.querySelector("tbody");
+          check("table editor: grid renders one header row and one row per body row",
+            !!thead && thead.rows.length === 1 && !!tbody &&
+            tbody.rows.length === 2 &&
+            grid.getAttribute("aria-rowcount") === "3" &&
+            grid.getAttribute("aria-colcount") === "2",
+            "rows=" + (grid.rows && grid.rows.length));
+          check("table editor: header cells are columnheaders, body cells gridcells",
+            Array.from(thead.rows[0].cells).every(
+              (c) => c.tagName === "TH" &&
+                c.getAttribute("role") === "columnheader") &&
+            Array.from(tbody.rows).every((r) => Array.from(r.cells).every(
+              (c) => c.tagName === "TD" &&
+                c.getAttribute("role") === "gridcell")));
+          check("table editor: grid cell text matches the source",
+            JSON.stringify(teRowsText(tGrid)) === JSON.stringify(
+              [["H1", "H2"], ["a", "b"], ["c", "d"]]),
+            JSON.stringify(teRowsText(tGrid)));
+          window.NB.tableEditor._cancel();
+          tGrid.remove();
+        }
+
+        // --- AC4: click + input update only the edited cell -----------
+        {
+          const tEdit = mkTe(
+            "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+            "<tbody><tr><td>one</td><td>two</td></tr></tbody>");
+          window.NB.tableEditor.open(tEdit);
+          const td = tePress(1, 1);
+          const span = td.querySelector(".te-cell-text");
+          check("table editor: clicking a cell enters edit mode on that cell",
+            span.getAttribute("contenteditable") === "true" &&
+            td.classList.contains("is-active"));
+          span.textContent = "changed";
+          span.dispatchEvent(new window.Event("input", { bubbles: true }));
+          const editState = window.NB.tableEditor.getState();
+          check("table editor: a cell input writes only that cell to the model",
+            editState.rows[1].cells[1].html === "changed" &&
+            editState.rows[1].cells[0].html === "one" &&
+            editState.rows[0].cells[1].html === "B" &&
+            editState.changed === true,
+            JSON.stringify(editState.rows[1].cells));
+          window.NB.tableEditor._cancel();
+          tEdit.remove();
+        }
+
+        // --- AC4b: native drop is reduced to collapsed plain text ----
+        {
+          const tDrop = mkTe(
+            "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+            "<tbody><tr><td>one</td><td>two</td></tr></tbody>");
+          window.NB.tableEditor.open(tDrop);
+          const td = TE_GRID.querySelector(
+            '.te-cell[data-row="1"][data-col="0"]');
+          const dropEvt = new window.Event("drop",
+            { bubbles: true, cancelable: true });
+          Object.defineProperty(dropEvt, "dataTransfer", { value: {
+            getData: (k) => k === "text/plain"
+              ? "block\n\ntext" : "<p>block</p><p>text</p>",
+          } });
+          td.dispatchEvent(dropEvt);
+          const dropHtml = window.NB.tableEditor.getState()
+            .rows[1].cells[0].html;
+          check("table editor: a native drop inserts plain text, not block HTML",
+            dropEvt.defaultPrevented && dropHtml.indexOf("<") === -1 &&
+            dropHtml.indexOf("block text") !== -1,
+            JSON.stringify(dropHtml));
+          window.NB.tableEditor._cancel();
+          tDrop.remove();
+        }
+
+        // --- AC5: keyboard navigation --------------------------------
+        {
+          const tKeys = mkTe(
+            "<thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>" +
+            "<tbody><tr><td>a1</td><td>b1</td><td>c1</td></tr>" +
+            "<tr><td>a2</td><td>b2</td><td>c2</td></tr></tbody>");
+          window.NB.tableEditor.open(tKeys);
+          const cell = (r, c) => TE_GRID.querySelector(
+            '.te-cell[data-row="' + r + '"][data-col="' + c + '"]');
+          // Keydown acts on the model's active cell, so every event is
+          // dispatched on the cell that currently owns the ring.
+          const active = () => TE_GRID.querySelector(".te-cell.is-active");
+          const key = (k, mods) => active().dispatchEvent(
+            new window.KeyboardEvent("keydown",
+              Object.assign({ key: k, bubbles: true, cancelable: true }, mods)));
+
+          key("Tab");
+          check("table editor: Tab moves one cell right without editing",
+            cell(0, 1).classList.contains("is-active") &&
+            !cell(0, 1).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable"));
+          key("Tab", { shiftKey: true });
+          check("table editor: Shift+Tab moves one cell left without editing",
+            cell(0, 0).classList.contains("is-active"));
+
+          // Arrows move cells when not editing, and clamp at the edges.
+          key("ArrowDown");
+          key("ArrowDown");
+          key("ArrowDown");
+          check("table editor: ArrowDown moves down and clamps at the last row",
+            cell(2, 0).classList.contains("is-active"));
+          key("ArrowRight");
+          key("ArrowRight");
+          key("ArrowRight");
+          check("table editor: ArrowRight moves right and clamps at the last column",
+            cell(2, 2).classList.contains("is-active"));
+          key("ArrowUp");
+          key("ArrowLeft");
+          check("table editor: ArrowUp/ArrowLeft move up and left",
+            cell(1, 1).classList.contains("is-active"));
+
+          // Tab never wraps rows: at a row edge it stays put.
+          key("ArrowUp");
+          key("ArrowRight");
+          const edgeEvt = new window.KeyboardEvent("keydown",
+            { key: "Tab", bubbles: true, cancelable: true });
+          active().dispatchEvent(edgeEvt);
+          check("table editor: Tab at a row edge is swallowed, no wrap",
+            cell(0, 2).classList.contains("is-active") &&
+            edgeEvt.defaultPrevented);
+
+          // At the grid's last cell Tab is left to the footer (not swallowed).
+          key("ArrowDown");
+          key("ArrowDown");
+          const lastEvt = new window.KeyboardEvent("keydown",
+            { key: "Tab", bubbles: true, cancelable: true });
+          active().dispatchEvent(lastEvt);
+          check("table editor: Tab at the grid's last cell leaves to the footer",
+            cell(2, 2).classList.contains("is-active") &&
+            lastEvt.defaultPrevented &&
+            window.document.activeElement === $("table-editor-cancel"));
+
+          // Enter starts editing; while editing it commits and moves down.
+          key("ArrowUp");
+          key("ArrowUp");
+          key("ArrowLeft");
+          key("ArrowLeft");
+          key("Enter");
+          check("table editor: Enter starts editing the focused cell",
+            cell(0, 0).querySelector(".te-cell-text")
+              .getAttribute("contenteditable") === "true");
+          key("Enter");
+          check("table editor: Enter commits and moves down one row",
+            cell(1, 0).classList.contains("is-active") &&
+            !cell(0, 0).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable"));
+          key("ArrowDown");
+          key("Enter");
+          key("Enter");
+          check("table editor: Enter stops at the last row",
+            cell(2, 0).classList.contains("is-active") &&
+            !cell(2, 0).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable"));
+
+          // An IME composition key must not start a cell edit.
+          const imeEvt = new window.KeyboardEvent("keydown",
+            { key: "a", isComposing: true, bubbles: true, cancelable: true });
+          active().dispatchEvent(imeEvt);
+          check("table editor: an IME composition key does not start editing",
+            !cell(2, 0).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable") &&
+            cell(2, 0).querySelector(".te-cell-text").textContent === "a2",
+            cell(2, 0).querySelector(".te-cell-text").textContent);
+
+          // Edit-mode edge keys keep focus in the dialog. Enter on the
+          // last row re-focuses the current cell rather than <body>.
+          key("Enter");
+          key("Enter");
+          check("table editor: Enter in edit mode on the last row keeps focus",
+            window.document.activeElement === cell(2, 0) &&
+            !cell(2, 0).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable"),
+            window.document.activeElement &&
+              window.document.activeElement.tagName);
+
+          // Tab at a row edge commits and re-focuses the same cell.
+          key("ArrowUp");
+          key("ArrowRight");
+          key("ArrowRight");
+          key("Enter");
+          const edgeEdit = new window.KeyboardEvent("keydown",
+            { key: "Tab", bubbles: true, cancelable: true });
+          active().dispatchEvent(edgeEdit);
+          check("table editor: Tab in edit mode at a row edge keeps focus in the grid",
+            window.document.activeElement === cell(1, 2) &&
+            !cell(1, 2).querySelector(".te-cell-text")
+              .hasAttribute("contenteditable") && edgeEdit.defaultPrevented,
+            window.document.activeElement &&
+              window.document.activeElement.tagName);
+
+          // Tab at the final cell leaves to the first footer control.
+          key("ArrowDown");
+          key("Enter");
+          const finalEdit = new window.KeyboardEvent("keydown",
+            { key: "Tab", bubbles: true, cancelable: true });
+          active().dispatchEvent(finalEdit);
+          check("table editor: Tab in edit mode at the final cell leaves to the footer",
+            window.document.activeElement === $("table-editor-cancel") &&
+            finalEdit.defaultPrevented,
+            window.document.activeElement &&
+              window.document.activeElement.id);
+
+          // Shift+Tab at (0,0) leaves to the last toolbar control.
+          key("ArrowUp");
+          key("ArrowUp");
+          key("ArrowLeft");
+          key("ArrowLeft");
+          key("Enter");
+          const firstEdit = new window.KeyboardEvent("keydown",
+            { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+          active().dispatchEvent(firstEdit);
+          check("table editor: Shift+Tab in edit mode at (0,0) leaves to the toolbar",
+            $("table-editor-toolbar").contains(window.document.activeElement) &&
+            firstEdit.defaultPrevented,
+            window.document.activeElement &&
+              window.document.activeElement.id);
+
+          // A printable key starts editing at the END and never wipes.
+          key("ArrowDown");
+          key("Z");
+          const typed = cell(1, 0).querySelector(".te-cell-text");
+          check("table editor: a printable key starts editing at the end",
+            typed.getAttribute("contenteditable") === "true" &&
+            typed.textContent.indexOf("a1") === 0 &&
+            typed.textContent.slice(-1) === "Z",
+            JSON.stringify(typed.textContent) + " edit=" +
+              typed.getAttribute("contenteditable"));
+          $("table-editor-overlay").dispatchEvent(new window.KeyboardEvent(
+            "keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          check("table editor: Esc still closes after focus left the grid",
+            !window.NB.tableEditor.isOpen());
+          tKeys.remove();
+        }
+
+        // --- AC6: add/delete guards ----------------------------------
+        {
+          const tDel = mkTe(
+            "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+            "<tbody><tr><td>only</td><td>1</td></tr></tbody>");
+          window.NB.tableEditor.open(tDel);
+          const cell00 = TE_GRID.querySelector('.te-cell[data-row="0"][data-col="0"]');
+          cell00.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "ArrowDown", bubbles: true, cancelable: true }));
+          check("table editor: Delete row is disabled for the last body row",
+            $("te-delete-row").getAttribute("aria-disabled") === "true" &&
+            /at least one body row/i.test($("te-delete-row").title));
+          $("te-delete-row").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Delete row on the last body row writes the cause",
+            window.NB.tableEditor.getState().rows.length === 2 &&
+            /at least one body row/i.test($("table-editor-status").textContent));
+          $("te-add-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          const addState = window.NB.tableEditor.getState();
+          const addBuilt = teBuilt();
+          check("table editor: Add column appends a th cell and td cells",
+            addState.cols === 3 &&
+            addBuilt.rows[0].cells[2].tagName === "TH" &&
+            addBuilt.rows[1].cells[2].tagName === "TD" &&
+            addState.rows[0].cells[2].align === "left");
+          window.NB.tableEditor._cancel();
+          tDel.remove();
+        }
+
+        // --- AC7: alignment serializes as GFM ------------------------
+        {
+          const tAli = mkTe(
+            "<thead><tr><th>A</th></tr></thead>" +
+            "<tbody><tr><td>x</td></tr></tbody>");
+          tAli.setAttribute("data-te-test", "align");
+          const findAli = () => vc.querySelector('table[data-te-test="align"]');
+          window.NB.tableEditor.open(tAli);
+          $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          window.NB.tableEditor._apply();
+          let aliMd = window.NB.hybrid.domToMarkdown();
+          check("table editor: center alignment serializes :-:",
+            /:-:/.test(aliMd), JSON.stringify(aliMd));
+          window.NB.tableEditor.open(findAli());
+          $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          window.NB.tableEditor._apply();
+          aliMd = window.NB.hybrid.domToMarkdown();
+          check("table editor: right alignment serializes --:",
+            /--:/.test(aliMd), JSON.stringify(aliMd));
+          window.NB.tableEditor.open(findAli());
+          $("te-align-col").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          window.NB.tableEditor._apply();
+          aliMd = window.NB.hybrid.domToMarkdown();
+          check("table editor: left alignment serializes :--",
+            /:--/.test(aliMd), JSON.stringify(aliMd));
+          if (findAli()) findAli().remove();
+        }
+
+        // --- AC7: a plain `---` column reads as left and is written
+        // `:--` once the table is edited --------------------------------
+        {
+          const tPlain = mkTe(
+            "<thead><tr><th>Zeta</th><th>Omega</th></tr></thead>" +
+            "<tbody><tr><td>x</td><td>y</td></tr></tbody>");
+          tPlain.setAttribute("data-te-test", "plain");
+          const findPlain = () => vc.querySelector('table[data-te-test="plain"]');
+          // The delimiter row that follows THIS table's header line.
+          const delimOf = (md) => {
+            const lines = md.split("\n");
+            const at = lines.findIndex((l) => /^\| Zeta \| Omega \|$/.test(l.trim()));
+            return at < 0 ? null : lines[at + 1];
+          };
+          const beforeDelim = delimOf(window.NB.hybrid.domToMarkdown());
+          window.NB.tableEditor.open(tPlain);
+          const plainState = window.NB.tableEditor.getState();
+          check("table editor: a plain delimiter reads as left",
+            plainState.rows[0].cells.every((c) => c.align === null) &&
+            /\| --- \| --- \|/.test(beforeDelim || ""),
+            JSON.stringify(beforeDelim));
+          plainState.rows[1].cells[0].html = "z";
+          plainState.changed = true;
+          window.NB.tableEditor._apply();
+          const afterDelim = delimOf(window.NB.hybrid.domToMarkdown());
+          check("table editor: an edited table writes :-- for a plain-left column",
+            /\| :-- \| :-- \|/.test(afterDelim || ""),
+            JSON.stringify(afterDelim));
+          if (findPlain()) findPlain().remove();
+        }
+
+        // --- AC9: transpose is its own content inverse ----------------
+        {
+          const tTwice = mkTe(
+            "<thead><tr><th>Name</th><th align=\"center\">Qty</th></tr></thead>" +
+            "<tbody><tr><td>Bolt</td><td>10</td></tr>" +
+            "<tr><td>Nut</td><td>2</td></tr></tbody>");
+          window.NB.tableEditor.open(tTwice);
+          const beforeTwice = JSON.stringify(teRowsText(window.NB.tableEditor.rebuildTable()));
+          const beforeAlign = window.NB.tableEditor.getState()
+            .rows[0].cells[1].align;
+          $("te-transpose").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          $("te-transpose").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          const afterTwice = JSON.stringify(teRowsText(window.NB.tableEditor.rebuildTable()));
+          check("table editor: transposing twice restores the content",
+            afterTwice === beforeTwice && beforeAlign === "center",
+            afterTwice + " vs " + beforeTwice);
+          check("table editor: transposing twice does not restore alignment",
+            window.NB.tableEditor.getState().rows.every(
+              (r) => r.cells.every((c) => c.align === null)));
+          window.NB.tableEditor._cancel();
+          tTwice.remove();
+        }
+
+        // --- AC15/AC16: inline round-trip and empty cells -------------
+        {
+          const tInline = mkTe(
+            "<thead><tr><th>H</th><th>Empty</th></tr></thead>" +
+            "<tbody><tr><td><b>bold</b> <em>it</em> <code>c</code> " +
+            "<a href=\"https://x.test\">link</a> " +
+            "<span style=\"color:red\">plain</span></td><td></td></tr></tbody>");
+          tInline.setAttribute("data-te-test", "inline");
+          window.NB.tableEditor.open(tInline);
+          window.NB.tableEditor.getState().rows[1].cells[0].html += " tail";
+          window.NB.tableEditor.getState().changed = true;
+          window.NB.tableEditor._apply();
+          const inlineMd = window.NB.hybrid.domToMarkdown();
+          const inlineTable = vc.querySelector('table[data-te-test="inline"]');
+          check("table editor: inline bold/italic/code/link survive Apply as GFM",
+            /(\*\*|__)bold(\*\*|__)/.test(inlineMd) &&
+            /(\*|_)it(\*|_)/.test(inlineMd) && /`c`/.test(inlineMd) &&
+            /\[link\]\(https:\/\/x\.test\)/.test(inlineMd),
+            JSON.stringify(inlineMd));
+          check("table editor: unsupported inline HTML is flattened to text",
+            inlineMd.indexOf("<span") === -1 &&
+            inlineMd.indexOf("color:red") === -1 &&
+            inlineMd.indexOf("plain") !== -1,
+            JSON.stringify(inlineMd));
+          check("table editor: an empty cell stays empty in place",
+            !!inlineTable && inlineTable.rows[1].cells.length === 2 &&
+            inlineTable.rows[1].cells[1].textContent === "" &&
+            inlineTable.rows[1].cells[1].tagName === "TD");
+          if (inlineTable) inlineTable.remove();
+        }
+
+        // --- AC17/AC18: accessible names, toolbar roles, dialog ------
+        {
+          const ov = $("table-editor-overlay");
+          const dialog = ov.querySelector('[role="dialog"]');
+          const controls = Array.from(ov.querySelectorAll(
+            ".te-tool, #te-sort-col, #table-editor-cancel, " +
+            "#table-editor-apply, #table-editor-close"));
+          check("table editor: dialog is a labelled modal titled Edit table",
+            dialog && dialog.getAttribute("role") === "dialog" &&
+            dialog.getAttribute("aria-modal") === "true" &&
+            dialog.getAttribute("aria-labelledby") === "table-editor-title" &&
+            $("table-editor-title").textContent === "Edit table");
+          check("table editor: every control has an accessible name or title",
+            controls.length >= 9 && controls.every((n) =>
+              !!(n.getAttribute("aria-label") || n.getAttribute("title") ||
+                n.textContent.trim())),
+            "n=" + controls.length);
+          check("table editor: toolbar and groups carry accessible roles",
+            ov.querySelector('[role="toolbar"][aria-label]') &&
+            ov.querySelectorAll('[role="group"][aria-label]').length >= 4 &&
+            $("te-sort-col").getAttribute("aria-label"));
+        }
+
+        // --- AC14: focus containment and return (overlay path) -------
+        // jsdom has no layout, so offsetParent/getClientRects are stubbed
+        // to let dialog.js see real focusable geometry.
+        {
+          const tFocus = mkTe(
+            "<thead><tr><th>F</th></tr></thead>" +
+            "<tbody><tr><td>v</td></tr></tbody>");
+          window.NB.tableEdit.reveal(tFocus);
+          const openBtn = $("viewer").querySelector(".nb-te-open");
+          openBtn.getClientRects = () => [{ width: 10, height: 10 }];
+          openBtn.focus();
+          window.NB.tableEditor.open(tFocus);
+          const ov = $("table-editor-overlay");
+          const focusList = () => Array.from(ov.querySelectorAll(
+            'button, [href], input, select, textarea, ' +
+            '[tabindex]:not([tabindex="-1"])'))
+            .filter((el) => !el.disabled && !el.hidden)
+            .filter((el) => {
+              if (el.offsetParent !== null) return true;
+              try {
+                Object.defineProperty(el, "offsetParent",
+                  { get: () => window.document.body, configurable: true });
+              } catch (_) { return false; }
+              return el.offsetParent !== null;
+            });
+          const tabEvt = (shift) => new window.KeyboardEvent("keydown",
+            { key: "Tab", shiftKey: !!shift, bubbles: true, cancelable: true });
+          const list = focusList();
+          const first = list[0];
+          const last = list[list.length - 1];
+          first.focus();
+          ov.dispatchEvent(tabEvt(true));
+          check("table editor: Shift+Tab from the first control wraps to the last",
+            window.document.activeElement === last);
+          last.focus();
+          ov.dispatchEvent(tabEvt(false));
+          check("table editor: Tab from the last control wraps to the first",
+            window.document.activeElement === first);
+          window.NB.tableEditor._cancel();
+          check("table editor: closing returns focus to the overlay entry control",
+            window.document.activeElement === openBtn);
+          window.NB.tableEdit.hide();
+          tFocus.remove();
+        }
+
+        // --- AC1: the hybrid context menu opens the same modal ------
+        {
+          const tMenu = mkTe(
+            "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+            "<tbody><tr><td>m1</td><td>m2</td></tr></tbody>");
+          const r = window.document.createRange();
+          r.selectNodeContents(tMenu.rows[1].cells[0]);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          tMenu.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
+            "contextmenu", { bubbles: true, cancelable: true,
+              clientX: 5, clientY: 5 }));
+          await tick(10);
+          const first = Array.from($("nb-menu").querySelectorAll("button"))
+            .find((b) => b.textContent.indexOf("Edit table") === 0);
+          check("table editor: the table menu offers Edit table…",
+            !!first, $("nb-menu").textContent.slice(0, 60));
+          if (first) {
+            first.dispatchEvent(new window.Event("click", { bubbles: true }));
+            await tick(10);
+            check("table editor: Edit table… opens the modal for that table",
+              window.NB.tableEditor.isOpen() &&
+              window.NB.tableEditor.getState().rows[0].cells[0].html === "A");
+            window.NB.tableEditor._cancel();
+            check("table editor: menu-path close leaves focus in #viewer-content",
+              window.document.activeElement === vc ||
+              vc.contains(window.document.activeElement),
+              window.document.activeElement &&
+                window.document.activeElement.tagName);
+          }
+          tMenu.remove();
+        }
+
+        // --- AC13: a merged-cell table's menu item stays enabled and
+        // opens the modal in its read-only refusal state --------------
+        {
+          const tMenuSpan = mkTe(
+            "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+            "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>");
+          const r = window.document.createRange();
+          r.selectNodeContents(tMenuSpan.rows[1].cells[0]);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          tMenuSpan.rows[1].cells[0].dispatchEvent(new window.MouseEvent(
+            "contextmenu", { bubbles: true, cancelable: true,
+              clientX: 5, clientY: 5 }));
+          await tick(10);
+          const first = Array.from($("nb-menu").querySelectorAll("button"))
+            .find((b) => b.textContent.indexOf("Edit table") === 0);
+          check("table editor: the merged-cell menu item is not disabled",
+            !!first && !first.disabled &&
+            first.getAttribute("aria-disabled") !== "true",
+            $("nb-menu").textContent.slice(0, 60));
+          if (first) {
+            first.dispatchEvent(new window.Event("click", { bubbles: true }));
+            await tick(10);
+            check("table editor: the merged-cell menu item opens the refusal",
+              window.NB.tableEditor.isOpen() &&
+              window.NB.tableEditor.isBlocked() &&
+              $("table-editor-notice").hidden === false);
+            window.NB.tableEditor._cancel();
+          }
+          tMenuSpan.remove();
+        }
+
+        // Hybrid-only guard used by both entry points (AC1 AC2).
+        {
+          await window.NB.hybrid.exit(false);
+          await tick(20);
+          const tPreview = window.document.createElement("table");
+          tPreview.innerHTML = "<tbody><tr><th>P</th></tr><tr><td>1</td></tr></tbody>";
+          vc.appendChild(tPreview);
+          check("table editor: the modal cannot open outside hybrid mode",
+            window.NB.tableEditor.open(tPreview) === false &&
+            !window.NB.tableEditor.isOpen());
+          tPreview.remove();
+          await window.NB.hybrid.enter();
+          await tick(20);
+        }
+
+        // --- AC11: a no-op Apply leaves the note clean ----------------
+        {
+          await window.NB.hybrid.exit(false);
+          await tick(20);
+          await window.NB.hybrid.enter();
+          await tick(20);
+          const tClean = mkTe(
+            "<thead><tr><th>K</th></tr></thead>" +
+            "<tbody><tr><td>v</td></tr></tbody>");
+          window.NB.tableEditor.open(tClean);
+          window.NB.tableEditor._apply();
+          check("table editor: no-op Apply leaves the note clean (not dirty)",
+            !window.NB.tableEditor.isOpen() && vc.contains(tClean) &&
+            window.NB.hybrid.isDirty() === false);
+          tClean.remove();
+        }
+
+        // --- AC12: Cancel keeps an existing dirty mark ----------------
+        {
+          const tCancelDirty = mkTe(
+            "<thead><tr><th>K</th></tr></thead>" +
+            "<tbody><tr><td>v</td></tr></tbody>");
+          window.NB.hybrid.onContentChange();
+          window.NB.hybrid.flushPendingSnapshot();
+          const dirtyBeforeCancel = window.NB.hybrid.isDirty();
+          window.NB.tableEditor.open(tCancelDirty);
+          window.NB.tableEditor._cancel();
+          check("table editor: Cancel does not clear an existing dirty mark",
+            dirtyBeforeCancel === true && window.NB.hybrid.isDirty() === true &&
+            vc.contains(tCancelDirty));
+          tCancelDirty.remove();
+        }
+
+        // --- AC10: Apply is exactly one undo step ---------------------
+        {
+          await window.NB.hybrid.exit(false);
+          await tick(20);
+          await window.NB.hybrid.enter();
+          await tick(20);
+          const tUndo = mkTe(
+            "<thead><tr><th>Part</th><th>Qty</th></tr></thead>" +
+            "<tbody><tr><td><b>old-part</b></td><td>1</td></tr></tbody>");
+          tUndo.setAttribute("data-te-test", "undo");
+          // Seed the pre-edit snapshot so undo has a state to return to.
+          window.NB.hybrid.onContentChange();
+          window.NB.hybrid.flushPendingSnapshot();
+          window.NB.tableEditor.open(tUndo);
+          window.NB.tableEditor.getState().rows[1].cells[0].html =
+            "<b>new-marker</b>";
+          window.NB.tableEditor.getState().changed = true;
+          window.NB.tableEditor._apply();
+          check("table editor: Apply writes the edited table",
+            window.NB.hybrid.domToMarkdown().indexOf("new-marker") !== -1);
+          vc.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+          const undoOne = vc.querySelector('table[data-te-test="undo"]');
+          check("table editor: one undo restores the previous table",
+            !!undoOne && /old-part/.test(undoOne.textContent) &&
+            !/new-marker/.test(vc.textContent),
+            undoOne ? undoOne.outerHTML : "table missing");
+          vc.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+          check("table editor: a second undo does not re-apply the edit",
+            !/new-marker/.test(vc.textContent));
+        }
+
+        // Delete table: one write, one undo step, modal closed.
+        {
+          const tDel = mkTe(
+            "<thead><tr><th>H</th></tr></thead>" +
+            "<tbody><tr><td>v</td></tr></tbody>");
+          tDel.setAttribute("data-te-test", "delete");
+          window.NB.hybrid.onContentChange();
+          window.NB.hybrid.flushPendingSnapshot();
+          window.NB.tableEditor.open(tDel);
+          $("te-delete-table").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+          check("table editor: Delete table removes the table and closes",
+            !window.NB.tableEditor.isOpen() &&
+            !vc.contains(tDel) &&
+            !vc.querySelector('table[data-te-test="delete"]'));
+          vc.dispatchEvent(new window.KeyboardEvent("keydown",
+            { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+          check("table editor: one undo restores a deleted table",
+            !!vc.querySelector('table[data-te-test="delete"]'),
+            "undo did not restore the table");
+          const back = vc.querySelector('table[data-te-test="delete"]');
+          if (back) back.remove();
+        }
+
+        // Leave one clean hybrid session for the drag tests that follow.
+        await window.NB.hybrid.exit(false);
+        await tick(20);
+        await window.NB.hybrid.enter();
+        await tick(20);
       }
 
       // --- spatial arrow navigation inside a table -------------------
@@ -12713,13 +13673,13 @@ function check(label, cond, extra) {
         { bubbles: true, cancelable: true, clientX: 5, clientY: 5 }));
       await tick(10);
       const menu = $("nb-menu");
-      const headerItem = Array.from(menu.querySelectorAll("button"))
-        .find((b) => /header/i.test(b.textContent));
-      check("hybrid table-guard: table submenu offers a header action",
-        !!headerItem, "menu=" + menu.textContent.slice(0, 80));
-      if (headerItem) headerItem.dispatchEvent(new window.Event("click", { bubbles: true }));
-      await tick(10);
-      check("hybrid table-guard: toggling the header off is refused",
+      const tableItems = Array.from(menu.querySelectorAll("button"))
+        .filter((b) => /Edit table|Move row|Move column|Insert row|Insert column|Delete row|Delete column|header row/i
+          .test(b.textContent));
+      check("hybrid table-guard: the menu offers only Edit table… for a table",
+        tableItems.length === 1 && /Edit table/.test(tableItems[0].textContent),
+        "items=" + tableItems.map((b) => b.textContent).join(","));
+      check("hybrid table-guard: the header row is not demotable from the menu",
         hdrTable.rows[0] === headerRow &&
         Array.from(hdrTable.rows[0].cells).every((c) => c.tagName === "TH"),
         "row=" + hdrTable.rows[0].outerHTML);
@@ -17798,8 +18758,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v17",
-      /const CACHE = "notebook-v17"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v18",
+      /const CACHE = "notebook-v18"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -26638,7 +27598,7 @@ function check(label, cond, extra) {
     // relative to viewport create huge empty bands on tall windows).
     // Top padding should be a small absolute value.
     // Anchor at a line start so selector-composed rules like
-    // "body.nb-table-drag #viewer-content" (which legitimately have no
+    // ".hybrid-editing #viewer-content" (which legitimately have no
     // padding) don't shadow the base layout rule.
     const viewerBlock = css.match(/(^|\n)#viewer-content\s*\{[^}]*\}/);
     check("viewer: #viewer-content rule exists in stylesheet", !!viewerBlock,
@@ -35110,8 +36070,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v17",
-        /const CACHE = "notebook-v17"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v18",
+        /const CACHE = "notebook-v18"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);

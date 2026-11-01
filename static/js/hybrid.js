@@ -7920,40 +7920,6 @@
     onContentChange();
   }
 
-  /* Build the Table submenu descriptors for the given table. The Move
-   * entries are the keyboard path for the drag overlay (table-edit.js)
-   * and the touch fallback; the caret must be inside the table, which it
-   * is because the submenu only exists when the right-click landed there. */
-  function buildTableItems(table) {
-    const row = getRowFromSelection();
-    const cell = getCellFromSelection();
-    const canRow = canDeleteRow(row);
-    const canCol = canDeleteColumn(cell);
-    return [
-      { label: "Move row up", handler: () => moveRowBySelection("up"), kbd: "Alt+Up" },
-      { label: "Move row down", handler: () => moveRowBySelection("down"), kbd: "Alt+Down" },
-      { separator: true },
-      { label: "Move column left", handler: () => moveColBySelection("left"), kbd: "Alt+Shift+Left" },
-      { label: "Move column right", handler: () => moveColBySelection("right"), kbd: "Alt+Shift+Right" },
-      { label: "Align column (cycle)", handler: () => cycleColAlign(getCellFromSelection()) },
-      { separator: true },
-      { label: "Insert row above", handler: () => insertRow(getRowFromSelection(), "above") },
-      { label: "Insert row below", handler: () => insertRow(getRowFromSelection(), "below") },
-      { label: "Delete row", handler: () => deleteRow(getRowFromSelection()),
-        disabled: !canRow,
-        title: canRow ? undefined : deleteRowBlockedReason(row) },
-      { separator: true },
-      { label: "Insert column left", handler: () => insertCol(getCellFromSelection(), "left") },
-      { label: "Insert column right", handler: () => insertCol(getCellFromSelection(), "right") },
-      { label: "Delete column", handler: () => deleteCol(getCellFromSelection()),
-        disabled: !canCol,
-        title: canCol ? undefined : "A table needs at least one column" },
-      { separator: true },
-      { label: "Toggle header row", handler: () => toggleHeaderRow(table) },
-      { label: "Delete table", handler: () => deleteTable(table) },
-    ];
-  }
-
   /* Keyboard/menu wrappers: resolve the caret's row/column and move it
    * one slot. After the move the caret follows into the moved row /
    * column's first cell, so pressing the chord again moves the same
@@ -8779,10 +8745,13 @@
     }
     items.push({ label: "List", submenu: listSub });
 
-    // Table submenu -- only shown when the click is inside a table.
+    // Edit table -- only shown when the click is inside a table. The
+    // modal owns the structural operations (row/column move, insert,
+    // delete, alignment, sort, transpose); hybrid edits cell text only.
     const table = e && e.target && e.target.closest ? e.target.closest("table") : null;
     if (table && viewerContentEl.contains(table)) {
-      items.push({ label: "Table", submenu: buildTableItems(table) });
+      items.push({ label: "Edit table…",
+        handler: () => NB.tableEditor && NB.tableEditor.open(table) });
     }
 
     // Code & plugin blocks (mermaid / wavedrom / katex / graphviz / any

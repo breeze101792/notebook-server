@@ -41,7 +41,11 @@ behavior), then leaving it re-renders. The block is atomic while not being edite
 **G3 — Tables have their own editing tool.** A table is edited with table-specific
 controls (add/remove row and column, move a row or a column, header toggle), not by
 typing pipe characters. The rendered table is the editing surface; the tool writes
-GFM.
+GFM. Structure editing (rows/columns, alignment, sort, transpose, delete table)
+lives in the "Edit table" modal — see [table-editor.md](table-editor.md). Hybrid
+mode itself carries one affordance: a **left-gutter "Edit table" button**, which
+is also the context menu's single `Edit table…` item. No grips, no row/column
+menu items: the rendered table is the editing surface for cell text only.
 
 **G4 — The file stays clean Markdown.** The rendered DOM is an editing
 convenience only; it must never leak presentation HTML into the saved file. No

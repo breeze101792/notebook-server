@@ -17,6 +17,7 @@ const SUITES = [
   { name: "auth/export/PWA", file: "test_auth_export_browser.js", port: 5081 },
   { name: "AI/ACP/editor", file: "test_ai_editor_browser.js", port: 5086 },
   { name: "hybrid", file: "test_hybrid_browser.js", port: 5099 },
+  { name: "table editor", file: "test_table_editor_browser.js", port: 5094 },
   { name: "hybrid blocks", file: "test_hybrid_blocks_browser.js", port: 5082 },
   { name: "fence editor", file: "test_block_edit_browser.js", port: 5091 },
   { name: "figure sizing", file: "test_figure_sizing_browser.js", port: 5083 },

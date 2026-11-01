@@ -1112,6 +1112,158 @@
     </div>
   </div>
 
+  <!-- Table editor modal (hybrid mode only). Opened from the hybrid Table
+       submenu's "Edit table…" item or the active table's overlay button.
+       Carries class="settings-overlay" so NB.dialog owns focus containment,
+       NB.windows owns drag/resize, and the app's keyboard-modal guards apply.
+       The grid itself is built per open by static/js/table-editor.js. -->
+  <div id="table-editor-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal table-editor-modal" role="dialog" aria-modal="true"
+         aria-labelledby="table-editor-title" tabindex="-1">
+      <div class="settings-header">
+        <h2 id="table-editor-title">Edit table</h2>
+        <button id="table-editor-close" class="icon-btn" type="button"
+                title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="te-body">
+        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
+          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
+          <div>
+            <p>This table has merged cells and cannot be edited here.</p>
+            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
+          </div>
+        </div>
+        <div id="table-editor-toolbar" class="te-toolbar" role="toolbar" aria-label="Table tools">
+          <div class="te-group" role="group" aria-label="Rows">
+            <button id="te-move-row-up" class="te-tool" type="button"
+                    title="Move row up" aria-label="Move row up">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 11V4M5 7l3-3 3 3"/></svg>
+            </button>
+            <button id="te-move-row-down" class="te-tool" type="button"
+                    title="Move row down" aria-label="Move row down">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 5v7M5 9l3 3 3-3"/></svg>
+            </button>
+            <span class="te-gap" aria-hidden="true"></span>
+            <button id="te-insert-row-above" class="te-tool" type="button"
+                    title="Insert row above" aria-label="Insert row above">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h10"/><path d="M8 9v4M6 11h4"/></svg>
+            </button>
+            <button id="te-insert-row-below" class="te-tool" type="button"
+                    title="Insert row below" aria-label="Insert row below">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10h10"/><path d="M8 2v4M6 4h4"/></svg>
+            </button>
+            <button id="te-add-row" class="te-tool" type="button"
+                    title="Add row at the end" aria-label="Add row at the end">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M8 10v4M6 12h4"/></svg>
+            </button>
+            <button id="te-delete-row" class="te-tool is-danger" type="button"
+                    title="Delete row" aria-label="Delete row">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M6 12.5h4"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Columns">
+            <button id="te-move-col-left" class="te-tool" type="button"
+                    title="Move column left" aria-label="Move column left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4M7 5 4 8l3 3"/></svg>
+            </button>
+            <button id="te-move-col-right" class="te-tool" type="button"
+                    title="Move column right" aria-label="Move column right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8M9 5l3 3-3 3"/></svg>
+            </button>
+            <span class="te-gap" aria-hidden="true"></span>
+            <button id="te-insert-col-left" class="te-tool" type="button"
+                    title="Insert column left" aria-label="Insert column left">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 3v10"/><path d="M8 8h5M10.5 5.5v5"/></svg>
+            </button>
+            <button id="te-insert-col-right" class="te-tool" type="button"
+                    title="Insert column right" aria-label="Insert column right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M11 3v10"/><path d="M3 8h5M5.5 5.5v5"/></svg>
+            </button>
+            <button id="te-add-col" class="te-tool" type="button"
+                    title="Add column at the right" aria-label="Add column at the right">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M11 8h4M13 6v4"/></svg>
+            </button>
+            <button id="te-delete-col" class="te-tool is-danger" type="button"
+                    title="Delete column" aria-label="Delete column">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M10 8h4"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group te-clip-group" role="group" aria-label="Clipboard">
+            <button id="te-cut" class="te-tool" type="button"
+                    title="Cut" aria-label="Cut">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.5 3l7 7M11.5 3l-7 7"/><circle cx="3.5" cy="12" r="1.6"/><circle cx="12.5" cy="12" r="1.6"/></svg>
+            </button>
+            <button id="te-copy" class="te-tool" type="button"
+                    title="Copy" aria-label="Copy">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="9"/><path d="M2.5 5.5v8h8"/></svg>
+            </button>
+            <button id="te-paste" class="te-tool" type="button"
+                    title="Paste" aria-label="Paste">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3.5" width="10" height="10"/><path d="M6 3.5V2h4v1.5M5 8h6M5 11h4"/></svg>
+            </button>
+            <button id="te-clear" class="te-tool" type="button"
+                    title="Clear contents" aria-label="Clear contents">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10.5l6-6 3 3-6 6z"/><path d="M9.5 4.5l2-2 3 3-2 2"/><path d="M2 14h12"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Column alignment">
+            <button id="te-align-col" class="te-tool" type="button"
+                    title="Cycle column alignment (left)" aria-label="Cycle column alignment">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 7.5h7M2 11h12"/></svg>
+            </button>
+          </div>
+
+          <div class="te-sep" aria-hidden="true"></div>
+
+          <div class="te-group" role="group" aria-label="Sort">
+            <span class="te-sort-label" aria-hidden="true">Sort</span>
+            <select id="te-sort-col" class="te-sort-col" aria-label="Sort by column">
+              <option value="">Sort by…</option>
+            </select>
+            <button id="te-sort-dir" class="te-tool" type="button" aria-pressed="true"
+                    title="Sort ascending" aria-label="Sort ascending">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5"/></svg>
+            </button>
+          </div>
+
+          <div class="te-spacer"></div>
+
+          <div class="te-group" role="group" aria-label="Table">
+            <button id="te-transpose" class="te-tool" type="button"
+                    title="Transpose table (resets column alignment)" aria-label="Transpose table">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5h7M7 2.5 9.5 5 7 7.5"/><path d="M13.5 11h-7M9 8.5 6.5 11 9 13.5"/></svg>
+            </button>
+            <button id="te-delete-table" class="te-tool is-danger" type="button"
+                    title="Delete table (one undo step)" aria-label="Delete table">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="te-scroll">
+          <table id="table-editor-grid" class="te-grid" role="grid"
+                 aria-label="Table cells"></table>
+        </div>
+      </div>
+      <div class="settings-footer te-footer">
+        <span id="table-editor-status" class="te-status" role="status"
+              aria-live="polite" aria-atomic="true"></span>
+        <span class="te-hint" aria-hidden="true">Esc cancels</span>
+        <button id="table-editor-cancel" class="settings-action" type="button">Cancel</button>
+        <button id="table-editor-apply" class="settings-action settings-action--primary" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
        "Design diagram…" item. Carries class="settings-overlay" so the app's
        keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
@@ -1602,6 +1754,7 @@
   <script src="/static/js/list-edit.js" defer></script>
   <script src="/static/js/table-view.js" defer></script>
   <script src="/static/js/table-select.js" defer></script>
+  <script src="/static/js/table-editor.js" defer></script>
   <script src="/static/js/watcher.js" defer></script>
   <script src="/static/js/outline.js" defer></script>
   <script src="/static/js/sidebar.js" defer></script>

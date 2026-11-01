@@ -30,6 +30,7 @@ is no database and no runtime build step.
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, the six tools, the tool loop, and reviewing edits. |
 | [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation plan: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
 | [`architecture/table-select.md`](architecture/table-select.md) | Rectangular table-cell selection and TSV/HTML clipboard copy. |
+| [`architecture/table-editor.md`](architecture/table-editor.md) | The hybrid "Edit table" modal: model, modal containment, grid, Apply ordering, sort/transpose, the merged-cell refusal, and the test seams. |
 | [`architecture/dot-wavedrom-designer.md`](architecture/dot-wavedrom-designer.md) | The Graphviz and WaveDrom design windows: parsing subsets, preview, and Apply order. |
 | [`architecture/design/`](architecture/design/tab-equalization.md) | Tab-bar design notes and the reference mockup. |
 
@@ -40,6 +41,10 @@ is no database and no runtime build step.
 | [`product/mobile.md`](product/mobile.md) | Mobile v1 product definition: ranked jobs, flows, edge cases, acceptance criteria, and the v2 boundary. |
 | [`design/mobile-shell.md`](design/mobile-shell.md) | Mobile shell design handoff: breakpoints, anatomy, component states, tokens, and the file-by-file change list. Reference mockup: [`design/mobile-shell.html`](design/mobile-shell.html). |
 | [`research/mobile-support.md`](research/mobile-support.md) | Mobile fact pack: measured layout failures, touch gaps, PWA/service-worker scope, auth and storage facts, with citations. |
+| [`product/table-editor.md`](product/table-editor.md) | Table edit window product definition: the two entry points, grid and toolbar behavior, Apply/Cancel, merged-cell refusal, edge cases, and AC1–AC18. |
+| [`product/table-editor-selection.md`](product/table-editor-selection.md) | Range selection and clipboard for the table editor: gestures, copy/cut/paste/clear, the TSV + HTML contract, grid growth, accessibility, AC19–AC40. |
+| [`design/table-editor.md`](design/table-editor.md) | Table editor design handoff: shell, grid, toolbar, sort, blocked state, keyboard, tokens, and responsive rules. Reference mockup: [`design/table-editor.html`](design/table-editor.html). |
+| [`design/table-editor-selection.md`](design/table-editor-selection.md) | Selection and clipboard design handoff: the wash and edge treatment, the clipboard toolbar group, status strings, and the blocked state. |
 
 ## Contracts
 

@@ -21,6 +21,7 @@ node tests/browser/test_designer_browser.js   # Playwright, mermaid designer
 node tests/browser/test_dw_designer_browser.js # Playwright, Graphviz + WaveDrom
 node tests/browser/test_block_edit_browser.js  # hybrid fence editor
 node tests/browser/test_hybrid_blocks_browser.js # lists, tasks, tables
+node tests/browser/test_table_editor_browser.js  # the "Edit table" modal
 ```
 
 ## The jsdom DOM harness
@@ -347,6 +348,14 @@ The audit suites cover the rest of the app end to end:
 - `test_hybrid_blocks_browser.js` — list Enter/Tab, task toggles, table view,
   cell Enter, Ctrl+drag selection, raw HTML, blockquote exit, and a hybrid
   draft across a tab switch.
+- `test_table_editor_browser.js` — the "Edit table" modal end to end: real
+  caret typing in a cell, Tab/Enter/F2 moving real focus and stopping at the row
+  and grid edges, a pointer drag painting a range and Shift+click extending it,
+  copy writing TSV plus an HTML table through a real `ClipboardEvent` and paste
+  writing a block back, Apply saving GFM with the bytes outside the table
+  unchanged, one-step undo/redo on both entry paths, the no-op Apply, the
+  merged-cell refusal strip, focus containment and return, and Esc writing
+  nothing.
 - `test_figure_sizing_browser.js` — rendered SVG sizing: font-scale response,
   the wide/tall/huge/tiny layout matrix, per-engine units (Graphviz pt,
   WaveDrom px, Mermaid viewBox, inline-SVG viewBox/explicit), the tall-mode

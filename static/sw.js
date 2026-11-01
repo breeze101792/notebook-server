@@ -28,7 +28,8 @@
  * Search is the only search surface. */
 /* Bumped v16 -> v17: the graph split into graph-2d.js + graph-3d.js, so
  * already installed workers must re-precache the new renderer modules. */
-const CACHE = "notebook-v17";
+/* Bumped v17 -> v18: the new table-editor.js must reach already installed workers. */
+const CACHE = "notebook-v18";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -69,6 +70,7 @@ const PRECACHE = [
   "/static/js/list-edit.js",
   "/static/js/table-view.js",
   "/static/js/table-select.js",
+  "/static/js/table-editor.js",
   "/static/js/watcher.js",
   "/static/js/outline.js",
   "/static/js/sidebar.js",
