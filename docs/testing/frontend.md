@@ -352,7 +352,11 @@ The audit suites cover the rest of the app end to end:
   two-root burst and a window resize, one image copy button on a chat
   diagram, the click-to-zoom lightbox from the chat (and no lightbox from a
   click outside the reading roots), the prose ```js fence's single text
-  button, and that an `nb-tool` fence renders nothing.
+  button, and that an `nb-tool` fence renders nothing. The reply is also
+  DOMPurify-sanitized (an event handler, a `javascript:` link, a form, a
+  non-checkbox input, and an SVG fence's script/SMIL are dropped while the
+  markdown, task list, wikilink, and sizing attributes survive), and a
+  missing sanitizer falls back to plain text.
 - `test_block_edit_browser.js` — every fence-editor gesture: the language
   chip, bare fences, rich and multi-line paste, Enter, Tab, native undo, Esc,
   save mid-edit, the tilde fence, plugin re-render and plugin multi-line paste,
