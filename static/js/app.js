@@ -17,6 +17,16 @@
   // Persisted graph renderer mode. "3d" is the default.
   const GRAPH_MODE_2D = "2d";
   const GRAPH_MODE_3D = "3d";
+  // UI state that follows a workspace root rather than the whole app. On a
+  // workspace page these live under `workspaceState.<id>` in /api/config and
+  // are written through POST /api/workspace-state; the top-level copies are
+  // the pre-workspace format and the fallback for a page without one.
+  const WORKSPACE_STATE_KEYS = [
+    "lastFile", "openFiles", "activeFile", "pinnedFiles", "recentFiles",
+    "bookmarks", "pinnedFolders",
+  ];
+  // Same debounce as the config write below.
+  const WORKSPACE_SAVE_DELAY_MS = 250;
 
   const DEFAULTS = {
     theme: "auto",
@@ -149,6 +159,35 @@
   // flushes would otherwise each read the same old blob and clobber the
   // other's key.
   let configFlushQueue = Promise.resolve();
+  // Per-workspace state has its own debounce: it goes to its own endpoint
+  // and must not be dragged into the global blob write. `wsPendingState` is
+  // the snapshot waiting on that debounce; `lastWorkspaceState` is the last
+  // one handed to the request queue (the dirty check).
+  let wsSaveTimer = null;
+  let wsPendingState = "";
+  let lastWorkspaceState = "";
+
+  // Role painted by the shell on <html data-role>. NB.pageRole normalises
+  // the auth-off install (no session role, but full access) and an older
+  // shell (no attribute at all). "viewer" and the empty role may not call
+  // the admin-only routes.
+  function pageRole() {
+    return NB.pageRole ? NB.pageRole() : "admin";
+  }
+
+  function canAdminWrite() {
+    return pageRole() === "admin";
+  }
+
+  function workspaceId() {
+    return (NB.workspaceId && NB.workspaceId()) || "";
+  }
+
+  function workspaceStateSnapshot() {
+    const out = {};
+    for (const key of WORKSPACE_STATE_KEYS) out[key] = cfg[key];
+    return out;
+  }
 
   // Phone mode is decided by CSS (--ui-mode) and mirrored by mobile.js.
   function isPhoneMode() {
@@ -363,6 +402,22 @@
   /* --- config persistence ------------------------------------------- */
   function applyConfig(c) {
     cfg = { ...DEFAULTS, ...c };
+    // Overlay the active workspace's state. Missing fields fall back to the
+    // legacy top-level copy already spread above, so the first load after
+    // the server migrates an old config shows the same session.
+    const wsId = workspaceId();
+    if (wsId && c && c.workspaceState && typeof c.workspaceState === "object") {
+      const state = c.workspaceState[wsId];
+      if (state && typeof state === "object") {
+        for (const key of WORKSPACE_STATE_KEYS) {
+          if (state[key] !== undefined) cfg[key] = state[key];
+        }
+      }
+    }
+    // Baseline for the dirty check, so boot does not immediately rewrite the
+    // state the server just sent.
+    lastWorkspaceState = JSON.stringify(workspaceStateSnapshot());
+    wsPendingState = "";
     applyTheme(cfg.theme || "auto");
     applyFontSize(cfg.fontSize || "medium");
     applySettingsModalWidth(cfg.settingsModalWidth || "medium");
@@ -440,16 +495,72 @@
 
   /* Persist config. `keys` names the only keys a caller may change.
    *
-   * Desktop keeps its single whole-blob POST. On a phone a keyless call is
-   * a no-op (nothing is safe to write from the phone shell), and a keyed
-   * call does a read-merge-write: fetch the current server blob, copy the
-   * named keys from cfg, then POST the complete merged object. The POST
-   * replaces the file verbatim, so a partial body would drop every other
-   * key the desktop owns (open tabs, pane widths, ...). */
+   * Desktop posts the whole blob; a workspace page reads the current blob
+   * first and merges, so the per-workspace state map survives. On a phone a
+   * keyless call is a no-op (nothing is safe to write from the phone shell),
+   * and a keyed call does a read-merge-write: fetch the current server blob,
+   * copy the named keys from cfg, then POST the complete merged object. The
+   * POST replaces the file verbatim, so a partial body would drop every
+   * other key the desktop owns (open tabs, pane widths, ...).
+   *
+   * On a workspace page the workspace-owned keys never enter that blob:
+   * they are posted to /api/workspace-state under the active id instead.
+   * The global write still carries workspaceState, because POST /api/config
+   * replaces the file verbatim; it is merged over a fresh read so other
+   * workspaces' state is preserved. */
   function persistConfig(keys) {
     clearTimeout(saveTimer);
     if (Array.isArray(keys)) keys.forEach(k => pendingConfigKeys.add(k));
     saveTimer = setTimeout(flushConfig, 250);
+    scheduleWorkspaceState();
+  }
+
+  function scheduleWorkspaceState() {
+    if (!workspaceId()) return;
+    // /api/workspace-state is admin-only. A viewer or the unauthenticated
+    // shell must not queue a write that can only be refused, and must not
+    // mark the state dirty: the server copy is authoritative and unchanged.
+    if (!canAdminWrite()) return;
+    const json = JSON.stringify(workspaceStateSnapshot());
+    if (json === lastWorkspaceState || json === wsPendingState) return;
+    wsPendingState = json;
+    clearTimeout(wsSaveTimer);
+    wsSaveTimer = setTimeout(flushWorkspaceState, WORKSPACE_SAVE_DELAY_MS);
+  }
+
+  function flushWorkspaceState() {
+    const id = workspaceId();
+    if (!id || !canAdminWrite()) return Promise.resolve();
+    const json = wsPendingState || JSON.stringify(workspaceStateSnapshot());
+    wsPendingState = "";
+    if (json === lastWorkspaceState) return Promise.resolve();
+    // Mark the snapshot as sent before the request, then clear the mark on
+    // failure: a dropped write must not look already saved.
+    lastWorkspaceState = json;
+    const state = JSON.parse(json);
+    const run = () => NB.api.saveWorkspaceState(id, state).catch((e) => {
+      if (lastWorkspaceState === json) lastWorkspaceState = "";
+      console.warn("workspace state save failed", e);
+    });
+    // Same serial chain as the config write: a workspace flush and a
+    // read-merge-write config flush must never overlap, or the merged blob
+    // can carry a stale state map back over a newer one.
+    configFlushQueue = configFlushQueue.then(run, run);
+    return configFlushQueue;
+  }
+
+  // Fold the active workspace's current state into a freshly read config.
+  // POST /api/config replaces the file verbatim, so the whole workspaceState
+  // map must be carried through or every other workspace's state is lost.
+  // Writing the active snapshot here also closes the race with the
+  // (independently debounced) /api/workspace-state write.
+  function mergeWorkspaceState(fresh, wsId) {
+    const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
+    const states = (merged.workspaceState && typeof merged.workspaceState === "object")
+      ? { ...merged.workspaceState } : {};
+    states[wsId] = workspaceStateSnapshot();
+    merged.workspaceState = states;
+    return merged;
   }
 
   function flushConfig() {
@@ -462,15 +573,35 @@
         // one, so theme + fontSize + recentFiles can share a debounce.
         if (!keyList.length) return Promise.resolve();
         return NB.api.getConfig().then((fresh) => {
+          const wsId = workspaceId();
+          let wrote = false;
           const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
           for (const key of keyList) {
+            // Workspace-owned keys go through the workspace endpoint.
+            if (wsId && WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
             if (cfg[key] === undefined) delete merged[key];
             else merged[key] = cfg[key];
+            wrote = true;
           }
-          return NB.api.saveConfig(merged);
+          if (!wrote) return undefined;
+          return NB.api.saveConfig(wsId ? mergeWorkspaceState(merged, wsId) : merged);
         }).catch(e => console.warn("config save failed", e));
       }
-      return NB.api.saveConfig(cfg).catch(e => console.warn("config save failed", e));
+      const wsId = workspaceId();
+      if (!wsId) {
+        return NB.api.saveConfig(cfg).catch(e => console.warn("config save failed", e));
+      }
+      // Workspace page: read-merge-write, so the global keys change without
+      // dropping the state map the server keeps alongside them.
+      return NB.api.getConfig().then((fresh) => {
+        const merged = mergeWorkspaceState(fresh, wsId);
+        for (const key of Object.keys(cfg)) {
+          if (key === "workspaceState") continue;
+          if (WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
+          merged[key] = cfg[key];
+        }
+        return NB.api.saveConfig(merged);
+      }).catch(e => console.warn("config save failed", e));
     };
     configFlushQueue = configFlushQueue.then(run, run).then(() => {
       NB.evt.emit("config:changed", cfg);

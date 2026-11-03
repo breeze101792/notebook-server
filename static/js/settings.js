@@ -556,7 +556,7 @@
 
   async function loadInfo() {
     try {
-      const info = await fetch("/api/info").then(r => r.json());
+      const info = await NB.api.getInfo();
       dataDirEl.textContent   = info.data_dir   || "(unknown)";
       configDirEl.textContent = info.config_dir || "(unknown)";
       infoLoaded = true;

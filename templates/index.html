@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
+<html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
@@ -85,11 +85,60 @@
       <symbol id="nb-icon-pin" viewBox="0 0 16 16">
         <path fill-rule="evenodd" d="M8 1.5A4.5 4.5 0 0 0 3.5 6c0 3.1 4.5 8.5 4.5 8.5S12.5 9.1 12.5 6 10.49 1.5 8 1.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
       </symbol>
+      <!-- Workspace glyph: two stacked cards, not a folder -- the workspace
+           is the container of folders. currentColor so it follows
+           --fg-muted / --fg / --ws-warn. -->
+      <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+        <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none"
+              stroke="currentColor" stroke-width="1.3"/>
+        <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none"
+              stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </symbol>
     </defs>
   </svg>
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">{{ boot.site_title }}</button>
+      {% if boot.workspace_id %}
+      {# A session role is "admin" or "viewer". With auth off there is no
+         role but the shell embeds the workspace list: that is a
+         full-access install. An unauthenticated visitor while auth is on
+         gets neither, so no workspace chrome renders at all -- no inert
+         chip, no rail glyph, no empty wrapper. #}
+      {% set ws_role = (boot.role if boot.role is defined else 'admin') or ('admin' if boot.workspaces else '') %}
+      {% set ws_interactive = ws_role == 'admin' or ws_role == 'viewer' %}
+      {% set ws_name = boot.workspace_name|default('Workspace', true) %}
+      {% set ws_path = boot.workspace_path if boot.workspace_path is defined else '' %}
+      {% if ws_interactive %}
+      <!-- Workspace chip: one of the picker's two mounts (the other is
+           #workspace-rail-btn on the activity bar, shown only while the
+           topbar is hidden). Server-rendered so the first frame already
+           names the workspace. The wrapper stays the node that carries
+           data-workspaces and that the popover is measured from; the
+           popover itself is moved to <body> at boot. -->
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <div id="workspace-bar"{% if boot.workspaces %} data-workspaces="{{ boot.workspaces|tojson|forceescape }}"{% endif %}>
+        <button type="button" id="workspace-switch" class="workspace-switch"
+                aria-haspopup="menu" aria-expanded="false"
+                aria-controls="workspace-menu"
+                title="{{ ws_name }}{% if ws_path %} — {{ ws_path }}{% endif %}">
+          <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+          <span class="sr-only">Workspace: </span>
+          <span class="workspace-name">{{ ws_name }}</span>
+          <span class="workspace-caret" aria-hidden="true">▾</span>
+        </button>
+
+        <!-- Rows are rendered by workspaces.js on open. The container is
+             hidden and gets moved to <body>, so an empty node here is a
+             valid first-paint state. -->
+        <div id="workspace-menu" class="workspace-menu" hidden>
+          <div class="ws-menu-list" id="workspace-menu-list" role="menu"
+               aria-labelledby="workspace-switch"></div>
+          <p class="ws-foot">Switching reloads the page.</p>
+        </div>
+      </div>
+      {% endif %}
+      {% endif %}
       <div class="topbar-spacer"></div>
       <div class="topbar-actions">
         <button id="back-btn" class="icon-btn" title="Back" aria-label="Back" disabled>←</button>
@@ -109,6 +158,18 @@
            NB.activity.register(); the bar itself is static markup so the
            grid column exists before the module boots. -->
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
+        {% if ws_interactive %}
+        <!-- Workspace on the rail: the picker's second mount, shown only
+             while the topbar is hidden (body.topbar-hidden). The chip in
+             the topbar is the control in every other state, and the phone
+             (which forces the topbar visible) hides this button. -->
+        <button id="workspace-rail-btn" class="activity-btn activity-action activity-pin" type="button"
+                aria-haspopup="menu" aria-expanded="false" aria-controls="workspace-menu"
+                title="{{ ws_name }}{% if ws_path %} — {{ ws_path }}{% endif %}"
+                aria-label="Workspace: {{ ws_name }}">
+          <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        </button>
+        {% endif %}
         <!-- View icons are injected by activity.js (NB.activity.register).
              The settings button below is a bottom-pinned action, not a
              view: clicking it just opens the Settings modal, no panel
@@ -515,6 +576,50 @@
     </div>
   </div>
 
+  <!-- Add / rename workspace dialog. Body-level like #auth-overlay so
+       NB.dialog's "inert every other body child" rule contains it. One
+       dialog serves both modes: rename hides the Folder row and shows the
+       workspace's current path in the "Will open" row instead. -->
+  {% if boot.workspace_id %}
+  <div id="workspace-dialog" class="settings-overlay" hidden>
+    <div class="settings-modal auth-modal" role="dialog" aria-modal="true"
+         aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-help" tabindex="-1">
+      <div class="settings-header">
+        <h2 id="ws-dialog-title">Add workspace</h2>
+        <button id="ws-dialog-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+      <form class="settings-body auth-form" id="ws-form" novalidate>
+        <p class="auth-help" id="ws-dialog-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
+
+        <div class="settings-row">
+          <label class="settings-label" for="ws-name">Name</label>
+          <input id="ws-name" class="settings-text-input" type="text" maxlength="60"
+                 autocomplete="off" spellcheck="false" placeholder="Work journal">
+        </div>
+
+        <div class="settings-row" id="ws-path-row">
+          <label class="settings-label" for="ws-path">Folder</label>
+          <input id="ws-path" class="settings-text-input" type="text"
+                 aria-describedby="ws-resolved ws-error"
+                 autocomplete="off" spellcheck="false" placeholder="/home/you/notes">
+        </div>
+
+        <div class="settings-row" id="ws-resolved-row" hidden>
+          <span class="settings-label">Will open</span>
+          <span class="ws-resolved-path" id="ws-resolved"></span>
+        </div>
+
+        <div class="auth-error" id="ws-error" role="alert"></div>
+
+        <div class="settings-form-actions">
+          <button class="settings-action" type="button" id="ws-cancel">Cancel</button>
+          <button class="settings-action settings-action--primary" type="submit" id="ws-submit">Add workspace</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Auth gate loads FIRST, before the heavy vendor bundles. api.js is a
        tiny fetch wrapper; auth.js checks /api/auth and shows the login
        modal immediately. Loading them here (right after the auth overlay
@@ -541,6 +646,9 @@
              matching section is unhidden. -->
         <nav class="settings-nav" role="tablist" aria-label="Settings sections">
           <button class="settings-nav-item active" role="tab" data-tab="general"     aria-selected="true"  aria-controls="settings-section-general"><span class="nav-icon" aria-hidden="true">⚙</span>General</button>
+          {% if boot.workspace_id %}
+          <button class="settings-nav-item"        role="tab" data-tab="workspaces"  aria-selected="false" aria-controls="settings-section-workspaces"><span class="nav-icon" aria-hidden="true">📚</span>Workspaces</button>
+          {% endif %}
           <button class="settings-nav-item"        role="tab" data-tab="appearance" aria-selected="false" aria-controls="settings-section-appearance"><span class="nav-icon" aria-hidden="true">🎨</span>Appearance</button>
           <button class="settings-nav-item"        role="tab" data-tab="shortcuts"  aria-selected="false" aria-controls="settings-section-shortcuts"><span class="nav-icon" aria-hidden="true">⌨</span>Shortcuts</button>
           <button class="settings-nav-item"        role="tab" data-tab="security"   aria-selected="false" aria-controls="settings-section-security"><span class="nav-icon" aria-hidden="true">🔒</span>Security</button>
@@ -605,6 +713,24 @@
               </div>
             </div>
           </section>
+
+          {% if boot.workspace_id %}
+          <!-- Workspaces: the managed list of notebook roots. Rows fill
+               from NB.settings.onOpen in workspaces.js; switching reloads
+               the page, removing only forgets the entry. -->
+          <section class="settings-section" data-section="workspaces" id="settings-section-workspaces" hidden>
+            <h3>Workspaces</h3>
+            <p class="settings-help">Each workspace is a folder of notes on this machine. Add one per project;
+              the server remembers which one you are in for this session.</p>
+            <div id="settings-workspace-list" class="ws-list" role="list"></div>
+            {% if ws_role == 'admin' %}
+            <div class="settings-row ws-add-row">
+              <button class="settings-action ws-add" type="button" id="settings-workspace-add">+ Add workspace…</button>
+            </div>
+            {% endif %}
+            <p class="settings-note">Switching reloads the page. Removing a workspace never deletes its notes.</p>
+          </section>
+          {% endif %}
 
           <!-- Appearance: theme, font size, wallpaper (pattern / color / intensity / scroll). -->
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
@@ -1776,6 +1902,7 @@
   <script src="/static/js/bookmarks.js" defer></script>
   <script src="/static/js/shortcuts.js" defer></script>
   <script src="/static/js/mobile.js" defer></script>
+  <script src="/static/js/workspaces.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <script>
     if ('serviceWorker' in navigator) {

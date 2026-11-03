@@ -206,16 +206,18 @@
       // thrash the cache. Skip until noteOpened() seeds a real value.
       if (mtime == null) continue;
       try {
-        const r = await fetch("/api/file?path=" + encodeURIComponent(path) +
-                              "&ifModifiedSince=" + mtime,
-                              { method: "GET" });
-        if (r.status === 304) continue;
-        if (!r.ok) { knownMtime.delete(path); continue; }
-        const data = await r.json();
+        const data = await NB.api.getFileMeta(path, mtime);
+        if (data && data.notModified) continue;
+        if (!data) { knownMtime.delete(path); continue; }
         if (data.mtime != null) knownMtime.set(path, data.mtime);
         if (isSelfSave(path)) continue;
         notifyChange(path, data);
-      } catch (e) { /* network blip; try again next tick */ }
+      } catch (e) {
+        // A transport blip keeps the baseline for the next tick; an HTTP
+        // refusal (deleted file, lost permission) drops it so a dead path
+        // is not re-polled forever.
+        if (e && e.status) knownMtime.delete(path);
+      }
     }
   }
 
@@ -234,10 +236,7 @@
         typeof NB.sidebar.refresh !== "function") return;
     let fresh;
     try {
-      const r = await fetch("/api/tree");
-      if (!r.ok) return;
-      const data = await r.json();
-      fresh = data.tree || [];
+      fresh = (await NB.api.getTree()) || [];
     } catch (e) { /* network blip; try again next tick */ return; }
     // The tree only encodes structure (names / paths / folders), so a
     // content-only edit of an open file compares equal and skips the

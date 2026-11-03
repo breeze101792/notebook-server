@@ -31,7 +31,11 @@
 /* Bumped v17 -> v18: the new table-editor.js must reach already installed workers. */
 /* Bumped v18 -> v19: the vendored DOMPurify bundle (AI reply sanitizer) joins
  * the precache. */
-const CACHE = "notebook-v19";
+/* Bumped v19 -> v20: the new workspaces.js must reach already installed
+ * workers. */
+/* Bumped v20 -> v21: the workspace switcher moved to the topbar chip and
+ * the activity-bar glyph, so the shell and workspaces.js must refresh. */
+const CACHE = "notebook-v21";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -89,6 +93,7 @@ const PRECACHE = [
   "/static/js/activity.js",
   "/static/js/bookmarks.js",
   "/static/js/mobile.js",
+  "/static/js/workspaces.js",
   "/static/js/graph-2d.js",
   "/static/js/graph-3d.js",
   "/static/js/graph.js",

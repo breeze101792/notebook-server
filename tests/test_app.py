@@ -1500,7 +1500,8 @@ class TestSearch(BaseTest):
         zero = self._matches("fix this", unique=0)
         self.assertEqual(absent, zero)
         self.assertEqual(set(absent),
-                         {"query", "matches", "truncated", "perFileTruncated"})
+                         {"query", "matches", "truncated", "perFileTruncated",
+                          "timedOut"})
         self.assertTrue(absent["matches"])
         self.assertTrue(all("count" not in m for m in absent["matches"]))
         self.assertFalse(absent["perFileTruncated"])
@@ -1617,6 +1618,49 @@ class TestSearch(BaseTest):
                    "q=x&name=1&file=../app.py"):
             r = self.client.get("/api/search?" + qs)
             self.assertEqual(r.status_code, 400, qs)
+
+
+class TestScanTimeout(BaseTest):
+    """Both filesystem walks run under a wall-clock deadline.
+
+    A workspace can be any local folder, so /api/search and /api/graph must
+    not spend unbounded time scanning one. The budget is read at request
+    time, so patching the module constant to 0 forces expiry.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.post("/api/file", {"path": "a.md", "content": "# A\n\nfix this\n"})
+
+    def _with_zero_budget(self, path):
+        with mock.patch.object(nb, "SCAN_TIMEOUT_SECONDS", 0):
+            return self.client.get(path)
+
+    def test_search_reports_a_timed_out_scan(self):
+        r = self._with_zero_budget("/api/search?q=fix")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data["timedOut"])
+        self.assertEqual(data["matches"], [])
+
+    def test_search_reports_timed_out_in_every_mode(self):
+        for extra in ("", "&unique=1", "&name=1", "&file=a.md"):
+            r = self._with_zero_budget("/api/search?q=a" + extra)
+            self.assertEqual(r.status_code, 200, extra)
+            self.assertIn("timedOut", r.get_json(), extra)
+
+    def test_search_without_pressure_is_not_timed_out(self):
+        code, data = self.jget("/api/search?q=fix")
+        self.assertEqual(code, 200)
+        self.assertFalse(data["timedOut"])
+        self.assertTrue(data["matches"])
+
+    def test_graph_returns_504_on_a_timed_out_scan(self):
+        r = self._with_zero_budget("/api/graph")
+        self.assertEqual(r.status_code, 504)
+        body = r.get_json()
+        self.assertEqual(body["code"], "timeout")
+        self.assertNotIn("nodes", body)
 
 
 class TestGraph(BaseTest):
@@ -5167,6 +5211,1188 @@ class TestMainEntrypoint(unittest.TestCase):
                 self.assertNotIn("WARNING:", buf.getvalue())
         finally:
             sys.argv = original_argv
+
+
+# --------------------------------------------------------------------------- #
+# Multi-workspace support
+#
+# A workspace is a named, server-owned notebook root. The registry lives in
+# config/workspaces.json; the request's root is chosen by the
+# X-Notebook-Workspace header, then session["workspace"], then the default.
+# These classes cover the registry store, validation, permissions, resolution,
+# data isolation, the path guards under a non-default root, the config
+# migration/merge rules, and the cache headers.
+# --------------------------------------------------------------------------- #
+class WorkspaceTestBase(BaseTest):
+    """Throw-away root folders and registry/config fixtures."""
+
+    # The twelve gated data routes: an unknown workspace id is a 404 here,
+    # but only once the route's auth gate has passed. Bodies are dummies --
+    # the unknown-id check runs before any body validation.
+    DATA_ROUTE_CALLS = (
+        ("get", "/api/tree", None),
+        ("get", "/api/ls", None),
+        ("get", "/api/file?path=Welcome.md", None),
+        ("post", "/api/file", {"path": "x.md", "content": "x"}),
+        ("post", "/api/file/append", {"path": "x.md", "content": "x"}),
+        ("post", "/api/edit", {"path": "x.md", "edits": [{"op": "append",
+                                                          "text": "x"}]}),
+        ("post", "/api/create", {"path": "x.md"}),
+        ("post", "/api/move", {"from": "a.md", "to": "b.md"}),
+        ("post", "/api/copy", {"from": "a.md", "to": "b.md"}),
+        ("post", "/api/delete", {"path": "a.md"}),
+        ("get", "/api/search?q=x", None),
+        ("get", "/api/graph", None),
+    )
+    # Routes that serve shell/auth/registry-level data: an unknown workspace
+    # id must NOT 404 here, or a tab whose workspace was removed would be
+    # locked out of the very calls that let it recover.
+    NON_DATA_ROUTE_CALLS = (
+        ("get", "/api/config", None),
+        ("get", "/api/info", None),
+        ("get", "/api/workspaces", None),
+        ("post", "/api/workspaces/active", {"id": nb.WORKSPACE_DEFAULT_ID}),
+        ("post", "/api/login", {"password": "not-the-password"}),
+        ("get", "/api/ai/config", None),
+    )
+    # Routes that answer any caller regardless of role, so the header can
+    # never change the status code.
+    PUBLIC_ROUTE_CALLS = (
+        ("get", "/", None),
+        ("get", "/api/auth", None),
+    )
+
+    def setUp(self):
+        super().setUp()
+        self._roots = []
+
+    def tearDown(self):
+        for root in self._roots:
+            shutil.rmtree(root, ignore_errors=True)
+        super().tearDown()
+
+    def make_root(self, suffix="ws"):
+        root = tempfile.mkdtemp(prefix="nbws_%s_" % suffix)
+        self._roots.append(root)
+        return root
+
+    def register(self, name, path):
+        """POST a workspace and return its public dict."""
+        r = self.post("/api/workspaces", {"name": name, "path": path})
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+        return r.get_json()["workspace"]
+
+    def write_registry(self, items):
+        nb.save_workspaces(items)
+
+    def read_registry(self):
+        with open(nb.WORKSPACES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def write_config(self, cfg):
+        with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f)
+
+    def read_config_file(self):
+        with open(nb.CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def set_session_workspace(self, wid):
+        with self.client.session_transaction() as sess:
+            sess["workspace"] = wid
+
+    def session_workspace(self):
+        with self.client.session_transaction() as sess:
+            return sess.get("workspace")
+
+    @staticmethod
+    def file_stamp(path):
+        """(contents, mtime_ns) of a server-owned file.
+
+        Comparing the pair proves a request did not write the file even
+        when it would have rewritten identical contents.
+        """
+        stat = os.stat(path)
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read(), stat.st_mtime_ns
+
+    def call(self, client, method, url, body=None, headers=None):
+        """Issue a request from a (method, url, body) table entry."""
+        return client.open(url, method=method, json=body,
+                           headers=headers or {})
+
+    def enable_auth(self, password="ws-test-admin-pw"):
+        """Turn the auth layer on with one admin password; return it."""
+        import bcrypt as _bcrypt
+        nb._login_failures.clear()
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "workspace-test-secret-not-used-for-signing",
+                "admin_password_hash": _bcrypt.hashpw(
+                    password.encode("utf-8"), _bcrypt.gensalt(4)
+                ).decode(),
+            }, f)
+        return password
+
+    @staticmethod
+    def tree_names(response):
+        """Flatten a /tree payload into a list of relative paths."""
+        out = []
+
+        def walk(nodes, prefix):
+            for node in nodes:
+                rel = prefix + node["name"]
+                out.append(rel)
+                if node.get("children"):
+                    walk(node["children"], rel + "/")
+
+        walk(response.get_json()["tree"], "")
+        return out
+
+
+class TestWorkspaceStore(WorkspaceTestBase):
+    """Registry load/save: synthesis, corrupt input, cap, rename and delete."""
+
+    def test_missing_registry_synthesises_the_default_without_writing(self):
+        self.assertFalse(os.path.isfile(nb.WORKSPACES_FILE))
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["id"] for w in data["workspaces"]], ["default"])
+        self.assertTrue(data["workspaces"][0]["is_default"])
+        self.assertEqual(data["workspaces"][0]["path"], nb.DATA_DIR)
+        # A read route never writes the server-owned registry...
+        self.assertFalse(os.path.isfile(nb.WORKSPACES_FILE))
+        self.assertEqual(self.jget("/api/tree")[0], 200)
+        self.assertFalse(os.path.isfile(nb.WORKSPACES_FILE))
+        # ...persistence belongs to a mutating route.
+        ws = self.register("Added", self.make_root("added"))
+        stored = self.read_registry()["items"]
+        self.assertEqual([e["id"] for e in stored], ["default", ws["id"]])
+
+    def test_corrupt_registry_never_500s_and_is_left_alone(self):
+        corrupt = '{"items": ['
+        with open(nb.WORKSPACES_FILE, "w", encoding="utf-8") as f:
+            f.write(corrupt)
+        before = self.file_stamp(nb.WORKSPACES_FILE)
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["id"] for w in data["workspaces"]], ["default"])
+        self.assertEqual(self.jget("/api/tree")[0], 200)
+        self.assertEqual(self.file_stamp(nb.WORKSPACES_FILE), before)
+        # The broken file is replaced only when a mutating route persists.
+        ws = self.register("Added", self.make_root("added"))
+        stored = self.read_registry()
+        self.assertEqual([e["id"] for e in stored["items"]],
+                         ["default", ws["id"]])
+
+    def test_registry_that_is_not_an_object_is_ignored(self):
+        with open(nb.WORKSPACES_FILE, "w", encoding="utf-8") as f:
+            f.write("[]")
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(data["workspaces"]), 1)
+        self.assertTrue(data["workspaces"][0]["is_default"])
+
+    def test_invalid_and_duplicate_entries_are_dropped(self):
+        self.write_registry([
+            "not-an-entry",
+            {"id": "no-name", "path": "/tmp/x"},
+            {"id": "blank-name", "name": "  ", "path": "/tmp/x"},
+            {"id": "no-path", "name": "N"},
+            {"id": "dup", "name": "First", "path": "/tmp/a"},
+            {"id": "dup", "name": "Second", "path": "/tmp/b"},
+        ])
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["name"] for w in data["workspaces"]],
+                         [nb.WORKSPACE_DEFAULT_NAME, "First"])
+
+    def test_default_entry_moves_to_the_front(self):
+        self.write_registry([
+            {"id": "b-0001", "name": "B", "path": "/tmp/b"},
+            {"id": "default", "name": "Renamed", "path": nb.DATA_DIR},
+        ])
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["id"] for w in data["workspaces"]],
+                         ["default", "b-0001"])
+        self.assertEqual(data["workspaces"][0]["name"], "Renamed")
+
+    def test_missing_default_entry_is_synthesised(self):
+        self.write_registry([{"id": "b-0001", "name": "B", "path": "/tmp/b"}])
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["id"] for w in data["workspaces"]],
+                         ["default", "b-0001"])
+        # Synthesised in memory only; the stored file is unchanged.
+        self.assertEqual([e["id"] for e in self.read_registry()["items"]],
+                         ["b-0001"])
+        # A rename persists the canonical registry, default included.
+        r = self.client.patch("/api/workspaces/" + nb.WORKSPACE_DEFAULT_ID,
+                              json={"name": "Mine"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        stored = self.read_registry()["items"]
+        self.assertEqual([e["id"] for e in stored], ["default", "b-0001"])
+        self.assertEqual(stored[0]["name"], "Mine")
+        self.assertEqual(stored[0]["path"], nb.DATA_DIR)
+
+    def test_startup_persist_writes_the_canonical_registry(self):
+        self.write_registry([
+            {"id": "b-0001", "name": "B", "path": "/tmp/b"},
+            {"id": "default", "name": "Mine",
+             "path": "/stale/install/notebook"},
+        ])
+        self.assertTrue(nb._persist_workspaces_if_changed())
+        stored = self.read_registry()["items"]
+        self.assertEqual([e["id"] for e in stored], ["default", "b-0001"])
+        self.assertEqual(stored[0]["name"], "Mine")
+        self.assertEqual(stored[0]["path"], nb.DATA_DIR)
+        # Already canonical -> no write on the next boot.
+        self.assertFalse(nb._persist_workspaces_if_changed())
+
+    def test_stale_default_path_is_corrected_to_the_current_data_dir(self):
+        self.write_registry([{"id": "default", "name": "Mine",
+                              "path": "/old/install/notebook"}])
+        items = nb.load_workspaces()
+        self.assertEqual(items[0]["path"], nb.DATA_DIR)
+        self.assertEqual(items[0]["name"], "Mine")
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaces"][0]["path"], nb.DATA_DIR)
+        self.assertEqual(self.jget("/api/info")[1]["data_dir"], nb.DATA_DIR)
+
+    def test_corrupt_registry_warns_once_across_requests(self):
+        with open(nb.WORKSPACES_FILE, "w", encoding="utf-8") as f:
+            f.write('{"items": [')
+        nb._workspace_warn_seen.clear()
+        before = self.file_stamp(nb.WORKSPACES_FILE)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            for _ in range(3):
+                self.assertEqual(self.jget("/api/workspaces")[0], 200)
+                self.assertEqual(self.jget("/api/tree")[0], 200)
+                self.assertEqual(self.client.get("/").status_code, 200)
+        self.assertEqual(
+            stderr.getvalue().count("workspaces.json ignored"), 1,
+            stderr.getvalue())
+        self.assertEqual(self.file_stamp(nb.WORKSPACES_FILE), before)
+
+    def test_registry_is_capped_at_max_count(self):
+        extras = [{"id": "ws-%02d" % i, "name": "W%d" % i,
+                   "path": "/tmp/ws-%02d" % i} for i in range(40)]
+        self.write_registry(
+            [{"id": "default", "name": "Notebook", "path": nb.DATA_DIR}]
+            + extras)
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(data["workspaces"]), nb.WORKSPACE_MAX_COUNT)
+        self.assertEqual(data["workspaces"][-1]["id"],
+                         "ws-%02d" % (nb.WORKSPACE_MAX_COUNT - 2))
+
+    def test_rename_keeps_id_path_and_default_flag(self):
+        root = self.make_root()
+        ws = self.register("B", root)
+        r = self.client.patch("/api/workspaces/" + ws["id"],
+                              json={"name": "Bee"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        renamed = r.get_json()["workspace"]
+        self.assertEqual(renamed["id"], ws["id"])
+        self.assertEqual(renamed["path"], ws["path"])
+        self.assertEqual(renamed["name"], "Bee")
+        self.assertFalse(renamed["is_default"])
+
+    def test_rename_rejects_duplicate_name_case_insensitively(self):
+        self.register("Alpha", self.make_root("a"))
+        ws_b = self.register("Beta", self.make_root("b"))
+        r = self.client.patch("/api/workspaces/" + ws_b["id"],
+                              json={"name": "alpha"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("already exists", r.get_json()["error"])
+
+    def test_rename_allows_keeping_its_own_name(self):
+        ws = self.register("Same", self.make_root())
+        r = self.client.patch("/api/workspaces/" + ws["id"],
+                              json={"name": "Same"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_rename_rejects_empty_name_and_unknown_id(self):
+        ws = self.register("B", self.make_root())
+        r = self.client.patch("/api/workspaces/" + ws["id"],
+                              json={"name": "  "})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Give the workspace a name", r.get_json()["error"])
+        r = self.client.patch("/api/workspaces/ghost", json={"name": "X"})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["error"], "Unknown workspace")
+
+    def test_delete_removes_the_entry_but_keeps_the_files(self):
+        root = self.make_root()
+        note = os.path.join(root, "keep.md")
+        with open(note, "w", encoding="utf-8") as f:
+            f.write("keep")
+        ws = self.register("B", root)
+        r = self.client.delete("/api/workspaces/" + ws["id"])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()["ok"])
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertEqual([w["id"] for w in data["workspaces"]], ["default"])
+        self.assertTrue(os.path.isfile(note))
+
+    def test_delete_unknown_is_404_and_default_is_400(self):
+        r = self.client.delete("/api/workspaces/ghost")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["code"], "unknown_workspace")
+        r = self.client.delete("/api/workspaces/" + nb.WORKSPACE_DEFAULT_ID)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("default workspace", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "default_not_removable")
+
+
+class TestWorkspaceValidation(WorkspaceTestBase):
+    """POST /api/workspaces: every documented 400 and the success shape."""
+
+    def assert_rejected(self, body, message, code):
+        r = self.post("/api/workspaces", body)
+        self.assertEqual(r.status_code, 400, r.get_data(as_text=True))
+        payload = r.get_json()
+        self.assertIn(message, payload["error"])
+        self.assertEqual(payload.get("code"), code, payload)
+
+    def test_requires_name_and_path_fields(self):
+        self.assert_rejected({"path": self.make_root()},
+                             "Missing required field: name", "bad_body")
+        self.assert_rejected({"name": "X"},
+                             "Missing required field: path", "bad_body")
+
+    def test_rejects_a_non_object_body(self):
+        r = self.client.post("/api/workspaces", json=["nope"])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("JSON object", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "bad_body")
+
+    def test_rejects_empty_and_overlong_names(self):
+        root = self.make_root()
+        self.assert_rejected({"name": "", "path": root},
+                             "Give the workspace a name", "name_empty")
+        self.assert_rejected({"name": "   ", "path": root},
+                             "Give the workspace a name", "name_empty")
+        self.assert_rejected({"name": "x" * (nb.WORKSPACE_NAME_MAX + 1),
+                              "path": root},
+                             "Workspace names are limited to %d"
+                             % nb.WORKSPACE_NAME_MAX, "name_too_long")
+
+    def test_rejects_a_duplicate_name(self):
+        self.register("Notes", self.make_root("one"))
+        self.assert_rejected({"name": "notes", "path": self.make_root("two")},
+                             "already exists", "name_duplicate")
+
+    def test_rejects_relative_paths(self):
+        self.assert_rejected({"name": "X", "path": "relative/notes"},
+                             "Use an absolute path", "path_not_absolute")
+
+    def test_rejects_a_missing_path(self):
+        missing = os.path.join(self.make_root("parent"), "nope")
+        self.assert_rejected({"name": "X", "path": missing},
+                             "doesn't exist", "path_missing")
+
+    def test_rejects_a_file(self):
+        root = self.make_root()
+        a_file = os.path.join(root, "note.md")
+        with open(a_file, "w", encoding="utf-8") as f:
+            f.write("x")
+        self.assert_rejected({"name": "X", "path": a_file},
+                             "is a file, not a folder", "path_not_directory")
+
+    def test_rejects_a_path_inside_the_install_dir(self):
+        inside = os.path.join(nb.BASE_DIR, "tests")
+        self.assertTrue(os.path.isdir(inside))
+        self.assert_rejected({"name": "X", "path": inside},
+                             "inside the server's install folder",
+                             "path_inside_install")
+        self.assert_rejected({"name": "X", "path": nb.BASE_DIR},
+                             "inside the server's install folder",
+                             "path_inside_install")
+
+    def test_rejects_a_path_inside_the_config_dir(self):
+        self.assert_rejected({"name": "X", "path": nb.CONFIG_DIR},
+                             "overlaps the server's install or config folder",
+                             "path_inside_install")
+
+    def test_rejects_a_path_that_contains_the_install_dir(self):
+        outside = os.path.dirname(os.path.abspath(nb.BASE_DIR))
+        self.assertTrue(os.path.isdir(outside))
+        self.assert_rejected({"name": "X", "path": outside},
+                             "overlaps the server's install or config folder",
+                             "path_inside_install")
+
+    def test_rejects_an_unreadable_folder(self):
+        locked = os.path.join(self.make_root("locked"), "locked")
+        os.makedirs(locked)
+        os.chmod(locked, 0o000)
+        try:
+            if os.access(locked, os.R_OK | os.X_OK):
+                self.skipTest("permissions not enforced for this user")
+            self.assert_rejected({"name": "X", "path": locked},
+                                 "can't be read", "path_unreadable")
+        finally:
+            os.chmod(locked, 0o700)
+
+    def test_rejects_a_path_inside_an_existing_workspace(self):
+        outer = self.make_root("outer")
+        self.register("Outer", outer)
+        inner = os.path.join(outer, "inner")
+        os.makedirs(inner)
+        r = self.post("/api/workspaces", {"name": "Inner", "path": inner})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('overlaps "Outer"', r.get_json()["error"])
+        self.assertIn(outer, r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "path_overlap")
+
+    def test_rejects_a_path_that_contains_an_existing_workspace(self):
+        outer = self.make_root("outer")
+        inner = os.path.join(outer, "inner")
+        os.makedirs(inner)
+        self.register("Inner", inner)
+        r = self.post("/api/workspaces", {"name": "Outer", "path": outer})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('overlaps "Inner"', r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "path_overlap")
+
+    def test_rejects_the_count_cap(self):
+        extras = [{"id": "ws-%02d" % i, "name": "W%d" % i,
+                   "path": "/tmp/ws-%02d" % i}
+                  for i in range(nb.WORKSPACE_MAX_COUNT - 1)]
+        self.write_registry(
+            [{"id": "default", "name": "Notebook", "path": nb.DATA_DIR}]
+            + extras)
+        r = self.post("/api/workspaces",
+                      {"name": "Extra", "path": self.make_root("extra")})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("At most %d workspaces" % nb.WORKSPACE_MAX_COUNT,
+                      r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "too_many")
+
+    def test_add_returns_the_public_shape_and_persists_it(self):
+        root = self.make_root("added")
+        ws = self.register("Added", root)
+        self.assertEqual(ws["name"], "Added")
+        self.assertEqual(ws["path"], os.path.realpath(root))
+        self.assertTrue(ws["available"])
+        self.assertFalse(ws["is_default"])
+        self.assertTrue(ws["id"].startswith("added-"))
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        self.assertIn(ws["id"], [w["id"] for w in data["workspaces"]])
+
+    def test_add_stores_the_realpath_of_a_symlinked_folder(self):
+        real = self.make_root("real")
+        link = os.path.join(self.make_root("link"), "alias")
+        os.symlink(real, link)
+        ws = self.register("Linked", link)
+        self.assertEqual(ws["path"], os.path.realpath(real))
+
+
+class TestWorkspacePermissions(WorkspaceTestBase):
+    """Admin gates registry writes; a viewer may list and switch roots."""
+
+    ADMIN_PW = "ws-admin-pw-secret"
+    VIEWER_PW = "ws-viewer-pw-secret"
+
+    def setUp(self):
+        super().setUp()
+        nb._login_failures.clear()
+        import bcrypt as _bcrypt
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "workspace-test-secret-not-used-for-signing",
+                "admin_password_hash": _bcrypt.hashpw(
+                    self.ADMIN_PW.encode("utf-8"), _bcrypt.gensalt(12)
+                ).decode(),
+                "viewer_password_hash": _bcrypt.hashpw(
+                    self.VIEWER_PW.encode("utf-8"), _bcrypt.gensalt(12)
+                ).decode(),
+            }, f)
+
+    def login(self, password):
+        client = nb.app.test_client()
+        r = client.post("/api/login", json={"password": password})
+        self.assertEqual(r.status_code, 200,
+                         r.get_data(as_text=True))
+        return client
+
+    def admin(self):
+        return self.login(self.ADMIN_PW)
+
+    def viewer(self):
+        return self.login(self.VIEWER_PW)
+
+    def test_anonymous_is_refused(self):
+        self.assertEqual(self.client.get("/api/workspaces").status_code, 401)
+        self.assertEqual(
+            self.post("/api/workspaces", {"name": "X", "path": "/tmp"}).status_code,
+            401)
+        self.assertEqual(
+            self.client.patch("/api/workspaces/default",
+                              json={"name": "X"}).status_code, 401)
+        self.assertEqual(
+            self.client.delete("/api/workspaces/default").status_code, 401)
+
+    def test_admin_can_add_rename_remove_and_write_state(self):
+        admin = self.admin()
+        root = self.make_root()
+        r = admin.post("/api/workspaces", json={"name": "B", "path": root})
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+        wid = r.get_json()["workspace"]["id"]
+        r = admin.patch("/api/workspaces/" + wid, json={"name": "Bee"})
+        self.assertEqual(r.status_code, 200)
+        r = admin.post("/api/workspace-state",
+                       json={"id": wid, "state": {"lastFile": "a.md"}})
+        self.assertEqual(r.status_code, 200)
+        r = admin.delete("/api/workspaces/" + wid)
+        self.assertEqual(r.status_code, 200)
+
+    def test_viewer_can_list_and_switch(self):
+        admin = self.admin()
+        root = self.make_root()
+        wid = admin.post("/api/workspaces",
+                         json={"name": "B", "path": root}
+                         ).get_json()["workspace"]["id"]
+        viewer = self.viewer()
+        r = viewer.get("/api/workspaces")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["active"], "default")
+        r = viewer.post("/api/workspaces/active", json={"id": wid})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["active"], wid)
+        self.assertEqual(viewer.get("/api/workspaces").get_json()["active"],
+                         wid)
+
+    def test_viewer_is_refused_on_every_registry_write(self):
+        admin = self.admin()
+        wid = admin.post("/api/workspaces",
+                         json={"name": "B", "path": self.make_root()}
+                         ).get_json()["workspace"]["id"]
+        viewer = self.viewer()
+        for r in (
+            viewer.post("/api/workspaces",
+                        json={"name": "C", "path": self.make_root()}),
+            viewer.patch("/api/workspaces/" + wid, json={"name": "Bee"}),
+            viewer.delete("/api/workspaces/" + wid),
+        ):
+            self.assertEqual(r.status_code, 403)
+            self.assertEqual(r.get_json()["code"], "not_admin",
+                             r.get_data(as_text=True))
+        # /api/workspace-state is gated by the plain admin decorator, whose
+        # 403 carries no `code`; see docs/testing/ for the reported gap.
+        r = viewer.post("/api/workspace-state", json={"id": wid, "state": {}})
+        self.assertEqual(r.status_code, 403)
+        # None of the refused calls changed the registry.
+        self.assertEqual(
+            len(admin.get("/api/workspaces").get_json()["workspaces"]), 2)
+
+    def test_logout_clears_the_bound_workspace(self):
+        admin = self.admin()
+        wid = admin.post("/api/workspaces",
+                         json={"name": "B", "path": self.make_root()}
+                         ).get_json()["workspace"]["id"]
+        r = admin.post("/api/workspaces/active", json={"id": wid})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        with admin.session_transaction() as sess:
+            self.assertEqual(sess.get("workspace"), wid)
+            self.assertEqual(sess.get("role"), "admin")
+        self.assertEqual(admin.post("/api/logout").status_code, 200)
+        with admin.session_transaction() as sess:
+            self.assertIsNone(sess.get("workspace"))
+            self.assertIsNone(sess.get("role"))
+        # Logged out, the client is gated again instead of holding the root.
+        self.assertEqual(admin.get("/api/workspaces").status_code, 401)
+
+    def test_shell_does_not_list_workspaces_to_an_anonymous_client(self):
+        admin = self.admin()
+        admin.post("/api/workspaces",
+                   json={"name": "SecretRoot", "path": self.make_root()})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn("SecretRoot", html)
+
+    def test_shell_boot_always_carries_workspace_id_and_role(self):
+        admin = self.admin()
+        admin.post("/api/workspaces",
+                   json={"name": "ViewerVisible", "path": self.make_root()})
+        # Anonymous: the id and the (empty) role are painted so the shell can
+        # resolve a header; the name, path and list are withheld.
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn('data-workspace="%s"' % nb.WORKSPACE_DEFAULT_ID, html)
+        self.assertIn('data-role=""', html)
+        self.assertNotIn("data-workspaces=", html)
+        # A viewer gets the role and the workspace list.
+        html = self.viewer().get("/").get_data(as_text=True)
+        self.assertIn('data-role="viewer"', html)
+        self.assertIn("data-workspaces=", html)
+        self.assertIn("ViewerVisible", html)
+
+    def test_auth_off_loopback_may_change_workspaces(self):
+        # No auth.json -> auth layer off; the test client is 127.0.0.1.
+        os.remove(nb.AUTH_FILE)
+        r = self.post("/api/workspaces",
+                      {"name": "B", "path": self.make_root()})
+        self.assertEqual(r.status_code, 201, r.get_data(as_text=True))
+
+    def test_auth_off_non_loopback_is_refused_on_writes(self):
+        os.remove(nb.AUTH_FILE)
+        root = self.make_root()
+        r = self.client.post("/api/workspaces", json={"name": "B", "path": root},
+                             environ_base={"REMOTE_ADDR": "10.9.8.7"})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("another machine", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+        # Reads are still open in auth-off mode, from anywhere.
+        self.assertEqual(
+            self.client.get("/api/workspaces",
+                            environ_base={"REMOTE_ADDR": "10.9.8.7"}).status_code,
+            200)
+        # Rename and delete are guarded by the same wrapper.
+        ws = self.register("B", root)
+        r = self.client.patch("/api/workspaces/" + ws["id"],
+                              json={"name": "Bee"},
+                              environ_base={"REMOTE_ADDR": "10.9.8.7"})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+        r = self.client.delete("/api/workspaces/" + ws["id"],
+                               environ_base={"REMOTE_ADDR": "10.9.8.7"})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+
+    def test_auth_off_forwarded_header_is_refused_even_from_loopback(self):
+        # A reverse proxy on the same host dials in from 127.0.0.1, so the
+        # peer address cannot separate a LAN client from a local one; the
+        # forwarding header is the only signal.
+        os.remove(nb.AUTH_FILE)
+        root = self.make_root()
+        for header in nb.PROXY_FORWARD_HEADERS:
+            with self.subTest(header=header):
+                r = self.client.post(
+                    "/api/workspaces", json={"name": "B", "path": root},
+                    headers={header: "203.0.113.9"})
+                self.assertEqual(r.status_code, 403,
+                                 r.get_data(as_text=True))
+                self.assertEqual(r.get_json()["code"], "loopback_required")
+        # Nothing was registered by the refused calls.
+        self.assertFalse(os.path.isfile(nb.WORKSPACES_FILE))
+        # Rename is guarded by the same wrapper.
+        ws = self.register("B", root)
+        r = self.client.patch("/api/workspaces/" + ws["id"],
+                              json={"name": "Bee"},
+                              headers={"X-Forwarded-For": "203.0.113.9"})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+        self.assertEqual(
+            [e["name"] for e in self.read_registry()["items"]],
+            [nb.WORKSPACE_DEFAULT_NAME, "B"])
+
+    def test_auth_off_forwarded_header_does_not_gate_reads(self):
+        os.remove(nb.AUTH_FILE)
+        r = self.client.get("/api/workspaces",
+                            headers={"X-Forwarded-For": "203.0.113.9"})
+        self.assertEqual(r.status_code, 200)
+
+
+class TestWorkspaceResolution(WorkspaceTestBase):
+    """Header -> session -> default, and the unknown-id answers."""
+
+    def test_header_selects_the_tree_and_info_root(self):
+        root = self.make_root()
+        ws = self.register("B", root)
+        hdr = {nb.WORKSPACE_HEADER: ws["id"]}
+        self.post_file("b-only.md", "B", headers=hdr)
+        self.assertIn("b-only.md",
+                      self.tree_names(self.client.get("/api/tree", headers=hdr)))
+        self.assertNotIn("b-only.md", self.tree_names(self.client.get("/api/tree")))
+        info = self.client.get("/api/info", headers=hdr).get_json()
+        self.assertEqual(info["data_dir"], root)
+        self.assertEqual(info["workspace"], ws["id"])
+        self.assertEqual(self.client.get("/api/workspaces", headers=hdr)
+                         .get_json()["active"], ws["id"])
+
+    def post_file(self, rel, content, headers=None):
+        r = self.client.post("/api/file", json={"path": rel, "content": content},
+                             headers=headers or {})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_unknown_header_is_404_on_data_routes_only(self):
+        ghost = {nb.WORKSPACE_HEADER: "ghost"}
+        for method, url, body in self.DATA_ROUTE_CALLS:
+            r = self.call(self.client, method, url, body, ghost)
+            self.assertEqual(r.status_code, 404, url)
+            self.assertEqual(r.get_json(),
+                             {"error": "Unknown workspace",
+                              "code": "unknown_workspace"}, url)
+        # Shell, auth and registry-level routes still answer: a tab whose
+        # workspace was removed must be able to recover.
+        for method, url, body in (self.NON_DATA_ROUTE_CALLS
+                                  + self.PUBLIC_ROUTE_CALLS):
+            r = self.call(self.client, method, url, body, ghost)
+            self.assertNotEqual(r.status_code, 404, url)
+
+    def test_unknown_session_id_is_404_on_data_routes_only(self):
+        self.set_session_workspace("ghost")
+        for method, url, body in self.DATA_ROUTE_CALLS:
+            r = self.call(self.client, method, url, body)
+            self.assertEqual(r.status_code, 404, url)
+            self.assertEqual(r.get_json(),
+                             {"error": "Unknown workspace",
+                              "code": "unknown_workspace"}, url)
+        for method, url, body in (self.NON_DATA_ROUTE_CALLS
+                                  + self.PUBLIC_ROUTE_CALLS):
+            r = self.call(self.client, method, url, body)
+            self.assertNotEqual(r.status_code, 404, url)
+
+    def test_unknown_id_is_401_not_404_when_unauthenticated(self):
+        # The id oracle: an anonymous caller must not be able to tell a real
+        # workspace id from a deleted one, so both answer 401 on every
+        # registry-backed route.
+        self.enable_auth()
+        anon = nb.app.test_client()
+        for method, url, body in (self.DATA_ROUTE_CALLS
+                                  + self.NON_DATA_ROUTE_CALLS):
+            known = self.call(anon, method, url, body)
+            ghost = self.call(anon, method, url, body,
+                              {nb.WORKSPACE_HEADER: "ghost"})
+            self.assertEqual(known.status_code, 401, url)
+            self.assertEqual(ghost.status_code, 401, url)
+        # Public routes stay public, with either id.
+        for method, url, body in self.PUBLIC_ROUTE_CALLS:
+            self.assertEqual(self.call(anon, method, url, body).status_code,
+                             200, url)
+            self.assertEqual(
+                self.call(anon, method, url, body,
+                          {nb.WORKSPACE_HEADER: "ghost"}).status_code,
+                200, url)
+
+    def test_authenticated_unknown_id_is_404_on_data_routes_only(self):
+        pw = self.enable_auth()
+        client = nb.app.test_client()
+        self.assertEqual(client.post("/api/login", json={"password": pw}
+                                     ).status_code, 200)
+        ghost = {nb.WORKSPACE_HEADER: "ghost"}
+        for method, url, body in self.DATA_ROUTE_CALLS:
+            r = self.call(client, method, url, body, ghost)
+            self.assertEqual(r.status_code, 404, url)
+        for method, url, body in (self.NON_DATA_ROUTE_CALLS
+                                  + self.PUBLIC_ROUTE_CALLS):
+            r = self.call(client, method, url, body, ghost)
+            self.assertNotEqual(r.status_code, 404, url)
+        self.assertEqual(client.get("/api/info", headers=ghost).get_json(),
+                         {"data_dir": nb.DATA_DIR,
+                          "config_dir": nb.CONFIG_DIR,
+                          "workspace": nb.WORKSPACE_DEFAULT_ID})
+
+    def test_unknown_header_on_shell_falls_back_and_never_500s(self):
+        r = self.client.get("/", headers={nb.WORKSPACE_HEADER: "ghost"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'data-workspace="default"', r.data)
+
+    def test_stale_session_id_on_shell_falls_back_and_is_cleared(self):
+        self.set_session_workspace("ghost")
+        r = self.client.get("/")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'data-workspace="default"', r.data)
+        self.assertIsNone(self.session_workspace())
+
+    def test_session_switch_changes_the_root(self):
+        root = self.make_root()
+        ws = self.register("B", root)
+        r = self.post("/api/workspaces/active", {"id": ws["id"]})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json(), {"ok": True, "active": ws["id"]})
+        self.post_file("session-only.md", "B")
+        self.assertTrue(os.path.isfile(os.path.join(root, "session-only.md")))
+        self.assertIn("session-only.md", self.tree_names(self.client.get("/api/tree")))
+        self.assertEqual(self.jget("/api/info")[1]["workspace"], ws["id"])
+
+    def test_header_beats_the_session(self):
+        root_b = self.make_root("b")
+        root_c = self.make_root("c")
+        ws_b = self.register("B", root_b)
+        ws_c = self.register("C", root_c)
+        self.assertEqual(
+            self.post("/api/workspaces/active", {"id": ws_b["id"]}).status_code,
+            200)
+        hdr = {nb.WORKSPACE_HEADER: ws_c["id"]}
+        info = self.client.get("/api/info", headers=hdr).get_json()
+        self.assertEqual(info["workspace"], ws_c["id"])
+        self.assertEqual(info["data_dir"], root_c)
+
+    def test_switch_rejects_unknown_empty_and_non_string_ids(self):
+        r = self.post("/api/workspaces/active", {"id": "ghost"})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["error"], "Unknown workspace")
+        self.assertEqual(r.get_json()["code"], "unknown_workspace")
+        r = self.post("/api/workspaces/active", {"id": ""})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/workspaces/active", {"id": 7})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/workspaces/active", {})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing required field: id", r.get_json()["error"])
+
+    def test_removing_the_workspace_a_session_sits_on_clears_it(self):
+        ws = self.register("B", self.make_root())
+        self.assertEqual(
+            self.post("/api/workspaces/active", {"id": ws["id"]}).status_code,
+            200)
+        self.assertEqual(self.session_workspace(), ws["id"])
+        self.assertEqual(
+            self.client.delete("/api/workspaces/" + ws["id"]).status_code, 200)
+        self.assertIsNone(self.session_workspace())
+        # The next read falls back to the default instead of 404ing.
+        self.assertEqual(self.jget("/api/tree")[0], 200)
+
+    def test_shell_boot_paints_the_active_workspace(self):
+        ws = self.register("Alpha", self.make_root())
+        html = self.client.get(
+            "/", headers={nb.WORKSPACE_HEADER: ws["id"]}).get_data(as_text=True)
+        self.assertIn('data-workspace="%s"' % ws["id"], html)
+        self.assertIn("Alpha", html)
+
+    def test_vanished_workspace_stays_listed_with_an_empty_tree(self):
+        root = self.make_root()
+        ws = self.register("B", root)
+        hdr = {nb.WORKSPACE_HEADER: ws["id"]}
+        shutil.rmtree(root)
+        code, data = self.jget("/api/workspaces")
+        self.assertEqual(code, 200)
+        entry = [w for w in data["workspaces"] if w["id"] == ws["id"]][0]
+        self.assertFalse(entry["available"])
+        r = self.client.get("/api/tree", headers=hdr)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["tree"], [])
+
+
+class TestWorkspaceDataIsolation(WorkspaceTestBase):
+    """Files written through one root never leak into another."""
+
+    def test_file_created_in_one_workspace_is_absent_from_the_default_tree(self):
+        root_b = self.make_root("b")
+        ws = self.register("B", root_b)
+        hdr = {nb.WORKSPACE_HEADER: ws["id"]}
+        self.client.post("/api/file", json={"path": "b-only.md", "content": "B"},
+                         headers=hdr)
+        self.assertTrue(os.path.isfile(os.path.join(root_b, "b-only.md")))
+        self.assertFalse(os.path.isfile(os.path.join(nb.DATA_DIR, "b-only.md")))
+        self.assertIn("b-only.md",
+                      self.tree_names(self.client.get("/api/tree", headers=hdr)))
+        self.assertNotIn("b-only.md",
+                         self.tree_names(self.client.get("/api/tree")))
+
+    def test_delete_in_one_workspace_leaves_the_same_path_in_default(self):
+        root_b = self.make_root("b")
+        ws = self.register("B", root_b)
+        hdr = {nb.WORKSPACE_HEADER: ws["id"]}
+        for headers in ({}, hdr):
+            r = self.client.post(
+                "/api/file",
+                json={"path": "shared.md", "content": "same name"},
+                headers=headers)
+            self.assertEqual(r.status_code, 200)
+        r = self.client.post("/api/delete", json={"path": "shared.md"},
+                             headers=hdr)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertFalse(os.path.isfile(os.path.join(root_b, "shared.md")))
+        self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "shared.md")))
+        r = self.client.get("/api/file?path=shared.md")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["content"], "same name")
+
+
+class TestWorkspacePathGuards(WorkspaceTestBase):
+    """The root and `..` guards still hold when the root is not the default."""
+
+    def non_default(self):
+        root = self.make_root("b")
+        ws = self.register("B", root)
+        return root, {nb.WORKSPACE_HEADER: ws["id"]}
+
+    def test_delete_move_and_copy_of_the_root_are_refused(self):
+        root, hdr = self.non_default()
+        for route, body in (
+            ("/api/delete", {"path": "."}),
+            ("/api/move", {"from": ".", "to": "moved"}),
+            ("/api/copy", {"from": ".", "to": "copied"}),
+        ):
+            r = self.client.post(route, json=body, headers=hdr)
+            self.assertEqual(r.status_code, 400,
+                             "%s: %s" % (route, r.get_data(as_text=True)))
+            self.assertEqual(r.get_json()["error"], "Invalid path")
+        # The root folder itself is still there.
+        self.assertTrue(os.path.isdir(root))
+
+    def test_delete_of_the_default_root_is_refused(self):
+        r = self.post("/api/delete", {"path": "."})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isdir(nb.DATA_DIR))
+
+    def test_dotdot_traversal_is_blocked_in_a_non_default_workspace(self):
+        _, hdr = self.non_default()
+        r = self.client.post(
+            "/api/delete",
+            json={"path": "../notebook/Welcome.md"}, headers=hdr)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["error"], "Invalid path")
+        r = self.client.post(
+            "/api/move",
+            json={"from": "../notebook/Welcome.md", "to": "stolen.md"},
+            headers=hdr)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(
+            "/api/copy",
+            json={"from": "../notebook/Welcome.md", "to": "stolen.md"},
+            headers=hdr)
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post(
+            "/api/file",
+            json={"path": "../notebook/evil.md", "content": "x"}, headers=hdr)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(
+            self.client.get("/api/file?path=../notebook/Welcome.md",
+                            headers=hdr).status_code, 400)
+        self.assertEqual(
+            self.client.get("/api/ls?path=../notebook", headers=hdr).status_code,
+            400)
+        self.assertTrue(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "Welcome.md")))
+        self.assertFalse(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "evil.md")))
+
+    def test_dotdot_traversal_is_blocked_in_the_default_workspace(self):
+        self.assertEqual(
+            self.client.get("/api/file?path=../config/config.json").status_code,
+            400)
+        r = self.client.post("/api/delete",
+                             json={"path": "../config/config.json"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(nb.CONFIG_FILE))
+
+
+class TestWorkspaceConfigState(WorkspaceTestBase):
+    """config.json: the startup migration, POST folding, and the state merge."""
+
+    LEGACY = {
+        "lastFile": "a.md",
+        "openFiles": ["a.md"],
+        "activeFile": "a.md",
+        "pinnedFiles": ["a.md"],
+        "recentFiles": ["a.md"],
+        "bookmarks": ["a.md"],
+        "pinnedFolders": ["notes"],
+    }
+
+    def test_startup_migration_moves_legacy_keys_once(self):
+        cfg = dict(self.LEGACY)
+        cfg.update({"theme": "light", "sidebarWidth": 300,
+                    "shortcuts": {"x": "y"}})
+        self.write_config(cfg)
+        self.assertNotIn("workspaceState", self.read_config_file())
+        nb._migrate_config_at_startup()
+        # Persisted under the default workspace, other keys untouched.
+        disk = self.read_config_file()
+        self.assertEqual(disk["workspaceState"],
+                         {nb.WORKSPACE_DEFAULT_ID: self.LEGACY})
+        for key in self.LEGACY:
+            self.assertNotIn(key, disk)
+        self.assertEqual(disk["theme"], "light")
+        self.assertEqual(disk["sidebarWidth"], 300)
+        self.assertEqual(disk["shortcuts"], {"x": "y"})
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data, disk)
+
+    def test_startup_migration_is_idempotent(self):
+        self.write_config(dict(self.LEGACY))
+        nb._migrate_config_at_startup()
+        first_stamp = self.file_stamp(nb.CONFIG_FILE)
+        nb._migrate_config_at_startup()
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_stamp)
+        first = self.jget("/api/config")[1]
+        self.assertEqual(first["workspaceState"],
+                         {nb.WORKSPACE_DEFAULT_ID: self.LEGACY})
+        second = self.jget("/api/config")[1]
+        self.assertEqual(first, second)
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_stamp)
+
+    def test_get_config_is_read_only(self):
+        self.write_config(dict(self.LEGACY))
+        before = self.file_stamp(nb.CONFIG_FILE)
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        # The legacy shape is returned as stored; a GET never migrates.
+        self.assertEqual(data["lastFile"], "a.md")
+        self.assertNotIn("workspaceState", data)
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+
+    def test_post_config_folds_legacy_keys_into_the_default_state(self):
+        r = self.post("/api/config", {
+            "theme": "light",
+            "lastFile": "a.md",
+            "openFiles": ["a.md"],
+        })
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        disk = self.read_config_file()
+        self.assertEqual(disk["workspaceState"],
+                         {nb.WORKSPACE_DEFAULT_ID: {"lastFile": "a.md",
+                                                    "openFiles": ["a.md"]}})
+        self.assertNotIn("lastFile", disk)
+        self.assertNotIn("openFiles", disk)
+        self.assertEqual(disk["theme"], "light")
+
+    def test_post_config_preserves_other_workspace_state(self):
+        r = self.post("/api/config", {
+            "theme": "dark",
+            "lastFile": "a.md",
+            "workspaceState": {
+                "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
+            },
+        })
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        state = self.read_config_file()["workspaceState"]
+        self.assertEqual(state["b-0001"],
+                         {"lastFile": "b.md", "openFiles": ["b.md"]})
+        self.assertEqual(state[nb.WORKSPACE_DEFAULT_ID], {"lastFile": "a.md"})
+
+    def test_existing_workspace_state_is_left_alone(self):
+        cfg = dict(self.LEGACY)
+        cfg["workspaceState"] = {"b-0001": {"lastFile": "b.md"}}
+        self.write_config(cfg)
+        before = self.file_stamp(nb.CONFIG_FILE)
+        nb._migrate_config_at_startup()
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaceState"],
+                         {"b-0001": {"lastFile": "b.md"}})
+        # The legacy top-level key is not touched either: presence of
+        # workspaceState means an aware client already wrote the file.
+        self.assertEqual(data["lastFile"], "a.md")
+
+    def test_empty_config_is_not_rewritten_by_migration(self):
+        self.write_config({"theme": "dark"})
+        before = self.file_stamp(nb.CONFIG_FILE)
+        nb._migrate_config_at_startup()
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data, {"theme": "dark"})
+        self.assertNotIn("workspaceState", self.read_config_file())
+
+    def test_workspace_state_merges_and_preserves_other_entries(self):
+        self.write_config({
+            "theme": "dark",
+            "workspaceState": {"b-0001": {"lastFile": "b.md"}},
+        })
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"lastFile": "a.md"}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json(), {"ok": True, "id": "default"})
+        disk = self.read_config_file()
+        self.assertEqual(disk["theme"], "dark")
+        self.assertEqual(disk["workspaceState"]["b-0001"],
+                         {"lastFile": "b.md"})
+        self.assertEqual(disk["workspaceState"]["default"],
+                         {"lastFile": "a.md"})
+        # A second write replaces only its own entry.
+        self.post("/api/workspace-state",
+                  {"id": "default", "state": {"lastFile": "c.md"}})
+        disk = self.read_config_file()
+        self.assertEqual(disk["workspaceState"]["default"],
+                         {"lastFile": "c.md"})
+        self.assertEqual(disk["workspaceState"]["b-0001"],
+                         {"lastFile": "b.md"})
+
+    def test_workspace_state_rejects_bad_bodies(self):
+        r = self.post("/api/workspace-state", {"id": "default"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing required field: state", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "bad_body")
+        for bad in ([1], "x", 3, None):
+            r = self.post("/api/workspace-state",
+                          {"id": "default", "state": bad})
+            self.assertEqual(r.status_code, 400, "state=%r" % (bad,))
+            self.assertEqual(r.get_json()["error"],
+                             "state must be a JSON object")
+            self.assertEqual(r.get_json()["code"], "bad_body")
+        r = self.post("/api/workspace-state", {"id": "", "state": {}})
+        self.assertEqual(r.status_code, 400)
+        r = self.post("/api/workspace-state", {"id": "ghost", "state": {}})
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["error"], "Unknown workspace")
+        self.assertEqual(r.get_json()["code"], "unknown_workspace")
+
+    def test_workspace_state_rejects_a_body_over_the_cap(self):
+        big = "a" * (nb.WORKSPACE_STATE_MAX_BYTES + 1)
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"blob": big}})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("state exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
+                      r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "state_too_large")
+        self.assertNotIn("workspaceState", self.read_config_file())
+
+    def test_workspace_state_accepts_a_body_at_the_cap(self):
+        # The cap is on the encoded state alone; land just under it.
+        payload = "a" * (nb.WORKSPACE_STATE_MAX_BYTES - 32)
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"blob": payload}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def test_workspace_state_write_failure_is_500(self):
+        with mock.patch.object(nb, "atomic_write", side_effect=OSError("full")):
+            r = self.post("/api/workspace-state",
+                          {"id": "default", "state": {"a": 1}})
+        self.assertEqual(r.status_code, 500)
+        self.assertIn("Could not write config", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "write_failed")
+
+
+class TestWorkspaceCacheHeaders(WorkspaceTestBase):
+    """Gated reads must vary on the workspace header."""
+
+    GATED_URLS = (
+        "/api/tree", "/api/ls", "/api/file?path=Welcome.md",
+        "/api/search?q=Welcome", "/api/config", "/api/info",
+        "/api/workspaces", "/api/graph",
+    )
+
+    def test_gated_reads_carry_the_vary_and_no_store_headers(self):
+        for url in self.GATED_URLS:
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 200, url)
+            vary = r.headers.get("Vary", "")
+            self.assertIn(nb.WORKSPACE_HEADER, vary, url)
+            self.assertIn("no-store", r.headers.get("Cache-Control", ""), url)
+
+    def test_vary_is_sent_even_on_a_data_route_workspace_404(self):
+        # Only the data routes 404 an unknown id; those are the responses a
+        # cache must never serve for a different workspace.
+        for method, url, body in self.DATA_ROUTE_CALLS:
+            r = self.call(self.client, method, url, body,
+                          {nb.WORKSPACE_HEADER: "ghost"})
+            self.assertEqual(r.status_code, 404, url)
+            self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""), url)
+
+    def test_non_data_routes_answer_an_unknown_id_with_less_data(self):
+        # The same URL answers with a different notebook per header, so even
+        # the fallback response must vary.
+        for method, url, body in self.NON_DATA_ROUTE_CALLS:
+            r = self.call(self.client, method, url, body,
+                          {nb.WORKSPACE_HEADER: "ghost"})
+            self.assertNotEqual(r.status_code, 404, url)
+            self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""), url)
+
+    def test_workspace_state_response_varies_too(self):
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"a": 1}})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""))
 
 
 if __name__ == "__main__":

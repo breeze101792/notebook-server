@@ -10,7 +10,8 @@
  * opens the header menu (sort actions + hide column). Title clicks
  * never open the menu.
  * The state is a per-file, per-table view overlay kept in localStorage
- * (`nb:tableView`) -- it is NEVER written to the note, never sent to
+ * (`nb:tableView`, or `nb:<workspace>:tableView` on a workspace page) --
+ * it is NEVER written to the note, never sent to
  * the server, and never appears in an export, because nothing here
  * touches the Markdown source or the serialization paths:
  *
@@ -71,6 +72,16 @@
   const HEAD_MENU_GLYPH = "\u25BE";             // idle: menu chevron
 
   const LS_KEY = "nb:tableView";       // localStorage namespace
+  // The default workspace keeps the pre-workspace key: existing installs
+  // already have their overlays under it, and one key per workspace keeps a
+  // rollback (which only knows the legacy key) clean. Other workspaces are
+  // namespaced.
+  const DEFAULT_WORKSPACE_ID = "default";
+  function storageKey() {
+    const id = (NB.workspaceId && NB.workspaceId()) || "";
+    return (id && id !== DEFAULT_WORKSPACE_ID)
+      ? "nb:" + id + ":tableView" : LS_KEY;
+  }
   const SCHEMA_VERSION = 2;            // blob schema version
   const MAX_FILES = 50;                // LRU files kept in the blob
   const MAX_TABLES = 20;               // tables kept per file
@@ -183,7 +194,7 @@
    * windows.js pattern. */
   function loadStore() {
     try {
-      const raw = localStorage.getItem(LS_KEY);
+      const raw = localStorage.getItem(storageKey());
       if (!raw) return emptyStore();
       const blob = JSON.parse(raw);
       if (!blob || blob.v !== SCHEMA_VERSION ||
@@ -255,7 +266,7 @@
   }
 
   function persist() {
-    try { localStorage.setItem(LS_KEY, serialize()); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(storageKey(), serialize()); } catch (e) { /* ignore */ }
   }
 
   /* Re-read the blob from localStorage. Returns the in-memory store so

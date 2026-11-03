@@ -34,33 +34,45 @@ Related docs:
 - **JSON everywhere.** Request bodies are JSON objects. Success responses are
   JSON objects. `POST /api/ai/chat` is the one exception: its response body is
   an upstream `text/event-stream` relayed verbatim.
-- **Paths are relative to `DATA_DIR`.** Clients pass forward-slash relative
-  paths such as `notes/ideas.md`. Every file route resolves the path through
-  `safe_path()` (`app.py:150`). It rejects non-strings, empty or whitespace
-  input, absolute paths, and any path whose lexically normalized result is not
-  `DATA_DIR` or under it. It returns the normalized absolute path or `None`.
-  `safe_path()` deliberately does not call `realpath`: interior symlinks that
-  point outside `DATA_DIR` are allowed because the user created them on purpose.
-  `rel_from()` (`app.py:210`) turns an absolute path back into a relative one.
+- **Paths are relative to the active workspace root.** Clients pass
+  forward-slash relative paths such as `notes/ideas.md`. Every file route
+  resolves the path through `safe_path(rel, current_root())`. It rejects
+  non-strings, empty or whitespace input, absolute paths, and any path whose
+  lexically normalized result is not the root or under it. It returns the
+  normalized absolute path or `None`. `safe_path()` deliberately does not call
+  `realpath`: interior symlinks that point outside the root are allowed
+  because the user created them on purpose. `rel_from()` turns an absolute
+  path back into a relative one. Outside a request, both default to
+  `DATA_DIR`; inside one, `current_root()` returns the workspace bound by
+  `_bind_workspace()`.
+- **Workspace header.** Every request may name a workspace with
+  `X-Notebook-Workspace: <id>`. Resolution order is the header, then
+  `session["workspace"]`, then the default. The frontend sends the header on
+  every request, so a tab keeps operating on the root it was rendered from.
+  No header and no session reaches the default root, which is where a bearer
+  token with no session lands. See [Workspaces](#workspaces).
 - **Writes are atomic but not power-loss durable.** `atomic_write()`
-  (`app.py:221`) writes a unique temp file (`<path>.<pid>.<tid>.<counter>.tmp`)
+  writes a unique temp file (`<path>.<pid>.<tid>.<counter>.tmp`)
   and calls `os.replace`. The rename is atomic under concurrent writers. There
   is no `fsync`, so a power loss can lose a recent write.
 - **Auth gating.** When an admin password is set, every read and write requires
-  a valid session or bearer token. When auth is off, all routes are open. See
-  [Authentication](#authentication).
-- **Cache headers.** The gated read endpoints (`/api/tree`, `/api/ls`,
-  `/api/file`, `/api/search`, `/api/config`, `/api/info`) carry
-  `Cache-Control: no-store, private` (`_GATED_READ_PATHS`, `app.py:72`). The
-  `/agent.md` response carries `Cache-Control: no-store`. `/api/graph` is also
-  a gated read but is absent from `_GATED_READ_PATHS`, so its response is
-  browser-cacheable.
+  a valid session or bearer token. When auth is off, all routes are open except
+  workspace registry mutations, which require a loopback peer with no
+  forwarding header. See [Authentication](#authentication).
+- **Cache headers.** The paths in `_GATED_READ_PATHS` (`/api/tree`, `/api/ls`,
+  `/api/file`, `/api/search`, `/api/config`, `/api/info`, `/api/workspaces`,
+  `/api/graph`, `/api/workspace-state`) carry
+  `Cache-Control: no-store, private`. Every `/api/*`
+  response also carries `Vary: X-Notebook-Workspace`, because the same URL
+  answers with a different notebook depending on the header. The `/agent.md`
+  response carries `Cache-Control: no-store`.
 - **No transport security.** The server serves plain HTTP (`app.run()` sets
   no `ssl_context`). Passwords and bearer tokens cross the wire in cleartext;
   bcrypt protects only the stored hash. See
   [Security posture](#security-posture).
-- **Errors.** `err()` (`app.py:192`) returns `{"error": "<message>"}` with a
-  status code. See [Error reference](#error-reference).
+- **Errors.** `err()` returns `{"error": "<message>"}` with a status code;
+  workspace routes add a stable `code`. See [Error reference](#error-reference)
+  and [Workspace error codes](#workspace-error-codes).
 
 ## Authentication
 
@@ -95,7 +107,8 @@ them.
 - **Auth is off by default.** Until an admin password is set, every route is
   unauthenticated, including all `/api/ai/*` and every mutating file route
   (`admin_required` and `read_login_required` return the view unguarded when
-  `auth_enabled()` is false, `app.py:645-646`, `app.py:680-681`).
+  `auth_enabled()` is false). Workspace registry mutations are the one
+  exception: they still require a loopback, non-proxied peer.
 - **Plain HTTP.** No TLS, so passwords and tokens can be sniffed on the LAN.
 - **Open by default on `0.0.0.0`.** The default bind is all interfaces
   (`app.py:2426-2444`).
@@ -106,19 +119,29 @@ them.
   arbitrary host.
 - **`/api/ai/fetch` can reach internal hosts.** It checks scheme and length
   only; loopback, private ranges, and metadata addresses are reachable.
-- **No body-size cap.** No `MAX_CONTENT_LENGTH` is set; routes read the whole
-  body into memory.
+- **Bodies are capped at 32 MiB.** `MAX_CONTENT_LENGTH` is set to
+  `MAX_REQUEST_BYTES` (32 MiB); an oversized body gets a JSON 413. A body
+  under the cap is still read wholly into memory.
 
 ### Decorators
 
-Three decorators compose the layer. All three bypass the check when auth is off
-(`app.py:622`, `app.py:638`, `app.py:657`).
+Four decorators compose the layer. All bypass the check when auth is off.
 
 | Decorator | Requires | Used on |
 | --- | --- | --- |
 | `login_required` | any valid role | `POST /api/logout` |
-| `admin_required` | role `admin` (401 if none, 403 if viewer) | every mutating route and all `/api/ai/*` routes |
-| `read_login_required` | any valid role | `/api/tree`, `/api/ls`, `GET /api/file`, `GET /api/config`, `/api/info`, `/api/search`, `/api/graph` |
+| `admin_required` | role `admin` (401 if none, 403 if viewer) | every remaining mutating route and all `/api/ai/*` routes |
+| `read_login_required` | any valid role | `/api/tree`, `/api/ls`, `GET /api/file`, `GET /api/config`, `/api/info`, `/api/search`, `/api/graph`, `GET /api/workspaces`, `POST /api/workspaces/active` |
+| `workspace_admin_required` | admin; with auth off, a loopback peer and no forwarding header | `POST /api/workspaces`, `PATCH`/`DELETE /api/workspaces/<id>`, `POST /api/workspace-state` |
+
+`workspace_admin_required` is stricter than `admin_required` only while auth is
+off. In that state every host on the LAN could otherwise add or remove a
+filesystem root, or write per-workspace UI state, so the request must come from
+a loopback address and must not carry `X-Forwarded-For` or `X-Real-IP` (a
+same-host reverse proxy dials in from 127.0.0.1, so a peer-address test alone
+would treat every proxied client as local). A refusal is **403** with
+`code: "loopback_required"`. With auth on, a viewer gets **403** with
+`code: "not_admin"`.
 
 ### Roles and tokens
 
@@ -157,9 +180,85 @@ The store is in-process, so it resets on restart and is best-effort.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/config` (`app.py:828`) | read | Returns the stored `config.json` verbatim. Missing or corrupt file returns `{}`. |
-| POST | `/api/config` (`app.py:851`) | admin | Body must be a JSON object. Stores it verbatim with no schema validation. 400 if not an object, 500 on write failure. |
-| GET | `/api/info` (`app.py:839`) | read | `{data_dir, config_dir}` absolute paths. |
+| GET | `/api/config` | read | Returns the stored `config.json` verbatim. Missing or corrupt file returns `{}`. The one-shot workspace-state migration runs at server startup, not on this read, so a GET never writes a server-owned file. |
+| POST | `/api/config` | admin | Body must be a JSON object. Stores it verbatim with no schema validation, except that legacy top-level content keys (`lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`) are folded under `workspaceState.default` first. 400 if not an object, 500 on write failure. |
+| GET | `/api/info` | read | `{data_dir, config_dir, workspace}`: the active workspace root, the config folder, and the active workspace id. For the default root, `data_dir` is the unresolved `DATA_DIR` string. |
+
+### Workspaces
+
+The server can serve several named notebook roots. The registry is
+`config/workspaces.json`, server-owned and read on every request. Its schema,
+limits, and the trust boundary are in
+[configuration.md](configuration.md#configworkspacesjson--workspace-registry).
+
+| Method | Path | Auth | Body | Response |
+| --- | --- | --- | --- | --- |
+| GET | `/api/workspaces` | read | — | `{workspaces: [{id, name, path, available, is_default}], active}`. `active` is the caller's resolved id. |
+| POST | `/api/workspaces` | workspace admin | `{name, path}` | **201** `{workspace: {id, name, path, available, is_default}}`. `path` is stored as the folder's absolute realpath. |
+| PATCH | `/api/workspaces/<id>` | workspace admin | `{name}` | `{workspace: {...}}`. Renaming never changes the id or the path. |
+| DELETE | `/api/workspaces/<id>` | workspace admin | — | `{ok: true}`. Removes the entry only; the folder and notes stay on disk. The default is not removable. |
+| POST | `/api/workspaces/active` | read | `{id}` | `{ok: true, active: "<id>"}`. Stores the id in the signed session. A viewer may switch too. |
+| POST | `/api/workspace-state` | workspace admin | `{id, state}` | `{ok: true, id}`. Merges `state` under `workspaceState.<id>` in `config.json`, preserving other entries and unrelated keys. `state` is capped at 256 KiB. |
+
+**Resolution.** `_bind_workspace()` runs as a `before_request` hook and binds
+the request's root to `g.data_dir` and its id to `g.workspace_id`. It reads
+`X-Notebook-Workspace`, else `session["workspace"]`, else the default. An
+unknown id does not abort there — the hook runs ahead of every auth decorator,
+so a 404 would both leak whether an id exists to an anonymous caller and lock a
+tab out of login when its workspace was removed. It records
+`g.workspace_unknown`, binds the default root, and the data views call
+`_unknown_workspace_response()` after their gate has passed.
+
+**Unknown id.** An authenticated caller gets **404** `unknown_workspace` on the
+twelve data routes: `/api/tree`, `/api/ls`, `GET /api/file`, `POST /api/file`,
+`/api/file/append`, `/api/edit`, `/api/create`, `/api/move`, `/api/copy`,
+`/api/delete`, `/api/search`, `/api/graph`. An unauthenticated caller gets the
+route's **401** instead, so the 404 never reveals that an id exists. A
+presented bearer token counts as authenticated for this decision. The 404 never
+fires on login, auth, the workspace routes, config, info, or the SPA shell;
+those fall back to the default root. `/api/ai/chat` is the exception: an
+explicit `workspace` id in the request body that names no workspace is a
+**404** `unknown_workspace`, because there the id is a selector the caller
+chose, not ambient session state.
+
+**Permissions.** Any authenticated role may list workspaces and switch. Add,
+rename, and remove require admin; with auth off they require a loopback peer and
+no `X-Forwarded-For` / `X-Real-IP`. Writing per-workspace UI state follows the
+same rule. Logout clears `session["workspace"]`, so the next request falls back
+to the default.
+
+#### Workspace error codes
+
+Workspace routes add a stable `code` to the shared error body:
+
+```json
+{"error": "That folder doesn't exist.", "code": "path_missing"}
+```
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `bad_body` | 400 | Body is not a JSON object, a required field is missing, `id` is not a non-empty string, or `state` is not an object. |
+| `name_empty` | 400 | Name is missing or blank. |
+| `name_too_long` | 400 | Name is over 60 characters. |
+| `name_duplicate` | 400 | Another workspace has that name, compared case-insensitively. |
+| `path_not_absolute` | 400 | Folder is not an absolute path. |
+| `path_missing` | 400 | Folder does not exist. |
+| `path_not_directory` | 400 | Path is a file. |
+| `path_unreadable` | 400 | Server cannot read or enter the folder. |
+| `path_inside_install` | 400 | Folder is inside the install tree, or contains the install or config folder. |
+| `path_overlap` | 400 | Folder overlaps another workspace in either direction. |
+| `too_many` | 400 | Registry already holds 32 workspaces. |
+| `default_not_removable` | 400 | DELETE targeted the default workspace. |
+| `state_too_large` | 400 | Serialised `state` exceeds 256 KiB. |
+| `unknown_workspace` | 404 | No workspace has that id. |
+| `timeout` | 504 | The `/api/graph` scan exceeded the scan deadline; no partial graph is returned. |
+| `not_admin` | 403 | Caller is a viewer. |
+| `loopback_required` | 403 | Auth is off and the registry change is not a local, non-proxied request. |
+| `write_failed` | 500 | `config.json` could not be written. |
+
+The frontend maps these codes to the dialog field and message
+(`ERROR_FIELD_BY_CODE`, `static/js/workspaces.js`); unknown codes fall back to
+the prose.
 
 ### Auth
 
@@ -192,7 +291,7 @@ new token's role must be `admin` or `viewer`.
 | Method | Path | Auth | Body / params | Response |
 | --- | --- | --- | --- | --- |
 | GET | `/api/tree` (`app.py:1647`) | read | — | `{tree: [...]}` recursive, dirs-first, directories and `.md` files only. Skips dotfiles and `__pycache__`. |
-| GET | `/api/ls` (`app.py:1653`) | read | `?path=` | Non-recursive single folder. All file types, skips hidden. `{path, entries: [{name, type, size, mtime}]}`. Empty `path` lists the notebook root. |
+| GET | `/api/ls` (`app.py:1653`) | read | `?path=` | Non-recursive single folder. All file types, skips hidden. `{path, entries: [{name, type, size, mtime}]}`. Empty `path` lists the active workspace root. |
 | GET | `/api/file` (`app.py:1698`) | read | `?path=`, `?ifModifiedSince=` | `{path, content, size, mtime}`. Empty 304 when `ifModifiedSince >= mtime`. `size` is the character count, not bytes. |
 | POST | `/api/file` (`app.py:1730`) | admin | `{path, content}` | Creates or overwrites a whole file. Parent folder must exist. Returns `{path, size}`. |
 | POST | `/api/file/append` (`app.py:1753`) | admin | `{path, content, create}` | Single `O_APPEND` write, so concurrent appends do not clobber. 404 if missing without `create: true`. Returns `{path, size, appended}`. |
@@ -236,8 +335,9 @@ fall back to check-then-rename. File copies use `open(..., "xb")`.
 | `desc=1` | off | Reverse the chosen order. |
 
 Caps are defined at `app.py:58`. The response is
-`{query, matches: [{file, line, col, snippet}], truncated, perFileTruncated}`,
-plus `file` when `?file=` was used and `count` on each item in unique mode.
+`{query, matches: [{file, line, col, snippet}], truncated, perFileTruncated,
+timedOut}`, plus `file` when `?file=` was used and `count` on each item in
+unique mode.
 `perFileTruncated` is true when at least one file had more matches than
 `perFile`; in unique mode `truncated` means more notes matched than were
 returned. In name mode each item is `{file}` only, `perFileTruncated` is
@@ -247,6 +347,11 @@ with `SNIPPET_PAD` = 60 characters of context on each side. Ordering regroups
 whole files and never splits a file's matches; in unique mode equal sort keys
 fall back to path A–Z. In name mode every note counts once, so `order=count`
 is path order.
+
+`timedOut` is true when the walk hit `SCAN_TIMEOUT_SECONDS` (5 s) before it
+finished. The matches returned are exact, just incomplete. It is independent of
+`truncated`: both can be true. One file read cannot be interrupted mid-read, so
+the deadline is checked before each file and every `SCAN_CHECK_LINES` lines.
 
 ### Graph
 
@@ -260,6 +365,11 @@ Markdown links ending in `.md`. Wikilinks resolve by stem, so `[[README]]` and
 the linking file's folder. `#anchor` fragments are stripped, links to missing
 files are dropped, and self-links are skipped. Edges are unique and undirected;
 `links` is the node's degree. Orphan files appear as nodes.
+
+The scan runs under the same 5-second deadline as search. On expiry the route
+returns **504** `{"error": "The notebook took too long to scan",
+"code": "timeout"}` and no partial graph: a truncated graph would silently
+misrepresent the notebook.
 
 ### AI assistant
 
@@ -276,7 +386,7 @@ the profile names. All routes below are admin-gated **only while auth is on**.
 | GET | `/api/ai/config` (`app.py:1575`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acpAgents}`. The key is never echoed. `acp` is `{name, model, agent, default}` or `null`; `agent` is the selected known-agent key (`""` when the profile uses `command`). `acpAgents` is always present. |
 | POST | `/api/ai/config` (`app.py:1583`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. Never touches `acp.json`. |
 | GET | `/api/ai/probe` (`app.py:1652`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
-| POST | `/api/ai/chat` (`app.py:1916`) | admin | `{server, messages}` | SSE relay. Serves ACP profiles too. See below. |
+| POST | `/api/ai/chat` (`ai_chat`) | admin | `{server, messages, workspace?}` | SSE relay. Serves ACP profiles too. See below. |
 | POST | `/api/ai/fetch` (`app.py:1995`) | admin | `{url}` | Server-side fetch. See below. |
 | POST | `/api/ai/search` (`app.py:2042`) | admin | `{q}` | SearXNG search. See below. |
 
@@ -304,12 +414,18 @@ is `{"error": true, "status", "message"}`.
 
 When the posted `server` is not an OpenAI profile but equals the `name` in
 `config/acp.json`, `POST /api/ai/chat` drives the ACP agent instead
-(`ai_chat`, `app.py:1916`). `messages` is validated the same way, then the
+(`ai_chat`). `messages` is validated the same way, then the
 system turn is dropped; a request left with no user/assistant turn is 400, any
 `image_url` content part is 400, and the flattened prompt is capped at
-`ACP_MAX_PROMPT_BYTES` = 8 MiB. A short context preamble (the notebook lead,
-the open note from `config/config.json`, and the global custom prompt from
-`config/ai.json`) is prefixed to that prompt. The response uses the identical
+`ACP_MAX_PROMPT_BYTES` = 8 MiB. An optional body field `workspace` selects the
+workspace whose root becomes the agent's cwd (unless the ACP profile sets
+`cwd`) and whose `workspaceState.<id>.activeFile` is named in the context
+preamble. An unknown id is **404** `unknown_workspace`, not a silent fallback —
+the agent must not work in a different folder than the client thinks. Without
+it the request's resolved workspace is used. The preamble carries the notebook
+lead, the open note for that workspace, and the global custom prompt from
+`config/ai.json`. For an OpenAI-compatible profile the `workspace` field is
+ignored and stripped from the upstream payload. The response uses the identical
 SSE envelope — OpenAI-shaped `data:` delta frames, `data: [DONE]` on completion,
 and `event: error` frames on failure — so clients parse it unchanged; one extra
 frame, `data: {"acp": "trace", "text": "<tool title>"}`, marks each tool the
@@ -381,13 +497,14 @@ in `_apply_edits()` (`app.py:397`); `find_replace` is `_edit_find_replace()`
 | 400 | Bad request: invalid path, missing field, bad value, failed edit op, empty query, invalid regex or order. |
 | 401 | No valid credential, or a presented bearer token is invalid. |
 | 403 | Authenticated but the role is insufficient (a viewer on an admin route). |
-| 404 | File, folder, server profile, or token not found. |
+| 404 | File, folder, server profile, token, or workspace not found. |
 | 409 | Conflict: target exists, duplicate token name, or a lost move/copy race. |
 | 429 | Rate limited: more than 5 failed logins in 60 seconds per IP. |
 | 500 | Server error: filesystem or write failure, or a missing `agent.md`. |
 | 502 | Upstream failure from the AI fetch or search tool. |
 
-All error bodies are `{"error": "<message>"}`.
+All error bodies are `{"error": "<message>"}`. Workspace routes also carry a
+`code`; see [Workspace error codes](#workspace-error-codes).
 
 ## Worked examples
 
@@ -451,4 +568,26 @@ Authenticate with a bearer token and read a file:
 curl -sS -G http://localhost:5000/api/file \
   -H 'Authorization: Bearer nbtk_0123456789abcdef0123456789abcdef01234567' \
   --data-urlencode 'path=README.md'
+```
+
+List the workspaces and read a file from one of them:
+
+```bash
+curl -sS http://localhost:5000/api/workspaces
+
+curl -sS -G http://localhost:5000/api/file \
+  -H 'X-Notebook-Workspace: work-1a2b' \
+  --data-urlencode 'path=notes/ideas.md'
+```
+
+Register a folder, then switch this session to it:
+
+```bash
+curl -sS -X POST http://localhost:5000/api/workspaces \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Work", "path": "/home/you/work-notes"}'
+
+curl -sS -X POST http://localhost:5000/api/workspaces/active \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "work-1a2b"}'
 ```

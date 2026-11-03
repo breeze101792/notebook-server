@@ -18,6 +18,9 @@ are plain `.md` files on disk — no database, no build step.
 
 - File tree with folders, bookmarks, and right-click context menus (open,
   new file/folder, rename/move, copy, delete, Export…).
+- Named local workspaces: register several folders of notes on the same
+  machine and switch between them from the bar above the file tree. Each
+  workspace keeps its own open tabs, recent files, pins, and bookmarks.
 - Markdown rendering with syntax highlighting (vendored `marked.js` +
   `highlight.js`) and six special fenced-block renderers: Mermaid,
   WaveDrom, KaTeX, Graphviz, sandboxed live HTML, and inline SVG.
@@ -358,6 +361,27 @@ on multiple machines without one machine's pip cache stomping the other.
 A legacy `data/` folder at the project root is auto-migrated to
 `notebook/` on first run.
 
+## Workspaces
+
+The bar above the file tree names the current workspace. It lists the default
+workspace (`notebook/`, or whatever `NOTEBOOK_DATA_DIR` points at) and any
+folders added under **Settings → Workspaces**. Switching reloads the page, so
+a tab always operates on the root it was rendered from. Adding, renaming, or
+removing a workspace changes only the list: the folder and its notes stay on
+disk.
+
+The registry lives in `config/workspaces.json`. Per-workspace UI state (open
+tabs, active file, recent files, pins, bookmarks, pinned folders) lives under
+`workspaceState.<id>` in `config/config.json`; table-view and phone resume
+state are namespaced in `localStorage`. A pre-workspace `config.json` is
+migrated once at server startup, so clients never carry the migration.
+
+**Security:** adding a workspace lets the server process read and write that
+folder as the user running the server. An admin credential is therefore
+equivalent to filesystem access as that user. The install folder and the
+config folder cannot be registered, and overlapping roots are refused — but
+enable authentication whenever the server is bound beyond loopback.
+
 ## Requirements
 
 - Python 3.8+ (for `start.sh`'s venv bootstrap)
@@ -386,7 +410,8 @@ static/
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
 config/               config.json (UI state), auth.json (passwords), ai.json (AI),
-                      acp.json (ACP agent, hand-edited) — created on first run
+                      acp.json (ACP agent, hand-edited), workspaces.json
+                      (workspace registry) — created on first run
 tests/
   test_app.py         stdlib unittest, hits the real Flask app via test client
   dom/test_dom.js     jsdom tests, loads real vendor bundles + app modules
@@ -424,8 +449,14 @@ plain-Markdown agent guide) with the current auth state filled in.
 | DELETE | `/api/auth/tokens/<name>` | Revoke a named token (admin)                   |
 | GET    | `/api/config`         | Read the persisted UI config                       |
 | POST   | `/api/config`         | Replace the persisted UI config (admin)            |
-| GET    | `/api/info`           | Absolute `data_dir` / `config_dir`                 |
-| GET    | `/api/tree`           | File tree of the notebook directory                |
+| GET    | `/api/info`           | Active `data_dir`, `config_dir`, and workspace id  |
+| GET    | `/api/workspaces`     | List named workspace roots                         |
+| POST   | `/api/workspaces`     | Register a folder as a workspace (admin)           |
+| PATCH  | `/api/workspaces/<id>` | Rename a workspace (admin)                        |
+| DELETE | `/api/workspaces/<id>` | Remove a workspace from the list (admin)          |
+| POST   | `/api/workspaces/active` | Switch this session's workspace                 |
+| POST   | `/api/workspace-state` | Merge per-workspace UI state (workspace admin)    |
+| GET    | `/api/tree`           | File tree of the active workspace root             |
 | GET    | `/api/ls`             | Non-recursive listing of ONE folder (`?path=…`)    |
 | GET    | `/api/file`           | Read a file (`?path=…`)                            |
 | POST   | `/api/file`           | Save a file (`{path, content}`)                    |
@@ -446,8 +477,10 @@ plain-Markdown agent guide) with the current auth state filled in.
 | GET    | `/agent.md`           | Agent API guide, auth state substituted            |
 
 All file routes resolve the user-supplied relative path through
-`safe_path()`, which rejects absolute input and `..` traversal. Writes use
-atomic temp-file + `os.replace`. Search is a line-by-line scan (literal by
+`safe_path()` against the active workspace root, which rejects absolute input
+and `..` traversal. Clients select the root with the `X-Notebook-Workspace`
+header. Writes use atomic temp-file + `os.replace`. Search is a line-by-line
+scan (literal by
 default, `regex=1` for Python regex per line) with default caps
 `MAX_TOTAL_MATCHES=200` and `MAX_MATCHES_PER_FILE=20`, raisable per
 request via `limit=`/`perFile=` up to hard ceilings (2000/200); matches

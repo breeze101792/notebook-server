@@ -34,6 +34,23 @@
   // without a fetch) can read the role. null until the fetch resolves.
   let authStatus = null;
 
+  // Device-local keys this app owns: the table overlays, the phone resume
+  // point, and the unsent capture draft. Each lives under the legacy name
+  // (`nb:<base>`, for the default workspace and a workspace-less page) or
+  // one namespaced variant per other workspace (`nb:<id>:<base>`). Sign-out
+  // clears every variant, not just the workspace the tab happens to be on.
+  const DEVICE_LOCAL_KEY_RE =
+    /^nb:(?:.+:)?(?:tableView|mobileResume|captureDraft)$/;
+
+  function clearDeviceLocalState() {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && DEVICE_LOCAL_KEY_RE.test(key)) localStorage.removeItem(key);
+      }
+    } catch (e) { /* storage unavailable */ }
+  }
+
   function lock()  {
     document.body.classList.add("auth-locked");
     // Wipe sensitive content from the DOM. The 401 that triggered
@@ -122,13 +139,10 @@
 
   async function tryLogout() {
     try { await NB.api.logout(); } catch (e) { /* ignore */ }
-    // Explicit sign-out clears device-local phone state. A 401/lock must
-    // not do this (the draft is recoverable after signing in).
+    // Explicit sign-out clears device-local phone state for every workspace.
+    // A 401/lock must not do this (the draft is recoverable after signing in).
     if (NB.mobile && NB.mobile.onSignOut) NB.mobile.onSignOut();
-    try {
-      localStorage.removeItem("nb:captureDraft");
-      localStorage.removeItem("nb:mobileResume");
-    } catch (e) { /* storage unavailable */ }
+    clearDeviceLocalState();
     // The session is gone; drop the cached role so a synchronous caller
     // (the designer menu gate) stops treating us as an admin.
     if (authStatus) authStatus = Object.assign({}, authStatus, { role: null });

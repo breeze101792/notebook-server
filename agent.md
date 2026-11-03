@@ -49,8 +49,101 @@ Tokens never expire but can be revoked individually. Rules that matter to you:
 
 | Role | Can do |
 | --- | --- |
-| `admin` | Everything: reads, writes, config, token management |
-| `viewer` | Reads only (`GET` endpoints); writes return **403** |
+| `admin` | Everything: reads, writes, config, token management, workspace management |
+| `viewer` | Reads only (`GET` endpoints); may list and switch workspaces; writes and workspace changes return **403** |
+
+## Workspaces
+
+A workspace is a named notebook root on the server. Several can be registered;
+the default workspace always exists and cannot be removed. A client chooses one
+with a header on every request:
+
+```
+X-Notebook-Workspace: <workspace id>
+```
+
+Resolution order: the header, then the session's stored workspace, then the
+default. Send the header on every call. Without it the server falls back to
+the session workspace, then the default root.
+
+A bearer token does not carry a workspace. A machine client that sends no
+header and no session cookie reaches the **default root only**.
+
+| Method | Path | Body | Returns |
+| --- | --- | --- | --- |
+| GET | `/api/workspaces` | — | `{"workspaces": [{"id", "name", "path", "available", "is_default"}], "active": "<id>"}` |
+| POST | `/api/workspaces` | `{"name": "Work", "path": "/home/you/work"}` | **201** `{"workspace": {"id", "name", "path", "available", "is_default"}}` |
+| PATCH | `/api/workspaces/<id>` | `{"name": "Renamed"}` | `{"workspace": {...}}` |
+| DELETE | `/api/workspaces/<id>` | — | `{"ok": true}` |
+| POST | `/api/workspaces/active` | `{"id": "<workspace id>"}` | `{"ok": true, "active": "<id>"}` |
+| POST | `/api/workspace-state` | `{"id": "<workspace id>", "state": {...}}` | `{"ok": true, "id": "<id>"}` |
+
+`path` is the stored absolute path. The default entry's path is always the
+server's current data folder, which may be unresolved. `available` is false
+when the folder is missing on the server; the entry still lists.
+
+### Workspace permissions
+
+- **List and switch:** any authenticated role, including `viewer`. With auth
+  off both are open.
+- **Add, rename, remove:** admin. With auth off the request must come from a
+  loopback peer and must not carry `X-Forwarded-For` or `X-Real-IP`; otherwise
+  it fails with **403** `loopback_required`.
+- **Write UI state:** admin. A viewer gets **403** `not_admin`. With auth off
+  the route follows the same loopback rule as the registry mutations.
+- **Logout** clears the session's workspace, so the next request falls back to
+  the default.
+
+### Unknown workspace ids
+
+An unknown id returns **404** `unknown_workspace` on the twelve data routes:
+`/api/tree`, `/api/ls`, `GET /api/file`, `POST /api/file`, `/api/file/append`,
+`/api/edit`, `/api/create`, `/api/move`, `/api/copy`, `/api/delete`,
+`/api/search`, `/api/graph`.
+
+An unauthenticated caller gets the route's **401** instead, so the 404 never
+reveals whether an id exists. The 404 never fires on login, auth, the
+workspace list, config, info, AI, or the SPA shell.
+
+### Workspace error codes
+
+Workspace routes put a stable `code` beside the prose:
+`{"error": "<message>", "code": "<code>"}`.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `bad_body` | 400 | Body is not a JSON object, a required field is missing, `id` is not a non-empty string, or `state` is not an object |
+| `name_empty` | 400 | Name is missing or blank |
+| `name_too_long` | 400 | Name is over 60 characters |
+| `name_duplicate` | 400 | Another workspace has that name, compared case-insensitively |
+| `path_not_absolute` | 400 | Folder is not an absolute path |
+| `path_missing` | 400 | Folder does not exist |
+| `path_not_directory` | 400 | Path is a file |
+| `path_unreadable` | 400 | Server cannot read/enter the folder |
+| `path_inside_install` | 400 | Folder is inside the install tree, or contains the install or config folder |
+| `path_overlap` | 400 | Folder overlaps another workspace in either direction |
+| `too_many` | 400 | Registry already holds 32 workspaces |
+| `default_not_removable` | 400 | DELETE targeted the default workspace |
+| `state_too_large` | 400 | Serialised `state` exceeds 256 KiB |
+| `unknown_workspace` | 404 | No workspace has that id |
+| `timeout` | 504 | `/api/graph` scan exceeded the deadline |
+| `not_admin` | 403 | Caller is a viewer |
+| `loopback_required` | 403 | Auth is off and the add/rename/remove request is not a local, non-proxied one |
+| `write_failed` | 500 | `config.json` could not be written |
+
+`POST /api/ai/chat` accepts an optional `workspace` body field for ACP
+profiles. It selects the folder the agent runs in when the ACP profile does not
+set `cwd`, and the open-note hint; an unknown id is **404**
+`unknown_workspace`. OpenAI-compatible profiles ignore the field.
+
+### Trust boundary
+
+Adding a workspace grants the server process read and write access to that
+directory **as the user running the server**. The install folder and the config
+folder are excluded from registration, and roots that overlap one another are
+refused, but the grant itself is broad. An admin credential is therefore
+equivalent to filesystem access as that user: enable authentication whenever
+the server is bound beyond loopback.
 
 ## Endpoints
 
@@ -63,8 +156,8 @@ Tokens never expire but can be revoked individually. Rules that matter to you:
 | `GET /api/file?path=notes/a.md` | `{path, content, size, mtime}`. Add `&ifModifiedSince=<mtime>` to get an empty **304** when unchanged. |
 | `GET /api/search?q=text` | See [Search](#search) below. |
 | `GET /api/graph` | `{nodes: [{id, name, links}], edges: [{source, target}]}` — wikilink/markdown-link graph between notes. |
-| `GET /api/config` | The UI preferences object (opaque). |
-| `GET /api/info` | `{data_dir, config_dir}` — server folder paths. |
+| `GET /api/config` | The UI preferences object (opaque). Per-workspace state is under `workspaceState.<id>`. |
+| `GET /api/info` | `{data_dir, config_dir, workspace}` — the active workspace root, the config folder, and the active workspace id. |
 
 ### Search
 
@@ -190,8 +283,9 @@ height.
 
 ## Path rules
 
-- All paths are relative to the notebook root and use forward slashes:
-  `notes/project/ideas.md`.
+- All paths are relative to the **active workspace root** and use forward
+  slashes: `notes/project/ideas.md`. Send `X-Notebook-Workspace` to choose the
+  root; without it the default root is used.
 - Absolute paths (`/etc/passwd`), empty paths, and anything that escapes the
   root (`../x`) are rejected with **400**.
 - `/api/tree`, `/api/search` and `/api/graph` only see `.md` files;
@@ -199,14 +293,15 @@ height.
 
 ## Errors
 
-Non-2xx responses are JSON: `{"error": "<human-readable message>"}`.
+Non-2xx responses are JSON: `{"error": "<human-readable message>"}`. Workspace
+routes add a stable `code`; see [Workspace error codes](#workspace-error-codes).
 
 | Status | Meaning |
 | --- | --- |
 | 400 | Bad request — invalid path, missing field, wrong type, bad regex |
 | 401 | No valid credential (or a bad Bearer token was presented) |
-| 403 | Authenticated but insufficient role (viewer attempting a write) |
-| 404 | File/folder/token not found |
+| 403 | Authenticated but insufficient role, or a workspace change from a non-loopback client while auth is off |
+| 404 | File/folder/token/workspace not found |
 | 409 | Conflict — target already exists (unless upsert/onConflict opts out) |
 | 429 | Rate limited — too many failed logins/token attempts from your IP |
 
@@ -242,6 +337,11 @@ curl -s 'http://HOST/api/search?q=deploy%20(failed|ok)&regex=1&glob=ops/*.md&ord
 
 # Search inside one specific file:
 curl -s 'http://HOST/api/search?q=todo&file=notes/big-plan.md'
+
+# List the registered workspaces, then read from one of them:
+curl -s http://HOST/api/workspaces
+curl -s -H 'X-Notebook-Workspace: work-1a2b' \
+     'http://HOST/api/file?path=notes/topic.md'
 ```
 
 ## Suggested workflow

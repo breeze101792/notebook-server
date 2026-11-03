@@ -3,16 +3,20 @@
 ## Overview
 
 This server keeps notes and settings in two separate folders. `notebook/`
-holds the Markdown notes. `config/` holds four settings files:
+holds the Markdown notes. `config/` holds five settings files:
 `config.json` (UI state), `auth.json` (passwords, session secret, API
-tokens), `ai.json` (assistant provider profiles), and `acp.json` (one
-hand-edited ACP agent). The split is deliberate: a client can POST the
-UI-prefs blob, and that blob must never be able to carry credentials or
-choose a command to run (`acp.json`).
+tokens), `ai.json` (assistant provider profiles), `acp.json` (one
+hand-edited ACP agent), and `workspaces.json` (the named workspace roots).
+The split is deliberate: a client can POST the UI-prefs blob, and that blob
+must never be able to carry credentials, choose a command to run
+(`acp.json`), or point the server at an arbitrary folder
+(`workspaces.json`).
 
-The server stores `config.json` verbatim with no validation. The
-authoritative schema lives in the frontend. `boot_state()` in `app.py:737`
-sanitizes a small subset for the first page paint.
+The server stores `config.json` with no schema validation, except that a POST
+folds legacy top-level content keys under `workspaceState.default` (see
+[per-workspace state](#per-workspace-state)). The authoritative schema lives
+in the frontend. `boot_state()` in `app.py` sanitizes a small subset for the
+first page paint.
 
 Related docs:
 
@@ -64,8 +68,8 @@ provider).
 
 | Variable | Effect | Resolved at |
 | --- | --- | --- |
-| `NOTEBOOK_DATA_DIR` | Overrides the notes folder (default `<root>/notebook`) | Import time, `app.py:31` |
-| `NOTEBOOK_CONFIG_DIR` | Overrides the config folder (default `<root>/config`) | Import time, `app.py:33` |
+| `NOTEBOOK_DATA_DIR` | Overrides the notes folder (default `<root>/notebook`), and with it the default workspace root | Import time, `app.py:42` |
+| `NOTEBOOK_CONFIG_DIR` | Overrides the config folder (default `<root>/config`) | Import time, `app.py:44` |
 
 These are read once when `app.py` is imported. The test suite points both
 at a temp directory before importing the module (`tests/test_app.py:27-29`).
@@ -87,10 +91,17 @@ things in order:
 
 The template is copied, not symlinked, so editing notes never touches it.
 
+After `seed()`, import-time startup maintenance runs before the server accepts
+requests: `_migrate_config_at_startup()` folds legacy config keys under
+`workspaceState.default`, and `_persist_workspaces_if_changed()` rebuilds
+`config/workspaces.json` when it is missing or stale. Both are best effort; a
+failure leaves the previous file for the next launch.
+
 ## `config/config.json` — UI state
 
-The server stores this file verbatim. `POST /api/config` only checks that
-the body is a JSON object (`app.py:851-867`). Missing keys fall back to
+The server stores this file with no schema validation. `POST /api/config`
+only checks that the body is a JSON object, then folds legacy top-level content
+keys under `workspaceState.default`. Missing keys fall back to
 `DEFAULTS` in `static/js/app.js:7-87`. The server embeds a validated subset
 into the page shell for first paint.
 
@@ -122,6 +133,10 @@ into the page shell for first paint.
 
 ### Files and tabs
 
+These keys follow the workspace root, not the whole app. On a workspace-aware
+client they live under `workspaceState.<id>`; the top-level copies are the
+pre-workspace format and the fallback for a page without a workspace.
+
 | Key | Effect |
 | --- | --- |
 | `lastFile` | The file opened most recently (`app.js:26`) |
@@ -130,6 +145,34 @@ into the page shell for first paint.
 | `activeFile` | The selected tab (`app.js:29`) |
 | `pinnedFiles` | Array of pinned tabs (`app.js:30`) |
 | `bookmarks` | Ordered array of bookmarked paths; missing files are pruned on tree refresh (`app.js:52`) |
+| `pinnedFolders` | Pinned folder paths shown in the Pinned view |
+
+### Per-workspace state
+
+`config.json` may carry a `workspaceState` object keyed by workspace id:
+
+```json
+{
+  "theme": "dark",
+  "workspaceState": {
+    "default": {"lastFile": "README.md", "openFiles": ["README.md"], "activeFile": "README.md"},
+    "work-1a2b": {"lastFile": "plan.md", "openFiles": ["plan.md"], "activeFile": "plan.md"}
+  }
+}
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is global and stays top-level. |
+| Read overlay | The client loads `config.json`, then overlays `workspaceState.<active id>` on top of the top-level values. A missing field falls back to the top-level copy, so the first load after a migration shows the same session. |
+| Write path | `POST /api/workspace-state` with `{id, state}` merges that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` must be a JSON object and is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). |
+| Whole-blob POST | `POST /api/config` replaces the file, so the client merges a fresh read first and carries the whole `workspaceState` map through. The server also folds any stray top-level scoped keys under `workspaceState.default` on every POST. |
+| Startup migration | `_migrate_config_at_startup()` moves legacy top-level scoped keys under `workspaceState.default` once per process start, under `_CONFIG_LOCK`. A blob that already has `workspaceState` is left alone. The migration is best effort and deliberately never runs from `GET /api/config`, so a read never writes a server-owned file. |
+| Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy and does not queue a write. |
+
+`GET /api/info` reports the active root and id alongside the config folder:
+`{data_dir, config_dir, workspace}`. `data_dir` is the active workspace root;
+for the default it is the unresolved `DATA_DIR` string.
 
 ### Editing
 
@@ -247,6 +290,72 @@ Passwords and bearer tokens are transmitted in cleartext, so the login gate
 protects against unauthorized use of the app, not against an observer on the
 network. Bind to loopback (`./start.sh --host 127.0.0.1`) when the machine is
 not on a trusted network.
+
+## `config/workspaces.json` — workspace registry
+
+The registry is server-owned and read on every request. It is written only by
+the workspace routes and once at startup, always through `atomic_write()`. A
+missing, corrupt, or non-object file degrades to the default workspace alone;
+a changed file logs one warning instead of a line per request.
+
+```json
+{
+  "version": 1,
+  "items": [
+    {"id": "default", "name": "Notebook", "path": "/home/you/notebook-server/notebook"},
+    {"id": "work-1a2b", "name": "Work", "path": "/home/you/work-notes"}
+  ]
+}
+```
+
+| Field | Rules |
+| --- | --- |
+| `version` | `1` (`WORKSPACES_VERSION`). |
+| `items` | At most 32 entries (`WORKSPACE_MAX_COUNT`), including the default. |
+| `id` | Immutable, URL-safe slug plus 4 random hex characters (`work-1a2b`). `default` is reserved. Renaming keeps the id. |
+| `name` | 1-60 characters, unique case-insensitively. The default entry can be renamed. |
+| `path` | Absolute folder path. A newly registered path is stored as its resolved realpath, so a later symlink change cannot move the root out from under the path guards. |
+
+Rules that follow from the code:
+
+- The `default` entry is always present and always first. Its stored path is
+  ignored and replaced with the current `DATA_DIR` (the `notebook/` folder, or
+  `NOTEBOOK_DATA_DIR`), so a registry carried between installs never serves the
+  old root. The default cannot be removed.
+- A stored entry with a missing id, name, or path, or a relative path, is
+  dropped when the file is read.
+- The file is rewritten at startup when the stored list is not canonical
+  (`_persist_workspaces_if_changed()`). `save_workspaces()` logs a write error
+  and swallows it, so a route can report success even when the registry could
+  not be persisted.
+- If the cap is exceeded by a hand-edited file, the default plus the first 31
+  valid entries are kept.
+
+### Permissions and the loopback rule
+
+| Operation | Auth on | Auth off |
+| --- | --- | --- |
+| List workspaces, switch the session workspace | any role, including viewer | open |
+| Add, rename, remove | admin | loopback peer only, and no `X-Forwarded-For` / `X-Real-IP` |
+| Write per-workspace UI state | admin | loopback peer only, and no `X-Forwarded-For` / `X-Real-IP` |
+
+A reverse proxy on the same host connects from 127.0.0.1, so the peer address
+alone cannot separate a LAN client from a local one. Any registry change that
+carries a forwarding header is therefore treated as remote and refused with
+`403 loopback_required`. With auth on, a viewer is refused with
+`403 not_admin`. Logout clears `session["workspace"]` along with the role.
+
+### Trust boundary
+
+Registering a folder grants the server process read and write access to it
+**as the user running the server**. `_workspace_path_problem()` excludes both
+the install folder (`BASE_DIR`) and the config folder (`CONFIG_DIR`), and
+`_paths_overlap()` refuses a candidate that is inside, contains, or equals
+another workspace root; comparisons realpath and normcase both sides so a
+symlink or a case-insensitive filesystem cannot dodge the check. None of that
+makes the grant narrow: an admin credential is equivalent to filesystem access
+as the server user. Enable authentication whenever the server is bound beyond
+loopback, and bind loopback when you do not need remote access.
 
 ## `config/ai.json` — assistant providers
 
@@ -374,10 +483,14 @@ IndexedDB.
 | Key | Owner | Contents |
 | --- | --- | --- |
 | `nb:windowGeometry` | `static/js/windows.js` | Per-modal position and size for the floating windows |
-| `nb:tableView` | `static/js/table-view.js` | Versioned per-file, per-table view state (hidden rows/columns, sort), schema v2. Applies only when the header text, a hash of every cell, and the table's same-header ordinal all match; otherwise it is ignored. |
+| `nb:tableView` · `nb:<id>:tableView` | `static/js/table-view.js` | Versioned per-file, per-table view state (hidden rows/columns, sort), schema v2. Applies only when the header text, a hash of every cell, and the table's same-header ordinal all match; otherwise it is ignored. The default workspace keeps `nb:tableView`; other workspaces use `nb:<id>:tableView`. |
 | `nb:aiChat` | `static/js/ai.js` | Versioned AI transcript (conversation + tool flags + newest prompt). **Clear** removes it. |
-| `nb:mobileResume` | `static/js/mobile.js` | Phone Home resume state: last path and scroll. |
-| `nb:captureDraft` | `static/js/mobile.js` | Quick-capture draft, kept across a 401. |
+| `nb:mobileResume` · `nb:<id>:mobileResume` | `static/js/mobile.js` | Phone Home resume state: last path and scroll. The default workspace keeps the legacy key. |
+| `nb:captureDraft` · `nb:<id>:captureDraft` | `static/js/mobile.js` | Quick-capture draft, kept across a 401. The default workspace keeps the legacy key. |
+
+The default workspace deliberately keeps the pre-workspace key names so an
+upgrade keeps its overlays, resume point, and draft, and a rollback that only
+knows the legacy names stays clean. Every other workspace is namespaced.
 
 ### PWA cache
 

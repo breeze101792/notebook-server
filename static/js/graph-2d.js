@@ -43,7 +43,12 @@
   const MAX_SPEED = 16;
   const MIN_SCALE = 0.2;
   const MAX_SCALE = 5;
+  // Must stay above the server's 5 s graph-scan deadline: the server's 504
+  // (and its message) has to arrive before this race rejects on the client.
   const FETCH_TIMEOUT_MS = 10000;
+  const NOTIFY_MS = 4000;
+  const GRAPH_TIMEOUT_MESSAGE =
+    "The notebook took too long to scan. Graph not refreshed.";
 
   // --- view state -----------------------------------------------------
   let nodes = [];
@@ -351,6 +356,15 @@
     if (srLiveEl) srLiveEl.textContent = text;
   }
 
+  /* A 504 means the server's walk hit its scan deadline and sent no data.
+   * The graph on screen stays; this only says why it is stale. */
+  function notifyGraphTimeout() {
+    if (NB.app && NB.app.notify) {
+      NB.app.notify(GRAPH_TIMEOUT_MESSAGE, NOTIFY_MS, "warn");
+    }
+    announce(GRAPH_TIMEOUT_MESSAGE);
+  }
+
   function updateSrList() {
     if (!srListEl) return;
     while (srListEl.firstChild) srListEl.removeChild(srListEl.firstChild);
@@ -381,6 +395,7 @@
       });
       data = await Promise.race([fetchGraph(), timeout]);
     } catch (e) {
+      if (e && e.code === "timeout") notifyGraphTimeout();
       console.warn("graph fetch failed", e);
       return;
     } finally {

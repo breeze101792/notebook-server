@@ -13,8 +13,8 @@ Two folders are deliberately separate:
   `/mnt/projects/notebook` in this checkout.
 - `config/` holds settings: `config.json` (UI state), `auth.json`
   (password hashes, token hashes, session-signing secret), `ai.json`
-  (OpenAI-compatible provider profiles), and `acp.json` (one hand-edited
-  ACP agent command).
+  (OpenAI-compatible provider profiles), `acp.json` (one hand-edited
+  ACP agent command), and `workspaces.json` (the named notebook roots).
 
 `notebook.template/` ships a starter notebook. On a fresh install the
 server copies it into `notebook/`.
@@ -49,10 +49,13 @@ time (`app.py:2517`, defined at `app.py:94`):
 3. If `notebook/` still does not exist, copy `notebook.template/` into it.
 
 The migration only runs when `DATA_DIR` is the default path; a custom
-`NOTEBOOK_DATA_DIR` is left untouched (`app.py:122-123`). The auth secret
-is loaded or generated right after `seed()` (`ensure_auth_secret()` at
-`app.py:2521`) and assigned as Flask's session-signing key
-(`app.py:2522`).
+`NOTEBOOK_DATA_DIR` is left untouched. Import-time startup maintenance then
+runs before the server starts: `_migrate_config_at_startup()` moves legacy
+config keys under `workspaceState.default`, and
+`_persist_workspaces_if_changed()` rebuilds `config/workspaces.json` when it
+is missing or not canonical. The auth secret is loaded or generated right
+after `seed()` (`ensure_auth_secret()`) and assigned as Flask's
+session-signing key.
 
 ### Route organisation
 
@@ -60,59 +63,119 @@ Routes are grouped by comment banners:
 
 | Section | Banner | Endpoints |
 | --- | --- | --- |
-| Page + config | `app.py:691` | `GET /`, `GET /sw.js` (service worker at root scope), the two `apple-touch-icon` aliases, `/api/config`, `/api/info` |
-| Auth | `app.py:871` | `/api/auth`, `/api/login`, `/api/logout`, `/api/auth/passwords` |
-| API tokens | `app.py:1071` | `/api/auth/tokens`, `/api/auth/tokens/<name>` |
-| AI assistant | `app.py:1152` | `/api/ai/config`, `/probe`, `/chat`, `/fetch`, `/search` |
-| Agent guide | `app.py:1607` | `GET /agent.md` |
-| File read/write | `app.py:1645` | `/api/tree`, `/api/ls`, `/api/file`, `/api/file/append`, `/api/edit` |
-| Mutations | `app.py:1852` | `/api/create`, `/api/move`, `/api/copy`, `/api/delete` |
-| Search | `app.py:2080` | `/api/search` |
-| Graph | `app.py:2243` | `/api/graph` |
-| SPA catch-all | `app.py:2393` | `GET /<path:p>` |
+| Page + config | `app.py:1179` | `GET /`, `GET /sw.js` (service worker at root scope), the two `apple-touch-icon` aliases, `/api/config`, `/api/info` |
+| Workspaces | `app.py:1509` | `/api/workspaces`, `/api/workspaces/active`, `/api/workspaces/<id>`, `/api/workspace-state` |
+| Auth | `app.py:1672` | `/api/auth`, `/api/login`, `/api/logout`, `/api/auth/passwords` |
+| API tokens | `app.py:1873` | `/api/auth/tokens`, `/api/auth/tokens/<name>` |
+| AI assistant | `app.py:1954` | `/api/ai/config`, `/probe`, `/chat`, `/fetch`, `/search` |
+| Agent guide | `app.py:2922` | `GET /agent.md` |
+| File read/write | `app.py:2960` | `/api/tree`, `/api/ls`, `/api/file`, `/api/file/append`, `/api/edit` |
+| Mutations | `app.py:3187` | `/api/create`, `/api/move`, `/api/copy`, `/api/delete` |
+| Search | `app.py:3427` | `/api/search` |
+| Graph | `app.py:3729` | `/api/graph` |
+| SPA catch-all | `app.py:3888` | `GET /<path:p>` |
 
-The catch-all (banner `app.py:2392-2394`, route decorators `app.py:2409-2410`,
-`spa` def at `app.py:2411`) serves `index.html` for any non-`/api/*`,
+The catch-all (banner `app.py:3888-3890`, route decorators `app.py:3905-3906`,
+`spa` def at `app.py:3907`) serves `index.html` for any non-`/api/*`,
 non-`/static/*` path, so a deep link such as `/README.md#core-rules`
 works.
 
 ### Request lifecycle
 
 Flask matches routes in registration order, so the catch-all registered
-last loses to every explicit route. The route's auth decorator resolves
-the caller role. File routes pass the user path through `safe_path()`,
-writes go through `atomic_write()`, and an `after_request` handler adds
-`Cache-Control: no-store` to gated read paths (`app.py:65-88`). Every
-file route must use `safe_path`; new operations must never accept a raw
-path.
+last loses to every explicit route. Before any view runs, the `before_request`
+hook `_bind_workspace()` resolves the request's workspace and stores its root
+and id on `g`; the route's auth decorator then resolves the caller role. File
+routes pass the user path through `safe_path(rel, current_root())`, writes go
+through `atomic_write()`, and an `after_request` handler adds
+`Cache-Control: no-store` to gated read paths and `Vary:
+X-Notebook-Workspace` to every `/api/*` response. Every file route must use
+`safe_path`; new operations must never accept a raw path.
 
 ## 3. Storage and path safety
 
-`safe_path(rel)` (`app.py:150`) is the security chokepoint. It resolves a
-user-supplied relative path against `DATA_DIR` and returns the lexically
-normalised absolute path when the result stays inside `DATA_DIR`, else
-`None`. It rejects absolute input and blocks `..` traversal. Interior
-symlinks are deliberately allowed: the user created them via the
-filesystem. The boundary check uses the unresolved `DATA_DIR`, so a `..`
-after a symlink resolves lexically and cannot escape. The result is not
-`realpath`-resolved, so operations on a symlink act on the link, matching
-`rm`/`mv`/`cp` semantics (`app.py:150-189`).
+`safe_path(rel, root=None)` is the security chokepoint. It resolves a
+user-supplied relative path against `root` and returns the lexically
+normalised absolute path when the result stays inside it, else `None`. `root`
+defaults to `DATA_DIR` for direct calls outside a request; file routes pass
+`current_root()`, which reads the workspace bound on `g`. It rejects absolute
+input and blocks `..` traversal. Interior symlinks are deliberately allowed:
+the user created them via the filesystem. The boundary check uses the
+unresolved root string, so a `..` after a symlink resolves lexically and cannot
+escape. The result is not `realpath`-resolved, so operations on a symlink act
+on the link, matching `rm`/`mv`/`cp` semantics.
 
-`atomic_write(path, content)` (`app.py:221`) writes a uniquely named temp
+`atomic_write(path, content)` writes a uniquely named temp
 file then calls `os.replace`. The temp name includes pid, thread id, and a
-counter (`app.py:238-243`), so concurrent writers to the same target never
-share a temp file. `save_auth()` uses the same pattern (`app.py:449`).
+counter, so concurrent writers to the same target never
+share a temp file. `save_auth()` uses the same pattern.
 
-Four files sit under `config/`: `config.json` (opaque UI-state JSON,
-stored verbatim, POSTable by any authenticated client), `auth.json`
-(`secret`, password hashes, `tokens` — keys documented at
-`app.py:35-43`), `ai.json` (provider profiles, global prompt,
-SearXNG URL), and `acp.json` (a hand-edited ACP agent `command` + `args`).
-Three of the four are split out of the POSTable `config.json` blob for the
-same reason: a client that can POST settings must not reach credential
-storage (`auth.json`, `ai.json`), and must never be able to choose a command
-to execute (`acp.json`). `acp.json` is read-only from the server's side:
-no route writes it.
+Five files sit under `config/`: `config.json` (opaque UI-state JSON,
+POSTable by any authenticated client), `auth.json`
+(`secret`, password hashes, `tokens`), `ai.json` (provider profiles, global
+prompt, SearXNG URL), `acp.json` (a hand-edited ACP agent `command` +
+`args`), and `workspaces.json` (the server-owned workspace registry).
+`auth.json`, `ai.json`, and `acp.json` are split out of the POSTable
+`config.json` blob because a client that can POST settings must not reach
+credential storage, and must never be able to choose a command to execute.
+`workspaces.json` is split out for the same reason in the other direction: a
+client that can POST settings must not be able to point the server at an
+arbitrary folder. `acp.json` and `workspaces.json` are never written through
+`POST /api/config`; only the workspace routes and startup touch the registry.
+
+### Workspace roots
+
+One process can serve several roots. `load_workspaces()` reads
+`config/workspaces.json` on every request and always synthesises the default
+entry first (`_default_workspace()`). Reading is pure in memory: a missing,
+corrupt, or non-object file degrades to the default, invalid entries are
+dropped, and the default's stored path is discarded. Persistence belongs to the
+mutating routes and to `_persist_workspaces_if_changed()` at startup, so a
+`/static/*` request never writes a server-owned file.
+
+**Resolution.** `_bind_workspace()` is a `before_request` hook, so it runs
+ahead of every view's auth decorator. It reads `X-Notebook-Workspace`, else
+`session["workspace"]`, else the default, and stores the chosen entry on
+`g.data_dir` and `g.workspace_id`. `current_root()` reads `g.data_dir` inside
+a request and falls back to `DATA_DIR` outside one.
+
+The hook deliberately never aborts. An unknown id sets
+`g.workspace_unknown` and binds the default root; the gated data views then
+call `_unknown_workspace_response()` after their auth gate passes. That
+ordering is the point: aborting in the hook would leak whether an id exists to
+an anonymous caller and would lock a tab out of login when its workspace was
+removed. The helper stays silent while auth is on and the caller is anonymous
+(no session role and no bearer header), so the decorator's 401 stands; with
+auth off, with a session role, or with a bearer token presented, it returns
+`404 unknown_workspace`. On the SPA shell an unknown id binds the default and
+clears the stale `session["workspace"]`, so a bad cookie cannot trap the user.
+The 404 applies to the twelve data routes; login, auth, the workspace list,
+config, info, AI, and the shell fall back silently.
+
+**Why the default path stays unresolved.** `DATA_DIR` is stored and compared
+as the unresolved string the process imported. If it were `realpath`-resolved
+in the registry, `safe_path()`'s prefix check and `rel_from()`'s string
+`relpath()` would compare a resolved root against lexically normalised paths,
+and `rel_from()` would emit nonsense such as `../real_notebook/x` when the root
+itself is a symlink. The same rule is why a carried `workspaces.json` has its
+default path overwritten with the current install's `DATA_DIR`: the identity
+must be this process's root, not the previous install's.
+
+**Config serialisation.** `_CONFIG_LOCK` guards every `config.json`
+read-modify-write: `set_config()`, `set_workspace_state()`, and the startup
+migration. Without it two writers each read the old blob and the later write
+silently loses the other's update. Reads stay lock-free because
+`atomic_write()` publishes a complete file.
+
+**Startup migration.** `_migrate_config_at_startup()` runs once at import time,
+after `seed()` and before the server starts, and moves the seven
+workspace-scoped top-level keys (`lastFile`, `openFiles`, `activeFile`,
+`pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`) under
+`workspaceState.default`. It is idempotent, leaves a blob that already has
+`workspaceState` alone, and is best effort under `_CONFIG_LOCK`. It
+deliberately does not run from `GET /api/config`, because a read route must not
+write a server-owned file. `POST /api/config` still folds stray legacy keys
+under `default` on every write, so a whole-blob POST cannot strand them.
 
 ## 4. Auth architecture
 
@@ -125,12 +188,22 @@ When the admin password is set, **all reads and writes are gated**,
 whether or not a viewer password exists (`app.py:657-687`). The viewer
 password is a secondary login option, not the read gate.
 
-**The three decorators.** `login_required` (`app.py:622`) is open when
+**The decorators.** `login_required` is open when
 auth is off, else requires a valid session or bearer role.
-`admin_required` (`app.py:638`) additionally requires the role to be
-`admin`. `read_login_required` (`app.py:657`) requires any resolved role.
-The first and third behave the same today; they are named separately to
+`admin_required` additionally requires the role to be
+`admin`. `read_login_required` requires any resolved role.
+`workspace_admin_required` (workspace registry writes) requires admin, and
+while auth is off requires a loopback peer with no `X-Forwarded-For` or
+`X-Real-IP`; a refusal is `403 loopback_required`. `login_required` and
+`read_login_required` behave the same today; they are named separately to
 document intent: mutating routes versus read routes.
+
+**Workspace permissions.** Any authenticated role, including `viewer`, may
+list workspaces and switch the session workspace. A viewer may not add,
+rename, or remove a workspace (`403 not_admin`), and may not write
+per-workspace UI state, which uses plain `admin_required`. Logout clears
+`session["workspace"]` with the role, so the next request falls back to the
+default.
 
 **Role resolution.** `_request_role()` (`app.py:563`) resolves the role. A
 presented Bearer token is authoritative: an invalid token fails with 401
@@ -154,10 +227,10 @@ record. Both login failures and invalid Bearer attempts feed it
 not a client-supplied header, so it cannot be bypassed by spoofing a header;
 it is defeated only by rotating source IPs or by several clients behind one
 NAT sharing a bucket. Gated read paths get
-`Cache-Control: no-store, private` (`app.py:65-88`), so a previously
-authorized browser cannot re-display content after auth tightens. Note
-`/api/graph` is a gated read (viewer-accessible) but is absent from
-`_GATED_READ_PATHS`, so its response is cacheable.
+`Cache-Control: no-store, private`, so a previously
+authorized browser cannot re-display content after auth tightens. Every
+`/api/*` response also varies on `X-Notebook-Workspace`, so a cache cannot
+serve one workspace's tree for another.
 
 ## 5. AI proxy architecture
 
@@ -241,10 +314,11 @@ can read them. bcrypt protects only the stored hash, never the wire.
 whole network.
 
 **Auth is off by default.** `auth_enabled()` is false until an admin password
-is set, and all three decorators return the view unguarded in that state
-(`app.py:645-646`, `app.py:680-681`). Every route — including all
-`/api/ai/*` and every mutating file route — is open to any client that can
-reach the port.
+is set, and the session/role decorators return the view unguarded in that
+state. Every route — including all `/api/ai/*` and every mutating file route —
+is open to any client that can reach the port. The one exception is registry
+mutation: `workspace_admin_required` still requires a loopback peer with no
+forwarding header while auth is off, but per-workspace state remains open.
 
 **Provider keys are stored in cleartext.** `save_ai_config` writes the raw
 `api_key` with default file permissions (`app.py:1199-1207`); unlike the
@@ -264,14 +338,25 @@ scheme and length only; loopback, private ranges, and cloud-metadata
 addresses are reachable, and redirects are followed (`app.py:1510-1512`
 acknowledges this). Scheme filtering is not SSRF protection.
 
-**No request-body size cap.** `app.py` sets no `MAX_CONTENT_LENGTH`; every
-route reads the whole body into memory, so a client can exhaust server memory
-with a large JSON body. **No CSRF token** is issued; the JSON content type
+**Request bodies are capped at 32 MiB.** `MAX_CONTENT_LENGTH` is set to
+`MAX_REQUEST_BYTES`; an oversized body is rejected with a JSON 413 before a
+route reads it, and a body under the cap is read wholly into memory. **No CSRF
+token** is issued; the JSON content type
 and modern `SameSite=Lax` cookie defaults are the practical protection. **No
 TLS and no `Secure` cookie flag** follow from serving plain HTTP.
 
+**A workspace registration is a filesystem grant.** Adding a workspace lets
+this process read and write that directory as the user running the server.
+The install folder and the config folder are excluded, and overlapping roots
+are refused in both directions after a realpath + normcase comparison, but the
+grant itself is broad. An admin credential — or, while auth is off, any client
+that can reach a loopback port — is therefore equivalent to filesystem access
+as the server user. Enable authentication whenever the host binds beyond
+loopback. While auth is off, registry mutations also require a loopback peer
+and no forwarding header, so a proxied LAN client cannot add a root.
+
 **Debug mode on a non-loopback host exposes the Flask debugger** to the
-network; `app.py:2534-2538` prints a warning.
+network; `app.py:4039-4042` prints a warning.
 
 ## 7. Frontend architecture
 
@@ -345,7 +430,8 @@ notebook-server/
   requirements.txt        Python dependencies
   notebook/               notes (symlink to /mnt/projects/notebook)
   notebook.template/      starter notebook copied on first run
-  config/                 config.json, auth.json, ai.json, acp.json
+  config/                 config.json, auth.json, ai.json, acp.json,
+                          workspaces.json
   templates/index.html    the single SPA shell (1502 lines)
   static/
     manifest.json         PWA manifest

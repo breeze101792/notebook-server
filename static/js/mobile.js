@@ -10,8 +10,19 @@
   "use strict";
   window.NB = window.NB || {};
 
-  const RESUME_KEY = "nb:mobileResume";
-  const DRAFT_KEY = "nb:captureDraft";
+  // Device-local state that belongs to one workspace: the resume position
+  // and the quick-capture draft must not leak between roots. The default
+  // workspace (and a page without one) keeps the original keys
+  // (`nb:mobileResume`, `nb:captureDraft`) so an upgrade keeps its resume
+  // point and draft; only other workspaces are namespaced.
+  const DEFAULT_WORKSPACE_ID = "default";
+  function workspaceKey(base) {
+    const id = (NB.workspaceId && NB.workspaceId()) || "";
+    return (id && id !== DEFAULT_WORKSPACE_ID)
+      ? "nb:" + id + ":" + base : "nb:" + base;
+  }
+  const resumeKey = () => workspaceKey("mobileResume");
+  const draftKey  = () => workspaceKey("captureDraft");
   const CAPTURE_PATH = "Inbox.md";
   const CAPTURE_BLOCK = "\n\n";
   const MENU_WIDTH = 196;
@@ -148,7 +159,7 @@
 
   /* --- resume + draft storage ---------------------------------------- */
   function readResume() {
-    const raw = lsGet(RESUME_KEY);
+    const raw = lsGet(resumeKey());
     if (!raw) return null;
     try {
       const v = JSON.parse(raw);
@@ -166,7 +177,7 @@
     if (!path) return;
     const vc = shell.viewerContent;
     const scroll = vc ? Math.round(vc.scrollTop) : 0;
-    lsSet(RESUME_KEY, JSON.stringify({ v: 1, path, scroll }));
+    lsSet(resumeKey(), JSON.stringify({ v: 1, path, scroll }));
   }
 
   function scheduleResume() {
@@ -181,8 +192,8 @@
     const input = shell.captureInput;
     if (!input) return;
     const v = input.value;
-    if (v) lsSet(DRAFT_KEY, v);
-    else lsRemove(DRAFT_KEY);
+    if (v) lsSet(draftKey(), v);
+    else lsRemove(draftKey());
   }
 
   function scheduleDraft() {
@@ -380,7 +391,7 @@
     }
     const input = shell.captureInput;
     if (input) {
-      const draft = lsGet(DRAFT_KEY);
+      const draft = lsGet(draftKey());
       if (draft !== null && draft !== "") input.value = draft;
     }
     sendFailed = false;
@@ -418,7 +429,7 @@
     updateSend();
     try {
       await NB.api.appendFile(CAPTURE_PATH, CAPTURE_BLOCK + text + "\n", true);
-      lsRemove(DRAFT_KEY);
+      lsRemove(draftKey());
       input.value = "";
       sending = false;
       sendFailed = false;
@@ -467,7 +478,7 @@
     if (!treeHas(tree, resume.path)) {
       // M7.4: a deleted Continue target lands on Home with a one-line
       // notice, not the full not-found screen.
-      lsRemove(RESUME_KEY);
+      lsRemove(resumeKey());
       hideState();
       renderHome();
       notify("That note is no longer available.");
@@ -1017,7 +1028,7 @@
     // Preserve a still-open draft across a 401, but never let the close
     // save an empty field. Explicit sign-out has already removed the keys
     // and must not resurrect them here.
-    if (!signingOut && input && input.value) lsSet(DRAFT_KEY, input.value);
+    if (!signingOut && input && input.value) lsSet(draftKey(), input.value);
     if (layer) closeLayerNow(false, { skipDraft: true });
     if (input) { input.value = ""; input.readOnly = false; }
     captureDirty = false;
@@ -1037,8 +1048,8 @@
 
   function onSignOut() {
     signingOut = true;
-    lsRemove(DRAFT_KEY);
-    lsRemove(RESUME_KEY);
+    lsRemove(draftKey());
+    lsRemove(resumeKey());
   }
 
   function onAuthStatus(status) {
@@ -1227,7 +1238,7 @@
       const r = readResume();
       return r ? r.path : null;
     },
-    clearResume: () => lsRemove(RESUME_KEY),
+    clearResume: () => lsRemove(resumeKey()),
     showState,
     hideState,
     showNotFound,

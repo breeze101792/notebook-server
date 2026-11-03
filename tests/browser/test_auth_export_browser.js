@@ -950,7 +950,11 @@ async function main() {
 
     const cacheRoot = await page.evaluate(async () => {
       try {
-        const c = await caches.open("notebook-v18");
+        // Version-agnostic: the cache name is bumped with every shell change,
+        // so the probe looks up whichever "notebook-v*" cache exists.
+        const name = (await caches.keys()).find((k) => k.startsWith("notebook-v"));
+        if (!name) return false;
+        const c = await caches.open(name);
         return !!(await c.match("/"));
       } catch (e) { return false; }
     });

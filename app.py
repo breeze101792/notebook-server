@@ -4,11 +4,19 @@ A small, single-user Flask app that serves a Markdown notebook over the web.
 Backend (this file) is JSON-only; the frontend lives under templates/ + static/
 and renders Markdown client-side. Notebook data lives in data/, user config in
 config/ -- two separate folders by design.
+
+Workspaces
+----------
+A workspace is a directory the server is allowed to read and write as the
+user running this process, so adding one is a deliberate grant of that
+access. Added roots may not overlap the install or config directory. Enable
+authentication whenever the server is bound to a non-loopback address.
 """
 
 import argparse
 import dataclasses
 import fnmatch
+import ipaddress
 import itertools
 import json
 import math
@@ -17,6 +25,7 @@ import re
 import secrets
 import shutil
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -24,7 +33,8 @@ import urllib.parse
 import urllib.request
 
 import bcrypt
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory, session
+from flask import (Flask, Response, g, has_request_context, jsonify,
+                   render_template, request, send_from_directory, session)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
@@ -33,6 +43,12 @@ DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebo
 
 CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+# Serialises every config.json read-modify-write (set_config, the
+# workspace-state merge and the one-shot startup migration). Without it two
+# concurrent writers each read the old blob and the later write silently
+# loses the other's update. Reads stay lock-free: atomic_write publishes a
+# complete file, so a reader never sees a partial document.
+_CONFIG_LOCK = threading.Lock()
 # Auth lives in its own file so the UI-prefs blob (POSTed by any client) can
 # never accidentally include hashed credentials. Schema:
 #   {"secret": "<hex>", "admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>",
@@ -42,6 +58,42 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 # both are unset the whole auth layer is bypassed (and tokens are cleared --
 # they would be meaningless while every route is open).
 AUTH_FILE = os.path.join(CONFIG_DIR, "auth.json")
+# Multi-workspace registry. Server-owned on purpose: a workspace is a named
+# root folder, and a client that could point the server at any path could
+# read every file the server account can read. The default entry is always
+# present and always first; extra entries are added through the admin-gated
+# routes below, never edited by hand for the path.
+WORKSPACES_FILE = os.path.join(CONFIG_DIR, "workspaces.json")
+WORKSPACES_VERSION = 1
+WORKSPACE_DEFAULT_ID = "default"
+WORKSPACE_DEFAULT_NAME = "Notebook"
+# Request header naming the workspace a client wants to talk to. Kept out
+# of the URL so every existing link keeps working against the active root.
+WORKSPACE_HEADER = "X-Notebook-Workspace"
+WORKSPACE_MAX_COUNT = 32
+WORKSPACE_NAME_MAX = 60
+WORKSPACE_ID_SLUG_MAX = 32
+WORKSPACE_ID_SUFFIX_BYTES = 2        # 4 hex chars: short, still collision-free
+WORKSPACE_STATE_MAX_BYTES = 256 * 1024
+# The registry holds at most WORKSPACE_MAX_COUNT entries of a name and a
+# path, so 64 KiB is generous. The cap exists because the file is parsed on
+# every request and on the request hook: json.load on a huge document raises
+# MemoryError, and on a deeply nested one RecursionError, which would turn
+# every request -- including /static/* -- into a 500.
+WORKSPACES_MAX_BYTES = 64 * 1024
+# A reverse proxy on the same host dials in from 127.0.0.1, so the peer
+# address alone cannot separate a LAN client from a local one. Any request
+# carrying one of these headers is treated as remote by the auth-off
+# workspace gate.
+PROXY_FORWARD_HEADERS = ("X-Forwarded-For", "X-Real-IP")
+# Content keys that used to sit at the top level of config.json and now live
+# under workspaceState["<id>"]. Kept as a tuple so the one-shot startup
+# migration and the ACP preamble agree on exactly which keys are scoped.
+_WORKSPACE_SCOPED_CONFIG_KEYS = (
+    "lastFile", "openFiles", "activeFile", "pinnedFiles",
+    "recentFiles", "bookmarks", "pinnedFolders",
+)
+
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
 # copied into it. Ship a tiny starter notebook under notebook.template/ so
 # new users see something useful on first launch.
@@ -60,6 +112,18 @@ MAX_MATCHES_PER_FILE = 20
 MAX_TOTAL_MATCHES_CEILING = 2000
 MAX_MATCHES_PER_FILE_CEILING = 200
 SNIPPET_PAD = 60  # chars of context each side of a match
+# Wall-clock budget for the two whole-workspace scans (/api/search and
+# /api/graph). A workspace can be any local folder, so a file-count cap is
+# the wrong bound: it cuts a legitimately large notebook short while still
+# leaving a slow network mount able to hold a worker for minutes. A deadline
+# bounds the only thing the user feels -- elapsed time -- and lets a big but
+# fast notebook finish complete. Read at request time, so a test can set
+# app.SCAN_TIMEOUT_SECONDS = 0 to force expiry.
+SCAN_TIMEOUT_SECONDS = 5.0
+# Lines between deadline checks inside one file. Small enough that a slow
+# single file cannot overrun the deadline for long, large enough that a
+# normal scan does not pay a clock read per line.
+SCAN_CHECK_LINES = 256
 
 # Hard cap on any request body, enforced by Flask before a route reads it.
 # /api/ai/chat re-uploads the whole conversation each turn, images included
@@ -81,6 +145,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 # forbidden; `private` prevents shared caches from holding it.
 _GATED_READ_PATHS = (
     "/api/tree", "/api/ls", "/api/file", "/api/search", "/api/config", "/api/info",
+    "/api/workspaces", "/api/graph", "/api/workspace-state",
 )
 
 @app.after_request
@@ -92,9 +157,21 @@ def _no_store_gated_reads(resp):
     notebook on the next navigation even though the server would
     have returned 401. This is belt-and-suspenders on top of the
     request-time auth check: the request still 401s, and the cache
-    is also told to drop the response. """
+    is also told to drop the response.
+
+    Every /api/* response also varies on the workspace header: the same
+    URL answers with a different notebook depending on it, so a cache
+    that does keep a response must key on the header to avoid serving
+    one workspace's tree for another.
+    """
     if request.path in _GATED_READ_PATHS:
         resp.headers["Cache-Control"] = "no-store, private"
+    if request.path.startswith("/api/"):
+        vary = resp.headers.get("Vary")
+        if not vary:
+            resp.headers["Vary"] = WORKSPACE_HEADER
+        elif WORKSPACE_HEADER.lower() not in vary.lower():
+            resp.headers["Vary"] = "%s, %s" % (vary, WORKSPACE_HEADER)
     return resp
 
 
@@ -157,50 +234,59 @@ def seed(verbose=False):
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
-def safe_path(rel_path):
-    """Resolve a user-supplied relative path against DATA_DIR safely.
+def safe_path(rel_path, root=None):
+    """Resolve a user-supplied relative path against a notebook root safely.
 
-    Returns the normalised absolute path if it stays within DATA_DIR,
-    else None. Blocks `..` traversal and absolute input. Interior
-    symlinks that point outside the resolved DATA_DIR are allowed (the
-    user created them intentionally via the filesystem).
+    `root` is the active workspace root (current_root()); it defaults to
+    DATA_DIR so direct helper calls outside a request context keep their
+    old single-root behaviour. Returns the normalised absolute path if it
+    stays within `root`, else None. Blocks `..` traversal and absolute
+    input. Interior symlinks that point outside the resolved root are
+    allowed (the user created them intentionally via the filesystem).
 
     The returned path is the LEXICALLY normalised one (no realpath),
-    so it always starts with DATA_DIR itself. Callers use it both as a
+    so it always starts with `root` itself. Callers use it both as a
     filesystem path (open/os.remove: the kernel follows interior
     symlinks transparently) and as an identity for boundary checks
     (delete/move/copy root guards, rel_from()). Resolving symlinks here
     would break both: the guards would compare a resolved path against
-    the unresolved DATA_DIR string, and rel_from() would emit garbage
-    like ../real_notebook/x when DATA_DIR itself is a symlink. It also
+    the unresolved root string, and rel_from() would emit garbage
+    like ../real_notebook/x when the root itself is a symlink. It also
     keeps operations ON a symlink operating on the LINK (delete removes
     the link, not its target), matching rm/mv/cp semantics.
     """
+    if root is None:
+        root = DATA_DIR
     if not rel_path or not isinstance(rel_path, str):
         return None
     rel = rel_path.strip()
     if not rel:
         return None
     # Reject absolute input outright (/etc/passwd, C:\...) rather than
-    # normalising it into a path inside DATA_DIR.
+    # normalising it into a path inside the root.
     if os.path.isabs(rel):
         return None
-    candidate = os.path.normpath(os.path.join(DATA_DIR, rel))
-    # Boundary check against the unresolved DATA_DIR so that interior
+    candidate = os.path.normpath(os.path.join(root, rel))
+    # Boundary check against the unresolved root so that interior
     # symlinks (e.g. notebook/projects -> /some/other/folder) are not
-    # blocked — the normalized path still starts with DATA_DIR before
+    # blocked — the normalized path still starts with the root before
     # symlink resolution. `..` segments are resolved lexically by
     # normpath, so a symlink component followed by ".." cannot escape
-    # either (the ".." applies to the DATA_DIR prefix, not the link
+    # either (the ".." applies to the root prefix, not the link
     # target).
-    norm_data = os.path.normpath(DATA_DIR)
-    if candidate == norm_data or candidate.startswith(norm_data + os.sep):
+    norm_root = os.path.normpath(root)
+    if candidate == norm_root or candidate.startswith(norm_root + os.sep):
         return candidate
     return None
 
 
-def err(message, status=400):
-    return jsonify({"error": message}), status
+def err(message, status=400, code=None):
+    """Error body shared by every route: {"error": ...} plus a stable
+    machine-readable `code` when the route names one."""
+    payload = {"error": message}
+    if code:
+        payload["code"] = code
+    return jsonify(payload), status
 
 
 @app.errorhandler(413)
@@ -213,28 +299,33 @@ def _request_too_large(_exc):
     return err("Request body too large", 413)
 
 
-def expect_json(*required_keys):
+def expect_json(*required_keys, code=None):
     """Validate the request body is a JSON object with the required keys.
 
-    Returns (data, None) on success or (None, error_response).
+    Returns (data, None) on success or (None, error_response). `code` is
+    attached to both failure responses so a route family can label a bad
+    body consistently.
     """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return None, err("Expected a JSON object body", 400)
+        return None, err("Expected a JSON object body", 400, code=code)
     for key in required_keys:
         if key not in data:
-            return None, err("Missing required field: %s" % key, 400)
+            return None, err("Missing required field: %s" % key, 400, code=code)
     return data, None
 
 
-def rel_from(abs_path):
-    """Render an absolute path inside DATA_DIR as a forward-slash relative path.
+def rel_from(abs_path, root=None):
+    """Render an absolute path inside a notebook root as a relative path.
 
-    abs_path comes from safe_path(), which returns the lexically
+    `root` defaults to DATA_DIR for direct calls outside a request
+    context. abs_path comes from safe_path(), which returns the lexically
     normalised path (NOT a symlink-resolved one), so the relpath() here
-    stays a pure string operation on the shared DATA_DIR prefix.
+    stays a pure string operation on the shared root prefix.
     """
-    rel = os.path.relpath(abs_path, os.path.normpath(DATA_DIR))
+    if root is None:
+        root = DATA_DIR
+    rel = os.path.relpath(abs_path, os.path.normpath(root))
     return rel.replace(os.sep, "/")
 
 
@@ -263,11 +354,15 @@ def _tmp_suffix():
     return "%d.%d.%d" % (os.getpid(), threading.get_ident(), next(_tmp_counter))
 
 
-def build_tree(path):
+def build_tree(path, root=None):
     """Recursively build a dirs-first, files-second tree of .md files.
 
-    Skips dotfiles and __pycache__.
+    `root` is the workspace root the paths are rendered relative to; it
+    defaults to DATA_DIR, and callers walking a non-default workspace pass
+    the same root they are walking. Skips dotfiles and __pycache__.
     """
+    if root is None:
+        root = DATA_DIR
     entries = []
     try:
         names = sorted(os.listdir(path))
@@ -277,13 +372,13 @@ def build_tree(path):
         if name.startswith(".") or name == "__pycache__":
             continue
         full = os.path.join(path, name)
-        rel = rel_from(full)
+        rel = rel_from(full, root)
         if os.path.isdir(full):
             entries.append({
                 "name": name,
                 "type": "dir",
                 "path": rel,
-                "children": build_tree(full),
+                "children": build_tree(full, root),
             })
         elif os.path.isfile(full) and name.lower().endswith(".md"):
             entries.append({"name": name, "type": "file", "path": rel})
@@ -708,6 +803,411 @@ def read_login_required(view):
 
 
 # --------------------------------------------------------------------------- #
+# Workspace registry
+# --------------------------------------------------------------------------- #
+# One process serves several notebook roots ("workspaces"). The registry is
+# a server-owned JSON file next to auth.json, read on every request: the file
+# is tiny, and the test suite wipes CONFIG_DIR between cases, so a process
+# cache would serve a stale list. The default workspace is synthesised from
+# DATA_DIR and cannot be removed.
+def _default_workspace():
+    """The implicit workspace pointing at DATA_DIR (unresolved, as defined)."""
+    return {"id": WORKSPACE_DEFAULT_ID, "name": WORKSPACE_DEFAULT_NAME,
+            "path": DATA_DIR}
+
+
+def _normalise_workspace_entry(raw):
+    """Return a usable {id, name, path} entry from stored JSON, or None.
+
+    A hand-edited entry with a relative path is dropped: every consumer
+    treats the stored path as an absolute root, so a relative one would
+    otherwise resolve against whatever the process cwd happens to be.
+    """
+    if not isinstance(raw, dict):
+        return None
+    wid = raw.get("id")
+    name = raw.get("name")
+    path = raw.get("path")
+    if not isinstance(wid, str) or not wid:
+        return None
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if not isinstance(path, str) or not path.strip():
+        return None
+    if not os.path.isabs(path.strip()):
+        return None
+    return {"id": wid, "name": name.strip(), "path": path.strip()}
+
+
+_workspace_warn_seen = {}
+
+
+def _warn_workspace_once(kind, message):
+    """One stderr line per unchanged workspaces.json (mtime granularity).
+
+    load_workspaces() runs on every request, including /static/* and /sw.js,
+    so a per-request warning would flood the log for a registry the operator
+    already knows is broken. A changed file gets a fresh warning.
+    """
+    try:
+        stamp = os.path.getmtime(WORKSPACES_FILE)
+    except OSError:
+        stamp = -1.0
+    key = (kind, stamp)
+    if key in _workspace_warn_seen:
+        return
+    _workspace_warn_seen[key] = True
+    sys.stderr.write(message + "\n")
+
+
+def _load_workspace_blob():
+    """Parse workspaces.json; return {} when missing, corrupt or unreadable.
+
+    Never raises: a broken registry must degrade to "default workspace
+    only" instead of turning every request into a 500.
+    """
+    try:
+        if os.path.getsize(WORKSPACES_FILE) > WORKSPACES_MAX_BYTES:
+            _warn_workspace_once(
+                "oversize",
+                "workspaces.json ignored: larger than %d bytes"
+                % WORKSPACES_MAX_BYTES)
+            return {}
+        with open(WORKSPACES_FILE, "r", encoding="utf-8") as f:
+            blob = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError, RuntimeError, MemoryError) as exc:
+        _warn_workspace_once("corrupt", "workspaces.json ignored: %s" % exc)
+        return {}
+    return blob if isinstance(blob, dict) else {}
+
+
+def save_workspaces(items):
+    """Persist the registry atomically; a write failure is not fatal.
+
+    Read-modify-write is fine here: only an admin can mutate the registry,
+    and atomic_write keeps a crash mid-write from leaving half a file.
+    """
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        atomic_write(WORKSPACES_FILE, json.dumps(
+            {"version": WORKSPACES_VERSION, "items": items}, indent=2))
+    except OSError as exc:
+        sys.stderr.write("could not write workspaces.json: %s\n" % exc)
+
+
+def load_workspaces():
+    """Return the workspace registry with the default entry first.
+
+    Pure in memory: it synthesises the default when the file is missing,
+    empty, corrupt or has no default entry, and it always overwrites the
+    default's path with the unresolved DATA_DIR string (the identity
+    safe_path() and rel_from() compare against). A workspaces.json carried
+    between installs must not keep serving the old root. Persistence belongs
+    to the mutating routes and to _persist_workspaces_if_changed() at
+    startup -- this function also runs for /static/* and /sw.js, which must
+    never write a server-owned file.
+    """
+    blob = _load_workspace_blob()
+    raw_items = blob.get("items")
+    items = []
+    seen = set()
+    default_entry = None
+    dropped = 0
+    if isinstance(raw_items, list):
+        for raw in raw_items:
+            # The default's stored path is always discarded in favour of the
+            # current install's DATA_DIR, so only its name matters here. A
+            # carried file with a stale or even relative default path still
+            # keeps the name the user gave it.
+            if (isinstance(raw, dict)
+                    and raw.get("id") == WORKSPACE_DEFAULT_ID):
+                if default_entry is not None:
+                    continue
+                stored_name = raw.get("name")
+                if isinstance(stored_name, str) and stored_name.strip():
+                    default_entry = {
+                        "id": WORKSPACE_DEFAULT_ID,
+                        "name": stored_name.strip(),
+                        "path": DATA_DIR,
+                    }
+                continue
+            entry = _normalise_workspace_entry(raw)
+            if entry is None:
+                continue
+            if entry["id"] in seen:
+                continue
+            if len(items) >= WORKSPACE_MAX_COUNT - 1:
+                # Deterministic: the default plus the first entries on disk.
+                dropped += 1
+                continue
+            seen.add(entry["id"])
+            items.append(entry)
+    if dropped:
+        _warn_workspace_once(
+            "overflow",
+            "workspaces.json has more than %d entries; kept the default and "
+            "the first %d" % (WORKSPACE_MAX_COUNT, WORKSPACE_MAX_COUNT - 1))
+    if default_entry is None:
+        default_entry = _default_workspace()
+    return [default_entry] + items
+
+
+def _persist_workspaces_if_changed():
+    """Rewrite workspaces.json when the stored registry is not canonical.
+
+    Called once at startup. Returns True when it wrote, so the caller can
+    report a first-run registry creation.
+    """
+    blob = _load_workspace_blob()
+    canonical = load_workspaces()
+    if blob.get("items") == canonical:
+        return False
+    save_workspaces(canonical)
+    return True
+
+
+def resolve_workspace(workspace_id):
+    """Return the stored entry for an id, or None when it is unknown."""
+    for entry in load_workspaces():
+        if entry["id"] == workspace_id:
+            return entry
+    return None
+
+
+def _active_workspace_id():
+    """The workspace id bound to this request, default outside one."""
+    if has_request_context():
+        wid = g.get("workspace_id")
+        if wid:
+            return wid
+    return WORKSPACE_DEFAULT_ID
+
+
+def current_root():
+    """Absolute root of the active workspace for this request.
+
+    Falls back to DATA_DIR outside a request context (direct helper calls
+    and the CLI) so the helpers keep their original single-root behaviour.
+    """
+    if has_request_context():
+        root = g.get("data_dir")
+        if root:
+            return root
+    return DATA_DIR
+
+
+def _workspace_public(entry):
+    """Client view of one entry; `path` stays as stored (unresolved default)."""
+    return {
+        "id": entry["id"],
+        "name": entry["name"],
+        "path": entry["path"],
+        "available": os.path.isdir(entry["path"]),
+        "is_default": entry["id"] == WORKSPACE_DEFAULT_ID,
+    }
+
+
+def _paths_overlap(path_a, path_b):
+    """True when the two real paths are equal or one contains the other.
+
+    Both sides go through os.path.normcase so a case-insensitive filesystem
+    (macOS, Windows) cannot smuggle a differently-cased route into the
+    install or config directory past the check.
+    """
+    real_a = os.path.normcase(os.path.realpath(path_a))
+    real_b = os.path.normcase(os.path.realpath(path_b))
+    return (real_a == real_b
+            or real_a.startswith(real_b + os.sep)
+            or real_b.startswith(real_a + os.sep))
+
+
+def _workspace_name_problem(name, items, exclude_id=None):
+    """Return (message, code) for an invalid name, or None when it is fine."""
+    if not isinstance(name, str) or not name.strip():
+        return ("Give the workspace a name.", "name_empty")
+    if len(name.strip()) > WORKSPACE_NAME_MAX:
+        return ("Workspace names are limited to %d characters."
+                % WORKSPACE_NAME_MAX, "name_too_long")
+    lowered = name.strip().lower()
+    for entry in items:
+        if entry["id"] != exclude_id and entry["name"].lower() == lowered:
+            return ('A workspace called "%s" already exists.' % name.strip(),
+                    "name_duplicate")
+    return None
+
+
+def _workspace_path_problem(path, items):
+    """Return (message, code) for an unusable folder, or None when it is fine.
+
+    The candidate is compared by realpath so a symlinked route into an
+    existing root is caught too. It must not overlap another workspace (the
+    delete/move/copy root guards only know the active root), and it must not
+    overlap BASE_DIR or CONFIG_DIR -- /api/file could otherwise write app.py
+    or config/auth.json through the open admin API. Every comparison is
+    normcased on both sides so a case-insensitive filesystem cannot dodge
+    the install/config exclusion.
+    """
+    if not isinstance(path, str) or not path.strip():
+        return ("Use an absolute path, like /home/you/notes.",
+                "path_not_absolute")
+    candidate = path.strip()
+    if not os.path.isabs(candidate):
+        return ("Use an absolute path, like /home/you/notes.",
+                "path_not_absolute")
+    if not os.path.exists(candidate):
+        return ("That folder doesn't exist.", "path_missing")
+    if not os.path.isdir(candidate):
+        return ("That path is a file, not a folder.", "path_not_directory")
+    if not os.access(candidate, os.R_OK | os.X_OK):
+        return ("That folder can't be read. Check its permissions.",
+                "path_unreadable")
+    real_base = os.path.normcase(os.path.realpath(BASE_DIR))
+    real_candidate = os.path.normcase(os.path.realpath(candidate))
+    if (real_candidate == real_base
+            or real_candidate.startswith(real_base + os.sep)):
+        return ("That folder is inside the server's install folder. "
+                "Pick a folder outside it.", "path_inside_install")
+    # "Overlaps" also catches a candidate that CONTAINS the install or config
+    # folder, which would hand the open file API the server's own source and
+    # credentials just as surely as putting the root inside them would.
+    if (_paths_overlap(candidate, BASE_DIR)
+            or _paths_overlap(candidate, CONFIG_DIR)):
+        return ("That folder overlaps the server's install or config folder. "
+                "Pick another folder.", "path_inside_install")
+    for entry in items:
+        if _paths_overlap(candidate, entry["path"]):
+            return ('This folder overlaps "%s" (%s). Workspaces can\'t '
+                    'contain one another.' % (entry["name"], entry["path"]),
+                    "path_overlap")
+    return None
+
+
+def _new_workspace_id(name, items):
+    """Derive an immutable, URL-safe id: name slug plus a random suffix.
+
+    The suffix keeps same-named entries apart; the id never changes when a
+    workspace is renamed. "default" is reserved and can never be generated
+    because "default" plus a suffix is never equal to it.
+    """
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    base = base[:WORKSPACE_ID_SLUG_MAX] or "workspace"
+    existing = {entry["id"] for entry in items}
+    candidate = "%s-%s" % (base, secrets.token_hex(WORKSPACE_ID_SUFFIX_BYTES))
+    if candidate in existing:
+        candidate = "ws-%s" % secrets.token_hex(WORKSPACE_ID_SUFFIX_BYTES)
+    return candidate
+
+
+def _is_loopback(addr):
+    """True when `addr` is a loopback IP literal."""
+    if not addr:
+        return False
+    try:
+        return ipaddress.ip_address(addr).is_loopback
+    except ValueError:
+        return addr == "localhost"
+
+
+def workspace_admin_required(view):
+    """Admin-only, plus loopback-only while the auth layer is off.
+
+    With auth on, the resolved role must be admin (and a viewer is refused
+    with `not_admin`). With auth off every route is a pass-through, so every
+    host on the LAN could otherwise add or remove a root folder; in that mode
+    the request must come from a loopback address AND must not carry any
+    PROXY_FORWARD_HEADERS value. A reverse proxy on the same host connects
+    from 127.0.0.1, so a peer-address test alone would treat every proxied
+    LAN client as local; a forwarding header is the signal that the request
+    arrived through such a proxy.
+    """
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not auth_enabled():
+            forwarded = any(request.headers.get(name)
+                            for name in PROXY_FORWARD_HEADERS)
+            if forwarded or not _is_loopback(request.remote_addr):
+                return err("Workspace changes from another machine require "
+                           "admin authentication", 403,
+                           code="loopback_required")
+            return view(*args, **kwargs)
+        role, error = _request_role()
+        if error:
+            return error
+        if role != "admin":
+            return err("Forbidden", 403, code="not_admin")
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def _unknown_workspace_response():
+    """404 for an unknown workspace id, for the data views to call.
+
+    _bind_workspace cannot answer the 404 itself: it runs before every
+    view's auth decorator, so aborting there would leak whether an id exists
+    to an unauthenticated caller and would break login, auth, config,
+    workspace-list and the SPA shell for a tab whose workspace was removed.
+    It instead records g.workspace_unknown and binds the default root. The
+    data views call this helper after their gate has passed.
+
+    An anonymous caller is skipped so the decorator's 401 (or a bearer
+    token's own result) is what it sees; a Bearer credential authenticates
+    without a session role, so it is treated as gated here.
+    """
+    if not g.get("workspace_unknown"):
+        return None
+    bearer = request.headers.get("Authorization", "").startswith("Bearer ")
+    if auth_enabled() and not session.get("role") and not bearer:
+        return None
+    return err("Unknown workspace", 404, code="unknown_workspace")
+
+
+@app.before_request
+def _bind_workspace():
+    """Bind the request's workspace to g.data_dir / g.workspace_id.
+
+    Resolution order: the X-Notebook-Workspace header, then
+    session["workspace"], then the default. An unknown id never aborts the
+    request here: this hook runs ahead of every auth decorator, so a 404
+    would both leak id validity to an anonymous caller and lock a tab out
+    of login/auth when its workspace was removed. Instead the flag is
+    recorded and the default root is bound; the gated data views call
+    _unknown_workspace_response() and the SPA shell falls back silently,
+    clearing the stale session value so a bad cookie cannot trap the user.
+    """
+    if request.path.startswith("/static/") or request.path == "/sw.js":
+        # No asset reads the bound root. Skipping the registry parse keeps a
+        # broken or oversized registry from taking the CSS and JS down too.
+        g.workspace_unknown = False
+        g.data_dir = DATA_DIR
+        g.workspace_id = WORKSPACE_DEFAULT_ID
+        return
+    items = load_workspaces()
+    by_id = {entry["id"]: entry for entry in items}
+    requested = (request.headers.get(WORKSPACE_HEADER) or "").strip()
+    if not requested:
+        stored = session.get("workspace")
+        if isinstance(stored, str):
+            requested = stored.strip()
+    entry = by_id.get(requested) if requested else None
+    g.workspace_unknown = bool(requested) and entry is None
+    if g.workspace_unknown:
+        if not request.path.startswith("/api/"):
+            if session.get("workspace") == requested:
+                session.pop("workspace", None)
+        entry = by_id.get(WORKSPACE_DEFAULT_ID)
+    if entry is None:
+        # The registry always carries the default; this is belt and braces.
+        entry = _default_workspace()
+    g.data_dir = entry["path"]
+    g.workspace_id = entry["id"]
+
+
+# --------------------------------------------------------------------------- #
 # Routes: page + config
 # --------------------------------------------------------------------------- #
 @app.route("/")
@@ -776,14 +1276,52 @@ _ACTIVE_VIEWS = ("explorer", "pinned", "bookmarks", "recent", "search", "ai")
 def _read_public_config():
     """Return the stored config as a dict, or {} if missing/corrupt.
 
-    Only ever used to derive first-paint chrome values -- callers must not
-    embed content-bearing keys into the HTML (see boot_state)."""
+    Used for first-paint chrome values (callers must not embed
+    content-bearing keys into the HTML -- see boot_state) and as the
+    never-raising "load config.json" helper for the workspace routes."""
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg = json.load(f)
     except (OSError, ValueError):
         return {}
     return cfg if isinstance(cfg, dict) else {}
+
+
+def _boot_workspaces():
+    """First-paint workspace values for the shell.
+
+    Only the active id and the caller's role are safe to paint on the login
+    screen. The shell is served before auth, so when auth is on and no role
+    is present we emit `workspace_id` and `role` alone: the name, the folder
+    path and the list describe the machine's filesystem and must wait for an
+    authenticated role. With auth off nothing is gated, so the full set is
+    emitted. Values are re-sanitised here, like the rest of boot_state, so a
+    hand-edited workspaces.json cannot inject markup.
+    """
+    items = load_workspaces()
+    active = items[0]
+    if has_request_context():
+        wid = g.get("workspace_id")
+        for entry in items:
+            if entry["id"] == wid:
+                active = entry
+                break
+    role = None
+    if has_request_context() and auth_enabled():
+        role = session.get("role")
+    out = {"workspace_id": active["id"], "role": role}
+    if auth_enabled() and not role:
+        return out
+    name = active["name"].strip()[:WORKSPACE_NAME_MAX] or WORKSPACE_DEFAULT_NAME
+    out["workspace_name"] = name
+    out["workspace_path"] = active["path"]
+    out["workspaces"] = [
+        {"id": entry["id"],
+         "name": entry["name"].strip()[:WORKSPACE_NAME_MAX],
+         "available": os.path.isdir(entry["path"])}
+        for entry in items
+    ]
+    return out
 
 
 def boot_state(cfg=None):
@@ -860,6 +1398,7 @@ def boot_state(cfg=None):
         "topbar_hidden": bool(cfg.get("hideTopbar")),
         "wallpaper_classes": " ".join(wallpaper_classes),
         "active_view": active_view,
+        **_boot_workspaces(),
     }
 
 
@@ -885,46 +1424,285 @@ def _render_index():
     return render_template("index.html", boot=state)
 
 
+def _fold_legacy_workspace_state(cfg):
+    """Merge legacy top-level content keys under workspaceState["default"].
+
+    Idempotent: a workspace-aware blob has no legacy keys left, so this
+    returns False. Runs on every config POST so a whole-blob write that
+    still carries the old shape cannot strand those keys at the top level
+    forever. The inbound top-level value wins over an existing default
+    entry because the POST is the client's authoritative current state.
+    """
+    if not isinstance(cfg, dict):
+        return False
+    legacy = {key: cfg[key] for key in _WORKSPACE_SCOPED_CONFIG_KEYS
+              if key in cfg}
+    if not legacy:
+        return False
+    state = cfg.get("workspaceState")
+    if not isinstance(state, dict):
+        state = {}
+    default = state.get(WORKSPACE_DEFAULT_ID)
+    if not isinstance(default, dict):
+        default = {}
+    default.update(legacy)
+    state[WORKSPACE_DEFAULT_ID] = default
+    cfg["workspaceState"] = state
+    for key in legacy:
+        cfg.pop(key, None)
+    return True
+
+
+def _migrate_workspace_state(cfg):
+    """Move legacy top-level content keys under workspaceState["default"].
+
+    The one-shot startup migration, so clients never carry migration code.
+    Mutates cfg in place and returns True when it changed. A blob that
+    already has workspaceState is left alone: the client that wrote it is
+    already workspace-aware.
+    """
+    if not isinstance(cfg, dict) or "workspaceState" in cfg:
+        return False
+    legacy = {key: cfg[key] for key in _WORKSPACE_SCOPED_CONFIG_KEYS
+              if key in cfg}
+    if not legacy:
+        return False
+    cfg["workspaceState"] = {WORKSPACE_DEFAULT_ID: legacy}
+    for key in legacy:
+        cfg.pop(key, None)
+    return True
+
+
+def _migrate_config_at_startup():
+    """Run the one-shot workspace-state migration once at process start.
+
+    Best effort: a read or write failure leaves the old shape for the next
+    launch. Held under _CONFIG_LOCK so it cannot interleave with a
+    concurrent POST and lose that writer's update; it deliberately does not
+    run from a GET, which would make a read route write a server-owned file.
+    """
+    with _CONFIG_LOCK:
+        cfg = _read_public_config()
+        if not _migrate_workspace_state(cfg):
+            return
+        try:
+            atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+        except OSError:
+            pass
+
+
 @app.route("/api/config", methods=["GET"])
 @read_login_required
 def get_config():
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except (OSError, ValueError):
-        cfg = {}
-    return jsonify(cfg)
+    """Read config.json. The one-shot migration runs at startup, not here,
+    so a GET never writes a server-owned file."""
+    return jsonify(_read_public_config())
 
 
 @app.route("/api/info", methods=["GET"])
 @read_login_required
 def info():
-    """Read-only info used by the settings page. Returns the absolute
-    data/config directories; both are already known to the user (they are
-    the folders the server is operating on) and contain no secrets."""
+    """Read-only info used by the settings page. Returns the active
+    workspace's data directory plus the config directory; both are already
+    known to the user (they are the folders the server is operating on) and
+    contain no secrets."""
     return jsonify({
-        "data_dir": DATA_DIR,
+        "data_dir": current_root(),
         "config_dir": CONFIG_DIR,
+        "workspace": _active_workspace_id(),
     })
 
 
 @app.route("/api/config", methods=["POST"])
 @admin_required
 def set_config():
+    """Replace config.json with the POSTed blob.
+
+    Held under _CONFIG_LOCK: set_workspace_state() and the startup migration
+    read-modify-write the same file, and without the lock two writers can
+    each read the old blob and silently lose the other's update. Legacy
+    top-level content keys in the blob are folded under
+    workspaceState["default"] first, so a whole-blob POST cannot strand
+    them.
+    """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return err("Expected a JSON object body", 400)
+    _fold_legacy_workspace_state(data)
     try:
-        # Unique temp name (see atomic_write): the debounced UI persist
-        # plus a Settings save can land concurrently, and a shared
-        # "<file>.tmp" makes one writer's replace crash the other.
-        tmp = "%s.%s.tmp" % (CONFIG_FILE, _tmp_suffix())
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, CONFIG_FILE)
+        with _CONFIG_LOCK:
+            atomic_write(CONFIG_FILE, json.dumps(data, indent=2))
     except OSError as exc:
-        return err("Could not write config: %s" % exc, 500)
+        return err("Could not write config: %s" % exc, 500,
+                   code="write_failed")
     return jsonify({"ok": True})
+
+
+# --------------------------------------------------------------------------- #
+# Routes: workspaces
+# --------------------------------------------------------------------------- #
+@app.route("/api/workspaces", methods=["GET"])
+@read_login_required
+def list_workspaces():
+    """List the registry; `active` is the caller's resolved workspace id."""
+    items = load_workspaces()
+    return jsonify({
+        "workspaces": [_workspace_public(entry) for entry in items],
+        "active": _active_workspace_id(),
+    })
+
+
+@app.route("/api/workspaces", methods=["POST"])
+@workspace_admin_required
+def add_workspace():
+    """Register a folder as a new workspace.
+
+    Body: {"name": "...", "path": "/abs/folder"}. Permission: admin when
+    auth is enabled; when auth is disabled every route is open to the LAN,
+    so the request must additionally come from a loopback address
+    (workspace_admin_required). Registered paths are stored as the folder's
+    absolute realpath, so later symlink changes cannot move the root out
+    from under the path guards.
+    """
+    data, error = expect_json("name", "path", code="bad_body")
+    if error:
+        return error
+    name = data.get("name")
+    path = data.get("path")
+    items = load_workspaces()
+    problem = _workspace_name_problem(name, items)
+    if problem:
+        return err(problem[0], 400, code=problem[1])
+    if len(items) >= WORKSPACE_MAX_COUNT:
+        return err("At most %d workspaces are supported"
+                   % WORKSPACE_MAX_COUNT, 400, code="too_many")
+    problem = _workspace_path_problem(path, items)
+    if problem:
+        return err(problem[0], 400, code=problem[1])
+    entry = {
+        "id": _new_workspace_id(name.strip(), items),
+        "name": name.strip(),
+        "path": os.path.realpath(path.strip()),
+    }
+    items.append(entry)
+    save_workspaces(items)
+    return jsonify({"workspace": _workspace_public(entry)}), 201
+
+
+@app.route("/api/workspaces/active", methods=["POST"])
+@read_login_required
+def set_active_workspace():
+    """Switch this session to another workspace (a viewer may switch too).
+
+    Body: {"id": "..."}. Stored in the signed session, so it lasts until
+    logout; clients that cannot hold a session use the request header.
+    """
+    data, error = expect_json("id", code="bad_body")
+    if error:
+        return error
+    wid = data.get("id")
+    if not isinstance(wid, str) or not wid.strip():
+        return err("id must be a non-empty string", 400, code="bad_body")
+    wid = wid.strip()
+    if resolve_workspace(wid) is None:
+        return err("Unknown workspace", 404, code="unknown_workspace")
+    session["workspace"] = wid
+    return jsonify({"ok": True, "active": wid})
+
+
+@app.route("/api/workspaces/<workspace_id>", methods=["PATCH"])
+@workspace_admin_required
+def rename_workspace(workspace_id):
+    """Rename a workspace; the folder path is immutable.
+
+    Body: {"name": "..."}. Changing the folder means removing the entry and
+    adding it again, which keeps the stored realpath and the path guards in
+    sync. The default entry may be renamed but never removed.
+    """
+    data, error = expect_json("name", code="bad_body")
+    if error:
+        return error
+    items = load_workspaces()
+    entry = next((e for e in items if e["id"] == workspace_id), None)
+    if entry is None:
+        return err("Unknown workspace", 404, code="unknown_workspace")
+    name = data.get("name")
+    problem = _workspace_name_problem(name, items, exclude_id=workspace_id)
+    if problem:
+        return err(problem[0], 400, code=problem[1])
+    entry["name"] = name.strip()
+    save_workspaces(items)
+    return jsonify({"workspace": _workspace_public(entry)})
+
+
+@app.route("/api/workspaces/<workspace_id>", methods=["DELETE"])
+@workspace_admin_required
+def remove_workspace(workspace_id):
+    """Remove a workspace entry; never the folder or its notes.
+
+    The default entry is not removable, and any session sitting on the
+    removed workspace is cleared so the next request falls back to the
+    default instead of 404ing on a stale id.
+    """
+    items = load_workspaces()
+    entry = next((e for e in items if e["id"] == workspace_id), None)
+    if entry is None:
+        return err("Unknown workspace", 404, code="unknown_workspace")
+    if workspace_id == WORKSPACE_DEFAULT_ID:
+        return err("The default workspace can't be removed", 400,
+                   code="default_not_removable")
+    save_workspaces([e for e in items if e["id"] != workspace_id])
+    if session.get("workspace") == workspace_id:
+        session.pop("workspace", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/workspace-state", methods=["POST"])
+@workspace_admin_required
+def set_workspace_state():
+    """Merge per-workspace UI state into config.json.
+
+    Body: {"id": "...", "state": {...}}. Stored under
+    config.json -> workspaceState -> <id>; every other key, including the
+    other workspaces' state, is preserved. `state` must be a JSON object and
+    is capped at WORKSPACE_STATE_MAX_BYTES: this route takes an admin
+    credential (cookie or bearer) and the whole blob is re-read at every
+    boot. The merge runs under _CONFIG_LOCK so a concurrent set_config or
+    startup migration cannot lose this update.
+
+    Gated with workspace_admin_required rather than admin_required: it
+    writes a server-owned file, so with auth off it must obey the same
+    loopback rule as the registry mutations.
+    """
+    data, error = expect_json("id", "state", code="bad_body")
+    if error:
+        return error
+    wid = data.get("id")
+    state = data.get("state")
+    if not isinstance(wid, str) or not wid.strip():
+        return err("id must be a non-empty string", 400, code="bad_body")
+    wid = wid.strip()
+    if resolve_workspace(wid) is None:
+        return err("Unknown workspace", 404, code="unknown_workspace")
+    if not isinstance(state, dict):
+        return err("state must be a JSON object", 400, code="bad_body")
+    encoded = json.dumps(state)
+    if len(encoded.encode("utf-8")) > WORKSPACE_STATE_MAX_BYTES:
+        return err("state exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES, 400,
+                   code="state_too_large")
+    with _CONFIG_LOCK:
+        cfg = _read_public_config()
+        workspace_state = cfg.get("workspaceState")
+        if not isinstance(workspace_state, dict):
+            workspace_state = {}
+        workspace_state[wid] = state
+        cfg["workspaceState"] = workspace_state
+        try:
+            atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+        except OSError as exc:
+            return err("Could not write config: %s" % exc, 500,
+                       code="write_failed")
+    return jsonify({"ok": True, "id": wid})
 
 
 # --------------------------------------------------------------------------- #
@@ -999,6 +1777,7 @@ def auth_login():
 @login_required
 def auth_logout():
     session.pop("role", None)
+    session.pop("workspace", None)
     return jsonify({"ok": True})
 
 
@@ -1834,7 +2613,7 @@ def _flatten_acp_prompt(messages):
     return "\n\n".join(blocks)
 
 
-def _acp_context_preamble():
+def _acp_context_preamble(workspace_id=None):
     """Rebuild the context the dropped system turn used to carry.
 
     The ACP branch drops the notebook's system message (the agent has its own),
@@ -1844,6 +2623,10 @@ def _acp_context_preamble():
     so rebuild them here instead of teaching the browser a second format. The
     result is prepended to the flattened transcript on every turn, so it is
     never duplicated into the conversation.
+
+    The open note is per workspace: workspaceState["<id>"].activeFile, falling
+    back to the top-level activeFile written by clients that predate
+    workspaces. `workspace_id` defaults to the default workspace.
     """
     lines = [ACP_CONTEXT_PREAMBLE]
     try:
@@ -1851,7 +2634,16 @@ def _acp_context_preamble():
             cfg = json.load(f)
     except (OSError, ValueError):
         cfg = {}
-    active = cfg.get("activeFile") if isinstance(cfg, dict) else None
+    if not isinstance(cfg, dict):
+        cfg = {}
+    active = None
+    scoped = cfg.get("workspaceState")
+    if isinstance(scoped, dict):
+        state = scoped.get(workspace_id or WORKSPACE_DEFAULT_ID)
+        if isinstance(state, dict):
+            active = state.get("activeFile")
+    if not isinstance(active, str) or not active.strip():
+        active = cfg.get("activeFile")
     if isinstance(active, str) and active.strip():
         lines.append("The note currently open: %s" % active.strip())
     custom = (load_ai_config().get("custom_prompt") or "").strip()
@@ -1902,7 +2694,26 @@ def _acp_chat_response(acp, data):
                 part.get("type") == "image_url" for part in content):
             return err("ACP profiles do not support image attachments", 400)
 
-    prompt = _acp_context_preamble() + "\n\n" + _flatten_acp_prompt(clean_messages)
+    # The optional body workspace id selects the root the agent runs in and
+    # the workspace whose open note goes into the preamble. An unknown id is
+    # an error, not a silent fallback: the agent would otherwise work in a
+    # different folder than the client thinks.
+    requested = data.get("workspace")
+    if requested is not None and not isinstance(requested, str):
+        return err("workspace must be a string", 400)
+    requested = (requested or "").strip()
+    if requested:
+        entry = resolve_workspace(requested)
+        if entry is None:
+            return err("Unknown workspace", 404, code="unknown_workspace")
+        workspace_id = entry["id"]
+        root = entry["path"]
+    else:
+        workspace_id = _active_workspace_id()
+        root = current_root()
+
+    prompt = (_acp_context_preamble(workspace_id) + "\n\n"
+              + _flatten_acp_prompt(clean_messages))
     if len(prompt.encode("utf-8")) > ACP_MAX_PROMPT_BYTES:
         return err("ACP prompt exceeds %d bytes" % ACP_MAX_PROMPT_BYTES, 400)
 
@@ -1914,9 +2725,9 @@ def _acp_chat_response(acp, data):
 
     command = acp["command"]
     args = list(acp.get("args") or [])
-    # The agent runs with the configured cwd, else the notebook folder, so a
-    # relative-path tool call resolves against the notebook by default.
-    cwd = acp.get("cwd") or DATA_DIR
+    # The agent runs with the configured cwd, else the active workspace root,
+    # so a relative-path tool call resolves against that notebook by default.
+    cwd = acp.get("cwd") or root
     env = acp.get("env")
     timeout = acp.get("timeout")
 
@@ -1965,7 +2776,8 @@ def _acp_chat_response(acp, data):
 def ai_chat():
     """Stream a chat completion through the saved upstream as SSE.
 
-    Body: {"server": "<profile name>", "messages": [{role, content}, ...]}.
+    Body: {"server": "<profile name>", "messages": [{role, content}, ...],
+    "workspace": "<workspace id>" (optional, ACP only)}.
     A message's content is a string, or a list of content parts
     ({"type":"text",...} / {"type":"image_url","image_url":{"url":
     "data:image/..."}}) so the side panel can send screenshots to a vision
@@ -2187,7 +2999,11 @@ def agent_guide():
 @app.route("/api/tree", methods=["GET"])
 @read_login_required
 def tree():
-    return jsonify({"tree": build_tree(DATA_DIR)})
+    error = _unknown_workspace_response()
+    if error:
+        return error
+    root = current_root()
+    return jsonify({"tree": build_tree(root, root)})
 
 
 @app.route("/api/ls", methods=["GET"])
@@ -2199,17 +3015,21 @@ def ls_dir():
     carries size + mtime, and never descends into subfolders -- so an
     agent can inspect one directory without pulling the whole tree.
     Hidden entries (dotfiles, __pycache__) are skipped, matching the
-    tree. Empty path lists the notebook root.
+    tree. Empty path lists the active workspace root.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
+    root = current_root()
     rel = request.args.get("path", "").strip()
     if rel in ("", "."):
-        abs_dir = os.path.realpath(DATA_DIR)
+        abs_dir = os.path.realpath(root)
         rel_out = ""
     else:
-        abs_dir = safe_path(rel)
+        abs_dir = safe_path(rel, root)
         if abs_dir is None:
             return err("Invalid path", 400)
-        rel_out = rel_from(abs_dir)
+        rel_out = rel_from(abs_dir, root)
     if not os.path.isdir(abs_dir):
         return err("Folder not found", 404)
     try:
@@ -2238,8 +3058,11 @@ def ls_dir():
 @app.route("/api/file", methods=["GET"])
 @read_login_required
 def file_get():
+    error = _unknown_workspace_response()
+    if error:
+        return error
     rel = request.args.get("path", "").strip()
-    abs_path = safe_path(rel)
+    abs_path = safe_path(rel, current_root())
     if abs_path is None:
         return err("Invalid path", 400)
     if not os.path.isfile(abs_path):
@@ -2270,6 +3093,9 @@ def file_get():
 @app.route("/api/file", methods=["POST"])
 @admin_required
 def file_save():
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("path", "content")
     if error:
         return error
@@ -2277,7 +3103,7 @@ def file_save():
     content = data["content"]
     if not isinstance(content, str):
         return err("content must be a string", 400)
-    abs_path = safe_path(rel)
+    abs_path = safe_path(rel, current_root())
     if abs_path is None:
         return err("Invalid path", 400)
     parent = os.path.dirname(abs_path)
@@ -2302,6 +3128,9 @@ def file_append():
     With "create": true a missing file is created (its parent folder
     must already exist); without it a missing file is 404.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("path", "content")
     if error:
         return error
@@ -2309,7 +3138,7 @@ def file_append():
     content = data["content"]
     if not isinstance(content, str):
         return err("content must be a string", 400)
-    abs_path = safe_path(rel)
+    abs_path = safe_path(rel, current_root())
     if abs_path is None:
         return err("Invalid path", 400)
     if not os.path.isdir(os.path.dirname(abs_path)):
@@ -2359,6 +3188,9 @@ def file_edit():
 
     Line ops normalise the buffer so it ends with a trailing newline.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("path", "edits")
     if error:
         return error
@@ -2366,7 +3198,7 @@ def file_edit():
     edits = data["edits"]
     if not isinstance(edits, list) or not edits:
         return err("edits must be a non-empty list of ops", 400)
-    abs_path = safe_path(rel)
+    abs_path = safe_path(rel, current_root())
     if abs_path is None:
         return err("Invalid path", 400)
     if not os.path.isfile(abs_path):
@@ -2407,6 +3239,9 @@ def create():
     that path) is still a 409 even under upsert. When creating a file,
     optional "content" seeds it (default empty).
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("path", "type")
     if error:
         return error
@@ -2420,7 +3255,7 @@ def create():
     content = data.get("content", "")
     if content is not None and not isinstance(content, str):
         return err("content must be a string", 400)
-    abs_path = safe_path(rel)
+    abs_path = safe_path(rel, current_root())
     if abs_path is None:
         return err("Invalid path", 400)
     if os.path.exists(abs_path):
@@ -2473,14 +3308,17 @@ def move():
     with no window where the destination is missing or partial.
     Filesystems without hardlink support fall back to check-then-rename.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("from", "to")
     if error:
         return error
     on_conflict = data.get("onConflict", "error")
     if on_conflict not in ("error", "skip", "overwrite"):
         return err("onConflict must be 'error', 'skip' or 'overwrite'", 400)
-    src = safe_path(data["from"])
-    dst = safe_path(data["to"])
+    src = safe_path(data["from"], current_root())
+    dst = safe_path(data["to"], current_root())
     if src is None or dst is None:
         return err("Invalid path", 400)
     # The notebook root itself is not a movable object: renaming it away
@@ -2488,7 +3326,7 @@ def move():
     # data tree with it. Same path on both ends is a no-op at best and a
     # self-clobber at worst (overwrite removes the destination -- which
     # IS the source -- before the copy), so reject it outright.
-    norm_data = os.path.normpath(DATA_DIR)
+    norm_data = os.path.normpath(current_root())
     if src == norm_data or dst == norm_data:
         return err("Invalid path", 400)
     if src == dst:
@@ -2545,20 +3383,23 @@ def copy():
     race; a lost race surfaces as 409 (or skipped=true). Folders are
     copied recursively; for them the existence check is best-effort.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("from", "to")
     if error:
         return error
     on_conflict = data.get("onConflict", "error")
     if on_conflict not in ("error", "skip", "overwrite"):
         return err("onConflict must be 'error', 'skip' or 'overwrite'", 400)
-    src = safe_path(data["from"])
-    dst = safe_path(data["to"])
+    src = safe_path(data["from"], current_root())
+    dst = safe_path(data["to"], current_root())
     if src is None or dst is None:
         return err("Invalid path", 400)
     # Same guards as /api/move: the notebook root is not a copyable/
     # replaceable object, and copying onto the source itself would (with
     # overwrite) delete the file before copying it -- silent data loss.
-    norm_data = os.path.normpath(DATA_DIR)
+    norm_data = os.path.normpath(current_root())
     if src == norm_data or dst == norm_data:
         return err("Invalid path", 400)
     if src == dst:
@@ -2601,11 +3442,14 @@ def copy():
 @app.route("/api/delete", methods=["POST"])
 @admin_required
 def delete():
+    error = _unknown_workspace_response()
+    if error:
+        return error
     data, error = expect_json("path")
     if error:
         return error
-    abs_path = safe_path(data["path"])
-    if abs_path is None or abs_path == os.path.normpath(DATA_DIR):
+    abs_path = safe_path(data["path"], current_root())
+    if abs_path is None or abs_path == os.path.normpath(current_root()):
         return err("Invalid path", 400)
     if not os.path.exists(abs_path):
         return err("Not found", 404)
@@ -2619,6 +3463,43 @@ def delete():
 # --------------------------------------------------------------------------- #
 # Routes: search
 # --------------------------------------------------------------------------- #
+class _ScanBudget:
+    """Wall-clock deadline for one whole-workspace scan.
+
+    Built once per request from ``SCAN_TIMEOUT_SECONDS`` and threaded into
+    every walk and file loop of that scan. ``seconds=None`` means "no
+    limit": a direct call to a scan helper outside a request still works
+    exactly as it did before the deadline existed.
+
+    ``tripped`` records that some loop actually stopped because of the
+    deadline, which lets a caller tell "the walk finished" from "the walk
+    stopped" without catching an exception out of a generator. Reading a
+    single enormous file cannot be interrupted mid-read: the checks happen
+    before each file open and between line blocks, so one huge file can
+    overrun the deadline by one file's read time and no more.
+    """
+
+    def __init__(self, seconds=None):
+        self.tripped = False
+        self._deadline = (
+            None if seconds is None else time.monotonic() + seconds
+        )
+
+    def expired(self):
+        """True once the deadline has passed; always false with no limit."""
+        if self._deadline is None:
+            return False
+        return time.monotonic() >= self._deadline
+
+
+def _scan_expired(budget):
+    """True when `budget` exists and has run out; latches budget.tripped."""
+    if budget is None or not budget.expired():
+        return False
+    budget.tripped = True
+    return True
+
+
 def _bounded_int_arg(name, default, ceiling):
     """Parse an optional query int, clamped to [1, ceiling]; None if bad."""
     raw = request.args.get(name, "")
@@ -2631,24 +3512,40 @@ def _bounded_int_arg(name, default, ceiling):
     return max(1, min(val, ceiling))
 
 
-def _iter_search_targets(scoped, glob_pat):
-    """Yield (relative, absolute) for every .md file the search should scan."""
+def _iter_search_targets(scoped, glob_pat, root=None, budget=None):
+    """Yield (relative, absolute) for every .md file the search should scan.
+
+    `root` is the active workspace root; it defaults to DATA_DIR for direct
+    calls outside a request. `budget` is the per-request ``_ScanBudget``;
+    when it expires the walk returns cleanly and the caller reads
+    ``budget.tripped`` to learn that the listing is incomplete. No
+    exception is raised, so a caller that ignores the budget still gets a
+    usable (short) list.
+    """
+    if root is None:
+        root = DATA_DIR
     if scoped is not None:
-        rel, full = rel_from(scoped), scoped
+        if _scan_expired(budget):
+            return
+        rel, full = rel_from(scoped, root), scoped
         if not glob_pat or (
                 fnmatch.fnmatch(rel, glob_pat)
                 or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
             yield rel, full
         return
-    for dirpath, dirs, filenames in os.walk(DATA_DIR):
+    for dirpath, dirs, filenames in os.walk(root):
+        if _scan_expired(budget):
+            return
         # Match the tree: hidden directories are not browsable, so their
         # notes must not appear in search results either.
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for name in sorted(filenames):
+            if _scan_expired(budget):
+                return
             if name.startswith(".") or not name.lower().endswith(".md"):
                 continue
             full = os.path.join(dirpath, name)
-            rel = rel_from(full)
+            rel = rel_from(full, root)
             if glob_pat and not (
                     fnmatch.fnmatch(rel, glob_pat)
                     or fnmatch.fnmatch(os.path.basename(rel), glob_pat)):
@@ -2673,15 +3570,23 @@ def _search_match_item(rel, line_no, line, match):
     return {"file": rel, "line": line_no, "col": start + 1, "snippet": snippet}
 
 
-def _search_unique(pattern, scoped, glob_pat, limit, order, desc):
+def _search_unique(pattern, scoped, glob_pat, limit, order, desc, root=None,
+                   budget=None):
     """One bundle per matching note: first hit, exact count, cap notes.
 
     Unlike every-match mode the cap is a note cap applied after the whole
     candidate set has been counted and ordered, so ?order=count&desc=1
     ranks by the true per-file count rather than by the first notes seen.
+
+    The deadline is checked between files but not inside one, because a
+    bundle's ``count`` must be the whole file's count: a half-counted note
+    would report a number that is simply wrong. `budget.tripped` tells the
+    caller whether the note set is complete.
     """
     bundles = []
-    for rel, full in _iter_search_targets(scoped, glob_pat):
+    for rel, full in _iter_search_targets(scoped, glob_pat, root, budget):
+        if _scan_expired(budget):
+            break
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.read().splitlines()
@@ -2720,16 +3625,21 @@ def _search_unique(pattern, scoped, glob_pat, limit, order, desc):
     return [bundle[3] for bundle in bundles[:limit]], truncated
 
 
-def _search_names(pattern, scoped, glob_pat, limit, order, desc):
+def _search_names(pattern, scoped, glob_pat, limit, order, desc, root=None,
+                  budget=None):
     """One {file} item per note whose basename matches the pattern.
 
     Filename mode never opens a note: the candidate set comes from
     ``_iter_search_targets`` and only ``os.path.basename(rel)`` is tested.
     Every note matches at most once, so ``count`` ordering degenerates to
-    path ordering and the note cap is applied after ordering.
+    path ordering and the note cap is applied after ordering. The deadline
+    is enforced by the target walk; ``budget.tripped`` reports whether the
+    candidate set was cut short.
     """
     bundles = []
-    for rel, full in _iter_search_targets(scoped, glob_pat):
+    for rel, full in _iter_search_targets(scoped, glob_pat, root, budget):
+        if _scan_expired(budget):
+            break
         if not pattern.search(os.path.basename(rel)):
             continue
         try:
@@ -2786,15 +3696,28 @@ def search():
 
     Response shape is unchanged for existing callers:
       {query, matches: [{file, line, col, snippet}], truncated,
-       perFileTruncated}
+       perFileTruncated, timedOut}
     plus "count" on each item in unique mode, and "file" echoed back
     when ?file= scoped. In name mode each item is {file} only and
     perFileTruncated is false. The hit inside each snippet stays wrapped
     in <<...>> so clients can re-highlight safely.
+
+    The scan runs against a wall-clock deadline (SCAN_TIMEOUT_SECONDS) in
+    every mode. On expiry the scan stops and the response keeps everything
+    found so far with "timedOut": true, because each returned match is
+    exact -- partial results plus the flag are more useful than an error.
+    "truncated" keeps its own meaning (a match cap was hit), so both flags
+    may be true. A single file read cannot be interrupted mid-read; the
+    deadline is checked before each file open and between line blocks.
     """
+    error = _unknown_workspace_response()
+    if error:
+        return error
     query = request.args.get("q", "")
     if not query.strip():
         return err("Empty query", 400)
+    root = current_root()
+    budget = _ScanBudget(SCAN_TIMEOUT_SECONDS)
     case_sensitive = request.args.get("case", "0") == "1"
     use_regex = request.args.get("regex", "0") == "1"
 
@@ -2808,7 +3731,7 @@ def search():
     file_scope = request.args.get("file", "").strip()
     scoped = None
     if file_scope:
-        scoped = safe_path(file_scope)
+        scoped = safe_path(file_scope, root)
         if scoped is None:
             return err("Invalid path", 400)
         if not os.path.isfile(scoped):
@@ -2833,20 +3756,22 @@ def search():
 
     if name_mode:
         matches_out, truncated = _search_names(
-            pattern, scoped, glob_pat, limit, order, desc)
+            pattern, scoped, glob_pat, limit, order, desc, root, budget)
         resp = {"query": query, "matches": matches_out,
-                "truncated": truncated, "perFileTruncated": False}
+                "truncated": truncated, "perFileTruncated": False,
+                "timedOut": budget.tripped}
         if scoped is not None:
-            resp["file"] = rel_from(scoped)
+            resp["file"] = rel_from(scoped, root)
         return jsonify(resp)
 
     if unique:
         matches_out, truncated = _search_unique(
-            pattern, scoped, glob_pat, limit, order, desc)
+            pattern, scoped, glob_pat, limit, order, desc, root, budget)
         resp = {"query": query, "matches": matches_out,
-                "truncated": truncated, "perFileTruncated": False}
+                "truncated": truncated, "perFileTruncated": False,
+                "timedOut": budget.tripped}
         if scoped is not None:
-            resp["file"] = rel_from(scoped)
+            resp["file"] = rel_from(scoped, root)
         return jsonify(resp)
 
     # Collect per-file bundles, then order + flatten, so ?order= can
@@ -2856,7 +3781,9 @@ def search():
     truncated = False
     per_file_truncated = False
 
-    for rel, full in _iter_search_targets(scoped, glob_pat):
+    for rel, full in _iter_search_targets(scoped, glob_pat, root, budget):
+        if _scan_expired(budget):
+            break
         try:
             with open(full, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.read().splitlines()
@@ -2866,6 +3793,11 @@ def search():
         count_in_file = 0
         file_capped = False
         for i, line in enumerate(lines, 1):
+            # Every SCAN_CHECK_LINES lines, and before the first one, ask
+            # the budget: a match item is exact on its own, so stopping
+            # mid-file only shortens the result, it never corrupts it.
+            if i % SCAN_CHECK_LINES == 1 and _scan_expired(budget):
+                break
             for m in pattern.finditer(line):
                 if total >= limit:
                     truncated = True
@@ -2902,18 +3834,19 @@ def search():
 
     matches_out = [m for _rel, _mtime, ms in bundles for m in ms]
     resp = {"query": query, "matches": matches_out, "truncated": truncated,
-            "perFileTruncated": per_file_truncated}
+            "perFileTruncated": per_file_truncated,
+            "timedOut": budget.tripped}
     if scoped is not None:
-        resp["file"] = rel_from(scoped)
+        resp["file"] = rel_from(scoped, root)
     return jsonify(resp)
 
 
 # --------------------------------------------------------------------------- #
 # Routes: graph
 # --------------------------------------------------------------------------- #
-# Wikilink graph: scans every .md file under DATA_DIR and extracts the
-# links between notes so the frontend can draw a force-directed graph
-# (Obsidian-style "graph view"). Two link syntaxes are recognised:
+# Wikilink graph: scans every .md file under the active workspace root and
+# extracts the links between notes so the frontend can draw a force-directed
+# graph (Obsidian-style "graph view"). Two link syntaxes are recognised:
 #
 #   [[Target]]            -- a wikilink. The target is resolved to a .md
 #                           file by stem (basename without extension)
@@ -2942,19 +3875,22 @@ def _strip_fragment(target):
     return target
 
 
-def _normalise_link(raw, src_rel, stem_index):
+def _normalise_link(raw, src_rel, stem_index, root=None):
     """Resolve a link target against its source file.
 
     Returns the canonical relative path of the linked .md file, or None
     when the target can't be resolved to a known note. `stem_index` maps
     a file's basename-without-extension to its relative path (built once
     per graph build) so [[wikilinks]] by stem can be looked up cheaply.
+    `root` is the active workspace root (default DATA_DIR).
     """
+    if root is None:
+        root = DATA_DIR
     target = _strip_fragment(raw.strip())
     if not target:
         return None
-    # Absolute paths never resolve inside DATA_DIR (safe_path would block
-    # them anyway); drop them.
+    # Absolute paths never resolve inside the workspace root (safe_path
+    # would block them anyway); drop them.
     if os.path.isabs(target):
         return None
     # A wikilink with no path separator may be a bare stem. Try the stem
@@ -2967,20 +3903,21 @@ def _normalise_link(raw, src_rel, stem_index):
         if stem in stem_index:
             return stem_index[stem]
     # Fall back to treating it as a relative path from the source's
-    # folder, normalised so "../sub/x.md" can't escape DATA_DIR.
+    # folder, normalised so "../sub/x.md" can't escape the root.
     src_dir = os.path.dirname(src_rel)
     candidate = os.path.normpath(os.path.join(src_dir, target))
-    norm_data = os.path.normpath(DATA_DIR)
-    abs_candidate = os.path.normpath(os.path.join(DATA_DIR, candidate))
-    if abs_candidate == norm_data or abs_candidate.startswith(norm_data + os.sep):
+    norm_root = os.path.normpath(root)
+    abs_candidate = os.path.normpath(os.path.join(root, candidate))
+    if (abs_candidate == norm_root
+            or abs_candidate.startswith(norm_root + os.sep)):
         return candidate.replace(os.sep, "/")
     return None
 
 
-def build_graph():
-    """Walk DATA_DIR, parse every .md file for links, and return the graph.
+def build_graph(root=None, budget=None):
+    """Walk a workspace root, parse every .md file for links, return the graph.
 
-    Shape:
+    `root` defaults to DATA_DIR for direct calls outside a request. Shape:
       { "nodes": [ {"id": "notes/a.md", "name": "a.md", "links": 3}, ... ],
         "edges": [ {"source": "notes/a.md", "target": "notes/b.md"}, ... ] }
 
@@ -2988,14 +3925,27 @@ def build_graph():
     it); the frontend uses it to size nodes. Nodes are every .md file
     found, including orphans (files with no links in or out) so the graph
     matches the file tree the user sees in the Explorer.
+
+    `budget` is the per-request ``_ScanBudget``. The return shape stays a
+    plain dict so callers that do not care about the deadline are
+    unaffected; when the budget runs out the walk stops and the caller
+    reads ``budget.tripped``. The dict is then partial and must not be
+    served -- a graph missing half its files is a wrong picture, so the
+    route answers 504 instead. Reading one huge file cannot be interrupted
+    mid-read: the deadline is checked before each file open and between
+    the parse passes over a file's text.
     """
+    if root is None:
+        root = DATA_DIR
     files = []
-    for dirpath, _dirs, filenames in os.walk(DATA_DIR):
+    for dirpath, _dirs, filenames in os.walk(root):
+        if _scan_expired(budget):
+            break
         for name in filenames:
             if name.startswith(".") or not name.lower().endswith(".md"):
                 continue
             full = os.path.join(dirpath, name)
-            rel = rel_from(full)
+            rel = rel_from(full, root)
             files.append(rel)
 
     # Stem index: basename-without-extension -> relative path. If two
@@ -3011,7 +3961,9 @@ def build_graph():
 
     contents = {}
     for rel in files:
-        abs_path = os.path.join(DATA_DIR, rel)
+        if _scan_expired(budget):
+            break
+        abs_path = os.path.join(root, rel)
         try:
             with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                 contents[rel] = f.read()
@@ -3021,14 +3973,16 @@ def build_graph():
     edge_set = set()   # frozenset({src, dst}) for undirected dedup
     degree = {rel: 0 for rel in files}
     for src_rel in files:
+        if _scan_expired(budget):
+            break
         text = contents.get(src_rel, "")
         targets = set()
         for m in _WIKILINK_RE.finditer(text):
-            resolved = _normalise_link(m.group(1), src_rel, stem_index)
+            resolved = _normalise_link(m.group(1), src_rel, stem_index, root)
             if resolved and resolved in degree:
                 targets.add(resolved)
         for m in _MD_LINK_RE.finditer(text):
-            resolved = _normalise_link(m.group(2), src_rel, stem_index)
+            resolved = _normalise_link(m.group(2), src_rel, stem_index, root)
             if resolved and resolved in degree:
                 targets.add(resolved)
         for dst in targets:
@@ -3055,7 +4009,24 @@ def build_graph():
 @app.route("/api/graph", methods=["GET"])
 @read_login_required
 def graph():
-    return jsonify(build_graph())
+    """Wikilink/markdown-link graph for the active workspace.
+
+    Walks and parses every note under the workspace root, so the scan runs
+    against the wall-clock deadline SCAN_TIMEOUT_SECONDS. When it expires
+    the response is 504 {"error": "The notebook took too long to scan",
+    "code": "timeout"} with no partial graph: half a graph is a wrong
+    picture of the notebook. A single file read cannot be interrupted
+    mid-read; the deadline is checked before each file open, so one
+    enormous note can overrun it by at most its own read time.
+    """
+    error = _unknown_workspace_response()
+    if error:
+        return error
+    budget = _ScanBudget(SCAN_TIMEOUT_SECONDS)
+    result = build_graph(current_root(), budget)
+    if budget.tripped:
+        return err("The notebook took too long to scan", 504, code="timeout")
+    return jsonify(result)
 
 
 # --------------------------------------------------------------------------- #
@@ -3184,6 +4155,15 @@ def _lan_ipv4_addresses():
 
 
 seed_notes = seed()
+
+# One-shot, best-effort startup maintenance, now that the folders exist:
+# fold legacy top-level config keys under workspaceState["default"], then
+# rebuild the registry when the carried file is stale (an old DATA_DIR path,
+# a corrupt item list, or more entries than the cap). Reads stay pure -- only
+# startup and the mutating routes ever write these files.
+_migrate_config_at_startup()
+if _persist_workspaces_if_changed():
+    seed_notes.append("Rebuilt config/workspaces.json")
 
 # Load (or generate) the auth secret and use it as Flask's session-signing key.
 # Done after seed() so auth.json is always inside an existing CONFIG_DIR.

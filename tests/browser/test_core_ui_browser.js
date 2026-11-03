@@ -114,6 +114,19 @@ function waitDisk(rel, present, timeout) {
 function waitConfig(pred, timeout) {
   return waitFor(() => { const c = readConfig(); return !!c && pred(c); }, timeout || 5000);
 }
+// Content-bearing UI state (open tabs, pins, bookmarks) is scoped per
+// workspace: config.json -> workspaceState["default"] for the fixture root.
+function readWorkspaceState() {
+  const c = readConfig();
+  const all = c && c.workspaceState;
+  return all && all.default ? all.default : null;
+}
+function waitWorkspaceState(pred, timeout) {
+  return waitFor(() => {
+    const s = readWorkspaceState();
+    return !!s && pred(s);
+  }, timeout || 5000);
+}
 
 async function waitForServer() {
   const deadline = Date.now() + 30000;
@@ -461,8 +474,8 @@ async function main() {
         !NB.tabs.isOpen("notes/b.md") &&
         !document.querySelector('.tab[data-path="notes/b.md"]'))));
     check("tabs: closed file drops out of config.openFiles",
-      await waitConfig((c) => Array.isArray(c.openFiles) &&
-        !c.openFiles.includes("notes/b.md")));
+      await waitWorkspaceState((s) => Array.isArray(s.openFiles) &&
+        !s.openFiles.includes("notes/b.md")));
 
     // Drag-reorder: move Welcome (currently last) before Note A.
     const beforeDrag = await page.evaluate(() => NB.tabs.getOpen());
@@ -483,13 +496,13 @@ async function main() {
     check("tabs: pinned tab has no close button",
       await page.locator('#tab-pinned .tab[data-path="Welcome.md"] .tab-close').count() === 0);
     check("tabs: pin persists in config.pinnedFiles",
-      await waitConfig((c) => Array.isArray(c.pinnedFiles) &&
-        c.pinnedFiles.includes("Welcome.md")));
+      await waitWorkspaceState((s) => Array.isArray(s.pinnedFiles) &&
+        s.pinnedFiles.includes("Welcome.md")));
 
     await tab("notes/a.md").click();
     await page.waitForFunction(() => NB.tabs.getActive() === "notes/a.md");
     check("tabs: active file persists in config.activeFile",
-      await waitConfig((c) => c.activeFile === "notes/a.md"));
+      await waitWorkspaceState((s) => s.activeFile === "notes/a.md"));
 
     // ---------------------------------------------------------------
     console.log("== tab strip scroll ==");
@@ -735,8 +748,8 @@ async function main() {
         document.querySelector('.tree-row[data-path="notes/renamed.md"] .tree-star')
           .classList.contains("is-bookmarked"))));
     check("bookmarks: first bookmark persists in config",
-      await waitConfig((c) => Array.isArray(c.bookmarks) &&
-        c.bookmarks.includes("notes/renamed.md")));
+      await waitWorkspaceState((s) => Array.isArray(s.bookmarks) &&
+        s.bookmarks.includes("notes/renamed.md")));
 
     await row("notes/b.md").hover();
     await row("notes/b.md").locator(".tree-star").click();
@@ -761,8 +774,8 @@ async function main() {
           rows[1].dataset.path === "notes/renamed.md";
       })));
     check("bookmarks: reordered list persists",
-      await waitConfig((c) => Array.isArray(c.bookmarks) &&
-        c.bookmarks[0] === "notes/b.md" && c.bookmarks[1] === "notes/renamed.md"));
+      await waitWorkspaceState((s) => Array.isArray(s.bookmarks) &&
+        s.bookmarks[0] === "notes/b.md" && s.bookmarks[1] === "notes/renamed.md"));
 
     await page.locator('#bookmarks-list .bookmark-row[data-path="notes/b.md"]')
       .click({ button: "right" });
@@ -772,8 +785,8 @@ async function main() {
       await waitFor(() => page.evaluate(() =>
         NB.bookmarks.get().length === 1 && !NB.bookmarks.has("notes/b.md"))));
     check("bookmarks: removal persists in config",
-      await waitConfig((c) => Array.isArray(c.bookmarks) &&
-        c.bookmarks.length === 1 && !c.bookmarks.includes("notes/b.md")));
+      await waitWorkspaceState((s) => Array.isArray(s.bookmarks) &&
+        s.bookmarks.length === 1 && !s.bookmarks.includes("notes/b.md")));
 
     // ---------------------------------------------------------------
     console.log("== outline ==");
@@ -1201,9 +1214,9 @@ async function main() {
     await page.waitForFunction(() => NB.tabs.getActive() === "§graph", null, { timeout: 5000 });
     check("graph: config persists §graph in openFiles and activeFile",
       await waitFor(() => {
-        const c = readConfig();
-        return !!c && Array.isArray(c.openFiles) && c.openFiles.includes("§graph") &&
-          c.activeFile === "§graph";
+        const s = readWorkspaceState();
+        return !!s && Array.isArray(s.openFiles) && s.openFiles.includes("§graph") &&
+          s.activeFile === "§graph";
       }, 6000),
       JSON.stringify(readConfig()));
     await page.reload();
@@ -1427,9 +1440,9 @@ async function main() {
       await waitConfig((c) => c.graphMode === "2d"), JSON.stringify(readConfig()));
     check("graph mode: config keeps §graph open and active for the reload",
       await waitFor(() => {
-        const c = readConfig();
-        return !!c && Array.isArray(c.openFiles) && c.openFiles.includes("§graph") &&
-          c.activeFile === "§graph";
+        const s = readWorkspaceState();
+        return !!s && Array.isArray(s.openFiles) && s.openFiles.includes("§graph") &&
+          s.activeFile === "§graph";
       }, 6000),
       JSON.stringify(readConfig()));
     await page.reload();
@@ -1693,6 +1706,34 @@ async function main() {
         !document.querySelector('#file-tree .tree-row[data-path="ms-a.md"]') &&
         !document.querySelector('#file-tree .tree-row[data-path="ms-b.md"]') &&
         !document.querySelector('#file-tree .tree-row[data-path="ms-dest"]')), 8000));
+
+    // ---------------------------------------------------------------
+    console.log("== workspace add dialog ==");
+    await page.click("#activity-settings-btn");
+    await page.waitForFunction(() => !document.getElementById("settings-overlay").hidden,
+      null, { timeout: 5000 });
+    await page.click('.settings-nav-item[data-tab="workspaces"]');
+    await page.click("#settings-workspace-add");
+    await page.waitForFunction(() => !document.getElementById("workspace-dialog").hidden,
+      null, { timeout: 5000 });
+    const wsStack = await page.evaluate(() => ({
+      dialog: Number(getComputedStyle(document.getElementById("workspace-dialog")).zIndex),
+      settings: Number(getComputedStyle(document.getElementById("settings-overlay")).zIndex),
+      focused: document.activeElement && document.activeElement.id,
+    }));
+    // Both overlays are body children; #settings-overlay is later in the
+    // document, so equal z-index would paint the Settings card over the
+    // dialog and the Add form would never appear.
+    check("workspace dialog: opens above the Settings overlay",
+      wsStack.dialog > wsStack.settings, JSON.stringify(wsStack));
+    check("workspace dialog: focus lands in the name field",
+      wsStack.focused === "ws-name", String(wsStack.focused));
+    await page.keyboard.press("Escape");
+    check("workspace dialog: Escape closes the dialog and leaves Settings open",
+      await waitFor(() => page.evaluate(() =>
+        document.getElementById("workspace-dialog").hidden &&
+        !document.getElementById("settings-overlay").hidden), 4000));
+    await page.keyboard.press("Escape");
 
     // ---------------------------------------------------------------
     console.log("== page errors ==");

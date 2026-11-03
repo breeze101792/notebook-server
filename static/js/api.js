@@ -5,10 +5,46 @@
 
   window.NB = window.NB || {};
 
-  async function request(method, url, body) {
+  /* The active workspace id is painted on <html data-workspace> by the
+   * template, so it is available before any module runs and never changes
+   * without a reload. Empty when the page has no workspace feature. */
+  function workspaceId() {
+    return document.documentElement.dataset.workspace || "";
+  }
+
+  /* The role the shell paints on <html data-role> is "admin", "viewer", or
+   * empty (the unauthenticated login shell). With auth off there is no
+   * session role either, so the server marks a full-access install with the
+   * workspace list it embeds in the shell; that list is withheld only from
+   * an unauthenticated visitor while auth is on. An absent attribute means
+   * a shell that predates the role, which keeps full access. */
+  const FULL_ACCESS = "admin";
+  const VIEW_ONLY = "viewer";
+  const NO_ROLE = "";
+
+  function pageRole() {
+    const role = document.documentElement.dataset.role;
+    if (role === undefined) return FULL_ACCESS;
+    if (role === FULL_ACCESS || role === VIEW_ONLY) return role;
+    const bar = document.getElementById("workspace-bar");
+    const embedsList = !!(bar && bar.dataset.workspaces !== undefined);
+    return embedsList ? FULL_ACCESS : NO_ROLE;
+  }
+
+  // Every request names its workspace so the server resolves relative paths
+  // against the root the page is actually showing.
+  function workspaceHeaders() {
+    const id = workspaceId();
+    return id ? { "X-Notebook-Workspace": id } : {};
+  }
+
+  // `options.notModified` is returned verbatim for an HTTP 304. A
+  // conditional GET is a success with no body, so it must not reach the
+  // JSON parser (an empty body would otherwise parse as null).
+  async function request(method, url, body, options) {
     const opts = {
       method,
-      headers: {},
+      headers: workspaceHeaders(),
       // Always send the session cookie so the server can identify the user
       // (same-origin so the cookie is included on both same-port and
       // cross-port LAN connections to the same host).
@@ -27,6 +63,9 @@
       NB.evt.emit("api:network-error", { url, message: e && e.message });
       throw new Error("Network error: " + e.message);
     }
+    if (resp.status === 304 && options && options.notModified !== undefined) {
+      return options.notModified;
+    }
     let data = null;
     const text = await resp.text();
     if (text) {
@@ -42,7 +81,14 @@
     }
     if (!resp.ok) {
       const msg = (data && data.error) || resp.statusText || "Request failed";
-      throw new Error(msg);
+      const error = new Error(msg);
+      // Workspace-route errors name the condition in `code`; callers key
+      // their field/message mapping on it instead of matching the prose.
+      if (data && typeof data.code === "string" && data.code) {
+        error.code = data.code;
+      }
+      error.status = resp.status;
+      throw error;
     }
     return data;
   }
@@ -50,6 +96,13 @@
   const api = {
     getTree:       () => request("GET",  "/api/tree").then(r => r.tree),
     getFile:       (path)     => request("GET",  "/api/file?path=" + encodeURIComponent(path)),
+    // Conditional GET for the change watcher: resolves to
+    // {notModified:true} when the file is unchanged, otherwise the same
+    // {path, content, size, mtime} object getFile returns.
+    getFileMeta:   (path, since) => request("GET",
+      "/api/file?path=" + encodeURIComponent(path) +
+      "&ifModifiedSince=" + encodeURIComponent(String(since)),
+      undefined, { notModified: { notModified: true } }),
     saveFile:      (path, content) => request("POST", "/api/file", { path, content }),
     appendFile:    (path, content, create) =>
       request("POST", "/api/file/append", { path, content, create: !!create }),
@@ -78,6 +131,16 @@
     getConfig:     () => request("GET",  "/api/config"),
     saveConfig:    (cfg)       => request("POST", "/api/config", cfg),
     getInfo:       () => request("GET",  "/api/info"),
+    // ---- workspaces (named notebook roots)
+    listWorkspaces: () => request("GET", "/api/workspaces"),
+    createWorkspace: (name, path) => request("POST", "/api/workspaces", { name, path }),
+    renameWorkspace: (id, name) =>
+      request("PATCH", "/api/workspaces/" + encodeURIComponent(id), { name }),
+    deleteWorkspace: (id) =>
+      request("DELETE", "/api/workspaces/" + encodeURIComponent(id)),
+    setActiveWorkspace: (id) => request("POST", "/api/workspaces/active", { id }),
+    saveWorkspaceState: (id, state) =>
+      request("POST", "/api/workspace-state", { id, state }),
     getAuthStatus: () => request("GET",  "/api/auth"),
     login:         (password)  => request("POST", "/api/login",  { password }),
     logout:        () => request("POST", "/api/logout"),
@@ -121,7 +184,10 @@
       const resp = await fetch("/api/ai/chat", {
         method: "POST",
         credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...workspaceHeaders(),
+        },
         body: JSON.stringify(body),
         signal,
       });
@@ -229,6 +295,8 @@
   };
 
   window.NB.api = api;
+  window.NB.workspaceId = workspaceId;
+  window.NB.pageRole = pageRole;
   window.NB.lazyload = { script: loadScript, scripts: loadScripts };
   window.NB.evt = evt;
 })();

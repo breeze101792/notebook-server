@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workspaces — reference mockup</title>
+<style>
+/* ==================================================================
+   REFERENCE MOCKUP — topbar chip, activity-bar glyph, picker popover,
+   Settings -> Workspaces, add dialog, phone.
+
+   Every app colour, size and radius below is copied from
+   static/css/style.css. workspaces.md Appendix A reproduces the shipped
+   mount/popover block; §4 is the normative component spec.
+
+   Two deliberate differences from the app, both so the file can hold
+   several app windows at once:
+     - the chip wrapper is .ws-bar (the app's #workspace-bar) and the
+       popover is .workspace-menu (the app's #workspace-menu), because
+       the app's ids repeat per window here;
+     - the popover is positioned with absolute coordinates anchored to its
+       mount: inside .ws-bar for the chip, and as a sibling of the rail at
+       rail-width + 6 px for the glyph. In the app the single node is a
+       child of <body> with position: fixed, and workspaces.js writes
+       left/top from the mount's rect — same 6 px gap, 8 px viewport
+       margin.
+
+   Nothing is wired to a server; buttons do not act.
+   ================================================================== */
+
+/* ---- tokens: verbatim from style.css :root ------------------------ */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --accent-fg: #14151a;
+  --activity-bar-width: 48px;
+  --side-panel-width: 240px;
+  --topbar-h: 46px;
+  --outline-width: 220px;
+  /* two text-only tokens for the workspace surfaces: the shared --fg-muted
+   * (4.26:1) and --warn (2.7:1) both fail 4.5:1 on --bg-elev in light. These
+   * are the values #settings-overlay already raises locally. */
+  --ws-fg-muted: #9799a4;
+  --ws-warn: #f3b454;
+  /* phone shell (inside the phone media query in style.css) */
+  --m-hit: 44px;
+  --m-topbar-h: 52px;
+  --m-rail-h: 56px;
+  --m-scrim: rgba(0, 0, 0, .45);
+}
+body[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #2faa66;
+  --warn: #c9831d;
+  --accent-fg: #ffffff;
+  --ws-fg-muted: #5d6470;
+  --ws-warn: #8a5a0b;
+}
+
+/* ---- page chrome (not part of the app) ---------------------------- */
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 26px 26px 60px;
+  background: #101116;
+  color: #c9ccd6;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body[data-theme="light"] { background: #e9ecf1; color: #3a4050; }
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap; margin: 0 0 22px;
+}
+.page-head h1 { font-size: 17px; margin: 0 0 3px; color: #fff; letter-spacing: .2px; }
+body[data-theme="light"] .page-head h1 { color: #1f2330; }
+.lead { margin: 0; max-width: 760px; font-size: 13px; color: #8b8d98; }
+body[data-theme="light"] .lead { color: #5d6470; }
+.seg { display: inline-flex; border: 1px solid #383a45; border-radius: 8px; overflow: hidden; }
+body[data-theme="light"] .seg { border-color: #d8dde4; }
+.seg button {
+  min-width: 74px; min-height: 34px; padding: 0 12px;
+  background: #1a1b1f; color: #c9ccd6; border: 0; border-right: 1px solid #383a45;
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+body[data-theme="light"] .seg button { background: #fff; color: #3a4050; border-right-color: #d8dde4; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: #2f5fd0; color: #fff; }
+.seg button:focus-visible { outline: 2px solid #7c9cff; outline-offset: 2px; }
+
+.board { margin: 0 0 40px; }
+.board > h2 {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+  color: #8b8d98; margin: 0 0 4px;
+}
+body[data-theme="light"] .board > h2 { color: #5d6470; }
+.board .cap { margin: 0 0 12px; font-size: 12.5px; color: #7c8091; max-width: 900px; }
+body[data-theme="light"] .board .cap { color: #5d6470; }
+.row { display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start; }
+.stack { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+.slice-label { font-size: 11.5px; color: #7c8091; margin: 0 0 6px; letter-spacing: .02em; }
+body[data-theme="light"] .slice-label { color: #5d6470; }
+.note {
+  font-size: 11.5px; line-height: 1.5; color: #7c8091; max-width: 300px;
+  border-left: 2px solid #383a45; padding-left: 10px; margin: 8px 0 0;
+}
+body[data-theme="light"] .note { color: #5d6470; border-left-color: #d8dde4; }
+.note b { color: #c9ccd6; font-weight: 600; }
+body[data-theme="light"] .note b { color: #3a4050; }
+
+/* ---- app window shell (desktop) ---------------------------------- */
+.win {
+  width: 920px; height: 560px; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  position: relative;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+  font-size: 14px; line-height: 1.5;
+}
+body[data-theme="light"] .win { box-shadow: 0 18px 50px rgba(31, 35, 48, .16); }
+.win--short { height: 220px; }
+.win--mini { width: 340px; height: 190px; border-radius: 8px; }
+
+/* #topbar — the shipped rule, plus the shared button chrome the chip
+ * inherits (style.css #topbar button / #topbar button.brand). The chrome is
+ * scoped to direct children here: in the app the popover is not a descendant
+ * of #topbar, so `#topbar button` never reaches the menu rows. */
+.topbar {
+  display: flex; align-items: center; gap: 12px; height: var(--topbar-h);
+  padding: 0 12px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  position: relative; z-index: 40;
+}
+.topbar-hidden .topbar { display: none; }
+.topbar > button {
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; font-size: .93rem; cursor: pointer;
+  font-family: inherit;
+}
+.topbar > button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.topbar > button.brand {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem;
+  background: transparent; border: none; padding: 4px 6px;
+}
+.brand-icon {
+  width: 1.1em; height: 1.1em; border-radius: 3px; display: block;
+  background: linear-gradient(140deg, var(--accent), #9a7bff);
+}
+.spacer { flex: 1 1 auto; }
+/* .icon-btn — used by the modal headers and the phone bar. Inside the topbar
+ * the shared `#topbar button` chrome wins on specificity in the app
+ * (id + element beats one class), and `.topbar button` above is the rule
+ * that does it here, so both surfaces match. */
+.icon-btn {
+  background: none; border: none; color: var(--fg-muted);
+  font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer; font-family: inherit;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+/* .topbar-divider */
+.ws-divider {
+  flex: 0 0 1px; align-self: center; width: 1px; height: 16px;
+  background: var(--border);
+}
+
+/* #layout */
+.layout {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0; flex: 1 1 auto; position: relative;
+}
+.layout--collapsed { grid-template-columns: var(--activity-bar-width) 0 1fr; }
+.layout--collapsed .side-panel { display: none; }
+.layout--collapsed .editor-pane { grid-column: 3; }
+
+/* #activity-bar */
+.activity-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0; background: var(--bg-panel); border-right: 1px solid var(--border);
+  overflow: hidden; min-width: 0;
+}
+.activity-btn {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; color: var(--fg-muted);
+  cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 0; position: relative;
+  transition: background .12s ease, color .12s ease;
+}
+.activity-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active::before {
+  content: ""; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 2px;
+  border-radius: 1px; background: var(--accent);
+}
+.activity-spacer { flex: 1 1 auto; }
+.rail-slot { position: relative; flex: 0 0 auto; }
+
+/* #side-panel + Explorer view */
+.side-panel {
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0; position: relative;
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 12px; flex: 0 0 auto; font-size: .79rem; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted); border-bottom: 1px solid var(--border);
+  position: relative; background: var(--bg-panel); z-index: 20;
+}
+.panel-title { overflow: hidden; text-overflow: ellipsis; }
+.panel-header-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.collapse-btn {
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 1.07rem; line-height: 1; padding: 2px 4px; border-radius: 4px;
+}
+.collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.tree { padding: 6px 4px; user-select: none; overflow: auto; min-height: 0; }
+.tree-row { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
+.tree-row:hover { background: var(--accent-soft); }
+.tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.tree-icon { width: 16px; height: 16px; flex: 0 0 16px; }
+.tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tree-indent { width: 18px; flex: 0 0 18px; }
+.editor-pane { background: var(--bg); padding: 30px 34px; overflow: hidden; min-width: 0; }
+.doc-h1 { font-size: 1.6rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -.2px; }
+.doc-p { color: var(--fg-muted); margin: 0 0 8px; max-width: 46ch; }
+.doc-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; max-width: 46ch; }
+.doc-code {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; color: var(--fg-muted); max-width: 46ch;
+}
+
+/* scrim + modal host used by the Settings and dialog boards */
+.scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+
+/* ---- verbatim copies of the modal surfaces ----------------------- */
+.settings-modal {
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5); display: flex; flex-direction: column;
+  overflow: hidden; color: var(--fg);
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.settings-header h2 { margin: 0; font-size: 1.14rem; font-weight: 600; letter-spacing: .3px; }
+.settings-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; padding: 0; }
+.settings-nav {
+  flex: 0 0 180px; border-right: 1px solid var(--border); padding: 8px 6px;
+  display: flex; flex-direction: column; gap: 2px; overflow-y: auto; background: var(--bg);
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: transparent;
+  border: none; border-radius: 6px; color: var(--fg-muted); font-size: .93rem;
+  font-family: inherit; text-align: left; cursor: pointer; user-select: none; white-space: nowrap;
+}
+.nav-icon { display: inline-block; min-width: 1.4em; text-align: center; flex: 0 0 auto; line-height: 1; }
+.settings-nav-item:hover { background: var(--accent-soft); color: var(--fg); }
+.settings-nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.settings-nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.settings-sections { flex: 1 1 auto; overflow-y: auto; padding: 4px 18px 18px; min-width: 0; }
+.settings-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.settings-section h3 {
+  margin: 0 0 8px; font-size: .76rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted);
+}
+.settings-help { color: var(--fg-muted); font-size: .89rem; margin: 0 0 10px; }
+.settings-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; min-width: 0; }
+.settings-label { flex: 0 0 130px; color: var(--fg-muted); font-size: .93rem; }
+.settings-text-input {
+  flex: 1 1 auto; min-width: 0; padding: 6px 10px; font-size: .9rem;
+  background: var(--code-bg); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; font-family: inherit;
+}
+.settings-text-input:focus { outline: none; border-color: var(--accent); }
+.settings-action {
+  background: var(--bg-elev); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 14px; font-size: .93rem; cursor: pointer; font-family: inherit;
+}
+.settings-action:hover { background: var(--accent-soft); border-color: var(--accent); }
+.settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.settings-action--primary:hover { background: var(--accent); border-color: var(--accent); filter: brightness(1.06); }
+.settings-action:disabled { opacity: .5; cursor: not-allowed; background: var(--bg-elev); border-color: var(--border); }
+.settings-form-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 6px 0; }
+.settings-note { font-size: .86rem; color: var(--fg-muted); margin-top: 4px; }
+
+/* auth/add dialog shape */
+.auth-modal { width: 420px; height: auto; max-height: 92vh; }
+.auth-form { display: flex; flex-direction: column; gap: 0; padding: 14px 18px 18px; }
+.auth-form .auth-help { color: var(--fg-muted); font-size: .93rem; margin: 4px 0 12px; }
+.auth-form .settings-row { padding: 8px 0; }
+.auth-error { color: var(--danger); font-size: .89rem; min-height: 18px; margin: 2px 0 4px; }
+
+/* ==================================================================
+   WORKSPACE MOUNTS + POPOVER — design reference. workspaces.md
+   Appendix A reproduces the shipped block; the stylesheet wins.
+   ================================================================== */
+
+/* #workspace-bar (chip wrapper). A topbar flex child: it may shrink,
+ * never pushes the actions off the row, and caps the name's room. */
+.ws-bar {
+  display: flex; align-items: center;
+  flex: 0 1 auto; min-width: 0; max-width: 240px;
+  position: relative;
+}
+
+/* #topbar .workspace-switch — the shared topbar button chrome with a
+ * fixed 28 px height, so it sits inside the 46 px topbar. The chrome is
+ * repeated here (the app inherits it from #topbar button, an id selector
+ * this file cannot reproduce because the phone topbar is not #topbar). */
+.ws-chip {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0; max-width: 100%;
+  height: 28px; padding: 0 8px;
+  font-size: .84rem; font-weight: 600; text-align: left;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  cursor: pointer; font-family: inherit;
+}
+.ws-chip:hover { background: var(--accent-soft); border-color: var(--accent); }
+.ws-chip[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.ws-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-chip .workspace-glyph { width: 12px; height: 12px; flex: 0 0 12px; }
+.ws-chip[aria-expanded="true"] .workspace-glyph,
+.ws-chip:hover .workspace-glyph { color: var(--fg); }
+.ws-chip.is-missing .workspace-glyph { color: var(--ws-warn); }
+
+/* #workspace-rail-btn — hidden while the topbar is on. */
+.ws-rail {
+  display: none; width: 36px; height: 36px; flex: 0 0 36px;
+  align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px;
+  color: var(--fg-muted); cursor: pointer; padding: 0; position: relative;
+}
+.topbar-hidden .ws-rail { display: flex; }
+.ws-rail:hover, .ws-rail[aria-expanded="true"] { background: var(--accent-soft); color: var(--fg); }
+.ws-rail:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-rail .workspace-glyph { width: 18px; height: 18px; }
+.ws-rail.is-missing { color: var(--ws-warn); }
+.ws-rail.is-missing .workspace-glyph { color: var(--ws-warn); }
+
+/* shared glyph / name / caret */
+.workspace-glyph { width: 16px; height: 16px; flex: 0 0 16px; color: var(--fg-muted); }
+.workspace-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workspace-warn { flex: 0 0 auto; color: var(--ws-warn); font-size: .8rem; line-height: 1; }
+.workspace-caret {
+  flex: 0 0 auto; color: var(--fg-muted); font-size: .72rem; line-height: 1;
+  transition: transform .12s ease;
+}
+.ws-chip[aria-expanded="true"] .workspace-caret { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .workspace-caret { transition: none; } }
+
+/* #workspace-menu — the app: position: fixed on <body>, left/top written
+ * by workspaces.js. Here: absolute inside the mount so one static page
+ * can show both mounts' geometry. 300 px, 6 px gap, 8 px radius. */
+.workspace-menu {
+  --ws-row-h: 32px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: 300px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+/* rail mount: to the right of the glyph, tops aligned. In the app the node
+ * is on <body> because the real #activity-bar sets overflow: hidden; board 2
+ * therefore places it as a sibling of the rail inside .layout, at the rail's
+ * width + 6 px, offset by the rail's own 8 px top padding. */
+.workspace-menu--rail {
+  top: 8px;                                    /* the rail's 8 px padding */
+  /* the 36 px glyph centred in the 48 px rail, plus the 6 px gap */
+  left: calc((var(--activity-bar-width) + 36px) / 2 + 6px);
+}
+.workspace-menu[hidden] { display: none; }
+.ws-menu-list { display: flex; flex-direction: column; }
+
+/* picker rows */
+.ws-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  min-height: var(--ws-row-h); padding: 6px 8px; background: none; border: 0;
+  border-radius: 5px; color: var(--fg); font: inherit; font-size: .93rem;
+  text-align: left; cursor: pointer;
+}
+.ws-item:hover { background: var(--accent-soft); }
+.ws-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ws-check { flex: 0 0 14px; width: 14px; text-align: center; font-size: .8rem; line-height: 1; color: var(--accent); }
+.ws-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-item[aria-current="page"] { color: var(--accent); font-weight: 600; }
+.ws-item[aria-current="page"]:hover { background: none; }
+.ws-item-body { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.ws-item-note { font-size: .76rem; line-height: 1.35; color: var(--ws-warn); }
+.ws-item.is-unavailable { color: var(--ws-fg-muted); cursor: default; }
+.ws-item.is-unavailable:hover { background: none; }
+.ws-item-warn { flex: 0 0 auto; color: var(--ws-warn); font-size: .8rem; line-height: 1; }
+.ws-sep { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+.ws-foot { margin: 2px 0 0; padding: 4px 8px 2px; font-size: .76rem; line-height: 1.35; color: var(--ws-fg-muted); }
+/* busy: rows inert, aria-busy on the list (the app keeps the same look) */
+.ws-item[aria-disabled="true"]:not(.is-unavailable) { cursor: default; opacity: .72; }
+
+/* ---- Settings -> Workspaces -------------------------------------- */
+.ws-list { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 10px; }
+.ws-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev);
+}
+.ws-row.is-active { box-shadow: inset 2px 0 0 var(--accent); }
+.ws-row-main {
+  display: flex; align-items: flex-start; gap: 8px; flex: 1 1 auto; min-width: 0;
+  margin: -4px -6px; padding: 4px 6px; background: none; border: 0;
+  border-radius: 6px; color: var(--fg); font: inherit; text-align: left; cursor: pointer;
+}
+.ws-row-main:hover { background: var(--accent-soft); }
+.ws-row-main:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ws-row-main[aria-current="page"] { cursor: default; }
+.ws-row-main[aria-current="page"]:hover { background: none; }
+.ws-row-main:disabled { cursor: default; color: var(--fg-muted); }
+.ws-row-main:disabled:hover { background: none; }
+.ws-row-check { flex: 0 0 14px; width: 14px; text-align: center; font-size: .8rem; line-height: 1.7; color: var(--accent); }
+.ws-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.ws-row-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .95rem; font-weight: 600; }
+.ws-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-row-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; line-height: 1.45; color: var(--fg-muted); overflow-wrap: anywhere;
+}
+.ws-row-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.ws-badge {
+  flex: 0 0 auto; padding: 1px 7px; border-radius: 999px; font-size: .72rem;
+  font-weight: 600; letter-spacing: .02em; background: transparent;
+  border: 1px solid var(--accent); color: var(--accent);
+}
+.ws-badge--default { border-color: var(--border); color: var(--fg-muted); }
+.ws-badge--warn { border-color: var(--ws-warn); color: var(--ws-warn); }
+.ws-add { width: 100%; background: transparent; border-style: dashed; color: var(--fg-muted); }
+.ws-add:hover { color: var(--accent); }
+.ws-add-row { padding: 0; }
+#settings-overlay .ws-btn {
+  background: transparent; border-color: transparent;
+  color: var(--fg-muted); padding: 4px 10px; font-size: .85rem;
+}
+#settings-overlay .ws-btn:hover:not(:disabled) {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+#settings-overlay .ws-btn--danger { color: var(--danger); }
+#settings-overlay .ws-btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft); border-color: var(--danger); color: var(--danger);
+}
+#workspace-dialog .settings-text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#workspace-dialog .settings-text-input[aria-invalid="true"] { border-color: var(--danger); }
+#workspace-dialog .settings-text-input[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px var(--danger-soft); }
+#workspace-dialog .settings-modal :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-resolved-path {
+  flex: 1 1 auto; min-width: 0; padding: 3px 6px; border-radius: 4px;
+  background: var(--code-bg); color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; overflow-wrap: anywhere;
+}
+
+/* ---- phone board ------------------------------------------------- */
+.phone {
+  width: 390px; height: 800px; border-radius: 40px; background: #000; position: relative;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5); flex: 0 0 auto;
+}
+.phone .screen {
+  position: absolute; inset: 0; border-radius: 40px; overflow: hidden;
+  background: var(--bg); color: var(--fg); display: flex; flex-direction: column;
+  font-size: 15px;
+}
+.phone .p-topbar {
+  flex: 0 0 var(--m-topbar-h); display: flex; align-items: center; gap: 4px;
+  padding: 0 4px; background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  position: relative; z-index: 100;
+}
+.p-icon {
+  width: var(--m-hit); height: var(--m-hit); flex: 0 0 var(--m-hit); display: flex;
+  align-items: center; justify-content: center; background: none; border: 0;
+  border-radius: 8px; color: var(--fg); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.p-title {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: center; font-size: 15px; font-weight: 600; padding: 0 6px;
+}
+.p-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.p-doc { padding: 20px 18px; overflow: hidden; }
+.p-rail {
+  flex: 0 0 var(--m-rail-h); display: flex; align-items: stretch; background: var(--bg-panel);
+  border-top: 1px solid var(--border); position: relative; z-index: 150;
+}
+.p-rail .activity-btn { width: auto; flex: 1 1 0; height: var(--m-rail-h); border-radius: 0; font-size: 22px; }
+.p-rail .activity-btn.active::before { left: 24%; right: 24%; top: 0; bottom: auto; width: auto; height: 2px; }
+.p-scrim { position: absolute; inset: 0; background: var(--m-scrim); z-index: 400; }
+.p-drawer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 335px;
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  z-index: 410; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+.p-drawer .panel-header { min-height: var(--m-topbar-h); padding: 0 4px 0 16px; gap: 4px; }
+.p-drawer .panel-title { font-size: 12px; letter-spacing: .08em; }
+.p-drawer .collapse-btn { width: var(--m-hit); height: var(--m-hit); display: inline-flex; align-items: center; justify-content: center; }
+.p-drawer .tree { flex: 1 1 auto; }
+.p-drawer .tree-row { min-height: var(--m-hit); gap: 6px; padding: 0 6px; border-radius: 8px; }
+.p-drawer .tree-name { font-size: 15px; }
+.p-drawer .tree-row.selected { box-shadow: inset 3px 0 0 var(--accent); color: var(--fg); }
+.p-drawer-foot {
+  flex: 0 0 44px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  border-top: 1px solid var(--border); font-size: 12px; color: var(--fg-muted);
+  white-space: nowrap; overflow: hidden;
+}
+.status-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--ok); }
+.status-origin { overflow: hidden; text-overflow: ellipsis; }
+
+/* phone overrides, verbatim in behaviour: the topbar is forced visible,
+ * the chip is the only mount, 44 px icon-only, the name sr-only-clipped. */
+.p-topbar .ws-bar { flex: 0 0 auto; }
+.p-topbar .ws-divider { display: none; }
+.p-topbar .ws-chip {
+  width: var(--m-hit); height: var(--m-hit); padding: 0; gap: 0; justify-content: center;
+}
+.p-topbar .ws-chip .workspace-glyph { width: 20px; height: 20px; flex: 0 0 20px; }
+.p-topbar .ws-chip .workspace-name {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.p-topbar .ws-chip .workspace-caret { display: none; }
+.p-topbar .ws-rail { display: none; }
+.p-topbar .workspace-menu { width: 320px; --ws-row-h: var(--m-hit); }
+.p-topbar .workspace-menu .ws-item { font-size: .95rem; }
+.p-topbar .workspace-menu .ws-foot { font-size: .8rem; }
+</style>
+</head>
+<body data-theme="dark">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="nb-icon-folder" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h4.3A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#EFA93B"/>
+      <path d="M2 6.4h12v5.1A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#F7C15C"/>
+    </symbol>
+    <symbol id="nb-icon-file" viewBox="0 0 16 16">
+      <path d="M4 1.8h4.7L13 6.1V14a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V2.6A.8.8 0 0 1 4 1.8z" fill="#DCE6FF" stroke="#6C9CFF" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M8.7 1.8 13 6.1H9.5A.8.8 0 0 1 8.7 5.3z" fill="#6C9CFF"/>
+      <path d="M5.6 8.4h4.8M5.6 10.6h4.8" stroke="#6C9CFF" stroke-width="1" stroke-linecap="round"/>
+    </symbol>
+    <!-- The picker glyph: two stacked cards, currentColor so it follows
+         --fg-muted / --fg / --ws-warn like the other chrome. -->
+    <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+      <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="page-head">
+  <div>
+    <h1>Workspace picker — reference mockup</h1>
+    <p class="lead">Named local notebook roots. One control, two mounts: a chip in the topbar and a glyph on the activity
+      bar, exactly one visible at a time, sharing one popover. Static: nothing here talks to a server. Colours, sizes and
+      radii are the live values from <code>static/css/style.css</code>; <code>workspaces.md</code> is the spec.</p>
+  </div>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<!-- ============================ 1 ============================ -->
+<section class="board">
+  <h2>1 · Chip in the topbar — picker open</h2>
+  <p class="cap">Mount 1. The chip sits after the brand, behind a 1 px divider, and carries the workspace name because the
+    topbar has room for it. The popover hangs below it, left edges aligned, 6 px gap. Rows are navigation, not toggles:
+    <code>aria-current="page"</code> on the active row, the page reloads on pick.</p>
+  <div class="win">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="ws-divider" aria-hidden="true"></span>
+      <div class="ws-bar">
+        <button type="button" class="ws-chip" id="ws-chip-1" aria-haspopup="menu" aria-expanded="true"
+                aria-controls="ws-menu-1" title="Notes — /home/shaun/projects/notebook">
+          <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+          <span class="workspace-name">Notes</span>
+          <span class="workspace-caret" aria-hidden="true">▾</span>
+        </button>
+
+        <div class="workspace-menu" id="ws-menu-1">
+          <div class="ws-menu-list" role="menu" aria-labelledby="ws-chip-1">
+            <button type="button" class="ws-item" role="menuitem" aria-current="page" tabindex="0">
+              <span class="ws-check" aria-hidden="true">✓</span>
+              <span class="ws-item-name">Notes</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Work journal</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Firmware handbook</span>
+            </button>
+            <button type="button" class="ws-item is-unavailable" role="menuitem"
+                    aria-disabled="true" tabindex="-1"
+                    title="Folder not found: /mnt/usb/archive-notes">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-body">
+                <span class="ws-item-name">USB notes</span>
+                <span class="ws-item-note">Folder not found</span>
+              </span>
+              <span class="ws-item-warn" aria-hidden="true">⚠</span>
+            </button>
+            <hr class="ws-sep">
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true">+</span>
+              <span class="ws-item-name">Add workspace…</span>
+            </button>
+          </div>
+          <p class="ws-foot">Switching reloads the page.</p>
+        </div>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn active" title="Explorer">📁</button>
+        <button class="activity-btn" title="Pinned">📌</button>
+        <button class="activity-btn" title="Bookmarks">🔖</button>
+        <button class="activity-btn" title="Recent">🕒</button>
+        <button class="activity-btn" title="Search">🔍</button>
+        <button class="activity-btn" title="AI">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Graph view">🕸</button>
+        <button class="activity-btn" title="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel">
+        <div class="panel-header">
+          <span class="panel-title">Files</span>
+          <div class="panel-header-actions">
+            <button class="collapse-btn" title="Top section">📌</button>
+            <button class="collapse-btn" title="Reload file tree">↻</button>
+            <button class="collapse-btn" title="Collapse files">‹</button>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">Projects</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">notebook-server</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Welcome.md</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Roadmap.md</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">firmware</span></div>
+          <div class="tree-row selected"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Sensors.md</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Timing notes.md</span></div>
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Power budget.md</span></div>
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Reading list.md</span></div>
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Archive</span></div>
+        </div>
+      </aside>
+
+      <section class="editor-pane">
+        <h1 class="doc-h1">Sensors</h1>
+        <p class="doc-p">Calibration runs on a 10 Hz timer. The raw stream is filtered before it reaches the log.</p>
+        <hr class="doc-rule">
+        <pre class="doc-code">sample = adc.read(0)
+value  = lpf(sample, prev)</pre>
+      </section>
+    </div>
+  </div>
+  <p class="note"><b>28 px</b> tall, <b>240 px</b> wrapper cap, name ellipsised, caret 180° while open. The divider
+    (1 × 16 px, <code>--border</code>) separates the chip from the brand; the topbar's own 12 px gap spaces it.</p>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="board">
+  <h2>2 · Glyph on the activity bar — topbar hidden</h2>
+  <p class="cap">Mount 2. With <code>hideTopbar</code> the whole topbar is gone, so the chip with it; the same control
+    reappears as an 18 px glyph at the top of the rail, above the view icons. The popover opens to its right, tops
+    aligned. CSS-only: a saved setting paints the right mount on the first frame, with no script.</p>
+  <div class="win topbar-hidden">
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <div class="rail-slot">
+          <button type="button" class="ws-rail" id="ws-rail-2" aria-haspopup="menu" aria-expanded="true"
+                  aria-controls="ws-menu-2" title="Notes — /home/shaun/projects/notebook"
+                  aria-label="Workspace: Notes">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+          </button>
+        </div>
+
+        <button class="activity-btn active" title="Explorer">📁</button>
+        <button class="activity-btn" title="Pinned">📌</button>
+        <button class="activity-btn" title="Bookmarks">🔖</button>
+        <button class="activity-btn" title="Recent">🕒</button>
+        <button class="activity-btn" title="Search">🔍</button>
+        <button class="activity-btn" title="AI">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Graph view">🕸</button>
+        <button class="activity-btn" title="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel">
+        <div class="panel-header">
+          <span class="panel-title">Files</span>
+          <div class="panel-header-actions">
+            <button class="collapse-btn" title="Top section">📌</button>
+            <button class="collapse-btn" title="Reload file tree">↻</button>
+            <button class="collapse-btn" title="Collapse files">‹</button>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">Projects</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">notebook-server</span></div>
+          <div class="tree-row"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Welcome.md</span></div>
+          <div class="tree-row selected"><span class="tree-indent"></span><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Sensors.md</span></div>
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Power budget.md</span></div>
+        </div>
+      </aside>
+
+      <section class="editor-pane">
+        <h1 class="doc-h1">Sensors</h1>
+        <p class="doc-p">Calibration runs on a 10 Hz timer. With the topbar hidden the rail carries the workspace, so the
+          root is still one click away.</p>
+        <hr class="doc-rule">
+        <pre class="doc-code">value = lpf(sample, prev)</pre>
+      </section>
+
+      <!-- The single popover node. In the app it is appended to <body> at
+           boot with position: fixed, because #activity-bar sets
+           overflow: hidden; here it is a sibling of the rail so the same
+           clipping does not eat it. Same geometry: rail right edge + 6 px,
+           tops aligned. -->
+      <div class="workspace-menu workspace-menu--rail" id="ws-menu-2">
+        <div class="ws-menu-list" role="menu" aria-labelledby="ws-rail-2">
+          <button type="button" class="ws-item" role="menuitem" aria-current="page" tabindex="0">
+            <span class="ws-check" aria-hidden="true">✓</span>
+            <span class="ws-item-name">Notes</span>
+          </button>
+          <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+            <span class="ws-check" aria-hidden="true"></span>
+            <span class="ws-item-name">Work journal</span>
+          </button>
+          <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+            <span class="ws-check" aria-hidden="true"></span>
+            <span class="ws-item-name">Firmware handbook</span>
+          </button>
+          <hr class="ws-sep">
+          <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+            <span class="ws-check" aria-hidden="true">+</span>
+            <span class="ws-item-name">Add workspace…</span>
+          </button>
+        </div>
+        <p class="ws-foot">Switching reloads the page.</p>
+      </div>
+    </div>
+  </div>
+  <p class="note">Icon-only by necessity: the rail is 48 px. The name lives in <code>aria-label="Workspace: Notes"</code>
+    and the <code>title</code>, which also carries the path. The glyph keeps the first slot — <code>activity.js</code>
+    inserts the view icons after <code>.activity-pin</code>.</p>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="board">
+  <h2>3 · Mount states</h2>
+  <p class="cap">Both mounts, every state that changes their look. The full row-by-row picker states are in board 4.</p>
+  <div class="stack">
+
+    <div>
+      <p class="slice-label">Chip · long name</p>
+      <div class="win win--mini">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>NB</button>
+          <span class="ws-divider" aria-hidden="true"></span>
+          <div class="ws-bar">
+            <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="false"
+                    title="Rust firmware research — 2024–2026 hardware notes — /home/shaun/projects/firmware/research-notes">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+              <span class="workspace-name">Rust firmware research — 2024–2026 hardware notes</span>
+              <span class="workspace-caret" aria-hidden="true">▾</span>
+            </button>
+          </div>
+        </div>
+        <div class="layout" style="grid-template-columns:0 0 1fr;">
+          <div></div><div></div>
+          <section class="editor-pane"><p class="doc-p">Name ellipsised at the 240 px cap. The full name and path are in
+            <code>title</code>.</p></section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">Chip · active folder missing</p>
+      <div class="win win--mini">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>NB</button>
+          <span class="ws-divider" aria-hidden="true"></span>
+          <div class="ws-bar">
+            <button type="button" class="ws-chip is-missing" aria-haspopup="menu" aria-expanded="false"
+                    title="USB notes — folder not found: /mnt/usb/archive-notes">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+              <span class="workspace-name">USB notes</span>
+              <span class="workspace-warn" aria-hidden="true">⚠</span>
+              <span class="workspace-caret" aria-hidden="true">▾</span>
+            </button>
+          </div>
+        </div>
+        <div class="layout" style="grid-template-columns:0 0 1fr;">
+          <div></div><div></div>
+          <section class="editor-pane"><p class="doc-p">Glyph turns <code>--ws-warn</code> and a ⚠ joins the row. The chip
+            stays usable: the popover is the way out.</p></section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">Rail · default, open, missing (topbar hidden)</p>
+      <div style="display:flex; gap:14px; align-items:flex-start;">
+        <div class="win win--mini" style="width:48px; height:150px; border-radius:8px;">
+          <div class="activity-bar" style="height:100%; border-right:0;">
+            <button type="button" class="ws-rail" style="display:flex;" aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Workspace: Notes" title="Notes — /home/shaun/projects/notebook">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            </button>
+            <button class="activity-btn active">📁</button>
+            <button class="activity-btn">📌</button>
+          </div>
+        </div>
+        <div class="win win--mini" style="width:48px; height:150px; border-radius:8px;">
+          <div class="activity-bar" style="height:100%; border-right:0;">
+            <button type="button" class="ws-rail" style="display:flex; background:var(--accent-soft); color:var(--fg);"
+                    aria-haspopup="menu" aria-expanded="true" aria-label="Workspace: Notes">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            </button>
+            <button class="activity-btn active">📁</button>
+            <button class="activity-btn">📌</button>
+          </div>
+        </div>
+        <div class="win win--mini" style="width:48px; height:150px; border-radius:8px;">
+          <div class="activity-bar" style="height:100%; border-right:0;">
+            <button type="button" class="ws-rail is-missing" style="display:flex;" aria-haspopup="menu" aria-expanded="false"
+                    aria-label="Workspace: USB notes" title="USB notes — folder not found: /mnt/usb/archive-notes">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            </button>
+            <button class="activity-btn active">📁</button>
+            <button class="activity-btn">📌</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">No ⚠ on the rail: no room. The glyph colour and the <code>title</code> carry the fault.</p>
+    </div>
+
+    <div>
+      <p class="slice-label">Panel collapsed · chip unaffected</p>
+      <div class="win win--mini">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>NB</button>
+          <span class="ws-divider" aria-hidden="true"></span>
+          <div class="ws-bar">
+            <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="false" title="Notes — /home/shaun/projects/notebook">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+              <span class="workspace-name">Notes</span>
+              <span class="workspace-caret" aria-hidden="true">▾</span>
+            </button>
+          </div>
+        </div>
+        <div class="layout layout--collapsed">
+          <nav class="activity-bar" aria-label="Activity bar">
+            <button class="activity-btn active" title="Reopen the panel">📁</button>
+            <button class="activity-btn">📌</button>
+            <span class="activity-spacer"></span>
+            <button class="activity-btn">⚙</button>
+          </nav>
+          <aside class="side-panel"></aside>
+          <section class="editor-pane"><p class="doc-p">The chip is in the topbar, so collapsing the panel does not
+            move it. The rail glyph stays hidden because the topbar is on.</p></section>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="board">
+  <h2>4 · Picker states</h2>
+  <p class="cap">The popover on its own, 300 px, at both themes. Active, normal, unavailable, the add row and the
+    footnote; then the same list while a switch is in flight.</p>
+  <div class="row" style="align-items:flex-start;">
+    <div>
+      <p class="slice-label">Default</p>
+      <div style="position:relative; width:300px;">
+        <div class="workspace-menu" style="position:static; box-shadow:none;">
+          <div class="ws-menu-list" role="menu" aria-label="Workspace picker">
+            <button type="button" class="ws-item" role="menuitem" aria-current="page" tabindex="0">
+              <span class="ws-check" aria-hidden="true">✓</span>
+              <span class="ws-item-name">Notes</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Work journal</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1" style="background:var(--accent-soft);">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Firmware handbook · hover</span>
+            </button>
+            <button type="button" class="ws-item is-unavailable" role="menuitem" aria-disabled="true" tabindex="-1"
+                    title="Folder not found: /mnt/usb/archive-notes">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-body">
+                <span class="ws-item-name">USB notes</span>
+                <span class="ws-item-note">Folder not found</span>
+              </span>
+              <span class="ws-item-warn" aria-hidden="true">⚠</span>
+            </button>
+            <hr class="ws-sep">
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true">+</span>
+              <span class="ws-item-name">Add workspace…</span>
+            </button>
+          </div>
+          <p class="ws-foot">Switching reloads the page.</p>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">Busy (switch in flight)</p>
+      <div style="position:relative; width:300px;">
+        <div class="workspace-menu" style="position:static; box-shadow:none;">
+          <div class="ws-menu-list" role="menu" aria-label="Workspace picker" aria-busy="true">
+            <button type="button" class="ws-item" role="menuitem" aria-current="page" aria-disabled="true" tabindex="-1">
+              <span class="ws-check" aria-hidden="true">✓</span>
+              <span class="ws-item-name">Notes</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" aria-disabled="true" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Work journal</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" aria-disabled="true" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Firmware handbook</span>
+            </button>
+            <hr class="ws-sep">
+            <button type="button" class="ws-item" role="menuitem" aria-disabled="true" tabindex="-1">
+              <span class="ws-check" aria-hidden="true">+</span>
+              <span class="ws-item-name">Add workspace…</span>
+            </button>
+          </div>
+          <p class="ws-foot">Switching reloads the page.</p>
+        </div>
+      </div>
+      <p class="note"><code>aria-busy</code> on the list, <code>aria-disabled</code> on the rows <b>and on both
+        mounts</b>. No spinner: the reload follows the response.</p>
+    </div>
+
+    <div>
+      <p class="slice-label">Viewer · no add row</p>
+      <div style="position:relative; width:300px;">
+        <div class="workspace-menu" style="position:static; box-shadow:none;">
+          <div class="ws-menu-list" role="menu" aria-label="Workspace picker">
+            <button type="button" class="ws-item" role="menuitem" aria-current="page" tabindex="0">
+              <span class="ws-check" aria-hidden="true">✓</span>
+              <span class="ws-item-name">Notes</span>
+            </button>
+            <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+              <span class="ws-check" aria-hidden="true"></span>
+              <span class="ws-item-name">Work journal</span>
+            </button>
+          </div>
+          <p class="ws-foot">Switching reloads the page.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="board">
+  <h2>5 · Settings → Workspaces</h2>
+  <p class="cap">Its own nav section, not a General subsection: the content is a managed list with per-row actions, it
+    grows with the number of roots, and it is the only place a path is shown in full. Active and Default are separate
+    facts; both can be true.</p>
+  <div class="win">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="ws-divider" aria-hidden="true"></span>
+      <div class="ws-bar">
+        <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="false" title="Notes — /home/shaun/projects/notebook">
+          <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+          <span class="workspace-name">Notes</span>
+          <span class="workspace-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn">←</button>
+      <button class="icon-btn">📝</button>
+    </div>
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn active">📁</button>
+        <button class="activity-btn">📌</button>
+        <button class="activity-btn">🔖</button>
+        <button class="activity-btn">🕒</button>
+        <button class="activity-btn">🔍</button>
+        <button class="activity-btn">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn active">⚙</button>
+      </nav>
+      <aside class="side-panel">
+        <div class="panel-header">
+          <span class="panel-title">Files</span>
+          <div class="panel-header-actions">
+            <button class="collapse-btn">📌</button><button class="collapse-btn">↻</button><button class="collapse-btn">‹</button>
+          </div>
+        </div>
+        <div class="tree">
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Welcome.md</span></div>
+        </div>
+      </aside>
+      <section class="editor-pane">
+        <h1 class="doc-h1">Sensors</h1>
+        <p class="doc-p">Calibration runs on a 10 Hz timer.</p>
+      </section>
+    </div>
+
+    <div class="scrim" id="settings-overlay">
+      <div class="settings-modal" style="width:700px; height:470px;" role="dialog" aria-modal="true" aria-labelledby="m-title">
+        <div class="settings-header">
+          <h2 id="m-title">Settings</h2>
+          <button class="icon-btn" aria-label="Close">×</button>
+        </div>
+        <div class="settings-body">
+          <nav class="settings-nav" role="tablist" aria-label="Settings sections">
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">⚙</span>General</button>
+            <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon">📚</span>Workspaces</button>
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">🎨</span>Appearance</button>
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">⌨</span>Shortcuts</button>
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">🔒</span>Security</button>
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">✨</span>AI</button>
+            <button class="settings-nav-item" role="tab" aria-selected="false"><span class="nav-icon">ℹ</span>About</button>
+          </nav>
+          <div class="settings-sections">
+            <section class="settings-section">
+              <h3>Workspaces</h3>
+              <p class="settings-help">Each workspace is a folder of notes on this machine. Add one per project;
+                the server remembers which one you are in for this session.</p>
+
+              <div class="ws-list" role="list">
+                <div class="ws-row is-active" role="listitem">
+                  <button type="button" class="ws-row-main" aria-current="page">
+                    <span class="ws-row-check" aria-hidden="true">✓</span>
+                    <span class="ws-row-text">
+                      <span class="ws-row-name"><span class="ws-row-label">Notes</span>
+                        <span class="ws-badge">Active</span>
+                        <span class="ws-badge ws-badge--default">Default</span></span>
+                      <span class="ws-row-path">/home/shaun/projects/notebook</span>
+                    </span>
+                  </button>
+                  <div class="ws-row-actions">
+                    <button class="settings-action ws-btn" type="button">Rename</button>
+                    <button class="settings-action ws-btn ws-btn--danger" type="button" disabled
+                            title="The default workspace can't be removed.">Remove</button>
+                  </div>
+                </div>
+
+                <div class="ws-row" role="listitem">
+                  <button type="button" class="ws-row-main">
+                    <span class="ws-row-check" aria-hidden="true"></span>
+                    <span class="ws-row-text">
+                      <span class="ws-row-name"><span class="ws-row-label">Work journal</span></span>
+                      <span class="ws-row-path">/home/shaun/work-journal</span>
+                    </span>
+                  </button>
+                  <div class="ws-row-actions">
+                    <button class="settings-action ws-btn" type="button">Rename</button>
+                    <button class="settings-action ws-btn ws-btn--danger" type="button">Remove</button>
+                  </div>
+                </div>
+
+                <div class="ws-row" role="listitem">
+                  <button type="button" class="ws-row-main" disabled
+                          title="Folder not found: /mnt/usb/archive-notes">
+                    <span class="ws-row-check" aria-hidden="true"></span>
+                    <span class="ws-row-text">
+                      <span class="ws-row-name"><span class="ws-row-label">USB notes</span>
+                        <span class="ws-badge ws-badge--warn">Not found</span></span>
+                      <span class="ws-row-path">/mnt/usb/archive-notes</span>
+                    </span>
+                  </button>
+                  <div class="ws-row-actions">
+                    <button class="settings-action ws-btn" type="button">Rename</button>
+                    <button class="settings-action ws-btn ws-btn--danger" type="button">Remove</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-row ws-add-row">
+                <button class="settings-action ws-add" type="button">+ Add workspace…</button>
+              </div>
+              <p class="settings-note">Switching reloads the page. Removing a workspace never deletes its notes.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="board">
+  <h2>6 · Add workspace — inline error</h2>
+  <p class="cap">One dialog serves Add and Rename. Field-level <code>aria-invalid</code>, one <code>role="alert"</code>
+    line under the fields, and the path the server will actually open. Focus lands in Name; <code>NB.dialog</code>
+    traps Tab and returns focus to the visible mount.</p>
+  <div class="win" style="height:420px;">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="ws-divider" aria-hidden="true"></span>
+      <div class="ws-bar">
+        <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="false" title="Notes — /home/shaun/projects/notebook">
+          <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+          <span class="workspace-name">Notes</span>
+          <span class="workspace-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <span class="spacer"></span>
+      <button class="icon-btn">←</button>
+      <button class="icon-btn">📝</button>
+    </div>
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn active">📁</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn">⚙</button>
+      </nav>
+      <aside class="side-panel">
+        <div class="panel-header"><span class="panel-title">Files</span></div>
+        <div class="tree">
+          <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Welcome.md</span></div>
+        </div>
+      </aside>
+      <section class="editor-pane"><h1 class="doc-h1">Sensors</h1><p class="doc-p">Calibration runs on a 10 Hz timer.</p></section>
+    </div>
+
+    <div class="scrim" id="workspace-dialog">
+      <div class="settings-modal auth-modal" role="dialog" aria-modal="true"
+           aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-help" tabindex="-1">
+        <div class="settings-header">
+          <h2 id="ws-dialog-title">Add workspace</h2>
+          <button class="icon-btn" aria-label="Close">×</button>
+        </div>
+        <form class="settings-body auth-form" onsubmit="return false">
+          <p class="auth-help" id="ws-dialog-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
+
+          <div class="settings-row">
+            <label class="settings-label" for="ws-name">Name</label>
+            <input id="ws-name" class="settings-text-input" type="text" value="Sensor work">
+          </div>
+
+          <div class="settings-row">
+            <label class="settings-label" for="ws-path">Folder</label>
+            <input id="ws-path" class="settings-text-input" type="text" value="/home/shaun/work-journal/sensors"
+                   aria-invalid="true" aria-describedby="ws-resolved ws-error">
+          </div>
+
+          <div class="settings-row">
+            <span class="settings-label" id="ws-resolved-label">Will open</span>
+            <span class="ws-resolved-path">/home/shaun/work-journal/sensors</span>
+          </div>
+
+          <div class="auth-error" id="ws-error" role="alert">This folder overlaps “Work journal”
+            (/home/shaun/work-journal). Workspaces can't contain one another.</div>
+
+          <div class="settings-form-actions">
+            <button class="settings-action" type="button">Cancel</button>
+            <button class="settings-action settings-action--primary" type="submit">Add workspace</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="board">
+  <h2>7 · Phone · 390 px</h2>
+  <p class="cap">The phone forces the topbar visible, so the chip is the only mount: a 44 × 44 icon button, name
+    clipped to an sr-only box, caret and divider gone, rail glyph hidden. The drawer has no workspace row — the chip
+    is always on screen, above it.</p>
+  <div class="row">
+
+    <div>
+      <p class="slice-label">Topbar chip · picker open</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="p-topbar">
+            <div class="ws-bar">
+              <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="true"
+                      aria-controls="ws-menu-p1" title="Notes — /home/shaun/projects/notebook">
+                <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+                <span class="workspace-name">Notes</span>
+                <span class="workspace-caret" aria-hidden="true">▾</span>
+              </button>
+
+              <div class="workspace-menu" id="ws-menu-p1">
+                <div class="ws-menu-list" role="menu" aria-label="Workspace picker">
+                  <button type="button" class="ws-item" role="menuitem" aria-current="page" tabindex="0">
+                    <span class="ws-check" aria-hidden="true">✓</span>
+                    <span class="ws-item-name">Notes</span>
+                  </button>
+                  <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+                    <span class="ws-check" aria-hidden="true"></span>
+                    <span class="ws-item-name">Work journal</span>
+                  </button>
+                  <button type="button" class="ws-item is-unavailable" role="menuitem" aria-disabled="true" tabindex="-1"
+                          title="Folder not found: /mnt/usb/archive-notes">
+                    <span class="ws-check" aria-hidden="true"></span>
+                    <span class="ws-item-body">
+                      <span class="ws-item-name">USB notes</span>
+                      <span class="ws-item-note">Folder not found</span>
+                    </span>
+                    <span class="ws-item-warn" aria-hidden="true">⚠</span>
+                  </button>
+                  <hr class="ws-sep">
+                  <button type="button" class="ws-item" role="menuitem" tabindex="-1">
+                    <span class="ws-check" aria-hidden="true">+</span>
+                    <span class="ws-item-name">Add workspace…</span>
+                  </button>
+                </div>
+                <p class="ws-foot">Switching reloads the page.</p>
+              </div>
+            </div>
+
+            <button class="p-icon" aria-label="Back">←</button>
+            <span class="p-title">Sensors.md</span>
+            <button class="p-icon" aria-label="Note menu">⋯</button>
+          </div>
+
+          <div class="p-body">
+            <div class="p-doc">
+              <h1 class="doc-h1" style="font-size:1.35rem;">Sensors</h1>
+              <p class="doc-p">Calibration runs on a 10 Hz timer. The raw stream is filtered before it reaches the log.</p>
+              <hr class="doc-rule">
+              <pre class="doc-code">sample = adc.read(0)</pre>
+            </div>
+          </div>
+
+          <div class="p-rail">
+            <button class="activity-btn active">📁</button>
+            <button class="activity-btn">📌</button>
+            <button class="activity-btn">🔖</button>
+            <button class="activity-btn">🕒</button>
+            <button class="activity-btn">🔍</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">The popover is <code>min(320px, calc(100vw - 16px))</code>, rows 44 px. The chip's 320 px popover
+        is placed from the chip's left edge, so it stays inside the 390 px viewport.</p>
+    </div>
+
+    <div>
+      <p class="slice-label">Drawer · no workspace row</p>
+      <div class="phone">
+        <div class="screen">
+          <div class="p-topbar">
+            <div class="ws-bar">
+              <button type="button" class="ws-chip" aria-haspopup="menu" aria-expanded="false"
+                      title="Notes — /home/shaun/projects/notebook">
+                <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+                <span class="workspace-name">Notes</span>
+                <span class="workspace-caret" aria-hidden="true">▾</span>
+              </button>
+            </div>
+            <button class="p-icon" aria-label="Back">←</button>
+            <span class="p-title">Sensors.md</span>
+            <button class="p-icon" aria-label="Note menu">⋯</button>
+          </div>
+
+          <div class="p-body">
+            <div class="p-doc">
+              <h1 class="doc-h1" style="font-size:1.35rem;">Sensors</h1>
+              <p class="doc-p">Calibration runs on a 10 Hz timer.</p>
+            </div>
+          </div>
+
+          <div class="p-scrim"></div>
+
+          <div class="p-drawer">
+            <div class="panel-header">
+              <span class="panel-title">Files</span>
+              <div class="panel-header-actions">
+                <button class="collapse-btn">×</button>
+              </div>
+            </div>
+            <div class="tree">
+              <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-folder"/></svg><span class="tree-name">Projects</span></div>
+              <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Welcome.md</span></div>
+              <div class="tree-row selected"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Sensors.md</span></div>
+              <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Roadmap.md</span></div>
+              <div class="tree-row"><span class="tree-indent"></span><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Reading list.md</span></div>
+              <div class="tree-row"><svg class="tree-icon"><use href="#nb-icon-file"/></svg><span class="tree-name">Scratch.md</span></div>
+            </div>
+            <div class="p-drawer-foot">
+              <span class="status-dot"></span><span class="status-origin">notebook.local · </span><span>online</span>
+            </div>
+          </div>
+
+          <div class="p-rail">
+            <button class="activity-btn active">📁</button>
+            <button class="activity-btn">📌</button>
+            <button class="activity-btn">🔖</button>
+            <button class="activity-btn">🕒</button>
+            <button class="activity-btn">🔍</button>
+          </div>
+        </div>
+      </div>
+      <p class="note">The drawer's first row is the view's own <code>.panel-header</code>, as it is on the desktop. The
+        workspace is one 44 px tap away, in the topbar, whether the drawer is open or not.</p>
+    </div>
+
+  </div>
+</section>
+
+<script>
+(function () {
+  "use strict";
+  var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-btn]"));
+  function apply(theme) {
+    document.body.dataset.theme = theme;
+    buttons.forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.themeBtn === theme ? "true" : "false");
+    });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () { apply(b.dataset.themeBtn); });
+  });
+  apply("dark");
+})();
+</script>
+</body>
+</html>

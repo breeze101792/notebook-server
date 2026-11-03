@@ -45,6 +45,7 @@ is no database and no runtime build step.
 | [`product/table-editor-selection.md`](product/table-editor-selection.md) | Range selection and clipboard for the table editor: gestures, copy/cut/paste/clear, the TSV + HTML contract, grid growth, accessibility, AC19–AC40. |
 | [`design/table-editor.md`](design/table-editor.md) | Table editor design handoff: shell, grid, toolbar, sort, blocked state, keyboard, tokens, and responsive rules. Reference mockup: [`design/table-editor.html`](design/table-editor.html). |
 | [`design/table-editor-selection.md`](design/table-editor-selection.md) | Selection and clipboard design handoff: the wash and edge treatment, the clipboard toolbar group, status strings, and the blocked state. |
+| [`ui/workspaces.md`](ui/workspaces.md) | Workspace picker design handoff: the bar, picker, add/rename dialog, Settings list, code-keyed error table, keyboard rules, and the shipped CSS. Reference mockup: [`ui/workspaces-mockup.html`](ui/workspaces-mockup.html). |
 
 ## Contracts
 

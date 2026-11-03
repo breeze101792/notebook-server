@@ -27,6 +27,13 @@
   const SEARCH_DEFAULTS = {
     unique: true, sort: "path", caseSensitive: false, target: "content",
   };
+
+  // /api/search sets `timedOut` when its scan stopped at the deadline and
+  // `matches` is incomplete. The server owns that deadline, so this copy
+  // names no duration and stays true if the budget changes.
+  const SEARCH_TIMEOUT_SUFFIX =
+    "search stopped early — results may be incomplete";
+
   function searchPrefUnique() {
     if (NB.app && NB.app.getSearchUnique) return NB.app.getSearchUnique();
     return SEARCH_DEFAULTS.unique;
@@ -87,7 +94,10 @@
     if (!viewsEl) {
       viewsEl = document.createElement("div");
       viewsEl.className = "activity-bar-views";
-      barEl.insertBefore(viewsEl, barEl.firstChild);
+      // A static top-pinned control (the workspace mount) keeps the first
+      // slot; the view icons go after it.
+      const pin = barEl.querySelector(".activity-pin");
+      barEl.insertBefore(viewsEl, pin ? pin.nextSibling : barEl.firstChild);
     }
     viewsEl.innerHTML = "";
     for (const v of views) {
@@ -770,38 +780,39 @@
       return n + " " + (n === 1 ? one : many);
     }
 
-    function summaryFor(matches, isUnique, truncated, perFileTruncated) {
+    function summaryFor(matches, isUnique, truncated, perFileTruncated, timedOut) {
       const n = matches.length;
+      let s;
       if (isUnique) {
         if (truncated) {
-          return plural(n, "note", "notes") + " shown — more results exist";
+          s = plural(n, "note", "notes") + " shown — more results exist";
+        } else {
+          let total = 0;
+          matches.forEach(m => {
+            total += (typeof m.count === "number" && isFinite(m.count) && m.count >= 0)
+              ? m.count : 1;
+          });
+          s = plural(n, "note", "notes") + " · " +
+            plural(total, "match", "matches");
         }
-        let total = 0;
-        matches.forEach(m => {
-          total += (typeof m.count === "number" && isFinite(m.count) && m.count >= 0)
-            ? m.count : 1;
-        });
-        return plural(n, "note", "notes") + " · " +
-          plural(total, "match", "matches");
-      }
-      const paths = new Set(matches.map(m => m.file));
-      if (truncated) {
-        let s = plural(n, "match", "matches") + " shown — more results exist";
+      } else {
+        const paths = new Set(matches.map(m => m.file));
+        if (truncated) {
+          s = plural(n, "match", "matches") + " shown — more results exist";
+        } else {
+          s = plural(n, "match", "matches") + " in " +
+            plural(paths.size, "note", "notes");
+        }
         if (perFileTruncated) s += " · some notes have more matches";
-        return s;
       }
-      let s = plural(n, "match", "matches") + " in " +
-        plural(paths.size, "note", "notes");
-      if (perFileTruncated) s += " · some notes have more matches";
-      return s;
+      return timedOut ? s + " · " + SEARCH_TIMEOUT_SUFFIX : s;
     }
 
-    function summaryForNames(matches, truncated) {
+    function summaryForNames(matches, truncated, timedOut) {
       const n = matches.length;
-      if (truncated) {
-        return plural(n, "note", "notes") + " shown — more results exist";
-      }
-      return plural(n, "note", "notes");
+      let s = plural(n, "note", "notes");
+      if (truncated) s += " shown — more results exist";
+      return timedOut ? s + " · " + SEARCH_TIMEOUT_SUFFIX : s;
     }
 
     function clearSummaryActions() {
@@ -927,6 +938,7 @@
       const matches = Array.isArray(data && data.matches) ? data.matches : [];
       const truncated = !!(data && data.truncated);
       const perFileTruncated = !!(data && data.perFileTruncated);
+      const timedOut = !!(data && data.timedOut);
       const hadFocus = list.contains(document.activeElement);
       list.innerHTML = "";
       setListBusy(false);
@@ -934,7 +946,10 @@
       note.textContent = "";
 
       if (!matches.length) {
-        setSummary(isName ? "0 notes" : "0 matches");
+        // An empty result from a stopped scan is not a clean "no hits", so
+        // the summary still carries the incomplete-scan caveat.
+        setSummary((isName ? "0 notes" : "0 matches") +
+          (timedOut ? " · " + SEARCH_TIMEOUT_SUFFIX : ""));
         const empty = document.createElement("div");
         empty.className = "search-panel-empty search-panel-state";
         empty.setAttribute("role", "presentation");
@@ -970,8 +985,8 @@
       }
 
       setSummary(isName
-        ? summaryForNames(matches, truncated)
-        : summaryFor(matches, isUnique, truncated, perFileTruncated));
+        ? summaryForNames(matches, truncated, timedOut)
+        : summaryFor(matches, isUnique, truncated, perFileTruncated, timedOut));
       if (isUnique && !isName) {
         note.textContent = "Click a row to open its first match.";
         note.hidden = false;

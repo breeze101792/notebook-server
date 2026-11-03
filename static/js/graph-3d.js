@@ -73,7 +73,12 @@
   const LABEL_FONT = '500 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   const LABEL_FONT_STRONG = '600 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   const LABEL_MAX_CHARS = 30;
+  // Must stay above the server's 5 s graph-scan deadline: the server's 504
+  // (and its message) has to arrive before this race rejects on the client.
   const FETCH_TIMEOUT_MS = 10000;
+  const NOTIFY_MS = 4000;
+  const GRAPH_TIMEOUT_MESSAGE =
+    "The notebook took too long to scan. Graph not refreshed.";
   const PARTICLES_LIMIT = 500;
 
   // Cap the synchronous warm-up by work, not just steps: 300 nodes at the
@@ -1120,8 +1125,11 @@
         fetching = false;
         if (el.refresh) el.refresh.classList.remove("is-spinning");
         if (!active) return;
+        const timedOut = !!(err && err.code === "timeout");
+        if (timedOut) notifyGraphTimeout();
         if (hadData) {
-          showToast("Couldn’t refresh the graph");
+          // The rendered graph stays; only the notice says it is stale.
+          if (!timedOut) showToast("Couldn’t refresh the graph");
           updateControls();
         } else {
           setReady("error");
@@ -1190,6 +1198,16 @@
   }
 
   // --- toast / hint ---------------------------------------------------
+  /* A 504 means the server's walk hit its scan deadline and sent no data.
+   * The graph on screen stays; this only says why it is stale. */
+  function notifyGraphTimeout() {
+    if (NB.app && NB.app.notify) {
+      NB.app.notify(GRAPH_TIMEOUT_MESSAGE, NOTIFY_MS, "warn");
+    } else {
+      showToast(GRAPH_TIMEOUT_MESSAGE);
+    }
+  }
+
   function showToast(message) {
     announce(message);
     if (!el.toast) return;

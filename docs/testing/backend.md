@@ -4,10 +4,11 @@
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **366 test methods across 42 `TestCase` classes**
-(plus `BaseTest`, which is the shared base and holds no tests). The class
-count and method count below were verified against the file, not copied from
-older notes.
+The suite currently holds **435 test methods across 50 `TestCase` classes**
+(plus `BaseTest` and `WorkspaceTestBase`, which are shared bases and hold no
+tests). The table below maps the original core route/file classes; the later
+ACP, workspace and CLI classes are not listed there (workspace coverage is
+described below).
 
 Run it:
 
@@ -100,6 +101,32 @@ Both handlers override `log_message` to keep test output clean. Each of
 `TestAiTools` and `TestAiChat` starts its stub in `setUpClass` and shuts it
 down in `tearDownClass`, resetting `LAST_UPSTREAM` / `LAST_WEB` (and
 `UPSTREAM_STATUS`) in `setUp`.
+
+## Multi-workspace coverage
+
+`WorkspaceTestBase` (no tests) adds throw-away root folders
+(`make_root`), registry/config fixtures (`write_registry`, `write_config`),
+a session helper (`set_session_workspace`), a `file_stamp` no-write assertion
+(`contents`, `mtime_ns`), an `enable_auth` fixture, a `call` helper, and the
+two route tables the resolution and cache tests share
+(`DATA_ROUTE_CALLS`, `NON_DATA_ROUTE_CALLS`, `PUBLIC_ROUTE_CALLS`). Eight
+classes cover the feature:
+
+| Class | Tests | Covers |
+| --- | --- | --- |
+| `TestWorkspaceStore` | 16 | Registry load/save: a missing file, a missing default entry and a corrupt file each synthesise the default in memory without writing; persistence is asserted through a mutating route (add, rename) and through `_persist_workspaces_if_changed`; a corrupt registry never 500s, is left byte-identical and warns once across several requests; invalid/duplicate entries dropped, default forced first, a stale stored default path corrected to `DATA_DIR`, 32-entry cap, rename keeps id/path/default flag, duplicate rename rejected, delete removes the entry but keeps files, unknown ids 404, default is not removable |
+| `TestWorkspaceValidation` | 16 | `POST /api/workspaces` 400s: missing fields, non-object body, empty/overlong/duplicate name, relative path, missing path, file-not-folder, unreadable folder, path inside `BASE_DIR` or `CONFIG_DIR`, path containing `BASE_DIR`, overlap in both directions (message names the other workspace), 32-entry cap; every one of those asserts its stable `code`; plus the 201 public shape, realpath storage, and symlinked-folder registration |
+| `TestWorkspacePermissions` | 11 | Admin may add/rename/remove/write state; a viewer may list and switch but gets 403 `not_admin` on every registry write; anonymous gets 401; auth-off allows loopback and refuses non-loopback writes (overridden `REMOTE_ADDR`) while reads stay open; an `X-Forwarded-For` or `X-Real-IP` header is refused even from loopback with `loopback_required`; logout clears `session["workspace"]` as well as the role; the shell boot always paints `data-workspace` and `data-role` but withholds the workspace list from an anonymous client; the shell does not list workspace names to an anonymous client |
+| `TestWorkspaceResolution` | 13 | `X-Notebook-Workspace` selects the tree and `/api/info` root and `active`; an unknown header or a stale session id 404s with `code: unknown_workspace` on the twelve gated data routes only and never on `/api/config`, `/api/info`, `/api/workspaces`, `/api/workspaces/active`, `/api/login`, `/api/auth`, `/api/ai/config` or the shell; unauthenticated callers get 401 for both a real and an unknown id (no id oracle); session switch; header beats session; bad switch ids; removing the active workspace clears the session; shell boot carries the active id and name; a folder deleted after registration is listed as `available: false` and serves an empty tree instead of failing |
+| `TestWorkspaceDataIsolation` | 2 | A file written through one root is absent from the default tree, and deleting a same-named file in workspace B leaves the default copy intact |
+| `TestWorkspacePathGuards` | 4 | Delete/move/copy of a non-default root refused; delete of the default root refused; `../` traversal refused for delete/move/copy, file write, file read and `ls` in a non-default root and in the default root |
+| `TestWorkspaceConfigState` | 12 | The legacy migration runs from `_migrate_config_at_startup`, moving the seven content keys into `workspaceState.default` (persisted, unrelated keys kept) and is idempotent by mtime; `GET /api/config` is read-only and returns the stored shape unchanged; `POST /api/config` folds stray legacy top-level keys into `workspaceState.default` and preserves other workspaces' entries; existing `workspaceState` left alone; empty config untouched; workspace-state merge keeps other entries and unrelated keys; non-object/missing/oversized bodies rejected (400 with `bad_body` / `state_too_large`), the exact cap accepted, and a failed config write is a 500 with `write_failed` |
+| `TestWorkspaceCacheHeaders` | 4 | Every gated read carries `Vary: X-Notebook-Workspace` plus `Cache-Control: no-store`; the data-route unknown-workspace 404s vary too, as do the non-data routes that answer an unknown id; `POST /api/workspace-state` varies |
+
+Known gap (reported, not fixed): `POST /api/workspace-state` is gated by the
+plain `admin_required` decorator, so its viewer 403 body carries no `code` and
+its auth-off path is not loopback-gated the way the three registry mutations
+are. `TestWorkspacePermissions` asserts the current 403 only.
 
 ## Related documentation
 
