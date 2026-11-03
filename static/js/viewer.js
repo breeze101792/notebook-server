@@ -669,9 +669,11 @@
     }
     return null;
   }
-  function showWelcome() {
+  function showWelcome(opts) {
     active = null;
-    cache.clear();
+    // A session swap lands on an empty target while other sessions keep their
+    // stashed drafts, so the empty state can keep the cache.
+    if (!(opts && opts.keepCache)) cache.clear();
     clearTimeout(liveTimer);
     editSplit.classList.remove("split");
     const scroller = NB.cmEditor.scrollDOM();
@@ -680,6 +682,10 @@
     if (cmHostEl) cmHostEl.hidden = true;
     viewerEl.hidden = true;
     welcomeEl.hidden = false;
+    // No activate() follows a pinned-only or empty strip, so a special tab's
+    // container would otherwise stay on top of the welcome page.
+    hideSpecialContainers();
+    hideDraftBar();
     // Clear the previous file's rendered markdown from #viewer-content
     // (and drop the per-render heading-id dedup state via seenIds).
     // Without this, the old HTML stays in the DOM inside the now-hidden
@@ -708,6 +714,12 @@
     // Shared with hybrid.js and export.js: drop marked's task-item
     // separator space after rendering (see stripTaskItemSpaces).
     stripTaskItemSpaces,
+    /* Abandon an in-flight activate(): bump the token so a pending fetch
+     * seeds the cache and returns without touching `active`, the DOM, or
+     * emitting file:open. Called by tabs.js before a session swap. */
+    cancelActivation() {
+      activateToken++;
+    },
     /* Load `path` into the cache (fetch on miss) and show it. Emits
      * file:open so the sidebar highlight and recent list stay in sync.
      * Copies the editor value into the tab being left's cache entry as a
@@ -781,6 +793,13 @@
     clear() {
       showWelcome();
       hideDraftBar();
+      if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(null);
+    },
+    /* The active session's strip is empty: show the welcome page (or the
+     * session's pinned active tab) without destroying another session's
+     * stashed draft. */
+    showSessionEmpty() {
+      showWelcome({ keepCache: true });
       if (NB.mobile && NB.mobile.setTitle) NB.mobile.setTitle(null);
     },
     /* Re-enter the empty state (e.g. after a test close). Alias for
@@ -1170,7 +1189,16 @@
       return;
     }
     const wasActive = (active === path);
+    // isOpen is active-session-only, which is exactly the "can the user see
+    // this note?" test. A hidden session's dirty file must not raise a modal;
+    // the conflict badge appears when the session is shown. Guarded for the
+    // harness, where the event handler can be registered before tabs.js.
+    const live = !NB.tabs || !NB.tabs.isOpen || NB.tabs.isOpen(path);
     if (viewer.isDirty(path)) {
+      if (!live) {
+        NB.evt.emit("viewer:conflict", { path, conflict: true });
+        return;
+      }
       const ok = confirm('"' + path + '" changed on disk.\n\n' +
         'Discard your unsaved edits and reload from disk?\n' +
         '(Cancel keeps your edits and marks the tab as a conflict.)');

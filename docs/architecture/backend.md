@@ -168,14 +168,24 @@ silently loses the other's update. Reads stay lock-free because
 `atomic_write()` publishes a complete file.
 
 **Startup migration.** `_migrate_config_at_startup()` runs once at import time,
-after `seed()` and before the server starts, and moves the seven
+after `seed()` and before the server starts, and moves the nine
 workspace-scoped top-level keys (`lastFile`, `openFiles`, `activeFile`,
-`pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`) under
+`pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`,
+`pinnedFolders`) under
 `workspaceState.default`. It is idempotent, leaves a blob that already has
 `workspaceState` alone, and is best effort under `_CONFIG_LOCK`. It
 deliberately does not run from `GET /api/config`, because a read route must not
 write a server-owned file. `POST /api/config` still folds stray legacy keys
 under `default` on every write, so a whole-blob POST cannot strand them.
+
+**Session state.** `POST /api/workspace-state` replaces the whole entry, so a
+client loaded before sessions existed (or a second stale tab) would otherwise
+delete `sessions`/`activeSessionId`. The route keeps those two keys from the
+stored entry when the incoming body omits them and the stored entry has
+`sessions`; a current client always sends both, so a real change is never
+blocked. `_ACTIVE_VIEWS` also gains `sessions`, so a saved view id is accepted
+by `boot_state()` and the view is painted on the first frame. See
+[sessions.md](sessions.md) §3, §11.
 
 ## 4. Auth architecture
 

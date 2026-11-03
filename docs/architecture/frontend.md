@@ -87,9 +87,12 @@ with `DEFAULTS` in `app.js:7-87`. `_ACTIVE_VIEWS`
 `app.js` registers a `DOMContentLoaded` listener (`app.js:652`). Its
 `boot()` function (`app.js:644`) wires DOM handlers, applies the server
 config over `DEFAULTS`, refreshes the sidebar tree, enables the vim keymap
-if `cfg.vimMode` is set, restores open tabs filtered to existing files,
-and opens any deep link before stripping it with `history.replaceState`
-(`app.js:630-641`).
+if `cfg.vimMode` is set, normalises the workspace's sessions, restores the
+active session's tabs (filtered to existing files) with the other sessions
+stored, and opens any deep link before stripping it with
+`history.replaceState` (`app.js:630-641`). A file that is already open in
+another session is opened in the active session; a note may be open in several
+sessions at once ([`sessions.md`](sessions.md) §8).
 
 `boot()` does not paint the active side-panel view: the shell already
 rendered it and `activity.js` adopts it at load (`adoptShellView`). Boot
@@ -140,7 +143,8 @@ implemented today.
 | `graph.js` | 276 | `NB.graph` | `§graph` facade: tab/activity wiring, shared header chrome, 2D/3D mode switch, persisted `graphMode`, and the compatibility surface that delegates to the active renderer. |
 | `graph-3d.js` | 2505 | `NB.graph3d` | 3D renderer: perspective orbit camera, canvas-2D projection, force physics, depth spread, hover/selection/filter states, loading/empty/error layers, optional particles. |
 | `graph-2d.js` | 1123 | `NB.graph2d` | Original 2D neural renderer: force layout, pan/zoom, hover/selection, particles, edge pulses, glow. |
-| `tabs.js` | 934 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry. A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md) and [design/tab-close-animation.md](design/tab-close-animation.md)). |
+| `tabs.js` | 934 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry, and the **session model** (named tab groups sharing the workspace's pins). A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md), [design/tab-close-animation.md](design/tab-close-animation.md), and [sessions.md](sessions.md)). |
+| `sessions.js` | new | `NB.sessions` | Sessions side-panel view: header, row list, row menu, New/Rename dialog, and the `Move to session` submenu's handlers. No tab data: reads `NB.tabs.getSessionList()` and writes only through `NB.tabs.*` (see [sessions.md](sessions.md) §12 and [ui/sessions.md](../ui/sessions.md)). |
 | `windows.js` | 279 | `NB.windows` | Makes each settings modal a draggable/resizable floating window. Geometry in `localStorage` under `nb:windowGeometry`. |
 | `settings.js` | 1728 | `NB.settings` | Settings modal with six tabs: General, Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 965 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
@@ -236,9 +240,11 @@ schema is `DEFAULTS` in `app.js:7-87`:
 | `wallpaperScroll` | `"scroll"` | scroll / fixed |
 | `lastFile` | `null` | |
 | `recentFiles` | `[]` | |
-| `openFiles` | `[]` | |
-| `activeFile` | `null` | |
-| `pinnedFiles` | `[]` | |
+| `openFiles` | `[]` | Mirror of the active session's strip |
+| `activeFile` | `null` | Mirror of the active session's tab |
+| `pinnedFiles` | `[]` | Workspace-global; shared by every session |
+| `sessions` | absent | Named tab groups; absent is migrated to one "Main" session. See [sessions.md](sessions.md) |
+| `activeSessionId` | absent | The session on screen; absent follows the first session |
 | `sidebarWidth` | `240` | |
 | `outlineWidth` | `220` | |
 | `sidebarCollapsed` | `false` | |
@@ -325,31 +331,38 @@ asset still updates, but the install-time copy stays stale.
 
 ### Activity bar views
 
-`NB.activity` registers four side-panel views (`activity.js:491-520`):
+`NB.activity` registers seven side-panel views (`activity.js:1318-1363`):
 
 | View | What it shows |
 | --- | --- |
-| Explorer | File tree and bookmarks |
+| Explorer | File tree, the inline pinned/bookmark section, and the tree menu |
+| Sessions | The workspace's tab groups: rows switch, `+` creates, row menu renames/deletes ([sessions.md](sessions.md), [ui/sessions.md](../ui/sessions.md)) |
+| Pinned | Pinned folder list |
+| Bookmarks | Bookmark list |
 | Recent | Fuzzy quick-open over recent files |
 | Search | Side-panel search input and results |
 | AI | Assistant chat panel |
 
-Mounts are lazy: a view's host stays empty until the first activation.
+Registration order is rail order. Mounts are lazy: a view's host stays empty
+until the first activation. The Sessions icon is hidden on the phone, where
+sessions are neither restored nor persisted.
 
 ### Tab bar
 
-`#tab-bar` holds three children in order (`index.html:128-142`):
+`#tab-bar` holds three children in order (`index.html:241-256`) and is
+unchanged by sessions:
 
 | Child | Role |
 | --- | --- |
-| `#tab-pinned` (`.tab-pinned`) | Pinned tabs. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`, `style.css:470`). |
-| `#tab-list` (`.tab-list`) | Unpinned tabs. The only part of the row that scrolls (`overflow-x: auto`). |
+| `#tab-pinned` (`.tab-pinned`) | Pinned tabs, shared by every session. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`, `style.css:470`). |
+| `#tab-list` (`.tab-list`) | The active session's unpinned tabs. The only part of the row that scrolls (`overflow-x: auto`). |
 | `#outline-toggle` | The outline button, a fixed sibling at the right edge. |
 
-`tabs.js` toggles the region's `hidden` attribute through
+`tabs.js` toggles the pinned region's `hidden` attribute through
 `syncPinnedRegion()` (`tabs.js:265-268`): `#tab-pinned` is hidden while
 nothing is pinned and no pinned ghost is in flight. There is no separator
-between the regions; the bar's own `2px` gap is the spacing.
+between the regions; the bar's own `2px` gap is the spacing. Sessions change
+which paths are in `#tab-list`, never the bar's structure.
 
 `NB.tabs` owns the width-freeze / release / ghost-close machinery described
 in [`design/tab-equalization.md`](design/tab-equalization.md) and

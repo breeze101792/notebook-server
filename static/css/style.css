@@ -8095,3 +8095,186 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   .ws-item { min-height: var(--m-hit); font-size: .95rem; }
   .ws-foot { font-size: .8rem; }
 }
+
+/* ------------------------------------------------------------------ */
+/* Sessions                                                            */
+/* A named set of unpinned tabs plus its own active tab, per workspace.*/
+/* The control is a side-panel view beside Explorer, Pinned and        */
+/* Bookmarks. The tab bar is untouched: #tab-pinned, #tab-list and     */
+/* #outline-toggle are its only children.                              */
+/* Spec: docs/ui/sessions.md.                                          */
+/* ------------------------------------------------------------------ */
+
+/* The header +. Same 18 px box as .bookmarks-add, but its own class: the
+ * bookmark button is the ★ toggle, and its phone rule is scoped to
+ * #bookmarks-view. Keeps its tab stop when unavailable so the reason is
+ * reachable (sessions.md D15). */
+.session-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 1.07rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.session-add:hover { color: var(--fg); background: var(--accent-soft); }
+.session-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.session-add[aria-disabled="true"] {
+  color: var(--ws-fg-muted);
+  cursor: default;
+  opacity: .72;
+}
+.session-add[aria-disabled="true"]:hover { background: none; }
+
+/* One row = wrapper + two buttons. The row is a <button> so Enter and
+ * Space switch it natively; a button cannot contain the ⋯ button, so the
+ * two are siblings and the wrapper keeps them on one line. */
+.session-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* The row reuses .bookmark-row (flex, 3px 6px padding, 4 px radius, hover,
+ * nowrap) and resets the button chrome .bookmark-row never needed as a div. */
+.session-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.session-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The active session: the bookmarks selected fill, the tree's 2 px accent
+ * edge, and weight. The name stays --fg: --accent on --accent-soft is
+ * 4.39:1 in the dark theme, under 4.5:1 for 14 px text (the shipped
+ * bookmark-selected pair). Three cues, none of them hue alone. */
+.session-row[aria-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+.session-row[aria-current="true"]:hover { background: var(--accent-soft); }
+
+.session-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The same 8 px accent dot as .tab.dirty, so a session row and its visible
+ * dirty tab never disagree. Presentational: the row's accessible name
+ * carries ", unsaved changes". */
+.session-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Unpinned tab count. Tabular digits and a 2ch floor keep the column steady
+ * from 0 to 40. --ws-fg-muted, not --fg-muted (4.26:1 on the light panel).
+ * On the active row it takes --fg: --ws-fg-muted on --accent-soft is
+ * 4.03:1 in the dark theme. */
+.session-count {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  text-align: right;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-fg-muted);
+}
+.session-row[aria-current="true"] .session-count {
+  color: var(--fg);
+  font-weight: 400;
+}
+
+/* Per-row actions. Visible at rest: a keyboard user must be able to reach
+ * it without a pointer, and a hover-only control cannot be tabbed to. */
+.session-more {
+  flex: 0 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.session-more:hover { color: var(--fg); background: var(--accent-soft); }
+.session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The model in one line, pinned to the view's bottom. It explains the shared
+ * pinned region, which is true at any scroll position, and must not scroll
+ * out of sight at 20 sessions. */
+.sessions-foot {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--ws-fg-muted);
+  font-size: .76rem;
+  line-height: 1.35;
+}
+
+/* ---- Move to session flyout ------------------------------------- */
+/* The shipped flyout shrink-to-fits inside its parent's 170 px, so a
+ * session name longer than the 150 px minimum wraps onto two lines. Size
+ * it to its longest name and clip at 260 px (about 30 characters) rather
+ * than wrap. Applies to every submenu; the existing labels are short. */
+body > #nb-menu .submenu > .context-menu { width: max-content; max-width: 260px; }
+body > #nb-menu .submenu > .context-menu button {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A disabled parent (the read-only "Move to session") must not reveal a
+ * flyout the user cannot act on. */
+body > #nb-menu .submenu[disabled] > .context-menu { display: none; }
+
+/* ---- two shipped context-menu states this view exposes --------- */
+/* Additive overrides, later in the file than the shipped rules. */
+/* A disabled item must stay above 4.5:1 on the light --bg-elev. */
+body > #nb-menu button:disabled { color: var(--ws-fg-muted); }
+/* --danger on the accent-soft hover fill is 3.99:1 light and 3.73:1 dark.
+ * The ring keeps the face (4.68 / 5.07) and marks the target. */
+body > #nb-menu button.danger:hover {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+/* ---- dialog: one short label ------------------------------------ */
+#session-dialog .settings-label { flex: 0 0 92px; }
+
+/* ---- phone: the view does not exist ----------------------------- */
+/* Same rule and same treatment as the AI view (style.css:7220-7221). This
+ * block is a second copy of the phone query because Appendix A is appended
+ * after the shipped one; no existing block is edited. The host is hidden
+ * too, so a saved activeView cannot paint an empty drawer. */
+@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  .activity-btn[data-view="sessions"],
+  #side-panel .side-panel-view[data-view="sessions"] { display: none; }
+}

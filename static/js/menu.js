@@ -20,8 +20,8 @@
   el.hidden = true;
   document.body.appendChild(el);
 
-  // { owner, scope } of the open menu; null while closed. `scope` is the
-  // element a right-click must land inside to leave the menu open.
+  // { owner, scope, onClose } of the open menu; null while closed. `scope`
+  // is the element a right-click must land inside to leave the menu open.
   let state = null;
 
   /* --- public API --------------------------------------------------- */
@@ -32,6 +32,10 @@
     const items = opts.items;
     validateOptions(opts);
     validateItems(items);
+
+    // A menu opened over another one closes the first with the "outside"
+    // reason, so its owner can clear the state it set on the trigger.
+    if (!el.hidden) close(undefined, "outside");
 
     el.innerHTML = "";
     buildItems(el, items);
@@ -44,19 +48,28 @@
     el.style.top = Math.max(VIEWPORT_EDGE, Math.min(opts.y, maxTop)) + "px";
     el.setAttribute("role", "menu");
 
-    state = { owner, scope };
+    state = {
+      owner,
+      scope,
+      onClose: typeof opts.onClose === "function" ? opts.onClose : null,
+    };
     if (opts.focusFirst) {
       const first = el.querySelector("button:not([disabled])");
       if (first) first.focus({ preventScroll: true });
     }
   }
 
-  function close(owner) {
+  // `owner` restricts the close to a surface's own menu; `reason` is the
+  // single dispatcher's account of why it closed: an Escape press ("esc"),
+  // a picked item ("pick"), or anything else ("outside", the default).
+  function close(owner, reason) {
     if (el.hidden) return;
     if (owner != null && (!state || state.owner !== owner)) return;
     el.hidden = true;
     el.querySelectorAll(".submenu.open").forEach((s) => s.classList.remove("open"));
+    const finished = state;
     state = null;
+    if (finished && finished.onClose) finished.onClose(reason || "outside");
   }
 
   /* --- rendering ---------------------------------------------------- */
@@ -104,7 +117,7 @@
       btn.setAttribute("aria-disabled", "true");
       if (item.title) btn.title = item.title;
     } else {
-      btn.addEventListener("click", (e) => { e.stopPropagation(); close(); item.handler(); });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); close(undefined, "pick"); item.handler(); });
     }
     appendKbd(btn, item.kbd);
     return btn;
@@ -120,6 +133,15 @@
     fly.hidden = false;   // CSS shows the flyout via .submenu:hover / .open
     buildItems(fly, item.submenu);
     wrap.appendChild(fly);
+    if (item.disabled) {
+      // A disabled parent advertises an unavailable command: native
+      // disabled keeps it out of the arrow walk, and its reason stays on
+      // the title. No click toggle.
+      wrap.disabled = true;
+      wrap.setAttribute("aria-disabled", "true");
+      if (item.title) wrap.title = item.title;
+      return wrap;
+    }
     // Click toggles .open so touch / single-click devices work.
     wrap.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -165,7 +187,7 @@
 
   document.addEventListener("keydown", (e) => {
     if (el.hidden) return;
-    if (e.key === "Escape") { close(); return; }
+    if (e.key === "Escape") { close(undefined, "esc"); return; }
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp" &&
         e.key !== "ArrowRight" && e.key !== "ArrowLeft" &&
         e.key !== "Enter" && e.key !== " ") return;

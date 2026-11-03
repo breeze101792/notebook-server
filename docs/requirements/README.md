@@ -61,6 +61,9 @@ linked documents for detail.
   unsaved edits survive a switch: the dirty buffer is kept, the tab stays
   marked, and a Recover bar restores it on return (source mode is Ctrl+Z
   undoable); Discard reloads the saved bytes. Autosave saves silently.
+- Named sessions inside a workspace: several sets of unpinned tabs, one per
+  task, switching in place, with the workspace's pinned tabs shared by every
+  session ([sessions](features/sessions.md)).
 
 **Rendering**
 

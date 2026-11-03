@@ -31,6 +31,29 @@
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)
   let activePath = null;
 
+  /* Sessions: a named set of unpinned tabs plus its own active tab. The
+   * active session IS the live view above (`ordered` minus pins, `activePath`);
+   * only the inactive sessions are stored. `sessionNames` and `sessionOrder`
+   * are metadata and never hold paths, so a path is owned by exactly one of
+   * `pinned`, the live strip, or one stored record. Spec:
+   * docs/architecture/sessions.md. */
+  const SESSION_MAX_COUNT = 20;        // sessions per workspace
+  const SESSION_NAME_MAX = 40;         // characters, after trimming
+  const SESSION_FILES_MAX = 40;        // unpinned tabs per session
+  const SESSION_DEFAULT_ID = "main";
+  const SESSION_DEFAULT_NAME = "Main";
+  const SESSION_ID_PREFIX = "s-";
+  const SESSION_FULL_MESSAGE =
+    "This session is full — close a tab or open a new session.";
+  const SESSION_LIMIT_MESSAGE = SESSION_MAX_COUNT + " sessions is the limit. Delete one first.";
+
+  let sessionOrder = [];               // ids, display order
+  const sessionNames = new Map();      // id -> display name
+  const storedSessions = new Map();    // id -> { openFiles: [path], activeFile }
+  let activeSessionId = "";
+  let sessionToken = 0;                // guards an in-flight swapTo
+  let sessionSeq = 0;                  // id generator counter
+
   /* Special tabs: pseudo-paths that render in the tab bar like file tabs
    * but show a non-file view (graph, search) in the content area instead
    * of a rendered note. A special tab's id starts with "§" so it never
@@ -113,6 +136,286 @@
     const u = ordered.filter(x => !pinned.has(x));
     ordered.length = 0;
     ordered.push(...p, ...u);
+  }
+
+  /* --- sessions: the model ------------------------------------------- */
+  /* A name is trimmed and capped; empty names are rejected, never stored. */
+  function cleanSessionName(raw) {
+    return String(raw == null ? "" : raw).trim().slice(0, SESSION_NAME_MAX);
+  }
+
+  /* Case-insensitive collision test against every other session. */
+  function nameTaken(name, exceptId) {
+    const n = name.toLowerCase();
+    for (const id of sessionOrder) {
+      if (id === exceptId) continue;
+      if ((sessionNames.get(id) || "").toLowerCase() === n) return true;
+    }
+    return false;
+  }
+
+  /* `{ok, code, name}`; `code` is "name_empty", "name_duplicate" or "" (ok).
+   * A too-long paste is truncated before validation, never rejected. The
+   * dialog (sessions.js) maps these codes onto its inline errors. */
+  function validateSessionName(raw, exceptId) {
+    const name = cleanSessionName(raw);
+    if (!name) return { ok: false, code: "name_empty" };
+    if (nameTaken(name, exceptId)) return { ok: false, code: "name_duplicate" };
+    return { ok: true, code: "", name };
+  }
+
+  function generateSessionId(taken) {
+    let id;
+    do {
+      sessionSeq++;
+      id = SESSION_ID_PREFIX + Date.now().toString(36) + "-" + sessionSeq.toString(36);
+    } while (taken(id));
+    return id;
+  }
+
+  function notify(msg) {
+    if (NB.app && NB.app.notify) NB.app.notify(msg);
+  }
+
+  function treeHasPath(tree, path) {
+    for (const node of tree) {
+      if (node.path === path) return true;
+      if (node.children && treeHasPath(node.children, path)) return true;
+    }
+    return false;
+  }
+
+  /* The tree may have changed since normalisation (a file removed between
+   * the fetch and restore). A missing path is dropped; the session stays. */
+  function liveTreeAllows(path) {
+    if (typeof path !== "string" || !path) return false;
+    if (isSpecial(path)) return specialTabs.has(path);
+    const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : null;
+    if (!tree || !tree.length) return true;   // nothing to check against
+    return treeHasPath(tree, path);
+  }
+
+  function unpinnedCount() { return ordered.filter(p => !pinned.has(p)).length; }
+
+  /* Rule 4 of normalisation: a stored activeFile survives while it is in the
+   * session or pinned; otherwise the first session file, else nothing. */
+  function fixSessionActive(rec, pinSet) {
+    const files = rec.openFiles || [];
+    if (rec.activeFile &&
+        (files.indexOf(rec.activeFile) >= 0 || pinSet.has(rec.activeFile))) return;
+    rec.activeFile = files[0] || null;
+  }
+
+  /* Drop one path from a stored record and repair its activeFile. */
+  function removeStoredFile(rec, path) {
+    const i = (rec.openFiles || []).indexOf(path);
+    if (i >= 0) rec.openFiles.splice(i, 1);
+    if (rec.activeFile === path) rec.activeFile = rec.openFiles[0] || null;
+  }
+
+  /* Live view <- a stored record (or an empty session). The pins keep their
+   * displayed order: `ordered`'s prefix, not the Set's insertion order,
+   * because drag-reorder changes the strip and not the Set. The record is
+   * consumed: storedSessions never holds the active session. */
+  function installSession(id) {
+    const rec = storedSessions.get(id) || { openFiles: [], activeFile: null };
+    storedSessions.delete(id);
+    const pinOrder = ordered.filter(p => pinned.has(p));
+    ordered.length = 0;
+    openSet.clear();
+    for (const p of pinOrder) { ordered.push(p); openSet.add(p); }
+    for (const p of rec.openFiles) {
+      if (!pinned.has(p) && !openSet.has(p)) { ordered.push(p); openSet.add(p); }
+    }
+    activePath = (rec.activeFile && openSet.has(rec.activeFile))
+      ? rec.activeFile
+      : (rec.openFiles.find(p => openSet.has(p)) || ordered[0] || null);
+  }
+
+  /* Live view -> the outgoing session's record. An empty session stores an
+   * explicit empty record so it is not confused with a missing one. */
+  function storeOutgoing() {
+    if (!activeSessionId) return;
+    storedSessions.set(activeSessionId, {
+      openFiles: ordered.filter(p => !pinned.has(p)),
+      activeFile: activePath,
+    });
+  }
+
+  /* The persisted shape: the live view for the active id, stored records for
+   * the rest, in session order. `dirty`/`count` are UI-only, never persisted. */
+  function snapshot() {
+    const live = { openFiles: ordered.filter(p => !pinned.has(p)), activeFile: activePath };
+    return sessionOrder.map(id => {
+      const rec = (id === activeSessionId)
+        ? live
+        : (storedSessions.get(id) || { openFiles: [], activeFile: null });
+      return {
+        id,
+        name: sessionNames.get(id) || id,
+        openFiles: (rec.openFiles || []).slice(),
+        activeFile: rec.activeFile || null,
+      };
+    });
+  }
+
+  function getSessionList() {
+    const live = { openFiles: ordered.filter(p => !pinned.has(p)), activeFile: activePath };
+    const hybridDirty = !!(NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive() &&
+                           NB.hybrid.isDirty && NB.hybrid.isDirty());
+    return sessionOrder.map(id => {
+      const rec = (id === activeSessionId)
+        ? live
+        : (storedSessions.get(id) || { openFiles: [], activeFile: null });
+      const files = rec.openFiles || [];
+      const dirty = files.some(p => !isSpecial(p) &&
+                                     NB.viewer && NB.viewer.isDirty && NB.viewer.isDirty(p)) ||
+                    (id === activeSessionId && hybridDirty);
+      return { id, name: sessionNames.get(id) || id, count: files.length, dirty };
+    });
+  }
+
+  function getActiveSessionId() { return activeSessionId; }
+
+  /* True when a stored (inactive) session still lists this path. The live
+   * active session is checked separately. `exceptId` skips the record a
+   * caller has already removed from the model. */
+  function hasStoredPath(path, exceptId) {
+    for (const [id, rec] of storedSessions) {
+      if (id === exceptId) continue;
+      if ((rec.openFiles || []).indexOf(path) >= 0) return true;
+    }
+    return false;
+  }
+
+  /* Repair a hand-edited or legacy `sessions` block. Never throws; returns
+   * the known shape plus `migrated` (true only for the first boot after the
+   * upgrade, when `sessions` was absent). Rules: docs/architecture/
+   * sessions.md §4. */
+  function normaliseSessions(raw, known) {
+    raw = raw || {};
+    const allows = (typeof known === "function") ? known : () => true;
+    const rawOpen = Array.isArray(raw.openFiles) ? raw.openFiles : [];
+    const rawPins = Array.isArray(raw.pinnedFiles) ? raw.pinnedFiles : [];
+
+    // Rule 9, computed first: rule 4 needs the pinned set to accept a pinned
+    // activeFile, and rule 5 removes every pin from every session. The strip
+    // order comes from the openFiles mirror (its pinned prefix), then any
+    // saved pin the mirror did not carry.
+    const pinnedFiles = [];
+    const pinSeen = new Set();
+    for (const p of rawOpen) {
+      if (rawPins.indexOf(p) < 0) continue;
+      if (!allows(p) || pinSeen.has(p)) continue;
+      pinSeen.add(p);
+      pinnedFiles.push(p);
+    }
+    for (const p of rawPins) {
+      if (!allows(p) || pinSeen.has(p)) continue;
+      pinSeen.add(p);
+      pinnedFiles.push(p);
+    }
+
+    // Rule 1: no non-empty sessions array -> migrate the legacy tab list.
+    let migrated = false;
+    let entries = Array.isArray(raw.sessions)
+      ? raw.sessions.filter(s => s && typeof s === "object")
+      : [];
+    if (!Array.isArray(raw.sessions) || !raw.sessions.length) {
+      entries = [{
+        id: SESSION_DEFAULT_ID,
+        name: SESSION_DEFAULT_NAME,
+        openFiles: rawOpen.slice(),
+        activeFile: raw.activeFile || null,
+      }];
+      migrated = true;
+    }
+
+    // Rule 2: usable ids, duplicates regenerated. An array of unusable
+    // entries repairs to one empty session rather than to zero.
+    const sessions = [];
+    const usedIds = new Set();
+    for (const entry of entries) {
+      let id = (typeof entry.id === "string") ? entry.id.trim() : "";
+      if (id && usedIds.has(id)) id = "";
+      if (!id) id = generateSessionId(cand => usedIds.has(cand));
+      usedIds.add(id);
+      sessions.push({
+        id,
+        name: entry.name,
+        openFiles: Array.isArray(entry.openFiles) ? entry.openFiles : [],
+        activeFile: entry.activeFile || null,
+      });
+    }
+    if (!sessions.length) {
+      sessions.push({
+        id: SESSION_DEFAULT_ID, name: SESSION_DEFAULT_NAME,
+        openFiles: [], activeFile: null,
+      });
+      usedIds.add(SESSION_DEFAULT_ID);
+    }
+
+    // Rule 3: unique names, " 2", " 3", … appended to a duplicate.
+    const usedNames = new Set();
+    sessions.forEach((s, i) => {
+      const base = cleanSessionName(s.name) || ("Session " + (i + 1));
+      let name = base;
+      let n = 1;
+      while (usedNames.has(name.toLowerCase())) {
+        n++;
+        const suffix = " " + n;
+        name = base.slice(0, SESSION_NAME_MAX - suffix.length) + suffix;
+      }
+      usedNames.add(name.toLowerCase());
+      s.name = name;
+    });
+
+    // Rule 4: known strings only, deduped, order preserved, capped at 40.
+    sessions.forEach(s => {
+      const files = [];
+      for (const p of s.openFiles) {
+        if (typeof p !== "string" || !p) continue;
+        if (!allows(p) || files.indexOf(p) >= 0) continue;
+        if (files.length >= SESSION_FILES_MAX) continue;
+        files.push(p);
+      }
+      s.openFiles = files;
+      fixSessionActive(s, pinSeen);
+    });
+
+    // Rule 5: pinned wins — no pin belongs to a session.
+    sessions.forEach(s => {
+      s.openFiles = s.openFiles.filter(p => !pinSeen.has(p));
+      fixSessionActive(s, pinSeen);
+    });
+
+    // No cross-session dedupe: the same note may be open in several sessions.
+    // Each session's own list is already deduped in rule 4.
+
+    // Rule 7: a known active id, else the first session.
+    const storedActive = (typeof raw.activeSessionId === "string") ? raw.activeSessionId : "";
+    const activeId = sessions.some(s => s.id === storedActive)
+      ? storedActive : sessions[0].id;
+
+    // Rule 8: cap at 20, keeping the active session even when it is past the
+    // cap (append it and drop the last non-active entry).
+    let kept = sessions;
+    if (sessions.length > SESSION_MAX_COUNT) {
+      const ai = sessions.findIndex(s => s.id === activeId);
+      kept = (ai >= SESSION_MAX_COUNT)
+        ? sessions.slice(0, SESSION_MAX_COUNT - 1).concat([sessions[ai]])
+        : sessions.slice(0, SESSION_MAX_COUNT);
+    }
+
+    return {
+      sessions: kept.map(s => ({
+        id: s.id, name: s.name,
+        openFiles: s.openFiles.slice(), activeFile: s.activeFile || null,
+      })),
+      activeSessionId: activeId,
+      pinnedFiles,
+      migrated,
+    };
   }
 
   /* --- render the tab bar -------------------------------------------- */
@@ -417,17 +720,24 @@
     NB.evt.emit("tabs:changed", {
       openFiles: ordered.slice(),
       activeFile: activePath,
-      pinnedFiles: [...pinned],
+      pinnedFiles: ordered.filter(p => pinned.has(p)),
+      sessions: snapshot(),
+      activeSessionId,
     });
   }
 
-  /* Remove a path from the open set + cache (no re-activate). */
+  /* Remove a path from the active strip (no re-activate). The viewer cache,
+   * draft and watcher baseline survive while another session or a pin still
+   * holds the path: the same note may be open in several sessions. */
   function dropTab(path) {
+    const elsewhere = hasStoredPath(path);
     const idx = ordered.indexOf(path);
     if (idx >= 0) ordered.splice(idx, 1);
     openSet.delete(path);
     pinned.delete(path);
     if (frozenWidths) frozenWidths.delete(path);   // drop the stale width pin
+    if (elsewhere) return;
+    conflictSet.delete(path);                      // a closed path has no badge
     if (isSpecial(path)) {
       const spec = specialTabs.get(path);
       if (spec && spec.onClose) { try { spec.onClose(path); } catch (e) { console.error(e); } }
@@ -437,6 +747,45 @@
   }
   function pickNeighbor(idx) {
     return ordered[idx] || ordered[idx - 1] || ordered[0] || null;
+  }
+
+  /* --- session swap -------------------------------------------------- */
+  /* The only way the live view becomes another session. Both activation
+   * tokens are bumped first so an in-flight tab activation cannot install a
+   * file that no longer belongs to the strip, and so a pending viewer fetch
+   * seeds the cache without touching the DOM or emitting file:open. The
+   * commit's boolean is checked: a failed hybrid save leaves hybrid active,
+   * and switching anyway would serialize the next keystroke to the old
+   * path. Mutate before emitting so app.js snapshots a consistent state. */
+  async function swapTo(id) {
+    if (id === activeSessionId) return true;
+    if (sessionOrder.indexOf(id) < 0) return false;
+    const token = ++sessionToken;
+    const stale = () => token !== sessionToken;
+
+    activateToken++;
+    if (NB.viewer && NB.viewer.cancelActivation) NB.viewer.cancelActivation();
+
+    const ok = (NB.viewer && NB.viewer.commitForTabSwitch)
+      ? await NB.viewer.commitForTabSwitch() : true;
+    // The target may have been deleted while the commit was in flight, and a
+    // later pick wins over this one.
+    if (!ok || stale() || sessionOrder.indexOf(id) < 0) return false;
+
+    storeOutgoing();
+    activeSessionId = id;
+    installSession(id);
+    finishGhosts();               // no ghost from the old strip survives
+    frozenWidths = null;          // the new strip measures itself
+
+    render();
+    emitChanged();
+    if (!ordered.length) {
+      if (NB.viewer && NB.viewer.showSessionEmpty) NB.viewer.showSessionEmpty();
+      return true;
+    }
+    await activate(activePath);
+    return true;
   }
 
   /* --- open / activate / close --------------------------------------- */
@@ -485,7 +834,7 @@
       if (!openSet.has(path)) {
         NB.viewer.close(path);
         if (ordered.length) activate(ordered[0]);
-        else NB.viewer.clear();
+        else NB.viewer.showSessionEmpty();
         return;
       }
       activePath = path;
@@ -498,16 +847,27 @@
       dropTab(path);
       const next = pickNeighbor(idx);
       if (next) { await activate(next); }
-      else { activePath = null; NB.viewer.clear(); render(); emitChanged(); }
+      else { activePath = null; NB.viewer.showSessionEmpty(); render(); emitChanged(); }
     }
   }
 
   async function open(path, opts) {
     opts = opts || {};
     const doActivate = opts.activate !== false;
-    if (!openSet.has(path)) { openSet.add(path); ordered.push(path); }
+    // Open in the ACTIVE session, even when another session already has the
+    // same note: a path may be open in several sessions, and clicking a file
+    // must never yank the user to another session.
+    if (!openSet.has(path)) {
+      if (unpinnedCount() >= SESSION_FILES_MAX) {
+        notify(SESSION_FULL_MESSAGE);
+        return false;
+      }
+      openSet.add(path);
+      ordered.push(path);
+    }
     if (doActivate) { await activate(path); }
     else { render(); emitChanged(); }
+    return true;
   }
 
   function close(path, opts) {
@@ -558,7 +918,7 @@
       render();            // immediately drop the closed tab + clear active
       emitChanged();
       if (next) { activate(next); }   // async: load + re-render neighbor
-      else { NB.viewer.clear(); }
+      else { NB.viewer.showSessionEmpty(); }
     } else {
       render();
       if (!ghostClose) animateReflow(reflow);
@@ -582,33 +942,64 @@
     const remap = (p) => p === from
       ? to
       : (p.startsWith(prefix) ? to + p.slice(from.length) : null);
-    // A folder move re-keys every open note under it, preserving order.
+    // Every pair that must reach viewer.rename, live or only stored: a file
+    // that exists only in an inactive session still carries its cache entry,
+    // draft and watcher baseline.
     const pairs = [];
+    const seenPairs = new Set();
+    const notePair = (p) => {
+      const mapped = remap(p);
+      if (mapped === null) return;
+      const key = p + "\n" + mapped;
+      if (seenPairs.has(key)) return;
+      seenPairs.add(key);
+      pairs.push({ from: p, to: mapped });
+    };
+    // A folder move re-keys every open note under it, preserving order.
+    let liveChanged = false;
     for (let i = 0; i < ordered.length; i++) {
       const mapped = remap(ordered[i]);
       if (mapped === null) continue;
-      pairs.push({ from: ordered[i], to: mapped });
+      notePair(ordered[i]);
       ordered[i] = mapped;
+      liveChanged = true;
+    }
+    // Re-key every stored session's tab list and its active tab. Without this
+    // a rename in a hidden session leaves an orphan tab in the record.
+    for (const rec of storedSessions.values()) {
+      const files = rec.openFiles || [];
+      for (let i = 0; i < files.length; i++) {
+        const mapped = remap(files[i]);
+        if (mapped === null) continue;
+        notePair(files[i]);
+        files[i] = mapped;
+      }
+      if (rec.activeFile) {
+        const mapped = remap(rec.activeFile);
+        if (mapped !== null) { notePair(rec.activeFile); rec.activeFile = mapped; }
+      }
     }
     if (!pairs.length) return;
-    rekeyMembers(openSet, remap);
-    rekeyMembers(pinned, remap);
-    // Carry the frozen width across the re-key so a rename while the pointer
-    // is in the bar does not re-equalize the renamed tab alone.
-    if (frozenWidths) {
-      const widths = [];
-      for (const [p, w] of frozenWidths) {
-        const mapped = remap(p);
-        if (mapped !== null) widths.push([mapped, w]);
+    if (liveChanged) {
+      rekeyMembers(openSet, remap);
+      rekeyMembers(pinned, remap);
+      // Carry the frozen width across the re-key so a rename while the pointer
+      // is in the bar does not re-equalize the renamed tab alone.
+      if (frozenWidths) {
+        const widths = [];
+        for (const [p, w] of frozenWidths) {
+          const mapped = remap(p);
+          if (mapped !== null) widths.push([mapped, w]);
+        }
+        for (const [p] of Array.from(frozenWidths)) {
+          if (remap(p) !== null) frozenWidths.delete(p);
+        }
+        for (const [p, w] of widths) frozenWidths.set(p, w);
       }
-      for (const [p] of Array.from(frozenWidths)) {
-        if (remap(p) !== null) frozenWidths.delete(p);
-      }
-      for (const [p, w] of widths) frozenWidths.set(p, w);
+      const mappedActive = activePath ? remap(activePath) : null;
+      if (mappedActive !== null) activePath = mappedActive;
     }
     for (const pair of pairs) NB.viewer.rename(pair.from, pair.to);
-    const mappedActive = activePath ? remap(activePath) : null;
-    if (mappedActive !== null) activePath = mappedActive;
     render();
     emitChanged();
   }
@@ -624,11 +1015,166 @@
       ordered.splice(pinnedCount(), 0, path);     // start of unpinned section
     } else {
       pinned.add(path);
+      // Pinning is what makes a tab shared: it leaves every session's own
+      // list, and a session that had it active falls back to its neighbour.
+      for (const rec of storedSessions.values()) removeStoredFile(rec, path);
       ordered.splice(i, 1);
       ordered.splice(pinnedCount() - 1, 0, path); // end of pinned section
     }
     render();
     emitChanged();
+  }
+
+  /* --- session operations -------------------------------------------- */
+  /* Every mutation ends in render() + emitChanged(): that is what marks the
+   * state dirty for app.js (persistConfig -> scheduleWorkspaceState). */
+  function closeStoredPath(path) {
+    // Another session or the active strip may still hold the same note; then
+    // its cache entry, draft and watcher baseline must stay.
+    if (openSet.has(path) || pinned.has(path) || hasStoredPath(path)) return;
+    // A closed path keeps no conflict badge (same rule as dropTab).
+    conflictSet.delete(path);
+    if (isSpecial(path)) {
+      const spec = specialTabs.get(path);
+      if (spec && spec.onClose) { try { spec.onClose(path); } catch (e) { console.error(e); } }
+    } else {
+      NB.viewer.close(path);   // also forgets the watcher baseline
+    }
+  }
+
+  async function createSession(name) {
+    const check = validateSessionName(name, null);
+    if (!check.ok) return check;
+    if (sessionOrder.length >= SESSION_MAX_COUNT) {
+      return { ok: false, code: "limit", message: SESSION_LIMIT_MESSAGE };
+    }
+    const id = generateSessionId(cand => sessionOrder.indexOf(cand) >= 0);
+    sessionOrder.push(id);
+    sessionNames.set(id, check.name);
+    storedSessions.set(id, { openFiles: [], activeFile: null });
+    await swapTo(id);        // the header + switches to the new session
+    return { ok: true, code: "", id, name: check.name };
+  }
+
+  /* Create from the tab menu's "New session…": the tab moves into the new
+   * session and the source stays active (requirements AC28). */
+  async function createSessionFromTab(path, name) {
+    const check = validateSessionName(name, null);
+    if (!check.ok) return check;
+    if (sessionOrder.length >= SESSION_MAX_COUNT) {
+      return { ok: false, code: "limit", message: SESSION_LIMIT_MESSAGE };
+    }
+    if (pinned.has(path) || !openSet.has(path)) return { ok: false, code: "missing" };
+    const id = generateSessionId(cand => sessionOrder.indexOf(cand) >= 0);
+    sessionOrder.push(id);
+    sessionNames.set(id, check.name);
+    storedSessions.set(id, { openFiles: [], activeFile: null });
+    await moveToSession(path, id);
+    return { ok: true, code: "", id, name: check.name };
+  }
+
+  function renameSession(id, name) {
+    if (sessionOrder.indexOf(id) < 0) return { ok: false, code: "missing" };
+    const check = validateSessionName(name, id);
+    if (!check.ok) return check;
+    sessionNames.set(id, check.name);
+    render();
+    emitChanged();
+    return { ok: true, code: "", name: check.name };
+  }
+
+  async function deleteSession(id) {
+    if (sessionOrder.length === 1) return false;
+    const idx = sessionOrder.indexOf(id);
+    if (idx < 0) return false;
+    // Invalidate any swap already targeting this row, including the stored
+    // branch below, which has no await of its own.
+    const token = ++sessionToken;
+    if (id !== activeSessionId) {
+      // A stored session is the only path that closes cached files the user
+      // cannot see. Remove the record first, then close only the paths no
+      // other session or pin still holds.
+      const rec = storedSessions.get(id);
+      storedSessions.delete(id);
+      sessionNames.delete(id);
+      sessionOrder.splice(idx, 1);
+      if (rec) (rec.openFiles || []).forEach(closeStoredPath);
+      render();
+      emitChanged();
+      return true;
+    }
+    // Active session: stop every in-flight activation and honour a failed
+    // hybrid commit before anything is dropped.
+    activateToken++;
+    if (NB.viewer && NB.viewer.cancelActivation) NB.viewer.cancelActivation();
+    const ok = await NB.viewer.commitForTabSwitch();
+    if (!ok || token !== sessionToken) return false;
+    ordered.filter(p => !pinned.has(p)).forEach(p => dropTab(p));  // no prompts
+    storedSessions.delete(id);
+    sessionNames.delete(id);
+    sessionOrder.splice(idx, 1);
+    const nextId = sessionOrder[idx - 1] || sessionOrder[idx] || sessionOrder[0];
+    activeSessionId = nextId;
+    installSession(nextId);      // no outgoing record to save
+    finishGhosts();
+    frozenWidths = null;
+    render();
+    emitChanged();
+    if (activePath) await activate(activePath);
+    else NB.viewer.showSessionEmpty();
+    return true;
+  }
+
+  async function moveToSession(path, id) {
+    if (id === activeSessionId) return false;
+    if (sessionOrder.indexOf(id) < 0) return false;
+    if (!openSet.has(path) || pinned.has(path)) return false;
+    // The moved tab may be the active one and in edit mode. Stash/exit before
+    // the strip changes, so a failed hybrid save leaves everything where it is
+    // (the buffer then travels with the file, as the cache entry does).
+    if (path === activePath && NB.viewer && NB.viewer.commitForTabSwitch) {
+      const ok = await NB.viewer.commitForTabSwitch();
+      if (!ok) return false;
+      // Re-check after the await: a concurrent close or switch wins.
+      if (!openSet.has(path) || pinned.has(path)) return false;
+      if (id === activeSessionId || sessionOrder.indexOf(id) < 0) return false;
+    }
+    const rec = storedSessions.get(id) || { openFiles: [], activeFile: null };
+    const files = rec.openFiles || (rec.openFiles = []);
+    // The target may already have the note; then this is just a removal from
+    // the source, not an add, and the cap does not apply.
+    const present = files.indexOf(path) >= 0;
+    if (!present && files.length >= SESSION_FILES_MAX) {
+      notify(SESSION_FULL_MESSAGE);
+      return false;
+    }
+    // Not a close: the viewer cache entry and any stashed draft stay with the
+    // file, so both travel to the target session.
+    const idx = ordered.indexOf(path);
+    ordered.splice(idx, 1);
+    openSet.delete(path);
+    if (frozenWidths) frozenWidths.delete(path);
+    if (!present) {
+      const wasEmpty = files.length === 0;
+      files.push(path);
+      if (wasEmpty) rec.activeFile = path;
+      storedSessions.set(id, rec);
+    }
+
+    if (activePath !== path) {
+      render();
+      emitChanged();
+      return true;
+    }
+    // The source's active tab left it: activate the neighbour, else the
+    // source stays active and renders its own empty state.
+    activePath = null;
+    const next = pickNeighbor(idx);
+    render();
+    emitChanged();
+    if (next) await activate(next);
+    else if (NB.viewer && NB.viewer.showSessionEmpty) NB.viewer.showSessionEmpty();
+    return true;
   }
 
   /* --- drag-and-drop reorder ----------------------------------------- */
@@ -766,12 +1312,23 @@
   // expires or the notebook is locked: we drop all paths so the tab
   // bar doesn't keep showing files the user can no longer read).
   function clearAll() {
-    if (!ordered.length) return;
     // Drop hybrid mode too if it's on: its contentEditable + listeners
     // target the file being dropped, and the auth-lock flow wipes the
     // viewer right after -- leaving hybrid on would re-edit stale DOM.
     if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
       NB.hybrid.exit(false);
+    }
+    // Clear the stored sessions first so dropTab() closes every live path
+    // (it skips a path another session still holds). A stored special tab's
+    // module is stopped here; viewer.clear() below drops the file caches.
+    for (const rec of storedSessions.values()) {
+      for (const p of rec.openFiles || []) {
+        if (!isSpecial(p)) continue;
+        const spec = specialTabs.get(p);
+        if (spec && spec.onClose) { try { spec.onClose(p); } catch (e) { console.error(e); } }
+      }
+      rec.openFiles = [];
+      rec.activeFile = null;
     }
     ordered.slice().forEach(p => dropTab(p));
     activePath = null;
@@ -796,6 +1353,27 @@
   }
 
   /* --- tab context menu --------------------------------------------- */
+  /* The "Move to session" submenu: every other session by name in creation
+   * order, then New session… after a separator. A pinned tab is already in
+   * every session, so it gets no item; a viewer may switch, not move. Built
+   * only when sessions.js is present, so an older cached shell still works. */
+  function sessionMenuItems(path) {
+    if (!NB.sessions || pinned.has(path)) return null;
+    const items = getSessionList()
+      .filter(s => s.id !== activeSessionId)
+      .map(s => ({ label: s.name, handler: () => NB.sessions.moveTo(path, s.id) }));
+    // The separator belongs to the list; with no other session the submenu is
+    // just New session… and a leading rule would be noise.
+    if (items.length) items.push({ separator: true });
+    items.push({ label: "New session…", handler: () => NB.sessions.newFromTab(path) });
+    const item = { label: "Move to session", submenu: items };
+    if (NB.pageRole && NB.pageRole() !== "admin") {
+      item.disabled = true;
+      item.title = "Read-only: sessions can’t be changed.";
+    }
+    return item;
+  }
+
   /* Categories, canonical order: Organize (Pin/Unpin, Export…, file ops,
    * bookmark) | View (Show in file sidebar) | Terminal (close variants,
    * Delete). A tab creates no files, so there is no Open or Create group. */
@@ -806,8 +1384,10 @@
     const left   = ordered.slice(0, i).filter(p => !pinned.has(p));
     const bookmarked = !!(NB.sidebar && NB.sidebar.getBookmarks &&
       NB.sidebar.getBookmarks().includes(path));
+    const moveItem = sessionMenuItems(path);
     return [
       { label: pinned.has(path) ? "Unpin" : "Pin", handler: () => togglePin(path) },
+      ...(moveItem ? [moveItem] : []),
       { label: "Export…", handler: () => { if (NB.export && NB.export.open) NB.export.open(path); } },
       { label: "Rename / Move…", handler: () => sidebarOp("renameFile", path) },
       { label: "Copy…", handler: () => sidebarOp("copyFile", path) },
@@ -845,8 +1425,34 @@
   /* openFiles/activeFile/pinnedFiles come from config. We populate the tab
    * bar without fetching; only the active file is loaded eagerly (others
    * fetch lazily on first activation). `fallback` is used when nothing is
-   * open yet. */
-  async function restore(openFiles, activeFile, fallback, pinnedFiles) {
+   * open yet — and only on the first boot after the upgrade, so an empty
+   * session stays empty afterwards.
+   *
+   * `sessionState` is normaliseSessions()' output. Without it the four
+   * positional arguments behave exactly as before and one "Main" session is
+   * seeded, so a phone rotating into the desktop shell still has a model. */
+  async function restore(openFiles, activeFile, fallback, pinnedFiles, sessionState) {
+    if (sessionState) {
+      installSessionState(sessionState);
+      if (!ordered.length) {
+        if (fallback) { await open(fallback); return; }
+        render();
+        emitChanged();
+        NB.viewer.showSessionEmpty();
+        return;
+      }
+      render();
+      if (activePath) await activate(activePath);
+      else NB.viewer.showSessionEmpty();
+      return;
+    }
+
+    sessionOrder = [SESSION_DEFAULT_ID];
+    sessionNames.clear();
+    sessionNames.set(SESSION_DEFAULT_ID, SESSION_DEFAULT_NAME);
+    storedSessions.clear();
+    activeSessionId = SESSION_DEFAULT_ID;
+
     (openFiles || []).forEach(p => {
       // A saved special tab whose module no longer registers (e.g. a
       // retired §search) would show a blank content area. Drop it.
@@ -864,6 +1470,48 @@
     let startActive = (activeFile && openSet.has(activeFile)) ? activeFile : ordered[0];
     render();
     await activate(startActive);
+  }
+
+  /* Seed the model and the live view from normaliseSessions()' output. The
+   * tree may have changed since normalisation, so each session is filtered
+   * again: a vanished path is dropped, never the session. */
+  function installSessionState(state) {
+    ordered.length = 0;
+    openSet.clear();
+    pinned.clear();
+    storedSessions.clear();
+    sessionNames.clear();
+    sessionOrder = [];
+
+    for (const p of (state.pinnedFiles || [])) {
+      if (!liveTreeAllows(p) || pinned.has(p)) continue;
+      pinned.add(p);
+      ordered.push(p);
+      openSet.add(p);
+    }
+
+    const records = [];
+    for (const s of (state.sessions || [])) {
+      const files = (s.openFiles || []).filter(liveTreeAllows);
+      const rec = { openFiles: files, activeFile: s.activeFile || null };
+      if (rec.activeFile && !liveTreeAllows(rec.activeFile) && !pinned.has(rec.activeFile)) {
+        rec.activeFile = files[0] || null;
+      }
+      sessionOrder.push(s.id);
+      sessionNames.set(s.id, s.name);
+      records.push([s.id, rec]);
+    }
+
+    if (!sessionOrder.length) {
+      sessionOrder = [SESSION_DEFAULT_ID];
+      sessionNames.set(SESSION_DEFAULT_ID, SESSION_DEFAULT_NAME);
+      records.push([SESSION_DEFAULT_ID, { openFiles: [], activeFile: null }]);
+    }
+    for (const [id, rec] of records) storedSessions.set(id, rec);
+
+    activeSessionId = sessionOrder.indexOf(state.activeSessionId) >= 0
+      ? state.activeSessionId : sessionOrder[0];
+    installSession(activeSessionId);
   }
 
   function getActive() { return activePath; }
@@ -888,6 +1536,13 @@
   }
 
   NB.tabs = {
+    /* Model limits, exported so the Sessions view's cap and name validation
+     * cannot drift from the model's. */
+    limits: {
+      maxSessions: SESSION_MAX_COUNT,
+      nameMax: SESSION_NAME_MAX,
+      filesMax: SESSION_FILES_MAX,
+    },
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
     togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next, clearAll,
     /* True while the pointer is inside the tab bar and tab widths are pinned.
@@ -899,6 +1554,18 @@
      * the ghost lifecycle. */
     isGhosting,
     ghostCount,
+    /* Sessions. The active session is the live view above; these expose the
+     * model and the operations the Sessions view and the tab menu drive. */
+    normaliseSessions,
+    getSessionList,
+    getActiveSessionId,
+    snapshot,
+    swapTo,
+    createSession,
+    createSessionFromTab,
+    renameSession,
+    deleteSession,
+    moveToSession,
     /* Register a special tab type. `def` = { id, icon, label, onActivate, onClose }.
      * id must start with "§". onActivate(id) is called when the tab becomes
      * active; onClose(id) when it's closed. Re-registering the same id
@@ -907,11 +1574,21 @@
       if (!def || !def.id || !def.id.startsWith("§")) return;
       specialTabs.set(def.id, def);
     },
-    /* Open a special tab (by id) and activate it. If it's already open,
-     * just activate it (no duplicate). */
+    /* Open a special tab (by id) and activate it. If it's already open in
+     * another session, switch there first, so a special tab follows the same
+     * one-owner rule as a file tab. */
     async openSpecial(id) {
       if (!specialTabs.has(id)) return;
-      if (!openSet.has(id)) { openSet.add(id); ordered.push(id); }
+      // Like a file: open in the active session, never switch to a session
+      // that already has it. A special tab may exist in several sessions.
+      if (!openSet.has(id)) {
+        if (unpinnedCount() >= SESSION_FILES_MAX) {
+          notify(SESSION_FULL_MESSAGE);
+          return;
+        }
+        openSet.add(id);
+        ordered.push(id);
+      }
       await activate(id);
     },
     isSpecial,
@@ -924,11 +1601,25 @@
     if (el) el.classList.toggle("dirty", !!dirty);
   });
 
-  // A file deleted from disk closes its tab (and, for a dir, any tab under it).
+  // A file deleted from disk closes its tab (and, for a dir, any tab under it),
+  // in every session. A hidden session's cache entry and draft go with it.
   NB.evt.on("file:deleted", (path) => {
     const prefix = path + "/";
-    ordered.filter(p => p === path || p.startsWith(prefix))
-      .forEach(p => close(p, { force: true }));
+    const matches = (p) => p === path || p.startsWith(prefix);
+    ordered.filter(matches).forEach(p => close(p, { force: true }));
+
+    let storedChanged = false;
+    for (const rec of storedSessions.values()) {
+      const dropped = (rec.openFiles || []).filter(matches);
+      if (!dropped.length) continue;
+      rec.openFiles = rec.openFiles.filter(p => !matches(p));
+      dropped.forEach(closeStoredPath);
+      if (rec.activeFile && matches(rec.activeFile)) {
+        rec.activeFile = rec.openFiles[0] || null;
+      }
+      storedChanged = true;
+    }
+    if (storedChanged) emitChanged();
   });
 
   /* Re-key a tab when its file is moved/renamed; unsaved edits travel. */
@@ -944,16 +1635,30 @@
   });
   // A close or rename that drops the path from the open set also drops
   // its conflict flag (otherwise the badge would reappear on re-open).
-  function _dropTab(path) { conflictSet.delete(path); }
-  // Wrap the existing dropTab so we don't lose the original. Simpler: the
-  // existing dropTab already deletes from the open set; clear conflicts
-  // at the same spot by hooking the close() path through an event.
   NB.evt.on("tabs:changed", () => {
     ordered.forEach(p => { if (!openSet.has(p)) conflictSet.delete(p); });
   });
   // When the notebook is locked (auth required, session gone), drop
   // every open tab so the bar doesn't keep showing files the user
   // is no longer authorized to read. The viewer / tree / search
-  // content is wiped by auth.js on the same event.
-  NB.evt.on("auth:locked", () => { clearAll(); });
+  // content is wiped by auth.js on the same event. Names, ids, order and the
+  // active id survive, so re-entering the workspace shows the same named,
+  // empty places.
+  NB.evt.on("auth:locked", () => {
+    sessionToken++;   // a swap in flight must not install anything
+    let clearedStored = false;
+    for (const rec of storedSessions.values()) {
+      if ((rec.openFiles || []).length || rec.activeFile) clearedStored = true;
+      rec.openFiles = [];
+      rec.activeFile = null;
+    }
+    const hadLive = ordered.length > 0;
+    clearAll();
+    if (!hadLive) {
+      // clearAll no-ops without a live tab, but the lock invalidates every
+      // buffer, including the stored sessions' cached drafts.
+      if (NB.viewer && NB.viewer.clear) NB.viewer.clear();
+      if (clearedStored) { render(); emitChanged(); }
+    }
+  });
 })();

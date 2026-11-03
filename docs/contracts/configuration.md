@@ -141,9 +141,11 @@ pre-workspace format and the fallback for a page without a workspace.
 | --- | --- |
 | `lastFile` | The file opened most recently (`app.js:26`) |
 | `recentFiles` | Array for the Quick open view (`app.js:27`) |
-| `openFiles` | Ordered array of open tabs (`app.js:28`) |
-| `activeFile` | The selected tab (`app.js:29`) |
-| `pinnedFiles` | Array of pinned tabs (`app.js:30`) |
+| `openFiles` | **Mirror** of the active session's live strip, pinned tabs included; the full tab sets live in `sessions` (`app.js:28`) |
+| `activeFile` | **Mirror** of the active session's selected tab (`app.js:29`) |
+| `pinnedFiles` | Array of pinned tabs; workspace-global and shared by every session (`app.js:30`) |
+| `sessions` | Named tab groups for this workspace, each with its own unpinned tabs and active tab (see [Sessions](#sessions)) |
+| `activeSessionId` | The session whose tabs the strip is showing; always one of `sessions[].id` |
 | `bookmarks` | Ordered array of bookmarked paths; missing files are pruned on tree refresh (`app.js:52`) |
 | `pinnedFolders` | Pinned folder paths shown in the Pinned view |
 
@@ -155,7 +157,16 @@ pre-workspace format and the fallback for a page without a workspace.
 {
   "theme": "dark",
   "workspaceState": {
-    "default": {"lastFile": "README.md", "openFiles": ["README.md"], "activeFile": "README.md"},
+    "default": {
+      "lastFile": "README.md",
+      "sessions": [
+        {"id": "main", "name": "Main", "openFiles": ["README.md"], "activeFile": "README.md"}
+      ],
+      "activeSessionId": "main",
+      "pinnedFiles": ["Welcome.md"],
+      "openFiles": ["Welcome.md", "README.md"],
+      "activeFile": "README.md"
+    },
     "work-1a2b": {"lastFile": "plan.md", "openFiles": ["plan.md"], "activeFile": "plan.md"}
   }
 }
@@ -163,12 +174,37 @@ pre-workspace format and the fallback for a page without a workspace.
 
 | Rule | Behavior |
 | --- | --- |
-| Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is global and stays top-level. |
+| Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is global and stays top-level. |
 | Read overlay | The client loads `config.json`, then overlays `workspaceState.<active id>` on top of the top-level values. A missing field falls back to the top-level copy, so the first load after a migration shows the same session. |
-| Write path | `POST /api/workspace-state` with `{id, state}` merges that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` must be a JSON object and is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). |
+| Write path | `POST /api/workspace-state` with `{id, state}` replaces that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` must be a JSON object and is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). When the stored entry already has `sessions`, a body that omits `sessions`/`activeSessionId` keeps the stored values: a page loaded before this feature must not delete the other sessions. A current client always sends both. |
 | Whole-blob POST | `POST /api/config` replaces the file, so the client merges a fresh read first and carries the whole `workspaceState` map through. The server also folds any stray top-level scoped keys under `workspaceState.default` on every POST. |
 | Startup migration | `_migrate_config_at_startup()` moves legacy top-level scoped keys under `workspaceState.default` once per process start, under `_CONFIG_LOCK`. A blob that already has `workspaceState` is left alone. The migration is best effort and deliberately never runs from `GET /api/config`, so a read never writes a server-owned file. |
 | Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy and does not queue a write. |
+
+### Sessions
+
+A session is a named set of unpinned tabs with its own active tab. The
+workspace's pinned tabs are shared: `pinnedFiles` sits outside `sessions` and
+every session sees the same pins. The model and the algorithms are in
+[`architecture/sessions.md`](../architecture/sessions.md).
+
+```json
+"sessions": [
+  {"id": "main", "name": "Main",
+   "openFiles": ["notes/a.md"], "activeFile": "notes/a.md"},
+  {"id": "s-7f3a2c", "name": "Reading", "openFiles": [], "activeFile": null}
+],
+"activeSessionId": "main"
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Invariant | A pinned path never appears in `sessions[].openFiles`; the pinned set is shared. An unpinned path may be open in **several** sessions — each occurrence is its own tab and they share one viewer buffer. |
+| `openFiles` / `activeFile` | Mirrors of the active session, pins included. A reader that predates sessions (the ACP open-note hint, `app.py:2605-2645`) keeps working. |
+| Limits | 20 sessions, 40 characters per name, 40 unpinned tabs per session; names are unique after trim and case-folding. |
+| Migration | A workspace state with no `sessions` becomes one session `{id: "main", name: "Main"}` built from the existing `openFiles`/`activeFile`; that first boot keeps the `lastFile` fallback. |
+| Empty session | `openFiles: []` is valid and is persisted; it is not the same as a missing entry. |
+| Read-only | A viewer may switch sessions in memory; structural changes are not offered and nothing is written. |
 
 `GET /api/info` reports the active root and id alongside the config folder:
 `{data_dir, config_dir, workspace}`. `data_dir` is the active workspace root;

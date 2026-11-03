@@ -1736,6 +1736,275 @@ async function main() {
     await page.keyboard.press("Escape");
 
     // ---------------------------------------------------------------
+    console.log("== sessions ==");
+    // A saved activeView of sessions makes the reload land on the view; the
+    // rail icon toggles collapse when already active, so only click when it
+    // is not the active, expanded view.
+    const openSessionsView = async () => {
+      await page.evaluate(() => {
+        if (NB.activity.getActive() !== "sessions" || NB.activity.isCollapsed()) {
+          document.querySelector('#activity-bar .activity-btn[data-view="sessions"]').click();
+        }
+      });
+      await page.waitForFunction(() => {
+        const v = document.getElementById("sessions-view");
+        return v && !v.hidden && v.getBoundingClientRect().width > 0 &&
+          document.querySelectorAll("#sessions-list .session-row-wrap").length >= 1;
+      }, null, { timeout: 8000 });
+    };
+    await openSessionsView();
+    check("sessions: the rail icon opens the Sessions view",
+      await page.evaluate(() =>
+        !document.getElementById("sessions-view").hidden &&
+        document.querySelector('#activity-bar .activity-btn[data-view="sessions"]')
+          .classList.contains("active")));
+    check("sessions: the view builds its header, list and footnote",
+      await page.evaluate(() =>
+        (document.querySelector("#sessions-view .panel-title") || {}).textContent === "Sessions" &&
+        !!document.querySelector("#sessions-view .session-add") &&
+        /Pinned tabs are shared by every session/.test(
+          (document.querySelector("#sessions-view .sessions-foot") || {}).textContent || "")));
+
+    // Known strip: one shared pin plus two unpinned tabs in the active session.
+    await page.evaluate(async () => {
+      if (NB.hybrid.isActive()) await NB.hybrid.exit(false);
+      NB.tabs.getOpen().slice().forEach((p) => NB.tabs.close(p, { force: true }));
+      await NB.tabs.open("Welcome.md");
+      NB.tabs.togglePin("Welcome.md");
+      await NB.tabs.open("notes/a.md");
+      await NB.tabs.open("notes/b.md");
+    });
+    await page.waitForFunction(() =>
+      NB.tabs.getOpen().join(",") === "Welcome.md,notes/a.md,notes/b.md" &&
+      NB.tabs.getActive() === "notes/b.md", null, { timeout: 8000 });
+    const mainId = await page.evaluate(() => NB.tabs.getActiveSessionId());
+    check("sessions: the active row shows its unpinned count",
+      await waitFor(() => page.evaluate((id) => {
+        const w = document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"]');
+        return !!w && Number(String(w.querySelector(".session-count").textContent)
+          .replace(/\D.*$/, "")) === 2 &&
+          w.querySelector(".session-row").getAttribute("aria-current") === "true";
+      }, mainId), 6000));
+    check("sessions: the shared pin renders in its own region, not the count",
+      await page.locator('#tab-pinned .tab[data-path="Welcome.md"]').count() === 1 &&
+      await page.locator('#tab-list .tab:not(.ghost)').count() === 2);
+
+    // Create a second session through + and the name dialog.
+    await page.click("#sessions-view .session-add");
+    await page.waitForFunction(() =>
+      !document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+    check("sessions: + opens the New session dialog with focus in the name field",
+      await page.evaluate(() =>
+        document.getElementById("session-dialog-title").textContent === "New session" &&
+        document.activeElement && document.activeElement.id === "session-name"));
+    await page.fill("#session-name", "Browser Session");
+    await page.click("#session-submit");
+    await page.waitForFunction(() =>
+      document.getElementById("session-dialog").hidden &&
+      NB.tabs.getSessionList().length === 2 &&
+      NB.tabs.getSessionList()[1].name === "Browser Session", null, { timeout: 8000 });
+    const createdId = await page.evaluate(() => NB.tabs.getSessionList()[1].id);
+    check("sessions: a created session is appended and becomes active",
+      await page.evaluate((id) =>
+        NB.tabs.getActiveSessionId() === id &&
+        document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"] .session-row')
+          .getAttribute("aria-current") === "true", createdId));
+    check("sessions: the new session's strip is the shared pinned set only",
+      await waitFor(() => page.evaluate(() =>
+        NB.tabs.getOpen().join(",") === "Welcome.md" &&
+        !!document.querySelector('#tab-pinned .tab[data-path="Welcome.md"]')), 6000));
+    // DEFECT (reported): a successful submit leaves the primary button
+    // disabled (static/js/sessions.js:472, :488-496), so the next dialog
+    // cannot be submitted. Kept as a check; the workaround below lets the
+    // rest of the section run.
+    check("sessions: the dialog's submit is enabled for the next open",
+      await page.evaluate(() =>
+        document.getElementById("session-submit").disabled === false),
+      "disabled=" + await page.evaluate(() =>
+        document.getElementById("session-submit").disabled));
+    await page.evaluate(() => {
+      document.getElementById("session-submit").disabled = false;
+    });
+
+    // Switch back by clicking the row: the strip swaps in place, the pin stays.
+    await page.locator('#sessions-list .session-row-wrap[data-session-id="' +
+      mainId + '"] .session-row').click();
+    check("sessions: clicking a row swaps the unpinned strip in place",
+      await waitFor(() => page.evaluate((id) =>
+        NB.tabs.getActiveSessionId() === id &&
+        NB.tabs.getOpen().join(",") === "Welcome.md,notes/a.md,notes/b.md" &&
+        !!document.querySelector('#tab-pinned .tab[data-path="Welcome.md"]'), mainId), 6000));
+    check("sessions: the active marker follows the switch",
+      await page.evaluate((id) =>
+        document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"] .session-row')
+          .getAttribute("aria-current") === "true", mainId));
+
+    // The row ⋯ menu renames the session.
+    await page.locator('#sessions-list .session-row-wrap[data-session-id="' +
+      createdId + '"] .session-more').click();
+    await page.waitForFunction(() => !document.getElementById("nb-menu").hidden,
+      null, { timeout: 5000 });
+    check("sessions: the row \u22ef menu offers Rename and Delete",
+      await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#nb-menu > button"))
+          .map((b) => b.textContent).join("|") === "Rename\u2026|Delete\u2026"),
+      await page.evaluate(() =>
+        Array.from(document.querySelectorAll("#nb-menu > button"))
+          .map((b) => b.textContent).join("|")));
+    await menuBtn("Rename\u2026").click();
+    await page.waitForFunction(() =>
+      !document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+    check("sessions: Rename prefills the field with the row's name",
+      await page.evaluate(() =>
+        document.getElementById("session-name").value === "Browser Session"));
+    await page.fill("#session-name", "Renamed Session");
+    await page.click("#session-submit");
+    check("sessions: the rename changes only the row text",
+      await waitFor(() => page.evaluate((id) => {
+        const w = document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"]');
+        return NB.tabs.getSessionList().length === 2 &&
+          w && w.querySelector(".session-name").textContent === "Renamed Session";
+      }, createdId), 6000));
+
+    // A dirty source buffer in the hidden session shows a row dot; coming
+    // back shows the tab dot and the Recover bar.
+    await page.click('#tab-list .tab[data-path="notes/a.md"]');
+    await page.waitForFunction(() => NB.tabs.getActive() === "notes/a.md",
+      null, { timeout: 8000 });
+    await page.click("#edit-toggle");
+    await page.waitForFunction(() => !document.getElementById("cm-host").hidden,
+      null, { timeout: 8000 });
+    await page.evaluate(() =>
+      NB.cmEditor.setValue(NB.cmEditor.getValue() + "\nSESSION_DIRTY\n"));
+    await page.locator('#sessions-list .session-row-wrap[data-session-id="' +
+      createdId + '"] .session-row').click();
+    check("sessions: a hidden dirty buffer puts a dot on its session row",
+      await waitFor(() => page.evaluate((id) =>
+        !!document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"] .session-dot'),
+        mainId), 6000));
+    check("sessions: the dirty buffer is kept as a draft",
+      await page.evaluate(() =>
+        !!NB.viewer.getDraft("notes/a.md") && NB.viewer.isDirty("notes/a.md")));
+    await page.locator('#sessions-list .session-row-wrap[data-session-id="' +
+      mainId + '"] .session-row').click();
+    check("sessions: returning shows the tab dot and the Recover bar",
+      await waitFor(() => page.evaluate(() => {
+        const t = document.querySelector('.tab[data-path="notes/a.md"]');
+        return !!t && t.classList.contains("dirty") &&
+          !document.getElementById("draft-bar").hidden;
+      }), 6000));
+    await page.evaluate(() => NB.viewer.discardDraft());
+    check("sessions: discarding the draft clears the row dot",
+      await waitFor(() => page.evaluate((id) =>
+        !document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"] .session-dot'),
+        mainId), 6000));
+
+    // Delete the inactive session from its ⋯ menu.
+    await page.locator('#sessions-list .session-row-wrap[data-session-id="' +
+      createdId + '"] .session-more').click();
+    await page.waitForFunction(() => !document.getElementById("nb-menu").hidden,
+      null, { timeout: 5000 });
+    queueConfirm();
+    await menuBtn("Delete\u2026").click();
+    check("sessions: deleting an inactive session removes only its row",
+      await waitFor(() => page.evaluate((id) =>
+        !document.querySelector(
+          '#sessions-list .session-row-wrap[data-session-id="' + id + '"]') &&
+        NB.tabs.getSessionList().length === 1, createdId), 6000));
+    check("sessions: the active strip is unchanged by that delete",
+      await page.evaluate(() =>
+        NB.tabs.getActiveSessionId() === "main" &&
+        NB.tabs.getOpen().join(",") === "Welcome.md,notes/a.md,notes/b.md"));
+    check("sessions: the delete asked for confirmation",
+      dialogSeen.some((d) => d.type === "confirm" && /Renamed Session/.test(d.message)),
+      JSON.stringify(dialogSeen.slice(-1)));
+
+    // Persistence and reload restore.
+    check("sessions: the session shape persists to the workspace state",
+      await waitWorkspaceState((s) => Array.isArray(s.sessions) &&
+        s.sessions.length === 1 && s.activeSessionId === "main" &&
+        Array.isArray(s.sessions[0].openFiles) &&
+        s.sessions[0].openFiles.join(",") === "notes/a.md,notes/b.md"));
+    await page.reload();
+    await page.waitForFunction(() =>
+      window.NB && NB.tabs && NB.sidebar &&
+      document.querySelectorAll("#file-tree .tree-row").length > 0,
+      null, { timeout: 20000 });
+    await page.waitForSelector("#viewer-content h1", { timeout: 15000 });
+    await openSessionsView();
+    check("sessions: reload restores the session, its tabs and the pin",
+      await page.evaluate(() =>
+        NB.tabs.getSessionList().length === 1 &&
+        NB.tabs.getSessionList()[0].name === "Main" &&
+        NB.tabs.getSessionList()[0].count === 2 &&
+        NB.tabs.getOpen().join(",") === "Welcome.md,notes/a.md,notes/b.md" &&
+        NB.tabs.getActiveSessionId() === "main"));
+    check("sessions: reload restores the shared pinned region",
+      await page.locator('#tab-pinned .tab[data-path="Welcome.md"]').count() === 1);
+
+    // A 900 px viewport keeps the view and its rows usable.
+    await page.setViewportSize({ width: 900, height: VIEW.height });
+    check("sessions: the view fits at 900 px",
+      await waitFor(() => page.evaluate(() => {
+        const v = document.getElementById("sessions-view");
+        const list = document.getElementById("sessions-list");
+        const more = document.querySelector("#sessions-list .session-more");
+        return !v.hidden && v.getBoundingClientRect().width > 0 &&
+          list.scrollWidth <= list.clientWidth + 1 &&
+          !!more && more.getBoundingClientRect().width > 0;
+      }), 4000),
+      await page.evaluate(() => {
+        const list = document.getElementById("sessions-list");
+        return "scroll=" + (list.scrollWidth - list.clientWidth);
+      }));
+    await page.setViewportSize(VIEW);
+
+    // The light theme renders the view with a distinct active row.
+    await page.click("#activity-settings-btn");
+    await page.waitForFunction(() =>
+      !document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    await page.click('.settings-nav-item[data-tab="appearance"]');
+    await page.locator('input[name="theme"][value="light"]').check();
+    await waitFor(() => page.evaluate(() => document.body.dataset.theme === "light"), 4000);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() =>
+      document.getElementById("settings-overlay").hidden, null, { timeout: 5000 });
+    await openSessionsView();
+    const lightRow = await page.evaluate(() => {
+      const row = document.querySelector('#sessions-list .session-row[aria-current="true"]');
+      const name = row && row.querySelector(".session-name");
+      if (!row || !name) return null;
+      const rs = getComputedStyle(row);
+      const ns = getComputedStyle(name);
+      return {
+        theme: document.body.dataset.theme,
+        bg: rs.backgroundColor,
+        color: ns.color,
+        height: row.getBoundingClientRect().height,
+      };
+    });
+    check("sessions: the view renders in the light theme with a distinct active row",
+      !!lightRow && lightRow.theme === "light" && lightRow.height > 0 &&
+      lightRow.bg !== "rgba(0, 0, 0, 0)" && lightRow.color !== lightRow.bg,
+      JSON.stringify(lightRow));
+
+    // Clean up every session the section created.
+    await page.evaluate(async () => {
+      for (const s of NB.tabs.getSessionList().slice(1)) {
+        await NB.tabs.deleteSession(s.id);
+      }
+    });
+    check("sessions: cleanup leaves the single Main session",
+      await page.evaluate(() => NB.tabs.getSessionList().length === 1 &&
+        NB.tabs.getSessionList()[0].name === "Main"));
+
+    // ---------------------------------------------------------------
     console.log("== page errors ==");
     check("no uncaught page errors", pageErrors.length === 0,
       pageErrors.slice(0, 3).join(" | "));

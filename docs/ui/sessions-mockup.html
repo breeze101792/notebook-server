@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions — reference mockup (side-panel view)</title>
+<style>
+/* ==================================================================
+   REFERENCE MOCKUP — the Sessions side-panel view.
+
+   Every app colour, size and radius below is copied from
+   static/css/style.css. sessions.md §3 (tokens) and §4 (components) are
+   normative; where this file and the spec differ, the spec wins.
+
+   Two deliberate differences from the app, both so the file can hold
+   several app windows at once:
+     - the app windows are .win boxes; the app's own #app fills the viewport;
+     - the menu and dialog are positioned inside their window rather than
+       fixed to the viewport. Geometry matches the app's NB.menu/dialog.
+
+   Nothing is wired to a server. Buttons do not act.
+   ================================================================== */
+
+/* ---- tokens: verbatim from style.css :root ------------------------ */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --accent-fg: #14151a;
+  --ws-fg-muted: #9799a4;
+  --activity-bar-width: 48px;
+  --side-panel-width: 240px;
+  --topbar-h: 46px;
+  --outline-width: 220px;
+}
+body[data-theme="light"],
+.win[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --accent-fg: #ffffff;
+  --ws-fg-muted: #5d6470;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: #14151a; color: #e6e6ea;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 28px 32px 64px;
+}
+body[data-theme="light"] { background: #e9ecf1; color: #3a4050; }
+.page-head { max-width: 1180px; margin: 0 auto 26px; display: flex; align-items: flex-end; gap: 20px; }
+.page-head h1 { margin: 0; font-size: 1.45rem; letter-spacing: -.3px; }
+body[data-theme="light"] .page-head h1 { color: #1f2330; }
+.lead { margin: 4px 0 0; color: #8b8d98; font-size: .92rem; line-height: 1.5; max-width: 78ch; }
+body[data-theme="light"] .lead { color: #5d6470; }
+.page-head .spacer { flex: 1 1 auto; }
+.seg { display: inline-flex; border: 1px solid #383a45; border-radius: 7px; overflow: hidden; }
+.seg button {
+  background: #22232a; color: #e6e6ea; border: 0; border-right: 1px solid #383a45;
+  padding: 6px 11px; font: inherit; font-size: .82rem; cursor: pointer;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: #7c9cff; color: #14151a; font-weight: 600; }
+body[data-theme="light"] .seg { border-color: #d8dde4; }
+body[data-theme="light"] .seg button { background: #fff; color: #3a4050; border-right-color: #d8dde4; }
+body[data-theme="light"] .seg button[aria-pressed="true"] { background: #2f5fd0; color: #fff; }
+
+.board { max-width: 1180px; margin: 0 auto 44px; }
+.board > h2 {
+  font-size: .8rem; text-transform: uppercase; letter-spacing: 1.1px;
+  color: #8b8d98; margin: 0 0 8px; font-weight: 600;
+}
+body[data-theme="light"] .board > h2 { color: #5d6470; }
+.board .cap { margin: 0 0 14px; color: #8b8d98; font-size: .88rem; line-height: 1.55; max-width: 96ch; }
+body[data-theme="light"] .board .cap { color: #5d6470; }
+.board .cap b { color: #e6e6ea; }
+body[data-theme="light"] .board .cap b { color: #1f2330; }
+.row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.slice-label { margin: 0 0 8px; font-size: .78rem; color: #8b8d98; letter-spacing: .2px; }
+body[data-theme="light"] .slice-label { color: #5d6470; }
+.note {
+  margin: 12px 0 0; padding: 5px 0 5px 11px; border-left: 2px solid #383a45;
+  color: #8b8d98; font-size: .82rem; line-height: 1.55; max-width: 96ch;
+}
+body[data-theme="light"] .note { color: #5d6470; border-left-color: #d8dde4; }
+.note b { color: #e6e6ea; }
+body[data-theme="light"] .note b { color: #1f2330; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; color: #b9c2d8; }
+body[data-theme="light"] code { color: #3a4050; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* ---- the app window ---------------------------------------------- */
+.win {
+  width: 1180px; max-width: 100%; height: 620px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid #33343d; border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .4);
+  position: relative;
+}
+body[data-theme="light"] .win { box-shadow: 0 18px 50px rgba(31, 35, 48, .16); }
+.win--short { height: 430px; }
+.win--panel { width: 240px; height: 360px; }
+.win--panel-wide { width: 360px; height: 360px; }
+.win--dialog { width: 520px; height: 430px; }
+.win--rail { width: 120px; height: 430px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px; height: var(--topbar-h);
+  padding: 0 12px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  position: relative; z-index: 40;
+}
+.topbar > button {
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; font-size: .93rem; cursor: pointer; font-family: inherit;
+}
+.topbar > button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.topbar > button.brand {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem;
+  background: transparent; border: none; padding: 4px 6px;
+}
+.brand-icon {
+  width: 1.1em; height: 1.1em; border-radius: 3px; display: block;
+  background: linear-gradient(140deg, var(--accent), #9a7bff);
+}
+.spacer { flex: 1 1 auto; }
+.icon-btn {
+  background: none; border: none; color: var(--fg-muted);
+  font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer; font-family: inherit;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.topbar-divider {
+  flex: 0 0 1px; align-self: center; width: 1px; height: 16px; background: var(--border);
+}
+.ws-chip {
+  display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 240px;
+  height: 28px; padding: 0 8px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: .84rem; font-weight: 600; text-align: left; cursor: pointer; font-family: inherit;
+}
+.ws-chip:hover { background: var(--accent-soft); border-color: var(--accent); }
+.workspace-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+.workspace-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-caret { flex: 0 0 auto; color: var(--fg-muted); font-size: .72rem; line-height: 1; }
+
+.topbar > button:focus-visible,
+.icon-btn:focus-visible,
+.activity-btn:focus-visible,
+.collapse-btn:focus-visible,
+.session-add:focus-visible,
+.session-more:focus-visible,
+.session-row:focus-visible,
+.ctx button:focus-visible,
+.submenu > .flyout button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0; flex: 1 1 auto; position: relative;
+}
+.layout--no-side { grid-template-columns: var(--activity-bar-width) 1fr; }
+
+.activity-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0; background: var(--bg-panel); border-right: 1px solid var(--border);
+  overflow: hidden; min-width: 0;
+}
+.activity-btn {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; color: var(--fg-muted);
+  cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 0; position: relative;
+}
+.activity-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active::before {
+  content: ""; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 2px;
+  border-radius: 1px; background: var(--accent);
+}
+.activity-spacer { flex: 1 1 auto; }
+
+.side-panel {
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 8px 12px; flex: 0 0 auto; font-size: .79rem; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted); border-bottom: 1px solid var(--border);
+}
+.panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-header-actions { display: flex; align-items: center; gap: 2px; }
+.collapse-btn {
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 1.07rem; line-height: 1; padding: 2px 4px; border-radius: 4px;
+}
+.collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+/* ==================================================================
+   THE SESSIONS VIEW — sessions.md §4, Appendix A
+   ================================================================== */
+.bookmarks-list {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 4px; overflow: auto; min-height: 0;
+}
+.sessions-list { flex: 1 1 auto; }
+.session-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 3px;
+  background: none; border: 0; border-radius: 4px;
+  color: var(--fg-muted); font: inherit; font-size: 1.07rem; line-height: 1;
+  cursor: pointer;
+}
+.session-add:hover { color: var(--fg); background: var(--accent-soft); }
+.session-add[aria-disabled="true"] { color: var(--ws-fg-muted); cursor: default; opacity: .72; }
+.session-add[aria-disabled="true"]:hover { background: none; }
+.session-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.session-row-wrap { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.session-row {
+  display: flex; align-items: center; gap: 4px;
+  flex: 1 1 auto; min-width: 0;
+  padding: 3px 6px; border: 0; border-radius: 4px;
+  background: none; color: inherit;
+  font: inherit; font-size: .9rem; line-height: 21px; text-align: left; white-space: nowrap;
+  cursor: pointer;
+}
+.session-row:hover { background: var(--accent-soft); }
+.session-row[aria-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+.session-row[aria-current="true"]:hover { background: var(--accent-soft); }
+.session-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.session-count {
+  flex: 0 0 auto; min-width: 2ch; text-align: right;
+  font-size: .76rem; font-variant-numeric: tabular-nums; color: var(--ws-fg-muted);
+}
+.session-row[aria-current="true"] .session-count { color: var(--fg); font-weight: 400; }
+.session-more {
+  flex: 0 0 20px; display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0;
+  background: none; border: 0; border-radius: 4px;
+  color: var(--fg-muted); font: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.session-more:hover { color: var(--fg); background: var(--accent-soft); }
+.session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sessions-foot {
+  flex: 0 0 auto; margin: 0; padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  color: var(--ws-fg-muted); font-size: .76rem; line-height: 1.35;
+}
+
+/* ---- the tab strip (unchanged; style.css :473-566, :1175-1238) ---- */
+.editor-pane {
+  background: var(--bg); display: flex; flex-direction: column;
+  min-width: 0; min-height: 0; position: relative;
+}
+.tab-bar {
+  display: flex; align-items: flex-end; gap: 2px;
+  --tab-min-width: 120px; --tab-width: 170px; --tab-max-width: 220px;
+  flex: 0 0 auto; height: 34px; padding: 0 6px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.tab-pinned {
+  display: flex; align-items: flex-end; gap: 2px;
+  flex: 0 0 auto; max-width: 50%; height: 100%;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.tab-pinned::-webkit-scrollbar { display: none; }
+.tab-list {
+  display: flex; align-items: flex-end; gap: 2px;
+  flex: 1 1 auto; min-width: 0; height: 100%;
+  overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1 1 var(--tab-width); min-width: var(--tab-min-width); max-width: var(--tab-max-width);
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-bottom: none;
+  border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap;
+  font-size: .89rem; color: var(--fg-muted); user-select: none;
+}
+.tab:hover { background: var(--accent-soft); color: var(--fg); }
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.tab .tab-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab.dirty { background: var(--accent-soft); border-color: var(--accent); }
+.tab.dirty .tab-label::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px;
+  border-radius: 50%; background: var(--accent); vertical-align: middle;
+}
+.tab .tab-close {
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0 3px; border-radius: 4px; font-family: inherit;
+}
+.tab .tab-close:hover { color: var(--danger); background: var(--accent-soft); }
+.tab.pinned { padding-right: 10px; }
+.tab.pinned .tab-pin { font-size: 11px; line-height: 1; }
+.tab-pinned .tab { flex: 0 0 auto; max-width: none; }
+.outline-toggle { align-self: center; flex: 0 0 auto; font-size: 1rem; padding: 2px 6px; }
+
+.editor-body { flex: 1 1 auto; min-height: 0; padding: 28px 32px; overflow: hidden; }
+.doc-h1 { font-size: 1.55rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -.2px; }
+.doc-p { color: var(--fg-muted); margin: 0 0 8px; max-width: 48ch; }
+.doc-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; max-width: 48ch; }
+.doc-code {
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; color: var(--fg-muted); max-width: 48ch;
+}
+
+/* ---- context menu (NB.menu) -------------------------------------- */
+.ctx {
+  position: absolute; z-index: 1000; min-width: 170px;
+  padding: 4px; background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.ctx button {
+  display: flex; align-items: center; width: 100%; padding: 6px 8px;
+  background: none; border: 0; border-radius: 5px;
+  color: var(--fg); font: inherit; font-size: .9rem; text-align: left; cursor: pointer;
+}
+.ctx button:hover { background: var(--accent-soft); }
+.ctx button.danger { color: var(--danger); }
+.ctx button.danger:hover { background: none; box-shadow: inset 0 0 0 1px var(--danger); }
+.ctx button:disabled { color: var(--ws-fg-muted); cursor: default; opacity: .72; }
+.ctx button:disabled:hover { background: none; box-shadow: none; }
+.ctx hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+.ctx .submenu { position: relative; }
+.ctx .submenu > .flyout {
+  position: absolute; left: 100%; top: -5px; margin-left: 2px;
+  min-width: 150px; width: max-content; max-width: 260px;
+  padding: 4px; background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.ctx .submenu > .flyout button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx .caret { margin-left: auto; padding-left: 12px; color: var(--fg-muted); }
+
+/* ---- dialogs ------------------------------------------------------ */
+.scrim {
+  position: absolute; inset: 0; z-index: 2000;
+  background: rgba(0, 0, 0, .5); display: flex; align-items: center; justify-content: center;
+}
+.settings-modal {
+  width: 420px; max-width: calc(100% - 32px);
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5); overflow: hidden;
+}
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-bottom: 1px solid var(--border);
+}
+.settings-header h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+.settings-body { padding: 14px; }
+.auth-help { margin: 0 0 14px; color: var(--fg-muted); font-size: .85rem; line-height: 1.5; }
+.settings-row { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+.settings-label { flex: 0 0 92px; font-size: .86rem; color: var(--fg-muted); }
+.settings-text-input {
+  flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 9px;
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: .86rem;
+}
+.settings-text-input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger-soft, rgba(255, 107, 107, .15)); }
+.auth-error { min-height: 18px; margin: 4px 0 8px; color: var(--danger); font-size: .82rem; line-height: 18px; }
+.settings-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.settings-action {
+  padding: 6px 12px; background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: .85rem; cursor: pointer;
+}
+.settings-action:hover { background: var(--accent-soft); }
+.settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.settings-action--primary:hover { background: var(--accent); filter: brightness(1.05); }
+
+/* ---- the sizes table -------------------------------------------- */
+.spec {
+  width: 100%; border-collapse: collapse; font-size: .84rem;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+.spec th, .spec td { padding: 8px 11px; text-align: left; border-bottom: 1px solid var(--border); }
+.spec th { font-size: .72rem; text-transform: uppercase; letter-spacing: .7px; color: var(--fg-muted); font-weight: 600; }
+.spec td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
+.spec tr:last-child td { border-bottom: 0; }
+.spec code { color: var(--fg-muted); }
+</style>
+</head>
+<body data-theme="dark">
+
+<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+    <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+    <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<header class="page-head">
+  <div>
+    <h1>Sessions — side-panel view</h1>
+    <p class="lead">Firefox-style tab groups, one named set of unpinned tabs per task, with the workspace's pinned tabs
+      shared by every session. The control is the <b>Sessions</b> view beside Explorer, Pinned and Bookmarks. The tab
+      bar is untouched.</p>
+  </div>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<!-- ============================ 1 ============================ -->
+<section class="board">
+  <h2>1 · The Sessions view — in place</h2>
+  <p class="cap">Desktop dark. The side panel is on <b>Sessions</b>: the shipped <code>.panel-header</code> with a
+    <code>+</code>, one row per session, and the footnote pinned to the bottom. The editor's strip is exactly today's:
+    the shared pinned region, this session's tabs, the outline toggle. No chip, no placeholder, no wrapper.</p>
+
+  <div class="win">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip" title="Notes — /home/shaun/projects/notebook">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn" data-view="explorer" title="Explorer" aria-label="Explorer">📁</button>
+        <button class="activity-btn active" data-view="sessions" title="Sessions" aria-label="Sessions"
+                aria-pressed="true">🗂</button>
+        <button class="activity-btn" data-view="pinned" title="Pinned folders" aria-label="Pinned folders">📌</button>
+        <button class="activity-btn" data-view="bookmarks" title="Bookmarks" aria-label="Bookmarks">🔖</button>
+        <button class="activity-btn" data-view="recent" title="Recent files" aria-label="Recent files">🕒</button>
+        <button class="activity-btn" data-view="search" title="Search" aria-label="Search">🔍</button>
+        <button class="activity-btn" data-view="ai" title="AI Assistant" aria-label="AI Assistant">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel" aria-label="Sessions">
+        <div class="panel-header">
+          <span class="panel-title">Sessions</span>
+          <div class="panel-header-actions">
+            <button type="button" class="session-add" title="New session" aria-label="New session">+</button>
+            <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+          </div>
+        </div>
+
+        <div class="bookmarks-list sessions-list" role="list">
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" aria-current="true" title="Deep work">
+              <span class="session-name">Deep work</span>
+              <span class="session-count">3<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" title="Firmware bring-up">
+              <span class="session-name">Firmware bring-up</span>
+              <span class="session-count">0<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Firmware bring-up actions" title="Firmware bring-up actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" title="Reading">
+              <span class="session-name">Reading</span>
+              <span class="session-dot" aria-hidden="true"></span>
+              <span class="sr-only">, unsaved changes</span>
+              <span class="session-count">2<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+        </div>
+
+        <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+      </aside>
+
+      <section class="editor-pane">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span class="tab-pin" aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+            <div class="tab dirty"><span class="tab-label">Timing notes.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+        <div class="editor-body">
+          <h1 class="doc-h1">Sensors</h1>
+          <p class="doc-p">Calibration runs on a 10 Hz timer. The raw stream is filtered before it reaches the log.</p>
+          <hr class="doc-rule">
+          <pre class="doc-code">sample = adc.read(0)
+value  = lpf(sample, prev)</pre>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <p class="note"><b>Rail:</b> Explorer, <b>Sessions</b>, Pinned, Bookmarks, Recent, Search, AI — the registration order.
+    <b>View:</b> the shipped <code>.panel-header</code> (title, <code>+</code>, collapse) over the shipped
+    <code>.bookmarks-list</code>, with the footnote below the scroller. <b>Strip:</b> three children, unchanged.</p>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="board">
+  <h2>2 · The rows — 240 px, 360 px, and the row menu</h2>
+  <p class="cap">One row per session: name, unpinned count, an 8 px dot when that session has unsaved work, and a
+    per-row <code>⋯</code> that opens Rename / Delete. The active session is fill + a 2 px accent edge + weight, not
+    colour alone. The name is the only flexible child; the count, dot and <code>⋯</code> never shrink.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">240 px — the default panel width</p>
+      <div class="win win--panel">
+        <aside class="side-panel" style="height:100%; border-right:0;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" title="New session" aria-label="New session">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Deep work">
+                <span class="session-name">Deep work</span>
+                <span class="session-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Firmware bring-up">
+                <span class="session-name">Firmware bring-up</span>
+                <span class="session-count">0<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Firmware bring-up actions" title="Firmware bring-up actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Reading">
+                <span class="session-name">Reading</span>
+                <span class="session-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+        </aside>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">360 px — a dragged-wide panel, long name</p>
+      <div class="win win--panel-wide">
+        <aside class="side-panel" style="height:100%; border-right:0;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" title="New session" aria-label="New session">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Firmware bring-up — 2026 sensor calibration and the power budget">
+                <span class="session-name">Firmware bring-up — 2026 sensor calibration and the power budget</span>
+                <span class="session-count">4<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Firmware bring-up — 2026 sensor calibration and the power budget actions"
+                      title="Firmware bring-up — 2026 sensor calibration and the power budget actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Deep work">
+                <span class="session-name">Deep work</span>
+                <span class="session-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Reading">
+                <span class="session-name">Reading</span>
+                <span class="session-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-count">12<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+        </aside>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">The row menu — <code>NB.menu</code>, 170 px</p>
+      <div class="win win--panel" style="width:360px;">
+        <aside class="side-panel" style="height:100%; border-right:0; position:relative; overflow:visible;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" title="New session" aria-label="New session">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Deep work">
+                <span class="session-name">Deep work</span>
+                <span class="session-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                      aria-haspopup="menu" aria-expanded="true">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Firmware bring-up">
+                <span class="session-name">Firmware bring-up</span>
+                <span class="session-count">0<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Firmware bring-up actions" title="Firmware bring-up actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Reading">
+                <span class="session-name">Reading</span>
+                <span class="session-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+
+          <div class="ctx" style="left:140px; top:58px;" role="menu" aria-label="Deep work actions">
+            <button role="menuitem" style="outline:2px solid var(--accent); outline-offset:-2px;">Rename…</button>
+            <button role="menuitem" class="danger">Delete…</button>
+          </div>
+        </aside>
+      </div>
+      <p class="note" style="max-width:360px;"><b>Two buttons per row</b>, in DOM order: the row button (Enter/Space
+        switches) and the <code>⋯</code> button. <b>Active:</b> <code>--accent-soft</code> fill, 2 px inset accent
+        edge, 600 weight. <b>Menu:</b> two items, no separator; Delete is the only destructive item.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="board">
+  <h2>3 · Tab menu → Move to session</h2>
+  <p class="cap">One Organize item, directly after Pin/Unpin. The submenu lists every session except the active one,
+    then a separator and <b>New session…</b>, so it is never empty and the parent is never disabled for want of
+    children. A pinned tab gets no item: it is already in every session.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">Unpinned tab · submenu open</p>
+      <div class="win win--short" style="width:720px;">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span class="tab-pin" aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+            <div class="tab dirty"><span class="tab-label">Timing notes.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+
+        <div class="editor-body" style="position:relative;">
+          <div class="ctx" style="left:80px; top:8px;" role="menu" aria-label="Sensors.md actions">
+            <button role="menuitem">Pin</button>
+            <div class="submenu">
+              <button role="menuitem" aria-expanded="true" style="background:var(--accent-soft);">
+                Move to session <span class="caret">▸</span>
+              </button>
+              <div class="flyout" role="menu" aria-label="Move to session">
+                <button role="menuitem">Firmware bring-up</button>
+                <button role="menuitem">Reading</button>
+                <hr>
+                <button role="menuitem">New session…</button>
+              </div>
+            </div>
+            <button role="menuitem">Export…</button>
+            <button role="menuitem">Rename / Move…</button>
+            <button role="menuitem">Copy path</button>
+            <hr>
+            <button role="menuitem">Close</button>
+            <button role="menuitem">Close others</button>
+            <button role="menuitem" class="danger">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">Pinned tab · no item</p>
+      <div class="win win--short" style="width:520px;">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span class="tab-pin" aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+
+        <div class="editor-body" style="position:relative;">
+          <div class="ctx" style="left:70px; top:8px;" role="menu" aria-label="Power budget.md actions">
+            <button role="menuitem">Unpin</button>
+            <button role="menuitem">Export…</button>
+            <button role="menuitem">Copy path</button>
+            <hr>
+            <button role="menuitem">Show in file sidebar</button>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:520px;">The pinned item is <b>not built</b>, not disabled: every session already
+        shows the pin. The tab strip here is exactly the shipped three-child strip.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="board">
+  <h2>4 · New session and Rename session</h2>
+  <p class="cap">One dialog serves both, like Add/Rename workspace: the same <code>.auth-modal</code> at 420 px, one
+    text field, one <code>role="alert"</code> line. New opens from the header <code>+</code> and from the tab menu's
+    <b>New session…</b>; Rename opens from a row's <code>⋯</code>. 40-character cap on both.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">New session · duplicate name</p>
+      <div class="win win--dialog">
+        <div class="layout layout--no-side" style="grid-template-columns:0 1fr;">
+          <div></div><section class="editor-pane"></section>
+        </div>
+        <div class="scrim">
+          <div class="settings-modal" role="dialog" aria-modal="true"
+               aria-labelledby="sess-new-title" aria-describedby="sess-new-help" tabindex="-1">
+            <div class="settings-header">
+              <h2 id="sess-new-title">New session</h2>
+              <button class="icon-btn" aria-label="Close">×</button>
+            </div>
+            <form class="settings-body" onsubmit="return false">
+              <p class="auth-help" id="sess-new-help">A session is a named set of open tabs. Pinned tabs stay in every session.</p>
+              <div class="settings-row">
+                <label class="settings-label" for="sess-new-name">Name</label>
+                <input id="sess-new-name" class="settings-text-input" type="text" value="Reading"
+                       maxlength="40" autocomplete="off" spellcheck="false"
+                       aria-invalid="true" aria-describedby="sess-new-error">
+              </div>
+              <div class="auth-error" id="sess-new-error" role="alert">A session called “Reading” already exists.</div>
+              <div class="settings-form-actions">
+                <button class="settings-action" type="button">Cancel</button>
+                <button class="settings-action settings-action--primary" type="submit">Create session</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:420px;">Focus lands in Name, which starts empty with the placeholder
+        <code>Deep work</code>. Empty name: <b>“Give the session a name.”</b> Duplicate, compared
+        case-insensitively: <b>“A session called “{name}” already exists.”</b> The field carries
+        <code>aria-invalid</code> and a <code>--danger</code> border; the message clears as soon as Name is edited.</p>
+    </div>
+
+    <div>
+      <p class="slice-label">Rename session · normal</p>
+      <div class="win win--dialog">
+        <div class="layout layout--no-side" style="grid-template-columns:0 1fr;">
+          <div></div><section class="editor-pane"></section>
+        </div>
+        <div class="scrim">
+          <div class="settings-modal" role="dialog" aria-modal="true"
+               aria-labelledby="sess-ren-title" aria-describedby="sess-ren-help" tabindex="-1">
+            <div class="settings-header">
+              <h2 id="sess-ren-title">Rename session</h2>
+              <button class="icon-btn" aria-label="Close">×</button>
+            </div>
+            <form class="settings-body" onsubmit="return false">
+              <p class="auth-help" id="sess-ren-help">Rename only changes the label. Its tabs stay open.</p>
+              <div class="settings-row">
+                <label class="settings-label" for="sess-ren-name">Name</label>
+                <input id="sess-ren-name" class="settings-text-input" type="text" value="Firmware bring-up"
+                       maxlength="40" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="auth-error" role="alert"></div>
+              <div class="settings-form-actions">
+                <button class="settings-action" type="button">Cancel</button>
+                <button class="settings-action settings-action--primary" type="submit">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:420px;">The error line keeps its 18 px height in both states so the buttons never
+        jump. Submitting sets <code>aria-busy</code> on the form and turns the primary label into <b>Creating…</b> /
+        <b>Saving…</b>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="board">
+  <h2>5 · Limit and role states</h2>
+  <p class="cap">The view never changes shape at a limit; only one control's state does. Delete is disabled on the
+    only session, <code>+</code> at 20, and both row-menu items for a viewer. Rows still switch in every state.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">Only session · Delete disabled</p>
+      <div class="win win--panel" style="width:340px; height:220px;">
+        <aside class="side-panel" style="height:100%; border-right:0; position:relative; overflow:visible;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" title="New session" aria-label="New session">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Main">
+                <span class="session-name">Main</span>
+                <span class="session-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Main actions" title="Main actions"
+                      aria-haspopup="menu" aria-expanded="true">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+          <div class="ctx" style="left:140px; top:58px; width:170px;" role="menu" aria-label="Main actions">
+            <button role="menuitem">Rename…</button>
+            <button role="menuitem" class="danger" disabled
+                    title="The only session can’t be deleted.">Delete…</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">20 sessions · <code>+</code> disabled</p>
+      <div class="win win--panel" style="width:300px; height:220px;">
+        <aside class="side-panel" style="height:100%; border-right:0;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" aria-disabled="true"
+                      title="20 sessions is the limit. Delete one first."
+                      aria-describedby="sessions-cap-note">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+              <span id="sessions-cap-note" class="sr-only">20 sessions is the limit. Delete one first.</span>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Deep work">
+                <span class="session-name">Deep work</span>
+                <span class="session-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Reading">
+                <span class="session-name">Reading</span>
+                <span class="session-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" title="Session 20">
+                <span class="session-name">Session 20</span>
+                <span class="session-count">0<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Session 20 actions" title="Session 20 actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+        </aside>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">Viewer · switching only</p>
+      <div class="win win--panel" style="width:340px; height:220px;">
+        <aside class="side-panel" style="height:100%; border-right:0; position:relative; overflow:visible;">
+          <div class="panel-header">
+            <span class="panel-title">Sessions</span>
+            <div class="panel-header-actions">
+              <button class="session-add" aria-disabled="true"
+                      title="Read-only: sessions can’t be changed.">+</button>
+              <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+            </div>
+          </div>
+          <div class="bookmarks-list sessions-list" role="list">
+            <div class="session-row-wrap" role="listitem">
+              <button class="session-row" aria-current="true" title="Deep work">
+                <span class="session-name">Deep work</span>
+                <span class="session-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                      aria-haspopup="menu" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <p class="note">Disabled controls keep their tab stop where the reason is only in a <code>title</code>
+    (<code>aria-disabled</code> for <code>+</code>, native <code>disabled</code> in the menu, which
+    <code>NB.menu</code> already skips). The view has <b>no empty state</b>: a workspace always has at least one
+    session, and a session with zero tabs is a normal row.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="board">
+  <h2>6 · Light theme</h2>
+  <p class="cap">The same view on the light tokens. The active row keeps <code>--fg</code> for the name (the
+    bookmark-selected pair, <code>--accent</code> on <code>--accent-soft</code>, is 4.39:1 in dark and is not copied);
+    the count and footnote use <code>--ws-fg-muted</code>.</p>
+
+  <div class="win" data-theme="light" style="height:430px;">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="spacer"></span>
+      <button class="icon-btn">📝</button>
+    </div>
+
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn" data-view="explorer" title="Explorer">📁</button>
+        <button class="activity-btn active" data-view="sessions" title="Sessions" aria-pressed="true">🗂</button>
+        <button class="activity-btn" data-view="pinned" title="Pinned folders">📌</button>
+        <button class="activity-btn" data-view="bookmarks" title="Bookmarks">🔖</button>
+        <button class="activity-btn" data-view="recent" title="Recent files">🕒</button>
+        <button class="activity-btn" data-view="search" title="Search">🔍</button>
+        <button class="activity-btn" data-view="ai" title="AI Assistant">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel">
+        <div class="panel-header">
+          <span class="panel-title">Sessions</span>
+          <div class="panel-header-actions">
+            <button class="session-add" title="New session" aria-label="New session">+</button>
+            <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+          </div>
+        </div>
+        <div class="bookmarks-list sessions-list" role="list">
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" aria-current="true" title="Deep work">
+              <span class="session-name">Deep work</span>
+              <span class="session-count">3<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Deep work actions" title="Deep work actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" title="Firmware bring-up">
+              <span class="session-name">Firmware bring-up</span>
+              <span class="session-count">0<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Firmware bring-up actions" title="Firmware bring-up actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap" role="listitem">
+            <button class="session-row" title="Reading">
+              <span class="session-name">Reading</span>
+              <span class="session-dot" aria-hidden="true"></span>
+              <span class="sr-only">, unsaved changes</span>
+              <span class="session-count">2<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Reading actions" title="Reading actions"
+                    aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+        </div>
+        <p class="sessions-foot">Pinned tabs are shared by every session.</p>
+      </aside>
+
+      <section class="editor-pane">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span class="tab-pin" aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+            <div class="tab dirty"><span class="tab-label">Timing notes.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+        <div class="editor-body">
+          <h1 class="doc-h1">Sensors</h1>
+          <p class="doc-p">Name <code>--fg</code> 14.6:1 on the active fill; count and footnote
+            <code>--ws-fg-muted</code> 5.56:1 on the panel.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="board">
+  <h2>7 · Rail close-up — the new icon and its slot</h2>
+  <p class="cap">The view icons are the registration order, top to bottom. Sessions is second, between Explorer's single
+    folder and Pinned's pin, and uses <code>🗂</code> (card index dividers): several labelled sets, the model in one
+    glyph. It is a text glyph in the same 36 px box as the rest, so the feature adds no asset.</p>
+
+  <div class="row" style="align-items:stretch;">
+    <div class="win" style="width:150px; height:430px;">
+      <nav class="activity-bar" style="height:100%; border-right:0; align-items:center;">
+        <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+        <button class="activity-btn active" title="Sessions" aria-label="Sessions" aria-pressed="true">🗂</button>
+        <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+        <button class="activity-btn" title="Bookmarks" aria-label="Bookmarks">🔖</button>
+        <button class="activity-btn" title="Recent files" aria-label="Recent files">🕒</button>
+        <button class="activity-btn" title="Search" aria-label="Search">🔍</button>
+        <button class="activity-btn" title="AI Assistant" aria-label="AI Assistant">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+    </div>
+    <div style="flex:1 1 420px; min-width:320px;">
+      <table class="spec">
+        <thead><tr><th>Slot</th><th>View</th><th>Glyph</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Explorer</td><td>📁</td></tr>
+          <tr><td>2</td><td><b>Sessions</b></td><td>🗂 — the new one</td></tr>
+          <tr><td>3</td><td>Pinned folders</td><td>📌</td></tr>
+          <tr><td>4</td><td>Bookmarks</td><td>🔖</td></tr>
+          <tr><td>5</td><td>Recent files</td><td>🕒</td></tr>
+          <tr><td>6</td><td>Search</td><td>🔍</td></tr>
+          <tr><td>7</td><td>AI Assistant</td><td>✨</td></tr>
+        </tbody>
+      </table>
+      <p class="note">Active: <code>--accent-soft</code> fill plus the 2 px accent edge; the rail keeps
+        <code>aria-pressed</code>. The icon has no count, no badge and no session name: that is the view's job.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section class="board">
+  <h2>8 · Sizes at a glance</h2>
+  <table class="spec">
+    <thead><tr><th>Element</th><th>Size / token</th><th>State notes</th></tr></thead>
+    <tbody>
+      <tr><td>Rail icon</td><td>36 × 36 hit box, <code>🗂</code> at 1.15rem, second after Explorer</td><td>Active: accent-soft fill + 2 px left edge; <code>aria-pressed</code></td></tr>
+      <tr><td>View header</td><td>.panel-header, 8 × 12 padding, .79rem uppercase title</td><td><code>+</code> 18 × 18, then the collapse <code>‹</code></td></tr>
+      <tr><td>Row</td><td>27 px tall: 3 px padding + 21 px line; 4 px radius</td><td>Name is the only flexible child; count/dot/<code>⋯</code> fixed</td></tr>
+      <tr><td>Active row</td><td>--accent-soft fill + inset 2 px --accent edge</td><td>Name --fg at 600; count --fg at 400; <code>aria-current="true"</code></td></tr>
+      <tr><td>Count</td><td>.76rem, tabular, min-width 2ch, right-aligned</td><td>--ws-fg-muted; --fg on the active row; always shown, including 0</td></tr>
+      <tr><td>Dirty dot</td><td>8 × 8, 50 % radius, --accent</td><td>Before the count; <code>, unsaved changes</code> in the accessible name</td></tr>
+      <tr><td><code>⋯</code></td><td>20 × 20, radius 4, U+22EF</td><td>Visible at rest; hover: --fg on accent-soft; focus ring inset</td></tr>
+      <tr><td>Row menu</td><td>NB.menu, min-width 170 px</td><td>Rename…, Delete… (danger); no separator</td></tr>
+      <tr><td>Footnote</td><td>8 × 12, .76rem/1.35, 1 px top border</td><td>Pinned below the scroller; --ws-fg-muted</td></tr>
+      <tr><td>Row widths</td><td>240 px panel: 190 px inner row; 360 px: 310 px; 140 px floor: 90 px</td><td>Nothing wraps; long names ellipsise</td></tr>
+      <tr><td>Strip</td><td>34 px, three children: pinned, list, outline toggle</td><td>Unchanged by sessions</td></tr>
+    </tbody>
+  </table>
+  <p class="note"><b>No new token.</b> The view reuses <code>--bg-panel</code>, <code>--bg-elev</code>,
+    <code>--fg</code>, <code>--fg-muted</code>, <code>--accent</code>, <code>--accent-soft</code>,
+    <code>--border</code>, <code>--danger</code> and <code>--ws-fg-muted</code>. Two additive menu rules fix shipped
+    contrast failures the view exposes: disabled items take <code>--ws-fg-muted</code>, and a danger item's hover is a
+    1 px ring instead of a fill.</p>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section class="board">
+  <h2>9 · Phone — the view does not exist</h2>
+  <p class="cap">The phone shell has one reader, no tab bar, and never reads or writes desktop sessions. The Sessions
+    rail icon and its host are hidden by the same phone rule that hides the AI view; a saved
+    <code>activeView: "sessions"</code> falls back to <b>Explorer</b>.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">Bottom rail — Sessions omitted</p>
+      <div class="win" style="width:360px; height:120px;">
+        <div style="display:flex; align-items:center; justify-content:space-around; height:100%; padding:0 8px; background:var(--bg-panel);">
+          <button class="activity-btn" title="Explorer">📁</button>
+          <button class="activity-btn" title="Pinned folders">📌</button>
+          <button class="activity-btn" title="Bookmarks">🔖</button>
+          <button class="activity-btn" title="Recent files">🕒</button>
+          <button class="activity-btn" title="Search">🔍</button>
+          <button class="activity-btn" title="Settings">⚙</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="slice-label">The rule</p>
+      <div class="win" style="width:460px; height:120px; padding:16px 18px; display:block; overflow:auto;">
+        <pre class="doc-code" style="max-width:none; margin:0; white-space:pre-wrap; overflow-wrap:anywhere;">@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  .activity-btn[data-view="sessions"],
+  #side-panel .side-panel-view[data-view="sessions"] { display: none; }
+}</pre>
+      </div>
+    </div>
+  </div>
+  <p class="note">The view is still built at load on a phone — it is a hidden DOM subtree and keeps
+    <code>sessions.js</code> free of a mode branch. Nothing else on the phone changes.</p>
+</section>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-btn]"));
+    function setTheme(theme) {
+      document.body.dataset.theme = theme;
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.themeBtn === theme ? "true" : "false");
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () { setTheme(b.dataset.themeBtn); });
+    });
+    setTheme("dark");
+  })();
+</script>
+</body>
+</html>

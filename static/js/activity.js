@@ -1321,6 +1321,10 @@
     label: "Explorer",
     mount: function () {},
   });
+  // Sessions: the host (#sessions-view) ships empty; sessions.js populates
+  // its header + list at load, so mount is not needed. Only [hidden] toggles
+  // here.
+  register({ id: "sessions", icon: "🗂", label: "Sessions" });
   // Pinned folders: the same pin rows the Explorer's inline top section
   // shows, mounted into their own pane on first activation.
   register({

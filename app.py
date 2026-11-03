@@ -92,6 +92,7 @@ PROXY_FORWARD_HEADERS = ("X-Forwarded-For", "X-Real-IP")
 _WORKSPACE_SCOPED_CONFIG_KEYS = (
     "lastFile", "openFiles", "activeFile", "pinnedFiles",
     "recentFiles", "bookmarks", "pinnedFolders",
+    "sessions", "activeSessionId",
 )
 
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
@@ -1270,7 +1271,8 @@ _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
 # activity.js registers and the data-view hosts templates/index.html
 # ships; tests/test_app.py enforces that. "graph" is an overlay, not a
 # view, so it is deliberately absent.
-_ACTIVE_VIEWS = ("explorer", "pinned", "bookmarks", "recent", "search", "ai")
+_ACTIVE_VIEWS = ("explorer", "sessions", "pinned", "bookmarks", "recent",
+                 "search", "ai")
 
 
 def _read_public_config():
@@ -1686,15 +1688,24 @@ def set_workspace_state():
         return err("Unknown workspace", 404, code="unknown_workspace")
     if not isinstance(state, dict):
         return err("state must be a JSON object", 400, code="bad_body")
-    encoded = json.dumps(state)
-    if len(encoded.encode("utf-8")) > WORKSPACE_STATE_MAX_BYTES:
-        return err("state exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES, 400,
-                   code="state_too_large")
     with _CONFIG_LOCK:
         cfg = _read_public_config()
         workspace_state = cfg.get("workspaceState")
         if not isinstance(workspace_state, dict):
             workspace_state = {}
+        # Forward-compatibility guard: a page loaded before sessions shipped
+        # posts the old key set, and replacing the entry would drop every
+        # other session. A current client always sends both keys, so a
+        # deliberate change, including a deletion, is never blocked.
+        existing = workspace_state.get(wid)
+        if isinstance(existing, dict) and "sessions" in existing:
+            for key in ("sessions", "activeSessionId"):
+                if key not in state:
+                    state[key] = existing[key]
+        encoded = json.dumps(state)
+        if len(encoded.encode("utf-8")) > WORKSPACE_STATE_MAX_BYTES:
+            return err("state exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES,
+                       400, code="state_too_large")
         workspace_state[wid] = state
         cfg["workspaceState"] = workspace_state
         try:

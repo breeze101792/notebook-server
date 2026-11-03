@@ -206,6 +206,13 @@
           <button class="expand-btn" id="sidebar-expand" title="Show files" hidden>›</button>
         </div>
 
+        <!-- Sessions view: one row per session. sessions.js builds the
+             header + list at load (the bookmarks.js pattern); the host stays
+             in the DOM so scroll and row state survive view switches.
+             Desktop-only: the phone query hides this host and its rail icon. -->
+        <div id="sessions-view" class="side-panel-view" data-view="sessions"
+             {% if boot.active_view != 'sessions' %}hidden{% endif %}></div>
+
         <!-- Pinned folders view: the same pin rows the Explorer's inline
              top section shows, in their own activity-bar pane. Mounted
              lazily by sidebar.js the first time the 📌 icon is activated. -->
@@ -614,6 +621,39 @@
         <div class="settings-form-actions">
           <button class="settings-action" type="button" id="ws-cancel">Cancel</button>
           <button class="settings-action settings-action--primary" type="submit" id="ws-submit">Add workspace</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- New / rename session dialog. Body-level like #workspace-dialog so
+       NB.dialog's "inert every other body child" rule contains it. One
+       dialog serves both modes: the title, the help line and the primary
+       label change; the field and the error line do not. -->
+  {% if boot.workspace_id %}
+  <div id="session-dialog" class="settings-overlay" hidden>
+    <div class="settings-modal auth-modal" role="dialog" aria-modal="true"
+         aria-labelledby="session-dialog-title" aria-describedby="session-dialog-help" tabindex="-1">
+      <div class="settings-header">
+        <h2 id="session-dialog-title">New session</h2>
+        <button id="session-dialog-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+      <form class="settings-body auth-form" id="session-form" novalidate>
+        <p class="auth-help" id="session-dialog-help">A session is a named set of open tabs. Pinned tabs stay in every session.</p>
+
+        <div class="settings-row">
+          <label class="settings-label" for="session-name">Name</label>
+          <input id="session-name" class="settings-text-input" type="text" maxlength="40"
+                 autocomplete="off" spellcheck="false" placeholder="Deep work"
+                 aria-describedby="session-error">
+        </div>
+
+        <div class="auth-error" id="session-error" role="alert"></div>
+
+        <div class="settings-form-actions">
+          <button class="settings-action" type="button" id="session-cancel">Cancel</button>
+          <button class="settings-action settings-action--primary" type="submit" id="session-submit">Create session</button>
         </div>
       </form>
     </div>
@@ -1900,6 +1940,7 @@
   <script src="/static/js/ai.js" defer></script>
   <script src="/static/js/activity.js" defer></script>
   <script src="/static/js/bookmarks.js" defer></script>
+  <script src="/static/js/sessions.js" defer></script>
   <script src="/static/js/shortcuts.js" defer></script>
   <script src="/static/js/mobile.js" defer></script>
   <script src="/static/js/workspaces.js" defer></script>

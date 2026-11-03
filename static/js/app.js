@@ -22,9 +22,13 @@
   // are written through POST /api/workspace-state; the top-level copies are
   // the pre-workspace format and the fallback for a page without one.
   const WORKSPACE_STATE_KEYS = [
-    "lastFile", "openFiles", "activeFile", "pinnedFiles", "recentFiles",
-    "bookmarks", "pinnedFolders",
+    "lastFile", "openFiles", "activeFile", "pinnedFiles", "sessions",
+    "activeSessionId", "recentFiles", "bookmarks", "pinnedFolders",
   ];
+  // Views that exist only in the desktop shell. A saved `activeView` naming
+  // one of them must fall back to Explorer on a phone, or the drawer would
+  // open onto a hidden host.
+  const PHONE_HIDDEN_VIEWS = ["ai", "sessions"];
   // Same debounce as the config write below.
   const WORKSPACE_SAVE_DELAY_MS = 250;
 
@@ -636,12 +640,16 @@
     // any file shown -> update recents + tree highlight (fired by viewer.activate)
     NB.evt.on("file:open", (path) => { if (path) updateRecent(path); });
 
-    // tab set changed -> persist open files + active file + pinned files
-    NB.evt.on("tabs:changed", ({ openFiles, activeFile, pinnedFiles }) => {
+    // tab set changed -> persist open files + active file + pinned files.
+    // `openFiles`/`activeFile` stay mirrors of the active session; `sessions`
+    // and `activeSessionId` are authoritative and arrive in the same payload.
+    NB.evt.on("tabs:changed", ({ openFiles, activeFile, pinnedFiles, sessions, activeSessionId }) => {
       if (isPhoneMode()) return;   // phone tabs are one note and never persist
       cfg.openFiles = openFiles;
       cfg.activeFile = activeFile;
       if (pinnedFiles) cfg.pinnedFiles = pinnedFiles;
+      if (sessions) cfg.sessions = sessions;
+      if (activeSessionId !== undefined) cfg.activeSessionId = activeSessionId;
       persistConfig();
     });
 
@@ -950,9 +958,10 @@
       NB.activity.getActive(), shellPanel.activeView,
       serverCfg && serverCfg.activeView);
     if (bootView) NB.activity.activate(bootView, false);
-    // Phone has no AI view; a saved desktop activeView of "ai" must not
-    // leave the drawer showing a hidden host.
-    if (isPhoneMode() && NB.activity.getActive && NB.activity.getActive() === "ai") {
+    // Phone has no AI or Sessions view; a saved desktop activeView of either
+    // must not leave the drawer showing a hidden host.
+    if (isPhoneMode() && NB.activity.getActive &&
+        PHONE_HIDDEN_VIEWS.indexOf(NB.activity.getActive()) >= 0) {
       NB.activity.activate("explorer", false);
     }
     // The panel is the source of truth for the active view -- the failed
@@ -970,14 +979,25 @@
     // default; only the user opt-in turns it on.
     if (NB.vimnav) NB.vimnav.setEnabled(!!cfg.vimMode);
 
-    // Restore previously open tabs (filtered to files that still exist),
-    // then activate the last active file; fall back to lastFile / first file.
-    const openFiles = (cfg.openFiles || []).filter(p => isSpecialTab(p) || treeHas(tree, p));
-    const activeFile = cfg.activeFile &&
-      (isSpecialTab(cfg.activeFile) || treeHas(tree, cfg.activeFile)) ? cfg.activeFile : null;
-    const lastFile = cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile : null;
-    const fallback = lastFile || firstFilePath(tree) || null;
-    const pinnedFiles = (cfg.pinnedFiles || []).filter(p => openFiles.includes(p));
+    // Normalise the saved sessions against the live tree, then restore. The
+    // tree may have changed since the state was written, so `known` is the
+    // same predicate the old hand-rolled filter used. The fallback file is
+    // used only on the first boot after the upgrade: afterwards an empty
+    // session stays empty.
+    const known = (p) => isSpecialTab(p) || treeHas(tree, p);
+    // Desktop only: the phone never restores or stores sessions, so it does
+    // not even normalise them.
+    const sessionState = isPhoneMode() ? null : NB.tabs.normaliseSessions({
+      sessions: cfg.sessions,
+      activeSessionId: cfg.activeSessionId,
+      openFiles: cfg.openFiles,
+      activeFile: cfg.activeFile,
+      pinnedFiles: cfg.pinnedFiles,
+    }, known);
+    const fallback = (sessionState && sessionState.migrated)
+      ? (cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile
+        : firstFilePath(tree) || null)
+      : null;
     // Read the incoming link BEFORE restoring anything: a phone boot must
     // not let a resume note rewrite the URL (mobile.js suppresses its
     // history entries for the whole boot window) or replace the requested
@@ -985,26 +1005,29 @@
     const deepLink = parseDeepLink();
     // Phone: one reader, one tab, no desktop session restore. A deep link
     // wins over the device-local resume fallback; with neither, boot lands
-    // on Home. The desktop path below is unchanged.
-    let restoreOpen = openFiles;
-    let restoreActive = activeFile;
+    // on Home. The phone passes no sessionState, so it neither reads nor
+    // writes sessions.
+    let restoreOpen = [];
+    let restoreActive = null;
     let restoreFallback = fallback;
-    let restorePinned = pinnedFiles;
+    let restorePinned = [];
+    let restoreSessions = null;
     if (isPhoneMode()) {
-      restoreOpen = [];
-      restoreActive = null;
-      restorePinned = [];
       if (deepLink) {
         restoreFallback = treeHas(tree, deepLink.file) ? deepLink.file : null;
       } else {
         const resume = (NB.mobile && NB.mobile.resumePath) ? NB.mobile.resumePath() : null;
         restoreFallback = (resume && treeHas(tree, resume)) ? resume : null;
       }
+    } else {
+      restoreSessions = sessionState;
     }
     if (NB.mobile && NB.mobile.beginBoot) NB.mobile.beginBoot();
     try {
-      try { await NB.tabs.restore(restoreOpen, restoreActive, restoreFallback, restorePinned); }
-      catch (e) { console.warn("restore tabs failed", e); }
+      try {
+        await NB.tabs.restore(restoreOpen, restoreActive, restoreFallback,
+                              restorePinned, restoreSessions);
+      } catch (e) { console.warn("restore tabs failed", e); }
 
       // Deep link: if the URL requested a specific file (and optional
       // heading), override the restored active tab with it. Runs AFTER

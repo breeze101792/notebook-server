@@ -25,6 +25,7 @@ is no database and no runtime build step.
 | --- | --- |
 | [`architecture/backend.md`](architecture/backend.md) | Import-time path resolution and seeding, `safe_path` and atomic writes, the auth layer, the AI proxy, and the design trade-offs. |
 | [`architecture/frontend.md`](architecture/frontend.md) | Script load order, the boot sequence, the `static/js/` modules, the code-block renderer registry, persistence, the service worker, and the UI surfaces. |
+| [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. |
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, the six tools, the tool loop, and reviewing edits. |
@@ -46,6 +47,8 @@ is no database and no runtime build step.
 | [`design/table-editor.md`](design/table-editor.md) | Table editor design handoff: shell, grid, toolbar, sort, blocked state, keyboard, tokens, and responsive rules. Reference mockup: [`design/table-editor.html`](design/table-editor.html). |
 | [`design/table-editor-selection.md`](design/table-editor-selection.md) | Selection and clipboard design handoff: the wash and edge treatment, the clipboard toolbar group, status strings, and the blocked state. |
 | [`ui/workspaces.md`](ui/workspaces.md) | Workspace picker design handoff: the bar, picker, add/rename dialog, Settings list, code-keyed error table, keyboard rules, and the shipped CSS. Reference mockup: [`ui/workspaces-mockup.html`](ui/workspaces-mockup.html). |
+| [`requirements/features/sessions.md`](requirements/features/sessions.md) | Session tab groups product definition: goals, model and invariants, flows, the edge-case table, 62 acceptance criteria, and what must not regress. |
+| [`ui/sessions.md`](ui/sessions.md) | Sessions side-panel view design handoff: activity-bar placement, header and rows, row menu, tab-menu item, name dialog, copy, keyboard/ARIA, and the CSS to add. Reference mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
 
 ## Contracts
 

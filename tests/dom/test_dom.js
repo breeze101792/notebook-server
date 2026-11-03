@@ -216,6 +216,7 @@ const html = `<!DOCTYPE html><html><head>
           <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
           <div id="file-tree" class="tree"></div>
         </div>
+        <div id="sessions-view" class="side-panel-view" data-view="sessions" hidden></div>
         <div id="pinned-view" class="side-panel-view" data-view="pinned" hidden></div>
         <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks" hidden></div>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
@@ -1403,6 +1404,31 @@ const html = `<!DOCTYPE html><html><head>
       <button id="svglb-close" class="mlb-btn mlb-close-btn" title="Close" aria-label="Close">×</button>
     </div>
   </div>
+  <!-- New / Rename session dialog (mirrors templates/index.html). Body-level
+       like #workspace-dialog so NB.dialog contains it. -->
+  <div id="session-dialog" class="settings-overlay" hidden>
+    <div class="settings-modal auth-modal" role="dialog" aria-modal="true"
+         aria-labelledby="session-dialog-title" aria-describedby="session-dialog-help" tabindex="-1">
+      <div class="settings-header">
+        <h2 id="session-dialog-title">New session</h2>
+        <button id="session-dialog-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+      <form class="settings-body auth-form" id="session-form" novalidate>
+        <p class="auth-help" id="session-dialog-help">A session is a named set of open tabs. Pinned tabs stay in every session.</p>
+        <div class="settings-row">
+          <label class="settings-label" for="session-name">Name</label>
+          <input id="session-name" class="settings-text-input" type="text" maxlength="40"
+                 autocomplete="off" spellcheck="false" placeholder="Deep work"
+                 aria-describedby="session-error">
+        </div>
+        <div class="auth-error" id="session-error" role="alert"></div>
+        <div class="settings-form-actions">
+          <button class="settings-action" type="button" id="session-cancel">Cancel</button>
+          <button class="settings-action settings-action--primary" type="submit" id="session-submit">Create session</button>
+        </div>
+      </form>
+    </div>
+  </div>
   <div id="mobile-home" hidden></div>
   <div id="mobile-scrim" hidden></div>
   <section id="capture-sheet" role="dialog" aria-modal="true" aria-labelledby="capture-title" hidden>
@@ -2344,6 +2370,7 @@ evalIn(read("static/js/settings.js"));
 evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/bookmarks.js"));
+evalIn(read("static/js/sessions.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/mobile.js"));
 evalIn(read("static/js/app.js"));
@@ -18840,8 +18867,8 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v21",
-      /const CACHE = "notebook-v21"/.test(read("static/sw.js")),
+    check("table select completeness: sw.js CACHE is notebook-v22",
+      /const CACHE = "notebook-v22"/.test(read("static/sw.js")),
       JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
@@ -21223,7 +21250,7 @@ function check(label, cond, extra) {
   // app.js is what keeps a special id through the boot tree filter; guard
   // the source shape because the boot path itself runs only once.
   check("graph: app.js preserves special tab ids through the boot filter",
-    /const openFiles\s*=\s*\(cfg\.openFiles \|\| \[\]\)\.filter\(p => isSpecialTab\(p\) \|\| treeHas\(tree, p\)\)/
+    /const known = \(p\) => isSpecialTab\(p\) \|\| treeHas\(tree, p\)/
       .test(read("static/js/app.js")));
 
   const graphTabFinal = window.document.querySelector('.tab[data-path="§graph"]');
@@ -33236,8 +33263,8 @@ function check(label, cond, extra) {
 
     // 4. The registry and the server host set stay in sync.
     const ids = window.NB.activity.views();
-    check("adopt: views() lists the six ids in registration order",
-      ids.join(",") === "explorer,pinned,bookmarks,recent,search,ai", ids.join(","));
+    check("adopt: views() lists the seven ids in registration order",
+      ids.join(",") === "explorer,sessions,pinned,bookmarks,recent,search,ai", ids.join(","));
     const tplIds = Array.from(
       read("templates/index.html").matchAll(
         /class="side-panel-view"[^>]*data-view="([^"]+)"/g),
@@ -36438,8 +36465,8 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v21",
-        /const CACHE = "notebook-v21"/.test(sw));
+      check("dw completeness: sw.js CACHE bumped to notebook-v22",
+        /const CACHE = "notebook-v22"/.test(sw));
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);
@@ -39672,6 +39699,995 @@ function check(label, cond, extra) {
     window.NB.auth.hideModal();
     await tick(10);
     delete FILES["notes/fake-auth-ids.md"];
+  }
+
+  // ===================================================================
+  // Sessions
+  // docs/architecture/sessions.md §4-§15, docs/requirements/features/
+  // sessions.md §7 AC1-AC60. Drives the real model (tabs.js), the real
+  // view (sessions.js) and the tab menu; the shell hosts live in the
+  // harness HTML above. Each scenario starts from a clean viewer cache
+  // and a restore() of the state it asserts against.
+  // ===================================================================
+  console.log("== sessions ==");
+  {
+    const S = window.NB.tabs;
+    const ssView = () => $("sessions-view");
+    const ssAdd = () => ssView().querySelector(".session-add");
+    const ssRows = () => Array.from(ssView().querySelectorAll(".session-row-wrap"));
+    const ssRow = (id) => ssView().querySelector(
+      '.session-row-wrap[data-session-id="' + id + '"]');
+    const ssRowBtn = (id) => ssRow(id) && ssRow(id).querySelector(".session-row");
+    const ssMore = (id) => ssRow(id) && ssRow(id).querySelector(".session-more");
+    const ssCount = (id) => {
+      const c = ssRow(id) && ssRow(id).querySelector(".session-count");
+      return c ? Number(String(c.firstChild.textContent)) : -1;
+    };
+    const ssNames = () => S.getSessionList().map((s) => s.name);
+    const ssIds = () => S.getSessionList().map((s) => s.id);
+    const ssSnap = () => S.snapshot();
+    const ssPaths = () => S.getOpen();
+    const ssPins = () => ssPaths().filter((p) => S.isPinned(p));
+    const ssMenuButtons = () => Array.from(
+      $("nb-menu").querySelectorAll(":scope > button"));
+    const ssMenuBtn = (label) => ssMenuButtons()
+      .find((b) => b.textContent === label);
+    const ssDialog = () => $("session-dialog");
+    const ssName = () => $("session-name");
+    const ssType = (value) => {
+      ssName().value = value;
+      ssName().dispatchEvent(new window.Event("input", { bubbles: true }));
+    };
+    const ssSubmit = () => $("session-form").dispatchEvent(
+      new window.Event("submit", { bubbles: true, cancelable: true }));
+    const ssState = (list, activeId, pins, migrated) => ({
+      sessions: list.map((s) => ({
+        id: s.id, name: s.name,
+        openFiles: (s.openFiles || []).slice(),
+        activeFile: s.activeFile || null,
+      })),
+      activeSessionId: activeId,
+      pinnedFiles: (pins || []).slice(),
+      migrated: !!migrated,
+    });
+    const ssLoad = async (list, activeId, pins, migrated) => {
+      window.NB.viewer.clear();
+      await S.restore([], null, null, [],
+        ssState(list, activeId, pins, migrated));
+      await tick(60);
+    };
+    const ssNormalise = (raw, known) =>
+      S.normaliseSessions(raw, known || (() => true));
+    // Drag `fromPath` onto the left or right half of `ontoPath`, the same
+    // event sequence the tab-reorder tests drive.
+    const ssDrag = (fromPath, ontoPath, before) => {
+      const src = window.document.querySelector('.tab[data-path="' + fromPath + '"]');
+      const over = window.document.querySelector('.tab[data-path="' + ontoPath + '"]');
+      if (!src || !over) return;
+      const orig = over.getBoundingClientRect.bind(over);
+      over.getBoundingClientRect = () => ({
+        width: 100, height: 30, left: 0, right: 100,
+        top: 0, bottom: 30, x: 0, y: 0, toJSON() {},
+      });
+      const cx = before ? 0 : 90;
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      const ov = new window.Event("dragover", { bubbles: true });
+      Object.defineProperty(ov, "clientX", { value: cx });
+      over.dispatchEvent(ov);
+      const dp = new window.Event("drop", { bubbles: true });
+      Object.defineProperty(dp, "clientX", { value: cx });
+      over.dispatchEvent(dp);
+      over.getBoundingClientRect = orig;
+    };
+
+    // A known tree/file fixture for every session scenario below.
+    for (const [rel, body] of [["c", "# File C\n\nbody c\n"],
+                               ["d", "# File D\n\nbody d\n"],
+                               ["e", "# File E\n\nbody e\n"]]) {
+      FILES["notes/" + rel + ".md"] = body;
+    }
+    FILES["notes/d2.md"] = "# File D\n\nbody d\n";
+    TREE.length = 0;
+    TREE.push(
+      { name: "notes", type: "dir", path: "notes", children: [
+        { name: "a.md", type: "file", path: "notes/a.md" },
+        { name: "b.md", type: "file", path: "notes/b.md" },
+        { name: "c.md", type: "file", path: "notes/c.md" },
+        { name: "d.md", type: "file", path: "notes/d.md" },
+        { name: "d2.md", type: "file", path: "notes/d2.md" },
+        { name: "e.md", type: "file", path: "notes/e.md" },
+      ]},
+      { name: "Welcome.md", type: "file", path: "Welcome.md" },
+    );
+    await window.NB.sidebar.refresh();
+    await tick(20);
+
+    // --- 1. migration -------------------------------------------------
+    const migratedRaw = {
+      openFiles: ["notes/a.md", "Welcome.md"],
+      activeFile: "Welcome.md",
+      pinnedFiles: ["Welcome.md"],
+    };
+    const mig = ssNormalise(migratedRaw);
+    check("sessions migration: one session named Main",
+      mig.sessions.length === 1 && mig.sessions[0].id === "main" &&
+      mig.sessions[0].name === "Main",
+      JSON.stringify(mig.sessions.map((s) => s.id + ":" + s.name)));
+    check("sessions migration: reports migrated",
+      mig.migrated === true);
+    check("sessions migration: the pin stays shared and out of the session",
+      mig.pinnedFiles.join(",") === "Welcome.md" &&
+      mig.sessions[0].openFiles.join(",") === "notes/a.md" &&
+      mig.sessions[0].activeFile === "Welcome.md",
+      JSON.stringify(mig));
+    await S.restore([], null, null, [], mig);
+    await tick(60);
+    check("sessions migration: restores the legacy strip and pinned prefix",
+      ssPaths().join(",") === "Welcome.md,notes/a.md", ssPaths().join(","));
+    check("sessions migration: keeps the legacy active note",
+      S.getActive() === "Welcome.md", String(S.getActive()));
+    check("sessions migration: renders the pinned region",
+      $("tab-pinned").hidden === false);
+    check("sessions migration: does not migrate a second time",
+      ssNormalise({
+        sessions: ssSnap(), activeSessionId: S.getActiveSessionId(),
+        openFiles: ssPaths(), pinnedFiles: ssPins(),
+      }).migrated === false);
+
+    // app.js hands restore() a fallback only on the migrated boot, so a
+    // saved empty session gets none and must stay empty.
+    window.NB.viewer.clear();
+    await S.restore([], null, null, [], ssState(
+      [{ id: "main", name: "Main", openFiles: [], activeFile: null }],
+      "main", [], false));
+    await tick(60);
+    check("sessions migration: a saved empty session stays empty, no fallback",
+      ssPaths().length === 0 && $("welcome").hidden === false,
+      "open=" + ssPaths().join(","));
+    check("sessions migration: app.js passes a fallback only when migrated",
+      /const fallback = \(sessionState && sessionState\.migrated\)/
+        .test(read("static/js/app.js")));
+    window.NB.viewer.clear();
+    await S.restore([], null, "notes/b.md", [], ssState(
+      [{ id: "main", name: "Main", openFiles: [], activeFile: null }],
+      "main", [], true));
+    await tick(60);
+    check("sessions migration: the migrated boot opens the fallback once",
+      S.getActive() === "notes/b.md" && ssPaths().join(",") === "notes/b.md",
+      ssPaths().join(","));
+
+    // --- 2. pinned union ---------------------------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/b.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1", ["Welcome.md"]);
+    check("sessions pins: the pin loads into the active strip",
+      ssPaths().join(",") === "Welcome.md,notes/a.md,notes/b.md",
+      ssPaths().join(","));
+    const snapPins = ssSnap();
+    check("sessions pins: no pinned path is stored in any session",
+      snapPins.every((s) => s.openFiles.indexOf("Welcome.md") < 0),
+      JSON.stringify(snapPins.map((s) => s.openFiles)));
+    await S.swapTo("s2");
+    await tick(50);
+    check("sessions pins: the pin is in every session's strip",
+      ssPaths().join(",") === "Welcome.md,notes/c.md", ssPaths().join(","));
+
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/b.md"], activeFile: "notes/b.md" },
+    ], "s1", ["Welcome.md", "notes/e.md"]);
+    check("sessions pins: two pins render in stored order",
+      ssPaths().join(",") === "Welcome.md,notes/e.md,notes/a.md",
+      ssPaths().join(","));
+    ssDrag("notes/e.md", "Welcome.md", true);
+    await tick(20);
+    check("sessions pins: a pin can be dragged within the pinned region",
+      ssPins().join(",") === "notes/e.md,Welcome.md", ssPins().join(","));
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions pins: pinned order survives a swap",
+      ssPaths().join(",") === "notes/e.md,Welcome.md,notes/b.md",
+      ssPaths().join(","));
+    await S.swapTo("s1");
+    await tick(40);
+    check("sessions pins: pinned order survives the return swap",
+      ssPins().join(",") === "notes/e.md,Welcome.md", ssPins().join(","));
+    const pinMirror = ssNormalise({
+      sessions: ssSnap(), activeSessionId: S.getActiveSessionId(),
+      openFiles: ssPaths(), pinnedFiles: ssPins(),
+    });
+    check("sessions pins: normalisation keeps the mirror's pin order",
+      pinMirror.pinnedFiles.join(",") === "notes/e.md,Welcome.md",
+      pinMirror.pinnedFiles.join(","));
+
+    // --- 3. per-session active tab and order -------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/b.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md", "notes/d.md"], activeFile: "notes/d.md" },
+    ], "s1");
+    check("sessions restore: lands on the saved session and active tab",
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/b.md",
+      S.getActiveSessionId() + "/" + S.getActive());
+    check("sessions restore: keeps the session's tab order",
+      ssPaths().join(",") === "notes/a.md,notes/b.md", ssPaths().join(","));
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions restore: the target's own order renders",
+      ssPaths().join(",") === "notes/c.md,notes/d.md", ssPaths().join(","));
+    check("sessions restore: the target's own active tab renders",
+      S.getActive() === "notes/d.md", String(S.getActive()));
+    await S.swapTo("s1");
+    await tick(40);
+    ssDrag("notes/b.md", "notes/a.md", true);
+    await tick(20);
+    const persisted = ssSnap();
+    const reNorm = ssNormalise({
+      sessions: persisted,
+      activeSessionId: persisted.activeSessionId,
+      openFiles: ssPaths(), activeFile: S.getActive(), pinnedFiles: [],
+    });
+    await S.restore([], null, null, [], reNorm);
+    await tick(60);
+    check("sessions restore: a re-restore keeps the dragged order",
+      ssPaths().join(",") === "notes/b.md,notes/a.md", ssPaths().join(","));
+    check("sessions restore: a re-restore keeps the per-session active tab",
+      S.getActive() === "notes/b.md", String(S.getActive()));
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions restore: the other session's active tab survives",
+      S.getActive() === "notes/d.md", String(S.getActive()));
+
+    // --- 4. drafts across a session switch ---------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/b.md"], activeFile: "notes/b.md" },
+    ], "s1");
+    await window.NB.viewer.startEdit();
+    await tick(20);
+    cmSetValue(FILE_A + "DRAFT-MARKER");
+    await tick(20);
+    let ssConfirm = 0;
+    const ssConfirmOrig = window.confirm;
+    window.confirm = () => { ssConfirm++; return true; };
+    await S.swapTo("s2");
+    await tick(60);
+    window.confirm = ssConfirmOrig;
+    check("sessions drafts: a dirty source buffer switches without a prompt",
+      ssConfirm === 0, "confirms=" + ssConfirm);
+    check("sessions drafts: the switch shows the target strip",
+      ssPaths().join(",") === "notes/b.md" && S.getActive() === "notes/b.md",
+      ssPaths().join(","));
+    check("sessions drafts: the source tab leaves the strip",
+      window.document.querySelector('.tab[data-path="notes/a.md"]') === null);
+    check("sessions drafts: the source buffer is stashed",
+      window.NB.viewer.isDirty("notes/a.md") &&
+      window.NB.viewer.getDraft("notes/a.md") !== null);
+    await S.swapTo("s1");
+    await tick(60);
+    const ssATab = window.document.querySelector('.tab[data-path="notes/a.md"]');
+    check("sessions drafts: returning restores the strip and active tab",
+      ssPaths().join(",") === "notes/a.md" && S.getActive() === "notes/a.md",
+      ssPaths().join(","));
+    check("sessions drafts: the returned tab carries its dot",
+      !!ssATab && ssATab.classList.contains("dirty"));
+    check("sessions drafts: the Recover bar names the file",
+      $("draft-bar").hidden === false && /a\.md/.test($("draft-bar-msg").textContent),
+      $("draft-bar-msg").textContent);
+    $("draft-recover").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    check("sessions drafts: Recover restores the exact text",
+      cmGetValue().indexOf("DRAFT-MARKER") >= 0, cmGetValue().slice(-40));
+    window.NB.viewer.forceCloseEdit();
+    await tick(30);
+
+    await window.NB.viewer.startEdit();
+    await tick(20);
+    cmSetValue(FILE_A + "SECOND-DRAFT");
+    await S.swapTo("s2");
+    await tick(60);
+    check("sessions drafts: the second draft is stashed by the swap",
+      window.NB.viewer.getDraft("notes/a.md") !== null,
+      JSON.stringify(window.NB.viewer.getDraft("notes/a.md")));
+    S.close("notes/b.md");
+    await tick(40);
+    check("sessions drafts: closing the last tab shows the empty state",
+      ssPaths().length === 0 && $("welcome").hidden === false,
+      "open=" + ssPaths().join(","));
+    check("sessions drafts: closing the last tab keeps another session's draft",
+      window.NB.viewer.getDraft("notes/a.md") !== null &&
+      window.NB.viewer.isDirty("notes/a.md"));
+    await S.swapTo("s1");
+    await tick(60);
+    const keptDraft = window.NB.viewer.getDraft("notes/a.md");
+    check("sessions drafts: the preserved draft is recoverable on return",
+      $("draft-bar").hidden === false && !!keptDraft &&
+      keptDraft.content.indexOf("SECOND-DRAFT") >= 0,
+      $("draft-bar-msg").textContent);
+    $("draft-discard").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+
+    // --- 5. empty sessions -------------------------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two", openFiles: [], activeFile: null },
+    ], "s1");
+    window.NB.viewer.setDraft("notes/a.md", { content: "KEPT-CACHE", mode: "source" });
+    await tick(20);
+    await S.swapTo("s2");
+    await tick(60);
+    check("sessions empty: an empty session shows the welcome page",
+      $("welcome").hidden === false && ssPaths().length === 0,
+      "open=" + ssPaths().join(","));
+    check("sessions empty: no tab is active",
+      window.document.querySelector("#tab-bar .tab.active") === null);
+    check("sessions empty: the empty state keeps the other session's cache",
+      window.NB.viewer.getDraft("notes/a.md") !== null,
+      JSON.stringify(window.NB.viewer.getDraft("notes/a.md")));
+
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two", openFiles: [], activeFile: "notes/e.md" },
+    ], "s1", ["notes/e.md"]);
+    await S.swapTo("s2");
+    await tick(60);
+    check("sessions empty: an empty session with pins activates its pinned note",
+      ssPaths().join(",") === "notes/e.md" && S.getActive() === "notes/e.md" &&
+      $("welcome").hidden === true,
+      ssPaths().join(",") + " active=" + S.getActive());
+
+    // --- 6. the Sessions view ----------------------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1", ["Welcome.md"]);
+    check("sessions view: one row per session in creation order",
+      ssRows().length === 3 && ssNames().join(",") === "One,Two,Three",
+      ssNames().join(","));
+    check("sessions view: rows show the unpinned count including 0",
+      ssCount("s1") === 2 && ssCount("s2") === 1 && ssCount("s3") === 0,
+      [ssCount("s1"), ssCount("s2"), ssCount("s3")].join(","));
+    check("sessions view: only the active row carries aria-current",
+      ssRowBtn("s1").getAttribute("aria-current") === "true" &&
+      !ssRowBtn("s2").hasAttribute("aria-current") &&
+      !ssRowBtn("s3").hasAttribute("aria-current"));
+    const ssFoot = ssView().querySelector(".sessions-foot");
+    check("sessions view: the + and the shared-pin footnote exist",
+      !!ssAdd() && ssAdd().textContent === "+" && !!ssFoot &&
+      /Pinned tabs are shared by every session/.test(ssFoot.textContent),
+      ssFoot && ssFoot.textContent);
+
+    await S.swapTo("s2");
+    await tick(40);
+    window.NB.viewer.setDraft("notes/c.md", { content: "dirty", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    check("sessions view: a session with a dirty buffer shows a dot",
+      !!ssRow("s2").querySelector(".session-dot") &&
+      !ssRow("s1").querySelector(".session-dot"),
+      "s1=" + !!ssRow("s1").querySelector(".session-dot") +
+      " s2=" + !!ssRow("s2").querySelector(".session-dot"));
+
+    ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: the row \u22ef menu offers Rename and Delete",
+      $("nb-menu").hidden === false &&
+      ssMenuButtons().map((b) => b.textContent).join("|") === "Rename\u2026|Delete\u2026",
+      ssMenuButtons().map((b) => b.textContent).join("|"));
+    window.NB.menu.close("sessions");
+    await tick(10);
+
+    // Rename through the dialog.
+    ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssMenuBtn("Rename\u2026").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: Rename opens the dialog prefilled with the row's name",
+      ssDialog().hidden === false &&
+      $("session-dialog-title").textContent === "Rename session" &&
+      ssName().value === "Two", ssName().value);
+    check("sessions view: the name field takes focus",
+      window.document.activeElement === ssName());
+    ssType("   ");
+    ssSubmit();
+    await tick(20);
+    check("sessions view: an empty rename shows an inline error",
+      /Give the session a name/.test($("session-error").textContent) &&
+      ssDialog().hidden === false && ssNames().join(",") === "One,Two,Three",
+      JSON.stringify($("session-error").textContent));
+    ssType("One");
+    ssSubmit();
+    await tick(20);
+    check("sessions view: a duplicate rename is rejected case-insensitively",
+      /already exists/.test($("session-error").textContent) &&
+      ssNames().join(",") === "One,Two,Three",
+      JSON.stringify($("session-error").textContent));
+    check("sessions view: a rejected rename keeps focus in the field",
+      window.document.activeElement === ssName());
+    ssType("Reading");
+    ssSubmit();
+    await tick(60);
+    check("sessions view: a valid rename changes only the row text",
+      ssDialog().hidden === true && ssNames().join(",") === "One,Reading,Three" &&
+      ssIds()[1] === "s2", ssNames().join(","));
+    check("sessions view: a rename keeps the tab set and order",
+      ssSnap().find((s) => s.id === "s2").openFiles.join(",") === "notes/c.md");
+
+    ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssMenuBtn("Rename\u2026").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssType("Nope");
+    $("session-cancel").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: Cancel on rename leaves the name unchanged",
+      ssDialog().hidden === true && ssNames().join(",") === "One,Reading,Three",
+      ssNames().join(","));
+
+    // Create through +, with Esc / outside-click cancels.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "s1");
+    ssAdd().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: + opens the New session dialog with focus in the field",
+      ssDialog().hidden === false &&
+      $("session-dialog-title").textContent === "New session" &&
+      window.document.activeElement === ssName());
+    const longName = "L".repeat(60);
+    ssType(longName);
+    check("sessions view: the name field truncates a paste to 40",
+      ssName().value.length === 40, "len=" + ssName().value.length);
+    ssSubmit();
+    await tick(80);
+    check("sessions view: a created session is appended and becomes active",
+      ssRows().length === 2 &&
+      S.getSessionList()[1].name === "L".repeat(40) &&
+      S.getActiveSessionId() === S.getSessionList()[1].id,
+      ssNames().join(","));
+    check("sessions view: a created session starts empty",
+      ssPaths().length === 0 && $("welcome").hidden === false,
+      "open=" + ssPaths().join(","));
+    // DEFECT (reported): setSubmitting(true) disables the primary button and
+    // neither finishDialog() nor openDialog() re-enables it, so the next
+    // dialog opens with a dead Create/Save (static/js/sessions.js:472,
+    // :488-496). Kept as a check; the workaround lets the rest run.
+    ssAdd().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: the submit button is re-enabled for the next dialog",
+      $("session-submit").disabled === false);
+    $("session-submit").disabled = false;
+    $("session-cancel").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+
+    ssAdd().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssDialog().dispatchEvent(new window.KeyboardEvent(
+      "keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(20);
+    check("sessions view: Esc closes the New session dialog",
+      ssDialog().hidden === true && ssRows().length === 2);
+    ssAdd().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssDialog().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: an outside click closes the dialog",
+      ssDialog().hidden === true && ssRows().length === 2);
+
+    // Only session: Delete is disabled with its reason.
+    await ssLoad([
+      { id: "only", name: "Solo",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "only");
+    ssMore("only").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    const ssDelOnly = ssMenuBtn("Delete\u2026");
+    check("sessions view: the only session's Delete is disabled with a reason",
+      !!ssDelOnly && ssDelOnly.disabled === true &&
+      /only session/.test(ssDelOnly.title),
+      ssDelOnly && (ssDelOnly.disabled + " " + ssDelOnly.title));
+    window.NB.menu.close("sessions");
+    check("sessions model: deleting the only session is refused",
+      (await S.deleteSession("only")) === false && S.getSessionList().length === 1);
+
+    // The 20-session cap disables + and refuses create.
+    const ssMany = Array.from({ length: 20 }, (_, i) => ({
+      id: "m" + i, name: "S" + i, openFiles: [], activeFile: null,
+    }));
+    await ssLoad(ssMany, "m0");
+    check("sessions view: the + is disabled at 20 sessions",
+      ssAdd().getAttribute("aria-disabled") === "true" &&
+      /20 sessions is the limit/.test(ssAdd().title), ssAdd().title);
+    check("sessions view: 20 rows render", ssRows().length === 20);
+    ssAdd().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions view: + at the cap opens no dialog",
+      ssDialog().hidden === true);
+    const ssCapRes = await S.createSession("Overflow");
+    check("sessions model: the 21st session is refused",
+      ssCapRes.ok === false && ssCapRes.code === "limit", JSON.stringify(ssCapRes));
+    await ssLoad(ssMany.slice(0, 19), "m0");
+    const ssTwentieth = await S.createSession("Twentieth");
+    check("sessions model: the 20th session can be created",
+      ssTwentieth.ok === true && S.getSessionList().length === 20,
+      JSON.stringify(ssTwentieth));
+
+    // A viewer may switch but not change anything.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/b.md"], activeFile: "notes/b.md" },
+    ], "s1");
+    const ssRoleOrig = window.NB.pageRole;
+    window.NB.pageRole = () => "viewer";
+    try {
+      window.NB.sessions.refresh();
+      await tick(20);
+      check("sessions view: a viewer cannot use +",
+        ssAdd().getAttribute("aria-disabled") === "true" &&
+        /Read-only/.test(ssAdd().title), ssAdd().title);
+      ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      const ssViewerRename = ssMenuBtn("Rename\u2026");
+      const ssViewerDel = ssMenuBtn("Delete\u2026");
+      check("sessions view: a viewer's Rename and Delete are disabled with a reason",
+        !!ssViewerRename && ssViewerRename.disabled === true &&
+        !!ssViewerDel && ssViewerDel.disabled === true &&
+        /Read-only/.test(ssViewerDel.title),
+        JSON.stringify(ssMenuButtons().map((b) => b.textContent + ":" + b.disabled)));
+      window.NB.menu.close("sessions");
+      window.document.querySelector('.tab[data-path="notes/a.md"]')
+        .dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, clientX: 40, clientY: 10 }));
+      await tick(20);
+      const ssViewerMove = ssMenuButtons()
+        .find((b) => /Move to session/.test(b.textContent));
+      check("sessions view: a viewer's Move to session is disabled",
+        !!ssViewerMove && ssViewerMove.disabled === true,
+        ssViewerMove && String(ssViewerMove.disabled));
+      window.NB.menu.close();
+    } finally {
+      window.NB.pageRole = ssRoleOrig;
+    }
+    window.NB.sessions.refresh();
+    await tick(20);
+
+    // --- 7. delete ---------------------------------------------------
+    const ssCommitOrig = window.NB.viewer.commitForTabSwitch;
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/b.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "s3", name: "Three",
+        openFiles: ["notes/d.md"], activeFile: "notes/d.md" },
+    ], "s2", ["Welcome.md"]);
+    check("sessions delete: deleting the active session lands on the previous one",
+      (await S.deleteSession("s2")) === true &&
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/b.md",
+      S.getActiveSessionId() + "/" + S.getActive());
+    check("sessions delete: the previous session's strip renders",
+      ssPaths().join(",") === "Welcome.md,notes/a.md,notes/b.md",
+      ssPaths().join(","));
+    check("sessions delete: the pinned set survives",
+      $("tab-pinned").hidden === false && ssPins().join(",") === "Welcome.md",
+      ssPins().join(","));
+
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/d.md"], activeFile: "notes/d.md" },
+    ], "s1");
+    await S.swapTo("s2");
+    await tick(40);
+    window.NB.viewer.setDraft("notes/d.md", { content: "D", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    check("sessions delete: setup leaves a cached draft in the hidden session",
+      window.NB.viewer.getDraft("notes/d.md") !== null);
+    check("sessions delete: an inactive delete leaves the active session alone",
+      (await S.deleteSession("s2")) === true &&
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/a.md" &&
+      ssPaths().join(",") === "notes/a.md", ssPaths().join(","));
+    check("sessions delete: an inactive delete closes its cached buffers",
+      window.NB.viewer.getDraft("notes/d.md") === null &&
+      window.NB.viewer.isDirty("notes/d.md") === false);
+    check("sessions delete: the deleted row is gone",
+      ssRows().length === 1 && ssNames().join(",") === "One", ssNames().join(","));
+
+    // Deleting a session that shares a note with another keeps the other's buffer.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "s1");
+    window.NB.viewer.setDraft("notes/a.md", { content: "SHARED", mode: "source" });
+    await tick(20);
+    check("sessions delete: a note another session still holds keeps its draft",
+      (await S.deleteSession("s2")) === true &&
+      !!window.NB.viewer.getDraft("notes/a.md") &&
+      ssPaths().join(",") === "notes/a.md",
+      "draft=" + !!window.NB.viewer.getDraft("notes/a.md") +
+      " open=" + ssPaths().join(","));
+
+    // The row menu's confirm, cancelled then accepted, on a dirty session.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/d.md"], activeFile: "notes/d.md" },
+    ], "s1");
+    await S.swapTo("s2");
+    await tick(40);
+    window.NB.viewer.setDraft("notes/d.md", { content: "D", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    let ssDeleteMsg = "";
+    window.confirm = (m) => { ssDeleteMsg = m; return false; };
+    ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssMenuBtn("Delete\u2026").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(40);
+    window.confirm = ssConfirmOrig;
+    check("sessions view: the delete confirm names the session and its edits",
+      ssDeleteMsg.indexOf("Two") >= 0 &&
+      /Its open tab will close/.test(ssDeleteMsg) &&
+      /Unsaved edits in its files will be lost/.test(ssDeleteMsg),
+      JSON.stringify(ssDeleteMsg));
+    check("sessions view: a cancelled delete changes nothing",
+      ssRows().length === 2 && S.getActiveSessionId() === "s1" &&
+      ssPaths().join(",") === "notes/a.md", ssPaths().join(","));
+    window.confirm = () => true;
+    ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    ssMenuBtn("Delete\u2026").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    window.confirm = ssConfirmOrig;
+    check("sessions view: confirming the delete removes the row",
+      ssRows().length === 1 && ssNames().join(",") === "One", ssNames().join(","));
+
+    // A failed hybrid commit blocks the active-session delete entirely.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/b.md"], activeFile: "notes/b.md" },
+    ], "s1");
+    window.NB.viewer.commitForTabSwitch = async () => false;
+    let ssBlockedDel;
+    try { ssBlockedDel = await S.deleteSession("s1"); }
+    finally { window.NB.viewer.commitForTabSwitch = ssCommitOrig; }
+    check("sessions delete: a failed commit blocks the active-session delete",
+      ssBlockedDel === false && S.getSessionList().length === 2 &&
+      S.getActiveSessionId() === "s1" && ssPaths().join(",") === "notes/a.md",
+      "res=" + ssBlockedDel);
+
+    // --- 8. move a tab -----------------------------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md", "notes/c.md"],
+        activeFile: "notes/b.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/d.md"], activeFile: "notes/d.md" },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    await S.activate("notes/a.md");
+    await tick(30);
+    window.NB.viewer.setDraft("notes/a.md", { content: "MOVED-DRAFT", mode: "source" });
+    await tick(20);
+    await S.activate("notes/b.md");
+    await tick(30);
+    check("sessions move: setup has the source strip in order",
+      ssPaths().join(",") === "notes/a.md,notes/b.md,notes/c.md" &&
+      S.getActive() === "notes/b.md", ssPaths().join(","));
+    check("sessions move: moving an inactive tab succeeds",
+      (await S.moveToSession("notes/a.md", "s2")) === true);
+    check("sessions move: the source loses the tab",
+      ssPaths().join(",") === "notes/b.md,notes/c.md", ssPaths().join(","));
+    const ssAfterMove = ssSnap();
+    const ssTarget = (id) => ssAfterMove.find((s) => s.id === id);
+    check("sessions move: the target gains the tab last",
+      ssTarget("s2").openFiles.join(",") === "notes/d.md,notes/a.md",
+      JSON.stringify(ssTarget("s2")));
+    const ssMovedDraft = window.NB.viewer.getDraft("notes/a.md");
+    check("sessions move: the draft travels with the tab",
+      !!ssMovedDraft && ssMovedDraft.content === "MOVED-DRAFT",
+      JSON.stringify(ssMovedDraft));
+    check("sessions move: the source's active tab is unchanged",
+      S.getActive() === "notes/b.md", String(S.getActive()));
+    check("sessions move: the target's own active tab is unchanged",
+      ssTarget("s2").activeFile === "notes/d.md");
+    check("sessions move: moving the active tab succeeds",
+      (await S.moveToSession("notes/b.md", "s2")) === true);
+    check("sessions move: the source activates the right neighbour",
+      ssPaths().join(",") === "notes/c.md" && S.getActive() === "notes/c.md",
+      ssPaths().join(",") + " active=" + S.getActive());
+    check("sessions move: the target keeps its active tab",
+      ssSnap().find((s) => s.id === "s2").activeFile === "notes/d.md");
+    check("sessions move: moving the last tab out succeeds",
+      (await S.moveToSession("notes/c.md", "s3")) === true);
+    check("sessions move: the emptied source stays active and empty",
+      S.getActiveSessionId() === "s1" && ssPaths().length === 0 &&
+      $("welcome").hidden === false, "open=" + ssPaths().join(","));
+    check("sessions move: moving into an empty session makes it active there",
+      ssSnap().find((s) => s.id === "s3").activeFile === "notes/c.md" &&
+      ssSnap().find((s) => s.id === "s3").openFiles.join(",") === "notes/c.md");
+
+    await S.open("notes/e.md");
+    await tick(40);
+    window.NB.viewer.commitForTabSwitch = async () => false;
+    let ssMoveRes;
+    try { ssMoveRes = await S.moveToSession("notes/e.md", "s2"); }
+    finally { window.NB.viewer.commitForTabSwitch = ssCommitOrig; }
+    check("sessions move: a blocked commit leaves the tab in the source",
+      ssMoveRes === false && ssPaths().join(",") === "notes/e.md" &&
+      S.getActive() === "notes/e.md",
+      "res=" + ssMoveRes + " open=" + ssPaths().join(","));
+    check("sessions move: a blocked commit leaves the target untouched",
+      ssSnap().find((s) => s.id === "s2")
+        .openFiles.indexOf("notes/e.md") < 0);
+
+    // The tab menu's Move to session submenu.
+    window.document.querySelector('.tab[data-path="notes/e.md"]')
+      .dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 60, clientY: 10 }));
+    await tick(20);
+    const ssSub = $("nb-menu").querySelector(".submenu");
+    const ssSubLabels = ssSub ? Array.from(
+      ssSub.querySelectorAll(":scope > .context-menu > button"))
+      .map((b) => b.textContent) : [];
+    check("sessions move: the tab menu lists every other session then New session",
+      !!ssSub && ssSubLabels.join(",") === "Two,Three,New session\u2026",
+      ssSubLabels.join(","));
+    check("sessions move: the current session is left out",
+      ssSubLabels.indexOf("One") < 0, ssSubLabels.join(","));
+    window.NB.menu.close();
+    S.togglePin("notes/e.md");
+    await tick(20);
+    window.document.querySelector('.tab[data-path="notes/e.md"]')
+      .dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 60, clientY: 10 }));
+    await tick(20);
+    const ssPinnedLabels = ssMenuButtons().map((b) => b.textContent);
+    check("sessions move: a pinned tab has no Move to session item",
+      ssPinnedLabels.indexOf("Move to session") < 0 &&
+      $("nb-menu").querySelector(".submenu") === null,
+      ssPinnedLabels.join("|"));
+    window.NB.menu.close();
+
+    // Moving into a session that already lists the note adds no duplicate.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "s1");
+    const ssDupMove = await S.moveToSession("notes/a.md", "s2");
+    const ssDupTarget = ssSnap().find((s) => s.id === "s2");
+    check("sessions move: a target that already lists the note gets no duplicate",
+      ssDupMove === true && ssPaths().join(",") === "notes/b.md" &&
+      ssDupTarget.openFiles.join(",") === "notes/a.md" &&
+      S.getActive() === "notes/b.md",
+      "res=" + ssDupMove + " open=" + ssPaths().join(",") +
+      " target=" + ssDupTarget.openFiles.join(","));
+
+    // --- 9. file operations on a hidden session ----------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md", "notes/d.md"], activeFile: "notes/d.md" },
+    ], "s2");
+    window.NB.viewer.setDraft("notes/d.md", { content: "HIDDEN-DRAFT", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    S.rename("notes/d.md", "notes/d2.md");
+    await tick(30);
+    const ssRenamed = ssSnap().find((s) => s.id === "s2");
+    check("sessions hidden rename: the stored tab is re-keyed",
+      ssRenamed.openFiles.join(",") === "notes/c.md,notes/d2.md",
+      JSON.stringify(ssRenamed));
+    check("sessions hidden rename: the stored active tab is re-keyed",
+      ssRenamed.activeFile === "notes/d2.md", String(ssRenamed.activeFile));
+    check("sessions hidden rename: the cached draft follows",
+      window.NB.viewer.getDraft("notes/d2.md") !== null &&
+      window.NB.viewer.getDraft("notes/d.md") === null);
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions hidden rename: the session shows the new name, no orphan",
+      ssPaths().join(",") === "notes/c.md,notes/d2.md" &&
+      S.getActive() === "notes/d2.md",
+      ssPaths().join(",") + " active=" + S.getActive());
+
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md", "notes/d.md"], activeFile: "notes/d.md" },
+    ], "s2");
+    window.NB.viewer.setDraft("notes/d.md", { content: "DELETED-DRAFT", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    window.NB.evt.emit("file:deleted", "notes/d.md");
+    await tick(30);
+    const ssDeleted = ssSnap().find((s) => s.id === "s2");
+    check("sessions hidden delete: the stored tab is dropped",
+      ssDeleted.openFiles.join(",") === "notes/c.md", JSON.stringify(ssDeleted));
+    check("sessions hidden delete: the session activates its neighbour",
+      ssDeleted.activeFile === "notes/c.md", String(ssDeleted.activeFile));
+    check("sessions hidden delete: the cached draft is dropped",
+      window.NB.viewer.getDraft("notes/d.md") === null);
+    check("sessions hidden delete: the session stays listed",
+      ssRows().length === 2);
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions hidden delete: the session renders the neighbour",
+      ssPaths().join(",") === "notes/c.md" && S.getActive() === "notes/c.md",
+      ssPaths().join(",") + " active=" + S.getActive());
+
+    // --- 10. open() across sessions ----------------------------------
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1", ["Welcome.md"]);
+    const ssOpenCross = await S.open("notes/c.md");
+    check("sessions open: a note open in another session opens in the active session",
+      ssOpenCross === true && S.getActiveSessionId() === "s1" &&
+      S.getActive() === "notes/c.md" &&
+      ssPaths().join(",") === "Welcome.md,notes/a.md,notes/c.md" &&
+      ssSnap().find((s) => s.id === "s2").openFiles.join(",") === "notes/c.md",
+      S.getActiveSessionId() + "/" + S.getActive() + " " + ssPaths().join(","));
+    const ssBg = await S.open("notes/b.md", { activate: false });
+    check("sessions open: activate:false adds to the active session without switching",
+      ssBg === true && S.getActiveSessionId() === "s1" &&
+      S.getActive() === "notes/c.md" &&
+      ssSnap().find((s) => s.id === "s1").openFiles.join(",") ===
+        "notes/a.md,notes/c.md,notes/b.md",
+      "res=" + ssBg + " " + S.getActiveSessionId() + "/" + S.getActive());
+    check("sessions open: a pinned path does not switch sessions",
+      (await S.open("Welcome.md")) === true &&
+      S.getActiveSessionId() === "s1" && S.getActive() === "Welcome.md",
+      S.getActiveSessionId() + "/" + S.getActive());
+    window.NB.viewer.setDraft("notes/c.md", { content: "SHARED-DRAFT", mode: "source" });
+    await tick(20);
+    S.close("notes/c.md", { force: true });
+    await tick(30);
+    check("sessions open: closing one occurrence keeps the other session's tab",
+      ssPaths().indexOf("notes/c.md") < 0 &&
+      ssSnap().find((s) => s.id === "s2").openFiles.join(",") === "notes/c.md",
+      ssPaths().join(","));
+    check("sessions open: closing one occurrence keeps the shared draft",
+      !!window.NB.viewer.getDraft("notes/c.md"));
+    await S.swapTo("s2");
+    await tick(40);
+    check("sessions open: the other occurrence still shows the draft",
+      S.getActive() === "notes/c.md" &&
+      !!window.NB.viewer.getDraft("notes/c.md"),
+      S.getActive() + " draft=" + !!window.NB.viewer.getDraft("notes/c.md"));
+
+    // --- 11. corrupt and hand-edited config -------------------------
+    const ssNonArray = ssNormalise({
+      sessions: "nope", openFiles: ["notes/a.md"], activeFile: "notes/a.md",
+    });
+    check("sessions repair: a non-array sessions value becomes one Main session",
+      ssNonArray.sessions.length === 1 &&
+      ssNonArray.sessions[0].name === "Main" && ssNonArray.migrated === true,
+      JSON.stringify(ssNonArray.sessions));
+    const ssJunk = ssNormalise({ sessions: [1, null, "x"] });
+    check("sessions repair: an array of unusable entries becomes one empty Main",
+      ssJunk.sessions.length === 1 && ssJunk.sessions[0].name === "Main" &&
+      ssJunk.sessions[0].openFiles.length === 0,
+      JSON.stringify(ssJunk.sessions));
+    const ssDup = ssNormalise({ sessions: [
+      { id: "x", name: "Main", openFiles: ["notes/a.md"] },
+      { id: "x", name: "main", openFiles: ["notes/b.md"] },
+      { id: "", name: "  ", openFiles: ["notes/a.md"] },
+    ]});
+    check("sessions repair: duplicate ids are regenerated, the first keeps its own",
+      ssDup.sessions[0].id === "x" && ssDup.sessions[1].id !== "x" &&
+      ssDup.sessions[2].id.length > 0,
+      ssDup.sessions.map((s) => s.id).join(","));
+    check("sessions repair: duplicate names suffix and missing names become Session N",
+      ssDup.sessions[0].name === "Main" && ssDup.sessions[1].name === "main 2" &&
+      ssDup.sessions[2].name === "Session 3",
+      ssDup.sessions.map((s) => s.name).join(","));
+    check("sessions repair: a path may be open in two sessions",
+      ssDup.sessions[2].openFiles.indexOf("notes/a.md") >= 0,
+      JSON.stringify(ssDup.sessions.map((s) => s.openFiles)));
+    const ssKnown = (p) => p !== "notes/gone.md";
+    const ssDropped = ssNormalise({ sessions: [
+      { id: "a", name: "A",
+        openFiles: ["notes/gone.md", "notes/a.md", "notes/a.md"],
+        activeFile: "notes/gone.md" },
+    ]}, ssKnown);
+    check("sessions repair: unknown and duplicate paths are dropped",
+      ssDropped.sessions[0].openFiles.join(",") === "notes/a.md" &&
+      ssDropped.sessions[0].activeFile === "notes/a.md",
+      JSON.stringify(ssDropped.sessions[0]));
+    const ssWide = Array.from({ length: 25 }, (_, i) => ({
+      id: "w" + i, name: "W" + i, openFiles: [], activeFile: null,
+    }));
+    const ssCapped = ssNormalise({ sessions: ssWide, activeSessionId: "w24" });
+    check("sessions repair: over 20 sessions are capped with the active kept",
+      ssCapped.sessions.length === 20 && ssCapped.sessions[19].id === "w24" &&
+      ssCapped.activeSessionId === "w24" && ssCapped.sessions[0].id === "w0",
+      ssCapped.sessions.map((s) => s.id).join(","));
+    const ssUnknownActive = ssNormalise({ sessions: [
+      { id: "p", name: "P" }, { id: "q", name: "Q" },
+    ], activeSessionId: "nope" });
+    check("sessions repair: an unknown active id falls back to the first",
+      ssUnknownActive.activeSessionId === "p", ssUnknownActive.activeSessionId);
+
+    // --- 12. races ---------------------------------------------------
+    // A delete that lands while a swap awaits its commit must win: the
+    // stale swap installs nothing.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "s3", name: "Three",
+        openFiles: ["notes/e.md"], activeFile: "notes/e.md" },
+    ], "s1");
+    let ssReleaseCommit = null;
+    const ssCommitGate = new Promise((r) => { ssReleaseCommit = r; });
+    window.NB.viewer.commitForTabSwitch = () => ssCommitGate;
+    const ssSwapP = S.swapTo("s2");
+    await tick(10);
+    const ssDelP = S.deleteSession("s2");
+    ssReleaseCommit(true);
+    const ssSwapRes = await ssSwapP;
+    const ssDelRes = await ssDelP;
+    window.NB.viewer.commitForTabSwitch = ssCommitOrig;
+    check("sessions race: a delete during the commit beats the stale swap",
+      ssSwapRes === false && ssDelRes === true &&
+      S.getActiveSessionId() === "s1" && ssPaths().join(",") === "notes/a.md" &&
+      !ssSnap().some((s) => s.id === "s2"),
+      "swap=" + ssSwapRes + " del=" + ssDelRes + " active=" +
+      S.getActiveSessionId() + " open=" + ssPaths().join(","));
+
+    // A blocked commit on an active dirty tab changes nothing.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/d.md"], activeFile: "notes/d.md" },
+    ], "s1");
+    const ssRaceBefore = JSON.stringify(ssSnap());
+    window.NB.viewer.commitForTabSwitch = async () => false;
+    let ssRaceRes;
+    try { ssRaceRes = await S.moveToSession("notes/a.md", "s2"); }
+    finally { window.NB.viewer.commitForTabSwitch = ssCommitOrig; }
+    check("sessions race: a failed commit on a dirty active tab changes nothing",
+      ssRaceRes === false && JSON.stringify(ssSnap()) === ssRaceBefore &&
+      ssPaths().join(",") === "notes/a.md" && S.getActive() === "notes/a.md",
+      "res=" + ssRaceRes);
+
+    window.NB.menu.close();
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

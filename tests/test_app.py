@@ -6245,6 +6245,112 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertNotIn("openFiles", disk)
         self.assertEqual(disk["theme"], "light")
 
+    SESSIONS = [
+        {"id": "main", "name": "Main",
+         "openFiles": ["notes/a.md", "notes/b.md"],
+         "activeFile": "notes/b.md"},
+        {"id": "reading", "name": "Reading", "openFiles": [],
+         "activeFile": None},
+    ]
+
+    def test_post_config_folds_sessions_into_the_default_state(self):
+        # A whole-blob POST from a page without a workspace must fold the
+        # session keys under workspaceState.default, like the other scoped
+        # keys (docs/architecture/sessions.md §11).
+        r = self.post("/api/config", {
+            "theme": "light",
+            "lastFile": "notes/b.md",
+            "sessions": self.SESSIONS,
+            "activeSessionId": "main",
+        })
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        disk = self.read_config_file()
+        self.assertEqual(disk["workspaceState"], {
+            nb.WORKSPACE_DEFAULT_ID: {
+                "lastFile": "notes/b.md",
+                "sessions": self.SESSIONS,
+                "activeSessionId": "main",
+            },
+        })
+        for key in ("sessions", "activeSessionId", "lastFile"):
+            self.assertNotIn(key, disk)
+        self.assertEqual(disk["theme"], "light")
+        self.assertTrue(
+            set(nb._WORKSPACE_SCOPED_CONFIG_KEYS) >=
+            {"sessions", "activeSessionId"})
+
+    def test_workspace_state_round_trips_the_session_shape(self):
+        state = {
+            "sessions": self.SESSIONS,
+            "activeSessionId": "main",
+            "pinnedFiles": ["Welcome.md"],
+            "openFiles": ["Welcome.md", "notes/a.md", "notes/b.md"],
+            "activeFile": "notes/b.md",
+        }
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": state})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        stored = self.read_config_file()["workspaceState"]["default"]
+        self.assertEqual(stored["sessions"], self.SESSIONS)
+        self.assertEqual(stored["activeSessionId"], "main")
+        # A current client always sends the keys, so the same shape
+        # round-trips unchanged on the next write.
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": state})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(
+            self.read_config_file()["workspaceState"]["default"], state)
+
+    def test_workspace_state_keeps_sessions_when_an_old_client_omits_them(self):
+        # A tab loaded before sessions shipped posts the old key set. The
+        # server keeps the stored session fields and updates the rest.
+        self.write_config({
+            "workspaceState": {"default": {
+                "sessions": self.SESSIONS,
+                "activeSessionId": "main",
+                "lastFile": "notes/a.md",
+            }},
+        })
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"lastFile": "notes/b.md"}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        entry = self.read_config_file()["workspaceState"]["default"]
+        self.assertEqual(entry["lastFile"], "notes/b.md")
+        self.assertEqual(entry["sessions"], self.SESSIONS)
+        self.assertEqual(entry["activeSessionId"], "main")
+
+    def test_workspace_state_accepts_a_new_sessions_array(self):
+        # A current client may replace the sessions (including deleting
+        # one); the guard must never block that.
+        self.write_config({
+            "workspaceState": {"default": {
+                "sessions": self.SESSIONS,
+                "activeSessionId": "main",
+            }},
+        })
+        new = [{"id": "only", "name": "Only", "openFiles": [],
+                "activeFile": None}]
+        r = self.post("/api/workspace-state", {
+            "id": "default",
+            "state": {"sessions": new, "activeSessionId": "only"},
+        })
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        entry = self.read_config_file()["workspaceState"]["default"]
+        self.assertEqual(entry["sessions"], new)
+        self.assertEqual(entry["activeSessionId"], "only")
+
+    def test_workspace_state_does_not_invent_sessions_without_stored_ones(self):
+        # The guard is conditional on the stored entry having `sessions`;
+        # an old entry must not gain empty session keys.
+        self.write_config({
+            "workspaceState": {"default": {"lastFile": "notes/a.md"}},
+        })
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"lastFile": "notes/b.md"}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        entry = self.read_config_file()["workspaceState"]["default"]
+        self.assertEqual(entry, {"lastFile": "notes/b.md"})
+
     def test_post_config_preserves_other_workspace_state(self):
         r = self.post("/api/config", {
             "theme": "dark",
