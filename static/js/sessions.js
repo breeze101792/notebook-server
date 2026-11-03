@@ -86,6 +86,7 @@
 
   let listEl = null;
   let addBtn = null;
+  let totalNumEl = null;
   // Row model, in list order: { id, name, count, dirty, active }.
   let sessions = [];
   let activeId = "";
@@ -103,10 +104,23 @@
 
     const header = document.createElement("div");
     header.className = "panel-header";
+    const heading = document.createElement("div");
+    heading.className = "panel-heading";
     const title = document.createElement("span");
     title.className = "panel-title";
     title.textContent = "Sessions";
-    header.appendChild(title);
+    heading.appendChild(title);
+    const totalEl = document.createElement("span");
+    totalEl.className = "session-total";
+    totalNumEl = document.createElement("span");
+    totalNumEl.className = "session-total-n";
+    totalEl.appendChild(totalNumEl);
+    const totalUnit = document.createElement("span");
+    totalUnit.className = "sr-only";
+    totalUnit.textContent = " sessions";
+    totalEl.appendChild(totalUnit);
+    heading.appendChild(totalEl);
+    header.appendChild(heading);
 
     const actions = document.createElement("div");
     actions.className = "panel-header-actions";
@@ -126,7 +140,7 @@
 
     listEl = document.createElement("div");
     listEl.id = LIST_ID;
-    listEl.className = "bookmarks-list sessions-list";
+    listEl.className = "sessions-list";
     viewEl.appendChild(listEl);
 
     // The cap reason, referenced by aria-describedby only while the +
@@ -139,7 +153,14 @@
 
     const foot = document.createElement("p");
     foot.className = "sessions-foot";
-    foot.textContent = FOOT_TEXT;
+    const footPin = document.createElement("span");
+    footPin.className = "sessions-foot-pin";
+    footPin.setAttribute("aria-hidden", "true");
+    footPin.textContent = "📌";
+    foot.appendChild(footPin);
+    const hint = document.createElement("span");
+    hint.textContent = FOOT_TEXT;
+    foot.appendChild(hint);
     viewEl.appendChild(foot);
   }
 
@@ -194,6 +215,7 @@
     listEl.textContent = "";
     for (const s of sessions) listEl.appendChild(buildRow(s));
     restoreFocus(keep);
+    if (totalNumEl) totalNumEl.textContent = String(sessions.length);
     lastSignature = signature();
     updateAddBtn();
   }
@@ -226,9 +248,10 @@
     // A button cannot contain the actions button, so the two are siblings.
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "bookmark-row session-row";
+    row.className = "session-row";
     row.title = s.name;
     if (s.active) row.setAttribute("aria-current", "true");
+    wrap.classList.toggle("is-active", s.active);
 
     const name = document.createElement("span");
     name.className = "session-name";

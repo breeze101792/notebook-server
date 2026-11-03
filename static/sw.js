@@ -37,7 +37,7 @@
  * the activity-bar glyph, so the shell and workspaces.js must refresh. */
 /* Bumped v21 -> v22: the new sessions.js joins the precache, and the shell
  * carries the Sessions view host. */
-const CACHE = "notebook-v22";
+const CACHE = "notebook-v23";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

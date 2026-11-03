@@ -8102,81 +8102,155 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 /* The control is a side-panel view beside Explorer, Pinned and        */
 /* Bookmarks. The tab bar is untouched: #tab-pinned, #tab-list and     */
 /* #outline-toggle are its only children.                              */
-/* Spec: docs/ui/sessions.md.                                          */
+/* Spec: docs/ui/sessions.md revision 3 — marker rows.                 */
 /* ------------------------------------------------------------------ */
 
-/* The header +. Same 18 px box as .bookmarks-add, but its own class: the
- * bookmark button is the ★ toggle, and its phone rule is scoped to
- * #bookmarks-view. Keeps its tab stop when unavailable so the reason is
- * reachable (sessions.md D15). */
+/* ---- header ------------------------------------------------------- */
+/* The host is a size container so the header can shed the total at the
+ * 140 px floor: the panel width is --side-panel-width, which no viewport
+ * media query can see (D20). */
+.side-panel-view[data-view="sessions"] { container-type: inline-size; }
+.side-panel-view[data-view="sessions"] > .panel-header { padding: 7px 10px; }
+
+/* Title + total. The total is a chip, not a notification badge: it
+ * counts rows, it does not ask for attention (D16). */
+.panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.panel-heading > .panel-title { min-width: 0; }
+.session-total {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--fg-muted);
+  font-size: .72rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The header +. A 24 px box: the WCAG 2.2 target minimum, and 4 px
+ * wider than the shipped 18 px +. Keeps its tab stop when unavailable
+ * so the reason is reachable (D15). */
 .session-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 3px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
   background: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--fg-muted);
   font: inherit;
-  font-size: 1.07rem;
+  font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
 .session-add:hover { color: var(--fg); background: var(--accent-soft); }
 .session-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.session-add[aria-disabled="true"] {
-  color: var(--ws-fg-muted);
-  cursor: default;
-  opacity: .72;
-}
-.session-add[aria-disabled="true"]:hover { background: none; }
+.session-add[aria-disabled="true"] { color: var(--ws-fg-muted); opacity: .72; cursor: default; }
+.session-add[aria-disabled="true"]:hover { color: var(--ws-fg-muted); background: none; }
 
-/* One row = wrapper + two buttons. The row is a <button> so Enter and
- * Space switch it natively; a button cannot contain the ⋯ button, so the
- * two are siblings and the wrapper keeps them on one line. */
+/* The collapse chevron takes the same 24 px box, so the two header
+ * actions share one rhythm. */
+.side-panel-view[data-view="sessions"] .collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+/* ---- list --------------------------------------------------------- */
+.sessions-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 8px;          /* the resize handle lives on that edge */
+  padding: 6px 6px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ---- row ---------------------------------------------------------- */
+/* One row = wrapper + two buttons. The wrapper only groups them; the
+ * row is a <button> so Enter and Space switch it natively, and the ⋯ is
+ * a sibling because a button cannot contain a button (D4). */
 .session-row-wrap {
+  flex: 0 0 auto;             /* rows must not shrink before the list scrolls */
   display: flex;
   align-items: center;
   gap: 2px;
   min-width: 0;
 }
-
-/* The row reuses .bookmark-row (flex, 3px 6px padding, 4 px radius, hover,
- * nowrap) and resets the button chrome .bookmark-row never needed as a div. */
 .session-row {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 3px 6px 3px 10px;
   background: none;
   border: 0;
-  color: inherit;
+  border-radius: 6px;
+  color: var(--fg);
   font: inherit;
+  font-size: .9rem;
+  line-height: 1.35;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
+  transition: background .12s ease;
+}
+/* The whole strip reacts: pointing at the ⋯ warms the row it acts on.
+ * Hover is neutral; only the active row is tinted (D17). */
+.side-panel-view[data-view="sessions"] .session-row-wrap:hover .session-row:not([aria-current="true"]) {
+  background: var(--bg-elev);
+}
+/* Active: tinted face + a 14 px accent marker + 600. The marker is the
+ * same 2 px indicator the activity bar uses, and being 14 px tall it
+ * never meets the row's 6 px corners. Three cues, one positional. */
+.session-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.session-row[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 0 1px 1px 0;
+  background: var(--accent);
 }
 .session-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* The active session: the bookmarks selected fill, the tree's 2 px accent
- * edge, and weight. The name stays --fg: --accent on --accent-soft is
- * 4.39:1 in the dark theme, under 4.5:1 for 14 px text (the shipped
- * bookmark-selected pair). Three cues, none of them hue alone. */
-.session-row[aria-current="true"] {
-  background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
-  font-weight: 600;
-}
-.session-row[aria-current="true"]:hover { background: var(--accent-soft); }
-
+/* The name is the only flexible child: it yields first, and the count,
+ * dot and ⋯ never shrink. */
 .session-name {
   flex: 1 1 auto;
   min-width: 0;
+  margin-right: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 /* The same 8 px accent dot as .tab.dirty, so a session row and its visible
  * dirty tab never disagree. Presentational: the row's accessible name
  * carries ", unsaved changes". */
@@ -8184,14 +8258,14 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   flex: 0 0 8px;
   width: 8px;
   height: 8px;
+  margin-right: 4px;
   border-radius: 50%;
   background: var(--accent);
 }
-
-/* Unpinned tab count. Tabular digits and a 2ch floor keep the column steady
- * from 0 to 40. --ws-fg-muted, not --fg-muted (4.26:1 on the light panel).
- * On the active row it takes --fg: --ws-fg-muted on --accent-soft is
- * 4.03:1 in the dark theme. */
+/* Unpinned tab count. Tabular and 2ch-floored so 0..40 holds one column;
+ * right-aligned, so a dirty dot never shifts the digits. --ws-fg-muted,
+ * not --fg-muted (4.26:1 on the light panel). On the active row it takes
+ * --fg: --ws-fg-muted on --accent-soft is 4.03:1 in dark. */
 .session-count {
   flex: 0 0 auto;
   min-width: 2ch;
@@ -8200,44 +8274,77 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   font-variant-numeric: tabular-nums;
   color: var(--ws-fg-muted);
 }
-.session-row[aria-current="true"] .session-count {
-  color: var(--fg);
-  font-weight: 400;
-}
+.session-row[aria-current="true"] .session-count { color: var(--fg); font-weight: 400; }
 
-/* Per-row actions. Visible at rest: a keyboard user must be able to reach
- * it without a pointer, and a hover-only control cannot be tabbed to. */
+/* ---- ⋯ actions button --------------------------------------------- */
+/* Visible at rest: a keyboard user must be able to reach it without a
+ * pointer. --fg-muted on --accent-soft is 3.46:1 in dark, under 4.5:1
+ * for a text glyph, so the active row's ⋯ takes --fg. is-active mirrors
+ * aria-current for paint only; it never replaces it (D19). */
 .session-more {
-  flex: 0 0 20px;
+  flex: 0 0 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   background: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   color: var(--fg-muted);
   font: inherit;
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
-.session-more:hover { color: var(--fg); background: var(--accent-soft); }
+.side-panel-view[data-view="sessions"] .session-row-wrap.is-active .session-more { color: var(--fg); }
+.side-panel-view[data-view="sessions"] .session-row-wrap:hover .session-more { color: var(--fg); }
+.session-more:hover,
+.session-more[aria-expanded="true"] { color: var(--fg); background: var(--accent-soft); }
 .session-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* The model in one line, pinned to the view's bottom. It explains the shared
- * pinned region, which is true at any scroll position, and must not scroll
- * out of sight at 20 sessions. */
+/* ---- pinned hint -------------------------------------------------- */
+/* The model in one line, pinned below the scroller: it explains the
+ * shared pinned region, which is true at any scroll position, and must
+ * not scroll out of sight at 20 sessions (D11). */
 .sessions-foot {
   flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   margin: 0;
-  padding: 8px 12px;
+  padding: 9px 12px 10px;
   border-top: 1px solid var(--border);
   color: var(--ws-fg-muted);
   font-size: .76rem;
-  line-height: 1.35;
+  line-height: 1.45;
+}
+.sessions-foot-pin {
+  flex: 0 0 auto;
+  font-size: .72rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* ---- 140 px floor ------------------------------------------------- */
+/* The total leaves the line but stays in the accessibility tree. */
+@container (max-width: 176px) {
+  .side-panel-view[data-view="sessions"] > .panel-header { padding: 7px 8px; gap: 4px; }
+  .session-total {
+    position: absolute;
+    min-width: 0;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
 }
 
 /* ---- Move to session flyout ------------------------------------- */
