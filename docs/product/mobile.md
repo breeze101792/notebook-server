@@ -1,6 +1,6 @@
 # Mobile (iPhone-first) — functional spec
 
-Status: draft for review. Owner: `product-designer`.
+Status: shipped (phone shell: read, capture, and WYSIWYG edit). Owner: `product-designer`.
 Applies to: the mobile layout of the existing shell (`templates/index.html`, `static/css/style.css`, `static/js/*`), `tests/dom/test_dom.js`, and a new real-browser mobile harness.
 Related: [mobile-support research](../research/mobile-support.md) owns the fact pack (tested devices, iOS floor, viewport units, keyboard and safe-area measurements, touch quirks). This document owns observable product behaviour; where it depends on a device fact, the fact lives there.
 
@@ -8,7 +8,7 @@ Related: [mobile-support research](../research/mobile-support.md) owns the fact 
 
 > **On a phone, the user should reach a note, read it properly, find something, and write a quick thought — without a desktop beside them and without disturbing the desktop they left at home.**
 
-Today the four-column shell collapses the editor to 0 px on a phone, so the product is desktop-only in practice. v1 makes the same web app usable on a phone for reading and capture; v2 adds WYSIWYG editing of the open note. It stays one web app over plain HTTP on the LAN: no framework, no bundler, no native shell, no TLS or reverse-proxy work, no offline guarantee.
+Before this change the four-column shell collapsed the editor to 0 px on a phone, so the product was desktop-only in practice. v1 made the same web app usable on a phone for reading and capture; v2 added WYSIWYG editing of the open note. It stays one web app over plain HTTP on the LAN: no framework, no bundler, no native shell, no TLS or reverse-proxy work, no offline guarantee.
 
 ### 1.1 Facts this spec takes from the research document
 

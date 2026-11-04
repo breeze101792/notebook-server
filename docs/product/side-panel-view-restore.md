@@ -1,6 +1,6 @@
 # Active side-panel view restore and first paint — functional spec
 
-Status: Implemented. Owner: `product-designer`.
+Status: shipped (active side-panel view restore and first paint). Owner: `product-designer`.
 Applies to: `static/js/activity.js`, `static/js/app.js`, `templates/index.html`,
 `app.py` (`boot_state()` / `_render_index()`), `tests/dom/test_dom.js`,
 `tests/test_app.py`.
@@ -10,21 +10,21 @@ Related: [configuration contract](../contracts/configuration.md),
 ## 1. Problem statement
 
 The active side-panel view id is persisted to `config.json` under `activeView`
-(`app.js:31-34`) and restored on boot from the config fetch
-(`app.js:325-327`, `NB.activity.activate(cfg.activeView, false)`). The shell
+(`app.js`) and restored on boot from the config fetch
+(`app.js`, `NB.activity.activate(cfg.activeView, false)`). The shell
 that the server sends, however, always paints Explorer: `#sidebar` is the one
-`.side-panel-view` without `hidden` (`index.html:129`, `144`, `150`, `156`,
+`.side-panel-view` without `hidden` (`index.html`, `144`, `150`, `156`,
 `162`), and `activity.js` activates Explorer unconditionally at module load
-(`activity.js:531`, `activate("explorer", false)`).
+(`activity.js`, `activate("explorer", false)`).
 
-The config fetch is async (`app.js:616`), so on an authenticated reload whose
+The config fetch is async (`app.js`), so on an authenticated reload whose
 saved view is Bookmarks — or Recent, Search, or AI — the browser paints the
 file tree first and then swaps to the saved view when the fetch resolves. The
 user sees a "fake page" replaced by the real one.
 
 The root cause is that one boot value (the active view) is left out of the
 first-paint mechanism that already exists for theme, title, font size, pane
-widths, collapse state, and wallpaper (`app.py:716-842`). Those are rendered
+widths, collapse state, and wallpaper (`app.py`). Those are rendered
 into the shell server-side precisely so the first frame matches the saved
 config; the active view must join them.
 
@@ -51,7 +51,7 @@ choose the implementation; the observable behavior is the contract.
 
 - Changing how the active view is persisted, or the debounced config save.
 - Changing view switching, the icon-toggle collapse behavior, or the per-view
-  lazy-mount and state-preservation rules (`activity.js:29-34`).
+  lazy-mount and state-preservation rules (`activity.js`).
 - The activity bar's icons, labels, order, or look. This spec touches only which
   view is shown and which icon is marked active at boot.
 - The graph view. It is an overlay driven from `#activity-graph-btn`, not an
@@ -99,14 +99,14 @@ expand it.
 
 **D6. Auth reuses the same path.** The login screen is served unauthenticated,
 so the server paints the defaults and the saved view is not embedded
-(`app.py:839`). After a successful login the page reloads (`auth.js:104`); that
+(`app.py`). After a successful login the page reloads (`auth.js`); that
 reload is authenticated, so the shell paints the saved view and the first frame
 is correct. No separate restore path is added.
 
 **D7. Unknown ids fall back to Explorer, silently.** The server allowlists
 `activeView` against the known view ids and substitutes `"explorer"` for
 anything else. The client's `activate()` already no-ops on an unknown id
-(`activity.js:91-92`). No toast, no dialog; a console warning is acceptable.
+(`activity.js`). No toast, no dialog; a console warning is acceptable.
 
 ## 5. Boot contract
 
@@ -142,7 +142,7 @@ the set of `data-view` hosts in `templates/index.html`; a drift is a defect.
    active view, and marks the Bookmarks icon active. It does not switch to
    Explorer and emits no `activity:changed` for `explorer`.
 5. `bookmarks.js` loads and populates the list inside the already-visible view.
-6. `GET /api/config` resolves (`app.js:616`); `applyConfig` reconciles the
+6. `GET /api/config` resolves (`app.js`); `applyConfig` reconciles the
    already-active view. No change, no swap.
 7. Result: no frame shows the file tree.
 
@@ -158,7 +158,7 @@ the set of `data-view` hosts in `templates/index.html`; a drift is a defect.
 5. The config fetch resolves; nothing about the panel changes.
 6. The user clicks the Bookmarks icon: the panel expands and the bookmarks view
    is revealed. (Clicking the already-active icon expands a collapsed panel;
-   `activity.js:96-105`.)
+   `activity.js`.)
 7. Result: the panel never paints open before settling collapsed, and the
    revealed view is the saved one.
 
@@ -170,22 +170,22 @@ the set of `data-view` hosts in `templates/index.html`; a drift is a defect.
    the fetch is in flight. The app does not blank the panel, hide the icons, or
    overlay a loading state on it.
 3. The fetch fails (network error, 500, or offline): `boot()`'s catch
-   (`app.js:618`) must leave the side panel in the shell-rendered state — the
+   (`app.js`) must leave the side panel in the shell-rendered state — the
    same active view, the same collapsed state, the same width. It must not call
    `activate("explorer")` and must not clear `.collapsed`.
-4. Offline service-worker fallback (`sw.js:115-127`) serves the last cached
+4. Offline service-worker fallback (`sw.js`) serves the last cached
    shell; the same rule applies: the panel keeps the cached shell's view.
 
 ### 6.4 Auth-gated reload
 
 1. Auth is enabled and there is no session. The server renders defaults —
-   Explorer visible, panel expanded (`app.py:835-839`). The login modal dims the
-   UI (`auth.js:39`). The saved view is not embedded and not shown.
-2. The user logs in; `auth.js:104` reloads the page.
+   Explorer visible, panel expanded (`app.py`). The login modal dims the
+   UI (`auth.js`). The saved view is not embedded and not shown.
+2. The user logs in; `auth.js` reloads the page.
 3. The reload is authenticated, so the server paints the saved view
-   (`app.py:840-841`). First frame is the saved view; no flash.
+   (`app.py`). First frame is the saved view; no flash.
 4. A later 401 on a gated read fires `auth:required`, which re-shows the modal
-   (`auth.js:134-136`). It must not change the active view.
+   (`auth.js`). It must not change the active view.
 
 ### 6.5 Unknown or removed view id
 
@@ -200,19 +200,19 @@ the set of `data-view` hosts in `templates/index.html`; a drift is a defect.
 
 1. URL `/?file=Welcome.md` with saved `activeView: "bookmarks"`.
 2. Boot restores Bookmarks in the panel. The deep link opens `Welcome.md` in a
-   tab (`app.js:646-657`); it reads the tree from `NB.sidebar.getTree()`, which
+   tab (`app.js`); it reads the tree from `NB.sidebar.getTree()`, which
    is independent of which view is visible.
 3. The active view is still Bookmarks after boot. The deep link must not call
    `sidebar.revealFile()` and must not paint Explorer.
 4. Reloading the deep-link URL serves the same shell boot state through the
-   catch-all route (`app.py:2909`), so it is flash-free too.
+   catch-all route (`app.py`), so it is flash-free too.
 
 ### 6.7 "Show in file sidebar" from another view
 
 1. While Bookmarks (or Search, Recent, AI) is active, the user picks **Show in
-   file sidebar** (`bookmarks.js:292`).
+   file sidebar** (`bookmarks.js`).
 2. `sidebar.revealFile()` activates Explorer and expands a collapsed panel
-   (`sidebar.js:313-318`). This is a deliberate user action.
+   (`sidebar.js`). This is a deliberate user action.
 3. The panel switches to Explorer and `activeView` persists as `explorer`. This
    is expected, not a flash, and is out of scope for elimination.
 
@@ -228,7 +228,7 @@ the set of `data-view` hosts in `templates/index.html`; a drift is a defect.
 | Config fetch returns a different view than the shell (changed on the server while the tab was open) | One reconciliation switch after boot. The first paint still matched the shell snapshot, so this is a genuine config change, not a flash. |
 | Whitespace or case in the id (`" Explorer "`, `"EXPLORER"`) | Not a match; Explorer. |
 | Offline launch | Cached shell's view is kept; config failure does not change it. |
-| Service worker serves the shell | Pages are network-first (`sw.js:112-127`), so an online reload gets a fresh shell. |
+| Service worker serves the shell | Pages are network-first (`sw.js`), so an online reload gets a fresh shell. |
 | The user has disabled JS | The shell still shows the saved view (correct), without icons. |
 
 ## 8. Acceptance criteria
@@ -289,7 +289,7 @@ fetch stub, following the existing harness conventions
   and does not set a non-zero `--side-panel-width`.
 - AC15. In that state `NB.activity.getActive() === "bookmarks"`, and clicking
   the Bookmarks icon expands the panel and reveals `#bookmarks-view`.
-- AC16. Extends the existing regression at `test_dom.js:24534-24565`: a
+- AC16. Extends the existing regression at `test_dom.js`: a
   non-toggle `activate()` never expands a collapsed panel, and an icon click
   still expands and restores the saved width.
 
@@ -309,7 +309,7 @@ fetch stub, following the existing harness conventions
 
 - AC20. `[server]` With auth on and no session, the shell paints Explorer and
   the saved view id does not appear in the HTML (extends
-  `test_app.py:162-198`). After login, the shell paints the saved view.
+  `test_app.py`). After login, the shell paints the saved view.
 - AC21. `[dom]` A `401` from a gated read (the `auth:required` path) re-shows the
   login modal without changing the active view or the collapsed state.
 
@@ -319,7 +319,7 @@ fetch stub, following the existing harness conventions
   Explorer, after boot `NB.activity.getActive() === "explorer"`, `#sidebar` is
   visible, and no toast or `alert` fires.
 - AC23. Calling `NB.activity.activate("gone", false)` with an unknown id changes
-  nothing and throws nothing (`activity.js:91-92`).
+  nothing and throws nothing (`activity.js`).
 
 ### G. Deep link and revealFile — `[dom]`
 
@@ -337,7 +337,7 @@ fetch stub, following the existing harness conventions
   and the `data-view` host set (AC8).
 - AC28. `[dom]` `templates/index.html` renders the `hidden` attribute on every
   `.side-panel-view` conditionally on the boot view, and the existing
-  first-paint boot-state block (`test_dom.js:24495-24532`) is extended to assert
+  first-paint boot-state block (`test_dom.js`) is extended to assert
   the active-view markup is rendered server-side.
 - AC29. `[server]` `docs/contracts/configuration.md` documents `activeView` with
   its allowed values and its first-paint treatment.
@@ -347,9 +347,9 @@ fetch stub, following the existing harness conventions
 - AC30. `[dom]` All existing activity/view tests still pass unchanged: view
   switching, icon toggle collapse, per-view collapse buttons, bookmarks view,
   recent view, AI mount/collapse, and the active-view persistence checks
-  (`test_dom.js:13840-13913`).
+  (`test_dom.js`).
 - AC31. `[server]` The existing first-paint tests still pass, and
-  `test_boot_state_does_not_leak_content` (`test_app.py:144-160`) still holds:
+  `test_boot_state_does_not_leak_content` (`test_app.py`) still holds:
   `activeView` is a view id, never content-bearing.
 - AC32. The full suites pass: `node tests/dom/test_dom.js` and
   `.venv_$(hostname)/bin/python -m unittest discover -s tests -v`.
@@ -379,7 +379,7 @@ Still open (out of scope for this spec):
 ## 10. Non-hard-coded values
 
 Names and locations, not literals: the config key `activeView` and its default
-live in `app.js:31-34`; the view-id set lives in `activity.js`'s
+live in `app.js`; the view-id set lives in `activity.js`'s
 `NB.activity.register()` calls; the boot allowlist must be derived from, or
 kept in sync with, that set rather than duplicated as an unrelated literal.
 No new numeric constant is introduced by this spec.
@@ -388,9 +388,9 @@ No new numeric constant is introduced by this spec.
 
 - A1. The active view remains a single id, not a per-view history.
 - A2. The existing first-paint mechanism (`boot_state()` / `_render_index()`,
-  `app.py:754-842`) is the intended home for boot chrome; the active view joins
+  `app.py`) is the intended home for boot chrome; the active view joins
   it rather than adding a new mechanism.
 - A3. `activity.js` remains the owner of the view registry and the boot
   adoption; `app.js` remains the owner of config load and reconciliation.
-- A4. Service-worker page handling stays network-first (`sw.js:112-127`); this
+- A4. Service-worker page handling stays network-first (`sw.js`); this
   spec does not change caching.

@@ -2,14 +2,17 @@
 
 Design handoff for the Settings modal (`#settings-overlay` in
 `templates/index.html`, behaviour in `static/js/settings.js`), focused on
-**unifying all six tabs onto one visual system** and on rebuilding the AI
+**unifying all seven tabs onto one visual system** and on rebuilding the AI
 tab's read-only **ACP / agent status** block as a proper status panel.
 
 Reference mockup: `docs/design/settings-modal.html`.
 
-Status: design only. No source files were changed. `web-engineer`
-implements the CSS in `static/css/style.css`, the small markup additions in
-`templates/index.html`, and the `settings.js` render changes listed in §9.
+Status: shipped (Settings modal redesign, ACP status panel), design record.
+
+The unified system is in `static/css/style.css` under `#settings-overlay …`,
+the markup additions in `templates/index.html`, and the `settings.js` render
+changes of §9. The modal now has seven tabs; the Workspaces tab (§2.5 of
+`docs/ui/workspaces.md`) was added after this design.
 
 Companion docs: `docs/design/ai-composer-redesign.md` and
 `docs/design/ai-chat-message-area.md`. This doc keeps the same visual
@@ -25,7 +28,7 @@ the two differ, this document wins.
 
 ## 1. Design intent
 
-The Settings modal is the app's control room: six tabs, every control live
+The Settings modal is the app's control room: seven tabs, every control live
 except the Security/AI save buttons. Today it mixes idioms — two near-identical
 uppercase headings (`.settings-section h3` and `.settings-form-title`), five
 sizes of secondary text (`.settings-help` .89rem, `.settings-note` .86rem,
@@ -37,7 +40,7 @@ stacks five forms and ends with the ACP block as a wall of grey sentences.
 
 The redesign imposes **one** spacing scale, **one** type scale, **one**
 control system, **one** status system, and a consistent "grouped form"
-rhythm across all six tabs. The AI tab is reorganised into labelled groups
+rhythm across all seven tabs. The AI tab is reorganised into labelled groups
 separated by hairline rules so it reads as one panel. Its ACP block becomes a
 read-only status panel: per-agent rows with a clear **Installed / Adapter
 missing / Not installed** state, an obvious **Selected** marker on the agent
@@ -62,14 +65,15 @@ the configured profile uses, and a visible **Read-only** affordance.
 and style the **Auth**, **Export**, and **Mermaid Designer** modals, which
 share `.settings-overlay` / `.settings-modal`:
 
-- `.settings-row` (`style.css:1617`), `.settings-label` (`:1629`),
-  `.settings-action` (`:1757`), `.settings-action--primary` (`:4468`),
-  `.theme-options` / `.font-size-options` (`:1737` / `:1747`), and
+- `.settings-row`, `.settings-label`, `.settings-action`,
+  `.settings-action--primary`, `.theme-options` / `.font-size-options`, and
   `.settings-form-title` / `.settings-hint` / `.settings-note` /
   `.settings-subheading`.
-- Consumers: the Auth modal (`index.html:355-361`), the Export modal
-  (`index.html:888-950`), and the Designer (`index.html:1065-1086`; its Apply
-  button is `class="settings-action settings-action--primary"`).
+- Consumers: the Auth modal (`#auth-overlay .auth-modal`), the Export modal
+  (`#export-overlay .export-modal`), the Table editor
+  (`#table-editor-overlay .table-editor-modal`), and the Designer
+  (`#designer-overlay .designer-modal`; its Apply button is
+  `class="settings-action settings-action--primary"`).
 
 Therefore **do not edit those global base rules**. Keep them as they are and
 **add scoped `#settings-overlay …` overrides** that only win inside the
@@ -885,12 +889,11 @@ installed" state carries no success/warning meaning, so it deliberately stays
 
 - Add the scoped token block (§3.1) and the scoped component rules
   (§3.3–§3.6, §5.3), all prefixed `#settings-overlay`.
-- **Keep every shared global rule intact** — `.settings-row` (1617),
-  `.settings-label` (1629), `.settings-action` (1757),
-  `.settings-action--primary` (4468), `.theme-options` (1737),
-  `.font-size-options` (1747), `.settings-form-title`, `.settings-hint`,
-  `.settings-note`, `.settings-subheading`. The Designers/Export/Auth modals
-  depend on them. The new `#settings-overlay …` rules win only inside Settings.
+- **Keep every shared global rule intact** — `.settings-row`,
+  `.settings-label`, `.settings-action`, `.settings-action--primary`,
+  `.theme-options`, `.font-size-options`, `.settings-form-title`,
+  `.settings-hint`, `.settings-note`, `.settings-subheading`. The
+  Designers/Export/Auth modals depend on them. The new `#settings-overlay …` rules win only inside Settings.
 - The only global rules you may touch are the `.settings-watch-status`
   colour/dot rules; the safest change is to add the scoped overrides in §3.6
   and leave the global ones in place (the scoped ones win inside Settings).
@@ -914,19 +917,19 @@ installed" state carries no success/warning meaning, so it deliberately stays
 
 ### `static/js/settings.js`
 
-- `buildAcpAgentLines(agents)` (~1299): emit the row structure in §5.4 — name,
+- `buildAcpAgentLines(agents)`: emit the row structure in §5.4 — name,
   status (classes `settings-ai-acp-agent-status stg-status
   stg-status--<state>` and the words Installed / Adapter missing / Not
   installed), mono key chip, and the hint line only for adapter-missing; set
   `data-state` and, when `a.key === aiAcpProfile.agent`,
   `data-selected="true"`.
-- `buildAiAcpRow(acp, agents)` (~1330): build the panel head + help + profile
+- `buildAiAcpRow(acp, agents)`: build the panel head + help + profile
   card + **a "Detected agents" sub-label only when `agents` has entries** +
   the agent list. Stop emitting `.settings-ai-acp-selected`.
-- `buildAiAcpInfoRow(agents)` (~1359): same panel shell under
+- `buildAiAcpInfoRow(agents)`: same panel shell under
   `.settings-ai-acp-info`. Keep the "none is configured" / `"agent": "<key>"`
   note wording (§5.4) so the existing test regexes pass.
-- `buildAiRow(s)` (~1069): add `settings-ai-test` to the Test button; add
+- `buildAiRow(s)`: add `settings-ai-test` to the Test button; add
   `settings-ai-remove` to Remove; render the default marker as a
   `.stg-tag--accent` "Default" tag when active and a ghost "Make default"
   button otherwise (or keep the button and add `settings-ai-default`
@@ -942,21 +945,21 @@ so `#settings-ai-list .settings-ai-acp-row`, `…-info`, and
 `.settings-ai-acp-agent[data-acp-key]` still resolve. Only these **text**
 assertions change:
 
-- `23305-23308` — `/^opencode — installed$/` → the row now contains
+- `/^opencode — installed$/` → the row now contains
   `opencode` and the word `Installed`.
-- `23309-23313` — the exact `"Claude Code — installed — ACP adapter missing (…)"`
+- The exact `"Claude Code — installed — ACP adapter missing (…)"`
   string → the row contains `Claude Code`, `Adapter missing`, and the hint
   `npm install -g @agentclientprotocol/claude-agent-acp`.
-- `23314-23317` — `/^Codex — not installed$/` → `Codex` + `Not installed`.
-- `23290-23295` — keep `/ACP agent: acp-agent/`? **No** — that sentence is gone.
+- `/^Codex — not installed$/` → `Codex` + `Not installed`.
+- Keep `/ACP agent: acp-agent/`? **No** — that sentence is gone.
   Change to assert the row contains the profile name `acp-agent`, a `Selected`
   tag, and the key `opencode`; keep `/config\/acp\.json/` and
   `/not editable here/` unchanged.
-- `23318-23320` — `/Selected agent key: opencode/` → assert the profile card's
+- `/Selected agent key: opencode/` → assert the profile card's
   key chip reads `opencode`.
-- `23357-23360` — **unchanged**: the note keeps `none is configured`,
+- **Unchanged**: the note keeps `none is configured`,
   `"agent": "<key>"`, and `config/acp.json`.
-- `23374-23376` — **unchanged**: the empty-key note keeps
+- **Unchanged**: the empty-key note keeps
   `explicit "command" instead of an allowlist key`.
 - The harness markup (the copy inside `test_dom.js`) does not need structural
   edits: it has no ACP nodes (the ACP panel is rendered by JS).
@@ -976,7 +979,7 @@ normative.
 
 ## 11. Acceptance criteria
 
-- [ ] All six tabs use one section-heading style and one group-label style;
+- [ ] All seven tabs use one section-heading style and one group-label style;
       no tab has a one-off title.
 - [ ] `.settings-help` and `.settings-note` render at .86rem; `.settings-hint`
       at .78rem.

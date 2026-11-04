@@ -1,6 +1,6 @@
 # Sessions — design handoff
 
-Status: implemented. The feature shipped in `static/js/tabs.js`,
+Status: shipped (sessions view), design record. The feature shipped in `static/js/tabs.js`,
 `static/js/sessions.js`, `static/js/viewer.js`, `static/js/app.js`,
 `static/js/activity.js`, `static/js/menu.js`, `templates/index.html`,
 `static/css/style.css`, and the workspace-state changes in `app.py`.
@@ -210,7 +210,8 @@ scrolling list as a `flex: 0 0 auto` band with a top border.
 **D12 — The phone hides the rail icon and the view; the boot fallback is
 Explorer.** The view is desktop-only: the phone has one reader, no tab bar and
 never reads or writes desktop sessions. The icon and host are hidden by the same
-phone rule that already hides AI's (`style.css:7220-7221`), and `app.js` forces
+phone rule that already hides AI's (`.activity-btn[data-view="ai"]` and
+`#side-panel .side-panel-view[data-view="ai"]` in the phone query), and `app.js` forces
 a saved `activeView` of `"sessions"` to `"explorer"` beside its existing
 `"ai" → "explorer"` guard. Naming the fallback: **Explorer**. The view is still
 built at load on a phone — it is a hidden DOM subtree and keeps `sessions.js`
@@ -991,7 +992,7 @@ listed is revision 2's, already shipped.
 | `static/js/tabs.js` | Unchanged: the `Move to session` item and the session operations. |
 | `static/js/menu.js` | Unchanged: `onClose(reason)` and the submenu `disabled`/`title` support. |
 | `static/js/app.js` | Unchanged: the phone guard. |
-| `static/sw.js` | Cache-name bump beside the existing one, as for every CSS change. |
+| `static/sw.js` | Cache-name bump beside the existing one, as for every CSS change; the cache is now `notebook-v23`. |
 
 The `sessions.js` DOM edits, all in `buildView()` / `buildRow()` / `render()`:
 

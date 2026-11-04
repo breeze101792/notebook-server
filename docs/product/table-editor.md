@@ -1,6 +1,6 @@
 # Table edit window — product definition
 
-**Status:** Product definition for review. No visual or technical design chosen here.
+**Status:** shipped (table edit window). No visual or technical design chosen here.
 **Date:** 2026-10-31 · **Owner:** `product-designer` · **Scope:** hybrid (WYSIWYG) edit mode only.
 Related: `docs/architecture/hybrid-editing.md` (G3/G3b — tables edit through a table tool and write GFM), `docs/product/hybrid-shortcuts.md`, `docs/architecture/table-select.md`.
 

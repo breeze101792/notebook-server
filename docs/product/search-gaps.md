@@ -1,6 +1,6 @@
 # Search gap analysis — daily-use audit
 
-Status: analysis for review. Owner: `product-designer`.
+Status: superseded by [the Advanced search panel design](../design/search-panel-advanced.md); gaps G1 and G3 remain open. Owner: `product-designer`.
 Applies to: the side-panel Search (`static/js/activity.js`, `mountSearch`),
 `/api/search` (`app.py`), the viewer jump (`static/js/viewer.js`), the search
 prefs (`static/js/app.js`), and the tests and contracts named below.
@@ -74,7 +74,7 @@ Recommendation values: **do next** (this phase), **later** (a real gap, not now)
 | # | Job | Missing capability | Why it matters | Recommendation | Risk or cost | Phase |
 |---|---|---|---|---|---|---|
 | G1 | Find the line | A result click marks the first rendered occurrence, not the selected one. Old `.search-highlight` marks are never cleared. A mark can survive into hybrid edit mode. | The rank-2 job is "where in this note"; the `line N` label is a promise the click does not keep. Repeated clicks leave several marks. A mark inside the editable DOM can reach a save, breaking the read-only guarantee. | **do next** | Add `occ` server-side and a client jump by ordinal. Some source matches (link URLs, front matter) do not render, so the ordinal can drift; fall back to the first visible occurrence. | Now |
-| G2 | Trust | Search walks dot-directories; the tree and `/api/ls` hide them. | A `.trash` or tool folder can put notes in results that the user cannot see or open from the tree. | **do next** (small) | One prune in `_iter_search_targets`; no result-shape change. | Now |
+| G2 | Trust | Search walked dot-directories; the tree and `/api/ls` hide them. | A `.trash` or tool folder could put notes in results that the user cannot see or open from the tree. | **done** | `_iter_search_targets` now prunes hidden directories, matching the tree; no result-shape change. | Done |
 | G3 | Find the note / line | No folder scope and no current-note scope in the panel. `glob=` and `file=` already work. | A common word becomes unusable in a growing notebook. Folder is the natural scope; current-note scope is the phone's only "find in note". | **do next** | UI state and a scope chip; `api.js` passes `glob`/`file`; folder menu and tab menu entries; a 404 branch for a scoped note; `fnmatch` metacharacters in folder names. | Now |
 | G4 | Find the note | The global search chord focuses the top-bar input and opens the flat §search tab, bypassing the richer panel. Content and File name are mutually exclusive, so a wrong mode returns zero. | The fastest path leads to the weaker surface. Users may never discover one-per-note or sort. A zero result in the wrong mode looks like "no such note". | **done** | The chord now activates the side-panel Search (normal and VIM); the top-bar input and `§search` tab were removed. The zero-result fallback switches target. | Done |
 | G5 | Find the note | No combined filename + content query. | Rejected: a fallback button (G4) removes the dead end without merging two result shapes or two scans. | **reject** | Two scans or a new server mode; ambiguous ordering between name and content hits. | — |

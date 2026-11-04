@@ -2087,6 +2087,7 @@ AI_FETCH_MAX_BYTES = 512 * 1024      # 512 KiB of body
 AI_FETCH_TIMEOUT = 15                # seconds
 AI_SEARXNG_TIMEOUT = 15              # seconds
 AI_SEARXNG_MAX_RESULTS = 10
+AI_PROBE_TIMEOUT = 8                 # seconds for the /api/ai/probe ping
 
 # A vision user turn may carry image_url parts. This per-message cap bounds
 # vision token cost and request size; image parts are rejected on any other
@@ -2375,9 +2376,11 @@ def _public_ai_config():
     # active), stored outside the server list. searxngUrl is the optional
     # SearXNG instance the search tool queries; it is not a secret but is
     # kept server-side so the browser never needs to know the LAN address.
+    custom = data.get("custom_prompt")
+    searx = data.get("searxng_url")
     return {"servers": servers, "default": data.get("default", ""),
-            "customPrompt": data.get("custom_prompt", ""),
-            "searxngUrl": data.get("searxng_url", ""),
+            "customPrompt": custom if isinstance(custom, str) else "",
+            "searxngUrl": searx if isinstance(searx, str) else "",
             "acp": _public_acp_config(),
             "acpAgents": _detect_acp_agents()}
 
@@ -2518,7 +2521,7 @@ def ai_probe():
                  "Accept": "application/json",
                  **_upstream_auth_headers(stored)})
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=AI_PROBE_TIMEOUT) as resp:
             return jsonify({"ok": True, "status": resp.status})
     except urllib.error.HTTPError as exc:
         # The endpoint lives and answered -- that's what "probe" asks.
@@ -2657,9 +2660,9 @@ def _acp_context_preamble(workspace_id=None):
         active = cfg.get("activeFile")
     if isinstance(active, str) and active.strip():
         lines.append("The note currently open: %s" % active.strip())
-    custom = (load_ai_config().get("custom_prompt") or "").strip()
-    if custom:
-        lines.append(custom)
+    custom = load_ai_config().get("custom_prompt")
+    if isinstance(custom, str) and custom.strip():
+        lines.append(custom.strip())
     return "\n\n".join(lines)
 
 
@@ -2928,7 +2931,8 @@ def ai_search():
     q = q.strip()
     if len(q) > 500:
         return err("q is longer than 500 chars", 400)
-    base = load_ai_config().get("searxng_url", "").strip()
+    base = load_ai_config().get("searxng_url")
+    base = base.strip() if isinstance(base, str) else ""
     if not base:
         return err("No SearXNG instance configured", 400)
     base = base.rstrip("/")
@@ -4060,6 +4064,10 @@ def graph():
 @app.route("/", defaults={"p": ""})
 @app.route("/<path:p>")
 def spa(p):
+    # An unknown API path must not fall through to the shell: a client that
+    # typos an endpoint would get HTML with 200 instead of a JSON 404.
+    if p == "api" or p.startswith("api/"):
+        return err("Not found", 404)
     return _render_index()
 
 

@@ -14,7 +14,7 @@ Two folders are deliberately separate:
 - `config/` holds settings: `config.json` (UI state), `auth.json`
   (password hashes, token hashes, session-signing secret), `ai.json`
   (OpenAI-compatible provider profiles), `acp.json` (one hand-edited
-  ACP agent command), and `workspaces.json` (the named notebook roots).
+  ACP agent profile), and `workspaces.json` (the named notebook roots).
 
 `notebook.template/` ships a starter notebook. On a fresh install the
 server copies it into `notebook/`.
@@ -29,18 +29,18 @@ test suites are described in [`../testing/README.md`](../testing/README.md).
 
 ## 2. Backend structure
 
-The backend is two files. `app.py` is the 2878-line Flask module: every route
+The backend is two files. `app.py` is the 4205-line Flask module: every route
 returns JSON except `GET /` (serves `index.html`), `GET /agent.md` (serves
 Markdown), and `POST /api/ai/chat` (relays `text/event-stream`).
-`acp_client.py` (298 lines) is the one exception to the single-file rule —
+`acp_client.py` (306 lines) is the one exception to the single-file rule —
 see [Design decisions](#9-design-decisions-and-trade-offs).
 
 ### Import-time path resolution
 
 `DATA_DIR` and `CONFIG_DIR` resolve once at import time
-(`app.py:31-33`). `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR` override the
+(`app.py`). `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR` override the
 project defaults `notebook/` and `config/`. `seed()` then runs at import
-time (`app.py:2517`, defined at `app.py:94`):
+time (`app.py`, defined at `app.py`):
 
 1. Create `config/` and an empty `config/config.json` if missing.
 2. If using the project-default data folder and a legacy `data/` directory
@@ -63,22 +63,23 @@ Routes are grouped by comment banners:
 
 | Section | Banner | Endpoints |
 | --- | --- | --- |
-| Page + config | `app.py:1179` | `GET /`, `GET /sw.js` (service worker at root scope), the two `apple-touch-icon` aliases, `/api/config`, `/api/info` |
-| Workspaces | `app.py:1509` | `/api/workspaces`, `/api/workspaces/active`, `/api/workspaces/<id>`, `/api/workspace-state` |
-| Auth | `app.py:1672` | `/api/auth`, `/api/login`, `/api/logout`, `/api/auth/passwords` |
-| API tokens | `app.py:1873` | `/api/auth/tokens`, `/api/auth/tokens/<name>` |
-| AI assistant | `app.py:1954` | `/api/ai/config`, `/probe`, `/chat`, `/fetch`, `/search` |
-| Agent guide | `app.py:2922` | `GET /agent.md` |
-| File read/write | `app.py:2960` | `/api/tree`, `/api/ls`, `/api/file`, `/api/file/append`, `/api/edit` |
-| Mutations | `app.py:3187` | `/api/create`, `/api/move`, `/api/copy`, `/api/delete` |
-| Search | `app.py:3427` | `/api/search` |
-| Graph | `app.py:3729` | `/api/graph` |
-| SPA catch-all | `app.py:3888` | `GET /<path:p>` |
+| Page + config | `app.py` | `GET /`, `GET /sw.js` (service worker at root scope), the two `apple-touch-icon` aliases, `/api/config`, `/api/info` |
+| Workspaces | `app.py` | `/api/workspaces`, `/api/workspaces/active`, `/api/workspaces/<id>`, `/api/workspace-state` |
+| Auth | `app.py` | `/api/auth`, `/api/login`, `/api/logout`, `/api/auth/passwords` |
+| API tokens | `app.py` | `/api/auth/tokens`, `/api/auth/tokens/<name>` |
+| AI assistant | `app.py` | `/api/ai/config`, `/probe`, `/chat`, `/fetch`, `/search` |
+| Agent guide | `app.py` | `GET /agent.md` |
+| File read/write | `app.py` | `/api/tree`, `/api/ls`, `/api/file`, `/api/file/append`, `/api/edit` |
+| Mutations | `app.py` | `/api/create`, `/api/move`, `/api/copy`, `/api/delete` |
+| Search | `app.py` | `/api/search` |
+| Graph | `app.py` | `/api/graph` |
+| SPA catch-all | `app.py` | `GET /<path:p>` |
 
-The catch-all (banner `app.py:3888-3890`, route decorators `app.py:3905-3906`,
-`spa` def at `app.py:3907`) serves `index.html` for any non-`/api/*`,
+The catch-all (banner `app.py`, route decorators `app.py`,
+`spa` def at `app.py`) serves `index.html` for any non-`/api/*`,
 non-`/static/*` path, so a deep link such as `/README.md#core-rules`
-works.
+works. It answers an unmatched `api/...` path with a JSON 404, so a client
+that mistypes an endpoint does not get the shell as HTML.
 
 ### Request lifecycle
 
@@ -113,7 +114,8 @@ share a temp file. `save_auth()` uses the same pattern.
 Five files sit under `config/`: `config.json` (opaque UI-state JSON,
 POSTable by any authenticated client), `auth.json`
 (`secret`, password hashes, `tokens`), `ai.json` (provider profiles, global
-prompt, SearXNG URL), `acp.json` (a hand-edited ACP agent `command` +
+prompt, SearXNG URL), `acp.json` (a hand-edited ACP agent profile: a
+`command` line, or a well-known `agent` key that resolves to one, plus
 `args`), and `workspaces.json` (the server-owned workspace registry).
 `auth.json`, `ai.json`, and `acp.json` are split out of the POSTable
 `config.json` blob because a client that can POST settings must not reach
@@ -150,7 +152,10 @@ auth off, with a session role, or with a bearer token presented, it returns
 `404 unknown_workspace`. On the SPA shell an unknown id binds the default and
 clears the stale `session["workspace"]`, so a bad cookie cannot trap the user.
 The 404 applies to the twelve data routes; login, auth, the workspace list,
-config, info, AI, and the shell fall back silently.
+config, info, and the shell fall back silently. The one exception among the
+non-data routes is AI chat: the ACP branch of `POST /api/ai/chat` resolves
+an explicit `workspace` id and answers an unknown one with the same
+`404 unknown_workspace` (`app.py`).
 
 **Why the default path stays unresolved.** `DATA_DIR` is stored and compared
 as the unresolved string the process imported. If it were `realpath`-resolved
@@ -189,20 +194,22 @@ by `boot_state()` and the view is painted on the first frame. See
 
 ## 4. Auth architecture
 
-Auth lives in a dedicated section (banner at `app.py:434`): a
+Auth lives in a dedicated section (banner at `app.py`): a
 two-password gate with an admin password and an optional viewer password.
 
-**Enabled-iff-admin.** `auth_enabled()` (`app.py:475`) returns true iff
+**Enabled-iff-admin.** `auth_enabled()` (`app.py`) returns true iff
 the admin password hash exists. When auth is off, every route is open.
 When the admin password is set, **all reads and writes are gated**,
-whether or not a viewer password exists (`app.py:657-687`). The viewer
-password is a secondary login option, not the read gate.
+whether or not a viewer password exists (the decorators at
+`app.py`). The viewer password is a secondary login option, not
+the read gate.
 
 **The decorators.** `login_required` is open when
 auth is off, else requires a valid session or bearer role.
 `admin_required` additionally requires the role to be
 `admin`. `read_login_required` requires any resolved role.
-`workspace_admin_required` (workspace registry writes) requires admin, and
+`workspace_admin_required` (workspace registry writes and
+`POST /api/workspace-state`) requires admin, and
 while auth is off requires a loopback peer with no `X-Forwarded-For` or
 `X-Real-IP`; a refusal is `403 loopback_required`. `login_required` and
 `read_login_required` behave the same today; they are named separately to
@@ -211,29 +218,31 @@ document intent: mutating routes versus read routes.
 **Workspace permissions.** Any authenticated role, including `viewer`, may
 list workspaces and switch the session workspace. A viewer may not add,
 rename, or remove a workspace (`403 not_admin`), and may not write
-per-workspace UI state, which uses plain `admin_required`. Logout clears
+per-workspace UI state: `POST /api/workspace-state` is gated by the same
+`workspace_admin_required`. Logout clears
 `session["workspace"]` with the role, so the next request falls back to the
 default.
 
-**Role resolution.** `_request_role()` (`app.py:563`) resolves the role. A
+**Role resolution.** `_request_role()` (`app.py`) resolves the role. A
 presented Bearer token is authoritative: an invalid token fails with 401
 rather than falling back to the session cookie. Otherwise the signed
 session cookie decides.
 
 **Named API tokens.** Tokens let agents and scripts skip the cookie login.
 Format is `nbtk_<40 hex>`; the scheme is documented with its constants at
-`app.py:511-529` (`_TOKEN_PREFIX` at `app.py:515`). The first 10 hex
+the top of the API-tokens section (`_TOKEN_PREFIX` at `app.py`). The
+first 10 hex
 chars are a public lookup id; the remaining 30 are the secret. Only a
 bcrypt hash is stored, and the full string is shown once at creation
-(`app.py:1126-1133`). Lookup is O(1) bcrypt per request because the id
-selects the single candidate hash (`_find_token`, `app.py:532-552`).
-Issuing requires auth to be on (`app.py:1094-1095`).
+(the issuing route at `app.py`). Lookup is O(1) bcrypt per request
+because the id selects the single candidate hash (`_find_token`,
+`app.py`). Issuing requires auth to be on (`app.py`).
 
 **Rate limiting.** An in-memory dict maps client IP to recent failure
-timestamps (`app.py:593-598`). Five failures in 60 seconds locks the IP
+timestamps (`app.py`). Five failures in 60 seconds locks the IP
 out; the sixth attempt returns 429, and a successful login clears the
 record. Both login failures and invalid Bearer attempts feed it
-(`app.py:575-586`). It keys on the TCP peer address (`request.remote_addr`),
+(`app.py`). It keys on the TCP peer address (`request.remote_addr`),
 not a client-supplied header, so it cannot be bypassed by spoofing a header;
 it is defeated only by rotating source IPs or by several clients behind one
 NAT sharing a bucket. Gated read paths get
@@ -252,7 +261,7 @@ client can read or rewrite the provider profiles and spend the stored key.
 See [Security posture](#6-security-posture) for the full caveat. The API key
 never appears in a response to the browser, but it is attached server-side to
 the request sent to whatever `base_url` is saved. `config/ai.json` is
-snake_case on disk (documented with the section banner at `app.py:1168`):
+snake_case on disk (documented with the section banner at `app.py`):
 
 ```
 {
@@ -264,7 +273,7 @@ snake_case on disk (documented with the section banner at `app.py:1168`):
 ```
 
 The HTTP API is camelCase (`baseUrl`, `customPrompt`, `searxngUrl`) and
-masks `api_key` to a boolean `hasKey` (`_public_ai_config`, `app.py:1402`).
+masks `api_key` to a boolean `hasKey` (`_public_ai_config`, `app.py`).
 The stored key is never echoed to a client. A POST with `apiKey: ""` plus
 `replaceSecret: true` carries the stored key over server-side.
 
@@ -272,29 +281,29 @@ The stored key is never echoed to a client. A POST with `apiKey: ""` plus
 reachable, while a connection failure returns `{ok: false}` with HTTP 200.
 `POST /api/ai/chat` streams the completion. The server rebuilds the
 upstream payload from the model, messages, and a `stream: true` flag, so
-extra client keys never reach the provider (`app.py:1802-1804`). The
+extra client keys never reach the provider (`app.py`). The
 stored `api_key` is attached server-side by `_upstream_auth_headers`
-(`app.py:1941`). The upstream bytes are relayed verbatim as
-`text/event-stream` (`relay()`, `app.py:1811-1840`). Upstream errors are
-re-emitted in-band as `event: error` frames (`app.py:1825-1836`), because
+(`app.py`). The upstream bytes are relayed verbatim as
+`text/event-stream` (`relay()`, `app.py`). Upstream errors are
+re-emitted in-band as `event: error` frames (`app.py`), because
 EventSource cannot read a non-200 status; the relay handles `GeneratorExit`
 so an early disconnect does not become an error banner.
 
 **ACP branch.** The same route serves the ACP provider. `config/acp.json` is
-a separate, hand-edited file holding one agent profile (`name`, `command`,
-`args`, `cwd`, `env`, `default`, `timeout`); `load_acp_config()`
-(`app.py:1240`) validates the whole object and fails closed to `{}` on any
+a separate, hand-edited file holding one agent profile (`name`, `agent` or
+`command`, `args`, `cwd`, `env`, `default`, `timeout`); `load_acp_config()`
+(`app.py`) validates the whole object and fails closed to `{}` on any
 violation, and it deliberately never comes through `POST /api/ai/config`
-(`app.py:1182-1185`) — a config blob any authed client can POST must not be
+(`app.py`) — a config blob any authed client can POST must not be
 able to choose a command to execute. `ai_chat` resolves an OpenAI profile
 first; when the posted `server` instead matches the ACP name it calls
-`_acp_chat_response` (`app.py:1686-1761`). Messages go through the shared
-`_validate_chat_messages` (`app.py:1624`), the system turn is dropped, image
+`_acp_chat_response` (`app.py`). Messages go through the shared
+`_validate_chat_messages` (`app.py`), the system turn is dropped, image
 parts are rejected, and the rest is flattened to one prompt
-(`_flatten_acp_prompt`, `app.py:1647`). The turn is streamed by
+(`_flatten_acp_prompt`, `app.py`). The turn is streamed by
 `acp_client.run_turn` as the same OpenAI delta frames plus `data: [DONE]`
 and `event: error` frames, so the browser parser is unchanged. `acp_client`
-is imported lazily (`app.py:1717`), so a missing `agent-client-protocol`
+is imported lazily (`app.py`), so a missing `agent-client-protocol`
 package disables only ACP rather than the server. See
 [ai-assistant.md](ai-assistant.md#acp-providers) for the full contract,
 including the agent's filesystem trust boundary.
@@ -302,10 +311,10 @@ including the agent's filesystem trust boundary.
 `POST /api/ai/fetch` fetches a URL server-side for the assistant's fetch
 tool, since the browser cannot cross CORS. Only http(s) is allowed. The
 body is capped at `AI_FETCH_MAX_BYTES` (512 KiB) and times out after
-`AI_FETCH_TIMEOUT` (15s) (`app.py:1204-1205`, route `app.py:1843`).
+`AI_FETCH_TIMEOUT` (15s) (`app.py`, route `app.py`).
 `POST /api/ai/search` queries a SearXNG instance's JSON output and returns
 the top `AI_SEARXNG_MAX_RESULTS` (10) results with a 15-second
-`AI_SEARXNG_TIMEOUT` (`app.py:1206-1207`, route `app.py:1890`). With no
+`AI_SEARXNG_TIMEOUT` (`app.py`, route `app.py`). With no
 `searxng_url` configured it returns 400, and the model is told the tool is
 disabled.
 
@@ -315,29 +324,30 @@ The operator must know these properties; they are consequences of the
 single-user design, not defects.
 
 **Transport is plain HTTP.** `app.run()` sets no `ssl_context`
-(`app.py:2538`). Admin and viewer passwords are posted in cleartext and
+(`app.py`). Admin and viewer passwords are posted in cleartext and
 bearer tokens travel as cleartext headers, so anyone who can observe the LAN
 can read them. bcrypt protects only the stored hash, never the wire.
 
 **The server binds `0.0.0.0` by default.** `app.py` defaults `-H` to
-`0.0.0.0` (`app.py:2426-2444`), so a fresh install is reachable from the
+`0.0.0.0` (`app.py`), so a fresh install is reachable from the
 whole network.
 
 **Auth is off by default.** `auth_enabled()` is false until an admin password
 is set, and the session/role decorators return the view unguarded in that
 state. Every route — including all `/api/ai/*` and every mutating file route —
-is open to any client that can reach the port. The one exception is registry
-mutation: `workspace_admin_required` still requires a loopback peer with no
-forwarding header while auth is off, but per-workspace state remains open.
+is open to any client that can reach the port. The exception is the
+workspace routes: `workspace_admin_required` (the registry writes and
+`POST /api/workspace-state`, `app.py`) still requires a loopback peer
+with no forwarding header while auth is off.
 
-**Provider keys are stored in cleartext.** `save_ai_config` writes the raw
-`api_key` with default file permissions (`app.py:1199-1207`); unlike the
-password hashes in `auth.json`, `config/ai.json` holds usable secrets, so
-backups and file permissions are operator-sensitive.
+**Provider keys are stored in cleartext.** `save_ai_config`
+(`app.py`) writes the raw `api_key` with default file permissions;
+unlike the password hashes in `auth.json`, `config/ai.json` holds usable
+secrets, so backups and file permissions are operator-sensitive.
 
 **A saved key follows its profile's `base_url`.** Saving a profile with a
 blank `apiKey` and `replaceSecret: true` carries over the stored key for the
-named profile (`replaceSecretFor`, `app.py:1242-1251`). Because `base_url`
+named profile (`replaceSecretFor`, `app.py`). Because `base_url`
 is attacker-chosen, a client that can POST `/api/ai/config` (open when auth
 is off) can repoint a profile and have the server attach the stored key to a
 request to that host. The "never leaves the server" property covers responses
@@ -345,8 +355,9 @@ to the browser, not the upstream request target.
 
 **The fetch tool can reach internal hosts.** `/api/ai/fetch` checks the
 scheme and length only; loopback, private ranges, and cloud-metadata
-addresses are reachable, and redirects are followed (`app.py:1510-1512`
-acknowledges this). Scheme filtering is not SSRF protection.
+addresses are reachable, and redirects are followed (the route's docstring
+at `app.py` acknowledges this). Scheme filtering is not SSRF
+protection.
 
 **Request bodies are capped at 32 MiB.** `MAX_CONTENT_LENGTH` is set to
 `MAX_REQUEST_BYTES`; an oversized body is rejected with a JSON 413 before a
@@ -366,23 +377,23 @@ loopback. While auth is off, registry mutations also require a loopback peer
 and no forwarding header, so a proxied LAN client cannot add a root.
 
 **Debug mode on a non-loopback host exposes the Flask debugger** to the
-network; `app.py:4039-4042` prints a warning.
+network; `app.py` prints a warning.
 
 ## 7. Frontend architecture
 
 The frontend has no build step at runtime. `templates/index.html` loads
 vendored libraries and app modules as plain `<script>` tags; the
 CodeMirror bundle is the one offline-built exception. It is one page plus
-40 modules under `static/js/`, all sharing the `window.NB` namespace. See
+45 modules under `static/js/`, all sharing the `window.NB` namespace. See
 [frontend.md](frontend.md) for the module inventory, boot sequence,
 renderer pipeline, and persistence.
 
 ## 8. Agent-facing surface
 
-`GET /agent.md` (`app.py:1612`) serves the project-root `agent.md` as
+`GET /agent.md` (`app.py`) serves the project-root `agent.md` as
 `text/markdown`, substituting the current auth state into a
-`{{auth_state}}` placeholder (`_AUTH_STATE_PLACEHOLDER` at `app.py:1609`,
-substitution at `app.py:1637`). The route is deliberately ungated: an
+`{{auth_state}}` placeholder (`_AUTH_STATE_PLACEHOLDER` at `app.py`,
+substitution at `app.py`). The route is deliberately ungated: an
 agent must discover how to authenticate before it holds a credential. The
 file contains endpoint documentation only — no notebook data and no
 secrets. It responds with `Cache-Control: no-store` because the
@@ -410,10 +421,11 @@ file), which the service worker caches. The benefit is that the served code
 is the source code, with no build artifact to drift.
 
 **CodeMirror exception.** `static/vendor/codemirror.bundle.js` is an
-esbuild IIFE built offline from `static/vendor/codemirror.entry.js`. No
-script in the repository regenerates it; the esbuild invocation is
-undocumented. This is the one served artifact that is not directly
-editable.
+esbuild IIFE built offline from `static/vendor/codemirror.entry.js`.
+The build is documented in
+[`../operations/build.md`](../operations/build.md), which also records
+the second built artifact, the Mermaid designer's `visimer.bundle.js`.
+These two are the served files that are not directly editable.
 
 **Mermaid copy.** `static/vendor/mermaid.min.js` is byte-identical to
 `node_modules/mermaid/dist/mermaid.min.js`. Updating it means copying the
@@ -433,7 +445,7 @@ no `allow-same-origin`.
 
 ```
 notebook-server/
-  app.py                  Flask backend (3077 lines)
+  app.py                  Flask backend (4205 lines)
   acp_client.py           Flask-free ACP client, one agent process per turn (306 lines)
   agent.md                machine-readable API guide, served at /agent.md
   start.sh                venv bootstrap + launcher
@@ -442,15 +454,15 @@ notebook-server/
   notebook.template/      starter notebook copied on first run
   config/                 config.json, auth.json, ai.json, acp.json,
                           workspaces.json
-  templates/index.html    the single SPA shell (1502 lines)
+  templates/index.html    the single SPA shell (1953 lines)
   static/
     manifest.json         PWA manifest
-    sw.js                 service worker source, served at /sw.js, cache notebook-v16
+    sw.js                 service worker source, served at /sw.js, cache notebook-v23 (sw.js)
     css/ icons/ vendor/   styles, PWA icons, vendored libraries
-    js/                   40 app modules sharing window.NB
+    js/                   45 app modules sharing window.NB
   tests/
-    test_app.py           357 test methods, 42 TestCase classes (4932 lines)
-    dom/test_dom.js       jsdom frontend harness (33458 lines, 111 sections)
+    test_app.py           461 test methods, 51 TestCase classes (6504 lines)
+    dom/test_dom.js       jsdom frontend harness (40695 lines, 116 sections)
     browser/              Playwright suites; run_all.js runs every suite
   docs/
     architecture/         this folder: backend, frontend, markdown,

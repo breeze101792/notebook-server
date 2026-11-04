@@ -37,8 +37,9 @@ node tests/dom/test_dom.js        # equivalent if jsdom already resolvable
 node tests/browser/run_all.js     # every real-browser suite (auto-detects Chromium)
 ```
 
-There is no lint step configured; the only test runners are `unittest` (backend) and
-`node tests/dom/test_dom.js` (frontend).
+There is no lint step configured; the test runners are `unittest` (backend),
+`node tests/dom/test_dom.js` (jsdom), and the Playwright suites under
+`tests/browser/` (`node tests/browser/run_all.js` runs all of them).
 
 ## Optional: enabling password protection
 
@@ -88,14 +89,15 @@ To fully remove the auth layer, delete `config/auth.json` and restart.
 
 ## Architecture
 
-**Backend — `app.py` (single file, ~2500 lines).** All routes are under `/api/*` and
+**Backend — `app.py` (single file, ~4200 lines).** All routes are under `/api/*` and
 return JSON; `GET /` serves `index.html`. The module resolves `DATA_DIR` /
 `CONFIG_DIR` at import time from `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (defaulting to the project `notebook/` and `config/` folders) and calls `seed()`
 on import. `seed()` ensures `config/config.json` exists, runs a one-time
 migration of legacy `data/` into `notebook/` if needed, and on a fresh
 install copies the contents of `notebook.template/` into `notebook/`. The
-template ships with a single `Welcome.md`; editing notes never touches the
+template ships with `Welcome.md`, `README.md`, and `Syntax.md`; editing notes
+never touches the
 template. Endpoints: `/api/auth` (GET), `/api/auth/passwords` (POST, admin-only),
 `/api/auth/tokens` (GET/POST) + `/api/auth/tokens/<name>` (DELETE, admin-only),
 `/api/login` (POST), `/api/logout` (POST), `/api/config` (GET/POST),
@@ -244,14 +246,14 @@ server user with filesystem access; `safe_path` and the approval cards do not
 apply.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
-then app modules in dependency order: `api.js → auth.js → cm-bridge.js →
+then app modules in dependency order: `api.js → dialog.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
 table-edit.js → list-edit.js → table-view.js → table-select.js → table-editor.js → watcher.js →
 outline.js → sidebar.js → graph-2d.js → graph-3d.js → graph.js → tabs.js → windows.js →
 settings.js → export.js → mermaid-designer.js → designer-shell.js →
 dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
-bookmarks.js → shortcuts.js → mobile.js → app.js`.
+bookmarks.js → sessions.js → shortcuts.js → mobile.js → workspaces.js → app.js`.
 Each is an IIFE that extends the shared `window.NB` namespace (e.g. `NB.tabs`,
 `NB.viewer`, `NB.sidebar`, `NB.outline`, `NB.api`, `NB.auth`,
 `NB.blocks`, `NB.menu`).
@@ -584,8 +586,13 @@ Docs: `docs/architecture/mobile.md`, `docs/design/mobile-shell.md`,
 **Config (`config/config.json`).** Frontend state persisted by the app: `theme`,
 `fontSize`, `lastFile`, `recentFiles`, `openFiles`, `activeFile`, `activeView`,
 `sidebarWidth`, `outlineWidth`, `sidebarCollapsed`, `outlineCollapsed`,
-`searchCaseSensitive`, `pinnedFolders`, `explorerTop` (`"pinned"`,
-`"bookmarks"`, or `"none"`), `graphMode` (`"2d"` or `"3d"`, default `"3d"`).
+`searchCaseSensitive`, `searchUnique`, `searchSort`, `searchTarget`,
+`pinnedFiles`, `pinnedFolders`, `bookmarks`, `sessions`, `activeSessionId`,
+`watchEnabled`, `wallpaper`, `wallpaperColor`, `wallpaperIntensity`,
+`wallpaperScroll`, `hideTopbar`, `siteTitle`, `graphParticles`,
+`explorerTop` (`"pinned"`, `"bookmarks"`, or `"none"`), `graphMode`
+(`"2d"` or `"3d"`, default `"3d"`), `autosave`, `autosaveDelay`, `vimrc`,
+`vimMode`, `settingsModalWidth`, `settingsModalHeight`, `shortcuts`.
 `fontSize` ∈ {`"small"`, `"medium"`, `"large"`, `"xlarge"`} drives the
 `--font-scale` CSS variable (0.9 / 1.0 / 1.15 / 1.3); the resolved value applies
 to the whole app via rem-ified chrome. The code-block syntax theme is **not**

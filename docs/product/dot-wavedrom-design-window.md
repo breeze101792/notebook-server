@@ -1,6 +1,6 @@
 # Graphviz and WaveDrom design windows — product definition
 
-Status: draft for review. No technical or visual design is chosen here.
+Status: shipped (Graphviz and WaveDrom design windows). No technical or visual design is chosen here.
 Date: 2026-10-20
 Owner: `product-designer`
 Scope: existing `dot` / `graphviz` and `wavedrom` fenced blocks in the desktop
@@ -21,9 +21,9 @@ Related documents:
 
 The owner edits notes in hybrid mode. Right-clicking a rendered Mermaid block
 offers **Design diagram…** and opens a window with a live preview and editable
-structure. Right-clicking a rendered Graphviz or WaveDrom block offers only
-**Edit … source**. He wants a design entry with the block's own noun
-(**Design graph…** / **Design timing…**) and an edit window for both.
+structure. At the time of writing, right-clicking a rendered Graphviz or WaveDrom
+block offered only **Edit … source**. He wanted a design entry with the block's
+own noun (**Design graph…** / **Design timing…**) and an edit window for both.
 
 The note must stay plain Markdown. The window must not turn a diagram into
 HTML, SVG, or an opaque attachment.

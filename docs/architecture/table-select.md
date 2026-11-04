@@ -38,7 +38,7 @@ or `table-edit.js`. Three small strip/belt changes are added to `hybrid.js`
    default means:
    - the native text-selection/caret gesture never starts (this is why
      `table-edit.js` `startCommon` preventDefaults its pointerdown,
-     table-edit.js:441);
+     table-edit.js);
    - Gecko's own Ctrl+drag table-selection gesture never starts in Firefox
      preview — our engine replaces it;
    - no `<a>`/`<img>` drag-and-drop can start (a canceled mousedown suppresses
@@ -144,29 +144,29 @@ scrolled-away cells is still correct to copy.
 
 | Fact | Where |
 | --- | --- |
-| `table-view.js` sessions + `canInteract`, teardown on `hybrid:will-enter`/`hybrid:entered`, rebuild on `viewer:rendered` | `static/js/table-view.js:844-849, 928-946, 953-992` |
-| `table-view.js` injects a `.nb-tv-head-menu` chevron into every header cell (payload must strip it) | `static/js/table-view.js:82-84, 327-345` |
-| `table-view.js` exports `lastRenderLive` getter (reused, not duplicated) | `static/js/table-view.js:1201` |
-| `table-view.js` overlay is a child of `#viewer`; layer is `pointer-events: none` | `static/js/table-view.js:1126-1161`, `static/css/style.css:739-745` |
-| `table-edit.js` `startCommon` preventDefaults pointerdown "never move the caret / start selection" — the precedent for arm-time preventDefault | `static/js/table-edit.js:440-448` |
-| `hybrid.js` enter: emits `hybrid:will-enter`, sets `contenteditable`, emits `hybrid:entered` | `static/js/hybrid.js:3289, 3294, 3373` |
-| `hybrid.js` exit: removes `contenteditable`, emits `hybrid:exited` | `static/js/hybrid.js:3412, 3452` |
-| `hybrid.js` `pushSnapshot` stores raw live `innerHTML`; called from the debounce (3062), `resetHistory` at enter (3071→3354), undo/redo flush (3098, 3106), and `flushPendingSnapshot` (3862-3868) — invoked by `moveRow` (3891) and `moveCol` (3908) BEFORE their mutation, and by `onContentChange` (3000-3006) which structural keydown/click paths call directly with NO `input` event (`insertLineBelow` 2387, `removeRuleLine` 2251, `indentListItem` 1922, `moveRow` 3893) | `static/js/hybrid.js:3000-3006, 3047-3071, 3862-3868` |
-| `hybrid.js` `restoreSnapshot` replaces `innerHTML` wholesale with no event | `static/js/hybrid.js:3074-3094` |
-| `hybrid.js` external change re-renders via `renderMarkdown` (replaces `innerHTML`, emits nothing) | `static/js/hybrid.js:1159-1193, 4560-4582` |
-| `watcher.js` emits `file:external-change` (the hook for the above) | `static/js/watcher.js:244` |
-| `hybrid.js` turndown clone strips chrome classes — the `HR_SELECTED_CLASS` precedent | `static/js/hybrid.js:412-420` |
-| `hybrid.js` change-hash class token-strip precedent (`HR_SELECTED_CLASS`) | `static/js/hybrid.js:730-741` |
-| `hybrid.js` `tableHasSpans(table)` | `static/js/hybrid.js:3874-3876` (exported at 4607); `moveRow`/`moveCol`/`flushPendingSnapshot` exported at 4598-4612 |
-| `viewer.js` emits `viewer:rendered` with `{path, live}` | `static/js/viewer.js:261, 269, 322` |
-| `api.js` pub/sub `NB.evt` | `static/js/api.js:187-202` |
-| `shortcuts.js` `isMac()` exists but is NOT exported; `modalIsOpen()` checks `.settings-overlay:not([hidden]), #auth-overlay:not([hidden])`; the keydown dispatcher yields to open modals | `static/js/shortcuts.js:73-80, 244-246, 305-309, 386-391` |
-| `vimnav.js` duplicates the same `modalIsOpen()` locally | `static/js/vimnav.js:48-50, 150` |
-| Export renders from the content cache, never the DOM (pinned by an existing test) | `tests/dom/test_dom.js:9747-9748` |
-| CSS custom properties `--accent`, `--accent-soft`, `--fg`, `--bg`, `--border` (dark + light themes) | `static/css/style.css:4-12, 58-65` |
-| index.html script order (table-edit 961, table-view 962, watcher 963; shortcuts near the end) | `templates/index.html:961-963` |
-| sw.js PRECACHE (table-edit 49, table-view 50) and `CACHE = "notebook-v5"` | `static/sw.js:16, 49-51` |
-| Test harness `evalIn` order; completeness-check pattern | `tests/dom/test_dom.js:1438-1439, 9822-9825` |
+| `table-view.js` sessions + `canInteract`, teardown on `hybrid:will-enter`/`hybrid:entered`, rebuild on `viewer:rendered` | `static/js/table-view.js, 928-946, 953-992` |
+| `table-view.js` injects a `.nb-tv-head-menu` chevron into every header cell (payload must strip it) | `static/js/table-view.js, 327-345` |
+| `table-view.js` exports `lastRenderLive` getter (reused, not duplicated) | `static/js/table-view.js` |
+| `table-view.js` overlay is a child of `#viewer`; layer is `pointer-events: none` | `static/js/table-view.js`, `static/css/style.css` |
+| `table-edit.js` `startCommon` preventDefaults pointerdown "never move the caret / start selection" — the precedent for arm-time preventDefault | `static/js/table-edit.js` |
+| `hybrid.js` enter: emits `hybrid:will-enter`, sets `contenteditable`, emits `hybrid:entered` | `static/js/hybrid.js, 3294, 3373` |
+| `hybrid.js` exit: removes `contenteditable`, emits `hybrid:exited` | `static/js/hybrid.js, 3452` |
+| `hybrid.js` `pushSnapshot` stores raw live `innerHTML`; called from the debounce (3062), `resetHistory` at enter (3071→3354), undo/redo flush (3098, 3106), and `flushPendingSnapshot` (3862-3868) — invoked by `moveRow` (3891) and `moveCol` (3908) BEFORE their mutation, and by `onContentChange` (3000-3006) which structural keydown/click paths call directly with NO `input` event (`insertLineBelow` 2387, `removeRuleLine` 2251, `indentListItem` 1922, `moveRow` 3893) | `static/js/hybrid.js, 3047-3071, 3862-3868` |
+| `hybrid.js` `restoreSnapshot` replaces `innerHTML` wholesale with no event | `static/js/hybrid.js` |
+| `hybrid.js` external change re-renders via `renderMarkdown` (replaces `innerHTML`, emits nothing) | `static/js/hybrid.js, 4560-4582` |
+| `watcher.js` emits `file:external-change` (the hook for the above) | `static/js/watcher.js` |
+| `hybrid.js` turndown clone strips chrome classes — the `HR_SELECTED_CLASS` precedent | `static/js/hybrid.js` |
+| `hybrid.js` change-hash class token-strip precedent (`HR_SELECTED_CLASS`) | `static/js/hybrid.js` |
+| `hybrid.js` `tableHasSpans(table)` | `static/js/hybrid.js` (exported at 4607); `moveRow`/`moveCol`/`flushPendingSnapshot` exported at 4598-4612 |
+| `viewer.js` emits `viewer:rendered` with `{path, live}` | `static/js/viewer.js, 269, 322` |
+| `api.js` pub/sub `NB.evt` | `static/js/api.js` |
+| `shortcuts.js` `isMac()` exists but is NOT exported; `modalIsOpen()` checks `.settings-overlay:not([hidden]), #auth-overlay:not([hidden])`; the keydown dispatcher yields to open modals | `static/js/shortcuts.js, 244-246, 305-309, 386-391` |
+| `vimnav.js` duplicates the same `modalIsOpen()` locally | `static/js/vimnav.js, 150` |
+| Export renders from the content cache, never the DOM (pinned by an existing test) | `tests/dom/test_dom.js` |
+| CSS custom properties `--accent`, `--accent-soft`, `--fg`, `--bg`, `--border` (dark + light themes) | `static/css/style.css, 58-65` |
+| index.html script order (table-edit 961, table-view 962, watcher 963; shortcuts near the end) | `templates/index.html` |
+| sw.js PRECACHE (table-edit 49, table-view 50) and `CACHE = "notebook-v5"` | `static/sw.js, 49-51` |
+| Test harness `evalIn` order; completeness-check pattern | `tests/dom/test_dom.js, 9822-9825` |
 
 ---
 
@@ -188,7 +188,7 @@ class earns its place as the cursor hook — see section 7.)
 
 ### 4.2 Platform modifier
 
-A local `isMac()` copy of `shortcuts.js:73-80` (not exported at 386-391, and
+A local `isMac()` copy of `shortcuts.js` (not exported at 386-391, and
 `shortcuts.js` loads after this module anyway, so a runtime dependency would
 be load-order-fragile). The arm predicate:
 
@@ -213,7 +213,7 @@ let armConsumed = false;      // this press armed (click-swallow flag, 1.3)
 ```
 
 No `lastRenderLive` copy: the eligibility gate reads
-`NB.tableView.lastRenderLive` (the getter at table-view.js:1201).
+`NB.tableView.lastRenderLive` (the getter at table-view.js).
 `table-view.js` loads first and its `viewer:rendered` listener is registered
 before ours, so the value is current when we consult it. If `NB.tableView` is
 missing (broken load), treat it as not-live — arming in that degraded state is
@@ -251,7 +251,7 @@ On each state change, recompute the visible-cell rectangle between
 `anchorCell` and `focusCell` (rows in DOM order, columns by `cellIndex`,
 skipping `.nb-tv-hide-row` rows and `.nb-tv-hide-col` cells) and toggle
 `RANGE_CLASS` only on changed cells — the same churn discipline as
-`onSelectionChange` in `hybrid.js:1879`.
+`onSelectionChange` in `hybrid.js`.
 
 **`clear()` is DOM-driven, not cache-driven**: it queries
 `#viewer-content` for `.nb-ts-range` and `.nb-ts-drag` and strips them, then
@@ -262,8 +262,8 @@ cannot miss.
 
 ### 4.7 Modal guard
 
-A local `modalIsOpen()` copy — the same three-liner `shortcuts.js:244-246` and
-`vimnav.js:48-50` already duplicate (same selector
+A local `modalIsOpen()` copy — the same three-liner `shortcuts.js` and
+`vimnav.js` already duplicate (same selector
 `.settings-overlay:not([hidden]), #auth-overlay:not([hidden])`). Both Esc and
 copy handlers return untouched when it is true. Two modules already carry
 private copies; a third follows the established pattern and avoids a new
@@ -322,7 +322,7 @@ NB.tableSelect = {
 | 12 | `viewer:rendered` | `NB.evt` | any | `clear()`; the live flag is read live from `NB.tableView.lastRenderLive` at gate time (4.3). |
 | 13 | `hybrid:will-enter`, `hybrid:entered` | `NB.evt` | any | `tearDownForEdit()` (clear; belt for 12). |
 | 14 | `hybrid:exited` | `NB.evt` | any | `clear()`. |
-| 15 | `file:external-change` | `NB.evt` | any | `clear()` — covers hybrid's `renderMarkdown` re-render on disk change (hybrid.js:1159, 4573), which replaces `innerHTML` without emitting `viewer:rendered`. |
+| 15 | `file:external-change` | `NB.evt` | any | `clear()` — covers hybrid's `renderMarkdown` re-render on disk change (hybrid.js, 4573), which replaces `innerHTML` without emitting `viewer:rendered`. |
 | 16 | `window blur` | `window` | DRAGGING only | Finalize the drag at the last valid cell (as if mouseup). |
 
 Notes:
@@ -330,7 +330,7 @@ Notes:
 - The modal guards (rows 9, 10) exist because a rectangle CAN outlive an
   open-modal trigger: Ctrl+Comma opens Settings with no mousedown, so nothing
   else clears the rectangle first. This mirrors the yield rule in
-  `shortcuts.js:305-309`.
+  `shortcuts.js`.
 - `copy` with focus in a non-modal text box (the side-panel search input) is
   already safe: clicking the input is a mousedown, which cleared the rectangle
   (row 1) — by the time Ctrl+C fires, `isActive()` is false and the handler
@@ -347,7 +347,7 @@ One permanent capture listener on `document` (row 10). It takes precedence
 **only** when a rectangle is active and no modal is open. Otherwise the
 handler returns without touching the event, so every other copy path —
 hybrid's native contenteditable copy, the context-menu `doCopy`
-(hybrid.js:2854-2865), the code-block Copy button, plain text copies anywhere,
+(hybrid.js), the code-block Copy button, plain text copies anywhere,
 and copies made inside an open modal — is untouched.
 
 ```js
@@ -381,7 +381,7 @@ function _onCopy(e) {
 ### 6.3 Cell text extraction (chrome-stripped, `<br>`-aware)
 
 `textContent` alone is wrong twice: header cells carry the injected
-`.nb-tv-head-menu` chevron (table-view.js:82-84, 327-345), and `<br>` runs
+`.nb-tv-head-menu` chevron (table-view.js, 327-345), and `<br>` runs
 collapse ("foo<br>bar" → "foobar"). Extraction:
 
 ```js
@@ -394,7 +394,7 @@ function cellText(cell) {
   // An image contributes its alt text, or nothing (M5).
   clone.querySelectorAll("img").forEach((img) => img.replaceWith(img.alt || ""));
   // Collapse whitespace runs to single spaces and trim (normText pattern,
-  // table-view.js:123-125) — kills any residual tab/newline that would
+  // table-view.js) — kills any residual tab/newline that would
   // corrupt the grid.
   return normText(clone.textContent);
 }
@@ -456,20 +456,20 @@ native gesture ever starts).
 ## 8. Serialization, undo, and export safety
 
 The selection is **chrome, never content** — the same contract
-`HR_SELECTED_CLASS` already holds (`hybrid.js:111, 417-420`). The leak vectors
+`HR_SELECTED_CLASS` already holds (`hybrid.js, 417-420`). The leak vectors
 and their guards:
 
 ### 8.1 Hybrid enter with a painted rectangle
 
-`hybrid:will-enter` fires at `hybrid.js:3289` — the last synchronous moment
+`hybrid:will-enter` fires at `hybrid.js` — the last synchronous moment
 before `contenteditable` is set (3294) and before `resetHistory()` seeds the
 undo snapshot (3354). `tearDownForEdit()` clears every class there, exactly
-like `table-view.js:928`. `hybrid:entered` runs it again as the belt.
+like `table-view.js`. `hybrid:entered` runs it again as the belt.
 
 ### 8.2 Undo snapshots — the structural-edit leak and its belt
 
 The previous draft claimed snapshots fire only via `input`. **False.**
-`pushSnapshot` (hybrid.js:3047-3055) reads the live `viewerContentEl.innerHTML`
+`pushSnapshot` (hybrid.js) reads the live `viewerContentEl.innerHTML`
 and is also reached with a painted rectangle by:
 
 - `flushPendingSnapshot` (3862-3868), called by `moveRow` (3891) and `moveCol`
@@ -486,7 +486,7 @@ Undo would then resurrect the classes, and `restoreSnapshot` (3074) replaces
 Fixes, in force order:
 
 1. **Single choke-point belt (the real guarantee): `pushSnapshot` clears
-   first.** At the top of `pushSnapshot` (hybrid.js:3047), before reading
+   first.** At the top of `pushSnapshot` (hybrid.js), before reading
    `innerHTML`:
 
    ```js
@@ -504,7 +504,7 @@ Fixes, in force order:
    by a path the belt missed is stripped by the next clear, because clear
    queries the DOM, not a cache.
 3. **Change-hash strip (`canonicalSubtree`)**: extend the existing
-   `HR_SELECTED_CLASS` token-strip (hybrid.js:730-741) to also drop the
+   `HR_SELECTED_CLASS` token-strip (hybrid.js) to also drop the
    `nb-ts-range` / `nb-ts-drag` tokens. Change keys are computed on the LIVE
    DOM during the splice-serialization path, where painted classes would
    otherwise mark an untouched table block "edited" and force a pointless
@@ -514,7 +514,7 @@ Fixes, in force order:
 
 A debounced autosave flush serializes the live DOM at flush time; the user
 can be mid-drag at that instant. Guard: strip the classes in
-`prepareTurndownClone` (`hybrid.js:412`), immediately after the
+`prepareTurndownClone` (`hybrid.js`), immediately after the
 `HR_SELECTED_CLASS` strip (lines 417-420), mirroring its comment:
 
 ```js
@@ -543,7 +543,7 @@ paths.
 ### 8.6 Exports
 
 `export.js` renders from the viewer's content cache and never reads the
-rendered DOM — pinned by the existing test at `tests/dom/test_dom.js:9747`.
+rendered DOM — pinned by the existing test at `tests/dom/test_dom.js`.
 Selection classes cannot reach an export by construction. One assertion in
 the test block (section 12) keeps the invariant pinned for this feature too.
 
@@ -551,9 +551,9 @@ the test block (section 12) keeps the invariant pinned for this feature too.
 
 Three changes, each mirroring an existing pattern, all in one PR:
 
-1. `prepareTurndownClone` strip block (8.3, after hybrid.js:417-420);
-2. `pushSnapshot` clear-call belt (8.2, top of hybrid.js:3047);
-3. `canonicalSubtree` token-strip extension (8.2, hybrid.js:730-741).
+1. `prepareTurndownClone` strip block (8.3, after hybrid.js);
+2. `pushSnapshot` clear-call belt (8.2, top of hybrid.js);
+3. `canonicalSubtree` token-strip extension (8.2, hybrid.js).
 
 ---
 
@@ -562,18 +562,18 @@ Three changes, each mirroring an existing pattern, all in one PR:
 ### 9.1 Merged cells
 
 Refuse: a spanned table never arms. `NB.hybrid.tableHasSpans(table)`
-(hybrid.js:3874) detects `colspan`/`rowspan`. A rectangle over spans has no
+(hybrid.js) detects `colspan`/`rowspan`. A rectangle over spans has no
 well-defined grid, and copying "the spanned cell text once" produces a ragged
 TSV — a broken rectangle, which defeats the feature's only purpose. Both
-`table-view.js:307` and `table-edit.js:195` already refuse spanned tables;
+`table-view.js` and `table-edit.js` already refuse spanned tables;
 this matches them. GFM cannot produce spans (marked never emits them), so
 this only affects tables born from pasted HTML.
 
 ### 9.2 Live preview
 
-`viewer:rendered` with `live: true` (viewer.js:322) must never carry selection
+`viewer:rendered` with `live: true` (viewer.js) must never carry selection
 state: the DOM is disposable and the textarea is the source of truth. The
-gate reads `NB.tableView.lastRenderLive` (table-view.js:1201) and refuses to
+gate reads `NB.tableView.lastRenderLive` (table-view.js) and refuses to
 arm while it is true. Every render (live or real) also clears any held
 rectangle — the old DOM is gone either way.
 
@@ -581,11 +581,11 @@ rectangle — the old DOM is gone either way.
 
 | Case | Behavior |
 | --- | --- |
-| Ctrl+drag starting on a `table-edit.js` grip | never reaches the engine: `startCommon` preventDefaults the `pointerdown` (table-edit.js:441), which suppresses the compatibility `mousedown` — the grip drag proceeds, no rectangle |
+| Ctrl+drag starting on a `table-edit.js` grip | never reaches the engine: `startCommon` preventDefaults the `pointerdown` (table-edit.js), which suppresses the compatibility `mousedown` — the grip drag proceeds, no rectangle |
 | Ctrl+mousedown on an `<a>`/`<img>` inside a cell | arms (cell resolves), DnD suppressed (1.2/1.3); on release the click default is swallowed — no tab opens (row 7) |
 | `dragstart` raised anyway (belt) | row 8 cancels it while ARMED/DRAGGING |
 | Drag crossing OVER a grip / overlay control mid-drag | `e.target.closest("td,th")` resolves nothing → rectangle holds at last valid cell (grips live outside cells; the 12 px col-grip overlap on the header is a known dead zone for extending the rectangle) |
-| Modifier+click on a header title (no drag) | no rectangle; the click default is swallowed only for `a,img` targets — `table-view.js`'s sort click behaves exactly as for a plain click (its handler ignores modifier keys, table-view.js:1043-1066) |
+| Modifier+click on a header title (no drag) | no rectangle; the click default is swallowed only for `a,img` targets — `table-view.js`'s sort click behaves exactly as for a plain click (its handler ignores modifier keys, table-view.js) |
 | Ctrl+Comma (Settings opens, no mousedown) | rectangle stays held; Esc and Ctrl+C yield to the modal (rows 9, 10) |
 | Copy while focus is in the side-panel search input | moot: the click into the box cleared the rectangle (row 1) |
 | Structural edit with a held rectangle (Alt+arrow row move, table menu) | `flushPendingSnapshot`/`pushSnapshot` belt clears before the snapshot (8.2); the rectangle is gone, undo stays clean |
@@ -606,7 +606,7 @@ rectangle — the old DOM is gone either way.
 No shared mutable state. The gate reads its exported `lastRenderLive` getter
 (one source of truth, no duplicate); the payload strips its injected
 `.nb-tv-head-menu` icons (6.3); the rectangle respects its hide-classes and
-DOM order — sorting physically reorders `<tr>` nodes (table-view.js:429-439),
+DOM order — sorting physically reorders `<tr>` nodes (table-view.js),
 so DOM order IS the copied order. No changes to `table-view.js`.
 
 ### 10.2 table-edit.js
@@ -641,12 +641,12 @@ Copy button click clears the rectangle via its `mousedown` first.
 | What | Where | Change |
 | --- | --- | --- |
 | New module | `static/js/table-select.js` | create |
-| Script tag | `templates/index.html` — insert between line 962 (`table-view.js`) and 963 (`watcher.js`) | `<script src="/static/js/table-select.js" defer></script>` |
-| Service worker | `static/sw.js` — insert `"/static/js/table-select.js",` between line 50 (`table-view.js`) and 51 (`watcher.js`); **bump `CACHE`** at line 16 from `"notebook-v5"` to the next version (the current cache is `"notebook-v16"`) (a stale precache would serve without the new module) | PRECACHE entry + cache bump |
-| CSS | `static/css/style.css` — new section after line 935 (end of the `.nb-tv-head-menu` rules) | section 7 |
-| hybrid changes | `static/js/hybrid.js` — (1) strip block in `prepareTurndownClone` after lines 417-420; (2) belt at the top of `pushSnapshot` (3047); (3) token-strip extension in `canonicalSubtree` (730-741) | section 8.7 |
-| Test harness | `tests/dom/test_dom.js` — insert `evalIn(read("static/js/table-select.js"));` after line 1439 (`table-view.js`) | load the module |
-| Completeness test | `tests/dom/test_dom.js` — after the existing checks at 9822-9825, add: `table-select.js` is in index.html AND in sw.js PRECACHE | mirror the `table-view` pattern |
+| Script tag | `templates/index.html` — between `table-view.js` and `watcher.js` | `<script src="/static/js/table-select.js" defer></script>` |
+| Service worker | `static/sw.js` — add `"/static/js/table-select.js",` to `PRECACHE` between `table-view.js` and `watcher.js`, then bump `CACHE` (the cache version must match the assertion in the DOM suite) | PRECACHE entry + cache bump |
+| CSS | `static/css/style.css` — new section after the `.nb-tv-head-menu` rules | section 7 |
+| hybrid changes | `static/js/hybrid.js` — (1) strip block in `prepareTurndownClone`; (2) belt at the top of `pushSnapshot`; (3) token-strip extension in `canonicalSubtree` | section 8.7 |
+| Test harness | `tests/dom/test_dom.js` — load the module after `table-view.js` | load the module |
+| Completeness test | `tests/dom/test_dom.js` — mirror the `table-view` pattern: `table-select.js` is in index.html AND in sw.js `PRECACHE` | completeness check |
 
 Load order rationale: after `table-view.js` (uses its `lastRenderLive` getter,
 `NB.hybrid.tableHasSpans`, `NB.evt` — all defined), before `watcher.js` —
@@ -702,14 +702,15 @@ Core behavior:
     `clear()` (DOM-driven) leaves no `.nb-ts-*` in the document.
 13. **Export invariant** — `read("static/js/export.js")` never references
     `nb-ts-` (extends the 9747 pattern).
-14. **Completeness** — index.html + sw.js PRECACHE contain
-    `/static/js/table-select.js`; sw.js `CACHE` is `notebook-v16`.
+14. **Completeness** — index.html + sw.js `PRECACHE` contain
+    `/static/js/table-select.js`; sw.js `CACHE` matches the assertion in the
+    DOM suite.
 
 Review-finding regressions:
 
 15. **B2 — structural edit cannot capture classes into a snapshot**: enter
     hybrid, paint a rectangle, call the exported `NB.hybrid.moveRow(row,
-    null)` (hybrid.js:4598; internally `flushPendingSnapshot` → `pushSnapshot`
+    null)` (hybrid.js; internally `flushPendingSnapshot` → `pushSnapshot`
     → belt clears): assert no `.nb-ts-range` in `#viewer-content` after, and
     a subsequent undo-driven restore carries none (drive
     `NB.hybrid.flushPendingSnapshot`, also exported, then assert the DOM
@@ -786,7 +787,7 @@ table selection — now the native gesture simply never starts, with explicit
 guards for the side effects (link/image Ctrl+click swallow, dragstart belt,
 no caret move) (B1, M1). Undo-safety section corrected: snapshots ARE reached
 without `input` via `flushPendingSnapshot`/`onContentChange` on structural
-paths (hybrid.js:3862-3868, 3891, 3000-3006), so the guarantee is now a
+paths (hybrid.js, 3891, 3000-3006), so the guarantee is now a
 clear-call belt at the top of `pushSnapshot` plus a DOM-driven `clear()` and a
 `canonicalSubtree` token-strip (B2, m1). Esc/copy handlers yield to open
 modals via the same `modalIsOpen()` pattern shortcuts.js/vimnav.js use, and

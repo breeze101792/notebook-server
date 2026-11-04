@@ -20,6 +20,10 @@ The backend is one Flask file (`app.py`) serving a JSON API and one HTML page.
 The frontend is a vanilla-JS single-page app that renders Markdown in the
 browser. There is no database and no runtime build step.
 
+Runtime: Python 3.10 or newer plus the three pinned packages in
+`requirements.txt` — `Flask==3.0.3`, `bcrypt==5.0.0`, and
+`agent-client-protocol==0.12.1`. The ACP SDK is what sets the 3.10 floor.
+
 See [backend](../architecture/backend.md), [frontend](../architecture/frontend.md),
 and [configuration](../contracts/configuration.md) for the implementation.
 
@@ -41,8 +45,9 @@ and [configuration](../contracts/configuration.md) for the implementation.
 - Multi-user collaboration, shared editing, or permissions beyond
   admin/viewer.
 - A database or any server-side index of note content.
-- A runtime build step (the one exception is an offline-built CodeMirror
-  bundle; see [frontend](../architecture/frontend.md)).
+- A runtime build step; the only built assets are two offline-built bundles,
+  `codemirror.bundle.js` and `visimer.bundle.js` (see
+  [frontend](../architecture/frontend.md)).
 - Cloud sync or hosted storage. Files live in a local folder the owner controls.
 
 ## 3. Feature scope
@@ -146,7 +151,7 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
 ### 4.2 Opening, editing, and saving a note
 
 1. The owner opens a note from the tree, a wikilink, a tab, or a deep link.
-2. The viewer renders it client-side (marked + highlight.js + the five
+2. The viewer renders it client-side (marked + highlight.js + the six
    renderers).
 3. The owner edits in the source editor or in hybrid mode.
 4. Saving posts the file content; the server resolves the path through
@@ -231,7 +236,7 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
   request up to hard ceilings (2000 / 200).
 - **Named limits are not hard-coded in this spec.** Concrete values live with
   their source (`AI_FETCH_MAX_BYTES` 512 KiB / 15 s, `AI_SEARXNG_MAX_RESULTS`
-  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v16`).
+  10, `MAX_TOOL_ROUNDS` 5, service-worker cache version `notebook-v23`).
 
 ## 6. Acceptance criteria
 

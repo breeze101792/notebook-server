@@ -882,9 +882,25 @@
       return false;
     }
     if (!NB.tabs.isOpen(file)) {
-      await NB.tabs.open(file);
+      let opened = await NB.tabs.open(file);
+      if (!opened) {
+        // The active session is at its tab cap. A deep link is explicit
+        // navigation, so make room by closing the current tab, but only
+        // when it has nothing unsaved to lose. Otherwise the refusal
+        // stands and boot keeps the URL so a refresh can retry.
+        const active = NB.tabs.getActive();
+        const hybridDirty = !!(NB.hybrid && NB.hybrid.isActive &&
+          NB.hybrid.isActive() && NB.hybrid.isDirty && NB.hybrid.isDirty());
+        const dirty = !!(active && (NB.viewer.isDirty(active) || hybridDirty));
+        if (active && active !== file && !dirty) {
+          NB.tabs.close(active);
+          opened = await NB.tabs.open(file);
+        }
+      }
+      if (!opened) return false;
     } else if (NB.tabs.getActive() !== file) {
       await NB.tabs.activate(file);
+      if (NB.tabs.getActive() !== file) return false;
     }
     if (heading) {
       const ok = NB.viewer.scrollToHeading(heading);
@@ -1043,8 +1059,9 @@
           // as a navigation. Boot is a fresh entry point, not a history
           // event. file:// / restricted env: harmless to skip. On a phone
           // a bad target keeps its address so "Note not found" stays
-          // shareable/retryable.
-          if (!isPhoneMode()) {
+          // shareable/retryable. Desktop keeps it too when the tab could
+          // not open (a full session), so a refresh retries.
+          if (!isPhoneMode() && opened) {
             try { history.replaceState(null, "", window.location.pathname); }
             catch (_) {}
           }

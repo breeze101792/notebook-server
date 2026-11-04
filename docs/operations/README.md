@@ -1,14 +1,17 @@
 # Operations
 
 How to build, run, test, and ship the notebook server. The runtime frontend
-has no build step; the only built artifact is the CodeMirror bundle.
+has no build step; two vendor bundles are built offline, `codemirror.bundle.js`
+and `visimer.bundle.js`.
 
 ## Guides
 
+The folder holds three files: this index, `development.md`, and `build.md`.
+
 | Guide | Covers |
 | --- | --- |
-| [`development.md`](development.md) | Repo layout, the change checklists (adding a renderer or a config key), conventions, and where to look next. |
-| [`build.md`](build.md) | The `start.sh` bootstrap, the vendoring model, the offline-built CodeMirror bundle, the service worker cache, and the absence of a release pipeline. |
+| [`development.md`](development.md) | Repo layout, running the tests, the change checklists (adding a renderer or a config key), conventions, and where to look next. |
+| [`build.md`](build.md) | The `start.sh` bootstrap and its Python 3.10 floor, the vendoring model, the two offline-built bundles (CodeMirror and Visimer), the service worker cache, and the absence of a release pipeline. |
 
 ## Related documentation
 

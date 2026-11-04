@@ -2,7 +2,9 @@
 
 Design handoff for the three Chromium-pass findings: clipped long tokens (F1),
 focus left behind the Settings dialog (F2), and an active tab that scrolls out
-of view (F3). Status: design only. Behaviour is fixed by
+of view (F3). Status: shipped (preview overflow, Settings focus, tab strip),
+design record; all three fixes are in the stylesheet, `settings.js` and
+`tabs.js`. Behaviour is defined by
 `docs/product/bugfix-preview-overflow-tabs-focus.md` (D1–D13); ownership is
 `docs/architecture/bugfix-preview-overflow-tabs-focus.md`. Mockup:
 `docs/design/bugfix-preview-overflow-tabs-focus.html`.
@@ -12,8 +14,9 @@ of view (F3). Status: design only. Behaviour is fixed by
 ## 1. Long-token treatment (F1)
 
 The column is 932px at 1440px while content measured 2394px: no rule sets
-`overflow-wrap`, so the UA default `normal` holds and `overflow-x: hidden`
-(`style.css:2427`) clips the overflow. Rule: **prose wraps, code and tables
+`overflow-wrap`, so the UA default `normal` held and the old `overflow-x: hidden`
+on the reading column clipped the overflow. The fix is the `overflow-wrap` set on
+`#viewer-content.markdown-body` and on the table and `pre` rules. Rule: **prose wraps, code and tables
 scroll in their own boxes**; the source and copied string never change.
 
 | Content | Behaviour | Why |
@@ -37,7 +40,7 @@ scroll in their own boxes**; the source and copied string never change.
 keeps `white-space: pre` and its scroll. **No soft-wrap indicator**: link
 colour and the code frame carry continuity; a pseudo-element would be copied
 into URLs; a hyphen would invent a character. `export.js`'s `markdownCss`
-(~776) needs the same rule.
+needs the same rule.
 
 ---
 
@@ -52,9 +55,9 @@ into URLs; a hyphen would invent a character. `export.js`'s `markdownCss`
 }
 ```
 
-The four scoped rules hard-coding `2px solid var(--accent)` (buttons `:1591`,
-switches `:1651`, chips `:1700`, nav `:2020`) switch to it; the catch-all also
-covers `.icon-btn`, which has no focus state today.
+The four scoped rules that hard-coded `2px solid var(--accent)` (the
+`.settings-action`, switch, chip, and `.settings-nav-item` rules) switch to it;
+the catch-all also covers `.icon-btn`, which had no focus state.
 
 **On open.** Focus goes to `#settings-close`. It is the first focusable in DOM
 order and exists on every tab, so the landing point is deterministic.
@@ -98,7 +101,7 @@ with `preventScroll: true`, falling back to the Settings gear if it is gone.
 ## 3. Tab strip (F3)
 
 An 887px strip held 1584px of tabs; `render()` clears `innerHTML`, resetting
-`scrollLeft`, and the scrollbar is hidden (`style.css:1231`).
+`scrollLeft`, and the scrollbar is hidden (`.tab-list::-webkit-scrollbar`).
 
 **Reveal.** `render()` reads `listEl.scrollLeft` (and the pinned region's)
 before clearing and writes both back after `applyFrozenWidths()` (the last
@@ -134,7 +137,7 @@ neighbours and its accent border on three visible sides. Reveal keeps it fully
 inside; a manual half-scroll leaves its accent edge visible, and the next
 activation re-reveals it. At the strip's end it is flush, never cut.
 
-**Phone.** Unchanged: `#tab-bar` is `display: none` (`style.css:5868`); the
+**Phone.** Unchanged: `#tab-bar` is `display: none` in the phone query; the
 reveal and preserve code no-op at zero width.
 
 ---

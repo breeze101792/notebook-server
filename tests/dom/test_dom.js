@@ -2373,6 +2373,7 @@ evalIn(read("static/js/bookmarks.js"));
 evalIn(read("static/js/sessions.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/mobile.js"));
+evalIn(read("static/js/workspaces.js"));
 evalIn(read("static/js/app.js"));
 
 const $ = (id) => window.document.getElementById(id);
@@ -27393,6 +27394,39 @@ function check(label, cond, extra) {
     // "normal boot" branch the app hits when no ?file= is present).
     check("parseDeepLink: window.location default is null (no deep link)",
       window.NB.app.parseDeepLink() === null);
+
+    // Session full: open() returns false when the active session holds
+    // SESSION_FILES_MAX unpinned tabs. The deep link must not silently
+    // leave the restored note on screen. It closes a clean active tab and
+    // retries; if open still fails, it returns false so boot keeps the URL.
+    const realTabsOpen = window.NB.tabs.open;
+    const realTabsClose = window.NB.tabs.close;
+    const cleanActive = window.NB.tabs.getActive();
+    TREE[0].children.push({ name: "deepcap.md", type: "file",
+      path: "notes/deepcap.md" });
+    FILES["notes/deepcap.md"] = "# Deep cap\n";
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    let openCalls = 0;
+    let closed = [];
+    window.NB.tabs.open = async () => { openCalls++; return false; };
+    window.NB.tabs.close = (p) => { closed.push(p); };
+    const okFull = await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=notes%2Fdeepcap.md"));
+    check("openDeepLink: a full session closes the clean active tab and retries",
+      okFull === false && openCalls === 2 && closed.length === 1 &&
+        closed[0] === cleanActive,
+      "ok=" + okFull + " openCalls=" + openCalls + " closed=" + JSON.stringify(closed));
+    openCalls = 0; closed = [];
+    window.NB.tabs.open = async () => { openCalls++; return openCalls > 1; };
+    const okFullRetry = await window.NB.app.openDeepLink(
+      window.NB.app.parseDeepLink("http://x/?file=notes%2Fdeepcap.md"));
+    check("openDeepLink: the retry opens the deep-linked note",
+      okFullRetry === true && openCalls === 2 && closed.length === 1,
+      "ok=" + okFullRetry + " openCalls=" + openCalls +
+      " closed=" + JSON.stringify(closed));
+    window.NB.tabs.open = realTabsOpen;
+    window.NB.tabs.close = realTabsClose;
 
     // Restore the stubs so later test blocks see the same environment.
     window.Element.prototype.scrollIntoView = realScroll;

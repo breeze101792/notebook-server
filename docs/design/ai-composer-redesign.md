@@ -4,9 +4,9 @@ Design handoff for the input/composer area of the AI assistant side panel
 (`#ai-view`, mounted by `static/js/ai.js`). Reference mockup:
 `docs/design/ai-composer-redesign.html`.
 
-Status: design only. No source files were changed. `web-engineer` implements
-the CSS in `static/css/style.css` and the two small `ai.js` tweaks called out
-below.
+Status: shipped (AI composer), design record. The CSS is the `.ai-input-row`
+composer card in `static/css/style.css` and the two `ai.js` tweaks below are
+in.
 
 ---
 
@@ -185,7 +185,7 @@ above the card with a matching 12px side edge.
 
 ## 4. Icon / label treatment
 
-**Current code** (`ai.js` 2132, 2159, 2164) uses plain text glyphs:
+**Current code** (the button setup in `ai.js`) used plain text glyphs:
 `attachBtn.textContent = "📎"`, `sendBtn.textContent = "↑"`,
 `stopBtn.textContent = "■"`. The emoji paperclip renders inconsistently across
 platforms and ignores `currentColor`.
@@ -244,11 +244,11 @@ spec is unchanged.
   outline still reads correctly over the card).
 
 ### Replace in `static/css/style.css`
-- The combined `.ai-send, .ai-stop { … }` rule (≈3972–3984) and the separate
-  `.ai-stop { … }` (3984) → split into the specs in §3.
-- `.ai-input { … }` (3958–3970) and `.ai-input:focus` (3971) → §3.
-- `.ai-attach { … }` (4041–4052) → §3.
-- `.ai-input-row { … }` (3950–3957) → §3 grid card.
+- The combined `.ai-send, .ai-stop { … }` rule and the separate
+  `.ai-stop { … }` rule → split into the specs in §3.
+- `.ai-input { … }` and `.ai-input:focus` → §3.
+- `.ai-attach { … }` → §3.
+- `.ai-input-row { … }` → §3 grid card.
 - `.ai-attach-bar { padding: 6px 12px 0 }` → `padding: 0 12px`.
 
 ### Add (in `ai.js`)
@@ -289,7 +289,7 @@ Testable by `web-engineer` while implementing and by `tester` for regression.
 - [ ] Clicking the composer card focuses the textarea (grid layout does not
       break the existing click-to-focus / auto-grow behaviour).
 - [ ] The textarea still auto-grows up to 160px and Enter still sends while
-      Shift+Enter inserts a newline (behaviour unchanged from `ai.js` 2438).
+      Shift+Enter inserts a newline (unchanged behaviour).
 - [ ] `sendBtn.disabled` (empty draft / reading attachments / streaming) still
       renders the inert disabled look, and Enter is still suppressed while
       disabled.

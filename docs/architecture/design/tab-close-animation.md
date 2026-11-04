@@ -57,21 +57,21 @@ The sequence for a close of a tab **while the pointer is inside the bar**
 
 | Step | What happens | Why |
 | --- | --- | --- |
-| **Create** | `addGhost(path, idx)` (`tabs.js:245-255`) runs **before** `dropTab`. It finds the closing tab's node (bar-scoped, `tabs.js:246`), measures its pixel width into `width`, computes the `label`, records the tab's region as `pinned` (`tabs.js:253`), and pushes `{path,label,width,index,pinned,startedAt:0,node:null,timer:null}` onto the module `ghosts` array (`tabs.js:84`). | The node disappears at the next step, so its width must be measured first. The entry is **data**, so it survives the rebuild keyed by its recorded slot `index`, not by a node reference. `pinned` is read while `pinned` still holds the path; `dropTab` deletes it at the next step. |
-| **Render** | `dropTab(path)` (`tabs.js:407-419`) removes the path from `ordered` / `openSet` / `pinned` / `frozenWidths` and closes its viewer entry. Then `render()` (`tabs.js:323-396`) runs: `stopRelease()`, `captureFrozenWidths()`, clear **both regions** (`pinEl.innerHTML = ""` / `listEl.innerHTML = ""`, `tabs.js:325-326`), rebuild the real tabs from `ordered` — appending each to `pinEl` or `listEl` by `pinned.has(path)` (`tabs.js:388`) — then **`materializeGhosts()`** (`tabs.js:394`), then `applyFrozenWidths()` (`tabs.js:395`). | `render()` stays the one strip-rebuild path. It is ghost-aware only in that it calls `materializeGhosts()` after the real tabs are appended; the real tab is gone immediately. |
-| **Collapse + fade** | CSS `.tab.ghost` (`style.css:1071-1080`) runs `nb-tab-ghost-close` (`style.css:1095-1098`) over `--tab-close-duration` / `--tab-close-ease`, `forwards`. The keyframes animate the node's `flex-basis` from `var(--nb-tab-ghost-from)` to `0` and its `opacity` from `1` to `0`. The ghost's inline `flex: 0 0 <w>px; width: <w>px` is the box it starts from. | This is the visible close motion, and it starts the instant the node is materialized. Because `flex-basis` shrinks, the flex layout re-packs: the survivors to the ghost's right **slide left** by the shrinking amount. |
-| **Self-remove** | On materialization, `materializeGhosts()` arms a per-ghost timer: `setTimeout(function () { removeGhost(g); }, TAB_GHOST_FALLBACK_MS)` (`tabs.js:305`). `removeGhost` (`tabs.js:272-279`) clears the timer, detaches the node, and splices the entry out. | The timer — not an animation event — owns completion. The close duration is `100ms` and the backstop is `280ms`, so the node is always removed after the motion has finished, with margin. |
+| **Create** | `addGhost(path, idx)` (`tabs.js`) runs **before** `dropTab`. It finds the closing tab's node (bar-scoped, `tabs.js`), measures its pixel width into `width`, computes the `label`, records the tab's region as `pinned` (`tabs.js`), and pushes `{path,label,width,index,pinned,startedAt:0,node:null,timer:null}` onto the module `ghosts` array (`tabs.js`). | The node disappears at the next step, so its width must be measured first. The entry is **data**, so it survives the rebuild keyed by its recorded slot `index`, not by a node reference. `pinned` is read while `pinned` still holds the path; `dropTab` deletes it at the next step. |
+| **Render** | `dropTab(path)` (`tabs.js`) removes the path from `ordered` / `openSet` / `pinned` / `frozenWidths` and closes its viewer entry. Then `render()` (`tabs.js`) runs: `stopRelease()`, `captureFrozenWidths()`, clear **both regions** (`pinEl.innerHTML = ""` / `listEl.innerHTML = ""`, `tabs.js`), rebuild the real tabs from `ordered` — appending each to `pinEl` or `listEl` by `pinned.has(path)` (`tabs.js`) — then **`materializeGhosts()`** (`tabs.js`), then `applyFrozenWidths()` (`tabs.js`). | `render()` stays the one strip-rebuild path. It is ghost-aware only in that it calls `materializeGhosts()` after the real tabs are appended; the real tab is gone immediately. |
+| **Collapse + fade** | CSS `.tab.ghost` (`style.css`) runs `nb-tab-ghost-close` (`style.css`) over `--tab-close-duration` / `--tab-close-ease`, `forwards`. The keyframes animate the node's `flex-basis` from `var(--nb-tab-ghost-from)` to `0` and its `opacity` from `1` to `0`. The ghost's inline `flex: 0 0 <w>px; width: <w>px` is the box it starts from. | This is the visible close motion, and it starts the instant the node is materialized. Because `flex-basis` shrinks, the flex layout re-packs: the survivors to the ghost's right **slide left** by the shrinking amount. |
+| **Self-remove** | On materialization, `materializeGhosts()` arms a per-ghost timer: `setTimeout(function () { removeGhost(g); }, TAB_GHOST_FALLBACK_MS)` (`tabs.js`). `removeGhost` (`tabs.js`) clears the timer, detaches the node, and splices the entry out. | The timer — not an animation event — owns completion. The close duration is `100ms` and the backstop is `280ms`, so the node is always removed after the motion has finished, with margin. |
 
 The survivors' widths are **not** touched by any of this. They stay pinned at
 their frozen `flex: 0 0 <w>px; width: <w>px` (`applyFrozenWidths`,
-`tabs.js:133-141`), so they never re-size. They only **translate**: a flex item
+`tabs.js`), so they never re-size. They only **translate**: a flex item
 pinned to a fixed width still flows, so when the ghost before it shrinks, it
 moves left. The width freeze therefore survives the ghost collapse untouched.
 
 Re-equalization is deferred: on `mouseleave`, `unfreezeWidths()`
-(`tabs.js:223-239`) measures the pinned widths, drops the pins, and then — if a
+(`tabs.js`) measures the pinned widths, drops the pins, and then — if a
 ghost is still on screen — **returns without playing `nb-tab-equalize`**
-(`tabs.js:232-238`), because the ghost's collapse is already the motion. If no
+(`tabs.js`), because the ghost's collapse is already the motion. If no
 ghost remains, the survivors play the normal release reflow.
 
 Note the create, collapse, and remove are three separate stages. The **create**
@@ -87,41 +87,41 @@ All in `static/js/tabs.js` unless noted. Line numbers are the current values.
 
 | # | Anchor | Lines | Role |
 | --- | --- | --- | --- |
-| 1 | `GHOST_CLASS`, `GHOST_FILL_CLASS`, `GHOST_FROM_VAR`, `TAB_GHOST_FALLBACK_MS` | `tabs.js:80-83` | `"ghost"`, `"tab-ghost-fill"`, `"--nb-tab-ghost-from"`, `280` ms. |
-| 2 | `ghosts` array | `tabs.js:84` | The ghost data model: `{ path, label, width, index, pinned, startedAt, node, timer }`. |
-| 3 | `realTabs()` | `tabs.js:106-108` | `barEl.querySelectorAll(".tab:not(.ghost)")` — **bar-scoped**, so it spans both regions in `ordered` order (pinned first). **The** accessor for width measurement/pinning/release; ghosts are never counted. |
-| 4 | `captureFrozenWidths()` / `applyFrozenWidths()` | `tabs.js:125-131` / `133-141` | The freeze pins that keep the survivors at their pre-close widths. Both use `realTabs()`. |
-| 5 | `captureCloseReflow(skipPath)` | `tabs.js:151-160` | The pointer-**outside** close capture; self-returns `null` while frozen. |
-| 6 | `prefersReducedMotion()` | `tabs.js:164-169` | The reduced-motion gate. |
-| 7 | `stopRelease()` / `animateReflow(fromWidths)` | `tabs.js:178-185` / `197-217` | The shared `nb-tab-equalize` release/reflow driver; both put the class on `barEl`. |
-| 8 | `unfreezeWidths()` ghost branch | `tabs.js:223-239`, branch at `232-237` | On leave, if a ghost is present, release the pins and skip the reflow. |
-| 9 | `addGhost(path, idx)` | `tabs.js:245-255` | Create step: measure the closing node (bar-scoped query), record its `pinned` region, push the data entry. |
-| 10 | `nowMs()` | `tabs.js:257-259` | `performance.now()` or `Date.now()`, for `startedAt`. |
-| 11 | `removeGhost(g)` | `tabs.js:272-279` | Self-remove step: clear the timer, detach the node, splice the entry. Idempotent. |
-| 12 | `materializeGhosts()` | `tabs.js:288-315` | Materialize step: rebuild one node per entry into its own region at its recorded slot (region-guarded anchor, `309-311`); resume via negative `animation-delay`; arm the per-ghost timer. |
-| 13 | `finishGhosts()` | `tabs.js:319-321` | Drop every entry + node; called by `clearAll`. |
-| 14 | `render()` → `materializeGhosts()` | `tabs.js:323-396`, call at `394-395` | Every strip rebuild clears both regions (`325-326`), re-appends each real tab by region (`388`), re-materializes the ghosts; `stopRelease()` first (`324`). |
-| 15 | `dropTab(path)` | `tabs.js:407-419` | Drops the path from `ordered` / `openSet` / `pinned` / `frozenWidths` and the viewer. |
-| 16 | `close()` | `tabs.js:493-547` | `ghostClose` at `529`, `reflow` at `530`, `addGhost` at `531`, `dropTab` at `532`, active branch `534-541`, else branch `542-546`. |
-| 17 | `animationend` listener (on `barEl`) | `tabs.js:667-669` | Ends the **release** only (`RELEASE_ANIM`); ignores ghost animations. |
-| 18 | `mouseenter` / `mouseleave` | `tabs.js:677-686` / `687` | Freeze on enter; `unfreezeWidths` on leave. |
-| 19 | `NB.tabs.isGhosting()` / `ghostCount()` | `tabs.js:699-700`, exported `855-856` | Test hooks. |
-| 20 | `clearAll()` → `finishGhosts()` | `tabs.js:719-733`, call at `729` | No stale slot survives an auth lock or a full clear. |
+| 1 | `GHOST_CLASS`, `GHOST_FILL_CLASS`, `GHOST_FROM_VAR`, `TAB_GHOST_FALLBACK_MS` | `tabs.js` | `"ghost"`, `"tab-ghost-fill"`, `"--nb-tab-ghost-from"`, `280` ms. |
+| 2 | `ghosts` array | `tabs.js` | The ghost data model: `{ path, label, width, index, pinned, startedAt, node, timer }`. |
+| 3 | `realTabs()` | `tabs.js` | `barEl.querySelectorAll(".tab:not(.ghost)")` — **bar-scoped**, so it spans both regions in `ordered` order (pinned first). **The** accessor for width measurement/pinning/release; ghosts are never counted. |
+| 4 | `captureFrozenWidths()` / `applyFrozenWidths()` | `tabs.js` / `133-141` | The freeze pins that keep the survivors at their pre-close widths. Both use `realTabs()`. |
+| 5 | `captureCloseReflow(skipPath)` | `tabs.js` | The pointer-**outside** close capture; self-returns `null` while frozen. |
+| 6 | `prefersReducedMotion()` | `tabs.js` | The reduced-motion gate. |
+| 7 | `stopRelease()` / `animateReflow(fromWidths)` | `tabs.js` / `197-217` | The shared `nb-tab-equalize` release/reflow driver; both put the class on `barEl`. |
+| 8 | `unfreezeWidths()` ghost branch | `tabs.js`, branch at `232-237` | On leave, if a ghost is present, release the pins and skip the reflow. |
+| 9 | `addGhost(path, idx)` | `tabs.js` | Create step: measure the closing node (bar-scoped query), record its `pinned` region, push the data entry. |
+| 10 | `nowMs()` | `tabs.js` | `performance.now()` or `Date.now()`, for `startedAt`. |
+| 11 | `removeGhost(g)` | `tabs.js` | Self-remove step: clear the timer, detach the node, splice the entry. Idempotent. |
+| 12 | `materializeGhosts()` | `tabs.js` | Materialize step: rebuild one node per entry into its own region at its recorded slot (region-guarded anchor, `309-311`); resume via negative `animation-delay`; arm the per-ghost timer. |
+| 13 | `finishGhosts()` | `tabs.js` | Drop every entry + node; called by `clearAll`. |
+| 14 | `render()` → `materializeGhosts()` | `tabs.js`, call at `394-395` | Every strip rebuild clears both regions (`325-326`), re-appends each real tab by region (`388`), re-materializes the ghosts; `stopRelease()` first (`324`). |
+| 15 | `dropTab(path)` | `tabs.js` | Drops the path from `ordered` / `openSet` / `pinned` / `frozenWidths` and the viewer. |
+| 16 | `close()` | `tabs.js` | `ghostClose` at `529`, `reflow` at `530`, `addGhost` at `531`, `dropTab` at `532`, active branch `534-541`, else branch `542-546`. |
+| 17 | `animationend` listener (on `barEl`) | `tabs.js` | Ends the **release** only (`RELEASE_ANIM`); ignores ghost animations. |
+| 18 | `mouseenter` / `mouseleave` | `tabs.js` / `687` | Freeze on enter; `unfreezeWidths` on leave. |
+| 19 | `NB.tabs.isGhosting()` / `ghostCount()` | `tabs.js`, exported `855-856` | Test hooks. |
+| 20 | `clearAll()` → `finishGhosts()` | `tabs.js`, call at `729` | No stale slot survives an auth lock or a full clear. |
 
 Ghost CSS in `static/css/style.css`:
 
 | Anchor | Lines | Role |
 | --- | --- | --- |
-| `--tab-close-duration` / `--tab-close-ease` | `style.css:410-411` | `100ms` / `ease-out`, declared on `.tab-bar`. |
-| `.tab.ghost` | `style.css:1071-1080` | The inert collapsing box: `pointer-events: none`, rails neutralized, `padding`/`border`/`background` removed, `overflow: hidden`, the `nb-tab-ghost-close` animation `forwards`. |
-| `.tab-ghost-fill` | `style.css:1081-1094` | The inner span that carries the label and the visible tab chrome so the outer box can reach `0`. |
-| `@keyframes nb-tab-ghost-close` | `style.css:1095-1098` | `from { flex-basis: var(--nb-tab-ghost-from); opacity: 1 }` → `to { flex-basis: 0; opacity: 0 }`. |
-| Equalizing override | `style.css:1100` | `.tab-bar.nb-tab-equalizing .tab.ghost { animation: none; }` — the release keyframes never drive the placeholder. |
-| Reduced-motion guard | `style.css:1103-1105` | `.tab.ghost { animation: none; opacity: 0; }` — no collapse, no fade. |
+| `--tab-close-duration` / `--tab-close-ease` | `style.css` | `100ms` / `ease-out`, declared on `.tab-bar`. |
+| `.tab.ghost` | `style.css` | The inert collapsing box: `pointer-events: none`, rails neutralized, `padding`/`border`/`background` removed, `overflow: hidden`, the `nb-tab-ghost-close` animation `forwards`. |
+| `.tab-ghost-fill` | `style.css` | The inner span that carries the label and the visible tab chrome so the outer box can reach `0`. |
+| `@keyframes nb-tab-ghost-close` | `style.css` | `from { flex-basis: var(--nb-tab-ghost-from); opacity: 1 }` → `to { flex-basis: 0; opacity: 0 }`. |
+| Equalizing override | `style.css` | `.tab-bar.nb-tab-equalizing .tab.ghost { animation: none; }` — the release keyframes never drive the placeholder. |
+| Reduced-motion guard | `style.css` | `.tab.ghost { animation: none; opacity: 0; }` — no collapse, no fade. |
 
 Release tokens (`--tab-release-duration` / `--tab-release-ease`, `180ms` /
-`ease-out`) are at `style.css:406-407`; the `nb-tab-equalize` keyframes at
-`style.css:1051-1057`.
+`ease-out`) are at `style.css`; the `nb-tab-equalize` keyframes at
+`style.css`.
 
 ### `materializeGhosts()` in full (shipped)
 
@@ -225,16 +225,16 @@ function unfreezeWidths() {
 | `label` | The text for the ghost's inner `.tab-ghost-fill` span (special-tab label, or `baseName(path)`). |
 | `width` | The pixel width measured from the closing node **before** `dropTab`. Held inline as `flex: 0 0 <w>px; width: <w>px` and fed to the keyframes as `--nb-tab-ghost-from`. |
 | `index` | The slot among the real tabs (`ordered.indexOf(path)` captured before removal). `materializeGhosts()` resolves it against `realTabs()` (bar order, pinned first) but only uses the anchor when it is a child of the ghost's region. |
-| `pinned` | The region the closed tab came from, read with `pinned.has(path)` **before** `dropTab` deletes it (`tabs.js:253-254`). `materializeGhosts()` picks `pinEl` when true, `listEl` otherwise (`tabs.js:309`). |
+| `pinned` | The region the closed tab came from, read with `pinned.has(path)` **before** `dropTab` deletes it (`tabs.js`). `materializeGhosts()` picks `pinEl` when true, `listEl` otherwise (`tabs.js`). |
 | `startedAt` | `0` at capture; set to `nowMs()` on the first materialization. `materializeGhosts()` computes `elapsed = now - startedAt` and sets a negative `animation-delay` so a rebuilt node resumes mid-collapse instead of restarting. |
 | `node` | The current DOM node, rebuilt on every `render()`. |
 | `timer` | The per-ghost `setTimeout` handle that calls `removeGhost` after `TAB_GHOST_FALLBACK_MS`; `null` until materialized. |
 
 **Why it survives `render()`.** `render()` clears both regions
-(`pinEl.innerHTML = ""` / `listEl.innerHTML = ""`, `tabs.js:325-326`), which
+(`pinEl.innerHTML = ""` / `listEl.innerHTML = ""`, `tabs.js`), which
 destroys a ghost node along with the real tabs. But the ghost is **data** in
 the module-level `ghosts` array, and `render()` never clears that array; it ends
-by calling `materializeGhosts()` (`tabs.js:394`), which re-creates a fresh node
+by calling `materializeGhosts()` (`tabs.js`), which re-creates a fresh node
 for each entry in its recorded region at its recorded `index`, with its
 `width` pinned, its `--nb-tab-ghost-from` set, and its elapsed time applied as a
 negative `animation-delay`. So any render that lands during the ghost's life (an
@@ -255,7 +255,7 @@ to full opacity and replay the whole 100 ms, which is the flicker this field
 exists to avoid.
 
 **`realTabs()` is the single accessor.** Every width measurement, pin, release,
-and stop path iterates `realTabs()` (`tabs.js:127`, `135`, `154`, `181`, `199`,
+and stop path iterates `realTabs()` (`tabs.js`, `135`, `154`, `181`, `199`,
 `226`, `231`, `291`), never `querySelectorAll(".tab")`. It is **bar-scoped**, so
 it returns the tabs of both regions in bar order (pinned first);
 `materializeGhosts()` uses the same accessor to resolve a ghost's anchor, then
@@ -271,10 +271,10 @@ freeze/release machinery — its collapsing box is invisible to the reflow math.
 | Gate | Condition | Behaviour | Reason |
 | --- | --- | --- | --- |
 | **Pointer inside the bar (frozen)** | `frozenWidths !== null` | Ghost created | This is the only case the ghost exists for; a close with the pointer outside keeps the `captureCloseReflow` → `animateReflow` path. |
-| **Reduced motion off** | `!prefersReducedMotion()` | No ghost; instant close | `ghostClose` is false, so nothing is captured; the frozen close lands instantly with no motion (CSS also forces `animation: none` / `opacity: 0` on a ghost as a second line of defense — `style.css:1103-1105`). |
+| **Reduced motion off** | `!prefersReducedMotion()` | No ghost; instant close | `ghostClose` is false, so nothing is captured; the frozen close lands instantly with no motion (CSS also forces `animation: none` / `opacity: 0` on a ghost as a second line of defense — `style.css`). |
 
 `close` creates a ghost **only** when both hold: `ghostClose = frozenWidths !==
-null && !prefersReducedMotion()` (`tabs.js:529`).
+null && !prefersReducedMotion()` (`tabs.js`).
 
 The **non-ghost** (pointer-outside) close path inherits `animateReflow`'s four
 gates unchanged: reduced motion, active drag (`draggingPath`), oversized strip
@@ -294,7 +294,7 @@ gates unchanged: reduced motion, active drag (`draggingPath`), oversized strip
 | --- | --- |
 | **`faded` class / `faded` entry flag** | The fade is part of the collapse keyframes and the node is removed by a timer, so there is no post-fade state to hold. |
 | **`leaving` class / `collapseGhosts()` / `releaseGhosts()`** | The ghost collapses on creation, not on pointer leave. There is no second, leave-triggered collapse stage. |
-| **`transitionend` listener (`flex-basis`)** | The collapse is a keyframe animation, not a transition, and completion is a flat timer. `animationend` is not used for ghosts either (the listener at `tabs.js:667-669` ends the release only). |
+| **`transitionend` listener (`flex-basis`)** | The collapse is a keyframe animation, not a transition, and completion is a flat timer. `animationend` is not used for ghosts either (the listener at `tabs.js` ends the release only). |
 | **Frozen close stays instant; gap closes later on leave** | Dropped. The frozen close now ghosts: the closing tab's box collapses and fades immediately. |
 | **Close while frozen must not animate** | Dropped. The old constraint existed to protect the next close button from sliding under the cursor. The ghost removes the danger differently: the survivors keep their frozen widths; only the ghost's own box shrinks, so the next close button is never resized. |
 
@@ -311,13 +311,13 @@ state.
   left as the ghost's box shrinks.
 - **Active-tab close while frozen.** `ghostClose` is true regardless of
   `wasActive`, so `addGhost` runs, `reflow` is `null`, and the ghost data
-  survives both the immediate `render()` (`tabs.js:538`) and the later
-  `activate(next)` render (`tabs.js:540`). `startedAt` + the negative
+  survives both the immediate `render()` (`tabs.js`) and the later
+  `activate(next)` render (`tabs.js`). `startedAt` + the negative
   `animation-delay` make the rebuilt node resume mid-collapse instead of
   restarting, so the content pane swaps to the neighbour over the tail of the
   close. The tab is still removed immediately; only the placeholder lingers.
 - **Close during a release.** Freeze and release are mutually exclusive:
-  `mouseenter` cancels a release (`stopRelease()`, `tabs.js:684`) and freezes, and
+  `mouseenter` cancels a release (`stopRelease()`, `tabs.js`) and freezes, and
   `mouseleave` releases. A ghost close therefore cannot coexist with an
   in-flight `nb-tab-equalize`. A close with the pointer **outside** while a
   release is mid-flight takes the non-ghost path; `render()` stops the release
@@ -327,7 +327,7 @@ state.
   removed by its timer.
 - **`clearAll()` / `auth:locked`.** `clearAll()` drops every tab via `dropTab`
   (bypassing `close()`, so no new ghost) and calls `finishGhosts()` at
-  `tabs.js:729` to remove any ghost entry + node in flight, clearing its timer,
+  `tabs.js` to remove any ghost entry + node in flight, clearing its timer,
   then renders. No stale slot survives a lock or a full clear.
 - **Overflow / scrolling strip.** No ghost cap. The ghost holds its inline width
   at the recorded slot; if the strip overflows, the ghost occupies its slot like
@@ -335,7 +335,7 @@ state.
   The `>24` cap affects only the survivor reflow. A **pinned** ghost always
   occupies a slot in the fixed `#tab-pinned` region, which never scrolls.
 - **Pointer leave, then re-enter.** `mouseleave` releases the freeze
-  (`unfreezeWidths`, `tabs.js:223-239`). If a ghost node is still on screen,
+  (`unfreezeWidths`, `tabs.js`). If a ghost node is still on screen,
   `unfreezeWidths` releases the pins and returns without a reflow (`232-237`);
   the ghost is already mid-collapse (or done). `mouseenter` then re-freezes at
   the survivors' current widths. If the ghost has already self-removed,
@@ -366,9 +366,9 @@ state.
 | Close with the pointer outside the bar | No ghost. `captureCloseReflow` → `render()` → `animateReflow` runs, as before. |
 | Reduced motion | No ghost; instant close, no collapse, no fade (§5.1). |
 | Ghost measured at width 0 (hidden, jsdom) | `addGhost` records `width = 0`; the node is `flex: 0 0 0px; width: 0px`, so the keyframes animate `flex-basis` from `0` to `0` and only the opacity is visible. The node still self-removes on its timer. |
-| A stale cached `index.html` (no `#tab-list`/`#tab-pinned`) | `listEl` falls back to `barEl` and `pinEl` falls back to `listEl` (`tabs.js:23-24`); ghosts render into the bar/scroller, and `realTabs()` still excludes them. |
-| A ghost for a **pinned** tab | `addGhost` records `pinned: true` (`tabs.js:253-254`) and `materializeGhosts()` inserts into `#tab-pinned` (`tabs.js:309`), so the placeholder occupies the pinned region and never scrolls with the strip. (A pinned tab has no close button, so this path is reached via the context-menu **Close**, not a `×`.) |
-| Anchor path not in the ghost's region (segment boundary / reorder since close) | `materializeGhosts()` nulls the anchor when `anchor.parentElement !== region` and inserts at the region's end (`tabs.js:310-311`), so a cross-region anchor never throws. |
+| A stale cached `index.html` (no `#tab-list`/`#tab-pinned`) | `listEl` falls back to `barEl` and `pinEl` falls back to `listEl` (`tabs.js`); ghosts render into the bar/scroller, and `realTabs()` still excludes them. |
+| A ghost for a **pinned** tab | `addGhost` records `pinned: true` (`tabs.js`) and `materializeGhosts()` inserts into `#tab-pinned` (`tabs.js`), so the placeholder occupies the pinned region and never scrolls with the strip. (A pinned tab has no close button, so this path is reached via the context-menu **Close**, not a `×`.) |
+| Anchor path not in the ghost's region (segment boundary / reorder since close) | `materializeGhosts()` nulls the anchor when `anchor.parentElement !== region` and inserts at the region's end (`tabs.js`), so a cross-region anchor never throws. |
 | `clearAll()` / `auth:locked` with a ghost in flight | `finishGhosts()` removes every entry + node and clears each timer. |
 | Fast repeated frozen closes | Each pushes an entry with its own timer; each self-removes independently. The array is emptied by the timers or by `clearAll`. |
 | Cancelled close (dirty `confirm` → Cancel) | `close()` returns before `ghostClose` / `addGhost`; nothing is armed, no ghost, the tab set is untouched. |
@@ -381,7 +381,7 @@ state.
 
 ### 8.1 Official DOM suite (`tests/dom/test_dom.js`)
 
-The `== tab close ghost ==` block runs from `test_dom.js:3665-3841`. It stubs
+The `== tab close ghost ==` block runs from `test_dom.js`. It stubs
 `Element.prototype.getBoundingClientRect` to return a fixed width per tab path
 (`notes/a.md` `140`, `Welcome.md` `160`, `notes/b.md` `180`), opens three tabs
 with `notes/a.md` active, and drives the freeze with a dispatched `mouseenter` on
@@ -396,7 +396,7 @@ What the block asserts, in order:
   the non-active `Welcome.md`:
   - `isGhosting()` is true and `ghostCount() === 1`;
   - a `.tab.ghost` node exists inside `#tab-list` and has the `ghost` class
-    (`test_dom.js:3699`);
+    (`test_dom.js`);
   - the ghost holds `"Welcome.md"` in an inner `.tab-ghost-fill` span (and the
     ghost's whole `textContent` is that label);
   - the closed path is absent from the real tabs, which number 2;
@@ -405,7 +405,7 @@ What the block asserts, in order:
 - **Slot + width** — the ghost's inline `style.width === "160px"` and
   `style.flex === "0 0 160px"`; it carries
   `--nb-tab-ghost-from: 160px`; it sits at `#tab-list.children[1]` (the closed
-  tab's slot, `test_dom.js:3722`); the frozen close runs **no** release
+  tab's slot, `test_dom.js`); the frozen close runs **no** release
   (`!isReleasing()`, no `nb-tab-equalizing` class); and the survivor `notes/b.md`
   keeps its freeze pins (`180px`).
 - **Data survives `render()`** — calling `NB.tabs.render()` keeps the entry
@@ -434,8 +434,8 @@ What the block asserts, in order:
 - **Cleanup** — restores the prototype rect stub and returns to one tab on
   `notes/a.md`.
 
-The `== tab pin + region ==` (`test_dom.js:11289-11398`) and
-`== tab pinned region ==` (`test_dom.js:11495-11700`) blocks cover the
+The `== tab pin + region ==` (`test_dom.js`) and
+`== tab pinned region ==` (`test_dom.js`) blocks cover the
 pinned region itself: a pinned tab renders in `#tab-pinned`, an unpinned tab
 stays in `#tab-list`, the region is shown while something is pinned, and the
 `.tab-pinned { flex: 0 0 auto; max-width: none }` / capped-and-scrolling CSS
@@ -444,12 +444,12 @@ exercised by the region guard in `materializeGhosts()` but is not directly
 asserted (see §9).
 
 Related blocks: the existing `== tab close reflow ==` block
-(`test_dom.js:3420-3653`) covers the pointer-**outside** path
+(`test_dom.js`) covers the pointer-**outside** path
 (`captureCloseReflow` → `animateReflow`), including the active-close-stays-instant
-case; the `== file tabs ==` freeze block (from `test_dom.js:3208`) covers the
+case; the `== file tabs ==` freeze block (from `test_dom.js`) covers the
 freeze pins and waits for a ghost's backstop to retire before the release block
 (`3240-3243`). The shared `tabs()` helper excludes ghosts
-(`test_dom.js:3144`), mirroring `realTabs()`.
+(`test_dom.js`), mirroring `realTabs()`.
 
 **What the block does not cover:** the active-tab ghost is not directly asserted
 (no test closes the active tab while frozen and checks the ghost survives the
@@ -501,7 +501,7 @@ closed, not on pointer leave.
 - **A pinned tab's ghost in a real browser.** `pinned` is recorded in the entry
   and `materializeGhosts()` inserts into `#tab-pinned`; the DOM suite does not
   close a pinned tab while frozen, so the pinned-region insert is reasoned from
-  the code (the region guard at `tabs.js:310-311` is the same path the unpinned
+  the code (the region guard at `tabs.js` is the same path the unpinned
   case exercises). The pinned region's own fixed behavior was measured in a
   browser — see [`tab-equalization.md`](tab-equalization.md) §11.1.
 - **The exact `100ms` feel.** The ghost width / opacity sequence in §8.2 was

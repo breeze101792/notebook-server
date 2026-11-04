@@ -1,14 +1,17 @@
 # Preview overflow, modal focus, tab-strip scroll — structural fixes
 
+Status: shipped. All three user-visible fixes landed (see
+[`../product/bugfix-preview-overflow-tabs-focus.md`](../product/bugfix-preview-overflow-tabs-focus.md)).
+
 Decisions for five findings from the real-Chromium pass. This document fixes
 the approach, the ownership boundary, and the shared-mechanism question;
 implementation goes to the build department. Citation corrections from
 reading the code: the `overflow-wrap: normal` rules cited at
-`style.css:3206/:3223` do not exist — those lines carry color/margin rules
+`style.css/:3223` do not exist — those lines carry color/margin rules
 only, so the no-wrap behavior is UA defaults, not a wrong policy. Also,
-`designer-shell.js:729-750` and `mermaid-designer.js:3721-3742` already
+`designer-shell.js` and `mermaid-designer.js` already
 hold two byte-identical `focusables()`/`trapTab()` copies, and
-`designer-shell.js:615-616` already sets `el.inert` — both facts change the
+`designer-shell.js` already sets `el.inert` — both facts change the
 F2 decision. Siblings: [frontend.md](frontend.md) (§7 tab bar) and
 [context-menus.md](context-menus.md) (the precedent for consolidating a
 triplicated widget into one module).
@@ -18,7 +21,7 @@ triplicated widget into one module).
 ## 1. F1 — wrapping strategy (medium)
 
 **Decision: one rule — `.markdown-body { overflow-wrap: break-word; }` next
-to `.markdown-body` (`style.css:3206`). Use `break-word`, not `anywhere`.
+to `.markdown-body` (`style.css`). Use `break-word`, not `anywhere`.
 Keep `overflow-x: hidden` on `#viewer-content` (`:2427`) as the guard.**
 
 - The clipped elements are block-flow prose (`p`, `li`, headings) and inline
@@ -45,7 +48,7 @@ Keep `overflow-x: hidden` on `#viewer-content` (`:2427`) as the guard.**
   eagerly); in-repo precedent: `.search-hit .hit-snippet` already wraps via
   `word-break: break-word` (`:3197`).
 - **Export parity:** the standalone export embeds its own stylesheet
-  (`export.js:806-903`), not `style.css`; add the same rule there so
+  (`export.js`), not `style.css`; add the same rule there so
   exported files match the app. Hybrid mode is unaffected: wrapping is
   CSS-only and Turndown serializes text nodes, so the write-back round-trip
   cannot see it; the hybrid container scrolls itself (`:2773-2775`), where
@@ -64,9 +67,9 @@ retire the two existing trap copies in the designers.**
 - **`inert`, not a JS trap.** A keydown trap only stops Tab; pointer users
   can still click the dimmed background and focus escapes. `inert` removes
   the background from the tab order, pointer interaction, and the AT tree in
-  one attribute (`designer-shell.js:615-616` is the in-repo precedent).
+  one attribute (`designer-shell.js` is the in-repo precedent).
 - **Mechanism.** All overlays are direct `<body>` children
-  (`index.html:372,403,910,992,1202`). `NB.dialog.open(overlayEl,
+  (`index.html,403,910,992,1202`). `NB.dialog.open(overlayEl,
   { initialFocus })` saves `document.activeElement`, sets `inert` on every
   other body child, then focuses `initialFocus`. `NB.dialog.close(overlayEl)`
   clears the inert set (only if this overlay is the active one) and restores
@@ -80,22 +83,22 @@ retire the two existing trap copies in the designers.**
   - **Initial focus:** default to the dialog container (`.settings-modal`
     gets `tabindex="-1"`) so the `aria-labelledby` title is announced — the
     ARIA APG dialog pattern. Auth passes its password input instead,
-    preserving `auth.js:82`.
+    preserving `auth.js`.
   - **Return focus:** on close, focus the saved invoker iff `isConnected`
-    and not `document.body` — the `designer-shell.js:334` pattern;
-    supersedes settings.js's blur-only release (`settings.js:184-186`).
-  - **Esc stays with each surface** (`settings.js:544-545` keeps its own);
+    and not `document.body` — the `designer-shell.js` pattern;
+    supersedes settings.js's blur-only release (`settings.js`).
+  - **Esc stays with each surface** (`settings.js` keeps its own);
     the helper owns only inert + initial focus + restore. Designer Esc and
-    Ctrl+Z (`designer-shell.js:752-778`) survive their migration untouched.
+    Ctrl+Z (`designer-shell.js`) survive their migration untouched.
   - **One dialog at a time;** no flow stacks two overlays today. If one
     ever does, the lower becomes inert (visible, unreachable) — the correct
     degradation. `NB.menu`'s singleton is a body child, but a menu can
     never be open when a dialog opens (the opening click is an outside
     click the dispatcher closes on); no exemption needed.
 - **Load order:** eager group becomes `api.js → dialog.js → auth.js`
-  (`index.html:399-400`); `auth.js` runs at parse time, so the helper must
+  (`index.html`); `auth.js` runs at parse time, so the helper must
   precede it. Add `dialog.js` to `sw.js` PRECACHE and bump the cache name
-  (`sw.js:22`). Mobile sheets (`mobile.js:735-744`) keep their local
+  (`sw.js`). Mobile sheets (`mobile.js`) keep their local
   focus-close pattern — different layer/history lifecycle; a follow-up.
   The AI panel and context menus are not modal, so they are out of scope.
 - **jsdom caveat:** jsdom 24 reflects `inert` but does not enforce its
@@ -103,7 +106,7 @@ retire the two existing trap copies in the designers.**
   real containment is covered by the browser suites (§6).
 - **`aria-modal="true"` without a trap is a correctness bug — yes.** The
   attribute is a contract with assistive tech — "everything outside is
-  unavailable" — and today that is false (`index.html:373,404,911`). Same
+  unavailable" — and today that is false (`index.html,404,911`). Same
   class as a wrong type signature; low severity only because the primary
   user is sighted-keyboard. `inert` makes the promise true for free.
 
@@ -112,7 +115,7 @@ retire the two existing trap copies in the designers.**
 **Decision: `tabs.js` owns both behaviors — `render()` preserves scroll,
 `activate()` reveals the newly active tab.**
 
-- **Preserve:** `render()` wipes `#tab-list` (`tabs.js:325-326`), so read
+- **Preserve:** `render()` wipes `#tab-list` (`tabs.js`), so read
   `listEl.scrollLeft` (and `pinEl.scrollLeft`) at the top of `render()` and
   write them back after `applyFrozenWidths()` — the last layout-mutating
   step, so frozen inline widths cannot clamp the restored value. Every
@@ -128,10 +131,10 @@ retire the two existing trap copies in the designers.**
   for a yank-the-strip bug on every watcher tick.
 - **Why not `scrollIntoView`:** it scrolls every scrollable ancestor
   (including the window vertically), and the DOM harness must stub it
-  (`test_dom.js:1234-1235`). Direct `scrollLeft` arithmetic scrolls only
+  (`test_dom.js`). Direct `scrollLeft` arithmetic scrolls only
   the strip and is a no-op in jsdom (all offsets 0), leaving existing
   tab tests untouched.
-- **Affordance: defer.** The hidden scrollbar (`style.css:500-501,523,1231`)
+- **Affordance: defer.** The hidden scrollbar (`style.css,523,1231`)
   is a deliberate 34px-row cleanliness choice; a visible overflow indicator
   needs JS scroll listeners (CSS scroll-driven animations are
   Chromium-only). The reveal fix removes the "where am I" failure that
@@ -143,11 +146,11 @@ retire the two existing trap copies in the designers.**
 ## 4. F4 — highlight.js warns on plugin fences (low)
 
 **Fix: skip registry-claimed fences in the highlight loop — the cited
-`viewer.js:446-450` plus the identical loops at `hybrid.js:1765-1773` and
-`export.js:423-427` (leave `ai.js:1271`; its prose never carries plugin
+`viewer.js` plus the identical loops at `hybrid.js` and
+`export.js` (leave `ai.js`; its prose never carries plugin
 fences). Guard each loop with the existing registry API: extract the
 `language-*` token from the class list and skip when `NB.blocks.forLang(lang)`
-returns a descriptor (`blocks.js:159` covers `mermaid`, `math`/`katex`,
+returns a descriptor (`blocks.js` covers `mermaid`, `math`/`katex`,
 `wavedrom`, `dot`/`graphviz`, `html-live`, `svg`). No new registry method —
 the guard is two lines at three sites, and a `claimsElement()` helper would
 abstract a trivial predicate. Zero risk to real code fences: `forLang`
@@ -159,8 +162,8 @@ matches only registered names.
 impact. The "fix" — real `<form>` wrappers — is the risky direction in the
 app's most sensitive UI: implicit submission puts Enter-in-a-password-field
 at risk of navigating, while today's Enter behavior is deliberately
-hand-wired per input (`settings.js:751,788,797,967`). If ever fixed: one
-`<form>` per password group (`index.html:686-766`), explicit
+hand-wired per input (`settings.js,788,797,967`). If ever fixed: one
+`<form>` per password group (`index.html`), explicit
 `type="button"` inside it, and a submit `preventDefault` — its own change.
 
 ## 6. Ordering and risk

@@ -1,8 +1,9 @@
 # Table editor modal (hybrid mode) — implementation blueprint
 
-Status: design. Owner: `architect`. Scope is fixed: a modal spreadsheet-style
-editor for one GFM table in hybrid (WYSIWYG) mode. One new file
-(`static/js/table-editor.js`) plus small edits. No frameworks, no new deps.
+Status: implemented (`static/js/table-editor.js`). The original blueprint: a
+modal spreadsheet-style editor for one GFM table in hybrid (WYSIWYG) mode.
+One new file (`static/js/table-editor.js`) plus small edits. No frameworks,
+no new deps.
 
 ```mermaid
 flow LR
@@ -33,13 +34,13 @@ flow LR
   state.
 - `close()` — Cancel semantics: discard the model, hide the overlay,
   `NB.dialog.close`. Idempotent.
-- `isOpen()` — the guards/dialog pattern (`mermaid-designer.js:381`).
+- `isOpen()` — the guards/dialog pattern (`mermaid-designer.js`).
 - Test hooks: `getState()` (the live model, §2), `rebuildTable()` (the built
   `<table>` before any apply, so jsdom can assert structure without mutating),
   `_apply()`, `_cancel()`, and `overlayEl()`.
 
 Callers deref `NB.tableEditor` lazily inside handlers (the `designMod` pattern,
-`hybrid.js:8800`), so load order cannot break either side.
+`hybrid.js`), so load order cannot break either side.
 
 ## 2. Data model
 
@@ -57,7 +58,7 @@ state = {
 - `html` = `cell.innerHTML` **verbatim** — bold/links/code/checkboxes survive
   Apply untouched because the rebuilt cell holds the same nodes-as-HTML the
   live surface holds. Round-trip behavior is then identical to editing the
-  cell in place; `normalizeTablesForGfm` (`hybrid.js:524`) keeps handling
+  cell in place; `normalizeTablesForGfm` (`hybrid.js`) keeps handling
   in-cell `<br>` exactly as the main surface does.
 - `align` = the cell's `align` attribute or `null`, stored **per cell**. The
   model keeps the source spelling; `rebuildTable()` writes the editor's
@@ -66,13 +67,13 @@ state = {
   The no-op check compares a source-faithful build
   (`rebuildTable({canonicalAlign:false})`), so an untouched table and an
   add-then-delete cycle are never rewritten. `cycleColAlign` marks every
-  cell of a column (`hybrid.js:7916`), and so does the modal's align action.
+  cell of a column (`hybrid.js`), and so does the modal's align action.
 - Ragged rows: padded at snapshot time with `{html:"", align:null}`
   so the grid is rectangular. Padding alone never sets `changed` — a no-op
   Apply writes nothing (invariant I3). The first *real* edit normalizes the
   ragged shape as a side effect; document this in the module header.
 - Empty cells keep `""`. Cells created *inside the modal* (add row/column)
-  get `"&nbsp;"` — the `insertRow`/`insertCol` convention (`hybrid.js:7695`),
+  get `"&nbsp;"` — the `insertRow`/`insertCol` convention (`hybrid.js`),
   so a caret fits when the user later edits them on the live surface.
 
 ## 3. Modal markup and containment
@@ -85,14 +86,14 @@ scroll host), `.settings-footer` (Cancel, Apply). Static, not module-built,
 because: all five existing modals are static; `windows.js` wires at boot and
 persists geometry per overlay id; and the keyboard guards in `shortcuts.js`,
 `vimnav.js`, `table-select.js` match `body > .settings-overlay:not([hidden])`
-(`shortcuts.js:258`) — the class buys drag/resize, Esc-guards, and focus
+(`shortcuts.js`) — the class buys drag/resize, Esc-guards, and focus
 containment for free. Only the **grid** is rebuilt per open by the module.
 
 - Open: `overlay.hidden = false; NB.dialog.open(overlay, { fallbackFocus:
   first header cell })` — dialog.js inerts every other body child, including
   `#viewer`, so the contenteditable surface cannot be touched while the modal
   is up. `fallbackFocus` matters on the context-menu path, where the invoker
-  (the dying menu item) is unusable at close time (`dialog.js:25`).
+  (the dying menu item) is unusable at close time (`dialog.js`).
 - Close: `overlay.hidden = true; NB.dialog.close(overlay)` — focus returns to
   the ▦ overlay button (its node survives). Own Esc/backdrop/× wiring, per
   the dialog.js contract.
@@ -131,7 +132,7 @@ apply():
   if (!state.changed ||
       sameTable(rebuildTable({canonicalAlign: false}), original))
     return close();                       // no-op / add-then-delete: nothing written
-  NB.hybrid.flushPendingSnapshot();       // pre-edit state = its own undo step (moveRow rule, hybrid.js:7851)
+  NB.hybrid.flushPendingSnapshot();       // pre-edit state = its own undo step (moveRow rule, hybrid.js)
   original.replaceWith(t);
   NB.hybrid.onContentChange();            // dirty + autosave + the one debounced snapshot
   close();
@@ -139,14 +140,14 @@ apply():
 
 `rebuildTable()`: shallow-clone the original table (keeps its attributes),
 append **one `<tbody>`** with all rows as direct children (the live
-post-`flattenTheads` shape, `hybrid.js:2868`). The element is chosen by row
+post-`flattenTheads` shape, `hybrid.js`). The element is chosen by row
 position — row 0 is `th`, every body row is `td` — because GFM always treats
 the first row as the header; no per-cell tag is stored. `align` is emitted from
 the editor's alignment state (`:--` for a header cell whose source column was
 plain, §2). Never emit `thead` — `normalizeTablesForGfm`
 rebuilds it in the clone at save time. One undo step: flush-before-mutate is
-the established contract (`moveRow`, `mermaid-designer.js:3713`); `undo()`
-flushes the pending timer first (`hybrid.js:6602`), so Ctrl+Z is correct even
+the established contract (`moveRow`, `mermaid-designer.js`); `undo()`
+flushes the pending timer first (`hybrid.js`), so Ctrl+Z is correct even
 inside the 400 ms coalesce window.
 
 ## 5b. Selection and clipboard
@@ -213,7 +214,7 @@ Every existing verb keeps addressing the focus cell.
 
 ## 7. Spans
 
-One helper decides: `NB.hybrid.tableHasSpans` (`hybrid.js:7834`). Both entry
+One helper decides: `NB.hybrid.tableHasSpans` (`hybrid.js`). Both entry
 points stay live for a merged-cell table so the refusal is discoverable: the
 Table submenu item is enabled, the ▦ control is rendered, and `open()` takes
 the table into the read-only blocked state (notice strip, disabled toolbar, no
@@ -251,7 +252,7 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
    deleted; the `table-*` edit-bar acts and the Alt+Arrow chords keep using
    `moveRowBySelection`/`moveColBySelection` and stay.
    Do not touch `onContentChange`/`flushPendingSnapshot` — they are already
-   exported (`hybrid.js:9113`).
+   exported (`hybrid.js`).
 6. `static/sw.js`: add `/static/js/table-editor.js` to `PRECACHE`, bump
    `CACHE` v17→v18 with the customary comment line.
 7. `CLAUDE.md` module list: add the one-line responsibility entry.
@@ -274,7 +275,7 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
   pointer painting is driven through `_select(r0,c0,r1,c1)` and the exported
   `selectionPayload()`/`pasteBlock()`/`clearSelection()`/`_fill()`; `elementFromPoint`
   is missing in jsdom, so the handle drag itself is browser-only.
-- Wiring guard (the `check()` pattern at `test_dom.js:3420-3430`): index.html
+- Wiring guard (the `check()` pattern at `test_dom.js`): index.html
   loads `table-editor.js`; sw.js PRECACHE includes it.
 - Chromium (`tests/browser/test_table_editor_browser.js`, new file —
   `run_all.js` picks up every suite): real caret typing in a cell; focus
@@ -297,7 +298,7 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
 - **Edit race**: the watcher can re-render `#viewer-content` under an open
   modal (`refreshFromContent`), detaching the original table. Apply and Cancel
   re-check `viewerContentEl.contains(original)` and bail to `close()` — the
-  designer's `resolveTarget` rule (`mermaid-designer.js:3706`).
+  designer's `resolveTarget` rule (`mermaid-designer.js`).
 - **Focus return**: overlay-button path is safe (node persists); menu path
   needs `fallbackFocus` or focus dies on body.
 - **Undo snapshot ordering**: flush *before* `replaceWith`, never after; an

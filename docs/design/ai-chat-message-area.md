@@ -5,9 +5,9 @@ Design handoff for the message area of the AI assistant side panel
 Regenerate turn controls**. Reference mockup:
 `docs/design/ai-chat-message-area.html`.
 
-Status: design only. No source files were changed. `web-engineer`
-implements the CSS in `static/css/style.css` and the two small `ai.js`
-edits called out in §5.
+Status: shipped (AI turn controls), design record. The CSS is the
+`.ai-turn-control` block in `static/css/style.css` and the two `ai.js` edits
+of §5 are in.
 
 Companion doc: `docs/design/ai-composer-redesign.md` (the composer below
 this area). This doc matches its visual language: one calm bordered card,
@@ -176,7 +176,7 @@ criterion except the icon-shape ones.
 ### Keep — behavior & hooks (unchanged)
 
 - Class **`ai-turn-control`** on both buttons (removal logic selects
-  `.ai-turn-control` in `removeTurnControls()` — `ai.js` ~1422).
+  `.ai-turn-control` in `removeTurnControls()`).
 - **`data-test-regenerate="1"`** and **`data-test-edit="1"`** (the DOM
   tests select on these).
 - Classes `ai-regenerate` / `ai-edit` — retained **for alignment only**
@@ -189,9 +189,10 @@ criterion except the icon-shape ones.
 
 ### Replace in `static/css/style.css`
 
-The whole turn-control block, **lines 3719–3742** (the comment above it
-plus `.ai-regenerate, .ai-edit { … }`, the two `align-self` rules, the
-`:hover` rule, and the `:disabled` rule), is replaced by:
+The whole turn-control block: the comment above it plus
+`.ai-regenerate, .ai-edit { … }`, the two `align-self` rules, the `:hover`
+rule, and the `:disabled` rule. It is replaced by the block below. The
+shipped CSS is `.ai-turn-control`.
 
 ```css
 /* Turn controls under the newest turn: quiet text affordances, not
@@ -236,8 +237,7 @@ plus `.ai-regenerate, .ai-edit { … }`, the two `align-self` rules, the
 }
 ```
 
-Optionally replace the old `.ai-user-text` rule (3619–3628) and
-`.ai-error` rule (3744–3753) per §3. Leave every other AI rule untouched.
+Optionally replace the old `.ai-user-text` and `.ai-error` rules per §3. Leave every other AI rule untouched.
 
 ### Add in `ai.js`
 
@@ -246,10 +246,10 @@ Optionally replace the old `.ai-user-text` rule (3619–3628) and
 - **If SVG icons are adopted:**
   - Add two module constants next to `AI_EDIT_LABEL` (`ai.js` ~59):
     `AI_ICON_EDIT` and `AI_ICON_REGEN`, each holding the SVG string above.
-  - In `appendRegenerate()` (~1448) replace
+  - In `appendRegenerate()` replace
     `btn.textContent = "↻ Regenerate";` with
     `btn.innerHTML = AI_ICON_REGEN + "Regenerate";`.
-  - In `appendEditControl()` (~1468) replace
+  - In `appendEditControl()` replace
     `btn.textContent = AI_EDIT_LABEL;` with
     `btn.innerHTML = AI_ICON_EDIT + "Edit";` (or keep
     `AI_EDIT_LABEL = "Edit"` and concatenate).

@@ -1,7 +1,7 @@
 # Build and toolchain
 
 The notebook server has no compile step. There is one bootstrap wrapper for the
-Python side and two offline-built frontend assets. This guide records both, the
+Python side and two offline-built frontend bundles. This guide records both, the
 vendoring model, and the service worker cache.
 
 ## `start.sh` bootstrap
@@ -26,12 +26,18 @@ The flow:
    so the server runs as the top process and receives every forwarded flag
    (e.g. `--debug`, `--host`, `--port`).
 
-`requirements.txt` pins two dependencies:
+`requirements.txt` pins three dependencies:
 
 ```
 Flask==3.0.3
 bcrypt==5.0.0
+agent-client-protocol==0.12.1
 ```
+
+**Python 3.10 is the floor.** `agent-client-protocol` declares
+`Requires-Python: >=3.10,<3.15`, so a 3.8 or 3.9 interpreter refuses the
+install. `start.sh` builds the venv with whatever `python3` resolves to and does
+not check the version; the requirement is enforced by pip.
 
 The stamp is content-based, not timestamp-based, so editing `requirements.txt`
 triggers a reinstall; touching it without changing its contents does not.
@@ -39,7 +45,7 @@ triggers a reinstall; touching it without changing its contents does not.
 ## Vendoring model
 
 The runtime frontend loads everything as plain `<script defer>` tags from
-`static/`. There is no bundler for the app code (the 40 `static/js/` modules)
+`static/`. There is no bundler for the app code (the 45 `static/js/` modules)
 and no CDN: every third-party library is committed under `static/vendor/`.
 
 Most vendor files are direct, byte-for-byte copies of an upstream distribution
@@ -49,10 +55,11 @@ with no local editing:
   `node_modules/mermaid/dist/mermaid.min.js` (verified with `cmp`; both are
   `md5 1dd12fadbfa258c3ac600e9e7f1d6a3d`). The `mermaid` dependency in
   `package.json` exists to source this copy.
-- `marked.min.js`, `highlight.min.js`, the `turndown*.js` pair,
-  `paged.polyfill.min.js`, `viz.js` / `viz.full.js`,
-  `wavedrom.unpkg.min.js`, and the `katex/` folder (JS, CSS, and woff2 fonts)
-  are direct upstream distributions.
+- `marked.min.js`, `highlight.min.js` with the `highlight-styles/` pair
+  (`github.css`, `github-dark.css`), `purify.min.js` (DOMPurify, the AI-reply
+  sanitizer), the `turndown*.js` pair, `paged.polyfill.min.js`,
+  `viz.js` / `viz.full.js`, `wavedrom.unpkg.min.js`, and the `katex/` folder
+  (JS, CSS, and woff2 fonts) are direct upstream distributions.
 
 To bump one of these, replace the file with the new upstream copy. There is no
 regeneration script and no checksum manifest; correctness is by inspection and
@@ -113,16 +120,17 @@ excluded from the service worker `PRECACHE` list.
 Its source is `static/vendor/visimer.entry.js`:
 
 ```js
-export { MermaidWysiwygEditor } from "@visimer/core";
+export { MermaidWysiwygEditor, parse } from "@visimer/core";
 export { MermaidCanvasView } from "@visimer/dom";
 ```
 
-Only the two symbols the app uses are re-exported, so the global `Visimer`
-surface stays narrow instead of exposing the whole upstream API (parsers,
-ops, `Popover`, `correlate*`). Both packages are ESM-only, so a `<script>`
-tag cannot load them directly;
-esbuild bundles them into one IIFE instead. The exact command is recorded as
-the `vendor:visimer` npm script in `package.json`:
+Only the three symbols the app uses are re-exported, so the global `Visimer`
+surface stays narrow instead of exposing the whole upstream API (parsers, ops,
+`Popover`, `correlate*`). `parse` is the headless capability probe that
+`static/js/mermaid-designer.js` uses to disable menu items for render-only
+diagram types. Both packages are ESM-only, so a `<script>` tag cannot load them
+directly; esbuild bundles them into one IIFE instead. The exact command is
+recorded as the `vendor:visimer` npm script in `package.json`:
 
 ```bash
 node_modules/.bin/esbuild static/vendor/visimer.entry.js \
@@ -151,21 +159,22 @@ its own `<style>` element at runtime — so there is no `visimer.css`.
 registering `/static/sw.js` would limit the worker to `/static/` and break
 offline shell loading.
 
-**`CACHE` version.** `const CACHE = "notebook-v16"`. Bumping this string makes
+**`CACHE` version.** `const CACHE = "notebook-v23"`. Bumping this string makes
 every installed worker re-run `install` (re-precache the current assets) and
 `activate` (delete every cache whose name is not the current `CACHE`). Bump it
 whenever a precached asset changes or a file is added to `PRECACHE`. Without a
 bump, an installed browser keeps serving assets from its old cache.
 
-**`PRECACHE`.** A hand-written list of **52 entries**: the app shell (`/`), the
-manifest, the favicon, the three precached icons (apple-touch 180, 192, 512 —
-the 1024 is manifest-only), the two stylesheets, the four vendor libs needed to
-boot, and all 40 `static/js/` modules. The heavy
-on-demand renderer bundles (Mermaid, Graphviz/Viz, CodeMirror, KaTeX, WaveDrom
-— about 6.8 MB) are deliberately excluded; precaching them at install would
-slow the first load. They are fetched on first use and cached on the way
-through like any other asset. When adding a module, add its entry here and
-bump `CACHE`.
+**`PRECACHE`.** A hand-written list of **58 entries**: the app shell (`/`),
+`manifest.json`, `favicon.svg`, the three precached v2 icons
+(`apple-touch-icon-v2.png`, `icon-192-v2.png`, `icon-512-v2.png` — the 1024 is
+manifest-only), the two stylesheets, the five vendor libs needed to boot
+(`marked`, `highlight`, `purify`, `turndown`, `turndown-plugin-gfm`), and all
+45 `static/js/` modules. The heavy on-demand renderer bundles (Mermaid,
+Graphviz/Viz, CodeMirror, WaveDrom, Visimer, KaTeX — roughly 6.8 MB) are
+deliberately excluded; precaching them at install would slow the first load.
+They are fetched on first use and cached on the way through like any other
+asset. When adding a module, add its entry here and bump `CACHE`.
 
 **The three caching strategies** (all in `sw.js`):
 

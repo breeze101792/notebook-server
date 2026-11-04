@@ -1,6 +1,13 @@
 # Window maximize/restore — shared design
 
-Status: design 2026-10-11. Owner: `build`. Read-only analysis; no source edited.
+Status: implemented. Designed 2026-10-11 as a read-only analysis (owner:
+`build`); the build landed Option A below, deleting the designer's private
+maximize exactly as §6 specified. As-built anchors: `setMaximized` at
+`windows.js`, `ensureMaxButton` at `windows.js`, the header
+`dblclick` toggle at `windows.js`, the `hidden` `attributeFilter` at
+`windows.js`, and the max CSS block at `style.css`.
+Line anchors inside the design sections (§2-§8) are the 2026-10-11
+snapshot and are not re-anchored.
 
 Goal: give every modal window the maximize/restore control that the Mermaid
 designer has today, and fold the designer-specific implementation into one
@@ -8,29 +15,42 @@ shared place.
 
 ## 1. Is window behavior already centralized?
 
-**Yes — everything except maximize.** `windows.js` is the single window module.
-Every modal in the app is an `.settings-overlay > .settings-modal` pair and
-every one is wired by `wire()` (static/js/windows.js:147), which injects the
-resize grip, arms header drag, and applies persisted geometry:
+**Yes — everything except maximize (at analysis time).** `windows.js` is the
+single window module. Every modal in the app is an `.settings-overlay >
+.settings-modal` pair and every one is wired by `wire()`
+(`static/js/windows.js`), which injects the resize grip and the
+maximize button, arms header drag, and applies persisted geometry:
 
 | Modal | Created | Header contents | Wired by |
 | --- | --- | --- | --- |
-| Login `#auth-overlay` | static, templates/index.html:306–323 | `<h2>` only — **no close button** | boot scan (windows.js:157) |
-| Settings `#settings-overlay` | static, index.html:346–351 | `<h2>` + close `icon-btn` | boot scan |
-| Export `#export-overlay` | static, index.html:821–826 | `<h2>` + close `icon-btn`; footer separate | boot scan |
-| Designer `#designer-overlay` | static, index.html:903–927 | `.designer-heading` + `.designer-header-actions` (`#designer-max`, `#designer-close`) | boot scan |
-| VIM `:help` `#vimnav-help` | dynamic, static/js/vimnav.js:388–400 | `<h2>` + close `icon-btn` | MutationObserver (windows.js:158–167) |
+| Login `#auth-overlay` | static, `templates/index.html` | `<h2>` only — **no close button** | boot scan (`windows.js`) |
+| Add-workspace `#workspace-dialog` | static, `index.html` — rendered only when `boot.workspace_id` is set | `<h2>` + close `icon-btn` | boot scan |
+| New-session `#session-dialog` | static, `index.html` — same condition | `<h2>` + close `icon-btn` | boot scan |
+| Settings `#settings-overlay` | static, `index.html` | `<h2>` + close `icon-btn` | boot scan |
+| Export `#export-overlay` | static, `index.html` | `<h2>` + close `icon-btn`; footer separate | boot scan |
+| Table editor `#table-editor-overlay` | static, `index.html` | `<h2>` + close `icon-btn` | boot scan |
+| Designer `#designer-overlay` | static, `index.html` | `.designer-heading` + `.designer-header-actions` (`#designer-close`) | boot scan |
+| Dot/WaveDrom designer `#dw-designer-overlay` | static, `index.html` | `.designer-heading` + `.designer-header-actions` (`#dw-close`) | boot scan |
+| VIM `:help` `#vimnav-help` | dynamic, `static/js/vimnav.js` | `<h2>` + close `icon-btn` | MutationObserver (`windows.js`) |
 
-Nothing bypasses `wire()`. The `role="dialog"` grep confirms there are exactly
-five dialogs (four static + one dynamic); the context menus are not modals.
-Geometry persistence is also centralized (`nb:windowGeometry`, keyed by overlay
-id — every overlay has one, including `vimnav-help` at vimnav.js:392).
+Seven overlay modals are always present — login, Settings, Export, the
+table editor, the Mermaid designer, the dot/WaveDrom designer, and the
+dynamically created `:help` — and the two workspace dialogs join them
+whenever `boot.workspace_id` renders them. A `role="dialog"` grep over
+`index.html` counts eleven nodes: the eight static modal dialogs above
+plus the phone capture sheet, the phone settings sheet, and the designer's
+compact build sheet, which carry the role without being floating windows.
+The context menus are not modals. Geometry persistence is also centralized
+(`nb:windowGeometry`, keyed by overlay id — every overlay has one,
+including `vimnav-help`).
 
-The one window behavior **not** in `windows.js` is maximize: it lives only in
-`static/js/mermaid-designer.js` (`setMaximized`/`toggleMaximized`, lines 468–482,
-header `dblclick` 764–769, close-reset 454), its markup `#designer-max`
-(index.html:912–924), and its CSS `.designer-modal--max` / `.designer-max`
-(static/css/style.css:4002–4017). That is the duplication this design removes.
+At analysis time the one window behavior **not** in `windows.js` was
+maximize: it lived only in `static/js/mermaid-designer.js`
+(`setMaximized`/`toggleMaximized`, header `dblclick`, close-reset), its
+markup `#designer-max`, and its CSS `.designer-modal--max` /
+`.designer-max`. That was the duplication this design removed; all three
+are gone from the shipped tree and the control is injected by
+`ensureMaxButton` instead.
 
 ## 2. Decision
 
@@ -47,27 +67,27 @@ window chrome.
 Two supporting decisions:
 
 - **Geometry: CSS class with `!important`** (generalize the designer's proven
-  approach, style.css:4007–4016). This is not a `!important` smell: the class
+  approach, style.css–4016). This is not a `!important` smell: the class
   overrides inline styles that `windows.js` itself writes — one module owns
   both sides. A JS-managed save/restore of inline geometry would need to
-  intercept `applyGeometry` (windows.js:171–176 re-applies saved geometry on
+  intercept `applyGeometry` (windows.js–176 re-applies saved geometry on
   window resize), stash pre-max geometry, and re-clamp on restore — more state
   for zero benefit. With the class, a window resize while maximized simply
   writes inline styles the class outranks; on restore the untouched inline
   geometry takes over, already clamped to the new viewport. Correct for free.
 - **State: transient, reset on close** — matches the designer's chosen behavior
-  ("opens at its normal size next time", mermaid-designer.js:454) and avoids
+  ("opens at its normal size next time", mermaid-designer.js) and avoids
   the surprise of a full-viewport Settings modal. Nothing is added to
   `nb:windowGeometry`.
 
 ## 3. Injection mechanism
 
 New `ensureMaxButton(modal)`, called from `wire()` next to `ensureGrip()`
-(windows.js:150):
+(windows.js):
 
 - Idempotent: bail if `modal.querySelector(".win-max")` exists (same pattern as
-  the grip guard, windows.js:61). The existing `dataset.windowsWired` guard
-  (windows.js:148) prevents re-running `wire()` anyway.
+  the grip guard, windows.js). The existing `dataset.windowsWired` guard
+  (windows.js) prevents re-running `wire()` anyway.
 - Placement rule, shape-agnostic, no aria-label string matching:
   **insert before the last `<button>` in the `.settings-header`; if the header
   has no button, append at the end.**
@@ -76,19 +96,19 @@ New `ensureMaxButton(modal)`, called from `wire()` next to `ensureGrip()`
     `.designer-header-actions` before it — the exact spot `#designer-max`
     occupies today.
   - Login: no close button by design; `justify-content: space-between`
-    (style.css:1415–1422) parks the appended button at the right edge.
+    (style.css–1422) parks the appended button at the right edge.
 - Button markup: `class="icon-btn win-max"`, `type="button"`,
   `title`/`aria-label="Maximize"`, `aria-pressed="false"`, carrying the two SVG
-  glyphs reused verbatim from today's index.html:914–923 (`.win-max-icon`,
+  glyphs reused verbatim from today's index.html–923 (`.win-max-icon`,
   `.win-max-restore`). The CSS swaps glyphs on `[aria-pressed="true"]` as
-  style.css:4004–4006 does today, under the renamed selectors.
+  style.css–4006 does today, under the renamed selectors.
 - Uniform for all five modals — no skip list. The login modal is the only odd
   case (maximizing a three-row form is pointless but harmless); if it should be
   excluded later, a `data-windows-nomax` check in `ensureMaxButton` is a
   two-line addition. Do not build it now.
 
 Shared state function in `windows.js` (generalizes
-mermaid-designer.js:468–477): toggles class `settings-modal--max` on the modal
+mermaid-designer.js–477): toggles class `settings-modal--max` on the modal
 and swaps `aria-pressed` + `title`/`aria-label` Maximize/Restore on the button.
 
 ```mermaid
@@ -108,34 +128,34 @@ flowchart LR
 ## 4. Interaction rules while maximized
 
 - **Drag and resize are refused, not just visually hidden.** Guard the
-  `pointerdown` handlers in `startDrag` (windows.js:74) and `startResize`
-  (windows.js:119) with a maximized check. This is a real bug class, not
+  `pointerdown` handlers in `startDrag` (windows.js) and `startResize`
+  (windows.js) with a maximized check. This is a real bug class, not
   polish: both `pointerup` handlers persist `geo[key]` from
-  `getBoundingClientRect()` (windows.js:107–108, 137–138) — a gesture on a
+  `getBoundingClientRect()` (windows.js–108, 137–138) — a gesture on a
   maximized modal would **overwrite the user's saved geometry with the
   full-viewport rect**. CSS `display: none` on the grip
-  (generalize style.css:4017) already blocks grip events; the JS guards cover
+  (generalize style.css) already blocks grip events; the JS guards cover
   the header and act as belt-and-braces.
-- **Double-click header toggles**, moved from mermaid-designer.js:764–769 into
+- **Double-click header toggles**, moved from mermaid-designer.js–769 into
   `windows.js` (armed next to the drag wiring, once per header via the same
   `dataset.windowsDrag` guard). Keep the exemption: a dblclick whose target is
   inside a `<button>` does not toggle.
 - **Esc / close / backdrop-click are untouched.** They are owned by each
-  modal's module, and the keyboard guards (shortcuts.js:246, vimnav.js:50,
-  table-select.js:60) key off `.settings-overlay:not([hidden])` — none of this
+  modal's module, and the keyboard guards (shortcuts.js, vimnav.js,
+  table-select.js) key off `.settings-overlay:not([hidden])` — none of this
   changes.
 - **Close resets the state.** The designer's `close()` calls
-  `setMaximized(false)` directly (mermaid-designer.js:454); modules must not
+  `setMaximized(false)` directly (mermaid-designer.js); modules must not
   have to know about maximize (the windows.js decoupling contract,
-  windows.js:9–12). Instead, extend the **existing** MutationObserver
-  (windows.js:158–167) with `attributes: true, attributeFilter: ["hidden"]` and
+  windows.js–12). Instead, extend the **existing** MutationObserver
+  (windows.js–167) with `attributes: true, attributeFilter: ["hidden"]` and
   branch on `mutation.type === "attributes"`: when a `.settings-overlay`
   target becomes hidden, reset its modal's max class and the button's
   `aria-pressed`/labels. The filter is one `classList.contains` check; other
   `hidden` toggles (settings tab sections, `#export-error`) pass through it
   cheaply.
 - **Window resize while maximized**: `applyGeometry` keeps running for all
-  modals (windows.js:171–176); the `!important` class outranks what it writes,
+  modals (windows.js–176); the `!important` class outranks what it writes,
   so the modal stays full-viewport, and on restore the re-clamped inline
   geometry applies.
 
@@ -143,14 +163,14 @@ flowchart LR
 
 - `icon-btn` class — same chrome as every close button; `.win-max` adds only
   the glyph-swap rules. Designers' `.designer-max` styles
-  (style.css:4002–4006) rename, not duplicate.
+  (style.css–4006) rename, not duplicate.
 - `aria-pressed` carries the state; `title` and `aria-label` swap
-  Maximize/Restore on every toggle (the mermaid-designer.js:471–476 pattern).
+  Maximize/Restore on every toggle (the mermaid-designer.js–476 pattern).
 - Keyboard: a real `<button>` — tab-reachable, Enter/Space operable.
   Maximize/restore becomes the only fully keyboard-operable window op (drag
   and resize stay pointer-only, as today). Focus order is unaffected: the
   button is inserted before the close button, never before the title.
-- Headers keep `cursor: move` (style.css:1379–1381): drag is refused while
+- Headers keep `cursor: move` (style.css–1381): drag is refused while
   maximized but dblclick still works on the same surface, so the cue stays
   honest.
 
@@ -159,7 +179,7 @@ flowchart LR
 1. `static/js/windows.js` — add `ensureMaxButton` + shared `setMaximized`;
    call from `wire()`; add header `dblclick`; add drag/resize maximized guards;
    extend the MutationObserver with the `hidden` attributeFilter branch.
-   `NB.windows = { wire }` export (windows.js:178) is unchanged.
+   `NB.windows = { wire }` export (windows.js) is unchanged.
 2. `static/css/style.css` — rename `.designer-modal--max` →
    `.settings-modal--max` and `.designer-max*` → `.win-max*`; move the block
    next to the `.resize-grip` rules (~line 1382) so shared window chrome lives
@@ -214,7 +234,7 @@ Real-browser only (jsdom has no layout):
   (settings tab sections). One `classList.contains("settings-overlay")` check
   per mutation; low frequency, acceptable.
 - `.designer-modal` sizes itself via `--designer-modal-w/h`
-  (style.css:3995) and `.auth-modal` via `height: auto` (style.css:1787–1795);
+  (style.css) and `.auth-modal` via `height: auto` (style.css–1795);
   both are overridden by the max class's `!important` — verified by reading,
   confirm visually once.
 - Test churn: the `== designer maximize ==` block is ~100 lines that move and

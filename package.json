@@ -13,9 +13,11 @@
     "test:browser:ai": "node tests/browser/test_ai_editor_browser.js",
     "test:browser:ai-blocks": "node tests/browser/test_ai_blocks_browser.js",
     "test:browser:blocks": "node tests/browser/test_block_edit_browser.js",
+    "test:browser:figure-sizing": "node tests/browser/test_figure_sizing_browser.js",
     "test:browser:hybrid-blocks": "node tests/browser/test_hybrid_blocks_browser.js",
     "test:browser:mobile": "node tests/browser/test_mobile_browser.js",
     "test:browser:designer": "node tests/browser/test_designer_browser.js",
+    "test:browser:table-editor": "node tests/browser/test_table_editor_browser.js",
     "test:browser:dw": "node tests/browser/test_dw_designer_browser.js"
   },
   "devDependencies": {

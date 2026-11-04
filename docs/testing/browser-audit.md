@@ -2,30 +2,37 @@
 
 A functional audit of the running app in real Chromium, run after the
 existing suites were green. Every check drives the real UI against a real
-Flask server on a temp notebook and reads the file back from disk. The
-audit added five suites and fixed the defects they found.
+Flask server on a temp notebook and reads the file back from disk. The audit
+started with five suites; the browser suite has since grown to twelve, and the
+defect table below records what the checks found and fixed.
 
-Environment: Chromium 155.0.8059.84, Playwright 1.63.0, Linux (NixOS).
+Environment: Chromium 156.0.8078.73, Playwright 1.63.0, Linux (NixOS).
 No hardware step is involved.
 
 ## Final result
 
+Last full run: `npm run test:browser:all`, Chromium 156.0.8078.73.
+
 | Suite | File | Checks |
 | --- | --- | --- |
-| Backend | `tests/test_app.py` | 357 tests |
-| Frontend DOM | `tests/dom/test_dom.js` | 3,959 checks |
-| Core UI | `tests/browser/test_core_ui_browser.js` | 76 |
-| Auth / export / PWA | `tests/browser/test_auth_export_browser.js` | 84 |
-| AI / ACP / source editor | `tests/browser/test_ai_editor_browser.js` | 35 |
-| Hybrid (existing) | `tests/browser/test_hybrid_browser.js` | 137 |
+| Backend | `tests/test_app.py` | 461 tests, OK |
+| Frontend DOM | `tests/dom/test_dom.js` | 4,777 checks, 0 failed |
+| Core UI | `tests/browser/test_core_ui_browser.js` | 186 |
+| Auth / export / PWA | `tests/browser/test_auth_export_browser.js` | 99 |
+| AI / ACP / source editor | `tests/browser/test_ai_editor_browser.js` | 40 |
+| AI blocks | `tests/browser/test_ai_blocks_browser.js` | 44 |
+| Hybrid | `tests/browser/test_hybrid_browser.js` | 169, 0 failed |
+| Table editor | `tests/browser/test_table_editor_browser.js` | 54 |
 | Hybrid blocks | `tests/browser/test_hybrid_blocks_browser.js` | 28 |
-| Fence editor | `tests/browser/test_block_edit_browser.js` | 61 |
-| Mobile (existing) | `tests/browser/test_mobile_browser.js` | 76 |
-| Mermaid designer (existing) | `tests/browser/test_designer_browser.js` | 36 |
-| Dot / WaveDrom designer (existing) | `tests/browser/test_dw_designer_browser.js` | 67 |
+| Fence editor | `tests/browser/test_block_edit_browser.js` | 184 ok, 0 failed |
+| Figure sizing | `tests/browser/test_figure_sizing_browser.js` | 96 |
+| Mobile | `tests/browser/test_mobile_browser.js` | 102 |
+| Mermaid designer | `tests/browser/test_designer_browser.js` | 36 |
+| Dot / WaveDrom designer | `tests/browser/test_dw_designer_browser.js` | 67 |
 
-All suites pass. `node tests/browser/run_all.js` runs the nine browser
-suites sequentially on distinct ports.
+`node tests/browser/run_all.js` (or `npm run test:browser:all`) runs the twelve
+browser suites sequentially on distinct ports. The last run reported **12/12
+suites passed**.
 
 ## What each new suite covers
 
@@ -75,6 +82,44 @@ multi-cell table-selection deletion, task-item merges at the checkbox,
 delete-edge guards (Ctrl+A, Cut/Shift+Delete and cut gap deletion,
 plain/task neighbours, images, rules), disabled table-menu guards, and
 undo. This suite pins the regressions below.
+
+### Table editor — `test_table_editor_browser.js`
+
+The "Edit table" modal end to end: real caret typing in a cell, Tab/Enter/F2
+moving real focus and stopping at the row and grid edges, a pointer drag
+painting a range plus Shift+click extending it, copy writing TSV and an HTML
+table through a real `ClipboardEvent`, paste writing a block back, Apply
+saving GFM with the bytes outside the table unchanged, one-step undo/redo on
+both entry paths, the no-op Apply, the merged-cell refusal strip, focus
+containment and return, and Esc writing nothing.
+
+### AI blocks — `test_ai_blocks_browser.js`
+
+The AI panel's reply bubbles render the shared special fences like a note: one
+streamed reply carries all six, five become their container while the
+`wavedrom` fence stays a plain code block (the panel passes `{untrusted:true}`),
+the chat figure is pinned to the chat log's width, the per-host relayout on a
+two-root burst and a window resize, the image copy button, the click-to-zoom
+lightbox (and no lightbox from outside the reading roots), the prose `js`
+fence's single text button, an `nb-tool` fence rendering nothing, and
+DOMPurify sanitization of the reply (event handler, `javascript:` link, form,
+non-checkbox input, and an SVG fence's script/SMIL dropped; markdown, task
+list, wikilink, and sizing attributes kept), with a missing sanitizer falling
+back to plain text.
+
+### Figure sizing — `test_figure_sizing_browser.js`
+
+Rendered SVG sizing: font-scale response, the wide/tall/huge/tiny layout
+matrix, per-engine units (Graphviz pt, WaveDrom px, Mermaid viewBox, inline-SVG
+viewBox/explicit), the tall-mode page-growth contract (no nested scroller or
+scroll a11y), no inner scrollbars for math/code/error sources (KaTeX
+fit-to-width and wrapped code), the lightbox from a tall diagram, the phone
+reference token, the HTML-export wrapper/print tokens plus the inline math fit
+script, and a hybrid round-trip byte check. It renders every block type for
+real in Chromium: Mermaid natural max-width versus viewBox and label scale,
+WaveDrom labels, Graphviz pt-to-px and labels, KaTeX prose sizing and
+wide-equation scroll containment, html-live frame width / font isolation /
+content auto-fit, and the prose-sized error boxes for all five renderers.
 
 ## Defects found and fixed
 
@@ -127,6 +172,7 @@ undo. This suite pins the regressions below.
 | 45 | Delete row showed the header+body-row reason on the header and had an unreachable lone-row branch | the reason was hard-coded and the first-row guard ran first | a cause-specific `deleteRowBlockedReason` is shared by menu and action; the first row (header or lone body row) is protected and the dead branch is gone | fence editor: table menu guards |
 | 46 | A multi-line paste or Enter collapsed the fence body to one line | Chromium's `insertText`/native Enter split a `<pre><code>` into sibling `<code>` elements; only the first stayed in the fence source | `insertTextIntoFence` inserts escaped text with `insertHTML` so raw newlines stay in one `<code>` and native undo still works | fence editor: multi-line paste, Enter |
 | 47 | A multi-line paste into a Mermaid (or other plugin) fence deleted the whole fence | plugin source has no highlight spans, so its `<code>` is inline; Chromium's `insertHTML` unwraps an inline `<code>` when replacing its contents | fence `<code>` is `display: block` in hybrid mode, matching highlighted fences | fence editor: plugin multi-line |
+| 48 | A `?file=` deep link past the 40-tab session cap silently left the restored note on screen under the requested URL | `NB.tabs.open` returns false, and `openDeepLink` ignored the result; boot stripped the URL either way | `openDeepLink` closes a clean active tab and retries, returns false when it cannot open, and boot keeps the URL on failure | hybrid: the 41st-note deep link; DOM: session-full checks |
 
 ## Known issues left unchanged
 

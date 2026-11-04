@@ -30,7 +30,7 @@ are flat and belong to one workspace; nothing is shared across workspaces.
 
 Not touched: the HTTP API surface, the workspace registry, the file tree,
 search, the AI assistant, export, **the tab bar**, and the phone shell (the
-Sessions icon is hidden there; the phone has no tab bar, `style.css:7101-7103`).
+Sessions icon is hidden there; the phone has no tab bar, `style.css`).
 
 ## 2. Ownership
 
@@ -39,7 +39,7 @@ The single rule that keeps the model honest:
 > **The active session is the live tab view. Inactive sessions are stored.**
 
 `tabs.js` already holds the live view — `ordered`, `openSet`, `pinned`,
-`activePath` (`tabs.js:29-32`). Those keep their meaning exactly. A new,
+`activePath` (`tabs.js`). Those keep their meaning exactly. A new,
 private record set holds only the sessions that are **not** on screen:
 
 ```js
@@ -93,8 +93,8 @@ Rules:
 | `sessions[].activeFile` | A path that was the active tab; may be pinned. `null` for an empty session. |
 | `activeSessionId` | Always one of `sessions[].id`. |
 | `pinnedFiles` | Unchanged: workspace-global, shared by every session. |
-| `openFiles` | **Mirror**: the live `ordered` including pins — exactly what `emitChanged()` sends today (`tabs.js:416-422`). Preserves `app.js:975-980`, the browser test, and any older client. |
-| `activeFile` | **Mirror**: the live `activePath`. Keeps `_acp_context_preamble` (`app.py:2605-2645`) naming the open note. |
+| `openFiles` | **Mirror**: the live `ordered` including pins — exactly what `emitChanged()` sends today (`tabs.js`). Preserves `app.js`, the browser test, and any older client. |
+| `activeFile` | **Mirror**: the live `activePath`. Keeps `_acp_context_preamble` (`app.py`) naming the open note. |
 
 `sessions` is authoritative on load. The two mirrors are derived and are
 rewritten by the first `tabs:changed`. `sessions` absent → migrate (below).
@@ -109,8 +109,8 @@ Limits, as named constants in `tabs.js`:
 | `SESSION_FILES_MAX` | 40 unpinned | `open`/move refusal with a notice; normalisation truncates |
 
 Worst case state is ~100 KiB, inside `WORKSPACE_STATE_MAX_BYTES = 256 KiB`
-(`app.py:77`). A hand-edited blob over the cap is refused by the route and
-only `console.warn`ed (`app.js:542`) — unchanged behaviour.
+(`app.py`). A hand-edited blob over the cap is refused by the route and
+only `console.warn`ed (`app.js`) — unchanged behaviour.
 
 ## 4. Normalisation and migration
 
@@ -153,7 +153,7 @@ sessions (each session's own list was deduped in rule 4).
 
 `restore` keeps its four positional arguments and gains a trailing optional
 fifth, so the four existing DOM-test calls keep working
-(`tests/dom/test_dom.js:21218, 22144, 22153, 22165`):
+(`tests/dom/test_dom.js, 22144, 22153, 22165`):
 
 ```js
 await NB.tabs.restore(openFiles, activeFile, fallback, pinnedFiles, sessionState)
@@ -181,7 +181,7 @@ seeds one `main` session** from the legacy arguments (`sessionOrder = ["main"]`,
 name "Main", `storedSessions` empty), so a phone that rotates into the desktop
 shell still has a valid model and the Sessions view has one row.
 
-`app.js` boot replaces the hand-rolled filter (`app.js:975-980`) with:
+`app.js` boot replaces the hand-rolled filter (`app.js`) with:
 
 ```js
 const known = (p) => isSpecialTab(p) || treeHas(tree, p);
@@ -203,7 +203,7 @@ sees sessions.
 
 `NB.tabs.swapTo(id)` is the only way the live view becomes another session.
 It is async and guarded by its own token, for the same reason `activate` has one
-(`tabs.js:449-453`).
+(`tabs.js`).
 
 ```js
 let sessionToken = 0;
@@ -214,8 +214,8 @@ async function swapTo(id) {
   const token = ++sessionToken;
   const stale = () => token !== sessionToken;
 
-  // Stop the in-flight activation and its recovery path (tabs.js:486-490),
-  // and the viewer's own UI write (viewer.js:725-754).
+  // Stop the in-flight activation and its recovery path (tabs.js),
+  // and the viewer's own UI write (viewer.js).
   activateToken++;
   NB.viewer.cancelActivation();
 
@@ -240,21 +240,21 @@ async function swapTo(id) {
 Points that are load-bearing:
 
 - **Check the commit's return.** `commitForTabSwitch()` returns `false` when a
-  hybrid save fails (`hybrid.js:7250-7266`) and leaves hybrid active. Switching
+  hybrid save fails (`hybrid.js`) and leaves hybrid active. Switching
   anyway would let the next keystroke serialize to the old path.
 - **Bump both tokens first.** `activateToken` stops `tabs.activate` from taking
-  its `!openSet.has(path)` recovery (`tabs.js:486-490`); `cancelActivation()`
+  its `!openSet.has(path)` recovery (`tabs.js`); `cancelActivation()`
   stops `viewer.activate` from writing `active`, rendering, and emitting
   `file:open` for a file that no longer belongs to the strip.
 - **Mutate before emitting.** `activeSessionId` and the live sets change together
   before `emitChanged()`, so the snapshot `app.js` takes in its listener is
-  consistent (`app.js:640-646`).
+  consistent (`app.js`).
 - Two rapid picks: the second bumps `sessionToken`; the first aborts at its next
   check and never installs.
 - Ghosts and the width freeze belong to the old strip. A ghost is data
-  (`tabs.js:83`) and would otherwise materialize in the new strip for 280 ms.
+  (`tabs.js`) and would otherwise materialize in the new strip for 280 ms.
 - `activate(activePath)` is a second commit, which is a no-op after the first
-  (the buffer is already stashed, `viewer.js:953-954`).
+  (the buffer is already stashed, `viewer.js`).
 
 `installSession(id)`:
 
@@ -318,28 +318,30 @@ if (opts.activate !== false) await activate(path);
 
 `open(path)` on a pinned path is already in the active `openSet`; it just
 activates. `open(path, {activate:false})` is the search view's failure recovery
-(`activity.js:1131-1133`): it adds the tab to the active session without
+(`activity.js`): it adds the tab to the active session without
 activating it. `openSpecial` follows the same rule.
 
 If the active session already holds `SESSION_FILES_MAX` unpinned tabs, `open`
 adds nothing and reports it through `NB.app.notify` ("This session is full —
 close a tab or open a new session."). `restore` and `normaliseSessions`
 truncate instead of refusing, because no user action is being rejected at load
-time.
+time. A deep link is the one caller that makes room instead of failing: when
+the active tab has no unsaved edits, `openDeepLink` closes it and retries
+(`app.js`).
 
 Back/forward keeps calling `open` when a history entry is not open
-(`viewer.js:1425-1432`); it now opens the note in the active session. There is
+(`viewer.js`); it now opens the note in the active session. There is
 no session switch on the nav path.
 
 ## 9. Pinning and file operations
 
-**Pin** (`tabs.js:617-632`): remove the path from the live `ordered` (existing)
+**Pin** (`tabs.js`): remove the path from the live `ordered` (existing)
 **and from every stored session**; if a stored session's `activeFile` was that
 path, fall back to its first remaining file or `null`. Pinning is what makes a
 tab shared.
 
 **Unpin**: existing behaviour inserts the path into the active session's strip
-(`tabs.js:624-628`). It is now visible only in the active session — the Firefox
+(`tabs.js`). It is now visible only in the active session — the Firefox
 rule.
 
 **Close** (`dropTab`): remove this occurrence from the active strip. The viewer
@@ -349,20 +351,20 @@ the other occurrence keeps them. `conflictSet` is cleared only on the last
 close. A special tab's `onClose` runs only on the last close too, so a `§graph`
 open in another session keeps its module alive.
 
-**`rename(from, to)`** (`tabs.js:579-614`): apply `remap` to `ordered`,
+**`rename(from, to)`** (`tabs.js`): apply `remap` to `ordered`,
 `openSet`, `pinned`, `frozenWidths` (existing) **and every stored session's
 `openFiles`/`activeFile`**, including every duplicate occurrence. Remove the
-`if (!pairs.length) return` early-out (`tabs.js:593`) or move it after the stored
+`if (!pairs.length) return` early-out (`tabs.js`) or move it after the stored
 pass: a file that exists only in an inactive session must still be re-keyed.
 Call `NB.viewer.rename` for every pair; it is a safe no-op for an uncached path
-(`viewer.js:766-774`).
+(`viewer.js`).
 
-**`file:deleted`** (`tabs.js:928-932`): drop the path from the live strip and
+**`file:deleted`** (`tabs.js`): drop the path from the live strip and
 from every stored session; `closeStoredPath` closes the viewer cache and calls
 the special tab's `onClose` once, when the last occurrence is gone. A deleted
 file's draft goes with it, as today.
 
-**`auth:locked`** (`tabs.js:958`): `sessionToken++`, clear every stored
+**`auth:locked`** (`tabs.js`): `sessionToken++`, clear every stored
 session's `openFiles` first, stop the special tabs those lists held, then
 `clearAll()` the live strip (so its `dropTab` paths no longer look "elsewhere")
 and `viewer.clear()`. Keep names, ids, order and `activeSessionId`, so
@@ -370,19 +372,19 @@ re-entering the workspace shows the same named places, empty. The lock
 invalidates every buffer.
 
 **`dropTab(path)`** also clears the path's conflict flag, but only on the last
-close. The dead `_dropTab` hook (`tabs.js:947`) can go.
+close. The dead `_dropTab` hook (`tabs.js`) can go.
 
 ## 10. viewer.js
 
 Three changes.
 
 **10.1 Abandon an activation.** Export `cancelActivation()` which bumps the
-module-private `activateToken` (`viewer.js:725`). It writes nothing else; a
+module-private `activateToken` (`viewer.js`). It writes nothing else; a
 pending fetch then seeds the cache and returns without touching `active`, the
-DOM, or `file:open` (`viewer.js:734-742`).
+DOM, or `file:open` (`viewer.js`).
 
 **10.2 An empty state that keeps the cache.** `showWelcome()`
-(`viewer.js:672-704`) starts with `cache.clear()`, which would destroy every
+(`viewer.js`) starts with `cache.clear()`, which would destroy every
 inactive session's stashed draft. Split it:
 
 ```js
@@ -399,7 +401,7 @@ function showWelcome(opts) {           // opts.keepCache
 - `clear()` calls `showWelcome()` (default: clears) — unchanged.
 - `NB.viewer.showSessionEmpty()` calls `showWelcome({keepCache: true})`.
 - Replace the two `NB.viewer.clear()` calls that mean "the strip is empty, show
-  the welcome page" — `tabs.js:501` and `tabs.js:561` — with
+  the welcome page" — `tabs.js` and `tabs.js` — with
   `showSessionEmpty()`. Both sit after `dropTab` has already closed the files
   they name, so their cache entries are gone; only the other sessions' entries
   were at risk.
@@ -408,13 +410,13 @@ function showWelcome(opts) {           // opts.keepCache
   of the welcome page.
 
 **10.3 External changes in a hidden session.** In the
-`file:external-change` handler (`viewer.js:1141-1206`), compute
+`file:external-change` handler (`viewer.js`), compute
 `const live = !NB.tabs || !NB.tabs.isOpen || NB.tabs.isOpen(path);` before the
 dirty check (the handler runs after `tabs.js` is defined; guard for the harness).
 
 | Path state | Behaviour |
 | --- | --- |
-| clean, live or hidden | Refresh the cache silently (today's `else` branch at `viewer.js:1201-1203`). |
+| clean, live or hidden | Refresh the cache silently (today's `else` branch at `viewer.js`). |
 | dirty, live | Today's confirm; Cancel marks the conflict. |
 | dirty, hidden | **No modal.** Emit `viewer:conflict {path, conflict:true}`, keep the buffer, return. The badge appears when the user switches to that session. |
 
@@ -425,11 +427,11 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 
 **Client.** `app.js`:
 
-- `WORKSPACE_STATE_KEYS` (`app.js:24-27`) gains `"sessions"` and
+- `WORKSPACE_STATE_KEYS` (`app.js`) gains `"sessions"` and
   `"activeSessionId"`. `workspaceStateSnapshot()` then carries them, and
   `flushWorkspaceState` posts them to `/api/workspace-state` on its existing
   250 ms debounce.
-- `tabs:changed` (`app.js:640-646`) copies `sessions` and `activeSessionId` from
+- `tabs:changed` (`app.js`) copies `sessions` and `activeSessionId` from
   the payload into `cfg`. The payload is built by `emitChanged()`:
 
   ```js
@@ -446,11 +448,11 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 
 **Server.** Three small changes in `app.py`:
 
-1. `_WORKSPACE_SCOPED_CONFIG_KEYS` (`app.py:92-95`) gains `"sessions"` and
+1. `_WORKSPACE_SCOPED_CONFIG_KEYS` (`app.py`) gains `"sessions"` and
    `"activeSessionId"`, so a whole-blob `POST /api/config` from a page without a
    workspace folds stray top-level copies under `workspaceState.default`
-   (`_fold_legacy_workspace_state`, `app.py:1427`).
-2. `set_workspace_state()` (`app.py:1660-1705`) replaces the whole entry
+   (`_fold_legacy_workspace_state`, `app.py`).
+2. `set_workspace_state()` (`app.py`) replaces the whole entry
    (`workspace_state[wid] = state`). Before the size check, preserve the session
    fields when the caller omits them **and the stored entry has them**:
 
@@ -466,7 +468,7 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
    posts the old key set and would otherwise delete every other session. A new
    client always sends `sessions`, so a legitimate change (including deleting a
    session) is never blocked.
-3. `_ACTIVE_VIEWS` (`app.py:1273`) gains `"sessions"`, so a saved
+3. `_ACTIVE_VIEWS` (`app.py`) gains `"sessions"`, so a saved
    `activeView: "sessions"` is accepted by `boot_state()` and the server renders
    `#sessions-view` visible on the first frame. The test that keeps
    `_ACTIVE_VIEWS` in step with the registered views and the `data-view` hosts
@@ -475,22 +477,22 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 There is no first-paint session *name*: the view is rendered by `sessions.js`
 from the restored model, exactly like the Bookmarks list.
 
-Phone writes stay gated (`app.js:641`); the phone's restored state has no
+Phone writes stay gated (`app.js`); the phone's restored state has no
 sessions. The phone must also not adopt a saved `activeView: "sessions"`
-(`app.js:955-957` already forces `ai` to explorer there; add `sessions`), and
+(`app.js` already forces `ai` to explorer there; add `sessions`), and
 `html[data-ui-mode="phone"] .activity-btn[data-view="sessions"]` hides the rail
 icon.
 
 ## 12. UI wiring (`sessions.js`)
 
 The module owns no data. It owns one side-panel view, built once at load the
-way `bookmarks.js` builds its list (`bookmarks.js:52-130`), and it is registered
+way `bookmarks.js` builds its list (`bookmarks.js`), and it is registered
 in `activity.js`'s existing block — after Explorer, before Pinned folders — so
 the rail reads Explorer, **Sessions**, Pinned, Bookmarks, Recent, Search, AI.
 The registration carries no `mount`: the host is populated at load and
-`activity.js` only toggles `[hidden]` (`activity.js:173-181`), the bookmarks
+`activity.js` only toggles `[hidden]` (`activity.js`), the bookmarks
 pattern. The id must be a literal `id: "sessions"` in `activity.js`:
-`tests/test_app.py:318-339` parses that file and compares the ids with
+`tests/test_app.py` parses that file and compares the ids with
 `_ACTIVE_VIEWS` and the `data-view` hosts.
 
 ```js
@@ -521,10 +523,10 @@ NB.sessions = {
   simply has no session item and its tab menu still works.
 - It listens for `tabs:changed` and `viewer:dirty-changed` and re-renders the
   rows, preserving focus by session id (the same rule the workspace picker uses,
-  `workspaces.js:349-373`), so a tab change cannot yank the keyboard out of the
+  `workspaces.js`), so a tab change cannot yank the keyboard out of the
   list.
 - It must null-guard its host and no-op when `#sessions-view` is absent (an old
-  cached shell, the jsdom harness), the way `tabs.js:23-24` guards a stale
+  cached shell, the jsdom harness), the way `tabs.js` guards a stale
   `index.html`. On the phone the host exists but the rail icon is hidden and a
   saved `activeView` falls back to Explorer, so the view is unreachable.
 
@@ -585,7 +587,7 @@ Existing seams (`getOpen`, `isOpen`, `getActive`, `restore`, `togglePin`,
 Verification:
 
 - **DOM (`npm test`, `tests/dom/test_dom.js`)**: add the `#sessions-view` host
-  to the harness shell (around `tests/dom/test_dom.js:226-230`), eval
+  to the harness shell (around `tests/dom/test_dom.js`), eval
   `static/js/sessions.js` after `tabs.js` (around `:2335`), and update the source
   regex that asserts the old boot filter (`:21225-21227`). Cases: migration;
   pinned union on boot; per-session active tab; swap with a stashed draft; close
@@ -603,7 +605,7 @@ Verification:
   session shape; preserve-if-absent; the fold tuple; `_ACTIVE_VIEWS` includes
   `sessions`.
 - **Service worker**: bump `CACHE` and include `sessions.js` in `PRECACHE`
-  (`static/sw.js:38, 45-90`); check an offline reload.
+  (`static/sw.js, 45-90`); check an offline reload.
 
 ## 16. Accepted limits
 

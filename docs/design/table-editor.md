@@ -1,8 +1,9 @@
 # Table Editor (hybrid mode)
 
-Handoff for the modal spreadsheet editor defined in
-`docs/product/table-editor.md` and `docs/architecture/table-editor.md`. Design
-only — no source files were changed. Mockup: `docs/design/table-editor.html`.
+Status: shipped (table editor), design record. Handoff for the modal
+spreadsheet editor defined in `docs/product/table-editor.md` and
+`docs/architecture/table-editor.md`; the modal is `static/js/table-editor.js`
+with its markup in `templates/index.html`. Mockup: `docs/design/table-editor.html`.
 Every value is an existing app token except the `--te-*` values in §8; no new
 font, dependency, colour family, or animation.
 

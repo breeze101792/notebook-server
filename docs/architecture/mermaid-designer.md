@@ -1,6 +1,7 @@
 # Mermaid visual editor — architecture and plan
 
-Status: locked 2026-10-10, amended after architecture + UI review. Owner: `build`.
+Status: implemented (`static/js/mermaid-designer.js`), design record. Locked
+2026-10-10, amended after architecture + UI review. Owner: `build`.
 
 > Replaces an earlier draft that hand-built the canvas and parsers. The decision
 > is to use a third-party library instead. `docs/requirements/features/mermaid-visual-editor.md`
@@ -70,9 +71,9 @@ static/js/mermaid-designer.js     NB.mermaidDesign: modal + apply
 
 ### New module: `static/js/mermaid-designer.js` (eager, `NB.mermaidDesign`)
 
-Roughly 300 lines (compare `export.js`, 959). Do **not** register it with
+Roughly 3,850 lines (compare `export.js`, 1,086). Do **not** register it with
 `NB.blocks` — it is not a renderer, and registering would drag in the
-ai.js/agent.md completeness requirements (`tests/dom/test_dom.js:3131-3142`).
+ai.js/agent.md completeness requirements (`tests/dom/test_dom.js`).
 
 - Owns `#designer-overlay`: **`class="settings-overlay"`** so the app's existing
   keyboard-modal guards already see it (F2), `hidden` toggle,
@@ -89,12 +90,12 @@ ai.js/agent.md completeness requirements (`tests/dom/test_dom.js:3131-3142`).
 ### Hybrid hook
 
 - `static/js/mermaid.js`: add an optional `design: "mermaidDesign"` flag to the
-  `NB.blocks.register({...})` descriptor (`mermaid.js:310-323`).
+  `NB.blocks.register({...})` descriptor (`mermaid.js`).
 - `static/js/blocks.js`: carry the optional flag through `pluginTypes()`
-  (`blocks.js:182-190`) — one line.
+  (`blocks.js`) — one line.
 - `static/js/hybrid.js`: in `buildMenu`, add "Design diagram…" **first**, then
   the existing "Edit <name> source", under the separator
-  (`hybrid.js:5172-5183`). Shown only when the plugin has `design`,
+  (`hybrid.js`). Shown only when the plugin has `design`,
   `NB[plugin.design]` exists, and the role allows it; hidden for a viewer;
   disabled for render-only types; absent for non-mermaid blocks.
 
@@ -112,19 +113,19 @@ ai.js/agent.md completeness requirements (`tests/dom/test_dom.js:3131-3142`).
    container), source: plugin.src(container)}`. At Apply, resolve
    `parent.children[index]` and require it to be `.mermaid-container` /
    `.mermaid-error` **whose source matches**; else abort via `NB.app.notify`
-   (`app.js:669`, the `mermaid.js:207-208` pattern). Source-verify also guards
+   (`app.js`, the `mermaid.js` pattern). Source-verify also guards
    against external changes (F1). Parent-relative indexing matches
-   `captureCaret` (`hybrid.js:3804-3806`) and works inside lists/blockquotes.
+   `captureCaret` (`hybrid.js`) and works inside lists/blockquotes.
 4. `container.replaceWith(fence)` — a raw
    `<pre><code class="language-mermaid">` holding `editor.code` (same swap as
-   `toRawBlock`, `hybrid.js:4994-5005`).
+   `toRawBlock`, `hybrid.js`).
 5. **`await NB.mermaid.renderAll(viewerContentEl)`** (F3). `renderAll` is async;
    awaiting prevents the debounced history snapshot (`HISTORY_COALESCE_MS` 400ms,
-   `hybrid.js:3792,3824-3831`) from capturing the raw fence. `renderAll`
-   re-renders only the new fence (`mermaid.js:237-245`) and `renderOne` sets
-   `dataset.mermaidSource`, so `restoreForMarkdown` (`blocks.js:144-158`) and
-   `isNoOpMarkdown` (`hybrid.js:4234`) keep working.
-6. `NB.hybrid.onContentChange()` (`hybrid.js:5400`) — dirty, autosave, one undo
+   `hybrid.js,3824-3831`) from capturing the raw fence. `renderAll`
+   re-renders only the new fence (`mermaid.js`) and `renderOne` sets
+   `dataset.mermaidSource`, so `restoreForMarkdown` (`blocks.js`) and
+   `isNoOpMarkdown` (`hybrid.js`) keep working.
+6. `NB.hybrid.onContentChange()` (`hybrid.js`) — dirty, autosave, one undo
    step. `view.destroy()`; restore focus.
 
 If the source is unchanged from open, write nothing (no-op) — the gate verified
@@ -136,7 +137,7 @@ No server changes. No `ai.js` / `agent.md` changes.
 
 Naive forwarding to `window.mermaid` clobbers config: mermaid's `initialize`
 deep-merges into live config, and `mermaid.js`'s `initializedFor` guard
-(`mermaid.js:95-119`) would then skip re-init forever. Export the adapter from
+(`mermaid.js`) would then skip re-init forever. Export the adapter from
 `mermaid.js` so the invariants live once:
 
 ```js
@@ -145,26 +146,26 @@ deep-merges into live config, and `mermaid.js`'s `initializedFor` guard
 //   and theme = currentTheme() (body[data-theme]) — the canvas and the note
 //   can never disagree
 // - mint ids `nb-designer-N` that never collide with `mermaid-svg-N`
-// - on render failure, remove mermaid's stray `d<id>` node (mermaid.js:215)
+// - on render failure, remove mermaid's stray `d<id>` node (mermaid.js)
 ```
 
-Refactor: extract the config literal at `mermaid.js:110-117` into one shared
+Refactor: extract the config literal at `mermaid.js` into one shared
 builder used by both `ensureInitialized` and `designerMermaid()`.
 
 ### Keyboard-modal integration (F2)
 
 `#designer-overlay` MUST carry `class="settings-overlay"`. `modalIsOpen()` is a
-hardcoded selector duplicated in `shortcuts.js:244-247`, `vimnav.js:48-51`,
-`table-select.js:58-61`; without that class, Mod+Shift+E / Mod+E / Mod+S /
+hardcoded selector duplicated in `shortcuts.js`, `vimnav.js`,
+`table-select.js`; without that class, Mod+Shift+E / Mod+E / Mod+S /
 Ctrl+, fire under the modal and can tear down the hybrid session. Do not add a
 fourth copy of `modalIsOpen`.
 
 ### Role gating (F4)
 
-`NB.auth` exposes no role today (`auth.js:157-162`). `auth.js` already fetches
-`/api/auth` at boot (`auth.js:138`) and discards it — store it and expose
+`NB.auth` exposes no role today (`auth.js`). `auth.js` already fetches
+`/api/auth` at boot (`auth.js`) and discards it — store it and expose
 `NB.auth.status()` + `NB.auth.isAdmin()` (`enabled && role === "admin"`).
-Availability = auth off OR admin, matching `settings.js:551`. The menu is built
+Availability = auth off OR admin, matching `settings.js`. The menu is built
 synchronously in `buildMenu`, so it reads this cache. A stale role mid-session
 falls through to the existing 401/403 → `auth:required` flow and writes nothing.
 
@@ -175,7 +176,7 @@ on broken sources; `zenuml` is render-only; the bundle can fail to load. Wrap
 construction in try/catch and, on throw / non-editable capability / load
 failure, show an inline modal notice ("This diagram can't be edited visually —
 edit the source instead") with one button that closes the modal and calls
-`editPluginSource(hit)` (`hybrid.js:5007`). On load failure, `.catch` on
+`editPluginSource(hit)` (`hybrid.js`). On load failure, `.catch` on
 `NB.lazyload.script` and close with a toast; no polling.
 
 ### Edit UI: inspector, selection, add forms (v1 + v2)
@@ -355,7 +356,7 @@ horizontal overflow.
 ## Built artifact: `static/vendor/visimer.bundle.js`
 
 Built at **dev time** with esbuild (already a devDependency); committed like
-`codemirror.bundle.js` (`docs/operations/build.md:61-103`). No runtime build step.
+`codemirror.bundle.js` (`docs/operations/build.md`). No runtime build step.
 
 Entry (`static/vendor/visimer.entry.js`):
 

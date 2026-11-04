@@ -1,6 +1,6 @@
 # Search options (side-panel Search) — product spec
 
-Status: draft for review. Owner: `product-designer`.
+Status: superseded by [the Advanced search panel design](../design/search-panel-advanced.md), which owns the shipped control surface. Owner: `product-designer`.
 Applies to: the Search view in the side panel (`static/js/activity.js`, `mountSearch`), its API wrapper (`static/js/api.js`), search prefs (`static/js/app.js`), the search endpoint (`app.py`), and the tests and contracts named in §9.
 Related: [mobile](mobile.md) owns phone-shell rules; [HTTP API](../contracts/http-api.md) and [configuration](../contracts/configuration.md) own the wire and config contracts. This document owns observable search behaviour.
 
@@ -12,7 +12,7 @@ Visual treatment is `ui-designer`'s. This document fixes labels, control order, 
 
 The request (verbatim): "On search sidebar, add search options for shows only one times if you found multiple matches on the same file. it's like unique. help to design a clear & easy to understand ui for user to search."
 
-Today the panel is a flat list of occurrences:
+At the time of writing the panel was a flat list of occurrences:
 
 - a note with many hits takes one row per hit and pushes every other note off the panel;
 - the summary counts occurrences only, so "23 matches" does not say whether that is one note or ten;

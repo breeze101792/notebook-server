@@ -16,9 +16,9 @@ conversation, and runs the tool loop.
 
 It talks to any OpenAI-compatible `/v1/chat/completions` endpoint through
 the server-side SSE route `POST /api/ai/chat`
-(`static/js/api.js:102`, `app.py:1434`). Provider profiles live in
+(`static/js/api.js`, `app.py`). Provider profiles live in
 `config/ai.json`. The stored API key is never echoed to the browser
-(`_public_ai_config`, `app.py:1263`), but it is attached to the upstream
+(`_public_ai_config`, `app.py`), but it is attached to the upstream
 request sent to whatever `base_url` the saved profile names. All `/api/ai/*`
 routes are admin-only **only while auth is on**; because `admin_required`
 returns the view unguarded when auth is off (the default), an open server
@@ -30,21 +30,21 @@ See [Security posture](backend.md#6-security-posture).
 Open Settings → AI. The tab is admin-gated while auth is on, and live.
 
 - Add a provider profile: name, base URL, model, and API key (the AI
-  section's element refs start at `settings.js:986`; the Add-provider
-  handler is `settings.js:1390-1466`).
+  section's element refs start at `settings.js`; the Add-provider
+  handler is `settings.js`).
 - Mark one profile as the default (`make default`), or Edit and Remove a
   profile.
 - Test a profile: the `Test` button calls `GET /api/ai/probe?server=<name>`
   and reports reachable or unreachable. An upstream HTTP error, including
   401, counts as reachable; only a connection failure reports unreachable
-  (`app.py:1393`).
+  (`app.py`).
 - Custom prompt: global text appended to the built-in contract. It can
   steer style and focus but cannot invent tools (see `customPromptSuffix()`).
 - Web search: sets the SearXNG instance URL used by the search tool.
 
 Editing a profile never re-sends the stored key. A blank API key plus
 `replaceSecret: true` carries the previous key over server-side
-(`app.py:1245`).
+(`app.py`).
 
 ## ACP providers
 
@@ -56,7 +56,7 @@ the same.
 **Config and the picker.** ACP is configured in `config/acp.json`, a single
 hand-edited object. The profile names a **known agent by key**; the server
 resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
-`app.py:1213`):
+`app.py`):
 
 ```jsonc
 {"name": "opencode", "agent": "opencode",
@@ -71,7 +71,7 @@ agent the table does not know. Known keys: `opencode`, `claude`, `codex`,
 `gemini`, `goose`, `cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`,
 `copilot`, `kiro`.
 
-`load_acp_config` (`app.py:1309`) validates the whole object and fails closed
+`load_acp_config` (`app.py`) validates the whole object and fails closed
 to `{}` on any violation — never raises. Bounds: `name` ≤ 60 characters,
 `command` ≤ 300, `args` ≤ 32 entries of ≤ 1000 characters each, `cwd` a
 string, `env` a string-to-string map, `default` a boolean, `timeout` a finite
@@ -87,14 +87,14 @@ off.
 `{name, model: "ACP", agent, default}` or `null`; `command`, `args`, and `env`
 stay server-side. It also returns an always-present `acpAgents` array —
 `[{key, label, available}]`, built by a read-only `shutil.which` PATH lookup
-(`_detect_acp_agents`, `app.py:1481`) — so the UI can show which known agents
+(`_detect_acp_agents`, `app.py`) — so the UI can show which known agents
 the host can launch; an agent whose wrapping CLI is present but whose ACP
 adapter is missing gains `adapterMissing: true` and a `hint` install command
 (today Claude Code and Codex). `loadAiConfig` appends one option labelled
 `<name> · ACP` after the OpenAI profiles, tags it client-side with `acp: true`,
-and selects it when `default` is true (`static/js/ai.js:2275-2294`). Settings →
+and selects it when `default` is true (`static/js/ai.js`). Settings →
 AI renders a read-only ACP row from `cfg.acp` (`buildAiAcpRow`,
-`static/js/settings.js:1330`); it is deliberately kept out of the editable
+`static/js/settings.js`); it is deliberately kept out of the editable
 provider list so a provider save cannot re-send or overwrite it. The same row
 lists every detected agent from `cfg.acpAgents` with its status — installed,
 ACP adapter missing (showing the server's `hint`), or not installed
@@ -106,26 +106,26 @@ client can POST must never choose a command to execute. The file is read on
 every request, so an edit takes effect on the next send without a restart.
 
 **One turn.** `POST /api/ai/chat` serves ACP when the posted `server` is not
-an OpenAI profile but matches the `acp.json` name (`ai_chat`, `app.py:1916`).
+an OpenAI profile but matches the `acp.json` name (`ai_chat`, `app.py`).
 Messages are validated by the same `_validate_chat_messages` used by the
 OpenAI relay, then system messages are dropped, image parts are rejected with
 400, and the surviving user/assistant turns are flattened into one prompt —
 `"User: …"` / `"Assistant: …"` blocks joined by blank lines
-(`_flatten_acp_prompt`, `app.py:1766`) — capped at 8 MiB. On the client, an
+(`_flatten_acp_prompt`, `app.py`) — capped at 8 MiB. On the client, an
 ACP-tagged provider narrows the attach input to `text/*` and
 `buildRequestMessages` strips every `image_url` part before the request is
 built (a one-per-turn notice says the image was not sent), so a stale image
 cannot poison every later turn; the server's 400 covers anything that still
 arrives (`activeServerIsAcp` / `buildRequestMessages`,
-`static/js/ai.js:1113-1142`). Multi-turn context is the replayed transcript,
+`static/js/ai.js`). Multi-turn context is the replayed transcript,
 exactly as for a model. `acp_client.run_turn` spawns a fresh agent process per
 request (`initialize → session/new → prompt`), kills it at turn end, and
 streams `agent_message_chunk` text back as OpenAI delta frames plus
 `data: [DONE]`. Each `tool_call` update the agent starts becomes a namespaced
 `data: {"acp":"trace","text":…}` frame that the panel renders as a trace line,
 so a long multi-step turn shows activity; thought, plan, and usage updates are
-dropped (`acp_client.py:74-84`). The prompt is prefixed with a short preamble
-(`_acp_context_preamble`, `app.py:1790`) built from server state: the fixed
+dropped (`acp_client.py`). The prompt is prefixed with a short preamble
+(`_acp_context_preamble`, `app.py`) built from server state: the fixed
 `ACP_CONTEXT_PREAMBLE` lead, the user's open note (`config/config.json`
 `activeFile`), and the global custom prompt (`config/ai.json` `custom_prompt`).
 It is re-sent on every turn, so it is never duplicated into the transcript.
@@ -138,14 +138,14 @@ use the agent answers in prose and the loop runs a single round.
 
 **Trust and capabilities.** `acp_client.py` is imported lazily, so a missing
 `agent-client-protocol` package disables only ACP and degrades to an in-band
-SSE error (`app.py:1863`). The client advertises no `fs/*`, `terminal/*`, or
+SSE error (`app.py`). The client advertises no `fs/*`, `terminal/*`, or
 elicitation capability; those client methods raise JSON-RPC
 `method_not_found` rather than returning a bogus empty success
-(`acp_client.py:109-134`). `session/request_permission` is auto-allowed with
+(`acp_client.py`). `session/request_permission` is auto-allowed with
 the agent's one-shot `allow_once` option, or `allow_always`, or denied when
-neither is offered (`acp_client.py:81-103`). A spawn failure becomes the
+neither is offered (`acp_client.py`). A spawn failure becomes the
 generic `"ACP agent failed to start"`; the configured command line is logged,
-never sent to the browser (`acp_client.py:218-224`). The agent runs as the
+never sent to the browser (`acp_client.py`). The agent runs as the
 server user with filesystem access, and its own tools execute directly —
 `safe_path` and the notebook's approval cards do not apply to it.
 
@@ -286,11 +286,11 @@ surface as Apply/Reject cards.
   which simulates the literal `find_replace`,
   `append`, and `prepend` ops. Ops it cannot simulate show an ops summary
   instead of a diff.
-- Applying a patch calls `/api/edit` (`file_edit` route, `app.py:1795`).
+- Applying a patch calls `/api/edit` (`file_edit` route, `app.py`).
   The server re-reads the file and re-applies every op against the
   current content, so a stale `find` (zero matches) fails closed with
-  HTTP 400 (`_edit_find_replace`'s zero-match raise at `app.py:390`,
-  mapped to 400 at `app.py:1841-1843`) and the card turns errored. The
+  HTTP 400 (`_edit_find_replace`'s zero-match raise at `app.py`,
+  mapped to 400 at `app.py`) and the card turns errored. The
   client preview is advisory; the server is the authority.
 - Applying a `write` calls `/api/create`. If the target already exists,
   the card is blocked with "write cannot overwrite — ask the AI to patch
@@ -393,7 +393,7 @@ The **Clear** button resets the conversation and system cache
 
 `config/ai.json` uses snake_case keys; the HTTP API accepts camelCase input
 and returns camelCase keys (the mapping lives in the AI section of `app.py`,
-from `app.py:1154`).
+from `app.py`).
 
 ```jsonc
 {
@@ -409,29 +409,29 @@ from `app.py:1154`).
 
 - `GET /api/ai/config` returns the masked profile list with `hasKey`
   booleans, the default, the custom prompt, and the SearXNG URL. The
-  stored key is never echoed (`app.py:1263`).
+  stored key is never echoed (`app.py`).
 - `POST /api/ai/config` replaces the profile list. Base URLs are
   normalized on save: a trailing slash and a trailing `/v1` are stripped
-  (`app.py:1230-1232`). `_chat_url()` then appends
-  `/v1/chat/completions` (`app.py:1297`).
+  (`app.py`). `_chat_url()` then appends
+  `/v1/chat/completions` (`app.py`).
 - `customPrompt` is preserved when the POST omits it and cleared when sent
-  as `""`. The cap is 8000 characters (`app.py:1356-1357`).
+  as `""`. The cap is 8000 characters (`app.py`).
 - `searxngUrl` is preserved when omitted and cleared when sent as `""`
-  (`app.py:1359-1362`).
+  (`app.py`).
 
 Caps:
 
 - `fetch` — 512 KiB body, 15-second timeout
-  (`AI_FETCH_MAX_BYTES` at `app.py:1168`, `AI_FETCH_TIMEOUT` at
-  `app.py:1169`).
+  (`AI_FETCH_MAX_BYTES` at `app.py`, `AI_FETCH_TIMEOUT` at
+  `app.py`).
 - `search` — top 10 results, 15-second timeout
-  (`AI_SEARXNG_TIMEOUT` at `app.py:1170`, `AI_SEARXNG_MAX_RESULTS` at
-  `app.py:1171`).
+  (`AI_SEARXNG_TIMEOUT` at `app.py`, `AI_SEARXNG_MAX_RESULTS` at
+  `app.py`).
 
 Upstream HTTP errors during chat are re-emitted in-band as SSE
 `event: error` frames, so the browser can display them
-(`app.py:1490-1495`). The client treats an `{error: true}` frame as a
-failed call (`static/js/api.js:141`).
+(`app.py`). The client treats an `{error: true}` frame as a
+failed call (`static/js/api.js`).
 
 The full HTTP request/response shapes for every `/api/ai/*` route are in
 [`../contracts/http-api.md`](../contracts/http-api.md); the `config/`

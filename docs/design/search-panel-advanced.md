@@ -6,9 +6,9 @@ Design handoff for moving the side-panel search filters behind an
 
 Reference mockup: `docs/design/search-panel-advanced.html`.
 
-Status: design only. No source files were changed. `web-engineer`
-implements the markup change in `activity.js` and the CSS change in
-`style.css`.
+Status: shipped (search Advanced disclosure), design record. The markup is in
+`mountSearch()` in `static/js/activity.js` and the CSS change in
+`static/css/style.css`. This document matches today's control area.
 
 > **Update (2026-10-30):** the `Aa` case toggle moved from the query row into
 > this Advanced panel, under a `Match case` caption. When it is on and the
@@ -791,8 +791,7 @@ File name variant:
 
 ### 8.2 Scoped tokens
 
-Add these four to the existing `#search-view` block
-(`static/css/style.css:3969`). Everything else stays.
+Add these four to the existing `#search-view` block. Everything else stays.
 
 ```css
 #search-view {
@@ -851,8 +850,7 @@ changes.
 
 ### 8.4 CSS additions and changes
 
-Add the trigger block after the `.search-panel-case` rules
-(`static/css/style.css:4021`–`:4067`):
+Add the trigger block after the `.search-panel-case` rules:
 
 ```css
 /* ------------------------------------------------------------------ */
@@ -940,8 +938,7 @@ Add the trigger block after the `.search-panel-case` rules
 .search-panel-advanced[hidden] { display: none; }
 ```
 
-Replace the `.search-panel-filters` flex block
-(`static/css/style.css:4069`–`:4073`) with:
+Replace the `.search-panel-filters` flex block with:
 
 ```css
 .search-panel-filters {
@@ -967,11 +964,11 @@ Replace the `.search-panel-filters` flex block
 }
 ```
 
-Change `.search-panel-mode` (`static/css/style.css:4092`) from
+Change `.search-panel-mode` from
 `grid-template-columns: 1fr 1fr;` to `grid-template-columns: 1fr;`.
 Keep the existing `.search-panel-mode.is-hidden { display: none; }`.
 
-After the `.search-panel-mode-opt span` rule (`:4111`), add the narrow
+After the `.search-panel-mode-opt span` rule, add the narrow
 grid type:
 
 ```css
@@ -985,8 +982,7 @@ grid type:
 
 ### 8.5 Container queries
 
-Replace the existing `@container (max-width: 199px)` block
-(`static/css/style.css:4295`–`:4300`) with two queries:
+Replace the existing `@container (max-width: 199px)` block with two queries:
 
 ```css
 /* Below this the two-up filter grid cannot hold a full option label. */
@@ -1027,8 +1023,7 @@ back into the 199 query; the base is already one column.
 
 ### 8.6 Phone overrides
 
-Inside the existing phone media query
-(`static/css/style.css:6486`), extend `#search-view` with the four new
+Inside the existing phone media query, extend `#search-view` with the four new
 tokens and add the trigger rules. Keep the existing search rules; replace
 the phone `.search-panel-mode-opt span` font-size rule with the scoped
 version so it wins over the `.search-panel-filters …` rule:
@@ -1097,7 +1092,7 @@ File-name Grouping row.
 
 ### 8.8 Behaviour map for `activity.js`
 
-Add near `syncControls` / `applyTargetUi` (`static/js/activity.js:576`):
+Add near `syncControls` / `applyTargetUi` in `activity.js`:
 
 ```js
 let advancedOpen = false;
@@ -1170,34 +1165,32 @@ mobile-specific behaviour.
 
 ### 9.1 `static/js/activity.js`
 
-- `mountSearch()` (`:415`): build the `.search-panel-advanced-row` and
+- `mountSearch()`: build the `.search-panel-advanced-row` and
   `.search-panel-advanced` wrapper; move the existing `.search-panel-filters`
-  inside the wrapper; append the row and wrapper after the input row.
-  Reference the control construction at `:447`–`:545`.
+  inside the wrapper; append the row and wrapper after the input row. The
+  control construction in `mountSearch()` is the reference.
 - Add `advancedOpen`, `setAdvancedOpen`, `advancedSummaryText`,
-  `syncAdvancedSummary` near `syncControls` (`:597`).
-- `applyTargetUi()` (`:576`): add the `.is-name` toggle and the
+  `syncAdvancedSummary` near `syncControls`.
+- `applyTargetUi()`: add the `.is-name` toggle and the
   `syncAdvancedSummary()` call.
-- Event handlers (`:1068`–`:1115`): add the trigger click, the panel
-  Escape handler, and the two `syncAdvancedSummary()` calls.
+- Event handlers: add the trigger click, the panel Escape handler, and the two
+  `syncAdvancedSummary()` calls.
 - Presentational only; no API, persistence or search-option changes.
 
 ### 9.2 `static/css/style.css`
 
-- `#search-view` tokens (`:3969`): add the four new tokens.
-- Add the Advanced row/toggle/badge/summary/panel rules after
-  `.search-panel-case` (`:4030`–`:4067`).
-- Replace `.search-panel-filters` (`:4069`) with the grid; add the
-  `is-name` rules.
-- Change `.search-panel-mode` (`:4092`) to one column.
-- Add the `.search-panel-filters .search-panel-mode-opt span` type rule
-  after `:4111`.
-- Replace the `@container (max-width: 199px)` block (`:4295`) with the
-  227 / 199 pair.
-- Extend the phone search block (`:6486`) with the trigger tokens/rules
-  and the scoped segment size.
+- `#search-view` tokens: add the four new tokens.
+- Add the Advanced row/toggle/badge/summary/panel rules after the
+  `.search-panel-case` rules.
+- Replace `.search-panel-filters` with the grid; add the `is-name` rules.
+- Change `.search-panel-mode` to one column.
+- Add the `.search-panel-filters .search-panel-mode-opt span` type rule after
+  the `.search-panel-mode-opt span` rule.
+- Replace the `@container (max-width: 199px)` block with the 227 / 199 pair.
+- Extend the phone search block with the trigger tokens/rules and the scoped
+  segment size.
 - Add `.search-panel-advanced-chevron` to the existing
-  `prefers-reduced-motion` block (`:4302`).
+  `prefers-reduced-motion` block.
 
 ### 9.3 Not changed
 

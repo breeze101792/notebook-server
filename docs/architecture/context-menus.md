@@ -1,17 +1,24 @@
 # Context menus — shared-menu blueprint
 
-Three independent right-click menus exist today: the sidebar's
-(`sidebar.js`, serving tree rows, bookmark rows, and the tree root), the
-tab bar's (`tabs.js`), and hybrid mode's formatting menu (`hybrid.js`,
-the only one with separators, submenus, keyboard hints, and keyboard
-navigation). All three render into a `<div class="context-menu">` styled
-by one shared CSS block, and all three hand-roll the same plumbing:
-build items, position at the pointer, close on outside click. The
-plumbing has already drifted — three different `addMenuItem` signatures,
-three different "what counts as outside" scopes, five copies of the
-positioning math with two different magic numbers.
+Status: shipped. `NB.menu` (`static/js/menu.js`) is the one menu module;
+the three per-surface implementations that §1 inventories are gone from
+the tree. §1 is the pre-migration record — its file:line anchors are the
+design-time snapshot and are not re-anchored — and §2 onward is the
+shipped contract, amended where the build differed (the `onClose`
+callback; see §2.2 and §3.3).
 
-New module: `static/js/menu.js` (`NB.menu`). One singleton menu element,
+Three independent right-click menus existed before the migration: the
+sidebar's (`sidebar.js`, serving tree rows, bookmark rows, and the tree
+root), the tab bar's (`tabs.js`), and hybrid mode's formatting menu
+(`hybrid.js`, the only one with separators, submenus, keyboard hints, and
+keyboard navigation). All three rendered into a `<div class="context-menu">`
+styled by one shared CSS block, and all three hand-rolled the same
+plumbing: build items, position at the pointer, close on outside click.
+The plumbing had already drifted — three different `addMenuItem`
+signatures, three different "what counts as outside" scopes, five copies
+of the positioning math with two different magic numbers.
+
+The module: `static/js/menu.js` (`NB.menu`). One singleton menu element,
 data-driven item descriptors, one document-level close dispatcher.
 Surfaces keep what is genuinely theirs — *when* the menu opens, *what*
 the items are, and the element that counts as "inside" — and stop
@@ -21,18 +28,17 @@ Sibling docs: [frontend.md](frontend.md) for the module inventory and
 load order, [hybrid-editing.md](hybrid-editing.md) for the hybrid mode
 this menu lives in, [table-select.md](table-select.md) for the style of
 this document. Load-order and PRECACHE facts cited below were verified
-against `templates/index.html:1099-1132`, `static/sw.js:38-67`, and
-`tests/dom/test_dom.js:1560-1601`.
+against the templates and harness as of the design date.
 
 ---
 
-## 1. Current-state assessment
+## 1. Pre-migration state assessment (historical)
 
 ### 1.1 Three implementations of one widget
 
 | Concern | sidebar.js | tabs.js | hybrid.js |
 | --- | --- | --- | --- |
-| Host `<div>` | `#context-menu` (lookup `sidebar.js:10`) | `#tab-context-menu` (`tabs.js:25`) | `#hybrid-context-menu` (`hybrid.js:45`) |
+| Host `<div>` | `#context-menu` (lookup `sidebar.js`) | `#tab-context-menu` (`tabs.js`) | `#hybrid-context-menu` (`hybrid.js`) |
 | Open entry | `openMenu` :601, `openBookmarkMenu` :447, `openRootMenu` :664 | `openMenu` :752 | `openMenu` :5695 → `buildMenu` :5540 |
 | Item builder | `addMenuItem(label, handler, danger)` :637 | `addMenuItem(label, handler, opts)` :778 | `addMenuItem(label, handler, danger, opts)` :4570 |
 | Separators | raw `menuEl.appendChild(document.createElement("hr"))` (×4 in :609-627) | raw `<hr>` :768 | `addMenuSep` :4588 |
@@ -59,8 +65,8 @@ keyboard hints — those features are trapped inside the largest module.
 ### 1.3 Positioning copy-pasted five times with drifting constants
 
 The clamp `x = Math.min(e.clientX, window.innerWidth − W)` appears five
-times: `sidebar.js:468`, `:631`, `:674` with **W = 190**, and
-`tabs.js:789`, `hybrid.js:5718` with **W = 200**. W is a *guess at the
+times: `sidebar.js`, `:631`, `:674` with **W = 190**, and
+`tabs.js`, `hybrid.js` with **W = 200**. W is a *guess at the
 menu's width*, not a measurement — a menu wider than the guess (long
 labels, kbd hints) overflows the viewport's right edge. The y-clamp
 (`window.innerHeight − menuEl.offsetHeight − 10`) is correct because it
@@ -77,18 +83,18 @@ while the hybrid menu is open closes the hybrid menu (:5780-5782), and
 vice versa (:650-658). Remove any one listener and a menu lingers.
 
 The scopes are also an ordering hazard. The tree-row handler
-(`sidebar.js:95-97`, :137-139) opens a menu during bubbling; the
+(`sidebar.js`, :137-139) opens a menu during bubbling; the
 document-level `contextmenu` handler then fires with the same target.
 It must recognize the target as *inside the sidebar* and not close the
 menu the row handler just opened. This exact bug shipped once — the
-regression guard at `tests/dom/test_dom.js:13217-13223` asserts the
+regression guard at `tests/dom/test_dom.js` asserts the
 bookmark menu is **visible** (not merely present) after a row
 right-click, with a comment describing the history.
 
 ### 1.5 Dead state
 
-`menuCtx` (`sidebar.js:25`, written :448, :602, :665, cleared :647) and
-`menuPath` (`tabs.js:750`, written :753, cleared :795) are **never
+`menuCtx` (`sidebar.js`, written :448, :602, :665, cleared :647) and
+`menuPath` (`tabs.js`, written :753, cleared :795) are **never
 read**. The handlers already capture their target in closures. This is
 state that suggests a "menu knows what it was opened for" contract that
 does not exist — and that a future maintainer might start relying on
@@ -113,12 +119,12 @@ without anyone keeping it correct.
 - **One module, one element.** `static/js/menu.js` (IIFE, `NB.menu`)
   creates a single host `<div id="nb-menu" class="context-menu" hidden>`
   appended to `document.body` at load. The three per-surface divs in
-  `templates/index.html:344-350` are deleted. One element makes "two
+  `templates/index.html` are deleted. One element makes "two
   menus open at once" *structurally impossible* instead of merely
   forbidden, and deletes an axis of state ("which host is open").
 - **The class `.context-menu` is the compatibility contract.** All
-  existing CSS (`style.css:2552-2614`) and
-  `mermaid-designer.js:477`'s `closest(".context-menu, …")` keep working
+  existing CSS (`style.css`) and
+  `mermaid-designer.js`'s `closest(".context-menu, …")` keep working
   unchanged. The element is **hidden, never removed** — the designer's
   invoker check relies on the clicked menu button staying connected to
   a `.context-menu` ancestor (see §4.4).
@@ -141,6 +147,11 @@ NB.menu.open({
   items: [ /* descriptors, below */ ],
   focusFirst: true,          // optional (hybrid only today): focus first enabled
                               // item so arrows/Enter work without a pointer
+  onClose: function (reason) {}, // optional: called with why the menu closed —
+                              // "outside" (outside click / right-click, the
+                              // default), "esc" (Escape), or "pick" (an item
+                              // was chosen). Stored at menu.js, invoked at
+                              // menu.js.
 });
 
 NB.menu.close();      // close whatever is open (idempotent)
@@ -156,7 +167,7 @@ today.
 ```js
 { label: "Delete",            // string, required (except separators)
   handler: fn,                // runs AFTER the menu closes (order preserved)
-  danger: true,               // red text (.danger, style.css:2575)
+  danger: true,               // red text (.danger, style.css)
   disabled: true,             // btn.disabled + aria-disabled + title, no click listener
   title: "No visual editor…", // tooltip / disabled reason
   kbd: "Alt+Up",              // right-aligned <kbd class="context-menu-kbd"> hint
@@ -172,32 +183,32 @@ today.
   `open()` throws a `TypeError`. Item lists are static literals per
   surface, so a typo (`hanlder`) fails at the first right-click in dev
   instead of rendering a silently dead button.
-- `disabled` renders exactly as hybrid does today (`hybrid.js:4574-4583`):
+- `disabled` renders exactly as hybrid does today (`hybrid.js`):
   `btn.disabled = true`, `aria-disabled="true"`, `title` carried, and
   **no click listener attached**. The designer test at
-  `tests/dom/test_dom.js:22148-22155` asserts all three attributes —
+  `tests/dom/test_dom.js` asserts all three attributes —
   this contract is load-bearing.
 
 ### 2.3 Rendering rules (DOM contract preserved)
 
 The module produces byte-identical DOM to today's menus so the CSS block
-(`style.css:2552-2614`) and the flyout rules (`:2587-2614`, which key off
+(`style.css`) and the flyout rules (`:2587-2614`, which key off
 `.submenu > .context-menu` and `left: 100%`) need no changes:
 
 - plain item → `<button>label</button>`; click = `NB.menu.close(); handler()`
-  (close-then-run, as in all three modules today — `sidebar.js:641`,
-  `tabs.js:784`, `hybrid.js:4582`).
+  (close-then-run, as in all three modules today — `sidebar.js`,
+  `tabs.js`, `hybrid.js`).
 - separator → `<hr>`.
 - submenu → `<button class="submenu">label<div class="context-menu">…</div></button>`;
   click on the parent `stopPropagation`s, closes sibling `.submenu.open`,
-  and toggles `.open` (ported from `hybrid.js:4606-4613`); hover is pure
+  and toggles `.open` (ported from `hybrid.js`); hover is pure
   CSS. Flyout items recurse; separators inside flyouts work (hybrid's
-  List flyout has one, `hybrid.js:5580`).
+  List flyout has one, `hybrid.js`).
 - `kbd` → `<kbd class="context-menu-kbd">` appended inside the button —
-  styled by `style.css:1166-1167`, available at top level and in
+  styled by `style.css`, available at top level and in
   submenus alike (the rule is class-based).
 - `role="menu"` is set on the host at every open (today only hybrid
-  does, `hybrid.js:5725`). Aria-only; invisible to behavior; sidebar and
+  does, `hybrid.js`). Aria-only; invisible to behavior; sidebar and
   tabs gain it for free.
 
 ### 2.4 Positioning, centralized
@@ -211,7 +222,7 @@ y = Math.min(anchorY, window.innerHeight - el.offsetHeight - VIEWPORT_EDGE);
 ```
 
 Build → unhide → measure → clamp → set `left/top`, the same order all
-three modules use today (measure after unhide, e.g. `sidebar.js:630-634`).
+three modules use today (measure after unhide, e.g. `sidebar.js`).
 The 190/200 width guesses die; `offsetWidth` is measured, so wide menus
 no longer overflow the right edge. `VIEWPORT_EDGE = 10` matches today's
 y-margin exactly (`:469`, `:632`, `:675`, `:790`, `:5719`); the x edge
@@ -223,23 +234,23 @@ y-clamp handles bottom overflow, as today.
 
 - **Esc**: one document `keydown` listener in the module closes any open
   menu (no `preventDefault`, no `stopPropagation` — identical to
-  `hybrid.js:5750-5752`, so other Esc consumers are unaffected). Now
+  `hybrid.js`, so other Esc consumers are unaffected). Now
   universal, free.
 - **Arrow/Enter/Space navigation**: ported from
-  `hybrid.js:5757-5777` into the module. Gated on "a menu is open **and**
+  `hybrid.js` into the module. Gated on "a menu is open **and**
   focus is inside it", `preventDefault` only inside that guard. Since
   arrows only act once focus is in the menu, this costs sidebar/tabs
   nothing until they opt in.
 - **Keyboard invocation (Shift+F10 / Menu key)** stays at the surface.
-  Only hybrid has focusable blocks (`mermaid.js:200` sets `tabIndex = 0`
-  exactly for this, comment `mermaid.js:197-199`). Hybrid keeps its
+  Only hybrid has focusable blocks (`mermaid.js` sets `tabIndex = 0`
+  exactly for this, comment `mermaid.js`). Hybrid keeps its
   detection — a `contextmenu` event with `clientX/Y === 0` anchored to
   the focused `.mermaid-container`/`.mermaid-error` rect + 8 px
-  (`hybrid.js:5704-5717`) — and passes the computed `x`/`y` to
+  (`hybrid.js`) — and passes the computed `x`/`y` to
   `NB.menu.open`. The module takes coordinates only; no `anchor`
   element option (one caller, no second use in sight).
 - **`focusFirst: true`** (hybrid passes it): focus the first
-  non-disabled button (`hybrid.js:5726-5727`). Default false, so
+  non-disabled button (`hybrid.js`). Default false, so
   sidebar/tabs keep their pointer-only behavior. Making it universal is
   a separate decision (§8).
 
@@ -248,18 +259,18 @@ y-clamp handles bottom overflow, as today.
 **Out of the abstraction — deliberately.**
 
 - The edit-bar dropdowns (`.eb-menu`, `.eb-table-menu`, `.eb-list-menu`;
-  markup `templates/index.html:160-211`, wiring `editbar.js:696-698`,
+  markup `templates/index.html`, wiring `editbar.js`,
   close rules `:911-932`) are **left-click** menus on anchored buttons
   inside the bar: persistent DOM authored once in markup, positioned by
   CSS containment (no fixed-position viewport math), items are
   `button[data-act]` handled by one delegated action map
-  (`editbar.js:911-920`), and the close scope is each menu's own anchor
+  (`editbar.js`), and the close scope is each menu's own anchor
   wrapper (`.eb-overflow`, `.eb-list`, …).
-- The table-view popovers (`.nb-tv-pop`, `table-view.js:698-790`) are
+- The table-view popovers (`.nb-tv-pop`, `table-view.js`) are
   anchored absolutely to a header cell inside a positioned overlay and
   contain **live-applied widgets** — radio sort actions that update in
   place and checkbox rows that apply on change without closing
-  (`table-view.js:705-725`, `:764-783`).
+  (`table-view.js`, `:764-783`).
 
 What these share with context menus is only the "transient popup closes
 on outside click" idiom. Their contracts differ in every load-bearing
@@ -296,13 +307,13 @@ flowchart TD
   the menu never close via the dispatcher — items close themselves,
   submenu toggles `stopPropagation`. Accepted micro-delta: today
   sidebar/tabs close on a click anywhere *including* menu padding
-  (`sidebar.js:649`, `tabs.js:796`); after, a padding click leaves the
-  menu open (hybrid's rule, `hybrid.js:5747-5749`, becomes the single
+  (`sidebar.js`, `tabs.js`); after, a padding click leaves the
+  menu open (hybrid's rule, `hybrid.js`, becomes the single
   rule).
 - **Contextmenu (capture)**: target outside the open menu's `scope` →
   close. Capture phase so the dispatcher runs *before* surface handlers
   and regardless of `stopPropagation` — hybrid already chose capture
-  (`hybrid.js:5782`), and capture also makes the §1.4 ordering hazard
+  (`hybrid.js`), and capture also makes the §1.4 ordering hazard
   impossible by construction: the dispatcher decides close/no-close
   *first*, then the surface's row handler calls `open()`, which replaces
   content. A right-click inside the scope never closes — the row's own
@@ -321,15 +332,24 @@ menu" listeners are deleted, not ported.
 
 ### 3.3 Ownership
 
-`open()` records `{owner, scope}`; `close(owner)` closes only on a
+`open()` records `{owner, scope, onClose}`; `close(owner)` closes only on a
 match. The one real caller is hybrid's teardown — `exit()` currently
-calls `hideMenu()` at `hybrid.js:4330` — which becomes
+calls `hideMenu()` at `hybrid.js` — which becomes
 `NB.menu.close("hybrid")`: leaving hybrid mode retires its menu without
 assuming nothing else could be open (they can't, but the call states
 intent and stays correct through the per-surface migration steps).
 
-No `NB.evt` events, no `onClose` callback, no `isOpen()`: no consumer
-exists. Add them when one does.
+**`onClose` shipped** (the one amendment to the original "no callbacks"
+stance): a consumer did appear — a surface needed to clear state it had
+set on its trigger when the menu closes for any other reason. `open()`
+accepts `opts.onClose(reason)` (stored at `menu.js`); the close
+dispatcher invokes it with the reason — `"outside"` for an outside click
+or right-click (the default), `"esc"` for Escape, `"pick"` for a picked
+item (`menu.js`). Items run *after* the callback, in the established
+close-then-run order.
+
+No `NB.evt` events and no `isOpen()`: still no consumer exists for
+either. Add them when one does.
 
 ---
 
@@ -365,7 +385,7 @@ then one call*:
   left` — then `NB.menu.open({ owner: "tabs", scope: barEl, … })`.
 - Delete: `addMenuItem` (`:778`), `positionMenu` (`:788`), `hideMenu`
   (`:795`), the document listeners (`:796-800`), dead `menuPath`
-  (`:750`). The tab-row listener (`tabs.js:387`) keeps its
+  (`:750`). The tab-row listener (`tabs.js`) keeps its
   `preventDefault`.
 
 ### 4.3 `hybrid.js` — submenus, focus, keyboard anchor
@@ -398,13 +418,13 @@ then one call*:
 ### 4.4 Shared files
 
 - `templates/index.html`: add `<script src="/static/js/menu.js" defer></script>`
-  **after `blocks.js`** (`index.html:1105`, before `mermaid.js` at
+  **after `blocks.js`** (`index.html`, before `mermaid.js` at
   `:1106`). The earliest consumer in load order is `hybrid.js` at
   `:1113`; `sidebar.js` (`:1120`) and `tabs.js` (`:1123`) load later.
   Grouping it with `blocks.js` keeps the "shared infra first" pattern.
   Delete the three menu divs (`:343-350`).
 - `static/sw.js`: add `"/static/js/menu.js"` to `PRECACHE` after
-  `blocks.js` (`sw.js:40`) — an app module missing from the precache
+  `blocks.js` (`sw.js`) — an app module missing from the precache
   breaks offline, which is the point of the list.
 - `static/js/mermaid-designer.js`: `:477`
   `el.closest(".context-menu, #hybrid-context-menu")` →
@@ -421,7 +441,7 @@ then one call*:
 ## 5. Style unification
 
 **No CSS changes are required.** All per-menu styling is already shared
-through the one `.context-menu` block (`style.css:2552-2614`), and every
+through the one `.context-menu` block (`style.css`), and every
 feature the module renders has class-based rules: hover/danger
 (`:2574-2575`), separators (`:2576-2580`), the submenu flyout geometry
 (`:2587-2614`, keyed off `.submenu` and a nested `.context-menu`, not
@@ -434,11 +454,11 @@ The drift that exists is in JS, not CSS, and §2 collapses it:
 | Drift | Today | After |
 | --- | --- | --- |
 | Viewport clamp constant | 190 (sidebar ×3) vs. 200 (tabs, hybrid) | measured `offsetWidth`, one `VIEWPORT_EDGE` |
-| Disabled rendering | tabs: `btn.disabled` only (`tabs.js:783`) | `disabled` + `aria-disabled` + `title`, one renderer (hybrid's, `:4574-4583`) |
+| Disabled rendering | tabs: `btn.disabled` only (`tabs.js`) | `disabled` + `aria-disabled` + `title`, one renderer (hybrid's, `:4574-4583`) |
 | `role="menu"` | hybrid only (`:5725`) | every open |
 
 One optional cleanup while touching nothing else: the
-`.context-menu-kbd` rules at `style.css:1166-1167` live far from the
+`.context-menu-kbd` rules at `style.css` live far from the
 menu block; moving them next to `:2552` groups the menu's styles.
 Cosmetic; do it or don't.
 
@@ -464,14 +484,14 @@ Every test below selects by the old host IDs; each becomes
 | Export entry points | :16629-16678 | tree-row and tab menus open the modal targeting that file |
 | Designer matrix | :22099-22157 | item shown for admin, absent for viewer; render-only type `disabled` + `aria-disabled` + `title` (:22148-22155) |
 
-Browser suites: `tests/browser/test_hybrid_browser.js:1798`, `:1814` and
-`tests/browser/test_designer_browser.js:142-143` select
+Browser suites: `tests/browser/test_hybrid_browser.js`, `:1814` and
+`tests/browser/test_designer_browser.js` select
 `#hybrid-context-menu` (and `:not([hidden])`) — update to `#nb-menu`.
 
 ### 6.2 New `== menu module ==` block
 
 Add a unit-style block right after the module loads (next to the other
-early blocks, load list at `test_dom.js:1570-1601`), driving `NB.menu`
+early blocks, load list at `test_dom.js`), driving `NB.menu`
 directly:
 
 - render: item order, `<hr>` for separators, `.danger`, `disabled` +
@@ -512,7 +532,7 @@ Each step lands green; every step is one surface plus its own tests.
 
 1. **Land `menu.js` inert.** Module + singleton host + `index.html`
    script tag + `sw.js` PRECACHE + harness `evalIn` (after `blocks.js`,
-   `test_dom.js:1574`) + the new `== menu module ==` block. Nothing
+   `test_dom.js`) + the new `== menu module ==` block. Nothing
    consumes `NB.menu` yet; the three legacy menus coexist with the
    unused singleton. Suite green.
 2. **Migrate `tabs.js`** (smallest: flat items, one open path). Update
@@ -524,7 +544,7 @@ Each step lands green; every step is one surface plus its own tests.
 4. **Migrate `hybrid.js`** (submenus, `focusFirst`, keyboard anchor,
    `isPlainTextTarget`, `exit` close). Update :6425-6530, :7750-7788,
    :10925-10956, :22099-22157 and both browser suites; delete
-   `#hybrid-context-menu` divs; simplify `mermaid-designer.js:477`.
+   `#hybrid-context-menu` divs; simplify `mermaid-designer.js`.
    Green.
 5. **Update the docs.** `frontend.md` module inventory gains the
    `menu.js` row and drops "right-click menus" from the sidebar/tabs
@@ -557,11 +577,11 @@ step interferes with its neighbors.
    `offsetHeight` y-clamp, so no regression — but the unit test must
    stub, not skip.
 2. **Submenu flyouts can overflow the right edge** near the viewport
-   border (CSS pins them to `left: 100%`, `style.css:2599-2606`).
+   border (CSS pins them to `left: 100%`, `style.css`).
    Pre-existing, hybrid-only, unchanged by this design. Fixing it needs
    JS flyout repositioning — defer until someone hits it.
 3. **Esc is not consumed.** With a menu open, Esc also reaches other
-   Esc handlers, exactly as today (`hybrid.js:5750-5752` has no
+   Esc handlers, exactly as today (`hybrid.js` has no
    `stopPropagation`). If the menu should claim Esc when open, that is a
    deliberate behavior change to decide separately.
 4. **`focusFirst` universality.** Sidebar/tabs keep pointer-only menus

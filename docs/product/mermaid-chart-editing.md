@@ -1,6 +1,6 @@
 # Mermaid chart editing — product definition
 
-**Status:** Product definition for review. No visual or technical design chosen here.
+**Status:** shipped (Mermaid chart editing; historical definition). No visual or technical design chosen here.
 **Date:** 2026-10-19
 **Owner:** `product-designer`
 **Scope:** The three Mermaid fenced blocks in `notebook/Syntax.md`:
@@ -15,27 +15,27 @@ Related documents:
 
 ## 1. Problem
 
-The owner expects "Design diagram…" to edit the chart they see. Today it is
-mostly an **add** panel. The owner's three blocks do open, and most element
-editing exists, but it is hidden behind canvas gestures that the modal never
-names. The visible sidebar offers only "Add" actions, and the one hint is
-flowchart-specific.
+The owner expects "Design diagram…" to edit the chart they see. At the time of
+writing it was mostly an **add** panel. The owner's three blocks did open, and
+most element editing existed, but it was hidden behind canvas gestures that the
+modal never named. The visible sidebar offered only "Add" actions, and the one
+hint was flowchart-specific.
 
 This is a verified gap between expectation and presentation, not a complete
 absence of editing.
 
-### 1.1 What the owner can do today
+### 1.1 What the owner could do at the time of writing
 
 Sources: **[code]** = read from our source; **[bundle]** = read from
 `static/vendor/visimer.bundle.js`; **[probe]** = run against the real bundle in
 Node with a throwaway script. No real-browser sequence/pie interaction was
 observed in this pass.
 
-| Type | Works today | Not reachable today | Why it feels add-only |
+| Type | Worked then | Not reachable then | Why it felt add-only |
 | --- | --- | --- | --- |
-| Flowchart | Add 14 shapes. Rename a node label by double-click or Enter. Change shape, color, duplicate, or delete from the node popover. Add an edge with Connect/Alt+drag. Relabel an edge by double-click. Change edge arrow, stroke, reverse, or delete from the edge popover. Undo/redo. **[code]** `mermaid-designer.js:110-118, 364-395`; **[bundle]** `MermaidCanvasView.actionsFor`, `editEntityLabel`, `onSvgPointerUp` | Flowchart direction (TD/TB/BT/LR/RL). Six of the 14 shapes on an existing node (the popover lists 8). No named instruction for rename, edge-label edit, or delete. **[bundle]** `setNodeShape` accepts all 14 **[probe]**; `setDirection` exists as a dispatch case but no canvas action invokes it. | The sidebar is just "Shapes". The hint says "click a node for shape, color and arrow options" and never mentions renaming, edges, or delete. `templates/index.html:1098-1100` |
-| Sequence | Add a participant. Rename a participant alias, change participant type, or delete from the participant popover. Edit message text by double-click. Change message arrow, reverse, wrap in fragment, or delete from the message popover. Reorder messages by dragging. Add a message or note from the lifeline `+`. Edit or delete a note. Undo/redo. **[code]** `mermaid-designer.js:116`; **[bundle]** `actionsFor`, `editEntityLabel`, `onSvgPointerUp` (`seq.moveEvent`), `showLifelinePlus` (`seq.addMessage`, `seq.addNote`) | Autonumber. Activation/deactivation. Participant reorder. Explicit "add message" control outside the hover `+`. **[bundle]** `seq.toggleAutonumber` exists but no canvas action invokes it; no activation dispatch op exists; no participant reorder op exists. | The sidebar is only "Add participant". The hint talks about nodes, colors, and arrows, which do not exist in a sequence diagram. `mermaid-designer.js:391-394`; `templates/index.html:1098-1100` |
-| Pie | Add a slice. Edit a slice's label or value from the slice popover. Double-click edits the value. Delete a slice. Undo/redo. **[bundle]** `actionsFor`, `editEntityLabel` (`pie.setValue`, `pie.setLabel`), `deleteEntities` (`pie.deleteSlice`) | Edit the title. Add a slice with a chosen label/value instead of the fixed "New slice"/10 defaults. Reorder slices. Show/hide data values. The parsed pie model has `showData` and `slices`, but no title. There is no `pie.setTitle` dispatch case; a `pie.setTitle` dispatch is a silent no-op **[probe]**. | The sidebar is only "Add slice". The hint is the flowchart hint. The title is not in the visual model at all. `mermaid-designer.js:114`; `ADD_DEFAULTS` at `mermaid-designer.js:95-105` |
+| Flowchart | Add 14 shapes. Rename a node label by double-click or Enter. Change shape, color, duplicate, or delete from the node popover. Add an edge with Connect/Alt+drag. Relabel an edge by double-click. Change edge arrow, stroke, reverse, or delete from the edge popover. Undo/redo. **[code]** `mermaid-designer.js, 364-395`; **[bundle]** `MermaidCanvasView.actionsFor`, `editEntityLabel`, `onSvgPointerUp` | Flowchart direction (TD/TB/BT/LR/RL). Six of the 14 shapes on an existing node (the popover lists 8). No named instruction for rename, edge-label edit, or delete. **[bundle]** `setNodeShape` accepts all 14 **[probe]**; `setDirection` exists as a dispatch case but no canvas action invokes it. | The sidebar is just "Shapes". The hint says "click a node for shape, color and arrow options" and never mentions renaming, edges, or delete. `templates/index.html` |
+| Sequence | Add a participant. Rename a participant alias, change participant type, or delete from the participant popover. Edit message text by double-click. Change message arrow, reverse, wrap in fragment, or delete from the message popover. Reorder messages by dragging. Add a message or note from the lifeline `+`. Edit or delete a note. Undo/redo. **[code]** `mermaid-designer.js`; **[bundle]** `actionsFor`, `editEntityLabel`, `onSvgPointerUp` (`seq.moveEvent`), `showLifelinePlus` (`seq.addMessage`, `seq.addNote`) | Autonumber. Activation/deactivation. Participant reorder. Explicit "add message" control outside the hover `+`. **[bundle]** `seq.toggleAutonumber` exists but no canvas action invokes it; no activation dispatch op exists; no participant reorder op exists. | The sidebar is only "Add participant". The hint talks about nodes, colors, and arrows, which do not exist in a sequence diagram. `mermaid-designer.js`; `templates/index.html` |
+| Pie | Add a slice. Edit a slice's label or value from the slice popover. Double-click edits the value. Delete a slice. Undo/redo. **[bundle]** `actionsFor`, `editEntityLabel` (`pie.setValue`, `pie.setLabel`), `deleteEntities` (`pie.deleteSlice`) | Edit the title. Add a slice with a chosen label/value instead of the fixed "New slice"/10 defaults. Reorder slices. Show/hide data values. The parsed pie model has `showData` and `slices`, but no title. There is no `pie.setTitle` dispatch case; a `pie.setTitle` dispatch is a silent no-op **[probe]**. | The sidebar is only "Add slice". The hint is the flowchart hint. The title is not in the visual model at all. `mermaid-designer.js`; `ADD_DEFAULTS` at `mermaid-designer.js` |
 
 ### 1.2 Verified conclusion
 
@@ -183,7 +183,7 @@ The title is a separate decision because the visual model does not carry it.
 
 **V1 entry:** hybrid mode → right-click a rendered block (or focus it and use
 Shift+F10 / the Menu key) → **Design diagram…**. This is the existing entry at
-`static/js/hybrid.js:6096-6123`.
+`static/js/hybrid.js`.
 
 **Why only hybrid:**
 
@@ -197,7 +197,7 @@ Shift+F10 / the Menu key) → **Design diagram…**. This is the existing entry 
   repair is not a required v1 entry.
 
 **Role gate:** the item is shown only when auth is off or the role is admin
-(`static/js/hybrid.js:5857-5862`). A viewer session never sees it and no write
+(`static/js/hybrid.js`). A viewer session never sees it and no write
 is attempted. A stale role falls through to the existing auth failure path and
 must not write.
 
@@ -229,7 +229,7 @@ must not write.
 ### 6.3 Apply
 
 Apply is the only note write. The order is the existing contract
-(`docs/architecture/mermaid-designer.md:101-128`):
+(`docs/architecture/mermaid-designer.md`):
 
 1. If the source equals the open-time source, close and write nothing.
 2. Validate the source with Mermaid's parser. On failure, keep the modal open,
@@ -357,7 +357,7 @@ or the real-browser harness (`tests/browser/`).
 - Real-browser sequence and pie canvas behavior is inferred from the vendored
   bundle's own click, double-click, popover, and drag handlers. The repo's
   Playwright coverage exercises only flowchart add/Apply
-  (`tests/browser/test_designer_browser.js:188-213`). DOM/browser tests must
+  (`tests/browser/test_designer_browser.js`). DOM/browser tests must
   observe the sequence and pie gestures before release.
 - The visual model's untouched lines are preserved by the library. The gate
   verified byte-identical round-trips for comments, subgraphs, and `classDef`;

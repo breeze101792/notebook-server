@@ -1,6 +1,6 @@
 # Hybrid (WYSIWYG) editing shortcuts — functional spec
 
-Status: draft for review. Owner: `product-designer`.
+Status: superseded by [hybrid editing](../architecture/hybrid-editing.md); the shortcut set shipped, and this document is the historical keyboard spec. Owner: `product-designer`.
 Applies to: `static/js/hybrid.js` (dispatch), `static/js/editbar.js` +
 `templates/index.html` (tooltips), `static/js/settings.js` (read-only list),
 `tests/dom/test_dom.js`, `tests/browser/test_hybrid_browser.js`.
@@ -15,11 +15,12 @@ document and that one disagree about a construct, that one wins.
 > mainstream editor — the chords they already know from Typora, Notion, Google
 > Docs, and VS Code — without leaving the rendered view.**
 
-Today hybrid ships four inline chords (bold, italic, strikethrough, inline code)
-plus undo/redo and table/list move arrows. The block and inline constructs the
-edit bar can produce (headings, lists, quote, code block, rule, clear formatting)
-have no keyboard path, and the one chord every Markdown editor shares — **Mod+K
-for a link** — is missing. This spec closes that gap.
+At the time of writing hybrid shipped four inline chords (bold, italic,
+strikethrough, inline code) plus undo/redo and table/list move arrows. The block
+and inline constructs the edit bar could produce (headings, lists, quote, code
+block, rule, clear formatting) had no keyboard path, and the one chord every
+Markdown editor shares — **Mod+K for a link** — was missing. This spec closed
+that gap.
 
 It does not add features or change how any construct serializes; every action
 below maps to a transform that already exists behind an edit-bar button.

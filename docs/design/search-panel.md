@@ -5,14 +5,17 @@ Design handoff for the **Search view in the activity bar** (`#search-view` in
 
 Reference mockup: `docs/design/search-panel.html`.
 
-Status: design only. No source files were changed. `web-engineer` implements the
-markup in `activity.js`, the CSS in `static/css/style.css`, and the request
-options in `api.js`.
+Status: shipped (search grouping and sorting), design record. The controls are
+in `mountSearch()` in `static/js/activity.js`, the CSS in
+`static/css/style.css`, and the request options in `static/js/api.js`. §3-§4
+describe the first control layout; `search-panel-controls.md` and
+`search-panel-advanced.md` supersede it and match what shipped.
 
-**Normative source.** §4 (controls), §5 (states), §6 (keyboard), §7
-(accessibility), §9 (DOM/CSS handoff) and §10 (implementation map) are the
-single source of truth. The mockup illustrates them; where the two differ,
-this document wins.
+**Normative source.** §5 (states), §6 (keyboard), §7 (accessibility), §9
+(DOM/CSS handoff) and §10 (implementation map) are the single source of truth
+for everything except the control area, which `search-panel-advanced.md`
+supersedes. The mockup illustrates the original layout; where the two differ,
+the later document wins.
 
 ---
 
@@ -77,11 +80,10 @@ result preview, and no server-side relevance scoring.
   .search-panel-retry       inline in the summary on error
 ```
 
-Relevant CSS lives in `static/css/style.css` at `.search-panel-input-row`
-(~line 3968), through `.search-panel-hit-snippet mark` (~line 4051). Phone
-overrides are inside the `max-width: 860px` block (~line 6236). The API wrapper
-is `NB.api.search(q, caseSensitive)` in `static/js/api.js` (~line 62) and
-currently sends only `q` and `case`.
+Relevant CSS lives in `static/css/style.css`, from `.search-panel-input-row`
+through `.search-panel-hit-snippet mark`. Phone overrides are inside the phone
+media query. The API wrapper is `NB.api.search(q, caseSensitive)` in
+`static/js/api.js`.
 
 The backend already supports `regex`, `order`, `desc`, `limit`, and `perFile`;
 it does **not** support grouping. The design assumes a new `unique=1` request

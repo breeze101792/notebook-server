@@ -3,15 +3,14 @@
 **Author:** product-designer
 **Date:** 2026-11-03
 **Status:** Product definition. No technical or visual design chosen here.
-**Inputs:** `static/js/tabs.js` (`ordered`/`openSet`/`pinned` at 29-32, `segment`
-at 111, `togglePin` at 617, `restore` at 849, `rename` at 579, `conflictSet` at
-939, close confirm at 525), `static/js/viewer.js` (`commitForTabSwitch` at 945,
-draft bar at 43-101, `close` at 758, `showWelcome` at 672, external-change
-handler at 1141-1205), `static/js/app.js` (`WORKSPACE_STATE_KEYS` at 24,
-`tabs:changed` persistence at 640, boot restore at 975, phone boot at 986),
-`app.py` (`_WORKSPACE_SCOPED_CONFIG_KEYS` at 92, `WORKSPACE_STATE_MAX_BYTES` at
-77, `workspace_admin_required` at 1113, `/api/workspace-state` at 1660, ACP
-open-note preamble at 2627). All line numbers verified 2026-11-03.
+**Inputs:** `static/js/tabs.js` (`ordered` / `openSet` / `pinned`, `segment`,
+`togglePin`, `restore`, `rename`, `renameSession`, `conflictSet`, `pickNeighbor`,
+`close`, `closeMany`, `open`, `render`), `static/js/viewer.js`
+(`commitForTabSwitch`, `draftBar`, `close`, `showWelcome`, the external-change
+handler), `static/js/app.js` (`WORKSPACE_STATE_KEYS`, the `tabs:changed`
+persistence, `boot`, the phone boot), `app.py`
+(`_WORKSPACE_SCOPED_CONFIG_KEYS`, `WORKSPACE_STATE_MAX_BYTES`,
+`workspace_admin_required`, `/api/workspace-state`, `_acp_context_preamble`).
 
 ---
 
@@ -38,7 +37,7 @@ Ranked by the job the feature does.
   Pinned tabs are that set and must not be duplicated per group.
 - **G3 — Never lose typing to a switch.** Moving between sets must cost nothing:
   an unsaved buffer is stashed, not prompted away, and is recoverable on return
-  — the behaviour the tab switch already has (`viewer.js:945-967`).
+  — the behaviour the tab switch already has (`commitForTabSwitch`, `viewer.js`).
 - **G4 — Never show stale structure.** A file renamed, deleted, or moved on disk
   must leave no orphan tab in a session the owner is not looking at, and an
   external edit must not silently overwrite an unread buffer.
@@ -61,7 +60,7 @@ Ranked by the job the feature does.
   (native confirm) on any row.
 - Tab right-click → Move to session ▸ (existing sessions + New session…).
 - Pin / unpin with the shared-set rule, preserving every rule in
-  `tabs.js:617-630`.
+  `tabs.js`.
 - Per-session persistence of tabs, order, active tab, and the active session, in
   the existing workspace state.
 - Legacy migration to a single session named "Main" on the first load after the
@@ -97,42 +96,42 @@ The tab bar today is one flat, ordered set per workspace, persisted per
 workspace:
 
 - `ordered` (display order, pinned first), `openSet` (membership), `pinned` (a
-  contiguous prefix of `ordered`), and one `activePath` — `tabs.js:29-32`.
-  `segment()` re-establishes the pinned-first invariant (`tabs.js:111-116`).
+  contiguous prefix of `ordered`), and one `activePath` — module state in
+  `tabs.js`. `segment()` re-establishes the pinned-first invariant.
 - Pinned tabs render into `#tab-pinned`, unpinned into `#tab-list`
-  (`index.html:241-250`, `tabs.js:19-24`); the pinned region is hidden while
-  nothing is pinned (`tabs.js:265`), and pinned tabs carry no close button and
-  are skipped by the bulk-close actions (`tabs.js:373-386`).
-- Opening a file adds it to the same flat strip in the active position
-  (`tabs.js:508`). A tab switch stashes a dirty source buffer as `t.draft` and
-  shows the dot plus the Recover bar on return, with no prompt
-  (`viewer.js:945-967`); WYSIWYG stashes its own serialized buffer.
-- Closing a tab with unsaved edits prompts and discards on OK
-  (`tabs.js:525-534`). Closing the last tab calls `NB.viewer.clear()` →
-  `showWelcome()`, which also clears the whole content cache
-  (`tabs.js:558-561`, `viewer.js:672-674`).
+  (`render()` in `tabs.js`, hosts in `index.html`); the pinned region is hidden
+  while nothing is pinned (`render()`), and pinned tabs carry no close button and
+  are skipped by the bulk-close actions (`closeMany`, `closeOthers`, `closeRight`,
+  `closeLeft`).
+- Opening a file adds it to the same flat strip in the active position (`open()`).
+  A tab switch stashes a dirty source buffer as `t.draft` and shows the dot plus
+  the Recover bar on return, with no prompt (`commitForTabSwitch`, `draftBar` in
+  `viewer.js`); WYSIWYG stashes its own serialized buffer.
+- Closing a tab with unsaved edits prompts and discards on OK (`close()` in
+  `tabs.js`). Closing the last tab calls `NB.viewer.clear()` → `showWelcome()`,
+  which also clears the whole content cache (`tabs.js`, `viewer.js`).
 - File rename/move re-keys `ordered`, `openSet`, `pinned`, `activePath`, the
-  frozen widths, and the viewer cache (`tabs.js:579-608`).
-- Conflict badges are a `Set` of paths rendered onto open tabs
-  (`tabs.js:939-952`).
+  frozen widths, and the viewer cache (`rename()` in `tabs.js`).
+- Conflict badges are `conflictSet`, a `Set` of paths rendered onto open tabs
+  (`tabs.js`).
 - An external change to a dirty file prompts and, on Cancel, flags the conflict
-  instead of overwriting (`viewer.js:1172-1180`).
+  instead of overwriting (the external-change handler in `viewer.js`).
 - Boot restores `openFiles` / `activeFile` / `pinnedFiles` from the workspace
-  state, dropping paths no longer in the tree (`app.js:975-979`), and falls back
-  to `lastFile` or the first file when nothing is open (`tabs.js:855-858`).
+  state, dropping paths no longer in the tree (`boot()` in `app.js`), and falls
+  back to `lastFile` or the first file when nothing is open (`restore()` in
+  `tabs.js`).
 - Persistence goes through `tabs:changed` → `cfg.openFiles` / `activeFile` /
-  `pinnedFiles` (`app.js:640-646`), written into
-  `workspaceState["<id>"]` under the keys in `WORKSPACE_STATE_KEYS`
-  (`app.js:24-27`) and mirrored by `_WORKSPACE_SCOPED_CONFIG_KEYS`
-  (`app.py:92-95`). That tuple is what the one-shot migration and the ACP
-  preamble both read.
+  `pinnedFiles` (the `tabs:changed` handler in `app.js`), written into
+  `workspaceState["<id>"]` under the keys in `WORKSPACE_STATE_KEYS` (`app.js`)
+  and mirrored by `_WORKSPACE_SCOPED_CONFIG_KEYS` (`app.py`). That tuple is what
+  the one-shot migration and the ACP preamble both read.
 - The ACP preamble names the open note from
-  `workspaceState["<id>"].activeFile` (`app.py:2627-2650`).
-- The workspace-state write is admin-gated (`app.py:1113-1140`) and capped at
-  `WORKSPACE_STATE_MAX_BYTES` = 256 KiB (`app.py:77`, enforced at
-  `app.py:1690`).
-- The phone boot drops desktop tabs entirely and never persists them
-  (`app.js:641`, `app.js:986-1000`).
+  `workspaceState["<id>"].activeFile` (`_acp_context_preamble`, `app.py`).
+- The workspace-state write is admin-gated (`workspace_admin_required`) and capped
+  at `WORKSPACE_STATE_MAX_BYTES` = 256 KiB, enforced in the `/api/workspace-state`
+  route (`app.py`).
+- The phone boot drops desktop tabs entirely and never persists them (`boot()` in
+  `app.js`).
 
 ---
 
@@ -141,7 +140,7 @@ workspace:
 ### 4.1 Definitions
 
 - **Workspace** — a root folder of notes, identified by the workspace id in the
-  workspace state (`app.js:24`). Sessions are scoped to one workspace.
+  workspace state (`app.js`). Sessions are scoped to one workspace.
 - **Session** — a stable id, a name, an ordered list of unpinned paths, and one
   active path (a member of that list, a pinned path, or `null`). A session's id
   is generated at create and never changes; the name does.
@@ -169,8 +168,8 @@ workspace:
    tabs. Pinned tabs are not counted against a session.
 7. A session name is 1-40 characters after trimming surrounding whitespace, and
    is unique within the workspace under a case-insensitive comparison.
-7. The active session id names an existing session.
-8. Order is stable: sessions keep their creation order; a session's tabs keep
+8. The active session id names an existing session.
+9. Order is stable: sessions keep their creation order; a session's tabs keep
    their relative order; pinning and unpinning are the only operations that move
    a tab between regions.
 
@@ -182,7 +181,7 @@ A session is always in one of these, and each is a testable rendering:
 |---|---|---|---|
 | **Idle with tabs** | ≥1 | any | the session's active tab |
 | **Pinned only** | 0 | ≥1 | the session's active tab if it is pinned; otherwise the first pinned tab |
-| **Empty** | 0 | 0 | welcome page (`viewer.js:672`) |
+| **Empty** | 0 | 0 | welcome page (`showWelcome()`, `viewer.js`) |
 | **Active + dirty draft** | a tab whose buffer differs from disk | any | that tab, with its dot and Recover bar on return |
 
 The Sessions view itself has no error state beyond the name dialog's inline error
@@ -195,7 +194,7 @@ The Sessions view itself has no error state beyond the name dialog's inline erro
 | Sessions per workspace | 20 | this spec | the view's `+` is disabled with a reason; an import of more is truncated (§4.5) |
 | Session name length | 40 characters | this spec | the field refuses further input; a pasted longer name is truncated to 40 |
 | Unpinned tabs per session | 40 | this spec | opening or moving a 41st into that session is refused with a notice; the tab is not added |
-| Workspace state size | 256 KiB | `app.py:77` | the write is refused by the server (`state_too_large`, `app.py:1690`); worst case is bounded by 20 × (40 paths + name) and must stay under it |
+| Workspace state size | 256 KiB | `WORKSPACE_STATE_MAX_BYTES` | the write is refused by the server (`state_too_large`, `/api/workspace-state`); worst case is bounded by 20 × (40 paths + name) and must stay under it |
 
 The values above are product caps. They are not server-enforced constants; a
 hand-edited config is repaired on read, not rejected.
@@ -215,7 +214,7 @@ Read in this order, never throw, never block boot:
    usable remains, repair to one empty session named "Main".
 4. Truncate to 20 entries, keeping the active session even when it falls past
    the cap (append it and drop the last other entry).
-5. Drop a path that is not in the tree, matching today's filter (`app.js:975`).
+5. Drop a path that is not in the tree, matching today's filter (`boot()`, `app.js`).
 6. A path in both the pinned set and a session: keep it pinned and drop it from
    the session. A path in two sessions is allowed; each occurrence is kept.
 7. A session whose `active` is not owned by it becomes `null`; the renderer then
@@ -223,7 +222,7 @@ Read in this order, never throw, never block boot:
 8. An unknown `activeSessionId` falls back to the first session.
 9. The repaired shape is held in memory only. It is written on the next user
    action, matching the boot baseline that stops a rewrite on load
-   (`app.js:419`).
+   (`boot()`, `app.js`).
 
 ---
 
@@ -267,8 +266,8 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
    full re-render of the shell. Pinned tabs do not move.
 4. A's buffer is stashed as a draft: A's tab is gone from the visible strip, but
    on return to S1 the tab carries its dot and its Recover bar offers the buffer
-   — the same end state as the tab switch today (`viewer.js:945-967`). No modal
-   prompt appears at any point.
+   — the same end state as the tab switch today (`commitForTabSwitch`,
+   `viewer.js`). No modal prompt appears at any point.
 5. S2's content area shows S2's active tab. If S2 has no unpinned tabs, the
    pinned region is still visible and S2's active pinned tab renders. If S2 has
    neither, the welcome page fills the content area.
@@ -290,7 +289,7 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
    appended last there. Switching to the target from its Sessions view row shows
    it at the end of the strip with the identical draft.
 4. If the moved tab was the source's active tab, the source activates its next
-   neighbour, else its previous one (`pickNeighbor`, `tabs.js:438-440`). If it was
+   neighbour, else its previous one (`pickNeighbor`, `tabs.js`). If it was
    the source's only tab, the source stays active and renders §4.3.
 5. The target's own active tab does not change. If the target had no tabs at all,
    the moved tab becomes its active tab.
@@ -321,9 +320,9 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
 | Situation | Behaviour | Rule / origin |
 |---|---|---|
 | Create a session while at 20 | The `+` is disabled with a reason; the dialog does not open | §4.4 |
-| Create a session named like an existing one, differing only in case | Rejected as a duplicate | §4.2(6) |
-| Name of only spaces, or a tab and newlines | Rejected as empty after trimming | §4.2(6) |
-| Rename to the same name, different case only | Allowed as a no-op change of display text; id and order unchanged | §4.2(6) |
+| Create a session named like an existing one, differing only in case | Rejected as a duplicate | §4.2(7) |
+| Name of only spaces, or a tab and newlines | Rejected as empty after trimming | §4.2(7) |
+| Rename to the same name, different case only | Allowed as a no-op change of display text; id and order unchanged | §4.2(7) |
 | Only session, Delete chosen from its `⋯` menu | Delete is shown disabled with the reason "The only session can't be deleted" | §7 AC19 |
 | Delete an inactive session | That row is removed; the active session, its strip, and its content are unchanged; cached buffers close only for paths no other session or pin holds | §7 AC59 |
 | Delete a session that holds an unsaved buffer | The confirm states that its unsaved edits will be lost; on OK its occurrences go, and another session's copy of the same note keeps its buffer and draft | §7 AC18, AC20 |
@@ -336,24 +335,24 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
 | Move a tab into a session at 40 | Refused with a notice naming the limit; the tab stays in the source. If that session already lists the note, the source copy is just removed | §4.4, AC62 |
 | Opening a 41st file in the active session | Refused with a notice naming the limit; the file does not open | §4.4 |
 | Pin the active tab of a session that has only that tab | The workspace tab strip shows only the pinned region; the file stays active | §5.3(7) |
-| Unpin the only pinned tab | It lands in the active session and renders there; the pinned region collapses | `tabs.js:265` |
-| Close the last unpinned tab of a session with an unsaved buffer | Today's confirm; on OK the tab closes and the empty state renders without clearing other sessions' cached drafts. Cancel keeps the tab | `tabs.js:525-534`, §7 AC38 |
-| Close a non-last dirty tab | Today's confirm and discard | `tabs.js:525-534` |
-| A session has a draft but the file is deleted on disk | Removed from every session; the draft goes with the last occurrence | §5.2, `tabs.js:939-952` |
-| External change to a dirty file in a hidden session | No confirm is shown; the tab is flagged and shows the conflict badge when the session becomes visible; the buffer is kept | `viewer.js:1172-1180`, `tabs.js:939` |
-| External change to a clean file in a hidden session | Reloaded silently; the new bytes appear on switch | `viewer.js:1141-1205` |
-| File renamed on disk while its session is hidden | Re-keyed in that session's list, in that session's active tab, and in its drafts | `tabs.js:579-608` |
-| File deleted on disk while its session is hidden | Removed from that session; if it was that session's active tab, the session activates a neighbour | `tabs.js:547-561` |
-| Folder moved or renamed | Every session's path under it re-keys | `tabs.js:579-608` |
+| Unpin the only pinned tab | It lands in the active session and renders there; the pinned region collapses | `togglePin` |
+| Close the last unpinned tab of a session with an unsaved buffer | Today's confirm; on OK the tab closes and the empty state renders without clearing other sessions' cached drafts. Cancel keeps the tab | `close`, §7 AC38 |
+| Close a non-last dirty tab | Today's confirm and discard | `close` |
+| A session has a draft but the file is deleted on disk | Removed from every session; the draft goes with the last occurrence | §5.2, `closeStoredPath` |
+| External change to a dirty file in a hidden session | No confirm is shown; the tab is flagged and shows the conflict badge when the session becomes visible; the buffer is kept | the external-change handler in `viewer.js`, `conflictSet` |
+| External change to a clean file in a hidden session | Reloaded silently; the new bytes appear on switch | the external-change handler in `viewer.js` |
+| File renamed on disk while its session is hidden | Re-keyed in that session's list, in that session's active tab, and in its drafts | `rename` |
+| File deleted on disk while its session is hidden | Removed from that session; if it was that session's active tab, the session activates a neighbour | `closeStoredPath` |
+| Folder moved or renamed | Every session's path under it re-keys | `rename` |
 | Sessions array holds a path no longer in the tree | Dropped at boot; an emptied session stays listed and empty | §4.5(5), §7 AC41 |
 | Hand-edited `sessions` with duplicate ids or names | Duplicate ids are regenerated; duplicate names get ` 2`, ` 3`, …; boot continues | §4.5(3) |
 | Hand-edited `activeSessionId` naming nothing | First session becomes active | §4.5(8) |
 | 25 sessions in config | Truncated to the first 20 | §4.5(4) |
 | Two sessions claim the same path | First keeps it; the second loses it | §4.5(6) |
-| Phone opens a note | Phone shell unchanged: one reader, one tab, no session control, no Sessions rail icon; desktop sessions are neither read nor written | `app.js:641`, `app.js:986-1000`, §7 AC60 |
+| Phone opens a note | Phone shell unchanged: one reader, one tab, no session control, no Sessions rail icon; desktop sessions are neither read nor written | `boot()`, §7 AC60 |
 | Phone loads with a saved `activeView` of `sessions` | Explorer opens instead; no session UI is shown | §7 AC60 |
-| Viewer role uses the Sessions view | Switching works in memory; the `+`, Rename, Delete, and Move to session are disabled with a read-only reason; nothing persists | `app.py:1113`, `app.py:1660` |
-| Session state pushes the workspace state past 256 KiB | The write fails with `state_too_large`; the app keeps working, the change is lost on reload | `app.py:1690` |
+| Viewer role uses the Sessions view | Switching works in memory; the `+`, Rename, Delete, and Move to session are disabled with a read-only reason; nothing persists | `workspace_admin_required`, `/api/workspace-state` |
+| Session state pushes the workspace state past 256 KiB | The write fails with `state_too_large`; the app keeps working, the change is lost on reload | `/api/workspace-state` |
 
 ---
 
@@ -648,32 +647,31 @@ request) is unchanged.
   browser, bookmarks, and their icons are unchanged; opening or closing the
   Sessions view obeys the same collapse/expand behaviour as every other view.
 - **The tab bar's motion.** Equal-width tabs within the existing min/max
-  (`style.css:481-483`, `1184-1185`), the width freeze while the pointer is in
-  the bar (`tabs.js:55`), the release animation, and the ghost close slot
-  (`tabs.js:79-83`, `style.css:1268-1304`) must behave identically. The strip
-  swap on a session switch is instant and produces no ghost and no release
-  animation.
-- **Pinned tabs.** No close button, skipped by middle-click close
-  (`tabs.js:373-386`), skipped by close others / right / left
-  (`tabs.js:784-796`), hidden region while empty (`tabs.js:265`), contiguous
-  prefix invariant (`tabs.js:111`, `690-691`), and their current position at the
-  left of the bar.
+  (`style.css`), the width freeze while the pointer is in the bar (`tabs.js`),
+  the release animation, and the ghost close slot (`tabs.js`, `style.css`) must
+  behave identically. The strip swap on a session switch is instant and produces
+  no ghost and no release animation.
+- **Pinned tabs.** No close button, skipped by middle-click close (`close()`),
+  skipped by close others / right / left (`closeOthers`, `closeRight`,
+  `closeLeft`), hidden region while empty (`render()`), contiguous prefix
+  invariant (`segment()`), and their current position at the left of the bar.
 - **Search and Recent opening behaviour.** A result for a file that is already
   open in another session opens or activates a tab in the **active** session; no
   switch and no cross-session duplicate suppression. A file not open anywhere
   opens one tab in the active session and activates it.
-- **Back / Forward.** The navigation stack (`viewer.js:1406-1420`) keeps
+- **Back / Forward.** The navigation stack (`viewer.js`) keeps
   working across sessions: going back to a note opens it in the active session
   (adding a tab if needed); no session switch; the back button's enabled state
   and the browser's `popstate` path are unchanged.
 - **The ACP open-note hint.** `activeFile` in the workspace state must remain the
   visible session's active tab, so the preamble still names the open note
-  (`app.py:2627-2650`). `sessions` and `activeSessionId` join the scoped key
-  lists (`app.py:92`, `app.js:24`) so the migration and the preamble agree.
+  (`_acp_context_preamble`). `sessions` and `activeSessionId` join the scoped key
+  lists (`_WORKSPACE_SCOPED_CONFIG_KEYS`, `WORKSPACE_STATE_KEYS`) so the migration
+  and the preamble agree.
 - **Deep links.** `?file=…&heading=…` opens the file in the active session
   (adding a tab if needed) and still applies the heading; no session switch.
 - **Phone shell.** One reader, one tab, no tab bar, no Sessions rail icon
-  (`app.js:986-1000`).
+  (`boot()`).
 
 ---
 
@@ -690,13 +688,13 @@ feature.
   session.** The only change on the empty path is that the empty state renders
   without `showWelcome()`'s `cache.clear()`, so drafts belonging to *other*
   sessions survive; the closed tab's own buffer is discarded on OK, as today
-  (`tabs.js:525-534`). A session does not accumulate hidden drafts.
+  (`tabs.js`). A session does not accumulate hidden drafts.
 - **A3 — Name uniqueness is trimmed and case-insensitive**, because "Main" and
   "main" are indistinguishable in the Sessions view. Ids are opaque and stable.
 - **A4 — The viewer role may switch sessions but not change them.** Structural
   actions are disabled with a read-only reason; switching is in-memory only and
   is not persisted, because `/api/workspace-state` is admin-gated
-  (`app.py:1113`).
+  (`workspace_admin_required`).
 - **A5 — Special tabs (`§graph`, `§search`) belong to the session that opened
   them** and follow the same swap, move, and persistence rules as file tabs.
 
@@ -718,7 +716,7 @@ feature.
    the migrated session still carries it, a new session named "Main" is rejected
    by the uniqueness rule (§4.2); renaming the migrated session frees the name.
 5. **Draft retention — session lifetime only.** Drafts live in the viewer's
-   in-memory cache (`viewer.js:32, 815-825`) and do not survive a page reload,
+   in-memory cache (`viewer.js`) and do not survive a page reload,
    exactly as today. Persisting drafts is out of scope and is not implied by
    session persistence.
 6. **No drag-reorder in v1.** Session order is creation order; the row list does

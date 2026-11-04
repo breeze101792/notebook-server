@@ -1,13 +1,14 @@
 # Frontend test suites
 
 The frontend is tested in two places. `tests/dom/test_dom.js` is the primary
-suite: about 33,000 lines with a hand-rolled harness, no framework, loading
-the real app into jsdom. The Playwright scripts under `tests/browser/` cover
+suite: 40,695 lines with a hand-rolled harness, no framework, loading the real
+app into jsdom. The twelve Playwright scripts under `tests/browser/` cover
 behavior only a real browser can produce: the hybrid editing engine, the
 hybrid block types (lists, tasks, tables, selection), the fence editor, the
-Visimer canvas, the Graphviz and WaveDrom windows, the phone shell, the core
-UI (tree, tabs, search, graph, bookmarks, outline, settings), auth/export/PWA,
-and AI/ACP plus the CodeMirror editor.
+table-editor modal, the Visimer canvas, the Graphviz and WaveDrom windows, the
+phone shell, the core UI (tree, tabs, search, graph, bookmarks, outline,
+settings), auth/export/PWA, AI/ACP plus the CodeMirror editor, the AI panel's
+rendered reply fences, and rendered figure sizing.
 
 Run them:
 
@@ -16,6 +17,7 @@ npm install && npm test            # jsdom DOM suite
 node tests/dom/test_dom.js         # equivalent once jsdom is resolvable
 npm run test:browser               # Playwright, chromium (default)
 npm run test:browser:firefox       # Playwright, firefox
+npm run test:browser:all           # every browser suite, distinct ports
 node tests/browser/run_all.js                 # every browser suite, distinct ports
 node tests/browser/test_designer_browser.js   # Playwright, mermaid designer
 node tests/browser/test_dw_designer_browser.js # Playwright, Graphviz + WaveDrom
@@ -23,21 +25,28 @@ node tests/browser/test_block_edit_browser.js  # hybrid fence editor
 node tests/browser/test_hybrid_blocks_browser.js # lists, tasks, tables
 node tests/browser/test_table_editor_browser.js  # the "Edit table" modal
 node tests/browser/test_ai_blocks_browser.js   # AI panel special fences
+node tests/browser/test_figure_sizing_browser.js # rendered SVG sizing
 ```
+
+`package.json` has one `test:browser:*` script per suite, so any single suite
+also runs as `npm run test:browser:<name>` (`core`, `auth`, `ai`, `ai-blocks`,
+`blocks`, `figure-sizing`, `hybrid-blocks`, `mobile`, `designer`,
+`table-editor`, `dw`; the hybrid suite itself is `npm run test:browser`).
 
 ## The jsdom DOM harness
 
 `tests/dom/test_dom.js` builds one jsdom window from an inline HTML fixture
-(`test_dom.js:157-742`), installs stubs for everything jsdom lacks, evaluates
-the real vendor bundles and every app module, then drives the app with real
-DOM events. There is no framework and no second runner; extend this file.
+(the `const html` template literal), installs stubs for everything jsdom
+lacks, evaluates the real vendor bundles and every app module, then drives the
+app with real DOM events. There is no framework and no second runner; extend
+this file.
 
 ### The window and its stubs
 
 The fixture is the real app shell, so module lookups by `id` resolve the way
 they do in the browser. The window is created with
 `runScripts: "outside-only"`, `pretendToBeVisual: true`, and URL
-`http://127.0.0.1:5000/` (`test_dom.js:744-750`).
+`http://127.0.0.1:5000/` (`new JSDOM(html, {...})`).
 
 Before any module loads, the harness installs stubs for APIs jsdom does not
 implement:
@@ -45,7 +54,8 @@ implement:
 - `requestAnimationFrame` / `cancelAnimationFrame`, `scrollIntoView`,
   `prompt`, `confirm`, `alert`.
 - `TextEncoder` / `TextDecoder` / `ReadableStream` pointed at the Node
-  implementations, so SSE decoding in `api.js` is real (`test_dom.js:760-764`).
+  implementations, so SSE decoding in `api.js` is real (the `Encoding
+  globals for api.js's SSE reader` block).
 - `navigator.clipboard` with a recording `writeText` and a `failNext` flag
   for the fallback path.
 - `window.print`, `window.open`, and a stubbed `HTMLIFrameElement`
@@ -56,10 +66,9 @@ implement:
   context installed on `HTMLCanvasElement.prototype.getContext`.
 - Stubs for the heavy renderer bundles, each with a `failNext` and a
   predictable output so the wrapper glue is exercised without loading the
-  real bundle: `window.mermaid` (`test_dom.js:874`), `window.wavedrom`
-  (`test_dom.js:916`), `window.katex` (`test_dom.js:942`), and `window.Viz`
-  (`test_dom.js:965`).
-- `window.fetch` (`test_dom.js:1098`) routes every `/api/*` endpoint against
+  real bundle: `window.mermaid`, `window.wavedrom`, `window.katex`, and
+  `window.Viz`.
+- `window.fetch` routes every `/api/*` endpoint against
   in-memory fixtures (`FILES`, `TREE`, `MTIMES`, `config`, `aiConfig`),
   records every call in `fetchLog`, and reproduces the server's conflict
   codes and conditional-GET 304 behavior. It defaults to auth disabled so the
@@ -67,57 +76,58 @@ implement:
 
 ### Module loading
 
-`evalIn(src)` is `vm.runInContext(src, ctx)` (`test_dom.js:1415`). The
+`evalIn(src)` is `vm.runInContext(src, ctx)`. The
 harness evaluates the real vendor bundles (`marked.min.js`,
 `highlight.min.js`, `codemirror.bundle.js`, `turndown.browser.js`,
-`turndown-plugin-gfm.browser.js`) and all 31 app modules in the dependency
-order `index.html` uses (`test_dom.js:1417-1456`, including
-`mermaid-designer.js` after `export.js`). Each module is an IIFE
-extending `window.NB`, so the load order is load-bearing. `window.onerror`
-is captured into an `errors` array and asserted in the first section.
+`turndown-plugin-gfm.browser.js`) and all 45 app modules in the dependency
+order `index.html` uses, including `mermaid-designer.js` after `export.js` and
+`workspaces.js` immediately before `app.js`. Each module is an IIFE extending
+`window.NB`, so the load order is load-bearing. `window.onerror` is captured
+into an `errors` array and asserted in the first section.
+
+A new app module must be added to this list, to `templates/index.html`, and to
+the `static/sw.js` `PRECACHE` array. The wiring checks assert the modules and
+renderers they name; the registry guard covers every renderer module.
 
 ### The check counter and exit code
 
-A single `check(label, cond, extra)` function (`test_dom.js:1472-1476`)
-increments `pass` or `fail` and logs `ok` / `FAIL`. The whole file is one
-async IIFE that ends with:
+A single `check(label, cond, extra)` function increments `pass` or `fail` and
+logs `ok` / `FAIL`. The whole file is one async IIFE that ends with a
+`RESULT: PASS|FAIL  (<pass> ok, <fail> failed)` line and
+`process.exit(fail === 0 ? 0 : 1)`.
 
-```js
-console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") +
-  "  (" + pass + " ok, " + fail + " failed)");
-process.exit(fail === 0 ? 0 : 1);
-```
-
-So the exit code is `0` only when every assertion passed. The suite has **117
-test sections**, each announced with `console.log("== name ==")`, and about
-4,300 printed checks covering boot, sidebar and tree, theme, viewer and
-outline, the six renderers, the blocks registry, tabs (open/close/reorder/
-pin/ghost animation), clear-text control, case in Advanced, the side-panel search options
+So the exit code is `0` only when every assertion passed. The suite announces
+**120 `== name ==` section headings** (119 distinct names — `== export ==` is
+announced twice) and printed **4,777 checks** in the last full run, covering
+boot, sidebar and tree, theme, viewer and outline, the six renderers, the
+blocks registry, tabs (open/close/reorder/pin/ghost animation), clear-text
+control, case in Advanced, the side-panel search options
 (unique mode, sort, caps, keyboard, latest-wins, open-failure), edit and
 save, the edit bar, scroll sync,
 hybrid mode and its round-trip guards, table view, empty-tree create,
 collapse/expand, recent files, the 3D graph view and interactions, bookmarks,
 watcher polling and tree sync, settings, auth, passwords, tokens, export,
 wallpaper, welcome, deep links, wikilinks, vim mode and vimrc, keyboard
-scroll, AI, the mermaid visual designer, lazy vendor loading, and
-first-paint boot state.
+scroll, AI, sessions, workspaces, the mermaid visual designer, lazy vendor
+loading, and first-paint boot state.
 
 ### Canned SSE for the AI tests
 
 The AI block drives a full agentic tool loop without a network. At the top
 of the file:
 
-- `aiChatStreams` (`test_dom.js:154`) is a queue of SSE frame arrays; each
-  entry is one assistant reply.
-- `aiChatLog` (`test_dom.js:155`) records the JSON bodies POSTed to
+- `aiChatStreams` is a queue of SSE replies. An entry is either an array of
+  frames or `{frames, gapMs}`, which delivers one frame per `gapMs` so a test
+  can observe the panel while the stream is still open.
+- `aiChatLog` records the JSON bodies POSTed to
   `/api/ai/chat`.
 
-The `/api/ai/chat` branch of the fetch stub (`test_dom.js:1235-1255`) parses
-the request body, pushes it onto `aiChatLog`, shifts the next frame array
+The `/api/ai/chat` branch of the fetch stub parses
+the request body, pushes it onto `aiChatLog`, shifts the next entry
 off `aiChatStreams`, encodes each frame, and returns it as a real
 `ReadableStream` body that `api.js` reads with `getReader()`. If the queue is
 empty it returns a 400. Tests build frames with a local `sseFrame(text)`
-helper (`test_dom.js:16293`) that wraps text in an OpenAI-style
+helper (declared inside the AI section) that wraps text in an OpenAI-style
 `delta.content` frame. Because the stub pops one entry per chat request, a
 test can script a multi-round tool loop by pushing several entries, then
 assert on `aiChatLog` to see exactly what the loop sent upstream.
@@ -129,8 +139,8 @@ descriptor with `NB.blocks`. The `== blocks registry ==` section asserts that
 six renderers are registered (`mermaid`, `wavedrom`, `katex`, `viz`,
 `htmlpreview`, `svg`) and that `pluginTypes()` derives one table entry per
 renderer.
-It then runs the **registry-completeness guard**
-(`test_dom.js:3111-3130`): for every descriptor it asserts
+It then runs the **registry-completeness guard** (the `blocks completeness:`
+`check()` calls): for every descriptor it asserts
 
 - the module is loaded by `templates/index.html`,
 - the module is in the `static/sw.js` `PRECACHE` list,
@@ -222,34 +232,30 @@ a `result.typeInfo.capability`, a family-shaped `result` driven by
 - `Ctrl+Z` while open is captured and forwarded to the canvas, never the note;
 - wiring completeness: `mermaid-designer.js` is in `index.html` and the `sw.js`
   `PRECACHE`, and `visimer.bundle.js` is in neither (it stays a lazy bundle);
-  the toolbar no longer carries `#designer-tool-addnode`, and
-  `#designer-sidebar` / `#designer-add-title` / `#designer-palette` are in
-  `index.html`.
+  the stage toolbar row is gone — its Tools and History buttons now live in
+  `#designer-sidebar` — and `#designer-sidebar` / `#designer-add-title` /
+  `#designer-palette` are in `index.html`.
 
-The `== designer sidebar ==` section covers the per-type add palette (the add
-action moved out of the toolbar into `#designer-sidebar`):
+The `== designer sidebar controls ==` section covers the Select / Connect /
+Undo / Redo icon buttons that Visimer does not ship, now inside
+`#designer-sidebar`: the buttons are descendants of the sidebar and carry
+`designer-iconbtn`, the sidebar is hidden by default, while loading, after
+close, and for a non-editable type, and visible in the ready state with a
+type-specific hint. Select/Connect call `view.setTool`, `aria-pressed` mirrors
+the view's `toolChange`, connect mode toggles the canvas class, Undo/Redo
+delegate to `editor.undo()`/`redo()` and track `canUndo`/`canRedo`, and close
+resets the pressed state and both history buttons.
 
-- the sidebar carries `designer-sidebar` + `aria-labelledby`, holds the title,
-  a `.designer-divider`, and `#designer-palette`, and is hidden by default and
-  during loading;
-- flowchart builds a `.designer-shapes` grid of 14 buttons, each of which calls
-  `view.addNode(shapeId)` with its own id (`rect`, `round`, … `odd`), and the
-  title reads `Shapes`; the sidebar is visible in the ready state;
-- the structured families each build one `.designer-add` button that dispatches
-  the expected op — `st.addState`, `cl.addClass`, `er.addEntity`,
-  `pie.addSlice`, `gantt.addTask`, `seq.addParticipant`, and `li.addItem` for
-  the line-item family;
-- Connect is visible + enabled for the drag-connect families (flowchart, state,
-  class, er) and hidden + disabled for the rest (pie, gantt, sequence,
-  line-item);
-- a render-only (`zenuml`) open builds no palette and keeps the sidebar hidden;
-  closing clears `#designer-palette`, empties the title, and hides the sidebar.
-
-The `== designer toolbar ==` section covers the Select / Connect / Undo / Redo
-row that Visimer does not ship: hidden until ready, Select/Connect call
-`view.setTool`, `aria-pressed` mirrors the view's `toolChange`, Undo/Redo
-delegate to `editor.undo()/redo()` and track `canUndo`/`canRedo`, and the row
-is reset on close and hidden in the non-editable state.
+The `== designer edit UI ==` section covers the three-column layout and its
+tokens (236 px sidebar, 296 px inspector, 1320 px modal), the Add tabs and
+form, the per-family palette, and the inspector. Selecting a node renders the
+node inspector; its label, shape, delete, direction and Add-node/Add-edge forms
+dispatch the expected ops; a rejected edit restores the model value; and the
+pointer guard keeps a selection when the click lands on a label or a shape
+button. The add-only families (gantt, line-item) keep the sidebar without an
+inspector and hide Connect; the sequence family renders participant and message
+inspectors and rejects a comma in a name inline; a model-rejected rename
+restores the current name.
 
 ### Mobile v1 (`== mobile ==`)
 
@@ -277,7 +283,7 @@ to Home, and A → B → back shows A with A's URL.
 
 ## The Playwright browser suite
 
-`tests/browser/test_hybrid_browser.js` (1963 lines) boots the real Flask app
+`tests/browser/test_hybrid_browser.js` (2,532 lines) boots the real Flask app
 against a temp notebook, opens a note in a real browser, enters hybrid mode
 through the actual UI button, edits with the real editing engine, and reads
 the file back from disk. It exists because jsdom has no `contentEditable`
@@ -401,8 +407,11 @@ needed when a working Chromium is installed. `PORT` overrides the default;
 `run_all.js` assigns a distinct port per suite because hybrid and mobile both
 defaulted to 5099. All use the same
 `check(name, cond, detail)` counter and report `PASS` / `FAIL` with
-`process.exitCode = 1` on failure, printing the server log tail when a run
-fails.
+`process.exitCode = 1` on failure, printing the server log tail when a suite
+reaches its summary with a failure. An uncaught Playwright error aborts the
+suite before that summary.
+
+Current status of the browser gate: all 12 suites pass (hybrid 169 checks).
 
 It asserts the hybrid (WYSIWYG) write-back contract: byte-identity on a
 clean enter+exit and a clean Save+Exit, that a native paragraph or heading

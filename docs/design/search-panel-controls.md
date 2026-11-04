@@ -6,8 +6,12 @@ side-panel view** (`#search-view`, built by `mountSearch()` in
 
 Reference mockup: `docs/design/search-panel-controls.html`.
 
-Status: design only. No source files were changed. `web-engineer` implements
-the markup change in `activity.js` and the CSS change in `style.css`.
+Status: shipped (search control stack), design record. The markup is in
+`mountSearch()` in `static/js/activity.js` and the CSS in
+`static/css/style.css`. `search-panel-advanced.md` later moved the control
+area behind the **Advanced** disclosure; that document matches today's UI on
+the control area, and this one is the record of the labelled filter stack
+before it.
 
 Companion: `docs/design/search-panel.md` (rows, states, result copy). **This
 document supersedes its §3 anatomy and §4 controls.** The result-row design,
@@ -1021,7 +1025,7 @@ Keep these or the frontend suite breaks:
 
 ### 9.1 `static/js/activity.js` — `mountSearch()`
 
-Control construction (currently ~lines 420–500):
+Control construction in `mountSearch()`:
 
 - Replace `optionsRow` with `.search-panel-controls` (containing the existing
   input row and a new `.search-panel-filters`).
@@ -1036,7 +1040,7 @@ Control construction (currently ~lines 420–500):
   wrapper; the tests assert them there.
 - Set `caseToggle` markup unchanged (`label > checkbox + span "Aa"`).
 
-`applyTargetUi()` (currently ~lines 530–600):
+`applyTargetUi()`:
 
 - Toggle `.is-hidden` on the **Grouping filter row** in addition to the mode
   track (see §8.7).

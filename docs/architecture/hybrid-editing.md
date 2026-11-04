@@ -1,6 +1,7 @@
 # Hybrid editing behavior specification
 
-Status: draft for discussion. Owner: `product-designer`.
+Status: implemented behavior spec. Open questions are tracked inline with
+the ⛔/✳ marks. Owner: `product-designer`.
 Applies to: `static/js/hybrid.js`, `templates/index.html`, `tests/dom/test_dom.js`,
 `tests/browser/test_hybrid_browser.js`.
 
@@ -12,7 +13,7 @@ here instead of case-by-case in `hybrid.js`.
 ## Overview
 
 Hybrid mode makes `#viewer-content` `contentEditable` (`enter()` at
-`hybrid.js:3237` sets the attribute at `hybrid.js:3255`), the user edits the
+`hybrid.js` sets the attribute at `hybrid.js`), the user edits the
 rendered DOM, and the DOM is converted back to Markdown on save. The renderer
 pipeline and the block registry are described in
 [markdown.md](markdown.md); this document owns the editing behavior and the
@@ -110,16 +111,16 @@ These are settled by the owner and override any conflicting recommendation below
 
 | # | Decision | Consequence |
 |---|----------|-------------|
-| Q1 | **Structural edits preserve untouched blocks.** Enter, Shift+Enter, Backspace/Delete, list outdent, and rule delete no longer canonicalize the rest of the file. | ✅ Implemented: `structuralSplice` (`hybrid.js:986`) matches the DOM against the baseline by content hash from both ends and re-serializes only the changed middle. Verified in Chromium: `Enter` in `first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n` keeps all three untouched forms byte-for-byte (before the fix it produced `-   star`, `# Title`, and even `` ```undefined ``). |
+| Q1 | **Structural edits preserve untouched blocks.** Enter, Shift+Enter, Backspace/Delete, list outdent, and rule delete no longer canonicalize the rest of the file. | ✅ Implemented: `structuralSplice` (`hybrid.js`) matches the DOM against the baseline by content hash from both ends and re-serializes only the changed middle. Verified in Chromium: `Enter` in `first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n` keeps all three untouched forms byte-for-byte (before the fix it produced `-   star`, `# Title`, and even `` ```undefined ``). |
 | G4 | **No presentation HTML in the file.** Raw DOM artifacts (`<br>`, `<div>`, caret line boxes, `<table>` built during editing) must be converted to Markdown before the write. Only HTML the owner already had may survive (Q10). | Confirms invariant I4; every new line-insert / paste / table path is checked against it. |
 | G4b | **One `Enter` adds one line break (Q16).** In hybrid, a single `Enter` must not produce several newlines. No idle action adds a break; no `<br>` reaches the file. Blank lines already in the Markdown stay. | Invariant I9, criterion AC7. The bugs it exposes are Q18. |
-| G2b | **Special fenced blocks: render in place, edit as source.** Entering a plugin block switches that block to a source editor; leaving it re-renders. The block is atomic while not edited. | Confirms the existing click-to-edit model (`editPluginSource` `hybrid.js:4080`) as the spec, not an ad-hoc feature. |
+| G2b | **Special fenced blocks: render in place, edit as source.** Entering a plugin block switches that block to a source editor; leaving it re-renders. The block is atomic while not edited. | Confirms the existing click-to-edit model (`editPluginSource` `hybrid.js`) as the spec, not an ad-hoc feature. |
 | G3b | **Tables edit through the table tool, not by typing pipes.** Row/column add, remove, move, and header toggle are the editing surface. | Confirms `table-edit.js` / the existing table controls as the spec; the rendered table is the surface. |
-| Q5 | **Add the missing live input rules** for `_italic_`, `+ ` bullets, `1) ` ordered lists, and `[[wikilinks]]`. Note: these rules did **not** exist in the code before this change (the pre-change `INPUT_RULES`/`INLINE_RULES` had only `#`, `-`/`*`, `\d+.`, `>`, `[ ]`). | ✅ Implemented. `_italic_`/`[[ ]]` in `INLINE_RULES` (`hybrid.js:1559`), `+ `/`1) ` in `INPUT_RULES` (`hybrid.js:1486-1553`); `NB.viewer.resolveWikilink` exported so the rule matches render. Verified in Chromium and jsdom. |
+| Q5 | **Add the missing live input rules** for `_italic_`, `+ ` bullets, `1) ` ordered lists, and `[[wikilinks]]`. Note: these rules did **not** exist in the code before this change (the pre-change `INPUT_RULES`/`INLINE_RULES` had only `#`, `-`/`*`, `\d+.`, `>`, `[ ]`). | ✅ Implemented. `_italic_`/`[[ ]]` in `INLINE_RULES` (`hybrid.js`), `+ `/`1) ` in `INPUT_RULES` (`hybrid.js`); `NB.viewer.resolveWikilink` exported so the rule matches render. Verified in Chromium and jsdom. |
 | Q9 | **Paste parses Markdown into blocks.** Plain-text insert stays available via the menu's "Paste without formatting"; rich HTML is stripped to text. | `doPaste` gains a Markdown-parse path; verify in the Chromium harness. |
 | Q10 | **Raw HTML is editable in place** (not made read-only). | The `html` token must be aligned by the splice so an edit does not force whole-file fallback. **Open fork:** what an *edited* raw HTML block writes back is undecided — preserve the user's tags, or unwrap to text (§6 Q10). |
 | Q16 | **One `Enter`, one break, in hybrid mode.** The rule is about the editor's behavior, not the file format. A single `Enter` must not add several newlines. | Invariant I9, criterion AC7. |
-| Q18 | **Fix the extra-break defects found in real Chromium.** An empty list item marked with a `<br>` saved as junk (`-     \n    \n`) instead of a bare marker. | ✅ Implemented: `markEmptyListItems` (`hybrid.js:305`) strips the line box before the sentinel; `ensureListMarker` also drops a textless item's browser `<br>` when the item is created, so typing cannot preserve it as a trailing soft break. Verified in Chromium and jsdom. |
+| Q18 | **Fix the extra-break defects found in real Chromium.** An empty list item marked with a `<br>` saved as junk (`-     \n    \n`) instead of a bare marker. | ✅ Implemented: `markEmptyListItems` (`hybrid.js`) strips the line box before the sentinel; `ensureListMarker` also drops a textless item's browser `<br>` when the item is created, so typing cannot preserve it as a trailing soft break. Verified in Chromium and jsdom. |
 
 ## Test suite
 
@@ -174,9 +175,9 @@ reproduced through the real `hybrid.js` + vendored marked/Turndown in jsdom.
 |---|--------|-----|
 | C4 | A text edit was silently reverted when it shared a save with a structural edit (type a word, press Enter, save): the region's unchanged-node path did not compare the content key. | The kept-raw branch now requires `curKeys[i] === blockHashes[kept].key`; an edited node falls through to serialization. Verified in Chromium. |
 | fence | `escapeLeadingHashes` did not recognize a fence inside a blockquote, and closed any backtick fence on a shorter delimiter, corrupting `#` inside code. | Track the whole delimiter (char + length), allow a `> ` prefix, and require a closing fence at least as long as the opener. |
-| M3b | The M3 fix only covered a live-typed wikilink; one already in the source still saved as `\[\[...\]\]`. | The renderer emits an unresolved wikilink as `<span data-wikilink-raw="1">[[...]]</span>` (`viewer.js:104`) and the serializer rule (`hybrid.js:201`) keys off the attribute. |
-| Q12 | **An empty heading must accept typed text.** It has zero height in a real browser and the caret was redirected into the next block (typing at `###` produced `Hellobody` inside the paragraph). | ✅ Implemented: `addEmptyLineBoxes` (`hybrid.js:1442`) gives every empty block a marked caret line box at enter/render; the box is stripped on save. Verified in Chromium. |
-| Q7 | **An emptied blockquote survives as `>`.** Turndown drops an empty `<blockquote>` outright, unlike an empty heading or list item. | ✅ Implemented: `markEmptyBlockquotes` + `EMPTY_QUOTE_SENTINEL` (`hybrid.js:67`). Verified in Chromium and jsdom. |
+| M3b | The M3 fix only covered a live-typed wikilink; one already in the source still saved as `\[\[...\]\]`. | The renderer emits an unresolved wikilink as `<span data-wikilink-raw="1">[[...]]</span>` (`viewer.js`) and the serializer rule (`hybrid.js`) keys off the attribute. |
+| Q12 | **An empty heading must accept typed text.** It has zero height in a real browser and the caret was redirected into the next block (typing at `###` produced `Hellobody` inside the paragraph). | ✅ Implemented: `addEmptyLineBoxes` (`hybrid.js`) gives every empty block a marked caret line box at enter/render; the box is stripped on save. Verified in Chromium. |
+| Q7 | **An emptied blockquote survives as `>`.** Turndown drops an empty `<blockquote>` outright, unlike an empty heading or list item. | ✅ Implemented: `markEmptyBlockquotes` + `EMPTY_QUOTE_SENTINEL` (`hybrid.js`). Verified in Chromium and jsdom. |
 
 The goal **G1–G4** governs every open question: where a recommendation below would
 make hybrid less Word-like, less clean in the raw file, or would add HTML, the goal
@@ -206,20 +207,20 @@ fences; and the inline constructs (`**bold**`, `*italic*`/`_italic_`,
 
 ### 1.2 Source of truth
 
-Per `PLAN.md:12-19`, the `.md` file is the document; the DOM is a view of the region
+Per `PLAN.md`, the `.md` file is the document; the DOM is a view of the region
 being edited.
 
-- The on-disk source is held in `sessionSource` (`hybrid.js:135`).
-- On save, `domToMarkdown()` (`hybrid.js:614`) tries `spliceSave()`
-  (`hybrid.js:895`) first, then falls back to `wholeDomMarkdown()`
-  (`hybrid.js:578`).
+- The on-disk source is held in `sessionSource` (`hybrid.js`).
+- On save, `domToMarkdown()` (`hybrid.js`) tries `spliceSave()`
+  (`hybrid.js`) first, then falls back to `wholeDomMarkdown()`
+  (`hybrid.js`).
 - `spliceSave` replaces only blocks whose content hash changed; every untouched
-  `block`/`gap`/`raw` segment emits its original bytes (`hybrid.js:913-980`).
+  `block`/`gap`/`raw` segment emits its original bytes (`hybrid.js`).
 - The splice fails closed — returning `null` and handing the *whole file* to
   `wholeDomMarkdown` — when there is no live session baseline
-  (`hybrid.js:899`), when the root-level text/comment count changes
-  (`hybrid.js:901`, guard against `rootAuxBaseline`), or when the source did
-  not lex exactly (`topLevelBlocks` returns null, `hybrid.js:625-637`).
+  (`hybrid.js`), when the root-level text/comment count changes
+  (`hybrid.js`, guard against `rootAuxBaseline`), or when the source did
+  not lex exactly (`topLevelBlocks` returns null, `hybrid.js`).
 
 **This last point governs the entire catalog.** A text-only edit inside one block
 keeps every other block byte-for-byte. Any edit that changes the number of top-level
@@ -240,21 +241,21 @@ I2. **No format lost unintentionally.** A construct the user did not touch keeps
     source bytes; a construct the user did touch is re-emitted in its canonical
     serialized form (Appendix A).
 I3. **A no-op writes nothing.** If `domToMarkdown()` equals the session baseline,
-    every save caller skips `POST /api/file` (`isNoOpMarkdown` at `hybrid.js:3426`;
+    every save caller skips `POST /api/file` (`isNoOpMarkdown` at `hybrid.js`;
     callers `save` `:3497`, `onClose` `:3528`,
     `commitForTabSwitch` `:3576`, `flushAutosave` `:3114`, `exit` `:3354`).
 I4. **Output is always plain Markdown, never HTML.** No `<tag>` may reach a file
-    outside a fence (`PLAN.md:116-118`). Turndown's unknown-markup default unwraps
-    to text (`vendor/turndown.browser.js:770-772`); tables are forced into GFM
-    shape (`normalizeTablesForGfm` `hybrid.js:368`); plugin blocks are restored as
-    fences (`hybrid.js:477-478`).
+    outside a fence (`PLAN.md`). Turndown's unknown-markup default unwraps
+    to text (`vendor/turndown.browser.js`); tables are forced into GFM
+    shape (`normalizeTablesForGfm` `hybrid.js`); plugin blocks are restored as
+    fences (`hybrid.js`).
 I5. **The protected-block rule holds.** No block transform may touch a table or a
-    fence (`WRAP_BLOCK_REFUSED_TAGS` `hybrid.js:1219`, `insideProtectedBlock`
-    `hybrid.js:1229-1237`).
+    fence (`WRAP_BLOCK_REFUSED_TAGS` `hybrid.js`, `insideProtectedBlock`
+    `hybrid.js`).
 I6. **Literal syntax characters are escaped**, not reinterpreted, when emitted as
-    text (`vendor/turndown.browser.js:732-746`, `:867-869`).
+    text (`vendor/turndown.browser.js`, `:867-869`).
 I7. **Undo restores structure, not just text** (`restoreSnapshot`
-    `hybrid.js:3035`; `HISTORY_LIMIT`/`HISTORY_COALESCE_MS` `hybrid.js:2989-2990`).
+    `hybrid.js`; `HISTORY_LIMIT`/`HISTORY_COALESCE_MS` `hybrid.js`).
 I8. **The raw file stays readable Markdown (goal G4).** Every DOM convenience the
     editor adds — a caret line-box `<br>`, a `<div>` wrapper, a `<table>` built
     during editing, an empty-block placeholder — is converted to Markdown before
@@ -271,10 +272,10 @@ I9. **One `Enter`, one break (goal G4b).** In hybrid mode a single `Enter` adds 
 ### 1.4 Non-hard-coded values
 
 This document names limits and their source; it does not invent numbers. Existing
-constants that must not be duplicated: `AUTOSAVE_MS` = 2000 (`hybrid.js:3083`),
-`HISTORY_LIMIT` = 100, `HISTORY_COALESCE_MS` = 400 (`hybrid.js:2989-2990`),
-`PASTE_PLAIN_TIMEOUT_MS` = 1000 (`hybrid.js:2813`), `SEGMENT_SEPARATOR` = `"\n\n"`
-(`hybrid.js:89`).
+constants that must not be duplicated: `AUTOSAVE_MS` = 2000 (`hybrid.js`),
+`HISTORY_LIMIT` = 100, `HISTORY_COALESCE_MS` = 400 (`hybrid.js`),
+`PASTE_PLAIN_TIMEOUT_MS` = 1000 (`hybrid.js`), `SEGMENT_SEPARATOR` = `"\n\n"`
+(`hybrid.js`).
 
 ---
 
@@ -282,18 +283,18 @@ constants that must not be duplicated: `AUTOSAVE_MS` = 2000 (`hybrid.js:3083`),
 
 | Term | Definition | Anchor |
 |---|---|---|
-| **Block** | One top-level element of `#viewer-content` (direct child) and the source segment it came from. | `topLevelBlock` `hybrid.js:2151`; `topLevelElements` `:681` |
+| **Block** | One top-level element of `#viewer-content` (direct child) and the source segment it came from. | `topLevelBlock` `hybrid.js`; `topLevelElements` `:681` |
 | **Marker** | The syntax prefix that selects a block type: `#`…`######`, `-`/`*`/`+`, `1.`, `>`, `- [ ]`, the fence line, the `\|` table border. | — |
 | **Content** | The text of a block after its marker. | — |
-| **Inline span** | A non-block element inside a block's content: `<strong>`, `<em>`, `<del>`, `<code>` (not in `<pre>`), `<a>`, `<img>`. | `isInlineCode` `hybrid.js:255` |
-| **Atomic block** | A rendered plugin container marked `contenteditable="false"` + `data-hybrid-atomic="1"`; the caret skips over it; click-to-edit swaps in its source. | `markAtomicBlocks` `hybrid.js:1110-1113` |
-| **Protected block** | A `<table>` or `<pre>` (and descendants); block transforms (`wrapBlock`, `toggleList`) refuse to act inside one. Atomic plugin blocks are a subset in practice. | `hybrid.js:1219`, `:1229-1237` |
+| **Inline span** | A non-block element inside a block's content: `<strong>`, `<em>`, `<del>`, `<code>` (not in `<pre>`), `<a>`, `<img>`. | `isInlineCode` `hybrid.js` |
+| **Atomic block** | A rendered plugin container marked `contenteditable="false"` + `data-hybrid-atomic="1"`; the caret skips over it; click-to-edit swaps in its source. | `markAtomicBlocks` `hybrid.js` |
+| **Protected block** | A `<table>` or `<pre>` (and descendants); block transforms (`wrapBlock`, `toggleList`) refuse to act inside one. Atomic plugin blocks are a subset in practice. | `hybrid.js`, `:1229-1237` |
 | **Block boundary** | The empty caret position after a block and before the next top-level element (or the editor root). | `insertLineBelow` `:2387-2440` |
-| **Gap** | A blank-line run between two blocks; owned by the preceding block for serialization; carried raw. | `PLAN.md:69-70`; `tokenProducesElement` `hybrid.js:652` |
-| **Raw** | An HTML comment or raw-HTML token; carried verbatim, never regenerated. | `hybrid.js:625-680` |
-| **Segment** | One `block`, `gap`, or `raw` unit of the splice model. | `PLAN.md:64-67` |
-| **Canonical form** | The Markdown a touched block serializes to. Listed in Appendix A. | `serializeEditedElement` `hybrid.js:595` |
-| **Fail-closed** | The splice returns `null` and the whole file is re-serialized rather than risk a wrong splice. | `hybrid.js:899-901` |
+| **Gap** | A blank-line run between two blocks; owned by the preceding block for serialization; carried raw. | `PLAN.md`; `tokenProducesElement` `hybrid.js` |
+| **Raw** | An HTML comment or raw-HTML token; carried verbatim, never regenerated. | `hybrid.js` |
+| **Segment** | One `block`, `gap`, or `raw` unit of the splice model. | `PLAN.md` |
+| **Canonical form** | The Markdown a touched block serializes to. Listed in Appendix A. | `serializeEditedElement` `hybrid.js` |
+| **Fail-closed** | The splice returns `null` and the whole file is re-serialized rather than risk a wrong splice. | `hybrid.js` |
 
 ---
 
@@ -357,16 +358,16 @@ the current code's extra newlines are the Q18 bug.
 | Pos | Op | Before | After (target) | Status |
 |---|---|---|---|---|
 | M | C | `one` | `onXe` | ✅ native |
-| M | G | `one` | `one` (unchanged) | ✅ `applyBlockRules` anchors `^…$` (`hybrid.js:1621-1623`) |
+| M | G | `one` | `one` (unchanged) | ✅ `applyBlockRules` anchors `^…$` (`hybrid.js`) |
 | E | ↵ | `one` | `one\ntwo` (one break, the next line) | ⛔ Q18: today saves `one\n\n` |
 | E | ⇧↵ | `one` | `one\ntwo` (one break) | ⛔ Q18: today inserts a `<p>` and saves `one\n\n` |
 | E | ⌦ | `one\ntwo` | `one\ntwo` (no merge) | 🌐 native; see 4.4 for `⌫` |
-| S | G (`# `) | `one` | `# one` | ✅ heading rule (`INPUT_RULES[0]` `hybrid.js:1487`), test `4421-4443` |
-| S | G (`- `) | `one` | `-   one` | ✅ list rule (`INPUT_RULES[1]` `hybrid.js:1491`), test `4327-4330` |
+| S | G (`# `) | `one` | `# one` | ✅ heading rule (`INPUT_RULES[0]` `hybrid.js`), test `4421-4443` |
+| S | G (`- `) | `one` | `-   one` | ✅ list rule (`INPUT_RULES[1]` `hybrid.js`), test `4327-4330` |
 | ∅/T | G (`- ` etc.) | `` | see §4.4–4.7 | ✅ |
 | ∅ | G (`+ `) | `` | `+ ` stays literal; serializes `\+ ` | ✳ Q5: rule to be added |
 | ∅ | G (`1) `) | `` | `1) ` stays literal | ✳ Q5: rule to be added |
-| — | D | `one` | `` (blank line) | ✅ `paragraph` rule (`hybrid.js:231-241`) returns `\n\n` |
+| — | D | `one` | `` (blank line) | ✅ `paragraph` rule (`hybrid.js`) returns `\n\n` |
 
 Worked examples (text-only edit, splice path):
 
@@ -385,13 +386,13 @@ AFTER   one\ntwo\n          (one newline; element count may change -> Q1)
 ### 4.2 ATX headings `#`–`######`
 
 Canonical output `### Title`; empty heading canonical output `###` (sentinel
-`EMPTY_HEADING_SENTINEL` `hybrid.js:65`, added to the clone at `hybrid.js:457`,
-restored at `hybrid.js:512-513`).
+`EMPTY_HEADING_SENTINEL` `hybrid.js`, added to the clone at `hybrid.js`,
+restored at `hybrid.js`).
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
-| ∅ | G (`### `) | `` | `### ` (h3, caret after marker) | ✅ `INPUT_RULES[0]` `hybrid.js:1487`; test `4318-4325` |
-| ∅ (root) | G (`# `) | `` (brand-new note: the browser types a bare text node under `#viewer-content`, no `<p>`) | `# ` (h1, caret in the heading) | ✅ root branch wraps empty root (`hybrid.js:1618`), `hasBlockContent` ignores the placeholder `<br>`; tests jsdom `7410`, Chromium `827` |
+| ∅ | G (`### `) | `` | `### ` (h3, caret after marker) | ✅ `INPUT_RULES[0]` `hybrid.js`; test `4318-4325` |
+| ∅ (root) | G (`# `) | `` (brand-new note: the browser types a bare text node under `#viewer-content`, no `<p>`) | `# ` (h1, caret in the heading) | ✅ root branch wraps empty root (`hybrid.js`), `hasBlockContent` ignores the placeholder `<br>`; tests jsdom `7410`, Chromium `827` |
 | S | C (no space) | `#no-space` typed | `\#no-space` on save | ✅ no conversion (`applyBlockRules` `:1621`); test `4414-4417`; escape `vendor:738` |
 | S | ⌫ | `x\n\n## Title` | `x Title` or merged `## xTitle` | ⛔ unspecified; browser-native merge, §6 Q2 |
 | T | C | `## Title` | `## TitXle` | ✅ native |
@@ -408,18 +409,18 @@ restored at `hybrid.js:512-513`).
 
 #### 4.2.1 Empty heading (zero height) — known pre-existing bug
 
-`PLAN.md:171-177`: an empty heading has zero height in a real browser and the caret
+`PLAN.md`: an empty heading has zero height in a real browser and the caret
 is redirected, so typed text can land in the following block. The catalog treats
 "text typed into an empty heading" as **must land in the heading**; current code
 cannot guarantee it in Chromium. Status: ⛔ tracked, not fixed (§6 Q12). The browser
 harness currently avoids the case in its first native-edit pass (comment at
-`test_hybrid_browser.js:165`) and covers it directly in the Q12 catalog case
-(`test_hybrid_browser.js:243-273`).
+`test_hybrid_browser.js`) and covers it directly in the Q12 catalog case
+(`test_hybrid_browser.js`).
 
 ### 4.3 Setext headings (`===` / `---` underline)
 
 Rendered as `<h1>`/`<h2>`; canonical output when touched is **ATX**, not setext
-(`headingStyle: "atx"` `hybrid.js:174`; rule `vendor:101-116`).
+(`headingStyle: "atx"` `hybrid.js`; rule `vendor:101-116`).
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
@@ -431,7 +432,7 @@ Rendered as `<h1>`/`<h2>`; canonical output when touched is **ATX**, not setext
 ### 4.4 Bullet lists `-`/`*`/`+`
 
 Rendered `<ul><li>`; canonical output `-   a` (three spaces, `bulletListMarker: "-"`
-`hybrid.js:175`).
+`hybrid.js`).
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
@@ -447,11 +448,11 @@ Rendered `<ul><li>`; canonical output `-   a` (three spaces, `bulletListMarker: 
 | S | ⌫ | `a\n\n- item` | outdent item / merge into `a` | ⛔ browser-native; §6 Q2 |
 | E | ⌦ | `- item\n\na` | merge next block into item | ⛔ browser-native; §6 Q2 |
 | — | D (empty the item) | `- item` | `-` | ✅ sentinel `:305-311`, `:514-522`, test `7199-7226` |
-| — | Ctrl+X / ⇧⌫ over a whole item | `- a\n- b\n- c` | the covered items are removed; no empty marker is left; the caret moves to the nearest surviving edge | ✅ `deleteListSelection` (`hybrid.js:7164`); browser test |
+| — | Ctrl+X / ⇧⌫ over a whole item | `- a\n- b\n- c` | the covered items are removed; no empty marker is left; the caret moves to the nearest surviving edge | ✅ `deleteListSelection` (`hybrid.js`); browser test |
 | — | Tab | `- a\n- b` (caret in b) | `- a\n    - b` nested | ✅ `indentListItem` `:1922`, test `4365-4370` |
 | — | ⇧Tab | nested b | outdent to top level | ✅ test `4377-4381` |
 | (item) | P-txt | `- a` | plain text inserted with `<br>` inside the item | ✅ `insertTextAtCaret` |
-| (item) | Ctrl+V of list item(s) | `- a\n- b` + copied item | pasted items become clean siblings (above / below / split at the caret); clipboard `style`/`class` markup is stripped | ✅ `onPaste` / `insertPastedListItems` (`hybrid.js:6037`/`:5994`); browser test |
+| (item) | Ctrl+V of list item(s) | `- a\n- b` + copied item | pasted items become clean siblings (above / below / split at the caret); clipboard `style`/`class` markup is stripped | ✅ `onPaste` / `insertPastedListItems` (`hybrid.js`/`:5994`); browser test |
 | (item) | P-md | multi-line MD | one item with hard breaks, **not** new blocks | ⚠ Q9: general Markdown-text parse still open |
 
 ### 4.5 Ordered lists `1.` / `1)`
@@ -536,7 +537,7 @@ hybrid editor and the exporter through `NB.viewer`.
 |---|---|---|---|---|
 | ∅ | G (`- [ ] ` / `[ ] `) | `` | task item, unchecked | ✅ `taskItemRule`; tests `4390-4401` |
 | ∅ | G (`- [x] ` / `[x] `) | `` | task item, checked | ✅ |
-| — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md:79`; tests `5733-5742`, `7784-7806` |
+| — | click checkbox | `- [ ] task` | `- [x] task` | ✅ hash includes `input.checked` `PLAN.md`; tests `5733-5742`, `7784-7806` |
 | — | Task edit-bar button | `task` / `<p>` / whole-list selection | adds the checkbox on the caret item; a second press returns the item to a plain **paragraph** | ✅ `toggleTask`/`setListItemType`; tests `8561-8574`, browser list-model block |
 | M | ⇧↵ | task item | `<p>` after whole list | ✅ test `4693-4708` |
 | — | ↵ | task item | new task item with a checkbox: **above** at the content start (the caret stays at the original text start below), **below** at the content end (the caret lands in the new item), and a **split** at the caret mid-text (text before stays, text after moves into the new item, caret right of its box) | ✅ `onEnterKey` task branch (`insertEmptyTaskItem`, native split + `repairNativeTaskSplit`); also on a task loaded from disk; task Enter tests |
@@ -596,7 +597,7 @@ ordered (`1.`/`1)`), nested, task (`- [ ]`/`- [x]`), and empty items — in ever
 editing surface (goal G1); a drag is a structural DOM move that Turndown re-serializes on
 save (goal G4). There is no popup window and no separate list editor. The pattern
 precedent is the table row/column reorder (`table-edit.js` + `moveRow`/`moveCol`,
-`hybrid.js:4817`/`:4838`); this is **pattern reuse only, not shared code**. §4.7.2 is a
+`hybrid.js`/`:4838`); this is **pattern reuse only, not shared code**. §4.7.2 is a
 second module of comparable size to `table-edit.js` — its own overlay, an indent-rail
 depth chooser, subtree carry, outdent, a variable-height recursive hit-test, a keyboard
 submenu, and an `aria-live` region — plus a substantial Playwright suite. The estimate
@@ -604,36 +605,36 @@ must not treat it as a small addition to `table-edit.js`.
 
 **Affordance (the grip).** One grip `<button>` is drawn for the list item under the
 pointer, or containing the caret, in the left gutter — the same hover-reveal model as
-the table row grip (`table-edit.js:626`). The grip, the drag ghost, and the drop line are
+the table row grip (`table-edit.js`). The grip, the drag ghost, and the drop line are
 children of the list feature's **own** overlay layer, `.nb-list-overlay`, a sibling of
-`.nb-table-overlay` under `#viewer` (created the same way at `table-edit.js:772`), with
+`.nb-table-overlay` under `#viewer` (created the same way at `table-edit.js`), with
 the same rules: deliberately OUTSIDE `#viewer-content`, `pointer-events: none` on the
 layer and `auto` on the controls, so the chrome is never in Turndown's clone and never in
 a hybrid `innerHTML` undo snapshot.
 
 **Overlay ownership is one layer per feature — no cross-module arbitration.**
 `table-edit.js` owns `.nb-table-overlay` exclusively and wipes that node on every render
-(`overlay.textContent = ""`, `table-edit.js:189`, `:623`); its `hide()` refuses to clear
-mid-drag (`if (drag) return`, `table-edit.js:619`). Drawing list chrome into that node
+(`overlay.textContent = ""`, `table-edit.js`, `:623`); its `hide()` refuses to clear
+mid-drag (`if (drag) return`, `table-edit.js`). Drawing list chrome into that node
 would let a table hover wipe a list drop line, and a table `hide()` called while the
 table module is idle would delete a list ghost mid-drag (its guard only protects a
 *table* drag). The list module therefore clears and rebuilds only `.nb-list-overlay`; the
 two layers never touch each other's nodes. No class or attribute is ever put on a list
 node during a drag: the lifted item is drawn as a translucent ghost and the insertion
-point as a drop line, both in the list overlay (`table-edit.js:18-24`). Because no chrome
+point as a drop line, both in the list overlay (`table-edit.js`). Because no chrome
 reaches the content, no `CHROME_CLASS_TOKENS` / `prepareTurndownClone` strip is added.
 Drags use Pointer Events with `setPointerCapture`, never HTML5 DnD
-(`table-edit.js:440-448`); the pointerdown is `preventDefault`ed so the caret and the
-native drag never start. Hover-intent lock and a grace timer mirror `table-edit.js:35`,
+(`table-edit.js`); the pointerdown is `preventDefault`ed so the caret and the
+native drag never start. Hover-intent lock and a grace timer mirror `table-edit.js`,
 `:637-658`.
 
 **Drop positions.** The pointer resolves `(target item T, side, depth)`:
 
 - `T` = the list item whose **hit region** contains the pointer; `side` = `before` on the
-  top half, `after` on the bottom half (the `rowBoundary` rule, `table-edit.js:495-503`).
+  top half, `after` on the bottom half (the `rowBoundary` rule, `table-edit.js`).
   The hit region is the union of the item's `<li>` rect and its own checkbox rect
   (`taskCheckboxOf(li)`), because a task checkbox hangs outside the item's border box
-  (`margin: 0 .53em 0 -1.53em`, `style.css:2712`) and a pointer over that marker column
+  (`margin: 0 .53em 0 -1.53em`, `style.css`) and a pointer over that marker column
   would otherwise resolve no item. If still no rect matches (the pointer sits in the
   gutter left of every item), the item on the pointer's row is resolved by clamping the
   pointer x to the container's base rail.
@@ -655,10 +656,10 @@ native drag never start. Hover-intent lock and a grace timer mirror `table-edit.
 
 Before measuring, the resolved item is given a line box if it has none. An item the user
 emptied during this session may not have one — `addEmptyLineBoxes` / `addListPlaceholders`
-run only on enter and re-render (`hybrid.js:1582-1589`, `:4242-4246`), not on every input —
+run only on enter and re-render (`hybrid.js`, `:4242-4246`), not on every input —
 and a zero-height `<li>` cannot be split by the top-half/bottom-half rule. The list module
 appends the same marked caret `<br>` (`CARET_BR_ATTR`) the enter path uses; it is
-hash-stripped (`hybrid.js:1042`) and removed before serialization, so it never reaches the
+hash-stripped (`hybrid.js`) and removed before serialization, so it never reaches the
 note.
 
 Placement from `(side, depth)`:
@@ -676,14 +677,14 @@ position hides the line and is a no-op (below).
 
 **Nesting and subtrees.** The mutation moves the existing `<li>` node, never a clone, so
 its whole subtree — nested `<ul>`/`<ol>`, their items, text, and inline markup — travels
-with it (the `moveRow` rule, `hybrid.js:4785`). The destination list is created or reused
-exactly as `indentListItem` does (`hybrid.js:2710-2722`): if the parent item has no child
+with it (the `moveRow` rule, `hybrid.js`). The destination list is created or reused
+exactly as `indentListItem` does (`hybrid.js`): if the parent item has no child
 list, a new list is created with the **moved item's source list type**
-(`document.createElement(list.tagName)`, `hybrid.js:2715`); if the parent already has a
+(`document.createElement(list.tagName)`, `hybrid.js`); if the parent already has a
 child list, the item joins it. A drag never explicitly retypes an item — that is §4.7.1 —
 so mixed-type nesting (`- a` with a nested `1. b`) is legal, and the emitted marker follows
 whichever list contains the item (Turndown's `listItem` rule,
-`static/vendor/turndown.browser.js:149-155`). A source nested list left empty by the move
+`static/vendor/turndown.browser.js`). A source nested list left empty by the move
 is removed (`indentListItem`'s `if (!list.firstElementChild) list.remove()`). The item may
 move between nesting levels of its own movable list container; it may not leave that
 container (cross-list rule below).
@@ -698,7 +699,7 @@ block canonicalizes its padding and numbering; untouched blocks keep bytes (§5.
 
 **Task items.** The checkbox `<input>` is a child of the moved `<li>`, so its `checked`
 state rides along with the item and is hashed explicitly (`canonicalSubtree`,
-`hybrid.js:1080`). A parent's checkbox state never cascades to its children and a child's
+`hybrid.js`). A parent's checkbox state never cascades to its children and a child's
 never to its parent: moving a task parent carries plain and task children unchanged, and
 moving a plain parent carries task children unchanged — each item keeps its own marker.
 A checkbox-only item keeps its `EMPTY_TASK_SENTINEL` trailing space on save (Appendix A).
@@ -734,38 +735,38 @@ has no clean Markdown round-trip, so conversion is rejected.
 
 **No-op.** A drop that resolves to the item's current parent and next sibling returns
 before any flush, mutation, or `onContentChange` — the no-op check precedes
-`flushPendingSnapshot()`, exactly as `moveRow` orders it (`hybrid.js:4821` before `:4827`).
+`flushPendingSnapshot()`, exactly as `moveRow` orders it (`hybrid.js` before `:4827`).
 Even if a path did mutate, a save whose output equals the baseline writes nothing
 (`isNoOpMarkdown`, §5.6 / I3).
 
 **Undo.** One completed drag is one undo step. Before the mutation call
-`flushPendingSnapshot()` to commit any debounced typing snapshot (`hybrid.js:4798`),
+`flushPendingSnapshot()` to commit any debounced typing snapshot (`hybrid.js`),
 mutate by moving nodes, then `onContentChange()` to push the post-drop snapshot. A refused
 or no-op drop returns before this flush, so it never creates a step. Esc during the drag
 cancels with no mutation and no snapshot. The overlay chrome is outside `#viewer-content`,
 so no snapshot can contain it and no restore can resurrect it.
 
 **Change-hash / dirty classification.** `spliceSave` dispatches on
-`els.length !== blockHashes.length` (`hybrid.js:1241-1242`). A drag changes child order,
+`els.length !== blockHashes.length` (`hybrid.js`). A drag changes child order,
 not the top-level element count, so when the live DOM still aligns with the enter baseline
 (the common case — the note was opened, dragged, and saved) the same-count path runs: the
 containing block's content key differs, and only that block is re-serialized
-(`hybrid.js:1246-1263`). When the baseline count has already drifted — e.g. the user
+(`hybrid.js`). When the baseline count has already drifted — e.g. the user
 pressed `Enter` earlier in the same edit session and the autosave/rebase has not yet
-re-seated the baseline — the count differs and `structuralSplice` (`hybrid.js:1336`) runs
+re-seated the baseline — the count differs and `structuralSplice` (`hybrid.js`) runs
 instead, matching the unchanged prefix/suffix by key and re-serializing only the changed
 middle. Both paths preserve every untouched block's bytes; the classification is
 path-dependent but the outcome is safe either way. The change key (`canonicalSubtree`,
-`hybrid.js:1048`) walks children in order, so a reorder is always seen as a change.
-`onContentChange` (`hybrid.js:3849`) marks the note dirty and schedules autosave and the
+`hybrid.js`) walks children in order, so a reorder is always seen as a change.
+`onContentChange` (`hybrid.js`) marks the note dirty and schedules autosave and the
 coalesced snapshot; the no-op guard decides the write.
 
 **Keyboard, touch, accessibility.** Keyboard parity is the context menu's **List**
 submenu, extended with the operations the table submenu has (`buildTableMenu`,
-`hybrid.js:4903`): "Move item up" / "Move item down" among siblings, plus the existing
-`Tab`/`Shift+Tab` for indent/outdent (`indentListItem`, `hybrid.js:2692`). The moved item
+`hybrid.js`): "Move item up" / "Move item down" among siblings, plus the existing
+`Tab`/`Shift+Tab` for indent/outdent (`indentListItem`, `hybrid.js`). The moved item
 takes the caret after the move so the command repeats (the `focusRow` pattern,
-`hybrid.js:4955`). Touch uses the same Pointer Events path; the grip is shown for the
+`hybrid.js`). Touch uses the same Pointer Events path; the grip is shown for the
 item containing the caret when no hover exists, carries `touch-action: none`, and starts
 on pointerdown. The grip is a focusable `<button>` labelled "Reorder list item"; a
 polite `aria-live` region outside `#viewer-content` announces each completed move's new
@@ -805,10 +806,10 @@ Rendered `<blockquote>` (often containing `<p>`); canonical output `> q`
 
 ### 4.9 Fenced code blocks (` ``` ` and `~~~`, with info string)
 
-Protected block (`WRAP_BLOCK_REFUSED_TAGS` `hybrid.js:1219`); rendered `<pre><code>`;
+Protected block (`WRAP_BLOCK_REFUSED_TAGS` `hybrid.js`); rendered `<pre><code>`;
 canonical output ```` ```python\nprint(1)\n``` ```` (`codeBlockStyle:"fenced"`,
 rule `vendor:181-215`). `pre > code` is never touched by inline rules
-(`applyInlineRules` bail at `hybrid.js:1650-1651`). Plugin fences are atomic
+(`applyInlineRules` bail at `hybrid.js`). Plugin fences are atomic
 (`:1110-1113`); click-to-edit swaps in an editable `<pre>`
 (`editPluginSource` `:4080`).
 
@@ -821,7 +822,7 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 | E | ⇧↵ | ` ```python\nprint(1)\n``` ` | fence unchanged; `<p>` **after** the block | ✅ test `4893-4933` |
 | (editing) | ↵ | inside the editable `<pre>` | one newline inside the source, in the same `<code>` | ✅ `insertTextIntoFence`; browser test |
 | — | D (empty the fence) | ` ```\nx\n``` ` | fence **dropped** from the note; the live view keeps an empty `<pre>` until the note is re-rendered | ✅ turndown's blank rule (`vendor:664`); the serializer never writes a blank fence |
-| (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | **removed** from the live DOM; top-level caret at the previous/next block edge; nested fence removed from its list item/quote with the container kept and the caret at its edge; undoable | ✅ `removeEmptyCodeBlock` (`hybrid.js:2477`); `test_block_edit_browser.js` |
+| (editing) | ⌫ / ⌦ on the emptied fence | empty `<pre>` | **removed** from the live DOM; top-level caret at the previous/next block edge; nested fence removed from its list item/quote with the container kept and the caret at its edge; undoable | ✅ `removeEmptyCodeBlock` (`hybrid.js`); `test_block_edit_browser.js` |
 | — | language chip | ` ```shell ` | change to `python` → ` ```python `; empty clears; `my lang` is refused | ✅ `addLanguagePill` (real `<input>` so Ctrl+A selects the chip, not the note), tests `test_block_edit_browser.js` |
 | — | bare fence touched | ` ```\ntext\n``` ` | stays bare; highlight.js's auto-detected language is never written | ✅ `captureFenceLanguages`; test `test_block_edit_browser.js` |
 | — | `~~~` fence | `~~~js\ntext\n~~~` | untouched byte-identical; touched canonicalizes to backticks | ✅ corpus + `test_block_edit_browser.js` (§6 Q13) |
@@ -846,8 +847,8 @@ Rendered `<pre><code>`; canonical output when **touched** is a **fence**
 ### 4.11 Horizontal rules `---` / `***` / `___`
 
 Rendered `<hr>` — a void top-level block with a custom caret-editing model
-(`ruleForDeleteKey` `hybrid.js:2220`; the click/selection model spans
-`hybrid.js:1773-1956`). Canonical output is `* * *` (`hr` option default
+(`ruleForDeleteKey` `hybrid.js`; the click/selection model spans
+`hybrid.js`). Canonical output is `* * *` (`hr` option default
 `vendor:754`; hybrid does not override it in `ensureTurndown` `:170-186`).
 
 **Selection and copy use the browser's own engine**, identically in hybrid and
@@ -893,7 +894,7 @@ Protected block; rendered `<table>` with `<thead>` flattened into the first `tbo
 row on entry (`flattenTheads` `:1467-1482`). Canonical GFM output
 `| a | b |\n| --- | --- |\n| 1 | 2 |` (`normalizeTablesForGfm` `:368-403`).
 A headerless or caption/colgroup table is **rebuilt**, never emitted as `<table>`
-(`PLAN.md:116-118`, tests `7306-7404`).
+(`PLAN.md`, tests `7306-7404`).
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
@@ -903,8 +904,8 @@ A headerless or caption/colgroup table is **rebuilt**, never emitted as `<table>
 | cell E | ⇧↵ | `\| body \|` | `<p>` **after the whole table**, no new row | ✅ `insertLineBelow` climbs `:2401-2409`, tests `4729-4754` |
 | cell E | ↵ | `\| body \|` | native line break **inside the cell** | ⚠ not specified; §6 Q8 |
 | cell | ⌫ at cell start | first cell | rule kept, cell text intact | ✅ test `5386-5404` |
-| multi-cell selection | ⌫ / ⌦ | selection crosses >1 cell | selected text cleared cell-by-cell; rows, columns, header kept; the outside part of a cell-to-paragraph selection is left (safe minimum); caret at the first affected cell | ✅ `deleteTableCellSelection` `hybrid.js:6462`; browser test |
-| multi-cell selection | Ctrl+X / Shift+Delete | selection crosses >1 cell | `beforeinput` claims `deleteByCut`, clears the cells AND deletes the selected gaps before/between/after the tables so the note matches the clipboard; rows, columns, header kept | ✅ `deleteTableSelectionGaps` `hybrid.js:6425`; browser test |
+| multi-cell selection | ⌫ / ⌦ | selection crosses >1 cell | selected text cleared cell-by-cell; rows, columns, header kept; the outside part of a cell-to-paragraph selection is left (safe minimum); caret at the first affected cell | ✅ `deleteTableCellSelection` `hybrid.js`; browser test |
+| multi-cell selection | Ctrl+X / Shift+Delete | selection crosses >1 cell | `beforeinput` claims `deleteByCut`, clears the cells AND deletes the selected gaps before/between/after the tables so the note matches the clipboard; rows, columns, header kept | ✅ `deleteTableSelectionGaps` `hybrid.js`; browser test |
 | single-cell selection | ⌫ / ⌦ | selection inside one cell | engine-native intra-cell delete | ✅ browser test |
 | guarded delete | context menu | header / header + one body row / one column | Delete row / Delete column is rendered disabled with the CAUSE ("The header row cannot be deleted", "A table needs a header and one body row", "A table needs at least one column"); the action uses the same predicate | ✅ `deleteRowBlockedReason` / `canDeleteColumn`; browser test |
 | empty cell | save | `\|  \| 2 \|` | empty cell keeps its column; whitespace/`<br>`-only cells serialize as `\|  \|`, never a soft break | ✅ `BLANK_RULE_EXEMPT_TAGS` `:52-55`, `normalizeTablesForGfm` `:512`; test `6862-6872` |
@@ -954,7 +955,7 @@ real-browser `table-nav` checks in `tests/browser/test_hybrid_browser.js`.
 ### 4.13 Blank-line runs and gaps
 
 A run of blank lines is a `space` token owned by the preceding block; carried raw
-(`PLAN.md:95-99`).
+(`PLAN.md`).
 
 | Op | Before | After | Status |
 |---|---|---|---|
@@ -968,9 +969,9 @@ A run of blank lines is a `space` token owned by the preceding block; carried ra
 ### 4.14 HTML comments and raw HTML
 
 Rendered as comment nodes / raw elements. Carried as `raw` segments and **never
-regenerated** (`PLAN.md:69`, the segment model at `hybrid.js:625-680`, assumption
-`PLAN.md:179-182`). A raw-HTML document deliberately makes the splice fail closed
-(`htmlTokenElementCount` `hybrid.js:656-680`).
+regenerated** (`PLAN.md`, the segment model at `hybrid.js`, assumption
+`PLAN.md`). A raw-HTML document deliberately makes the splice fail closed
+(`htmlTokenElementCount` `hybrid.js`).
 
 **Q10 is DECIDED and implemented:** raw HTML stays editable in place, and an edited
 raw block writes back its own `outerHTML`. `markRawHtmlBlocks` marks authored
@@ -1010,12 +1011,12 @@ editable `<pre>` with a language pill. Round-trip is owned by `NB.blocks`
 ### 4.16 Inline constructs
 
 Rendered inline elements inside a block. Live rules fire on the **closing
-delimiter at the caret in a single text node** (`INLINE_RULES` `hybrid.js:1559`,
-`applyInlineRules` `hybrid.js:1645`). Keyboard toggles: `Ctrl/Cmd+B` `strong`,
+delimiter at the caret in a single text node** (`INLINE_RULES` `hybrid.js`,
+`applyInlineRules` `hybrid.js`). Keyboard toggles: `Ctrl/Cmd+B` `strong`,
 `Ctrl/Cmd+I` `em`, `Ctrl+Shift+X` `del`, `Ctrl+Shift+C` `code` (`:2482-2521`,
 `toggleInline` `:1705`). Canonical outputs: `a **b** c`, `a *b*`, `a ~b~`
 (strikethrough via the GFM plugin), `` a `b c` ``, `[x](u)`, `![a](s)`,
-`[[Target|label]]` (`hybrid.js:188-195`).
+`[[Target|label]]` (`hybrid.js`).
 
 | Construct | Position | Op | Before | After | Status |
 |---|---|---|---|---|---|
@@ -1045,7 +1046,7 @@ delimiter at the caret in a single text node** (`INLINE_RULES` `hybrid.js:1559`,
 #### 4.16.1 Inline rule boundary conditions
 
 - The trigger must be inside **one text node** (`node.nodeType === TEXT_NODE`
-  `hybrid.js:1654`); a delimiter split across nodes does not convert.
+  `hybrid.js`); a delimiter split across nodes does not convert.
 - `**bold**` requires a non-space first inner char and no `*` inside
   (`:1559`); `*italic*` uses lookarounds so it does not match `**`.
 - Inline rules never fire in a fence or plugin editor (`:1650-1651`).
@@ -1156,7 +1157,7 @@ One browser artifact is normalized: Chromium wraps the text it carries across a
 merge in a presentational `<span style="font-size: …">` copied from the source
 block, so joining a second heading into a title rendered the moved words a size
 bigger inside it (and repeated splits/joins compounded it). Hybrid has no span
-formatting, so `normalizeEngineSpans` (`hybrid.js:1847`) clears an inline
+formatting, so `normalizeEngineSpans` (`hybrid.js`) clears an inline
 font-size/font-weight on a class-less, id-less span in the caret's block. The
 saved bytes are unchanged (Turndown discards the span either way); this fixes the
 live view. Verified in Chromium.
@@ -1193,13 +1194,13 @@ blocks, whose bytes are carried raw. The rule, stated once:
 ### 5.5 Write-back splice
 
 - `spliceSave` re-serializes only blocks whose content hash changed; all other
-  `block`/`gap`/`raw` raws are emitted verbatim (`hybrid.js:913-980`).
+  `block`/`gap`/`raw` raws are emitted verbatim (`hybrid.js`).
 - The hash covers tags, non-chrome attributes, text, comments, and
   `input.checked`; it strips `contenteditable`, `data-hybrid-*`, heading ids, and
   the zero-width-space placeholder (`isHashStrippedAttr` `:707`,
   `canonicalSubtree` `:714`).
 - Plugin container subtrees are hashed by **fence source**, not rendered pixels
-  (`PLAN.md:212`).
+  (`PLAN.md`).
 - **Q1 (decided, implemented):** an element-count change no longer forces
   whole-file regeneration. `structuralSplice` (`:986`) matches the current top-level
   elements to baseline blocks **by content hash from both ends**: the unchanged
@@ -1213,7 +1214,7 @@ blocks, whose bytes are carried raw. The rule, stated once:
 - A save whose output equals `sessionSerialized` or `sessionSource` writes nothing
   (`isNoOpMarkdown` `:3426`).
 - Undo/redo restore whole-DOM snapshots (`restoreSnapshot`); node
-  identity is deliberately not relied upon (`PLAN.md:79`). A snapshot that
+  identity is deliberately not relied upon (`PLAN.md`). A snapshot that
   restores an in-place fence re-wires it but leaves the caret beside it, so the
   next Ctrl+Z stays hybrid's own undo instead of the rebuilt editor's empty
   native stack. The splice baseline is
@@ -1237,7 +1238,7 @@ keeps `* star a` bullets, a setext `Title\n=====` heading, and `    indented` co
 byte-for-byte, and no `` ```undefined `` artifact is produced. §5.5 describes the
 mechanism.
 
-**Q2 — block merge is partly specified.** `<hr>` (`ruleForDeleteKey` `hybrid.js:4010`), atomic
+**Q2 — block merge is partly specified.** `<hr>` (`ruleForDeleteKey` `hybrid.js`), atomic
 plugin/fence blocks (`:4113`), and task-item edges (`:3031`) have explicit merge
 models; general paragraph/heading/list/quote merges are still the browser's
 native behavior. Browser-native merges can move a paragraph's text into a
@@ -1253,7 +1254,7 @@ and test the native result.
 **Q4 — canonicalization of an edited block's marker/style.** Editing a setext
 heading emits ATX (`vendor:101-116`); editing an indented code block emits a fence
 (`vendor:181-215`); editing an `<hr>` emits `* * *` (`vendor:754`); editing a
-`*`-bulleted list emits `-   ` (`hybrid.js:175`). Correct per I2 for a *touched*
+`*`-bulleted list emits `-   ` (`hybrid.js`). Correct per I2 for a *touched*
 block but surprising. Proposed: keep and document in the Settings help text;
 alternatively detect "same-construct, text-only" edits and keep the raw marker.
 **Task lines are the exception**: turndown's `-   [ ]  text` padding is
@@ -1261,7 +1262,7 @@ collapsed to `- [ ] text` by `normalizeTaskListSpacing`, because the mismatched
 spacing on every sibling item when one checklist line was edited read as a bug.
 
 **Q5 — DECIDED. Add the missing live input rules.** `INPUT_RULES`
-(`hybrid.js:1486-1553`) and `INLINE_RULES` (`hybrid.js:1559`) do **not** have
+(`hybrid.js`) and `INLINE_RULES` (`hybrid.js`) do **not** have
 `+ ` bullets, `1) ` ordered lists, `_italic_`, or `[[wikilinks]]` today; typing them
 yields escaped literal text. Add live rules for all four and list them in the
 Settings help text.
@@ -1280,21 +1281,21 @@ touches a table from more than one cell -- two cells in the same table, a cell
 to the paragraph after it, two different tables, or a range crossing a table --
 is clamped to the intersected table(s): hybrid claims the key, clears the
 selected text cell-by-cell, and keeps every row, column, and header
-(`deleteTableCellSelection` `hybrid.js:6462`). Delete/Backspace leave the outside
+(`deleteTableCellSelection` `hybrid.js`). Delete/Backspace leave the outside
 part of a cell-to-paragraph selection (the safe minimum); CUT deletes the
 outside gaps too, because the clipboard already holds the whole selection
-(`deleteTableSelectionGaps` `hybrid.js:6425`). A partial cell keeps the caret at
+(`deleteTableSelectionGaps` `hybrid.js`). A partial cell keeps the caret at
 the original deletion start. `Enter` inside a cell is
 refused with a notice: a newline in a cell splits the GFM row and breaks the
 table on the next render. `caretDirectlyInTop` deliberately excludes cells
-(`hybrid.js:3912`) so the rule-edge repair does not apply. A
+(`hybrid.js`) so the rule-edge repair does not apply. A
 whitespace/`<br>`-only cell is emptied and serializes as an empty GFM cell.
 Verified in Chromium (`test_block_edit_browser.js`,
 `test_hybrid_blocks_browser.js`).
 
 **Q9 — PARTIALLY IMPLEMENTED. Paste of list items is list-aware.** A native
 `Ctrl+V` whose clipboard HTML carries list items and whose caret is inside a
-list item is claimed (`onPaste` `hybrid.js:6037`): the top-level `<li>` clones
+list item is claimed (`onPaste` `hybrid.js`): the top-level `<li>` clones
 are sanitized (no `style`, `class`, `id`, scripts, `SVG`/`MathML`/`template`
 content, or unsafe URLs; a fragment over the size/node budget is not claimed)
 and inserted as siblings of the target item — above at the content start, below at the
@@ -1374,17 +1375,17 @@ belongs to Q16.** Real Chromium, this revision:
   "one break" the owner means is part of the same open question.
 
 **Q19 — DECIDED and implemented. The first block trigger in a brand-new note must
-convert.** The root-caret branch of `applyBlockRules` (`hybrid.js:1618`) runs for a
+convert.** The root-caret branch of `applyBlockRules` (`hybrid.js`) runs for a
 caret sitting directly on `#viewer-content`. Its guard refused whenever the root had
 **any** child (`blockEl.firstChild`), to keep a mid-note root caret (beside an `<hr>`)
 from flattening every block into one `<p>`. But a brand-new empty note has no `<p>`:
 the browser types the first characters straight into the root as a bare text node, so
 that text node tripped the guard and `# ` stayed literal — saving as an escaped
 `\# `. The guard now refuses only real **block** content: `hasBlockContent`
-(`hybrid.js:1619`) treats any root child that is not the editing placeholder `<br>`
+(`hybrid.js`) treats any root child that is not the editing placeholder `<br>`
 as content, so an empty root is wrapped in a `<p>`, the placeholder `<br>` is dropped
-first, and the block rules fire. Verified in jsdom (`test_dom.js:7382`) and Chromium
-(`test_hybrid_browser.js:803`). The mid-note no-flatten guard is unchanged and still
+first, and the block rules fire. Verified in jsdom (`test_dom.js`) and Chromium
+(`test_hybrid_browser.js`). The mid-note no-flatten guard is unchanged and still
 covered by the root-caret test.
 
 ---
@@ -1409,7 +1410,7 @@ scope:
 - Fixing the empty-heading caret bug as part of this catalog; it is Q12, tracked
   separately.
 - Any change to the `/api/edit` op vocabulary; that server contract
-  (`app.py:397-431`) is the line-granularity reference this catalog stays
+  (`app.py`) is the line-granularity reference this catalog stays
   consistent with.
 
 ---
@@ -1422,7 +1423,7 @@ scope:
 and `FILES` mock disk. A row maps to a test as follows:
 
 1. Set `FILES["notes/a.md"] = <before>`; `viewer.close`, `tabs.open`,
-   `hybrid.enter`, `tick` (idiom at `test_dom.js:4983-4991`).
+   `hybrid.enter`, `tick` (idiom at `test_dom.js`).
 2. Build the caret with one of the existing helpers: `caretAtEnd` (`4576`),
    `caretAtStart` (`5081`), `setRootCaret` (`5065`), `caretOnRule` (`5091`),
    `typeIn` (`4303`), or `selWord` (`4488`).
@@ -1460,14 +1461,14 @@ required wherever the **native editing engine** produces the DOM that jsdom cann
   patch to `table-edit.js` (see the §4.7.2 preamble); the estimate and Playwright budget must
   reflect that.
 
-The harness already provides `caretInBlock` (`test_hybrid_browser.js:70`),
+The harness already provides `caretInBlock` (`test_hybrid_browser.js`),
 `writeNote`/`readNote` (`:59-65`), and the locality corpus (`:216`). Extend it;
 do not add a separate runner.
 
 ### 8.3 Corpus additions implied by this catalog
 
-Add to the byte-identity corpus (`test_dom.js:8013-8023`) and the locality test
-(`test_hybrid_browser.js:216`):
+Add to the byte-identity corpus (`test_dom.js`) and the locality test
+(`test_hybrid_browser.js`):
 
 - `~~~\ntext\n~~~\n` (Q13)
 - `> outer\n> > inner\n` in the byte-identity corpus
@@ -1481,8 +1482,8 @@ Add to the byte-identity corpus (`test_dom.js:8013-8023`) and the locality test
   byte-identical after enter+save
 
 The Q5/Q7/Q10/`~~~`/nested-list/owner entries already exist as contract cases
-(`HYBRID_CONTRACT_CASES`, `test_dom.js:8680-8939`) and as browser corpus entries
-(`test_hybrid_browser.js:457-463`).
+(`HYBRID_CONTRACT_CASES`, `test_dom.js`) and as browser corpus entries
+(`test_hybrid_browser.js`).
 
 ### 8.4 Acceptance criteria
 
@@ -1496,7 +1497,7 @@ The Q5/Q7/Q10/`~~~`/nested-list/owner entries already exist as contract cases
 - AC5. A clean enter+save, enter+exit, and save+exit issue zero
   `POST /api/file` (I3).
 - AC6. `_italic_`, `+ `, `1) `, and `[[ ]]` have live rules and the Settings help
-  text (`index.html:558-566`) lists them.
+  text (`index.html`) lists them.
 - AC7. **One `Enter`, one break (I9).** For every block type, a single `Enter`
   produces exactly one line break — never several, never a `<br>`. No idle action
   (focus change, click, save) adds a break. Assert the exact saved string in both
@@ -1518,7 +1519,7 @@ The Q5/Q7/Q10/`~~~`/nested-list/owner entries already exist as contract cases
   parent state does not change a child's.
 - AC12. **Tight/loose and empty survive.** In the DOM, a moved tight item stays tight and a
   moved loose item keeps its `<p>`; in the saved bytes, a task item is canonicalized by
-  `normalizeLooseTaskItems` (`hybrid.js:371-379`) and so may not carry that `<p>`, while a
+  `normalizeLooseTaskItems` (`hybrid.js`) and so may not carry that `<p>`, while a
   non-task item emits the shape its DOM has. An item that was empty before the move still
   saves as a bare marker (`-` / `1.`), including a checkbox-only item's trailing space.
 - AC13. **No-op drop writes nothing.** A drop resolving to the item's current position
@@ -1549,7 +1550,7 @@ touch `touch-action`. No backend test changes.
 ## Appendix A — Canonical serializer output for a touched block
 
 Verified against the vendored bundles at this revision with the exact
-`ensureTurndown` options (`hybrid.js:173-180`).
+`ensureTurndown` options (`hybrid.js`).
 
 | DOM | Canonical Markdown |
 |---|---|

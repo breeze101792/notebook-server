@@ -89,6 +89,17 @@ async function saveAndExit(page) {
   await page.click("#close-edit-btn");
 }
 
+// Open a note and wait until the SPA has actually made it the active tab.
+// A `?file=` navigation is a full page load, but boot is asynchronous: it
+// restores the saved session first, then applies the deep link. Waiting for a
+// generic selector can match the previously restored tab and act on the wrong
+// note, so every `?file=` open in this suite waits for the requested path.
+async function gotoNote(page, rel) {
+  await page.goto(BASE + "/?file=" + encodeURIComponent(rel));
+  await page.waitForFunction((p) => window.NB && window.NB.tabs &&
+    window.NB.tabs.getActive() === p, rel, { timeout: 15000 });
+}
+
 async function waitForServer(child) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -141,7 +152,7 @@ async function main() {
     page.on("pageerror", (e) => pageErrors.push(String(e)));
 
     // Boot straight to the note via the app's own deep link.
-    await page.goto(BASE + "/?file=" + encodeURIComponent(NOTE));
+    await gotoNote(page, NOTE);
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
 
     // --- no-op: enter hybrid, change nothing, exit -----------------
@@ -223,7 +234,7 @@ async function main() {
     // byte alone.
     const LOCALITY = "para one\n\n* a\n* b\n\nTitle\n=====\n\n    code\n\nlast para\n";
     writeNote("notes/locality.md", LOCALITY);
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/locality.md"));
+    await gotoNote(page, "notes/locality.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -253,7 +264,7 @@ async function main() {
     // redirected so typed text landed in the next block. Typing at the
     // empty h3 must stay in the heading.
     writeNote("notes/emptyhead.md", "## Commands\n###\n### `   `\n\nbody\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/emptyhead.md"));
+    await gotoNote(page, "notes/emptyhead.md");
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -285,7 +296,7 @@ async function main() {
     // The browser marks the new empty item with a <br>; left in it saved
     // as junk. Enter on a list item must produce a clean marker.
     writeNote("notes/listenter.md", "- item\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/listenter.md"));
+    await gotoNote(page, "notes/listenter.md");
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -310,7 +321,7 @@ async function main() {
     // the caret was painted on the line above and the first keystroke
     // looked misplaced. The selection must anchor inside the new item.
     writeNote("notes/listbutton.md", "above\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/listbutton.md"));
+    await gotoNote(page, "notes/listbutton.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -347,7 +358,7 @@ async function main() {
     // now the second item -- the same place a newline at the caret leaves
     // the cursor in a text editor. The gesture is a real click plus Home.
     writeNote("notes/liststartenter.md", "- first\n- second\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/liststartenter.md"));
+    await gotoNote(page, "notes/liststartenter.md");
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -387,7 +398,7 @@ async function main() {
     // <br> into the item. Once the user typed, the stray break survived
     // and Enter for the next line saved "- [ ] one  \n    \n".
     writeNote("notes/tasknextline.md", "above\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/tasknextline.md"));
+    await gotoNote(page, "notes/tasknextline.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -415,7 +426,7 @@ async function main() {
 
     // --- behavior catalog: emptied blockquote keeps its marker (Q7) --
     writeNote("notes/emptyquote.md", "> quote\n\nbody\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/emptyquote.md"));
+    await gotoNote(page, "notes/emptyquote.md");
     await page.waitForSelector("#viewer-content blockquote", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -443,7 +454,7 @@ async function main() {
     // star bullets, a setext heading, and indented code must survive.
     const STRUCT = "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n";
     writeNote("notes/struct.md", STRUCT);
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/struct.md"));
+    await gotoNote(page, "notes/struct.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -488,7 +499,7 @@ async function main() {
     // each split/join compounded it). hybrid.js clears that engine style;
     // the file bytes were always correct, so this asserts the live DOM.
     writeNote("notes/headmerge.md", "## Title Middle End\n\nbody\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/headmerge.md"));
+    await gotoNote(page, "notes/headmerge.md");
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -534,7 +545,7 @@ async function main() {
     // (a) A single Enter at the end of a paragraph is one block break:
     // never several newlines, never a <br>.
     writeNote("notes/entersplit.md", "alpha beta\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/entersplit.md"));
+    await gotoNote(page, "notes/entersplit.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -563,7 +574,7 @@ async function main() {
     // vs block) is still open, so assert the invariant common to both:
     // at most one break, never a tag.
     writeNote("notes/softenter.md", "soft line\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/softenter.md"));
+    await gotoNote(page, "notes/softenter.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -594,7 +605,7 @@ async function main() {
     const SHIFT_STRUCT =
       "first\n\n* star a\n* star b\n\nTitle\n=====\n\n    indented\n";
     writeNote("notes/shiftstruct.md", SHIFT_STRUCT);
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/shiftstruct.md"));
+    await gotoNote(page, "notes/shiftstruct.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -632,7 +643,7 @@ async function main() {
     for (const [label, src] of ENTER_EXIT_CORPUS) {
       const rel = "notes/corpus-" + label + ".md";
       writeNote(rel, src);
-      await page.goto(BASE + "/?file=" + encodeURIComponent(rel));
+      await gotoNote(page, rel);
       await page.waitForSelector("#viewer-content > *", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -658,7 +669,7 @@ async function main() {
     // click on the rule must still repair the caret to the clicked side.
     // The selection chrome must never reach the file.
     writeNote("notes/rule.md", "first paragraph\n\n---\n\nsecond paragraph\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/rule.md"));
+    await gotoNote(page, "notes/rule.md");
     // state: attached -- an <hr>'s content box is zero-height, which
     // Playwright's "visible" heuristic treats as hidden.
     await page.waitForSelector("#viewer-content hr",
@@ -821,7 +832,7 @@ async function main() {
     writeNote("notes/table-nav.md",
       "before\n\n| A | B | C |\n| --- | --- | --- |\n" +
       "| a1 | b1 | c1 |\n| a2 | b2 | c2 |\n\nafter\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/table-nav.md"));
+    await gotoNote(page, "notes/table-nav.md");
     await page.waitForSelector("#viewer-content table", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -990,7 +1001,7 @@ async function main() {
     // as an escaped "\# " instead of becoming a heading. This is the real
     // editing engine writing native markup, so it cannot run in jsdom.
     writeNote("notes/newnote.md", "");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/newnote.md"));
+    await gotoNote(page, "notes/newnote.md");
     await page.waitForFunction(
       () => { const b = document.getElementById("hybrid-toggle"); return b && !b.hidden; },
       null, { timeout: 15000 });
@@ -1034,7 +1045,7 @@ async function main() {
     {
       const TASK_SRC = "- [ ] task\n";
       writeNote("notes/tasktoggle.md", TASK_SRC);
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/tasktoggle.md"));
+      await gotoNote(page, "notes/tasktoggle.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
 
       // Rendered (preview) state: marked emits a bare <li> with the
@@ -1121,7 +1132,7 @@ async function main() {
     // text landed second, below the blank.
     {
       writeNote("notes/taskstartenter.md", "- [ ] first\n- [ ] second\n");
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartenter.md"));
+      await gotoNote(page, "notes/taskstartenter.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -1170,7 +1181,7 @@ async function main() {
     // than let the native Enter insert below.
     {
       writeNote("notes/taskstartedge.md", "- [ ] first\n- [ ] second\n");
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskstartedge.md"));
+      await gotoNote(page, "notes/taskstartedge.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -1215,7 +1226,7 @@ async function main() {
     // with its own checkbox, and the caret continues right of that box.
     {
       writeNote("notes/taskmidsplit.md", "- [ ] hello\n- [ ] second\n");
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskmidsplit.md"));
+      await gotoNote(page, "notes/taskmidsplit.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -1248,7 +1259,7 @@ async function main() {
     // The edit-bar Task button: first press builds the task item, a
     // second press removes it (the toolbar toggle contract).
     writeNote("notes/taskbutton.md", "hello\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/taskbutton.md"));
+    await gotoNote(page, "notes/taskbutton.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -1299,7 +1310,7 @@ async function main() {
     // resolves to nothing. A real browser selection is the only way to
     // observe this.
     writeNote("notes/reselect.md", "alpha\n\nbeta\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/reselect.md"));
+    await gotoNote(page, "notes/reselect.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -1362,7 +1373,7 @@ async function main() {
     // the text's left edge against the plain bullet's.
     writeNote("notes/togglegeom.md",
       "- plain a\n- [ ] task b\n- plain c\n\n1. one\n2. two\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/togglegeom.md"));
+    await gotoNote(page, "notes/togglegeom.md");
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -1541,7 +1552,7 @@ async function main() {
     });
     const openNote = async (file, src) => {
       writeNote(file, src);
-      await page.goto(BASE + "/?file=" + encodeURIComponent(file));
+      await gotoNote(page, file);
       await page.waitForSelector("#viewer-content li, #viewer-content p", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -2022,7 +2033,7 @@ async function main() {
     // listener records defaultPrevented after the hybrid handler runs.
     writeNote("notes/ctxmenu.md",
       "hello world prose\n\n| a | b |\n| - | - |\n| 1 | 2 |\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/ctxmenu.md"));
+    await gotoNote(page, "notes/ctxmenu.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2079,7 +2090,7 @@ async function main() {
     // the address bar). This case drives the real prompt path and asserts the
     // link lands on the ORIGINAL selection after the prompt closes.
     writeNote("notes/chords.md", "click here\n\nsecond para\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/chords.md"));
+    await gotoNote(page, "notes/chords.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2154,7 +2165,7 @@ async function main() {
     await page.click("#close-edit-btn");
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/chordlist.md"));
+    await gotoNote(page, "notes/chordlist.md");
     await page.waitForSelector("#viewer-content p", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2195,7 +2206,7 @@ async function main() {
     const CLIPBOARD_NOTE = "notes/cliplist.md";
     writeNote(CLIPBOARD_NOTE,
       "- alpha\n- bravo\n- charlie\n\nMiddle paragraph.\n\n- one\n- two\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent(CLIPBOARD_NOTE));
+    await gotoNote(page, CLIPBOARD_NOTE);
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2292,7 +2303,7 @@ async function main() {
     // must remove the whole item (box included), not leave a checkbox.
     const CLIPBOARD_TASK = "notes/cliptask.md";
     writeNote(CLIPBOARD_TASK, "- [ ] task one\n- [ ] task two\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent(CLIPBOARD_TASK));
+    await gotoNote(page, CLIPBOARD_TASK);
     await page.waitForSelector("#viewer-content li", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2334,7 +2345,7 @@ async function main() {
     // Dropping that input turned a pasted task item into a plain bullet.
     {
       writeNote("notes/cliptype.md", "- [ ] keep\n");
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/cliptype.md"));
+      await gotoNote(page, "notes/cliptype.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -2381,7 +2392,7 @@ async function main() {
     // line must not land as a dot among the checkboxes.
     {
       writeNote("notes/cliptaskinherit.md", "- [ ] keep\n");
-      await page.goto(BASE + "/?file=" + encodeURIComponent("notes/cliptaskinherit.md"));
+      await gotoNote(page, "notes/cliptaskinherit.md");
       await page.waitForSelector("#viewer-content li", { timeout: 15000 });
       await page.click("#hybrid-toggle");
       await page.waitForFunction(
@@ -2448,7 +2459,7 @@ async function main() {
     }
 
     writeNote("notes/markerdelete.md", "alpha\n\n## Beta\n\nomega\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/markerdelete.md"));
+    await gotoNote(page, "notes/markerdelete.md");
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(
@@ -2475,7 +2486,7 @@ async function main() {
     }
 
     writeNote("notes/markerbackspace.md", "alpha\n\n## Beta\n\nomega\n");
-    await page.goto(BASE + "/?file=" + encodeURIComponent("notes/markerbackspace.md"));
+    await gotoNote(page, "notes/markerbackspace.md");
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
     await page.click("#hybrid-toggle");
     await page.waitForFunction(

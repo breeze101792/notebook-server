@@ -1,7 +1,8 @@
 # Table editor — selection and clipboard
 
-Handoff for `docs/product/table-editor-selection.md`, against the modal in
-`docs/design/table-editor.md`. Design only. Mockup: `docs/design/table-editor.html`
+Status: shipped (table editor selection and clipboard), design record. Handoff
+for `docs/product/table-editor-selection.md`, against the modal in
+`docs/design/table-editor.md`. Mockup: `docs/design/table-editor.html`
 (`te-title-1` live, 3 × 3 selected; `te-title-3` blocked). One new value,
 `--te-sel-fill` (§2); everything else is an existing token or a dimension already
 in `table-editor.md` §3.

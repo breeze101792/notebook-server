@@ -4,11 +4,13 @@ Design handoff for a mouse/touch **clear ×** on the side-panel Search query
 field. Small, precise addition to the current surface. No redesign.
 
 - **Surface:** `#search-view`, built by `mountSearch()` in `static/js/activity.js`
-  (input row at `activity.js:440-471`). Styles: `static/css/style.css`,
-  "Search view (side panel)" (`~3876`), phone block (`~6151`).
+  (the input row it builds). Styles: the `#search-view` "Search view (side
+  panel)" block in `static/css/style.css` and the `.search-panel-clear` rules in the
+  phone query.
 - **Reference mockup:** `docs/design/search-panel-clear.html`.
-- **Status:** implemented in `activity.js` / `style.css`; covered by the jsdom
-  and core/mobile browser suites.
+- **Status:** shipped (search clear control), design record. Implemented in
+  `activity.js` / `style.css`; covered by the jsdom and core/mobile browser
+  suites.
 
 **Why a new mockup file.** `docs/design/search-panel.html` documents an earlier
 layout (a panel-padded input row with an **Options** disclosure and a

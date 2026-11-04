@@ -23,7 +23,7 @@ a handful of CSS custom properties.
 ## 1. Design principles
 
 1. **Same shell, larger box.** The designer reuses the Settings/Export modal
-   chrome (`static/css/style.css:1303-1411`) so it feels native. Only the size,
+   chrome (`static/css/style.css`) so it feels native. Only the size,
    the body layout, and the new `.designer-*` pieces are specific.
 2. **The canvas is the hero.** The diagram surface gets almost the whole modal;
    chrome floats over it rather than consuming layout rows.
@@ -33,7 +33,7 @@ a handful of CSS custom properties.
    named one; no one-off hex values (guardrail).
 5. **Theme and font-scale come for free.** The canvas reads `body[data-theme]`
    and the chrome is rem-based, so S/M/L/XL text scaling
-   (`static/css/style.css:36`, `:92-97`) applies with no extra work.
+   (`static/css/style.css`, `:92-97`) applies with no extra work.
 
 ---
 
@@ -42,11 +42,11 @@ a handful of CSS custom properties.
 ### 2.1 Where it lives
 
 The hybrid (WYSIWYG) context menu builds its code/plugin section at
-`static/js/hybrid.js:5176-5183`. Today that section emits one item per code
+`static/js/hybrid.js`. Today that section emits one item per code
 block: **Edit `<name>` source**. The designer adds a second item **above** it.
 
 ```
-─── separator (addMenuSep, hybrid.js:5177) ───
+─── separator (addMenuSep, hybrid.js) ───
 Design diagram…            ← new, first
 Edit mermaid source        ← existing
 ```
@@ -63,29 +63,29 @@ separator, before the `Insert` submenu.
 
 The item is created in `hybrid.js` only when the clicked block's plugin
 descriptor carries `design` **and** `NB[plugin.design]` exists (architecture:
-`mermaid-designer.md:92-94`). Beyond that:
+`mermaid-designer.md`). Beyond that:
 
 | Situation | State | Mechanism | Why |
 | --- | --- | --- | --- |
 | Admin role, editable type (library reports `capability: "edit"`) | **shown** | normal `<button>` | the happy path |
-| Viewer role | **hidden** | do not append the item | writes are admin-only; the architecture hides both the menu item and Apply (`mermaid-designer.md:83-84`) |
-| Render-only type (library reports `capability: "render"`, e.g. `zenuml`) | **disabled** | add `disabled` + `title="No visual editor for this diagram type — use Edit source"` | the library marks 22 of 23 types editable; the one exception must not pretend to open. `.context-menu button:disabled` already dims and drops the hover cue (`static/css/style.css:1246-1247`) |
+| Viewer role | **hidden** | do not append the item | writes are admin-only; the architecture hides both the menu item and Apply (`mermaid-designer.md`) |
+| Render-only type (library reports `capability: "render"`, e.g. `zenuml`) | **disabled** | add `disabled` + `title="No visual editor for this diagram type — use Edit source"` | the library marks 22 of 23 types editable; the one exception must not pretend to open. `.context-menu button:disabled` already dims and drops the hover cue (`static/css/style.css`) |
 | Plugin has no `design` flag (non-mermaid blocks) | **absent** | not appended | the section only shows existing items |
 | Editor bundle not yet downloaded / offline | **shown** | normal button | the failure is not knowable at menu time; it surfaces in the modal's error state (§5.4) |
 
 **Reading the role.** `NB.auth` currently exposes `showModal/hideModal/isLocked/
-logout` but **not** the role (`static/js/auth.js:157-162`). The designer needs
+logout` but **not** the role (`static/js/auth.js`). The designer needs
 the role at menu-build time. Add a `role` getter to `NB.auth` (populated from
-the `/api/auth` response already fetched on boot, `static/js/auth.js:144-152`)
+the `/api/auth` response already fetched on boot, `static/js/auth.js`)
 or cache the `/api/auth` result in `NB.mermaidDesign`. This is a behavior
 prerequisite, not a visual one; the architecture already says "reads `role`
-from `NB.auth`/`/api/auth`" (`mermaid-designer.md:83`).
+from `NB.auth`/`/api/auth`" (`mermaid-designer.md`).
 
 ### 2.3 Keyboard reachability of the trigger
 
 The menu already supports keyboard navigation once it is open: focus lands on
-the first enabled item (`hybrid.js:5250-5251`), ArrowUp/Down move between
-enabled items, Enter/Space activate, Escape closes (`hybrid.js:5268-5295`).
+the first enabled item (`hybrid.js`), ArrowUp/Down move between
+enabled items, Enter/Space activate, Escape closes (`hybrid.js`).
 The gap is **opening it without a mouse**. The block is right-click-only today.
 
 Required:
@@ -94,7 +94,7 @@ Required:
   (`tabindex="0"`).
 - While that block has focus, `ContextMenu` or `Shift+F10` opens the hybrid
   menu anchored to the block. Reuse the existing open path
-  (`hybrid.js:5254-5257`) with a synthetic anchor.
+  (`hybrid.js`) with a synthetic anchor.
 - The `Design diagram…` item therefore becomes reachable on a keyboard-only
   path: Tab to the diagram → Shift+F10 → Down to `Design diagram…` → Enter.
 
@@ -110,8 +110,8 @@ click-only).
 
 ### 3.1 Markup (added to `templates/index.html`)
 
-Follows the Export modal shape (`templates/index.html:821-896`) and the
-Settings modal shape (`templates/index.html:346-364`) exactly.
+Follows the Export modal shape (`templates/index.html`) and the
+Settings modal shape (`templates/index.html`) exactly.
 
 ```html
 <!-- Mermaid visual designer. Opened from the hybrid right-click menu. -->
@@ -189,12 +189,12 @@ reader does not read an invisible node (see §9).
 
 | Class | Reused / new | Source |
 | --- | --- | --- |
-| `.settings-overlay` | reused | `static/css/style.css:1303-1321` |
-| `.settings-modal` | reused | `static/css/style.css:1322-1361` |
-| `.settings-header`, `.icon-btn` | reused | `style.css:1398-1411`, `:1281-1301` |
-| `.settings-body` | reused (layout overridden) | `style.css:1419-1425` |
-| `.settings-footer` | reused | `style.css:1755-1763` |
-| `.settings-action` | reused | `style.css:1643-1662` |
+| `.settings-overlay` | reused | `static/css/style.css` |
+| `.settings-modal` | reused | `static/css/style.css` |
+| `.settings-header`, `.icon-btn` | reused | `style.css`, `:1281-1301` |
+| `.settings-body` | reused (layout overridden) | `style.css` |
+| `.settings-footer` | reused | `style.css` |
+| `.settings-action` | reused | `style.css` |
 | `.designer-modal`, `.designer-header`, `.designer-heading`, `.designer-type` | new | §8.3 |
 | `.designer-body`, `.designer-stage`, `.designer-canvas` | new | §5, §8.3 |
 | `.designer-state` + `--loading/--error/--readonly`, `.designer-empty`, `.designer-hint` | new | §5 |
@@ -205,7 +205,7 @@ reader does not read an invisible node (see §9).
 ### 3.3 Size and responsiveness
 
 `.settings-modal` defaults to `min(75vw, 96vw)` × `min(80vh, 92vh)`
-(`static/css/style.css:1345-1346`). The designer needs a large canvas, so
+(`static/css/style.css`). The designer needs a large canvas, so
 `.designer-modal` overrides only the preferred size (the `96vw`/`92vh` clamps
 are inherited):
 
@@ -222,28 +222,28 @@ are inherited):
   full-screen; the footer keeps Cancel/Apply at the right and the status line
   moves to its own row (see §8.3) so two buttons never crowd the message.
 - The modal is `position: fixed` and centered, with `display: flex;
-  flex-direction: column; overflow: hidden` (`style.css:1340-1361`). The stage
+  flex-direction: column; overflow: hidden` (`style.css`). The stage
   owns all internal scroll/pan; the modal itself never clips a diagram because
   the library's view provides pan/zoom inside the stage.
 
-**Stacking.** `.settings-overlay` is `z-index: 2000` (`style.css:1307`); the
-hybrid context menu is `z-index: 1000` (`style.css:2441`). The modal therefore
+**Stacking.** `.settings-overlay` is `z-index: 2000` (`style.css`); the
+hybrid context menu is `z-index: 1000` (`style.css`). The modal therefore
 covers the menu. The menu is hidden before the designer opens (the item click
 closes it).
 
 **No nav column.** The Settings modal's `.settings-body` is a horizontal flex
-with a nav column (`style.css:1419-1438`). The designer has no nav; set
+with a nav column (`style.css`). The designer has no nav; set
 `.designer-body { display: flex; flex-direction: column; }` so the stage can
 use the full width and the `min-height: 0` scroll contract is preserved.
 
 ### 3.4 Open / close behavior
 
-Mirror `static/js/export.js:329-352`:
+Mirror `static/js/export.js`:
 
 - `open()`: store the invoker (`document.activeElement`), unhide the overlay,
   move focus to `#designer-canvas`.
 - `close()`: unhide→hidden, then restore focus to the stored invoker
-  (`export.js:344-350`).
+  (`export.js`).
 - Esc closes; a click on the overlay backdrop closes; the header `×` closes.
   All three route through `close()`.
 - Opening is guarded: if an instance is already open, focus the existing modal
@@ -254,7 +254,7 @@ Mirror `static/js/export.js:329-352`:
 ## 4. Header
 
 `.settings-header` gives a 14px/18px padded row with the title and a close
-button (`style.css:1398-1411`). The designer adds `.designer-heading`, a
+button (`style.css`). The designer adds `.designer-heading`, a
 baseline-aligned row holding:
 
 - `h2#designer-title` — **Design diagram** (unchanged copy).
@@ -264,8 +264,8 @@ baseline-aligned row holding:
   uses `--bg-elev` / `--border` / `--fg-muted`.
 
 The header is draggable by the `NB.windows` machinery like every
-`.settings-modal` (`style.css:1362-1364`, `:1367-1397`); no designer-specific
-work is needed. The `×` reuses `.icon-btn` (`style.css:1281-1301`).
+`.settings-modal` (`style.css`, `:1367-1397`); no designer-specific
+work is needed. The `×` reuses `.icon-btn` (`style.css`).
 
 ---
 
@@ -297,7 +297,7 @@ this stage (§6).
 - **Grid:** a calm **dot** grid from `--designer-grid` at `--designer-grid-size`
   (24px). Dots read as "work surface" without the busyness of a line grid. The
   grid is in **px**, not rem, matching the app's rule that only micro-decorations
-  stay px (`style.css:30-36`); it must not balloon at XL font scale.
+  stay px (`style.css`); it must not balloon at XL font scale.
 - **The library surface must be transparent** so the grid shows through. If the
   vendored `visimer.css` paints its own canvas background, override it to
   `transparent` on the `.designer-canvas` host. This is one of the allowed
@@ -306,7 +306,7 @@ this stage (§6).
 The library is mounted by `mermaid-designer.js` as
 `new MermaidCanvasView({ editor, container: #designer-canvas,
 mermaid: window.mermaid, mermaidConfig, toolbar: 'top' })` (architecture:
-`mermaid-designer.md:76-79`).
+`mermaid-designer.md`).
 
 ### 5.2 Empty state (`#designer-empty`)
 
@@ -322,7 +322,7 @@ user can double-click straight through it.
 ### 5.3 Loading state (`#designer-loading`)
 
 Shown from open until the lazy Visimer bundle is fetched and the first render
-completes (the bundle is ~264 KB, `mermaid-designer.md:54-56`). Opaque
+completes (the bundle is ~264 KB, `mermaid-designer.md`). Opaque
 background (`--designer-canvas-bg`) so the bare grid does not flash as
 "content":
 
@@ -338,7 +338,7 @@ The footer's Apply is disabled during loading (§8.3).
 Shown when the lazy bundle fails to load **or** mermaid render/parse fails
 inside the designer. Opaque background; `role="alert"` so it is announced when
 it appears. It reuses the app's warn treatment so it reads like the existing
-mermaid error box (`style.css:2828-2846`):
+mermaid error box (`style.css`):
 
 - `.designer-state-icon` `⚠` in `--warn`, `.designer-state-title` *Couldn’t open
   this diagram* in `--warn`.
@@ -349,7 +349,7 @@ mermaid error box (`style.css:2828-2846`):
   is no detail text.
 - Two actions: **Retry** (re-attempt load/render) and **Edit source instead**
   (close the modal and open the existing `Edit mermaid source` path). The second
-  is the honest fallback the architecture promises (`mermaid-designer.md:202`).
+  is the honest fallback the architecture promises (`mermaid-designer.md`).
 
 Apply is disabled in this state; Cancel/`×`/Esc still close with no write.
 
@@ -401,15 +401,15 @@ top-left of the stage:
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);   /* matches .context-menu, style.css:2446 */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);   /* matches .context-menu, style.css */
 }
 ```
 
 Rationale for an **opaque, theme-aware pill** rather than the lightbox's
-translucent black (`style.css:2999`): the canvas is a light surface in the light
+translucent black (`style.css`): the canvas is a light surface in the light
 theme, where a black pill looks like a bug. `--bg-elev` + `--border` reads as
 app chrome on both themes. `.designer-tool-btn` uses the same accent-soft hover
-and `aria-pressed` accent fill as `.settings-nav-item` (`style.css:1466-1478`).
+and `aria-pressed` accent fill as `.settings-nav-item` (`style.css`).
 
 If the vendor ships its own tool-row background, clear it and let this class
 paint instead (allowed override, §7.3).
@@ -443,7 +443,7 @@ stage must clip the pan/zoom surface.
 
 | Key | Action | Notes |
 | --- | --- | --- |
-| `Esc` | close the modal, discard | handled by the designer's `keydown`, matching `export.js` / `hybrid.js:5268-5270` |
+| `Esc` | close the modal, discard | handled by the designer's `keydown`, matching `export.js` / `hybrid.js` |
 | `Ctrl/Cmd+Z` | **canvas undo** | must **not** reach the note. See below. |
 | `Shift+Ctrl/Cmd+Z` | **canvas redo** | same routing |
 | `Tab` / `Shift+Tab` | cycle focus within the modal | focus trap (§9) |
@@ -460,10 +460,10 @@ must not act on `Ctrl/Cmd+Z`. Two reinforcing mechanisms:
 2. `#designer-overlay` gets `data-active` (or `NB.mermaidDesign.isOpen()`
    returns true) and the global handlers early-return while it is set, so a
    `Ctrl+Z` that slips past the dialog never reaches the note's history. This is
-   exactly architecture test 8 (`mermaid-designer.md:180`).
+   exactly architecture test 8 (`mermaid-designer.md`).
 
 The note's history is touched only by the **Apply** write-back, which is one
-undo step in the owning editor (`mermaid-designer.md:109-110`).
+undo step in the owning editor (`mermaid-designer.md`).
 
 **Autosave.** Never runs while the modal is open (requirements §4). The
 designer does not call any save path until Apply.
@@ -476,7 +476,7 @@ designer does not call any save path until Apply.
 aria-live="polite"` and carries transient, non-blocking feedback: *Ready*,
 *No changes to apply*, *Applying…*, *Couldn’t apply — the diagram changed*.
 Reuse the `.settings-vimrc-status` color pattern: `--fg-muted` default,
-`--ok` for success, `--warn` for failure (`style.css:1585-1590`).
+`--ok` for success, `--warn` for failure (`style.css`).
 
 ---
 
@@ -484,7 +484,7 @@ Reuse the `.settings-vimrc-status` color pattern: `--fg-muted` default,
 
 ### 7.1 Body theme
 
-The canvas reads theme tokens from `body[data-theme]` (`style.css:4-88`):
+The canvas reads theme tokens from `body[data-theme]` (`style.css`):
 `--designer-canvas-bg`, `--designer-grid`, `--accent`, `--border`, `--bg-elev`,
 `--fg`, `--fg-muted`. No JS theme switch is needed for the chrome — the tokens
 flip with the body.
@@ -493,14 +493,14 @@ flip with the body.
 
 The diagram itself is rendered by **our** vendored mermaid through the library.
 Pass the resolved body theme into `mermaidConfig: { theme }` at mount so the
-diagram nodes/edges match the app (architecture: `mermaid-designer.md:181`).
+diagram nodes/edges match the app (architecture: `mermaid-designer.md`).
 When the note re-renders after Apply, the existing renderer re-renders with the
 same theme (`static/js/mermaid.js`), so the block and the designer agree.
 
 ### 7.3 Library custom properties (the allowed override)
 
 The library's stylesheet is vendored (`static/vendor/visimer.css`,
-`mermaid-designer.md:141-148`). Scope overrides to our host so we never edit the
+`mermaid-designer.md`). Scope overrides to our host so we never edit the
 vendored file:
 
 ```css
@@ -521,7 +521,7 @@ small alias block in `style.css`, commented as "Visimer theme bridge".
 ### 7.4 Font scaling
 
 - Header, type pill, footer, status, state messages, and hints are **rem** —
-  they scale with `--font-scale` (`style.css:36`, `:92-97`).
+  they scale with `--font-scale` (`style.css`, `:92-97`).
 - Grid size, spinner, and glyph sizes are **px** — they are micro-decorations
   that must not distort at 1.3×.
 - The diagram's own text is the library's SVG, scaled by pan/zoom, not by
@@ -534,7 +534,7 @@ small alias block in `style.css`, commented as "Visimer theme bridge".
 ### 8.1 New tokens (add to the theme blocks)
 
 Add to `:root` (dark default) and override in `body[data-theme="light"]`
-(`style.css:4-88`):
+(`style.css`):
 
 | Token | Dark | Light | Purpose |
 | --- | --- | --- | --- |
@@ -549,7 +549,7 @@ Add to `:root` (dark default) and override in `body[data-theme="light"]`
 
 `--bg`, `--bg-panel`, `--bg-elev`, `--fg`, `--fg-muted`, `--accent`,
 `--accent-soft`, `--border`, `--code-bg`, `--danger`, `--warn`, `--ok`
-(`style.css:4-88`). No others.
+(`style.css`). No others.
 
 ### 8.3 New CSS (block to add to `static/css/style.css`)
 
@@ -670,7 +670,7 @@ Add to `:root` (dark default) and override in `body[data-theme="light"]`
 ### 8.4 Tool row vs. app chrome — spacing
 
 All insets are 12px (tool row top/left, popover offset), matching the lightbox
-toolbar's 16px feel (`style.css:2991-3003`) but tightened for a modal. Modal
+toolbar's 16px feel (`style.css`) but tightened for a modal. Modal
 padding is unchanged (header 14/18, footer 12/18). No new spacing scale is
 introduced.
 
@@ -681,7 +681,7 @@ introduced.
 - **Dialog semantics.** `.designer-modal` is `role="dialog" aria-modal="true"`
   with `aria-labelledby="designer-title"` and a conditional
   `aria-describedby` (the hint/state message, when visible). Matches the
-  Settings/Export modals (`index.html:347`, `:822`).
+  Settings/Export modals (`index.html`, `:822`).
 - **Focus on open.** Move focus to `#designer-canvas` (`tabindex="0"`). It is
   the primary surface; a keyboard user should land where the work happens, not
   on a chrome button.
@@ -690,11 +690,11 @@ introduced.
   controls, then Cancel and Apply, then wrap. Collect focusables as
   `button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])`
   filtered by `offsetParent !== null` (this mirrors the visibility filter the
-  hybrid menu already uses at `hybrid.js:5289`). Do not use `inert` on `#app`:
-  the overlays are children of `#app` (`index.html:41`, `:306`), so inerting
+  hybrid menu already uses at `hybrid.js`). Do not use `inert` on `#app`:
+  the overlays are children of `#app` (`index.html`, `:306`), so inerting
   the app would inert the modal too.
 - **Focus return.** On close, restore focus to the element stored at open
-  (`export.js:347-349`). For the hybrid entry the invoker is the menu item; if
+  (`export.js`). For the hybrid entry the invoker is the menu item; if
   the menu has already hidden, focus falls back to the mermaid container.
 - **Keyboard-only path.** Fulfilled by §2.3 + §6.3: Tab to the focused block →
   Shift+F10 → arrow to `Design diagram…` → Enter → edit on the canvas →
@@ -717,7 +717,7 @@ introduced.
   decorative and never carry meaning.
 - **Focus visibility.** `.designer-canvas:focus-visible` uses a 2px `--accent`
   outline inset by 2px. Buttons inherit the app's focus-visible accent outline
-  pattern (`style.css:1475-1478`).
+  pattern (`style.css`).
 - **Reduced motion.** Only the spinner animates; it slows under
   `prefers-reduced-motion` rather than stopping (progress must stay legible).
   No other designer animation exists.
@@ -728,7 +728,7 @@ introduced.
 
 ## 10. Handoff checklist (`web-engineer`)
 
-Files (per `mermaid-designer.md:142-158`):
+Files (per `mermaid-designer.md`):
 
 1. `templates/index.html` — add the `#designer-overlay` markup (§3.1), the
    `static/js/mermaid-designer.js` script tag in dependency order (after
@@ -740,14 +740,14 @@ Files (per `mermaid-designer.md:142-158`):
    trap + return, lazy mount of `MermaidCanvasView({ toolbar: 'top' })`, state
    machine (§5.7), `Ctrl+Z` isolation (§6.3), Apply/Cancel.
 4. `static/js/hybrid.js` — the `Design diagram…` item (§2.2) above the existing
-   source item (`hybrid.js:5176-5183`); the block focus + `Shift+F10` open
+   source item (`hybrid.js`); the block focus + `Shift+F10` open
    (§2.3).
 5. `static/js/auth.js` (or the designer) — expose/cache the role for the menu
    gate (§2.2).
 6. `static/sw.js` — CACHE bump + PRECACHE `mermaid-designer.js` (the vendor
-   bundle stays lazy), per `mermaid-designer.md:154`.
+   bundle stays lazy), per `mermaid-designer.md`.
 
-Verify (from `mermaid-designer.md:160-182`): jsdom menu-visibility and
+Verify (from `mermaid-designer.md`): jsdom menu-visibility and
 Apply/Cancel write tests; the completeness/lazy guards; Playwright round-trip,
 theme sync, and the `Ctrl+Z`-does-not-touch-the-note test.
 
@@ -763,7 +763,7 @@ theme sync, and the `Ctrl+Z`-does-not-touch-the-note test.
 - **No restyling of the library internals** beyond the §7.3 alias block; edit
   the vendored `visimer.css` only to build it, never by hand.
 - **No preview-hover entry, no source pane, no Insert flow** in P1 — those are
-  later phases (architecture phasing, `mermaid-designer.md:186-191`).
+  later phases (architecture phasing, `mermaid-designer.md`).
 - **No autosave while open.** The note is written only on Apply.
 - **Don't disable Apply silently.** When Apply is unavailable, the reason is
   shown (status line or state message).

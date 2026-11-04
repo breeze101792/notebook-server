@@ -145,9 +145,9 @@
     login:         (password)  => request("POST", "/api/login",  { password }),
     logout:        () => request("POST", "/api/logout"),
     // Save the admin and/or viewer password. Pass null for a field to
-    // leave it unchanged; pass "" to clear the viewer (admin cannot be
-    // cleared once set, the server rejects that). When changing the
-    // admin password (i.e. an admin already exists), adminCurrentPassword
+    // leave it unchanged; pass "" to clear it (clearing the admin
+    // password disables auth and also drops the viewer hash and tokens).
+    // When changing or clearing the admin password, adminCurrentPassword
     // is required and verified server-side.
     saveAuthPasswords: (adminPassword, adminCurrentPassword, viewerPassword) =>
       request("POST", "/api/auth/passwords", {
@@ -198,7 +198,11 @@
           const data = await resp.json();
           if (data && data.error) msg = data.error;
         } catch (_) { /* non-JSON error body */ }
-        throw new Error(msg);
+        // Mirror the in-band SSE error path: callers key the vision hint
+        // and other recoveries off err.status.
+        const e = new Error(msg);
+        e.status = resp.status;
+        throw e;
       }
       // SSE framing: messages arrive as "data: <one line>\n\n" records.
       // Line-oriented on purpose -- a chunk boundary may split a record,

@@ -1,8 +1,11 @@
 # Mobile shell (iPhone-first) — design handoff
 
-Status: design only. No source files changed. `web-engineer` implements
-§7. Product behaviour is owned by [mobile.md](../product/mobile.md); measured
-device facts by [mobile-support.md](../research/mobile-support.md).
+Status: shipped (mobile shell), design record. The phone shell lives in
+`static/js/mobile.js`, the phone query at the end of `static/css/style.css`,
+and the `#mobile-*` markup in `templates/index.html`. §7 records the implementation
+plan as designed. Product behaviour is
+owned by [mobile.md](../product/mobile.md); measured device facts by
+[mobile-support.md](../research/mobile-support.md).
 
 Reference mockup: `docs/design/mobile-shell.html` (390×820, Read / Drawer /
 Capture / Unreachable, mode toggle above the frame).
@@ -71,9 +74,9 @@ in jsdom.
 
 | Value | Failure it prevents |
 |---|---|
-| `max-width: 860px` | The default desktop grid is `48 + 240 + 1fr + 220` (`style.css:197-200`). Below 860 the `1fr` reader would be under 352 px, and at 390/360 it measures **0 px** (research §2.2). All phone portraits fit here, and so does a narrow desktop window. |
+| `max-width: 860px` | The default desktop grid is `48 + 240 + 1fr + 220` (the `#app` grid rule). Below 860 the `1fr` reader would be under 352 px, and at 390/360 it measures **0 px** (research §2.2). All phone portraits fit here, and so does a narrow desktop window. |
 | `(pointer: coarse) and (max-width: 1023px)` | iPhone landscape is **932×430** (Pro Max) / 844×390, i.e. *wider* than the width arm. The coarse pointer is what separates those phones from a 932 px desktop window. It also covers portrait tablets up to 1023 px. |
-| `(hover: none) and (pointer: coarse)` | The 88 `:hover` rules and hover-revealed `.tree-star` / `.tree-pin` / `.code-copy-btn` (`style.css:2953-2980`, `:3281-3290`) have no touch path. This arm also fixes an iPad left in the desktop shell. |
+| `(hover: none) and (pointer: coarse)` | The `:hover` rules and hover-revealed `.tree-star` / `.tree-pin` / `.code-copy-btn` have no touch path. This arm also fixes an iPad left in the desktop shell. |
 | No user-agent test | Product assumption A4: layout follows the viewport, so a narrow desktop window (e.g. 800×900) gets the phone shell. Predictable, and testable in jsdom/Playwright. |
 | No `orientation: landscape` alone | A 1366×768 desktop is landscape; the coarse-pointer guard is the real signal. |
 
@@ -91,7 +94,7 @@ viewer (`mobile.md` M5.5) but the reader is identical.
 ## 3. Layout anatomy
 
 ```
-#app (100dvh, body safe-area padding: style.css:126)
+#app (100dvh, body safe-area padding: the `body` rule)
 ├ #topbar          52 px   back | title (flex) | + capture | … more
 ├ #layout          flex:1, single column, position:relative
 │ ├ #editor-pane    100% width/height
@@ -126,7 +129,7 @@ rail is 56; top bar 52; gutters 20 (24 landscape); drawer padding 16;
 sheet padding 16/24. Hit area `--m-hit: 44px`; fields `16px`.
 
 `--topbar-h` is re-pointed to the mobile value so every existing
-`calc(100dvh - var(--topbar-h) - …)` (e.g. `style.css:3384`) stays correct.
+`calc(100dvh - var(--topbar-h) - …)` (e.g. the reader-height calc) stays correct.
 
 ### 3.2 z-index order
 
@@ -138,16 +141,16 @@ sheet padding 16/24. Hit area `--m-hit: 44px`; fields `16px`.
 | Scrim | 400 | new `#mobile-scrim` |
 | Drawer | 410 | `#side-panel` |
 | Capture sheet | 600 | new `#capture-sheet` |
-| Context menu | 1000 | `style.css:2993` |
-| Login / settings overlay | 2000 | `style.css:1398` |
-| Toast | 3000 | `style.css:3695` |
+| Context menu | 1000 | `#nb-menu` |
+| Login / settings overlay | 2000 | `.settings-overlay` |
+| Toast | 3000 | `.toast` |
 
 The menu must outrank the drawer: the per-row `…` opens `NB.menu` from inside it.
 
 ### 3.3 Safe areas
 
-`viewport-fit=cover` is set (`index.html:5`), but the phone shell does **not**
-keep the desktop `body` padding (`style.css:126`). Phone mode zeroes it and
+`viewport-fit=cover` is set (the viewport meta tag), but the phone shell does **not**
+keep the desktop `body` padding (the `body` rule). Phone mode zeroes it and
 lets each edge layer own its inset, so the app is edge-to-edge and the fixed
 rail cannot leave a strip under the home indicator:
 
@@ -181,19 +184,19 @@ These IDs are read at boot by `tabs.js`, `outline.js`, `viewer.js`,
 ## 4. Components
 
 All numbers are CSS px. `--font-scale` still scales readers and chrome
-(`html { font-size: calc(14px * …) }`, `style.css:117`); fields are fixed 16 px.
+(`html { font-size: calc(14px * …) }`, the `html` rule); fields are fixed 16 px.
 
 ### 4.1 Top bar
 
 Container: `#topbar`, 52 px, `background: var(--bg-panel)`,
 `border-bottom: 1px solid var(--border)`, `gap: 4px`, `padding: 0 4px`.
-The phone arm resets the shared `#topbar button` chrome (`style.css:156-160`)
+The phone arm resets the shared `#topbar button` chrome
 for these four controls: `#topbar .icon-btn, #topbar .mobile-title
 { background: none; border: 0; padding: 0 }`.
 
 | Part | DOM | Size | States |
 |---|---|---|---|
-| Back | `#back-btn` | 44×44, glyph 20 | default `--fg`; **disabled** (no nav history) `--fg-muted` at .4 opacity (`style.css:1386`); `:active` `--accent-soft`; focus ring |
+| Back | `#back-btn` | 44×44, glyph 20 | default `--fg`; **disabled** (no nav history) `--fg-muted` at .4 opacity (the `#back-btn` rule); `:active` `--accent-soft`; focus ring |
 | Title | new `#mobile-title` (button) | 44 high, flex 1, min-width 0 | note basename, 16 px/600, one line, ellipsis; tap opens the drawer (`mobile.md` M2.4); Home shows the site title |
 | Edit | existing `#hybrid-toggle` | 44×44, ✎ 20 | hidden unless a note is open and the role can write; `.active` keeps the desktop accent fill; opens §4.12 |
 | Capture | new `#mobile-capture` | 44×44, `+` 22 | hidden for viewer role; `:active` `--accent-soft`; opens §4.8 |
@@ -201,7 +204,7 @@ for these four controls: `#topbar .icon-btn, #topbar .mobile-title
 
 Order: back, title, edit, capture, more. On 390 px: 4×44 plus 4×4 gaps and
 2×4 padding leaves 178 px for the title; it ellipsizes. Back is always present
-but disabled on first load (`viewer.js:1121-1123`).
+but disabled on first load (the nav-history guard in `viewer.js`).
 
 Note `…` menu (desktop parity per `mobile.md` M3.4):
 
@@ -221,22 +224,23 @@ items in v1.
 `#activity-bar` becomes `position: fixed; left: 0; right: 0; bottom: 0`,
 `height: calc(56px + env(safe-area-inset-bottom))`, `flex-direction: row`,
 `padding-bottom: env(safe-area-inset-bottom)`. `.activity-bar-views`:
-`display:flex; flex:1 1 auto`. Each `.activity-btn` (currently 36×36,
-`style.css:224-226`) becomes `flex: 1 1 0; height: 56px`, icon 22 px.
+`display:flex; flex:1 1 auto`. Each `.activity-btn` (currently 36×36, the
+`.activity-btn` rule) becomes `flex: 1 1 0; height: 56px`, icon 22 px.
 
 | State | Treatment |
 |---|---|
 | Default | `--fg-muted` glyph |
-| Active | `--fg` glyph, `--accent-soft` fill; the 2 px indicator moves from the left edge to the top edge (`style.css:244-252`) |
+| Active | `--fg` glyph, `--accent-soft` fill; the 2 px indicator moves from the left edge to the top edge (the
+`.activity-btn.active::before` rule) |
 | Pressed | `--accent-soft` |
 | Disabled | n/a — no disabled views |
 | Focus | 2 px `--accent` ring, offset −2 (inside the button) |
 
 Four icons remain: Files (🗂), Bookmarks (🔖), Recent (🕘), Search (🔍). Labels
-are `aria-label` only (the module already sets it, `activity.js:65`). The
+are `aria-label` only (the module already sets it in `register()`). The
 rail is 56 px so a 4-item row gives 97×56 per target at 390 px.
 
-Tapping the active icon closes the drawer (VS Code behaviour, `activity.js:92-99`),
+Tapping the active icon closes the drawer (VS Code behaviour, `activate()`),
 but on phone it must **not** call `collapse()` — see §7.
 
 ### 4.3 Drawer
@@ -262,7 +266,7 @@ Width: 86vw / max 340. Search is the exception: `body.drawer-open[data-drawer-vi
 
 Header: `.panel-header` (52 px on phone, `padding: 0 4px 0 16px`), title
 "Files"/"Bookmarks"/… 13 px uppercase `--fg-muted`, close `×` 44×44 — the
-existing `.collapse-btn` (`activity.js:177`) relabelled from `‹` on phone. Footer:
+existing `.collapse-btn` (`makeCollapseBtn()`) relabelled from `‹` on phone. Footer:
 `#mobile-drawer-status`, 44 px, 12 px text: origin (mono, ellipsis) + dot + word
 "Online" / "Offline". Colour is never the only signal.
 
@@ -272,13 +276,13 @@ and choosing a leaf file.
 
 Drawer content is the existing `.side-panel-view` hosts (`#sidebar`,
 `#bookmarks-view`, `#recent-view`, `#search-view`). Only one is visible,
-`[hidden]` does the switching (`style.css:286`).
+`[hidden]` does the switching (the `.side-panel-view[hidden]` rule).
 
 ### 4.4 Tree rows
 
 `.tree-row`: `min-height: 44px`, `padding: 0 0 0 4px`, `gap: 6px`, radius 8;
 icon 18×18; name 15 px, ellipsis; chevron 20 px at the left of a folder; row
-indent +16 px per level (the existing guide cells stay, `style.css:2794`).
+indent +16 px per level (the existing guide cells stay).
 
 | State | Treatment |
 |---|---|
@@ -297,7 +301,7 @@ Copy path. Create/rename/delete are absent, not greyed out
 The `#file-tree` scroll container keeps `-webkit-overflow-scrolling: touch`
 and `overscroll-behavior: contain`. The resize handle is hidden
 (`.resize-handle { display:none }`). Empty tree: the existing `.tree-empty`
-copy (`style.css:2834`) — "No notes yet." — plus a Capture action when the role
+copy (`.tree-empty`) — "No notes yet." — plus a Capture action when the role
 allows it.
 
 ### 4.5 Search surface
@@ -333,7 +337,7 @@ absent; the row is one tap.
 
 ### 4.7 Note reader
 
-`#viewer-content` remains the only scroller (`style.css:2388-2398`).
+`#viewer-content` remains the only scroller (its own rule carries the overflow).
 
 - `max-width: 680px; margin-inline: auto; padding: 16px 20px calc(56px + env(safe-area-inset-bottom) + 24px)`.
 - Font `calc(16px * var(--font-scale))`, line-height 1.65, paragraph gap .85em.
@@ -346,7 +350,7 @@ absent; the row is one tap.
   long lines scroll inside the block; `.code-copy-btn` is visible (not
   hover-gated) at 44×44, `top: 0; right: 0`.
 - Table: already `display:block; max-width:100%; overflow-x:auto`
-  (`style.css:3664`); add `overscroll-behavior-x: contain` and `border-radius: 8px`.
+  (`.markdown-body table`); add `overscroll-behavior-x: contain` and `border-radius: 8px`.
   Hover toolbar, row/column hiding and sort are hidden (`table-view.js`).
 - Images: `max-width: 100%; height: auto`; tap does nothing.
 - Diagram: `.mermaid-container` / `.wavedrom-container` / `.viz-container` /
@@ -389,7 +393,7 @@ footer   Send 44px high, full width, radius 10
 Draft: `localStorage["nb:captureDraft"]`, written on input (300 ms debounce) and
 on `pagehide` / `visibilitychange:hidden`; restored on sheet open and app boot.
 Send: `POST /api/file/append {path:"Inbox.md", content, create:true}`
-(`app.py:2264-2298`). The server appends the string verbatim, so the client
+(the `file_append` route in `app.py`). The server appends the string verbatim, so the client
 sends `"\n\n" + text.trim()` to produce the blank-line-separated block.
 Close: `×`, scrim, Esc, back.
 
@@ -422,19 +426,19 @@ New `#mobile-state`, fixed inset below the top bar, fills the editor area.
 | Unreachable (`mobile.md` M8) | 40 px glyph, h2 "Can't reach the server", origin in mono, "Nothing is cached on this phone." | Retry (primary, 44); top bar stays |
 | Note not found | h2 "Note not found", the requested path in mono | Browse, Home (44 each) |
 | 403 | "Not allowed for this role" | Home |
-| 401 | **not** this surface: existing `.auth-modal` (`index.html:351`) | password field, inline error, rate-limit copy |
+| 401 | **not** this surface: existing `.auth-modal` | password field, inline error, rate-limit copy |
 | Empty reader | existing `#welcome` / loading state | — |
 
 Unreachable and sign-in must never look alike (product C6): Retry vs. password.
 
 ### 4.11 Toast and menu
 
-Toast (`.toast`, `style.css:3691`): fixed, `left/right: 16px`,
+Toast (`.toast`): fixed, `left/right: 16px`,
 `bottom: calc(56px + env(safe-area-inset-bottom) + 12px)`, min-height 44,
 radius 10, 14 px, one or two lines, auto-dismiss 2.4 s, `z-index: 3000`.
 Success and warning variants keep the border colour cue and a word.
 
-`NB.menu` (`menu.js:29-52`) is unchanged except for touch sizes: item
+`NB.menu` (`menu.js` `show()`) is unchanged except for touch sizes: item
 `min-height: 48px`, font 15, horizontal padding 14, viewport edge 10.
 It is anchored to the triggering button (`x = rect.left`, `y = rect.bottom + 4`),
 right-aligned when the button is in the right half. `focusFirst` is true for
@@ -495,7 +499,7 @@ control that opened it. The back layer order is: menu → sheet → drawer →
 viewer nav stack → Home → browser history.
 
 **Back layering.** `#back-btn` calls `NB.ui.closeTopLayer()` first; if it
-returns true, it stops. The existing `popstate` handler (`viewer.js:1236`) gets
+returns true, it stops. The existing `popstate` handler in `viewer.js` gets
 the same one-line guard before popping `navStack`. Recommended implementation:
 push one history entry when a layer opens and close it on `popstate`; see Q1.
 
@@ -526,7 +530,7 @@ the off-canvas drawer is `visibility:hidden` so it is skipped.
 
 **Reduced motion.** All drawer/sheet/scrim/chevron transitions are disabled
 under `prefers-reduced-motion: reduce` (the file already has several such
-blocks, e.g. `style.css:3985`); state changes remain instant and complete.
+blocks); state changes remain instant and complete.
 
 **Tap feedback.** `-webkit-tap-highlight-color: transparent` on chrome;
 `:active { background: var(--accent-soft) }` on rows and buttons.
@@ -552,18 +556,18 @@ Design-only list; no implementation beyond the tokens above.
    `!important`). `:not([hidden])` keeps `.side-panel-view[hidden]` intact.
 6. Touch arm: hover-reveal and 44 px fixes (§6).
 7. `prefers-reduced-motion` overrides for the new transitions.
-8. Existing `.auth-modal` (`:2281`): 16 px field, 44 px buttons, full-width up
+8. Existing `.auth-modal`: 16 px field, 44 px buttons, full-width up
    to 92vw under the phone arm.
 
 ### `templates/index.html`
 
-1. `index.html:5` — add `interactive-widget=resizes-content` to the viewport.
-2. `#topbar` (`:87`) — add `<button id="mobile-title">`, `<button
+1. The viewport meta tag — add `interactive-widget=resizes-content`.
+2. `#topbar` — add `<button id="mobile-title">`, `<button
    id="mobile-capture">`, `<button id="mobile-more">`; move the existing
    `#hybrid-toggle` before them. Keep `#back-btn`, `#brand`, `#edit-toggle`.
 3. Before `#app` closes — add `#mobile-scrim`, `#capture-sheet`, `#mobile-state`
    (all `hidden` initially) and the settings-sheet host.
-4. Add `<script src="/static/js/mobile.js" defer>` before `app.js` (`:1190`).
+4. Add `<script src="/static/js/mobile.js" defer>` before the `app.js` tag.
 
 No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline`,
 `#back-btn`, `#edit-toggle` stay in the DOM.
@@ -573,9 +577,9 @@ No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline
 | File | Change |
 |---|---|
 | `static/js/mobile.js` **(new)** | mode read/mirror, drawer + sheet layers, history guard, capture send/draft, `visualViewport`, mobile Home render, mobile settings sheet, title text, back order. ~250 lines. |
-| `static/js/app.js` | **Delete `pane.style.position = "relative"` (`:507`)** — redundant (`style.css:274`, `:309`) and it defeats the media query. Guard `applySidebarState`/`applyOutlineState` (`:350`, `:359`) and `setupResize` (`:487-488`) with the mode; expose the mode on `NB.app`. |
-| `static/js/activity.js` | Make `collapse()`/`expand()` (`:126-150`) mode-aware: on phone they call `NB.ui.closeDrawer()`/`openDrawer()` and return without touching `.collapsed`, the width var, or `activity:collapsed`/`expanded`, so `sidebarCollapsed` is never persisted from a phone (product C5). `activate()` (`:92`) routes to the drawer the same way. `makeCollapseBtn()` (`:177`) uses `×` on phone and `‹` on desktop. |
-| `static/js/viewer.js` | Back handler (`:1164`) closes the top layer first; set `#mobile-title` on every activate (same place as the tab title). Editing is untouched; CSS hides its entry points. |
+| `static/js/app.js` | **Delete `pane.style.position = "relative"`** — redundant (the `#side-panel` rules) and it defeats the media query. Guard `applySidebarState`/`applyOutlineState` and `setupResize` with the mode; expose the mode on `NB.app`. |
+| `static/js/activity.js` | Make `collapse()`/`expand()` mode-aware: on phone they call `NB.ui.closeDrawer()`/`openDrawer()` and return without touching `.collapsed`, the width var, or `activity:collapsed`/`expanded`, so `sidebarCollapsed` is never persisted from a phone (product C5). `activate()` routes to the drawer the same way. `makeCollapseBtn()` uses `×` on phone and `‹` on desktop. |
+| `static/js/viewer.js` | The back handler closes the top layer first; set `#mobile-title` on every activate (same place as the tab title). Editing is untouched; CSS hides its entry points. |
 | `static/js/mermaid.js` | Skip the lightbox click and `cursor: zoom-in` on phone. |
 | `static/js/table-view.js`, `table-select.js` | No-op on phone (CSS alone hides the toolbar; guards prevent arming). |
 | Search view in `activity.js` | Autofocus the field when opened on phone; debounce 250 ms already exists. |
@@ -586,8 +590,8 @@ No class or id is renamed. `#tab-bar`, `#side-panel`, `#outline-pane`, `#outline
 
 The drawer "wins" without `!important` because (a) the only inline positioning
 is the line deleted above, and (b) the drawer width is `min(86vw, 340px)`, not
-`var(--side-panel-width)`, so the inline width written by `app.js:352` /
-`activity.js:130` is simply never read in the phone arm.
+`var(--side-panel-width)`, so the inline width written by `applySidebarState()`
+in `app.js` and by `activity.js` is simply never read in the phone arm.
 
 ---
 
@@ -595,33 +599,33 @@ is the line deleted above, and (b) the drawer width is `min(86vw, 340px)`, not
 
 | Mockup element | Existing id / class | Notes |
 |---|---|---|
-| `.screen` | viewport; `body` safe-area | `style.css:126` |
-| `.topbar` | `#topbar` | `index.html:87` |
-| `.back` | `#back-btn` | `index.html:97`, `viewer.js:1164` |
+| `.screen` | viewport; `body` safe-area | the `body` rule |
+| `.topbar` | `#topbar` | `templates/index.html` |
+| `.back` | `#back-btn` | `templates/index.html`, `viewer.js` |
 | `.title` | new `#mobile-title` | button, opens drawer |
 | `.capture` | new `#mobile-capture` | opens sheet |
 | `.more` | new `#mobile-more` | anchors `NB.menu` |
-| `.menu` | `#nb-menu` | `menu.js:17` |
-| `.rail` | `#activity-bar`, `.activity-bar-views` | `index.html:110`, `activity.js:54` |
-| `.rail-btn` | `.activity-btn` | `style.css:224` |
-| `.rail-badge` | `.activity-btn.active::before` | `style.css:244` |
+| `.menu` | `#nb-menu` | `menu.js` |
+| `.rail` | `#activity-bar`, `.activity-bar-views` | `templates/index.html`, `activity.js` |
+| `.rail-btn` | `.activity-btn` | the `.activity-btn` rule |
+| `.rail-badge` | `.activity-btn.active::before` | the `::before` rule |
 | `.scrim` | new `#mobile-scrim` | one scrim for both layers |
-| `.drawer` | `#side-panel` | `index.html:128` |
-| `.drawer-head` | `.panel-header` / `.panel-title` | `style.css:311` |
-| `.drawer-close` | `.collapse-btn` / `NB.activity.makeCollapseBtn()` | `activity.js:177` |
+| `.drawer` | `#side-panel` | `templates/index.html` |
+| `.drawer-head` | `.panel-header` / `.panel-title` | the `.panel-header` rule |
+| `.drawer-close` | `.collapse-btn` / `NB.activity.makeCollapseBtn()` | `activity.js` |
 | `.status` | new `#mobile-drawer-status` | origin + reachability |
 | `.tree-row` | `.tree-row`, `.tree-children` | `sidebar.js` render |
 | `.tree-more` | new `.tree-more` | per-row `…` |
 | `.search` | `#search-view` (`.side-panel-view[data-view="search"]`) | `activity.js` mount |
 | `.bookmarks / recent` | `#bookmarks-view`, `#recent-view` | module hosts |
-| `.reader` | `#viewer`, `#viewer-content` | `index.html:271-272` |
-| `.table` | `.markdown-body table` | `style.css:3664` |
-| `.code` | `.markdown-body pre` | `style.css:3251` |
+| `.reader` | `#viewer`, `#viewer-content` | `templates/index.html` |
+| `.table` | `.markdown-body table` | the table rule |
+| `.code` | `.markdown-body pre` | the `pre` rule |
 | `.diagram` | `.mermaid-container` / `.wavedrom-container` / `.viz-container` / `.katex-container` | renderer blocks |
 | `.sheet` | new `#capture-sheet` | |
 | `.state` | new `#mobile-state` | unreachable / not found / 403 |
-| `.toast` | `.toast` (`.show`) | `style.css:3691`, `NB.app.notify` |
-| `.login` | `.settings-modal.auth-modal` | `index.html:351` |
+| `.toast` | `.toast` (`.show`) | the `.toast` rule, `NB.app.notify` |
+| `.login` | `.settings-modal.auth-modal` | `templates/index.html` |
 
 ---
 

@@ -1,38 +1,38 @@
 # Edit Bar Arrangement
 
-Product/functional spec for the Markdown editor's edit bar (`#edit-bar`), the
-formatting row shown in edit/hybrid mode. This defines the target arrangement
-only. No source files were changed. An engineer implements the markup in
-`templates/index.html`, the CSS in `static/css/style.css`, and the small
-`static/js/editbar.js` cleanup called out below.
+Status: shipped (edit-bar rearrangement), design record.
 
-Status: spec / definition.
+The rearrangement is in the shipped markup (`#edit-bar` in
+`templates/index.html`), the stylesheet and `static/js/editbar.js`: history
+first, `h1`–`h6` in one run, `hr` at the end of the Insert run, `clear` in the
+trailing reset slot, and no `⋯` More wrapper. §1 records the bar as it stood
+before the change and its line citations are historical.
 
 ---
 
 ## 1. Inventory (current)
 
-Markup: `templates/index.html:187-262`. CSS: `static/css/style.css:546-624` and
-`1174-1203`. Behavior: `static/js/editbar.js` (source mode) and
-`static/js/hybrid.js:3577-3589` (WYSIWYG mode).
+Markup: the `#edit-bar` block in `templates/index.html`. CSS: the `.edit-bar`
+and `.eb` rules in `static/css/style.css`. Behavior: `static/js/editbar.js`
+(source mode) and `static/js/hybrid.js` (WYSIWYG mode).
 
-Left to right, as shipped today:
+Left to right, as it stood before the change:
 
-| Group | Controls (`data-act`) | Source |
-| --- | --- | --- |
-| Headings | `h1` `h2` `h3` `h4` | index.html:188-191 |
-| — separator | | :192 |
-| Inline emphasis | `bold` `italic` `strike` `code` | :193-196 |
-| — separator | | :197 |
-| Lists & quote | `ul` `ol` `task` `quote`, `☰` list menu (`list-menu`, items `list-move-up` `list-move-down`) | :198-208 |
-| — separator | | :209 |
-| Insert | `link` `image` `emoji` (opens emoji panel), `codeblock` | :210-220 |
-| — separator | | :221 |
-| Table | `▦` table menu (`table-menu`, 14 items, `table` first) | :222-240 |
-| — separator | | :241 |
-| History | `undo` `redo` | :242-243 |
-| Overflow | `⋯` More menu (`more`) holding exactly `hr`, `h5`, `h6`, `clear` | :244-253 |
-| Spacer + actions | `.eb-spacer`, then right-aligned `Preview`, `Save` (hidden), `Close` (dirty dot) | :254-261 |
+| Group | Controls (`data-act`) |
+| --- | --- |
+| Headings | `h1` `h2` `h3` `h4` |
+| — separator | |
+| Inline emphasis | `bold` `italic` `strike` `code` |
+| — separator | |
+| Lists & quote | `ul` `ol` `task` `quote`, `☰` list menu (`list-menu`, items `list-move-up` `list-move-down`) |
+| — separator | |
+| Insert | `link` `image` `emoji` (opens emoji panel), `codeblock` |
+| — separator | |
+| Table | `▦` table menu (`table-menu`, 14 items, `table` first) |
+| — separator | |
+| History | `undo` `redo` |
+| Overflow | `⋯` More menu (`more`) holding exactly `hr`, `h5`, `h6`, `clear` |
+| Spacer + actions | `.eb-spacer`, then right-aligned `Preview`, `Save` (hidden), `Close` (dirty dot) |
 
 The More menu is the only *hide* menu: a control behind `⋯` is invisible until
 opened. The `▦` and `☰` menus are *action* menus — they group a family of
@@ -174,7 +174,7 @@ An engineer can verify each item directly; the DOM harness
    code blocks keep their content and are left intact. Behavior of every
    other existing control is unchanged.
 7. `templates/index.html` holds the §2 order. The test fixture in
-   `tests/dom/test_dom.js` (currently lines 210-271) carries the same controls
+   `tests/dom/test_dom.js` carries the same controls
    and menu wrappers; exact fixture order is not load-bearing because the tests
    query by `data-act`.
 8. CSS: `flex-wrap: wrap` remains; `.eb-actions` carries `margin-left: auto`;
@@ -186,23 +186,21 @@ An engineer can verify each item directly; the DOM harness
    two click handlers. Outside-click still closes the table menu, the list
    menu, and the emoji panel.
 10. Hybrid mode needs no code change for the four controls: `h5`, `h6`, `hr`,
-    and `clear` are already in `EDIT_BAR_HYBRID_ACTS`
-    (`hybrid.js:3577-3589`) and `more` was never claimed there. Confirm no
+    and `clear` are already in `EDIT_BAR_HYBRID_ACTS` and `more` was never
+    claimed there. Confirm no
     `.eb-overflow:not(...)` selector survives.
 
 ### Tests to change (name them)
 
-- `tests/dom/test_dom.js:4801-4803` — the "at least 14 buttons" count and the
+- `tests/dom/test_dom.js` — the "at least 14 buttons" count and the
   `.eb-overflow:not(.eb-table) > .eb-menu` hidden-by-default check.
-- `tests/dom/test_dom.js:4960` — `hr` query (`#edit-bar .eb[data-act="hr"]`)
-  still passes unchanged.
-- `tests/dom/test_dom.js:4977-5002` — the `.eb-overflow:not(.eb-table)`
-  lookups and the `index.html` regex `/<div class="eb-menu" hidden>/`; that
-  regex no longer targets the (removed) More menu.
-- `tests/dom/test_dom.js:5003-5022` — the "more opens overflow menu" checks;
-  replace with a direct `h5` click.
-- `tests/dom/test_dom.js:5010` and `5025` — `.eb-menu .eb[data-act="h5"]` and
-  `.eb-menu .eb[data-act="clear"]` become plain bar queries.
+- The `hr` query (`#edit-bar .eb[data-act="hr"]`) still passes unchanged.
+- The `.eb-overflow:not(.eb-table)` lookups and the `index.html` regex
+  `/<div class="eb-menu" hidden>/`; that regex no longer targets the (removed)
+  More menu.
+- The "more opens overflow menu" checks; replace with a direct `h5` click.
+- `.eb-menu .eb[data-act="h5"]` and `.eb-menu .eb[data-act="clear"]` become
+  plain bar queries.
 
 No new `data-act` keys are introduced; none are renamed; `more` is removed.
 
@@ -227,5 +225,5 @@ No new `data-act` keys are introduced; none are renamed; `more` is removed.
 1. **Minimum supported content-column width.** With no controls dropped, the
    only narrow-window behavior is wrapping. If the bar must stay on one row
    above a known width, fix that width (the app already uses 720px as a
-   narrow-width reference, `style.css:4477`) and measure it against the real
+   narrow-width reference in the stylesheet) and measure it against the real
    content column; otherwise leave wrapping unconstrained.

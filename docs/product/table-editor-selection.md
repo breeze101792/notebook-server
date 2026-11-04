@@ -1,6 +1,6 @@
 # Table edit window — selection and clipboard — product definition
 
-**Status:** for review. No visual or technical design chosen here.
+**Status:** shipped (table edit window — selection and clipboard). No visual or technical design chosen here.
 **Date:** 2026-11-01 · **Owner:** `product-designer` · **Scope:** the hybrid (WYSIWYG) "Edit table" modal only.
 Related: `docs/product/table-editor.md` (the modal; AC1–AC18 remain in force), `docs/design/table-editor.md`, `docs/architecture/table-editor.md`.
 

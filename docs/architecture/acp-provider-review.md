@@ -7,7 +7,9 @@ code on 2026-10-13. This is a design review, not an implementation.
 > **SUPERSEDED (as built, 2026-10-13).** This review predates the build, and
 > the shipped provider differs from the design below. Read
 > [ai-assistant.md](ai-assistant.md#acp-providers) for the as-built contract.
-> As-built deltas:
+> **Every file:line citation below is historical** — pinned to the tree as of
+> the 2026-10-13 review and not re-anchored; the current `app.py` is 4205
+> lines, so the cited lines no longer resolve. As-built deltas:
 >
 > - Uses the official `agent-client-protocol` (0.12.1) Python SDK; JSON-RPC is
 >   not hand-rolled.
@@ -41,7 +43,7 @@ server-side. Three amendments are required:
    contained addition behind the same seam (§6).
 3. **Drop `POST /api/ai/acp/cancel`.** The browser abort (Stop button,
    `AbortController`) already delivers `GeneratorExit` in the relay — the
-   same mechanism today's relay relies on (`app.py:1558`) — and that is the
+   same mechanism today's relay relies on (`app.py`) — and that is the
    natural cancel path. One route (`/api/ai/acp/permission`), one mechanism
    (§7).
 
@@ -60,20 +62,20 @@ Hard constraints from the codebase:
 - No new dependencies (`requirements.txt` = Flask 3.0.3 + bcrypt 5.0.0);
   `acp_client.py` must be stdlib-only (subprocess/threading/queue/json) — the
   proposal is right.
-- Dev server only: `app.run(...)` at `app.py:2617`. Werkzeug threading facts
+- Dev server only: `app.run(...)` at `app.py`. Werkzeug threading facts
   verified in the installed venv: Flask sets `threaded=True` by default
-  (flask/app.py:618 `options.setdefault("threaded", True)`), and Werkzeug's
+  (flask/app.py `options.setdefault("threaded", True)`), and Werkzeug's
   threaded server runs each request on a **daemon** thread
-  (werkzeug/serving.py:877 `daemon_threads = True`). No process manager, no
+  (werkzeug/serving.py `daemon_threads = True`). No process manager, no
   supervisor.
 - The server is request-stateless today: every `/api/ai/chat` POST carries
-  the full conversation (`static/js/ai.js:1258`), nothing about a turn
+  the full conversation (`static/js/ai.js`), nothing about a turn
   survives the request. ACP must not silently break this (§6).
-- `safe_path` (`app.py:156`) is the only path chokepoint; `atomic_write`
-  (`app.py:237`) is the only write mechanism. Both are reused, not
+- `safe_path` (`app.py`) is the only path chokepoint; `atomic_write`
+  (`app.py`) is the only write mechanism. Both are reused, not
   re-implemented.
 - Single user, LAN-facing, auth optional (`admin_required` bypasses entirely
-  when auth is off — `app.py:654-670`). This bites for `command` execution
+  when auth is off — `app.py`). This bites for `command` execution
   (§8).
 
 ## 2. Module boundary: yes, `acp_client.py` — and the seam is "no Flask, no app.py"
@@ -93,7 +95,7 @@ The seam, precisely:
 | `AcpAgent`: spawn (`command` + `args`, own process group), stdin writer with one lock, stdout reader thread, stderr drain, request-id → future map | Routes: the `/api/ai/chat` type branch, `/api/ai/acp/permission`, probe branch |
 | `AcpTurn`: event queue, done flag, pending-approval registry `{request_id: entry}`, turn id | `/api/ai/*` auth decorators, JSON validation of the POST body |
 | JSON-RPC framing/correlation both directions; EOF → resolve-all-with-error cleanup | fs policy: read through `safe_path`-equivalent bounds, approved writes through `atomic_write` |
-| Pure translation helpers: ACP update params → wire event dicts (no Flask) | SSE framing + `Response(...)` envelope reuse (`app.py:1576-1578`) |
+| Pure translation helpers: ACP update params → wire event dicts (no Flask) | SSE framing + `Response(...)` envelope reuse (`app.py`) |
 | Turn registry: `{turn_id: AcpTurn}` + atexit kill-all | Config: `_sanitize_server`, `_public_ai_config`, `Upstream` dataclass |
 
 Two rules keep the boundary clean:
@@ -103,7 +105,7 @@ Two rules keep the boundary clean:
    `write_pending(entry)`), the update sink, spawn cwd. This makes
    `acp_client` unit-testable with a ~50-line stdlib stub agent speaking
    JSON-RPC over stdio — the same testing posture as `_StubOpenAIHandler`
-   (`tests/test_app.py:2648-2664` starts a real loopback HTTP server; the
+   (`tests/test_app.py` starts a real loopback HTTP server; the
    ACP analog is a subprocess, which is even cheaper).
 2. **No circular import**: `app.py` imports `acp_client`, passes callables
    in. The fs read handler answers inline (bounded disk read); the fs write
@@ -134,12 +136,12 @@ flowchart LR
 What must be true, verified against this stack:
 
 - **The relay generator runs on a per-request daemon thread.** Flask's dev
-  default is `threaded=True` (flask/app.py:618), so a blocking SSE generator
+  default is `threaded=True` (flask/app.py), so a blocking SSE generator
   never blocks the server — the existing relay already exploits this
-  (`app.py:1549-1578`). No change needed; this is a documented dependency,
+  (`app.py`). No change needed; this is a documented dependency,
   not something to fix.
 - **Client disconnect reaches the generator as `GeneratorExit`** (Werkzeug
-  calls `Response.close()` on disconnect; precedent: `app.py:1558`'s comment
+  calls `Response.close()` on disconnect; precedent: `app.py`'s comment
   and handler). The ACP relay's `finally` must: send `session/cancel`,
   resolve all pending approvals as denied, then run the kill ladder (§6).
 - **Reader thread must never block.** `proc.stdout.readline()` is its only
@@ -152,7 +154,7 @@ What must be true, verified against this stack:
   write JSON-RPC; interleaved writes would corrupt the stream. BrokenPipeError
   on a dead child → fail the turn, resolve all pendings.
 - **Daemon-thread caveat**: Werkzeug's request threads are daemon threads
-  (werkzeug/serving.py:877) and so should `acp_client`'s reader be — but
+  (werkzeug/serving.py) and so should `acp_client`'s reader be — but
   daemons die without cleanup, so the *only* reliable cleanup triggers are
   EOF (child died → reader resolves everything with errors) and the atexit
   killpg (§6). Never rely on thread shutdown for correctness.
@@ -163,7 +165,7 @@ What must be true, verified against this stack:
 ## 4. The SSE relay for ACP: pump, never fetch
 
 The generator for an ACP turn is *not* a relay of an upstream connection
-(like `app.py:1549`); it is a queue pump:
+(like `app.py`); it is a queue pump:
 
 - Reader thread translates `session/update` params into wire event dicts and
   pushes them on the turn queue; the `session/prompt` **response** (StopReason)
@@ -171,10 +173,10 @@ The generator for an ACP turn is *not* a relay of an upstream connection
 - Generator loop: `queue.get(timeout≈0.5)` → yield `data: <json>\n\n` frames;
   on sentinel, drain remaining events and return.
 - In-band errors reuse the existing convention *exactly*: `event: error` +
-  `{"error": true, "status", "message"}` frames (`app.py:1569-1574`), so
-  `static/js/api.js:141-148` handles ACP failures without change.
+  `{"error": true, "status", "message"}` frames (`app.py`), so
+  `static/js/api.js` handles ACP failures without change.
 - Same response envelope: `text/event-stream`, `Cache-Control: no-store`,
-  `X-Accel-Buffering: no` (`app.py:1576-1578`).
+  `X-Accel-Buffering: no` (`app.py`).
 - Optional but cheap: a `: keep-alive` comment frame every ~15 s so a silent
   agent turn (long tool call, no chunks) cannot be dropped by an intermediary.
 
@@ -208,7 +210,7 @@ Remaining soundness points:
   gets 409/404. The server performs the write itself (`atomic_write`) with
   the content captured at request time — the card can only ever approve what
   it displayed, which closes the TOCTOU the current client-side patch cards
-  have (client previews at `ai.js`, server re-checks at `app.py:1919`).
+  have (client previews at `ai.js`, server re-checks at `app.py`).
 - **Turn-level timeout is the containment for an abandoned card**: if the
   user walks away, the prompt deadline fires → cancel → all pendings auto-
   denied → agent told "denied", stream ends with an error/stop event. No
@@ -224,7 +226,7 @@ turn start (initialize → session/new), kill at turn end (StopReason,
 error, timeout, or client abort). Consequences:
 
 - The server stays request-stateless — the same invariant the OpenAI path
-  has (the browser owns the conversation, `ai.js:1258` re-uploads it). For
+  has (the browser owns the conversation, `ai.js` re-uploads it). For
   ACP the route flattens the POSTed messages into one prompt for a fresh
   session each turn; cross-turn memory stays in the browser, not the server.
   This is honest for v1: the ACP provider behaves as a stateless
@@ -255,10 +257,10 @@ Kill ladder and orphans:
   property of any ACP agent (all mainstream ones do), test it, and note
   the `--debug` caveat in operations docs. Do not add a SIGTERM handler to
   fight the reloader — `--debug` is already documented as
-  dev-only/loopback-advised (`app.py:2613-2616`).
+  dev-only/loopback-advised (`app.py`).
 - **Server restart mid-turn** (the asked failure mode): the child dies with
   the server; the browser sees the stream drop and renders it as a failed
-  request (`ai.js:1261-1282` already handles stream errors); after restart
+  request (`ai.js` already handles stream errors); after restart
   the in-memory registry is gone so a late permission POST 404s and the
   stale card turns errored. Acceptable and expected for a single-user tool;
   write it down rather than designing persistence around it.
@@ -268,12 +270,12 @@ Kill ladder and orphans:
 **Reuse the SSE transport end-to-end; only the event vocabulary grows.**
 
 - Server: keep `/api/ai/chat` as the single chat entry point, branching on
-  profile `type` (`ai_chat`, `app.py:1505`). The ACP branch produces the
-  same envelope (`app.py:1576-1578`) and the same in-band error frames
-  (`app.py:1569-1574`). The OpenAI branch is untouched.
-- Client: extend, don't fork, `NB.api.aiChat` (`static/js/api.js:102-156`).
+  profile `type` (`ai_chat`, `app.py`). The ACP branch produces the
+  same envelope (`app.py`) and the same in-band error frames
+  (`app.py`). The OpenAI branch is untouched.
+- Client: extend, don't fork, `NB.api.aiChat` (`static/js/api.js`).
   It already tolerates unknown data frames (parses every `data:` line,
-  ignores objects without a delta at `api.js:149-153`), so ACP events ride
+  ignores objects without a delta at `api.js`), so ACP events ride
   the same framing: each translated update is one `data: {json}` line whose
   payload carries an ACP discriminator (`{"acp":"message"|"thought"|
   "tool"|"card", ...}`); `agent_message_chunk` maps onto the existing
@@ -281,13 +283,13 @@ Kill ladder and orphans:
   an optional event callback parameter so ACP events reach `ai.js`.
 - The six-tool contract does not apply to ACP agents: the agent brings its
   own tools; we advertise only `fs.readTextFile`/`fs.writeTextFile` (and
-  no `terminal/*`) at initialize. `systemPrompt()` (`ai.js:827`) branches by
+  no `terminal/*`) at initialize. `systemPrompt()` (`ai.js`) branches by
   provider type: ACP gets the notebook context, the custom prompt, and the
   renderer/fenced-language section (which the registry-completeness test
   pins — keep it in both branches), but **not** the ` ```nb-tool ` contract.
-- `MAX_TOOL_ROUNDS` (`ai.js:54`) is meaningless for ACP (the agent runs its
+- `MAX_TOOL_ROUNDS` (`ai.js`) is meaningless for ACP (the agent runs its
   own loop inside one turn); its server-side analog is the turn timeout
-  (§6). The frontend's `runToolLoop` (`ai.js:1239`) branches: an ACP turn
+  (§6). The frontend's `runToolLoop` (`ai.js`) branches: an ACP turn
   is one `aiChat` call whose events render bubbles, thought/tool trace
   lines (same DOM vocabulary as `.ai-tool-trace`), and cards; the stream
   end finalizes the turn.
@@ -297,14 +299,14 @@ Kill ladder and orphans:
 every `/api/ai/*` route). It resolves *both* held `fs/write_text_file`
 requests and held `session/request_permission` — one pending mechanism, one
 card shape, two renderings. On allow-write, the server itself runs
-`atomic_write` (`app.py:237`) and then answers the agent; on deny, answer
+`atomic_write` (`app.py`) and then answers the agent; on deny, answer
 with the deny outcome. Emit `NB.evt("ai:applied", {path})` from the card's
 apply handler so `viewer.js`'s cache refresh keeps working unchanged.
 
 **Cut from the proposal**: `POST /api/ai/acp/cancel`. The Stop button is an
-`AbortController` abort (`ai.js:1260` → `api.js:108`), which the server sees
+`AbortController` abort (`ai.js` → `api.js`), which the server sees
 as a disconnect → `GeneratorExit` in the generator (the exact mechanism
-today's relay uses, `app.py:1558`) → cancel + kill ladder. A separate cancel
+today's relay uses, `app.py`) → cancel + kill ladder. A separate cancel
 route would be a second mechanism for the same outcome. Add it later only
 if a "cancel without dropping the stream" need ever materializes.
 
@@ -320,22 +322,22 @@ enforcement point for non-compliant agents).
 
 | File | Change |
 | --- | --- |
-| `app.py:1195` | `Upstream` dataclass: add `type` (default `"openai"`), `command`, `args` |
-| `app.py:1231` | `_sanitize_server`: type-conditional validation (§8) |
-| `app.py:1284` | `_public_ai_config`: echo `type`/`command`/`args` (not secrets) for UI round-trip |
-| `app.py:1310` | `_saved_server`: unchanged lookup, callers read `type` |
-| `app.py:1505` | `ai_chat`: branch on type; ACP branch = flatten messages, drive `AcpAgent`, pump queue |
-| `app.py:1414` | `ai_probe`: ACP branch = spawn + initialize + report protocol version, then kill |
+| `app.py` | `Upstream` dataclass: add `type` (default `"openai"`), `command`, `args` |
+| `app.py` | `_sanitize_server`: type-conditional validation (§8) |
+| `app.py` | `_public_ai_config`: echo `type`/`command`/`args` (not secrets) for UI round-trip |
+| `app.py` | `_saved_server`: unchanged lookup, callers read `type` |
+| `app.py` | `ai_chat`: branch on type; ACP branch = flatten messages, drive `AcpAgent`, pump queue |
+| `app.py` | `ai_probe`: ACP branch = spawn + initialize + report protocol version, then kill |
 | new | `POST /api/ai/acp/permission` route |
 | new `acp_client.py` | everything in §2/§3 |
-| `static/js/api.js:102` | `aiChat`: optional event callback (additive, default keeps OpenAI behavior) |
-| `static/js/ai.js:827` | `systemPrompt`: provider-type branch (keep renderer docs in both) |
-| `static/js/ai.js:1239` | `runToolLoop`: type branch → `runAcpTurn` |
-| `static/js/ai.js:2179/2215` | `loadAiConfig` + picker label: type-aware (`s.model \|\| s.baseUrl` shows nothing for ACP; use the command basename) |
-| `static/js/settings.js` (AI tab, refs at `settings.js:986`, add/edit at `1390-1466`) | profile editor gains type/command/args; Test button uses the ACP probe |
+| `static/js/api.js` | `aiChat`: optional event callback (additive, default keeps OpenAI behavior) |
+| `static/js/ai.js` | `systemPrompt`: provider-type branch (keep renderer docs in both) |
+| `static/js/ai.js` | `runToolLoop`: type branch → `runAcpTurn` |
+| `static/js/ai.js/2215` | `loadAiConfig` + picker label: type-aware (`s.model \|\| s.baseUrl` shows nothing for ACP; use the command basename) |
+| `static/js/settings.js` (AI tab, refs at `settings.js`, add/edit at `1390-1466`) | profile editor gains type/command/args; Test button uses the ACP probe |
 | `docs/contracts/http-api.md`, `docs/contracts/configuration.md`, `docs/architecture/ai-assistant.md`, `CLAUDE.md` | contract + as-built updates (CLAUDE.md when the code lands, not now) |
-| `tests/test_app.py` | `TestAiConfig` gains ACP `_sanitize_server` cases; new `TestAcpChat` with a stdlib stub agent subprocess (pattern of `TestAiChat` at `tests/test_app.py:2648`) |
-| `tests/dom/test_dom.js` | `== ai ==` block: ACP SSE streams via the existing `aiChatStreams` queue (`tests/dom/test_dom.js:1380-1384` already plays arbitrary frames) |
+| `tests/test_app.py` | `TestAiConfig` gains ACP `_sanitize_server` cases; new `TestAcpChat` with a stdlib stub agent subprocess (pattern of `TestAiChat` at `tests/test_app.py`) |
+| `tests/dom/test_dom.js` | `== ai ==` block: ACP SSE streams via the existing `aiChatStreams` queue (`tests/dom/test_dom.js` already plays arbitrary frames) |
 
 `agent.md` does not change: it documents the external-agent HTTP API, and
 external agents never call `/api/ai/*`.
@@ -355,12 +357,12 @@ shape-stable):
 ]}
 ```
 
-Validation changes in `_sanitize_server` (`app.py:1231`):
+Validation changes in `_sanitize_server` (`app.py`):
 
 - `type` ∈ `{"openai", "acpi"}`-style allowlist, default `"openai"` so the
   existing stored profiles (no `type` key) and the load path
-  (`load_ai_config`, `app.py:1204`) stay backward compatible.
-- Today `baseUrl` is unconditionally required (`app.py:1240-1241`) — make
+  (`load_ai_config`, `app.py`) stay backward compatible.
+- Today `baseUrl` is unconditionally required (`app.py`) — make
   it required only for `type == "openai"`.
 - For `type == "acp"`: `command` is a non-empty string ≤ 300 chars and is
   **argv[0] only — never a shell string** (no `shell=True`, ever; spaces in
@@ -371,13 +373,13 @@ Validation changes in `_sanitize_server` (`app.py:1231`):
   NUL/newline; anything non-string is a 400. These bounds are about
   foot-guns and memory, not security theater.
 - Probe/spawn failures surface as data, never 500s (the probe route's
-  existing pattern: `ok: false` with HTTP 200, `app.py:1448-1452`).
+  existing pattern: `ok: false` with HTTP 200, `app.py`).
 
 **Is admin-gating sufficient?** While auth is on: yes — the admin is the
 machine owner and could run the command themselves. While auth is **off**
 (the shipped default): no honest reading says yes. Today an open server
 leaks notes and spends a stored key (the documented posture,
-`docs/architecture/ai-assistant.md:22-26`); a `command` field turns any LAN
+`docs/architecture/ai-assistant.md`); a `command` field turns any LAN
 client into remote command execution *as the server's user*. That is a
 different class, not a louder version of the same one.
 
@@ -404,10 +406,10 @@ Each row names the bug class and the structural prevention.
 | 8 | Double-resolve of one requestId (double-click, two tabs) | TOCTOU/idempotency | Resolve-once under turn lock; second POST 409 |
 | 9 | Agent ignores `session/cancel` | hostile/buggy child | Kill ladder: cancel → 5 s → SIGTERM pgid → 2 s → SIGKILL pgid |
 | 10 | Agent calls unadvertised `terminal/*` | capability escape | Not advertised at initialize + JSON-RPC -32601 response — the protocol's own enforcement |
-| 11 | Agent writes outside the notebook (`fs/write_text_file` on `/etc/...`) | path traversal | Server-side bounds check mirroring `safe_path`'s boundary rule (`app.py:192-195`), extracted into one shared predicate used by both callers; out-of-bounds → error response, never a card |
+| 11 | Agent writes outside the notebook (`fs/write_text_file` on `/etc/...`) | path traversal | Server-side bounds check mirroring `safe_path`'s boundary rule (`app.py`), extracted into one shared predicate used by both callers; out-of-bounds → error response, never a card |
 | 12 | Prompt never completes (silent agent) | unbounded wait | Turn deadline (constants with the others) → cancel → in-band error event |
 | 13 | Profile edited mid-turn | config race | Per-request process snapshot; new turns see new config, running turn unaffected |
-| 14 | Flattened prompt exceeds body/prompt caps | resource abuse | `MAX_REQUEST_BYTES` already bounds the POST (`app.py:66`); cap the flattened prompt server-side (~8 MiB) |
+| 14 | Flattened prompt exceeds body/prompt caps | resource abuse | `MAX_REQUEST_BYTES` already bounds the POST (`app.py`); cap the flattened prompt server-side (~8 MiB) |
 
 ## 10. Open questions (decide before implementation)
 

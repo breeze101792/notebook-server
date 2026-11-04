@@ -1,6 +1,7 @@
 # Mermaid editor — edit UI redesign
 
-**Status:** Design only. No source, template, or test files were changed.
+**Status:** Shipped (Mermaid designer window), design record. The editor is
+`static/js/mermaid-designer.js`.
 **Date:** 2026-10-19
 **Owner:** `ui-designer`
 **Mockup:** `docs/design/mermaid-editor.html`

@@ -1,14 +1,16 @@
 # Graphviz and WaveDrom design windows — edit UI
 
-**Status:** Design only. No source, template, or test files were changed.
+**Status:** Shipped (Graphviz and WaveDrom design windows), design record. The
+windows are `static/js/dot-designer.js` and `static/js/wavedrom-designer.js`,
+sharing `static/js/designer-shell.js`.
 **Date:** 2026-10-20
 **Owner:** `ui-designer`
 **Mockup:** `docs/design/dot-wavedrom-editor.html`
 
 Related documents:
 
-- `docs/product/dot-wavedrom-design-window.md` — the product definition, in
-  progress. This design assumes its v1 shape and marks every open point inline.
+- `docs/product/dot-wavedrom-design-window.md` — the product definition. This
+  design assumed its v1 shape and marked every open point inline.
 - `docs/design/mermaid-editor.md` — the modal shell, tokens, three-region body,
   compact layout, states, and a11y patterns this design reuses.
 - `docs/design/settings-modal.md` — the shared modal language and the scoped
@@ -18,7 +20,7 @@ Related documents:
   `editPluginSource` fallback this design mirrors.
 - `static/js/viz.js`, `static/js/wavedrom.js` — the rendered SVG these windows
   select inside.
-- `static/js/blocks.js`, `static/js/hybrid.js:5172-5183` — the block descriptor,
+- `static/js/blocks.js`, `static/js/hybrid.js` — the block descriptor,
   `pluginTypes()`, and the existing design menu entry.
 
 This document is **normative** for the two new edit windows. The mockup
@@ -1003,7 +1005,7 @@ Graphviz and WaveDrom IDEs.
 
 ## 12. Implementation notes for `web-engineer`
 
-Design only; this section is the handoff shape, not a code change made here.
+This section is the handoff shape; the markup and modules below are shipped.
 
 ### 12.1 Markup (`templates/index.html`)
 

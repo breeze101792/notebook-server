@@ -384,10 +384,12 @@ enable authentication whenever the server is bound beyond loopback.
 
 ## Requirements
 
-- Python 3.8+ (for `start.sh`'s venv bootstrap)
+- Python 3.10+ (for `start.sh`'s venv bootstrap; the ACP SDK requires
+  `>=3.10,<3.15`)
 - Node.js (only for the frontend DOM tests — not needed to run the app)
 
-Python deps are pinned in `requirements.txt`: Flask 3.0 and bcrypt 5.0.
+Python deps are pinned in `requirements.txt`: Flask 3.0, bcrypt 5.0, and
+`agent-client-protocol` 0.12.
 
 ## Project layout
 
@@ -401,11 +403,11 @@ notebook.template/    starter notebook (copied into notebook/ on first run)
 templates/
   index.html          single page, loads vendored libs + app modules
 static/
-  js/                 40 app modules sharing window.NB (loaded in dependency order)
+  js/                 45 app modules sharing window.NB (loaded in dependency order)
   vendor/             marked, highlight.js, CodeMirror, Mermaid, WaveDrom, KaTeX,
                       Viz.js, Turndown, Paged.js (vendored, no CDN)
   css/                style.css, vimnav.css
-  sw.js               service worker (cache notebook-v16)
+  sw.js               service worker (cache notebook-v23)
   manifest.json       PWA manifest
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
@@ -415,6 +417,9 @@ config/               config.json (UI state), auth.json (passwords), ai.json (AI
 tests/
   test_app.py         stdlib unittest, hits the real Flask app via test client
   dom/test_dom.js     jsdom tests, loads real vendor bundles + app modules
+  browser/            Playwright suites in real Chromium/Firefox
+  fixtures/           stub ACP agent for the backend tests
+  manual/             checks that need a real ACP CLI
 docs/                 project documentation (see docs/README.md)
 ```
 
@@ -422,14 +427,16 @@ docs/                 project documentation (see docs/README.md)
 redirected at import time via `NOTEBOOK_DATA_DIR` / `NOTEBOOK_CONFIG_DIR`
 (the test suite uses this so it never touches your real files).
 
-`static/js/` holds 40 modules, all extending the shared `window.NB`
+`static/js/` holds 45 modules, all extending the shared `window.NB`
 namespace. The list is documented in
 [`docs/architecture/frontend.md`](docs/architecture/frontend.md), which also covers the code-block
 renderer registry, persistence, and the service worker.
 
-The one asset that is built rather than copied: `static/vendor/codemirror.bundle.js`
-is an esbuild IIFE generated offline from `static/vendor/codemirror.entry.js`.
-See [`docs/operations/development.md`](docs/operations/development.md) for details.
+Two assets are built rather than copied: `static/vendor/codemirror.bundle.js`
+is an esbuild IIFE generated offline from `static/vendor/codemirror.entry.js`,
+and `static/vendor/visimer.bundle.js` is built from
+`static/vendor/visimer.entry.js` by `npm run vendor:visimer`.
+See [`docs/operations/build.md`](docs/operations/build.md) for details.
 
 ## API
 
@@ -568,7 +575,7 @@ The backend tests redirect `notebook/` and `config/` to a temp dir
 before importing `app`, so your real notebooks are never touched. The
 auth test classes reset the in-memory failure tracker between tests so
 the rate limiter doesn't leak. The frontend harness loads the real
-vendor bundles and all 40 app modules into jsdom and covers 111 sections,
+vendor bundles and all 45 app modules into jsdom and covers 120 sections,
 including auth, the AI tool loop, hybrid editing, and export. The
 `tests/browser/` suites drive the same app in real Chromium; the audit
 results are in [`docs/testing/browser-audit.md`](docs/testing/browser-audit.md).
@@ -577,8 +584,9 @@ results are in [`docs/testing/browser-audit.md`](docs/testing/browser-audit.md).
 
 Markdown is rendered **un-sanitized** because the notebooks are your
 own files in `notebook/`. If you ever load untrusted content (pastes
-from elsewhere, shared files), add a vendored DOMPurify and sanitize
-before `innerHTML` in `viewer.js`. The `html-live` renderer is the one
+from elsewhere, shared files), sanitize before `innerHTML` in `viewer.js`
+the way the AI panel already does with the vendored DOMPurify 3.4.12
+(`static/vendor/purify.min.js`). The `html-live` renderer is the one
 exception: it runs inside a sandboxed iframe with `allow-scripts` and
 without `allow-same-origin`, so it cannot reach the app's cookies, DOM,
 or API.

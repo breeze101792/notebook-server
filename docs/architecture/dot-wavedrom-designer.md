@@ -1,7 +1,8 @@
 # Graphviz / WaveDrom design windows — architecture
 
-Status: design for implementation. Owner: `architect`. No source was changed.
-Date: 2026-10-20.
+Status: implemented. Design record for the shipped Graphviz and WaveDrom
+design windows (`dot-designer.js`, `wavedrom-designer.js`). Original design
+date: 2026-10-20.
 
 Inputs (both read in full):
 
@@ -77,7 +78,7 @@ different: the model, the preview, canvas selection, the sidebar/inspector
 forms, serialization.
 
 This is the third copy of the apply/capture/resolve lifecycle in the codebase
-(`mermaid-designer.js:3403-3717` is the second). Writing it twice more would be
+(`mermaid-designer.js` is the second). Writing it twice more would be
 ~600 duplicated lines around the riskiest path in the feature. The shell
 mirrors the mermaid order **exactly**, so the two remain diffable.
 Refactoring `mermaid-designer.js` onto the shell is deliberately **rejected for
@@ -139,7 +140,7 @@ bundle.
 unchanged; `hybrid.js` unchanged except the disabled-item title.** `viz.js` and
 `wavedrom.js` add `design: "dotDesign"` / `design: "wavedromDesign"` to their
 `NB.blocks.register` descriptors. `pluginTypes()` already carries `design
-|| null`, and `hybrid.js:6200-6212` already builds the item from
+|| null`, and `hybrid.js` already builds the item from
 `plugin.design` + `designerAllowed()` (auth-off-or-admin) +
 `capabilityFor(src)` + `open(hit)`, with Design first and "Edit Graphviz source"
 / "Edit WaveDrom source" (from the descriptors' `name`) second. Nothing new

@@ -2,7 +2,11 @@
 
 **Author:** product-designer
 **Date:** 2026-10-13
-**Status:** Product definition. No technical or visual design chosen here.
+**Status:** Shipped and superseded by the architecture record. The menus now
+route through the one `NB.menu` module; read
+[`../../architecture/context-menus.md`](../../architecture/context-menus.md)
+for the as-built contract. The `file:line` inputs below are the design-time
+snapshot and are not re-anchored.
 **Inputs:** `static/js/sidebar.js`, `static/js/tabs.js`, `static/js/hybrid.js`,
 `static/js/editbar.js`, `templates/index.html:344-350`,
 `static/css/style.css:2549-2614`, `1336-1337`, `1165-1173` (all verified

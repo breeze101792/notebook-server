@@ -77,7 +77,7 @@ Related docs:
 ## Authentication
 
 Auth is optional. It is **on** exactly when the admin password hash exists
-(`auth_enabled()`, `app.py:475`). Setting the admin password also gates every
+(`auth_enabled()`, `app.py`). Setting the admin password also gates every
 read, whether or not a viewer password exists. A viewer password only adds a
 second, read-only login option.
 
@@ -111,7 +111,7 @@ them.
   exception: they still require a loopback, non-proxied peer.
 - **Plain HTTP.** No TLS, so passwords and tokens can be sniffed on the LAN.
 - **Open by default on `0.0.0.0`.** The default bind is all interfaces
-  (`app.py:2426-2444`).
+  (`app.py`).
 - **Provider keys in cleartext.** `config/ai.json` stores upstream API keys
   unhashed; file permissions and backups matter.
 - **The stored key follows `base_url`.** While auth is off, any LAN client can
@@ -157,13 +157,13 @@ Tokens are created with `POST /api/auth/tokens`, which returns the full token
 string exactly once. Only a bcrypt hash is stored. The public lookup id is the
 first 10 hex characters; the remaining 30 are the secret, and the hash covers
 the whole string. A presented-but-invalid bearer token fails with 401 and never
-falls back to the session cookie (`_request_role()`, `app.py:563`).
+falls back to the session cookie (`_request_role()`, `app.py`).
 
 ### Rate limiting
 
 Failed logins and bad bearer tokens share an in-memory per-IP limiter:
 `_LOGIN_FAIL_LIMIT` = 5 failures per `_LOGIN_FAIL_WINDOW` = 60 seconds
-(`app.py:596`). The sixth attempt returns 429. A success clears the counter.
+(`app.py`). The sixth attempt returns 429. A success clears the counter.
 The store is in-process, so it resets on restart and is best-effort.
 
 ## Endpoint reference
@@ -172,9 +172,9 @@ The store is in-process, so it resets on restart and is best-effort.
 
 | Method | Path | Auth | Response |
 | --- | --- | --- | --- |
-| GET | `/` (`app.py:693`) | none | `index.html`, with saved chrome pre-applied. |
-| GET | `/<path:p>` (`app.py:2409`) | none | SPA catch-all. Serves `index.html` for deep links such as `/README.md#core-rules`. |
-| GET | `/agent.md` (`app.py:1612`) | none | The root `agent.md` verbatim as `text/markdown; charset=utf-8`, with `{{auth_state}}` substituted. 500 if the file is missing. |
+| GET | `/` (`app.py`) | none | `index.html`, with saved chrome pre-applied. |
+| GET | `/<path:p>` (`app.py`) | none | SPA catch-all. Serves `index.html` for deep links such as `/README.md#core-rules`; an unmatched `api/...` path gets a JSON 404. |
+| GET | `/agent.md` (`app.py`) | none | The root `agent.md` verbatim as `text/markdown; charset=utf-8`, with `{{auth_state}}` substituted. 500 if the file is missing. |
 
 ### Config and info
 
@@ -264,17 +264,17 @@ the prose.
 
 | Method | Path | Auth | Body | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/auth` (`app.py:873`) | none | — | `{enabled, hasAdmin, hasViewer, role}`. `role` is reported only when an admin hash exists, else `null`. |
-| POST | `/api/login` (`app.py:902`) | none | `{password}` | Tries admin then viewer. Sets the session role. 400 auth off or missing password, 429 rate-limited, 401 wrong. |
-| POST | `/api/logout` (`app.py:938`) | login | — | `{ok: true}`. |
-| POST | `/api/auth/passwords` (`app.py:950`) | admin | `{admin_password, viewer_password, admin_current_password?}` | See below. |
-| GET | `/api/auth/tokens` (`app.py:1073`) | admin | — | `{tokens: [{name, role, created?}]}`. |
-| POST | `/api/auth/tokens` (`app.py:1083`) | admin | `{name, role}` | Returns the full token once. 409 duplicate name, 400 auth off. |
-| DELETE | `/api/auth/tokens/<name>` (`app.py:1136`) | admin | — | `{ok: true}`. 404 unknown name. |
+| GET | `/api/auth` (`app.py`) | none | — | `{enabled, hasAdmin, hasViewer, role}`. `role` is reported only when an admin hash exists, else `null`. |
+| POST | `/api/login` (`app.py`) | none | `{password}` | Tries admin then viewer. Sets the session role. 400 auth off or missing password, 429 rate-limited, 401 wrong. |
+| POST | `/api/logout` (`app.py`) | login | — | `{ok: true}`. |
+| POST | `/api/auth/passwords` (`app.py`) | admin | `{admin_password, viewer_password, admin_current_password?}` | See below. |
+| GET | `/api/auth/tokens` (`app.py`) | admin | — | `{tokens: [{name, role, created?}]}`. |
+| POST | `/api/auth/tokens` (`app.py`) | admin | `{name, role}` | Returns the full token once. 409 duplicate name, 400 auth off. |
+| DELETE | `/api/auth/tokens/<name>` (`app.py`) | admin | — | `{ok: true}`. 404 unknown name. |
 
 `POST /api/auth/passwords` requires both `admin_password` and `viewer_password`
 keys; either value may be `null`. A non-empty value must be at least 6
-characters (`_MIN_PASSWORD_LEN`, `app.py:947`). Semantics:
+characters (`_MIN_PASSWORD_LEN`, `app.py`). Semantics:
 
 | Value | Effect |
 | --- | --- |
@@ -283,23 +283,23 @@ characters (`_MIN_PASSWORD_LEN`, `app.py:947`). Semantics:
 | `""` (viewer) | Clear the viewer hash. |
 | string | Bcrypt-hash and set. Changing an existing admin password requires a verified `admin_current_password`. Setting the first admin password does not. |
 
-Token names must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (`app.py:518`); a
+Token names must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (`app.py`); a
 new token's role must be `admin` or `viewer`.
 
 ### Files and tree
 
 | Method | Path | Auth | Body / params | Response |
 | --- | --- | --- | --- | --- |
-| GET | `/api/tree` (`app.py:1647`) | read | — | `{tree: [...]}` recursive, dirs-first, directories and `.md` files only. Skips dotfiles and `__pycache__`. |
-| GET | `/api/ls` (`app.py:1653`) | read | `?path=` | Non-recursive single folder. All file types, skips hidden. `{path, entries: [{name, type, size, mtime}]}`. Empty `path` lists the active workspace root. |
-| GET | `/api/file` (`app.py:1698`) | read | `?path=`, `?ifModifiedSince=` | `{path, content, size, mtime}`. Empty 304 when `ifModifiedSince >= mtime`. `size` is the character count, not bytes. |
-| POST | `/api/file` (`app.py:1730`) | admin | `{path, content}` | Creates or overwrites a whole file. Parent folder must exist. Returns `{path, size}`. |
-| POST | `/api/file/append` (`app.py:1753`) | admin | `{path, content, create}` | Single `O_APPEND` write, so concurrent appends do not clobber. 404 if missing without `create: true`. Returns `{path, size, appended}`. |
-| POST | `/api/edit` (`app.py:1795`) | admin | `{path, edits: [...]}` | Ordered all-or-nothing patch batch. See below. |
-| POST | `/api/create` (`app.py:1854`) | admin | `{path, type, upsert?, content?}` | `type` is `file` or `dir`. 409 if it exists unless `upsert: true`. Returns `{path, existed}`. |
-| POST | `/api/move` (`app.py:1918`) | admin | `{from, to, onConflict?}` | `onConflict` is `error` (default), `skip`, or `overwrite`. Returns `{from, to}`, or `{to, skipped: true}`. |
-| POST | `/api/copy` (`app.py:1996`) | admin | `{from, to, onConflict?}` | Recursive for folders. File copies use exclusive create. Returns `{to}`, or `{to, skipped: true}`. |
-| POST | `/api/delete` (`app.py:2061`) | admin | `{path}` | Recursive for folders. Returns `{path}`. |
+| GET | `/api/tree` (`app.py`) | read | — | `{tree: [...]}` recursive, dirs-first, directories and `.md` files only. Skips dotfiles and `__pycache__`. |
+| GET | `/api/ls` (`app.py`) | read | `?path=` | Non-recursive single folder. All file types, skips hidden. `{path, entries: [{name, type, size, mtime}]}`. Empty `path` lists the active workspace root. |
+| GET | `/api/file` (`app.py`) | read | `?path=`, `?ifModifiedSince=` | `{path, content, size, mtime}`. Empty 304 when `ifModifiedSince >= mtime`. `size` is the character count, not bytes. |
+| POST | `/api/file` (`app.py`) | admin | `{path, content}` | Creates or overwrites a whole file. Parent folder must exist. Returns `{path, size}`. |
+| POST | `/api/file/append` (`app.py`) | admin | `{path, content, create}` | Single `O_APPEND` write, so concurrent appends do not clobber. 404 if missing without `create: true`. Returns `{path, size, appended}`. |
+| POST | `/api/edit` (`app.py`) | admin | `{path, edits: [...]}` | Ordered all-or-nothing patch batch. See below. |
+| POST | `/api/create` (`app.py`) | admin | `{path, type, upsert?, content?}` | `type` is `file` or `dir`. 409 if it exists unless `upsert: true`. Returns `{path, existed}`. |
+| POST | `/api/move` (`app.py`) | admin | `{from, to, onConflict?}` | `onConflict` is `error` (default), `skip`, or `overwrite`. Returns `{from, to}`, or `{to, skipped: true}`. |
+| POST | `/api/copy` (`app.py`) | admin | `{from, to, onConflict?}` | Recursive for folders. File copies use exclusive create. Returns `{to}`, or `{to, skipped: true}`. |
+| POST | `/api/delete` (`app.py`) | admin | `{path}` | Recursive for folders. Returns `{path}`. |
 
 `POST /api/create` with `upsert: true` is an idempotent ensure-exists call. An
 existing item of the matching type returns 200 with `{existed: true}` and is not
@@ -318,7 +318,7 @@ fall back to check-then-rename. File copies use `open(..., "xb")`.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/search` (`app.py:2756`) | read | Line-oriented scan of `.md` files. Params below. |
+| GET | `/api/search` (`app.py`) | read | Line-oriented scan of `.md` files. Params below. |
 
 | Param | Default | Meaning |
 | --- | --- | --- |
@@ -334,7 +334,7 @@ fall back to check-then-rename. File copies use `open(..., "xb")`.
 | `order=` | walk order | `path`, `mtime`, or `count`. Invalid value is 400. |
 | `desc=1` | off | Reverse the chosen order. |
 
-Caps are defined at `app.py:58`. The response is
+Caps are defined at `app.py`. The response is
 `{query, matches: [{file, line, col, snippet}], truncated, perFileTruncated,
 timedOut}`, plus `file` when `?file=` was used and `count` on each item in
 unique mode.
@@ -357,9 +357,9 @@ the deadline is checked before each file and every `SCAN_CHECK_LINES` lines.
 
 | Method | Path | Auth | Response |
 | --- | --- | --- | --- |
-| GET | `/api/graph` (`app.py:2386`) | read | `{nodes: [{id, name, links}], edges: [{source, target}]}`. |
+| GET | `/api/graph` (`app.py`) | read | `{nodes: [{id, name, links}], edges: [{source, target}]}`. |
 
-`build_graph()` (`app.py:2311`) scans every `.md` file for `[[wikilinks]]` and
+`build_graph()` (`app.py`) scans every `.md` file for `[[wikilinks]]` and
 Markdown links ending in `.md`. Wikilinks resolve by stem, so `[[README]]` and
 `[[README.md]]` both find `README.md`. Relative markdown links resolve against
 the linking file's folder. `#anchor` fragments are stripped, links to missing
@@ -373,22 +373,22 @@ misrepresent the notebook.
 
 ### AI assistant
 
-These routes read and write `config/ai.json` (`app.py:1180`), which holds
+These routes read and write `config/ai.json` (`app.py`), which holds
 OpenAI-compatible provider profiles, the optional global custom prompt, and the
 optional SearXNG URL. A second provider kind, ACP, is configured separately in
-`config/acp.json` (`app.py:1186`) and is **read-only from the server** — no
+`config/acp.json` (`app.py`) and is **read-only from the server** — no
 route writes it. The stored key is never returned in a response to the browser,
 but the server attaches it to the upstream request sent to whatever `base_url`
 the profile names. All routes below are admin-gated **only while auth is on**.
 
 | Method | Path | Auth | Body / params | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/ai/config` (`app.py:1575`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acpAgents}`. The key is never echoed. `acp` is `{name, model, agent, default}` or `null`; `agent` is the selected known-agent key (`""` when the profile uses `command`). `acpAgents` is always present. |
-| POST | `/api/ai/config` (`app.py:1583`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. Never touches `acp.json`. |
-| GET | `/api/ai/probe` (`app.py:1652`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
+| GET | `/api/ai/config` (`app.py`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acpAgents}`. The key is never echoed. `acp` is `{name, model, agent, default}` or `null`; `agent` is the selected known-agent key (`""` when the profile uses `command`). `acpAgents` is always present. |
+| POST | `/api/ai/config` (`app.py`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. Never touches `acp.json`. |
+| GET | `/api/ai/probe` (`app.py`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
 | POST | `/api/ai/chat` (`ai_chat`) | admin | `{server, messages, workspace?}` | SSE relay. Serves ACP profiles too. See below. |
-| POST | `/api/ai/fetch` (`app.py:1995`) | admin | `{url}` | Server-side fetch. See below. |
-| POST | `/api/ai/search` (`app.py:2042`) | admin | `{q}` | SearXNG search. See below. |
+| POST | `/api/ai/fetch` (`app.py`) | admin | `{url}` | Server-side fetch. See below. |
+| POST | `/api/ai/search` (`app.py`) | admin | `{q}` | SearXNG search. See below. |
 
 On `POST /api/ai/config`, a profile with `apiKey: ""` plus `replaceSecret: true`
 carries over the previously stored key server-side, so the browser never echoes
@@ -397,20 +397,26 @@ secrets. `replaceSecretFor` names a different profile to carry the key from
 key of the same-named stored profile is used. A profile is
 `{name, baseUrl, apiKey?, model, replaceSecret?, replaceSecretFor?}`. Base
 URLs are normalized: a trailing `/` and a trailing `/v1` are stripped. Names are
-limited to 60 characters, base URLs to 300, keys to 500, and `customPrompt` to
-8000; `searxngUrl` must be an http(s) URL. Duplicate server names and a
-`default` that is not a listed name are 400. `customPrompt` and `searxngUrl` are
-preserved when omitted and cleared when sent as `""`.
+limited to 60 characters, base URLs to 300, keys to 500, `customPrompt` to
+8000, and `searxngUrl` to 300; `searxngUrl` must be an http(s) URL. Duplicate
+server names and a `default` that is not a listed name are 400. `customPrompt`
+and `searxngUrl` are preserved when omitted and cleared when sent as `""`.
 
-On `POST /api/ai/chat`, `messages` is a non-empty list of
-`{role, content}` with `role` in `system`, `user`, `assistant` and `content` a
-string. The server rebuilds the upstream payload from known fields, so extra
-client keys and the `server` selector never reach the provider. The stored key
+On `POST /api/ai/chat`, `messages` is a non-empty list of `{role, content}`
+with `role` in `system`, `user`, `assistant`. `content` is either a string, or
+a non-empty list of content parts:
+
+- `{"type": "text", "text": "<string>"}`
+- `{"type": "image_url", "image_url": {"url": "data:image/..."}}` — user role
+  only, and at most 8 image parts per message (`AI_CHAT_MAX_IMAGE_PARTS`).
+
+The server rebuilds each message and the upstream payload from known fields, so
+extra client keys and the `server` selector never reach the provider. The stored key
 is attached server-side. The upstream request always sets `stream: true`. The
 response body is the upstream byte stream relayed unmodified as
 `text/event-stream` with `Cache-Control: no-store`. Upstream HTTP errors and
 connection failures are re-emitted in-band as `event: error` frames whose data
-is `{"error": true, "status", "message"}`.
+is `{"error": true, "status", "message"}`. The upstream read timeout is 120 s.
 
 When the posted `server` is not an OpenAI profile but equals the `name` in
 `config/acp.json`, `POST /api/ai/chat` drives the ACP agent instead
@@ -436,7 +442,7 @@ writes `config/acp.json`; see
 `GET /api/ai/config` reports host availability of the known agents in an
 always-present `acpAgents` array: `[{key, label, available}]`, one entry per
 key in the server's table, `available` true when the executable resolves on
-`PATH` (`_detect_acp_agents`, `app.py:1481`). An entry whose wrapping CLI is
+`PATH` (`_detect_acp_agents`, `app.py`). An entry whose wrapping CLI is
 installed but whose ACP adapter binary is not gains `adapterMissing: true` and
 a `hint` string with the adapter's install command (today Claude Code and
 Codex). The array is built with `shutil.which` only — a read-only name lookup,
@@ -476,8 +482,8 @@ the number of ops.
 
 Line numbers are 1-based and inclusive; `end` defaults to `start`. Line ops
 normalize the buffer so the file ends with a trailing newline. Op semantics live
-in `_apply_edits()` (`app.py:397`); `find_replace` is `_edit_find_replace()`
-(`app.py:366`).
+in `_apply_edits()` (`app.py`); `find_replace` is `_edit_find_replace()`
+(`app.py`).
 
 ```json
 {
@@ -499,9 +505,11 @@ in `_apply_edits()` (`app.py:397`); `find_replace` is `_edit_find_replace()`
 | 403 | Authenticated but the role is insufficient (a viewer on an admin route). |
 | 404 | File, folder, server profile, token, or workspace not found. |
 | 409 | Conflict: target exists, duplicate token name, or a lost move/copy race. |
+| 413 | Request body larger than the 32 MiB `MAX_REQUEST_BYTES` cap. |
 | 429 | Rate limited: more than 5 failed logins in 60 seconds per IP. |
 | 500 | Server error: filesystem or write failure, or a missing `agent.md`. |
 | 502 | Upstream failure from the AI fetch or search tool. |
+| 504 | `/api/graph` scan exceeded its deadline. |
 
 All error bodies are `{"error": "<message>"}`. Workspace routes also carry a
 `code`; see [Workspace error codes](#workspace-error-codes).

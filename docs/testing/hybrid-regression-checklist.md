@@ -1,6 +1,6 @@
 # Hybrid edit-mode regression checklist
 
-Status: active. Owner: `tester`. Baseline: commit `09fdfd6`, 2026-10-31.
+Status: active, green. Owner: `tester`. Baseline: full run 2026-11-04 (Chromium 156.0.8078.73); the previous baseline was commit `09fdfd6`, 2026-10-31.
 
 This is the pre-change gate for `static/js/hybrid.js`. It is not a behavior
 spec: the authority for what hybrid must do is
@@ -20,8 +20,8 @@ No single pre-change checklist existed. Several artifacts partially cover it:
 
 | Artifact | What it is | What it covers | What it is not |
 | --- | --- | --- | --- |
-| `docs/architecture/hybrid-editing.md` | Behavior catalog, 1628 lines | Every construct at every position/operation, with status marks and a "Test suite" section (`:120-131`) | A runnable checklist. Its counts (`2411` jsdom, `69` Chromium) are a historical snapshot; today is `4387` / `169`. |
-| `tests/dom/test_dom.js:14988-15066` | Coverage-map comment | Maps spec sections to `check()` names for the behavior-contract block | Operation-to-test map. It has no paste/cut, undo, export, phone, or real-IME mapping. |
+| `docs/architecture/hybrid-editing.md` | Behavior catalog, 1632 lines | Every construct at every position/operation, with status marks and a "Test suite" section | A runnable checklist. Its counts are a historical snapshot; today's are in §2. |
+| `tests/dom/test_dom.js` coverage-map comment | Coverage map | Maps spec sections to `check()` names for the behavior-contract block | Operation-to-test map. It has no paste/cut, undo, export, phone, or real-IME mapping. |
 | `docs/product/hybrid-block-marker-backspace.md` | Interaction spec | Backspace/Delete at the content start, with 18 acceptance criteria | Wired to the fence-editor suite; its Backspace-at-T cases were reconciled with this spec on 2026-10-31 (gap 1 resolved). |
 | `docs/product/hybrid-shortcuts.md` | Shortcut spec | Hybrid chords and their display rows | Not a regression gate. |
 | `docs/testing/frontend.md`, `docs/testing/browser-audit.md` | Suite descriptions and a past audit | What each suite owns, defects found, run commands | Not a pre-commit checklist. |
@@ -31,27 +31,37 @@ So the automated net is real and broad, but there was no single
 "about to touch hybrid.js" list, no AUTO/MANUAL/GAP map, and no smoke set.
 This document supplies those three things and links to the rest.
 
-## 2. Baseline (run 2026-10-31, commit `09fdfd6`)
+## 2. Baseline (full run 2026-11-03, Chromium 156.0.8078.73)
+
+The previous baseline was commit `09fdfd6` (2026-10-31). Everything below was
+re-run with `npm run test:browser:all` plus the two host suites.
 
 | Suite | Command | Result |
 | --- | --- | --- |
-| Backend | `.venv_$(hostname)/bin/python -m unittest discover -s tests` | **374 OK** |
-| Frontend jsdom | `node tests/dom/test_dom.js` | **4387 ok, 0 failed** |
-| Hybrid (real Chromium) | `CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium node tests/browser/test_hybrid_browser.js` | **169 ok, 0 failed** |
-| Hybrid blocks | `... node tests/browser/test_hybrid_blocks_browser.js` | **28 ok, 0 failed** |
-| Fence editor | `... node tests/browser/test_block_edit_browser.js` | **184 ok, 0 failed** |
-| Core UI | `... node tests/browser/test_core_ui_browser.js` | **108 passed, 1 failed** (stale, see gap 2) |
-| Auth / export / PWA | `... node tests/browser/test_auth_export_browser.js` | **99 passed, 0 failed** |
-| AI / ACP / editor | `... node tests/browser/test_ai_editor_browser.js` | **40 passed, 0 failed** |
-| Figure sizing | `... node tests/browser/test_figure_sizing_browser.js` | **96 ok, 0 failed** |
-| Mobile | `... node tests/browser/test_mobile_browser.js` | **102 ok, 0 failed** |
-| Mermaid designer | `... node tests/browser/test_designer_browser.js` | **36 ok, 0 failed** |
-| Dot / WaveDrom designer | `... node tests/browser/test_dw_designer_browser.js` | **67 ok, 0 failed** |
+| Backend | `.venv_nixlab/bin/python -m unittest discover -s tests -q` | **461 tests, OK** (52.7 s) |
+| Frontend jsdom | `node tests/dom/test_dom.js` | **4777 ok, 0 failed** |
+| Hybrid (real Chromium) | `npm run test:browser` | **169 ok, 0 failed** |
+| Hybrid blocks | `npm run test:browser:hybrid-blocks` | **28 ok, 0 failed** |
+| Fence editor | `npm run test:browser:blocks` | **184 ok, 0 failed** |
+| Core UI | `npm run test:browser:core` | **186 passed, 0 failed** |
+| Auth / export / PWA | `npm run test:browser:auth` | **99 passed, 0 failed** |
+| AI / ACP / editor | `npm run test:browser:ai` | **40 passed, 0 failed** |
+| AI blocks | `npm run test:browser:ai-blocks` | **44 passed, 0 failed** |
+| Table editor | `npm run test:browser:table-editor` | **54 ok, 0 failed** |
+| Figure sizing | `npm run test:browser:figure-sizing` | **96 ok, 0 failed** |
+| Mobile | `npm run test:browser:mobile` | **102 ok, 0 failed** |
+| Mermaid designer | `npm run test:browser:designer` | **36 ok, 0 failed** |
+| Dot / WaveDrom designer | `npm run test:browser:dw` | **67 ok, 0 failed** |
 
-`node tests/browser/run_all.js` therefore reports **9/10 suites passed**. The
-one red suite is **not a hybrid regression**: it asserts behavior that a later
-commit intentionally replaced. It still breaks the gate, so fix or reconcile it
-before treating a run as green (gap 2).
+`npm run test:browser:all` therefore reports **12/12 suites passed**.
+
+The previous failure was a real deep-link defect, now fixed: the suite opens
+more than 40 notes in one session, and a `?file=` deep link past the session's
+tab cap was refused silently, leaving the previously restored note on screen
+under the new URL. The clipboard checks then pasted into the wrong document,
+and the next navigation timed out. `openDeepLink` now checks the result of
+`NB.tabs.open`, closes a clean active tab to make room, and returns false when
+it cannot open; boot keeps the URL on failure instead of stripping it.
 
 ## 3. Smoke set for "any hybrid.js change"
 
@@ -61,7 +71,7 @@ Run from the repo root. Use `CHROMIUM_PATH` when Chromium is not auto-detected.
 # 1. Main DOM suite. Must be 0 failed.
 node tests/dom/test_dom.js
 
-# 2. The hybrid engine in a real browser. Must be 0 failed.
+# 2. The hybrid engine in a real browser. Must reach its summary with 0 failed.
 CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
   node tests/browser/test_hybrid_browser.js
 
@@ -73,7 +83,7 @@ CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
 CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
   node tests/browser/test_block_edit_browser.js
 
-# 5. Full browser gate. Must be 10/10 before commit.
+# 5. Full browser gate. Must be 12/12 before commit.
 CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
   node tests/browser/run_all.js
 ```
@@ -82,8 +92,8 @@ If the change touches `app.py` too, add the backend suite. If it touches a
 renderer fence name/version/limit, also run backend (the `/agent.md` marker
 check) and update both `static/js/ai.js` and `agent.md` in the same change.
 
-**Do not commit on a red run.** Today that means gap 2 must be resolved first.
-A red suite hides a new regression in the same suite.
+**Do not commit on a red run.** The automated gate is green (12/12 browser
+suites, 461 backend tests, 4,777 DOM checks); keep it that way.
 
 ## 4. Checklist
 
@@ -98,7 +108,7 @@ is given once per area. The authority for "expected" is the linked spec.
 | A1 | Clean enter + exit writes nothing | Bytes unchanged, zero `POST /api/file` | `AUTO-br` `real browser: clean enter+exit preserves the file bytes`; `AUTO-js` `hybrid no-op: clean Save issues zero POST /api/file` |
 | A2 | Clean Save + exit writes nothing | Same | `AUTO-br` `real browser: clean Save then exit leaves the file untouched`; `AUTO-js` `hybrid no-op: clean Close issues zero POST /api/file` |
 | A3 | A real edit writes once, then is clean | POST once, dirty cleared | `AUTO-js` `hybrid no-op: a real edit still writes`, `hybrid no-op: dirty cleared after the write` |
-| A4 | Untouched blocks keep their source bytes | Only the edited block re-serializes | `AUTO-js` `hybrid splice: only the edited paragraph changed`, `hybrid splice: the clean session serializes to the source exactly`; `hybrid: segment splice keeps untouched source bytes` (`test_dom.js:13481`) |
+| A4 | Untouched blocks keep their source bytes | Only the edited block re-serializes | `AUTO-js` `hybrid splice: only the edited paragraph changed`, `hybrid splice: the clean session serializes to the source exactly`; `hybrid: segment splice keeps untouched source bytes` |
 | A5 | Structural edits preserve untouched blocks | Star bullets, setext, indented code, comments, blank runs survive | `AUTO-js` contract cases `Q1 C1: Shift+Enter keeps untouched bytes`, `Q1: a block delete keeps star bullets / setext / indented bytes`, `hybrid splice: an HTML comment survives an edit to another block`; `AUTO-br` `real browser Q1: structural Enter keeps star-bullet bytes` |
 | A6 | An edit during an in-flight save is not lost | Newer bytes win | `AUTO-js` `hybrid splice: an edit during an in-flight save is not lost`, `hybrid autosave-race: the explicit save is the last write` |
 | A7 | No presentation HTML reaches the file | No `<br>/<div>/<span>/<table>` outside authored HTML | `AUTO-js` every contract case with `expectedSaved`; `AUTO-br` `real browser: no HTML tag reached the file` |
@@ -114,15 +124,15 @@ is given once per area. The authority for "expected" is the linked spec.
 
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
-| B1 | Enter sets exactly the editing surface | `contenteditable`, `.hybrid-editing`, edit bar, topbar class, active button | `AUTO-js` `hybrid: contenteditable=true after enter`, `hybrid: .hybrid-editing class on viewer-content`, `hybrid: edit bar visible` (`test_dom.js:7482`) |
+| B1 | Enter sets exactly the editing surface | `contenteditable`, `.hybrid-editing`, edit bar, topbar class, active button | `AUTO-js` `hybrid: contenteditable=true after enter`, `hybrid: .hybrid-editing class on viewer-content`, `hybrid: edit bar visible` |
 | B2 | Exit removes every editing artifact | `contenteditable` null, classes/bar/button cleared, rendered content back | `AUTO-js` `hybrid: contenteditable removed after exit`, `hybrid: edit bar hidden after exit`, `hybrid: viewer-content has rendered content after exit` |
-| B3 | Closing the active tab leaves no mode leak | Hybrid exits; next file opens in preview | `AUTO-js` `hybrid close: hybrid mode exited`, `hybrid close: next file opens in preview (no contenteditable)` (`test_dom.js:14933`) |
+| B3 | Closing the active tab leaves no mode leak | Hybrid exits; next file opens in preview | `AUTO-js` `hybrid close: hybrid mode exited`, `hybrid close: next file opens in preview (no contenteditable)` |
 | B4 | Dirty tab switch stashes a draft, does not save or prompt | No POST, tab stays dirty, Recover bar on return | `AUTO-js` `hybrid switch: no save POST fired`, `hybrid switch: the draft is retained`, `hybrid switch: the tab stays marked dirty`, `hybrid switch: the draft bar appears on return` |
 | B5 | Recover restores the WYSIWYG buffer; Discard drops it | Recover enters hybrid with the text; Discard reloads saved | `AUTO-js` `hybrid switch: Recover restores the draft text`, `hybrid switch: Recover clears the stored draft`; `AUTO-br` `hybrid switch: Recover restores the WYSIWYG buffer` (`test_hybrid_blocks_browser.js`) |
-| B6 | Autosave is quiet-period based and cancellable | No write inside quiet; exit(discard) cancels | `AUTO-js` `autosave: no write inside the quiet period`, `hybrid autosave-cancel: exit(discard) cancels the pending write` (`test_dom.js:12426`) |
-| B7 | Watcher own-save echo does not exit hybrid | Edit bar stays, cache takes fresh bytes | `AUTO-js` `hybrid external-change: own-save echo keeps WYSIWYG active`, `hybrid external-change: cache takes the fresh bytes` (`test_dom.js:21416`) |
+| B6 | Autosave is quiet-period based and cancellable | No write inside quiet; exit(discard) cancels | `AUTO-js` `autosave: no write inside the quiet period`, `hybrid autosave-cancel: exit(discard) cancels the pending write` |
+| B7 | Watcher own-save echo does not exit hybrid | Edit bar stays, cache takes fresh bytes | `AUTO-js` `hybrid external-change: own-save echo keeps WYSIWYG active`, `hybrid external-change: cache takes the fresh bytes` |
 | B8 | Clean save after an external change writes nothing | External bytes preserved | `AUTO-js` `hybrid no-op: clean save after an external change writes nothing`, `hybrid no-op: the external bytes are preserved` |
-| B9 | `ai:applied` refreshes in place, edit bar stays | Still in WYSIWYG editing | `AUTO-js` `ai:applied during hybrid keeps the edit bar visible`, `ai:applied during hybrid stays in WYSIWYG editing` (`test_dom.js:17282`) |
+| B9 | `ai:applied` refreshes in place, edit bar stays | Still in WYSIWYG editing | `AUTO-js` `ai:applied during hybrid keeps the edit bar visible`, `ai:applied during hybrid stays in WYSIWYG editing` |
 | B10 | A clean re-enter has a clean baseline | `isDirty()` false | `AUTO-js` `no-op: clean after re-enter` |
 
 ### C. Block edges: Enter, Shift+Enter, Backspace, Delete
@@ -133,7 +143,7 @@ is given once per area. The authority for "expected" is the linked spec.
 | C2 | Shift+Enter inserts exactly one block below | One `<p>`, caret in it, note dirty | `AUTO-js` `hybrid: Shift+Enter adds a new empty <p> below`, `hybrid: Shift+Enter moves caret into the new line`, `hybrid: one Shift+Enter adds exactly one <p>` |
 | C3 | Enter at a list item's content start opens an item above | Caret stays in the original text | `AUTO-js` `hybrid: Enter at a plain list item's start opens an item above`, `hybrid: Enter at a plain list item's start keeps the caret in the original item`; `AUTO-br` `real browser: Enter at a list item's start keeps the caret in the text below` |
 | C4 | Enter on an empty list item exits the list | Paragraph after the list | `AUTO-br` `list: Enter twice on an empty item exits the list` (`test_hybrid_blocks_browser.js`) |
-| C5 | Backspace at a formatted block's content start removes the marker, keeps text | Heading→paragraph, item→paragraph, quote line lifted | `AUTO-js` `hybrid marker: Backspace at a heading's T makes a paragraph`, `hybrid marker: a single bullet becomes a paragraph`, `hybrid marker: a task item drops its checkbox and class`, `hybrid marker: a one-line quote lifts its line` (`test_dom.js:11238`) |
+| C5 | Backspace at a formatted block's content start removes the marker, keeps text | Heading→paragraph, item→paragraph, quote line lifted | `AUTO-js` `hybrid marker: Backspace at a heading's T makes a paragraph`, `hybrid marker: a single bullet becomes a paragraph`, `hybrid marker: a task item drops its checkbox and class`, `hybrid marker: a one-line quote lifts its line` |
 | C6 | Backspace at T never merges a neighbour | Previous/next block bytes unchanged | `AUTO-js` `hybrid marker: neighbours' DOM is unchanged`, `hybrid marker: neighbours' saved bytes are unchanged` |
 | C7 | Forward Delete on a non-empty block stays native | Not prevented; first character eaten | `AUTO-js` `hybrid marker: forward Delete on a non-empty heading is not claimed`; `AUTO-br` `real browser Delete at T: the first character is eaten` |
 | C8 | Delete on an empty formatted block removes the marker | Empty paragraph | `AUTO-js` `hybrid marker: forward Delete on an empty heading strips it` |
@@ -150,7 +160,7 @@ is given once per area. The authority for "expected" is the linked spec.
 | --- | --- | --- | --- |
 | D1 | Typed triggers convert the line | `### `, `- `, `1. `, `> `, `[ ] `, `+ `, `1) `, triple-backtick | `AUTO-js` `hybrid: input rule '### ' makes an h3`, `hybrid: input rule '- ' makes a bullet list`, `hybrid: input rule '1. ' makes an ordered list`, `hybrid: input rule '> ' makes a blockquote`, `hybrid: input rule '[ ] ' makes a task item with checkbox`, ``hybrid: '```js' + Enter makes a code block``; `hybrid rule: '+ ' makes a bullet list`, `hybrid rule: '1) ' makes an ordered list` |
 | D2 | Every list-type transition is defined | paragraph/bullet/number/task matrix | `AUTO-js` `hybrid edit bar: every list-type transition is defined`; `AUTO-br` `real browser list model: every dot/number/checkbox/quote transition is defined` |
-| D3 | Quote wraps the top-level block and toggles off | No `<blockquote>` inside `<ul>`, no `<p>` in `<p>` | `AUTO-js` `hybrid edit bar: Quote wraps the top-level block and toggles off` (`test_dom.js:16196`) |
+| D3 | Quote wraps the top-level block and toggles off | No `<blockquote>` inside `<ul>`, no `<p>` in `<p>` | `AUTO-js` `hybrid edit bar: Quote wraps the top-level block and toggles off` |
 | D4 | H1–H6 buttons convert and toggle | Caret preserved | `AUTO-js` `hybrid: H2 button converts <p> to <h2>`, `hybrid edit bar: caret is preserved inside the new h1` |
 | D5 | Table insert is GFM and editable | 2-column table inserted, dirty | `AUTO-js` `hybrid table: clicking Insert table (menu closed) inserts a 2-col table` |
 | D6 | Image/void block survives a save | No HTML leak | `AUTO-js` `hybrid void-blocks: a standalone image survives save`, `hybrid void-blocks: image save leaks no HTML` |
@@ -197,10 +207,10 @@ is given once per area. The authority for "expected" is the linked spec.
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
 | H1 | Row/column add, delete, move, align, header | GFM stays valid | `AUTO-js` `hybrid edit bar: Insert row below adds a body row`, `hybrid edit bar: Move row up reorders the body rows`, `hybrid edit bar: Align column cycles left -> center -> right -> left`, `hybrid tables: reordered table saves valid GFM` |
-| H2 | Table view state is stripped at `hybrid:will-enter` | No hidden rows/sort/classes in the editor | `AUTO-js` `table view seam: contenteditable is null when hybrid:will-enter fires`, `table view seam: the overlay is already stripped at will-enter time` (`test_dom.js:17249`) |
+| H2 | Table view state is stripped at `hybrid:will-enter` | No hidden rows/sort/classes in the editor | `AUTO-js` `table view seam: contenteditable is null when hybrid:will-enter fires`, `table view seam: the overlay is already stripped at will-enter time` |
 | H3 | Table view state re-applies after exit | Stored state returns in preview | `AUTO-js` `table view seam: the stored state re-applies after exiting hybrid` |
 | H4 | A render during hybrid applies no view state | Live preview never rebuilds | `AUTO-js` `table view hybrid render: a real render during hybrid applies no view state` |
-| H5 | Table-cell selection is cleared at `hybrid:will-enter` | Rectangle classes stripped synchronously | `AUTO-js` `table select (8): hybrid:will-enter clears it synchronously` (`test_dom.js:17410`) |
+| H5 | Table-cell selection is cleared at `hybrid:will-enter` | Rectangle classes stripped synchronously | `AUTO-js` `table select (8): hybrid:will-enter clears it synchronously` |
 | H6 | Ctrl+drag selection copies TSV and never writes the note | TSV rectangle, no POST | `AUTO-br` `table select: Ctrl+drag paints a rectangle`, `table select: the clipboard is TSV for the rectangle`, `table select: selecting never writes the note` |
 | H7 | Enter inside a cell does not split the GFM row | Refused with a notice, typing stays in the cell | `AUTO-br` `table cell: Enter does not write a newline into the row`, `table cell: typing after the refused Enter stays in the cell` |
 
@@ -208,7 +218,7 @@ is given once per area. The authority for "expected" is the linked spec.
 
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
-| I1 | Plugin containers are atomic while active | `contenteditable=false`, caret skips | `AUTO-js` `hybrid atomic: a rendered plugin container is non-editable while active` (`test_dom.js:14870`) |
+| I1 | Plugin containers are atomic while active | `contenteditable=false`, caret skips | `AUTO-js` `hybrid atomic: a rendered plugin container is non-editable while active` |
 | I2 | Click-to-edit swaps to the fence source, blur re-renders | mermaid/wavedrom/katex/dot/html-live/svg | `AUTO-js` `plugin edit: container swapped for editable source block`, `plugin edit: blur re-renders the diagram`; `AUTO-br` `plugin: click swaps the diagram for its source` (`test_block_edit_browser.js`) |
 | I3 | Plugin fences round-trip byte-identically when untouched | `mermaid`/`wavedrom`/`katex`/`dot`/`html-live` | `AUTO-js` contract cases `plugin mermaid fence byte-identical`, `plugin wavedrom fence byte-identical`, `plugin katex fence byte-identical`, `plugin dot fence byte-identical`, `plugin html-live fence byte-identical` |
 | I4 | An edited plugin fence saves its new source, not SVG | Re-opens and renders | `AUTO-js` ````hybrid mermaid: domToMarkdown preserves first ```mermaid block````, `hybrid mermaid: saved file does NOT contain stripped SVG text` |
@@ -227,17 +237,17 @@ is given once per area. The authority for "expected" is the linked spec.
 
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
-| K1 | The phone pencil enters WYSIWYG; the phone has no source editor | `contenteditable`, edit bar, Save visible | `AUTO-js` `mobile edit: the pencil enters WYSIWYG mode`, `mobile edit: the formatting bar is shown`, `mobile edit: Save stays visible in the phone toolbar` (`test_dom.js:36702`) |
+| K1 | The phone pencil enters WYSIWYG; the phone has no source editor | `contenteditable`, edit bar, Save visible | `AUTO-js` `mobile edit: the pencil enters WYSIWYG mode`, `mobile edit: the formatting bar is shown`, `mobile edit: Save stays visible in the phone toolbar` |
 | K2 | Phone back leaves the edit layer before navigating | Same note, edit closed | `AUTO-js` `mobile edit: back leaves edit mode`, `mobile edit: back stays on the same note` |
 | K3 | A phone WYSIWYG edit saves to disk | Text on disk, edit closed | **GAP** (jsdom has no real contentEditable engine; the browser mobile suite has no hybrid typing/save case) |
-| K4 | Phone config writes are keyed/merged, never clobber desktop | No `openFiles`/`activeFile`/`lastFile`/`sidebarCollapsed` writes | `AUTO-js` phone config gate checks in `== mobile ==` (`test_dom.js:35873`) |
+| K4 | Phone config writes are keyed/merged, never clobber desktop | No `openFiles`/`activeFile`/`lastFile`/`sidebarCollapsed` writes | `AUTO-js` phone config gate checks in `== mobile ==` |
 
 ### L. IME / composition
 
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
-| L1 | Enter during composition does not split a task item | Composition confirms, note unchanged | `AUTO-js` `hybrid: an IME composition Enter does not split a task item` (`test_dom.js:7817`) |
-| L2 | Backspace during composition is not claimed | Marker strip does not run | `AUTO-js` `hybrid marker: an IME composition is not claimed` (`test_dom.js:11967`) |
+| L1 | Enter during composition does not split a task item | Composition confirms, note unchanged | `AUTO-js` `hybrid: an IME composition Enter does not split a task item` |
+| L2 | Backspace during composition is not claimed | Marker strip does not run | `AUTO-js` `hybrid marker: an IME composition is not claimed` |
 | L3 | A real IME composition types/commits once in Chromium | No doubled or lost text | **MANUAL** (jsdom only sets `isComposing`; no real IME in the suite) |
 
 ### M. Modifiers and global shortcuts
@@ -260,9 +270,9 @@ is given once per area. The authority for "expected" is the linked spec.
 
 | # | Check | Expected | Tag / how to verify |
 | --- | --- | --- | --- |
-| O1 | Every renderer module is loaded and precached | `index.html` + `sw.js` | `AUTO-js` `blocks completeness: <mod>.js is in index.html`, `... in sw.js PRECACHE` (`test_dom.js:5603-5612`) |
+| O1 | Every renderer module is loaded and precached | `index.html` + `sw.js` | `AUTO-js` `blocks completeness: <mod>.js is in index.html`, `... in sw.js PRECACHE`, both from the registry-completeness guard |
 | O2 | Every fence name is documented in `ai.js` and `agent.md` | Both files | `AUTO-js` `blocks completeness: <fence> is documented for the AI`, `... documented in agent.md` |
-| O3 | Fixed vendored versions and html-live limits are in `agent.md` | Mermaid 11.16, WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1, sandbox limits | `AUTO` backend `TestAgentMd` markers (`tests/test_app.py:2634-2637`); **the matching version strings in `ai.js` are not asserted — GAP** |
+| O3 | Fixed vendored versions and html-live limits are in `agent.md` | Mermaid 11.16, WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1, sandbox limits | `AUTO` backend `TestAgentGuide` marker checks; **the matching version strings in `ai.js` are not asserted — GAP** |
 
 ## 5. Coverage map summary
 
@@ -292,26 +302,28 @@ and/or `AUTO-br` as written in §4.
 inline (E), plugins (I), and the real engine (C/F/G/H) are strongly automated.
 The thin areas are cross-module data flow (export, phone), real IME, global
 shortcut suppression from `contentEditable`, and preview-DOM equality. The
-biggest current problem is not a missing assertion: it is the one remaining red
-suite (gap 2).
+biggest current problem was a broken gate, not a missing assertion; that gate
+is green now.
 
 ## 6. Ranked gaps and proposed tests
 
-Ranked by regression risk. "Red" means the suite is currently failing on stale
-expectations; that is a broken gate, not a missing assertion.
+Ranked by regression risk. A resolved row records a gate defect that is fixed
+and keeps its regression test.
 
 | Rank | Gap | Risk | Proposed test |
 | --- | --- | --- | --- |
-| 1 | **Resolved 2026-10-31: fence-editor task/plain Backspace-at-T expectations** (`test_block_edit_browser.js`). The suite asserted the pre-`09fdfd6` merge; the tests were rewritten to the committed spec (first press strips the marker, second press merges) and now pass **184 ok, 0 failed**. | — | No action. Keep the suite green. |
-| 2 | **Red: core-UI code-scroller assertion** (`test_core_ui_browser.js:370`). It expects a fenced block to own a horizontal scroller, but `20e4fdb` made code wrap (`static/css/style.css:3313-3321`). | High: same broken-gate problem | Replace the assertion with `pre` wraps and `preOwnScroller === false`, matching `test_figure_sizing_browser.js` §12 (`no inner scrollbar`). Rename it `preview overflow: a fenced block wraps instead of scrolling`. |
-| 3 | **No real IME test.** jsdom only sets `isComposing: true` (`test_dom.js:7817`, `:11967`). | Medium-high: IME is where composition + Enter + Backspace interact | `tests/browser/test_hybrid_browser.js`: use CDP `Input.imeSetComposition` to compose `にほん`, commit it, assert the text appears once and no block split/strip ran; repeat with an Enter during composition. |
+| 1 | **Resolved 2026-10-31: fence-editor task/plain Backspace-at-T expectations** (`test_block_edit_browser.js`). The suite asserted the pre-`09fdfd6` merge; the tests were rewritten to the committed spec (first press strips the marker, second press merges) and passed **184 ok, 0 failed** at the time. The suite is green (184 ok). | — | No action for this gap. |
+| 2 | **Resolved 2026-11-03: core-UI code-scroller assertion.** The check is now `preview overflow: a fenced block wraps inside the viewer (no inner scroller)` in `test_core_ui_browser.js`, and it asserts `preOwnScroller === false`, `preScrolled === false`, and that the fence stays inside the viewer's clip edge. It passes (core UI: 186 passed, 0 failed). | — | No action. Keep the assertion. |
+| 3 | **No real IME test.** jsdom only sets `isComposing: true`, in `hybrid: an IME composition Enter does not split a task item` and `hybrid marker: an IME composition is not claimed`. | Medium-high: IME is where composition + Enter + Backspace interact | `tests/browser/test_hybrid_browser.js`: use CDP `Input.imeSetComposition` to compose `にほん`, commit it, assert the text appears once and no block split/strip ran; repeat with an Enter during composition. |
 | 4 | **No export-after-hybrid test.** Export is tested from preview only (`test_auth_export_browser.js`). Export re-renders from the viewer cache, so a stale cache after a hybrid save would export old text. | High: user-visible wrong output, cross-module | `tests/browser/test_auth_export_browser.js`: open a note, enter hybrid, type `HYBRID_EDIT`, Save, open Export → HTML, assert the downloaded document contains `HYBRID_EDIT`; repeat with PDF and assert `#pdf-print-root` contains it. |
-| 5 | **No real phone WYSIWYG edit+save.** jsdom covers mode/back only (`test_dom.js:36702`); the browser mobile suite has no hybrid typing/save. | High: the phone is a separate shell | `tests/browser/test_mobile_browser.js` phone context: open a note, tap `#hybrid-toggle`, type via `page.keyboard`, tap Save, assert the text is on disk and `contenteditable` is removed. |
+| 5 | **No real phone WYSIWYG edit+save.** jsdom covers mode/back only (the `== mobile ==` edit checks); the browser mobile suite has no hybrid typing/save. | High: the phone is a separate shell | `tests/browser/test_mobile_browser.js` phone context: open a note, tap `#hybrid-toggle`, type via `page.keyboard`, tap Save, assert the text is on disk and `contenteditable` is removed. |
 | 6 | **Watcher self-save and `ai:applied` are jsdom-only.** No real-browser test that an own-save echo or an AI patch keeps hybrid open. | Medium: a real watcher poll + a real SSE patch are different paths | `tests/browser/test_hybrid_browser.js`: edit + Save, then wait one watcher poll and assert hybrid is still active; in `test_ai_editor_browser.js`, apply a patch while hybrid is open and assert the edit bar stays and the block updates in place. |
 | 7 | **Global shortcuts from `contentEditable` not asserted.** The typing guard is tested for inputs (`shortcuts: / in an input does NOT fire openSearch`), not for the hybrid editor. | Medium: a stray `/` or Alt chord could open a panel mid-edit | `tests/dom/test_dom.js` `== shortcuts ==`: focus a `contentEditable` `#viewer-content`, dispatch `/` and default global chords, assert `openSearch`/`tabNext`/`openSettings` did not fire. |
 | 8 | **Native cross-block copy fidelity.** Cut and paste are covered; a plain Ctrl+C of a multi-block selection and the exact system clipboard payload are manual. | Medium: clipboard is native-engine territory | `tests/browser/test_hybrid_browser.js`: select across two blocks, `Ctrl+C`, read `navigator.clipboard.readText()` (grant permission), assert the Markdown/text shape and that the note is unchanged. |
 | 9 | **Preview DOM immutability not asserted.** Only "has content after exit". | Low-medium: leftover chrome could persist until the next render | `tests/dom/test_dom.js` hybrid section: enter, mutate, exit, re-open the file, compare `#viewer-content.innerHTML` (or assert no `contenteditable`, caret `<br>`, ZWS, or sentinel remains). |
-| 10 | **`ai.js` version strings not asserted.** `agent.md` versions are checked in backend (`test_app.py:2634-2637`); the matching strings in `ai.js` are not. | Low: docs drift only; fence names are checked | Extend the registry guard (`test_dom.js:5603-5612`) to assert each version string in `ai.js` as well as `agent.md`. |
+| 10 | **`ai.js` version strings not asserted.** `agent.md` versions are checked in backend (`TestAgentGuide`); the matching strings in `ai.js` are not. | Low: docs drift only; fence names are checked | Extend the registry guard to assert each version string in `ai.js` as well as `agent.md`. |
+| 11 | **Resolved 2026-11-04: fence-editor `table menu:` assertions rewritten** (`test_block_edit_browser.js`). The six checks now open the "Edit table…" modal and assert its toolbar guards (`aria-disabled` and the `te-delete-row` / `te-delete-col` titles), then delete a row, Apply, and save. The suite passes **184 ok, 0 failed**. | — | No action. |
+| 12 | **Resolved 2026-11-04: deep link lost at the session tab cap** (`app.js` `openDeepLink`). `NB.tabs.open` returns false at 40 unpinned tabs; the deep link ignored it, so the restored note stayed visible under the requested URL. Boot now keeps the URL on failure, and `openDeepLink` closes a clean active tab to make room. Covered by the hybrid suite's 41st-note deep link (`169 ok, 0 failed`). | — | Keep the suite above 40 notes per run. |
 
 ## 7. Manual-only checks (automation cannot prove these)
 
@@ -341,8 +353,8 @@ Run these in the real app after the automated gate is green. They are short.
 ## 8. When to update this file
 
 - A new hybrid behavior or a new construct: add a case to
-  `HYBRID_CONTRACT_CASES` (`tests/dom/test_dom.js:15149`), add the row here,
-  and extend the coverage-map comment at `test_dom.js:14988`.
+  `HYBRID_CONTRACT_CASES` in `tests/dom/test_dom.js`, add the row here, and
+  extend the coverage-map comment above that table.
 - A new renderer/fence: update the registry guard, `ai.js`, `agent.md`, and
   row O1–O3.
 - A new manual gesture or a new native-engine dependency: add it to §7.

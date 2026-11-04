@@ -1777,32 +1777,34 @@ async function main() {
       ruleImage.rules === 1 && ruleImage.images === 0 &&
         /alpha/.test(ruleImage.text), JSON.stringify(ruleImage));
 
-    // Table context-menu items must be disabled on the shapes the delete
-    // actions already refuse.
-    const openTableMenu = async (selector = "#viewer-content td") => {
-      await page.click(selector);
+    // Table structural deletes moved from the block context menu into the
+    // "Edit table" modal. The same refusal rules live on its toolbar.
+    const openTableEditor = async (cellSelector = "#viewer-content td") => {
+      await page.click(cellSelector);
       await page.evaluate((sel) => {
         const cell = document.querySelector(sel);
         cell.dispatchEvent(new MouseEvent("contextmenu",
           { bubbles: true, cancelable: true, clientX: 20, clientY: 20 }));
-      }, selector);
+      }, cellSelector);
       await sleep(100);
+      await page.locator("#nb-menu button", { hasText: "Edit table" })
+        .first().click();
+      await page.waitForSelector("#table-editor-overlay:not([hidden])",
+        { timeout: 5000 });
     };
-    const tableMenuState = () => page.evaluate(() => {
-      const menu = document.getElementById("nb-menu");
-      const wrap = Array.from(menu.querySelectorAll("button.submenu"))
-        .find((b) => b.firstChild && b.firstChild.nodeType === Node.TEXT_NODE &&
-          b.firstChild.nodeValue.trim() === "Table");
-      if (!wrap) return null;
-      const buttons = Array.from(wrap.querySelectorAll("button"));
-      const pick = (label) => buttons.find((b) => b.textContent.trim() === label);
-      const row = pick("Delete row");
-      const col = pick("Delete column");
+    const gridCell = (row, col) =>
+      page.click('.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+    const toolbarState = () => page.evaluate(() => {
+      const row = document.getElementById("te-delete-row");
+      const col = document.getElementById("te-delete-col");
+      const state = (node) => node && {
+        disabled: node.getAttribute("aria-disabled") === "true",
+        title: node.title,
+      };
       return {
-        row: row && { disabled: row.disabled, title: row.title },
-        col: col && { disabled: col.disabled, title: col.title },
-        rows: menu.ownerDocument
-          .querySelectorAll("#viewer-content table tr").length,
+        row: state(row),
+        col: state(col),
+        rows: document.querySelectorAll("#table-editor-grid tr").length,
       };
     });
 
@@ -1810,58 +1812,69 @@ async function main() {
     await page.waitForFunction(
       () => /1/.test(document.getElementById("viewer-content").textContent),
       null, { timeout: 5000 });
-    await openTableMenu();
-    let menuState = await tableMenuState();
-    check("table menu: Delete row is disabled for header + one row",
-      menuState && menuState.row && menuState.row.disabled &&
-        /header/.test(menuState.row.title), JSON.stringify(menuState));
-    // The header row has its own reason, not the header+body-row reason.
+    await openTableEditor();
+    await gridCell(1, 0);
+    let toolbar = await toolbarState();
+    check("table editor: Delete row is disabled when one body row remains",
+      toolbar && toolbar.row && toolbar.row.disabled &&
+        /one body row/.test(toolbar.row.title), JSON.stringify(toolbar));
+
+    // The header row has its own reason, not the last-body-row reason.
+    await page.click("#table-editor-cancel");
+    await page.waitForFunction(
+      () => document.getElementById("table-editor-overlay").hidden,
+      null, { timeout: 5000 });
     await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n");
     await page.waitForFunction(
       () => /3/.test(document.getElementById("viewer-content").textContent),
       null, { timeout: 5000 });
-    await openTableMenu("#viewer-content th");
-    menuState = await tableMenuState();
-    check("table menu: deleting the header row states the header cause",
-      menuState && menuState.row && menuState.row.disabled &&
-        /header row cannot be deleted/.test(menuState.row.title),
-      JSON.stringify(menuState));
+    await openTableEditor("#viewer-content th");
+    await gridCell(0, 0);
+    toolbar = await toolbarState();
+    check("table editor: deleting the header row states the header cause",
+      toolbar && toolbar.row && toolbar.row.disabled &&
+        /header row/.test(toolbar.row.title), JSON.stringify(toolbar));
 
+    await page.click("#table-editor-cancel");
+    await page.waitForFunction(
+      () => document.getElementById("table-editor-overlay").hidden,
+      null, { timeout: 5000 });
     await boot("# T\n\n| A |\n| --- |\n| 1 |\n");
     await page.waitForFunction(
       () => /1/.test(document.getElementById("viewer-content").textContent),
       null, { timeout: 5000 });
-    await openTableMenu();
-    menuState = await tableMenuState();
-    check("table menu: Delete column is disabled for one column",
-      menuState && menuState.col && menuState.col.disabled &&
-        /column/.test(menuState.col.title), JSON.stringify(menuState));
+    await openTableEditor();
+    toolbar = await toolbarState();
+    check("table editor: Delete column is disabled for one column",
+      toolbar && toolbar.col && toolbar.col.disabled &&
+        /column/.test(toolbar.col.title), JSON.stringify(toolbar));
 
+    await page.click("#table-editor-cancel");
+    await page.waitForFunction(
+      () => document.getElementById("table-editor-overlay").hidden,
+      null, { timeout: 5000 });
     await boot("# T\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n");
     await page.waitForFunction(
       () => /3/.test(document.getElementById("viewer-content").textContent),
       null, { timeout: 5000 });
-    await openTableMenu();
-    menuState = await tableMenuState();
-    check("table menu: an ordinary table keeps both deletes enabled",
-      menuState && menuState.row && !menuState.row.disabled &&
-        menuState.col && !menuState.col.disabled, JSON.stringify(menuState));
-    await page.evaluate(() => {
-      const menu = document.getElementById("nb-menu");
-      const wrap = Array.from(menu.querySelectorAll("button.submenu"))
-        .find((b) => b.firstChild && b.firstChild.nodeType === Node.TEXT_NODE &&
-          b.firstChild.nodeValue.trim() === "Table");
-      const row = wrap && Array.from(wrap.querySelectorAll("button"))
-        .find((b) => b.textContent.trim() === "Delete row");
-      if (row && !row.disabled) row.click();
-    });
+    await openTableEditor();
+    await gridCell(1, 0);
+    toolbar = await toolbarState();
+    check("table editor: an ordinary table keeps both deletes enabled",
+      toolbar && toolbar.row && !toolbar.row.disabled &&
+        toolbar.col && !toolbar.col.disabled, JSON.stringify(toolbar));
+    await page.click("#te-delete-row");
     await sleep(150);
-    check("table menu: enabled Delete row removes that row",
+    check("table editor: enabled Delete row removes that row",
       (await page.evaluate(
-        () => document.querySelectorAll("#viewer-content table tr").length)) === 2,
-      JSON.stringify(await tableShape()));
+        () => document.querySelectorAll("#table-editor-grid tr").length)) === 2,
+      JSON.stringify(await toolbarState()));
+    await page.click("#table-editor-apply");
+    await page.waitForFunction(
+      () => document.getElementById("table-editor-overlay").hidden,
+      null, { timeout: 5000 });
     await page.keyboard.press("Control+s");
-    check("table menu: enabled Delete row saves the shortened table",
+    check("table editor: enabled Delete row saves the shortened table",
       await waitForFile((md) => (md.match(/^\|/gm) || []).length === 3 &&
         /\| 3 \| 4 \|/.test(md) && !/\| 1 \| 2 \|/.test(md)),
       JSON.stringify(readNote()));

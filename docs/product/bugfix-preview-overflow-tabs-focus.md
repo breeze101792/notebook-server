@@ -1,6 +1,6 @@
 # Preview overflow, Settings focus, and tab-strip visibility — bugfix spec
 
-Status: Ready for implementation. Owner: `product-designer`.
+Status: superseded by [the structural fixes](../architecture/bugfix-preview-overflow-tabs-focus.md); all three user-visible findings shipped. Owner: `product-designer`.
 Applies to: `static/css/style.css`, `static/js/dialog.js`, `static/js/settings.js`, `static/js/export.js`, `static/js/auth.js`, `static/js/designer-shell.js`, `static/js/mermaid-designer.js`, `static/js/tabs.js`, `templates/index.html`, `tests/dom/test_dom.js`, `tests/browser/`.
 Related: [browser audit](../testing/browser-audit.md), [frontend testing](../testing/frontend.md), [settings modal design](../design/settings-modal.md).
 

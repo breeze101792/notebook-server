@@ -1,6 +1,6 @@
 # Workspace picker — design handoff
 
-Status: implemented. The design shipped in `static/js/workspaces.js`,
+Status: shipped (workspace picker), design record. The design shipped in `static/js/workspaces.js`,
 `static/css/style.css`, `templates/index.html`, and the workspace routes in
 `app.py`. §12 records where the shipped CSS differs from the mockup.
 
@@ -70,9 +70,9 @@ three faults.**
   there, so the workspace belongs there.
 
 **D1b — The tab-strip chip was considered and rejected as unhostable on the
-phone.** `.tab-bar` is `display: none` under the phone query
-(`style.css:7102`), so a control hosted there has no phone mount at all, and the
-phone would need a second mount anyway. Two further faults: `.tab-bar` sets
+phone.** `#tab-bar` is `display: none` under the phone query, so a control
+hosted there has no phone mount at all, and the phone would need a second mount
+anyway. Two further faults: `.tab-bar` sets
 `overflow: hidden` and its tabs are flex-equalised, so a chip inside it is
 either clipped or measured as one more tab; and the tab strip is per-note-set
 editor chrome, while the workspace is the root the whole page is scoped to.
@@ -140,11 +140,11 @@ is on, and the template then renders **no divider, no wrapper, no chip, no rail
 glyph** — not an inert control. That matters beyond cosmetics: `api.js`
 `pageRole()` treats a `#workspace-bar` that carries `data-workspaces` as the
 marker of a full-access install whenever `<html data-role>` is empty — which is
-exactly the auth-off shell (`static/js/api.js:19-34`). An inert wrapper rendered
+exactly the auth-off shell. An inert wrapper rendered
 for an unauthenticated visitor would therefore be read as a workspace shell if it
 carried the list.
 
-### 2.1 Mount 1 — chip, `templates/index.html:119-140`, inside `#topbar`
+### 2.1 Mount 1 — chip, inside `#topbar`, after `#brand`
 
 ```html
 <header id="topbar">
@@ -188,7 +188,7 @@ placeholder only.
 The divider exists because the chip is a bordered control immediately beside the
 brand's text; without the rule the two read as one compound control.
 
-### 2.2 Mount 2 — glyph, `templates/index.html:160-175`, inside `#activity-bar`
+### 2.2 Mount 2 — glyph, first button in `#activity-bar`
 
 ```html
 <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
@@ -207,7 +207,7 @@ brand's text; without the rule the two read as one compound control.
 ```
 
 The button carries `.activity-pin` because `activity.js` inserts the
-`.activity-bar-views` container after it (`static/js/activity.js:97`), so the
+`.activity-bar-views` container after it (`activity.js`'s bar builder), so the
 glyph keeps the first slot however many views are registered. It is above
 `.activity-bar-spacer` and therefore above the bottom-pinned actions.
 
@@ -215,12 +215,12 @@ glyph keeps the first slot however many views are registered. It is above
 
 `#workspace-menu` is server-rendered inside the chip and **moved** (appended, not
 cloned — ids and the `aria-controls` relationship survive) to `document.body`
-at module init (`static/js/workspaces.js:116-121`). Three reasons one body child
+at module init (`workspaces.js`). Three reasons one body child
 is the right shape:
 
-- `#activity-bar` is `overflow: hidden` (`style.css:239`), so a popover that is a
+- `#activity-bar` is `overflow: hidden` (its own rule), so a popover that is a
   child of the rail mount is clipped at 48 px;
-- `#app` is `overflow: hidden` too (`style.css:154`), so the popover must sit
+- `#app` is `overflow: hidden` too (its own rule), so the popover must sit
   outside it as well;
 - one node serves both mounts. A popover per mount would need two copies of the
   row markup and two id sets.
@@ -237,8 +237,8 @@ the popover is not inside either mount, so it cannot be positioned by an
 ### 2.4 Dialog — body child, beside `#auth-overlay`
 
 Body-level, like `#auth-overlay` and `#settings-overlay`, so `NB.dialog`'s
-"inert every other body child" rule (`static/js/dialog.js:92`) works. Markup is
-unchanged from the first revision (`templates/index.html:584-620`):
+"inert every other body child" rule (`dialog.js` `open()`) works. Markup is
+unchanged from the first revision (the `#workspace-dialog` markup):
 
 ```html
 <div id="workspace-dialog" class="settings-overlay" hidden>
@@ -285,7 +285,7 @@ two-field, one-error-line shape this needs, and it already sizes to content.
 
 ### 2.5 Settings — new nav item and section
 
-Nav item, after General (`templates/index.html:650`):
+Nav item, after General (`.settings-nav-item[data-tab="workspaces"]`):
 
 ```html
 <button class="settings-nav-item" role="tab" data-tab="workspaces"
@@ -293,7 +293,7 @@ Nav item, after General (`templates/index.html:650`):
   <span class="nav-icon" aria-hidden="true">📚</span>Workspaces</button>
 ```
 
-Section, after `#settings-section-general` closes (`templates/index.html:721`):
+Section, after `#settings-section-general` closes (`#settings-section-workspaces`):
 
 ```html
 <section class="settings-section" data-section="workspaces" id="settings-section-workspaces" hidden>
@@ -314,12 +314,12 @@ so a seventh tab works as soon as it is in the markup. The list fills from
 
 ### 2.6 Script
 
-`<script src="/static/js/workspaces.js" defer></script>`
-(`templates/index.html:1905`). It reads `NB.settings` at load, and `settings.js`
-is already parsed by then.
+`<script src="/static/js/workspaces.js" defer></script>`, placed after
+`settings.js`. It reads `NB.settings` at load, and `settings.js` is already
+parsed by then.
 
-The sprite symbol `#nb-icon-workspace` (`templates/index.html:91-95`) is shared by
-both mounts, drawn in `currentColor`:
+The sprite symbol `#nb-icon-workspace` (in the `<svg>` sprite at the top of
+`templates/index.html`) is shared by both mounts, drawn in `currentColor`:
 
 ```html
 <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
@@ -472,7 +472,7 @@ two features.
 `z-index: 200`. Defaults are `top: 0; left: 0`; `left` and `top` are written as
 pixel values before the popover is painted.
 
-**Placement** (`placeMenu()`, `static/js/workspaces.js:402-425`), with
+**Placement** (`placeMenu()` in `workspaces.js`), with
 `POP_GAP = 6` and `POP_MARGIN = 8`:
 
 | Case | Rule |
@@ -614,7 +614,7 @@ Containment is `NB.dialog.open(overlay, { initialFocus: nameInput, fallbackFocus
 `fallbackFocus` is the mount the user can actually see: the usual opener is a row
 inside the popover, which is hidden before the dialog opens, so `dialog.js`'s
 `usable()` check fails and falls through — that is the exact case its comment
-describes (`static/js/dialog.js:25-32`). Returning to the hidden chip while the
+describes (`dialog.js`'s `usable()` comment). Returning to the hidden chip while the
 topbar is hidden would drop focus on the body.
 
 ---
@@ -759,10 +759,10 @@ The phone query is `@media (max-width: 860px), ((pointer: coarse) and (max-width
 
 Phone specifics, verified in the stylesheet (`mobile.js` only namespaces its `localStorage` keys and appends the drawer's status footer):
 
-- **The topbar is forced visible on the phone**: `body.topbar-hidden #topbar { display: flex }` inside the phone query (`style.css:7032`), with `--topbar-h` restored. So the chip is the phone's only workspace control, and the rail glyph is hidden by an explicit rule even when `body.topbar-hidden` is set.
-- `#brand` is `display: none` on the phone (`style.css:7034`), so the chip is the **leftmost** topbar item; the divider is hidden because there is nothing to its left to separate it from.
+- **The topbar is forced visible on the phone**: `body.topbar-hidden #topbar { display: flex }` inside the phone query, with `--topbar-h` restored. So the chip is the phone's only workspace control, and the rail glyph is hidden by an explicit rule even when `body.topbar-hidden` is set.
+- `#brand` is `display: none` on the phone (phone-query `#brand` rule), so the chip is the **leftmost** topbar item; the divider is hidden because there is nothing to its left to separate it from.
 - The name is clipped with the `.sr-only` recipe rather than `display:none`, so the button keeps its accessible name. This is why the phone chip is not merely an icon with an `aria-label`: the same markup serves both, and only the visual box changes.
-- **The drawer no longer has a workspace row.** `#side-panel` becomes the drawer (`position: fixed`, `min(86vw, 340px)`, `z-index: 410`, `style.css:7224-7248`); the workspace is not in it. Its first row is the view's own `.panel-header`, as before the feature existed.
+- **The drawer no longer has a workspace row.** `#side-panel` becomes the drawer (`position: fixed`, `min(86vw, 340px)`, `z-index: 410`, phone-query `#side-panel` rule); the workspace is not in it. Its first row is the view's own `.panel-header`, as before the feature existed.
 - The phone drawer's scrim (`400`) and drawer (`410`) paint over the popover (`200`), and the drawer covers the topbar, so the chip is behind it. With the drawer open the picker is not usable; it becomes usable again when the drawer closes. Accepted: the drawer is transient and the chip is permanent, and the two are never needed at the same moment.
 
 ---
@@ -863,13 +863,13 @@ keys; the default workspace keeps the legacy key names. See
 
 | File | Change |
 |---|---|
-| `templates/index.html` | `#nb-icon-workspace` in the sprite (line 91); `.topbar-divider` + `#workspace-bar` + `#workspace-switch` + `#workspace-menu` inside `#topbar` after `#brand` (lines 119-140); `#workspace-rail-btn` at the top of `#activity-bar` (lines 166-172); `#workspace-dialog` beside `#auth-overlay` (lines 584-620); the Workspaces nav item (line 650) and section (line 721); the `workspaces.js` script tag (line 1905) |
-| `static/css/style.css` | `--ws-fg-muted` / `--ws-warn` in `:root` (85-86) and `body[data-theme="light"]` (129-130); `#brand` ellipsis guards (172-187); one appended feature block (lines 7821-8089, Appendix A) — no other existing rule changes |
+| `templates/index.html` | `#nb-icon-workspace` in the sprite; `.topbar-divider` + `#workspace-bar` + `#workspace-switch` + `#workspace-menu` inside `#topbar` after `#brand`; `#workspace-rail-btn` at the top of `#activity-bar`; `#workspace-dialog` beside `#auth-overlay`; the Workspaces nav item and `#settings-section-workspaces`; the `workspaces.js` script tag |
+| `static/css/style.css` | `--ws-fg-muted` / `--ws-warn` in `:root` and `body[data-theme="light"]`; `#brand` ellipsis guards; one appended feature block (Appendix A) — no other existing rule changes |
 | `static/js/workspaces.js` | new module: move the popover to `<body>`, keep both mounts in step, place the popover, fetch + render the popover and the Settings list, the dialog in both modes, the switch/rename/remove calls |
-| `static/js/activity.js` | none of its own; it inserts `.activity-bar-views` after `.activity-pin` (line 97), which is what keeps the glyph first |
-| `static/js/api.js` | `pageRole()` reads `#workspace-bar[data-workspaces]` as the "full-access install" marker (19-34) |
+| `static/js/activity.js` | none of its own; it inserts `.activity-bar-views` after `.activity-pin`, which is what keeps the glyph first |
+| `static/js/api.js` | `pageRole()` reads `#workspace-bar[data-workspaces]` as the "full-access install" marker |
 | `static/js/settings.js`, `static/js/mobile.js` | none for the picker; `mobile.js` only namespaces its `localStorage` keys per workspace |
-| `static/sw.js` | cache name `notebook-v21` |
+| `static/sw.js` | the workspaces bump was `v20` → `v21`; the cache is now `notebook-v23` (later features) |
 | `app.py` | the routes; `boot_state()` supplies `workspace_id`, `workspace_name`, `workspace_path`, `workspaces`, and `role` |
 
 `workspaces.js` internals a maintainer will look for:
@@ -906,7 +906,7 @@ NB.workspaces = { openPicker, closePicker, openAdd, openRename, refresh, list };
 ## 12. Appendix A — CSS as shipped
 
 The feature is one block appended at the end of `static/css/style.css`
-(lines 7821-8089), plus the two token declarations in each theme block (§3.3),
+(Appendix A), plus the two token declarations in each theme block (§3.3),
 plus the `#brand` guards. Appending is deliberate: `#settings-overlay .ws-btn`
 has to beat `#settings-overlay .settings-action`, and later-in-file is the only
 way to do that without raising specificity or editing existing rules.
@@ -935,7 +935,7 @@ popover with `absolute` inside each mount, because the real node is `fixed` on
 | `#topbar` | **not edited.** The chip is a flex child of the existing rule, which already supplies `display:flex`, `align-items:center`, `gap:12px` and `padding:0 12px` |
 
 The brand guards cannot fully work: `app.js` `applySiteTitle()` writes
-`brand.textContent` (`static/js/app.js:390-400`), which leaves the title as an
+`brand.textContent` (`app.js` `applySiteTitle()`), which leaves the title as an
 anonymous flex item next to the icon, and `text-overflow` on a flex container
 does not reach an anonymous item. The brand therefore **hard-clips** at 40 % with
 no `…`. The guards still do their main job — a long site title can no longer push
@@ -1091,7 +1091,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 }
 ```
 
-And the `#brand` rule as it now stands (`style.css:172-187`):
+And the `#brand` rule as it now stands:
 
 ```css
 #brand {

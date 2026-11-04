@@ -1,6 +1,6 @@
 # Hybrid: removing a block marker at the content start — interaction spec
 
-Status: proposed for review. Owner: `product-designer`.
+Status: shipped (removing a block marker at the content start). Owner: `product-designer`.
 Applies to: `static/js/hybrid.js` (`onEnterKey`), `tests/dom/test_dom.js`,
 `tests/browser/` (real-engine check).
 Related: [hybrid-editing](../architecture/hybrid-editing.md) (positions S/T,

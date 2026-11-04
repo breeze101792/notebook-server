@@ -4,9 +4,11 @@ A 3D evolution of the notebook's wikilink graph. This document is the
 implementation contract; the interactive reference is
 [`docs/design/graph-3d.html`](graph-3d.html).
 
-- **Surface:** the existing `§graph` special tab (`templates/index.html:327-341`,
-  `static/js/graph.js`, `static/css/style.css:4418-4560`).
-- **Status:** implemented. 2D and 3D are both available; default is 3D.
+- **Surface:** the `§graph` special tab (its `.graph-*` block in
+  `templates/index.html`, `static/js/graph.js`, and the graph rules in
+  `static/css/style.css`).
+- **Status:** shipped (3D graph). 2D and 3D are both available; default is 3D.
+  This document is the design record.
 - **Read-only view:** it fetches `GET /api/graph` and writes nothing.
 - **Mockup size:** 45 notes, 75 links. The count is computed from the mockup
   data, not typed into the summary.
@@ -832,8 +834,8 @@ backing store and focal length; the camera is not refit on resize.
 
 **The 3D graph is not a phone surface in v1.**
 
-- The current phone shell hides `#activity-graph-btn` in the phone media query
-  (`static/css/style.css:6439`), so the graph is already unreachable there.
+- The current phone shell hides `#activity-graph-btn` in the phone media query,
+  so the graph is already unreachable there.
   This design keeps that behaviour; it does not silently add a hidden 3D view.
 - Reasons: a 390px viewport cannot show 45 labels without a hairball; orbit +
   pinch + two-finger pan competes with the phone shell's back gesture and
