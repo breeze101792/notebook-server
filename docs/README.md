@@ -44,7 +44,7 @@ Start here depending on the job:
 | [`operations/`](operations/README.md) | [`operations/README.md`](operations/README.md) | Repo layout, build/toolchain, vendoring, and the change checklists. |
 | [`product/`](product/mobile.md) | [`product/mobile.md`](product/mobile.md) | Shipped feature definitions: behavior, edge cases, acceptance criteria. |
 | [`design/`](design/settings-modal.md) | [`design/settings-modal.md`](design/settings-modal.md) | UI design handoffs and reference mockups for shipped features. |
-| [`ui/`](ui/workspaces.md) | [`ui/workspaces.md`](ui/workspaces.md) | Design handoffs for the workspace picker and the Sessions view. |
+| [`ui/`](ui/workspaces.md) | [`ui/workspaces.md`](ui/workspaces.md) | Design handoffs for the workspace picker, the Sessions view, and the top-bar session label. |
 | [`research/`](research/mobile-support.md) | [`research/mobile-support.md`](research/mobile-support.md) | Dated fact packs: browsers, libraries, protocols, and device constraints. |
 
 ## Architecture
@@ -129,6 +129,7 @@ Each `.md` has a sibling `.html` mockup where one exists.
 | [`design/bugfix-preview-overflow-tabs-focus.md`](design/bugfix-preview-overflow-tabs-focus.md) | The visual fix for preview overflow, focus, and tab visibility. |
 | [`ui/workspaces.md`](ui/workspaces.md) | Workspace picker: the bar, picker, add/rename dialog, Settings list, code-keyed error table, keyboard rules, and the shipped CSS. Mockup: [`ui/workspaces-mockup.html`](ui/workspaces-mockup.html). |
 | [`ui/sessions.md`](ui/sessions.md) | Sessions side-panel view: activity-bar placement, header and rows, row menu, tab-menu item, name dialog, copy, keyboard/ARIA, and the CSS to add. Mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
+| [`ui/topbar-session.md`](ui/topbar-session.md) | The active session's name in the top bar: placement after the workspace chip, markup, CSS, the `sessions.js` fill, states, ARIA and acceptance criteria. Mockup: [`ui/topbar-session-mockup.html`](ui/topbar-session-mockup.html). |
 | [`ui/workspace-placement-mockup.html`](ui/workspace-placement-mockup.html) | Workspace placement mockup. |
 
 ## Research

@@ -190,6 +190,14 @@ const html = `<!DOCTYPE html><html><head>
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">📓 Notebook</button>
+      <span id="session-bar" class="topbar-session" hidden>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name" id="topbar-session-name"></span>
+        </span>
+      </span>
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="mobile-title" class="mobile-title" aria-label="Browse notes"></button>
       <button id="mobile-capture" class="icon-btn" title="Quick capture" aria-label="Quick capture" hidden>＋</button>
@@ -40776,6 +40784,65 @@ function check(label, cond, extra) {
       ssRaceRes === false && JSON.stringify(ssSnap()) === ssRaceBefore &&
       ssPaths().join(",") === "notes/a.md" && S.getActive() === "notes/a.md",
       "res=" + ssRaceRes);
+
+    // --- top-bar label -------------------------------------------------
+    // The label is context, not a control: it names the active session and
+    // must follow every model change without a reload.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1");
+    const tbBar = () => $("session-bar");
+    const tbName = () => $("topbar-session-name");
+    const tbChip = () => tbBar().querySelector(".topbar-session-chip");
+    check("topbar session: names the active session at load",
+      !tbBar().hidden && tbName().textContent === "One" &&
+      tbChip().title === "Session: One",
+      tbName().textContent + " / " + tbChip().title);
+    check("topbar session: reads 'Session: {name}' and adds no tab stop",
+      tbBar().textContent.replace(/\s+/g, " ").trim() === "Session: One" &&
+      tbBar().querySelector("a, button, [tabindex], [contenteditable]") === null,
+      JSON.stringify(tbBar().textContent));
+    check("topbar session: the glyph and divider are hidden from assistive tech",
+      tbBar().querySelector(".topbar-session-glyph")
+        .getAttribute("aria-hidden") === "true" &&
+      tbBar().querySelector(".topbar-divider")
+        .getAttribute("aria-hidden") === "true");
+
+    await S.swapTo("s2");
+    await tick(50);
+    check("topbar session: a switch repaints the label",
+      tbName().textContent === "Two" && tbChip().title === "Session: Two",
+      tbName().textContent);
+
+    S.renameSession("s2", "Firmware bring-up");
+    await tick(30);
+    check("topbar session: renaming the active session repaints the label",
+      tbName().textContent === "Firmware bring-up" &&
+      tbChip().title === "Session: Firmware bring-up",
+      tbName().textContent);
+
+    S.renameSession("s1", "Inactive rename");
+    await tick(30);
+    check("topbar session: renaming an inactive session leaves the label",
+      tbName().textContent === "Firmware bring-up", tbName().textContent);
+
+    await S.deleteSession("s2");
+    await tick(50);
+    check("topbar session: deleting the active session names the neighbour",
+      S.getActiveSessionId() === "s1" &&
+      tbName().textContent === "Inactive rename",
+      S.getActiveSessionId() + "/" + tbName().textContent);
+
+    const ssLong = "Sensor calibration — Q4 hardware sync v2";
+    await ssLoad([{ id: "s1", name: ssLong,
+                    openFiles: [], activeFile: null }], "s1");
+    check("topbar session: a 40-character name is kept whole in text and title",
+      tbName().textContent === ssLong &&
+      tbChip().title === "Session: " + ssLong,
+      tbName().textContent);
 
     window.NB.menu.close();
   }

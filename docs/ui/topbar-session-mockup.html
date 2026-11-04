@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top bar — the active session name (reference mockup)</title>
+<style>
+/* ==================================================================
+   REFERENCE MOCKUP — the active session name in the top bar.
+
+   Every app colour, size and radius below is copied from
+   static/css/style.css. topbar-session.md is normative; where this file
+   and the spec differ, the spec wins.
+
+   Differences from the app, all so several app windows can live on one
+   page:
+     - the app windows are .win boxes; the app's own #app fills the
+       viewport;
+     - the native tooltip in board 4 is drawn as page furniture, since a
+       real title attribute cannot be screenshotted;
+     - a few .demo-* helpers force a state for a still frame.
+
+   Nothing is wired to a server. The theme toggle is the only script.
+   ================================================================== */
+
+/* ---- tokens: verbatim from style.css :root ------------------------ */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --accent-fg: #14151a;
+  --ws-fg-muted: #9799a4;
+  --activity-bar-width: 48px;
+  --side-panel-width: 240px;
+  --topbar-h: 46px;
+  --outline-width: 220px;
+}
+body[data-theme="light"],
+.win[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --accent-fg: #ffffff;
+  --ws-fg-muted: #5d6470;
+}
+
+* { box-sizing: border-box; }
+/* The app sets html { font-size: calc(14px * --font-scale) }; every rem
+ * below is the app's, so the windows are drawn at --font-scale: 1. */
+html { font-size: 14px; }
+html, body { margin: 0; }
+body {
+  background: #14151a; color: #e6e6ea;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 28px 32px 64px;
+}
+body[data-theme="light"] { background: #e9ecf1; color: #3a4050; }
+.page-head { max-width: 1180px; margin: 0 auto 26px; display: flex; align-items: flex-end; gap: 20px; }
+.page-head h1 { margin: 0; font-size: 1.65rem; letter-spacing: -.3px; }
+body[data-theme="light"] .page-head h1 { color: #1f2330; }
+.lead { margin: 4px 0 0; color: #8b8d98; font-size: 1rem; line-height: 1.5; max-width: 82ch; }
+body[data-theme="light"] .lead { color: #5d6470; }
+.page-head .spacer { flex: 1 1 auto; }
+.seg { display: inline-flex; border: 1px solid #383a45; border-radius: 7px; overflow: hidden; }
+.seg button {
+  background: #22232a; color: #e6e6ea; border: 0; border-right: 1px solid #383a45;
+  padding: 6px 11px; font: inherit; font-size: .92rem; cursor: pointer;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: #7c9cff; color: #14151a; font-weight: 600; }
+body[data-theme="light"] .seg { border-color: #d8dde4; }
+body[data-theme="light"] .seg button { background: #fff; color: #3a4050; border-right-color: #d8dde4; }
+body[data-theme="light"] .seg button[aria-pressed="true"] { background: #2f5fd0; color: #fff; }
+
+.board { max-width: 1180px; margin: 0 auto 46px; }
+.board > h2 {
+  font-size: .88rem; text-transform: uppercase; letter-spacing: 1.1px;
+  color: #8b8d98; margin: 0 0 8px; font-weight: 600;
+}
+body[data-theme="light"] .board > h2 { color: #5d6470; }
+.board .cap { margin: 0 0 14px; color: #8b8d98; font-size: .98rem; line-height: 1.55; max-width: 100ch; }
+body[data-theme="light"] .board .cap { color: #5d6470; }
+.board .cap b { color: #e6e6ea; }
+body[data-theme="light"] .board .cap b { color: #1f2330; }
+.row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.slice-label { margin: 0 0 8px; font-size: .88rem; color: #8b8d98; letter-spacing: .2px; }
+body[data-theme="light"] .slice-label { color: #5d6470; }
+.note {
+  margin: 12px 0 0; padding: 5px 0 5px 11px; border-left: 2px solid #383a45;
+  color: #8b8d98; font-size: .94rem; line-height: 1.55; max-width: 100ch;
+}
+body[data-theme="light"] .note { color: #5d6470; border-left-color: #d8dde4; }
+.note b { color: #e6e6ea; }
+body[data-theme="light"] .note b { color: #1f2330; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; color: #b9c2d8; }
+body[data-theme="light"] code { color: #3a4050; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+
+/* ---- the app window ---------------------------------------------- */
+.win {
+  width: 1180px; max-width: 100%; height: 620px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid #33343d; border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .4);
+  position: relative;
+}
+body[data-theme="light"] .win { box-shadow: 0 18px 50px rgba(31, 35, 48, .16); }
+.win--shell { height: 560px; }
+.win--bar { height: auto; }
+.win--phone { width: 390px; height: 210px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px; height: var(--topbar-h);
+  padding: 0 12px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  position: relative; z-index: 40;
+}
+.topbar > button {
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; font-size: .93rem; cursor: pointer; font-family: inherit;
+}
+.topbar > button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.topbar > button.brand {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem;
+  background: transparent; border: none; padding: 4px 6px;
+  min-width: 0; max-width: 40%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brand-icon {
+  width: 1.1em; height: 1.1em; border-radius: 3px; display: block; flex: 0 0 auto;
+  background: linear-gradient(140deg, var(--accent), #9a7bff);
+}
+.spacer { flex: 1 1 auto; }
+.icon-btn {
+  background: none; border: none; color: var(--fg-muted);
+  font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer; font-family: inherit;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.topbar-divider {
+  flex: 0 0 1px; align-self: center; width: 1px; height: 16px; background: var(--border);
+}
+.ws-chip {
+  display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 240px;
+  height: 28px; padding: 0 8px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: .84rem; font-weight: 600; text-align: left; cursor: pointer; font-family: inherit;
+}
+.ws-chip:hover { background: var(--accent-soft); border-color: var(--accent); }
+.workspace-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+.workspace-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-caret { flex: 0 0 auto; color: var(--fg-muted); font-size: .72rem; line-height: 1; }
+
+.topbar > button:focus-visible,
+.icon-btn:focus-visible,
+.activity-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ==================================================================
+   THE DELTA — the active session name.
+
+   Context, not a control: no face, no border, no hover, no tab stop.
+   A session is a named set of open tabs inside the workspace, so it
+   sits after the chip, separated by the same 1 x 16 px rule.
+   ================================================================== */
+.topbar-session {
+  display: flex; align-items: center; gap: 12px;
+  flex: 0 1 auto; min-width: 0;
+}
+/* The bar ships hidden and sessions.js fills it, so an empty label can
+ * never paint an empty slot or a stray divider. */
+.topbar-session[hidden] { display: none; }
+.topbar-session-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.topbar-session-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+.topbar-session-name {
+  min-width: 0; max-width: 17em;          /* 200 px at the .84rem label size */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .84rem; font-weight: 500; line-height: 1.2;
+  color: var(--fg-muted);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0; flex: 1 1 auto; position: relative;
+}
+
+.activity-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0; background: var(--bg-panel); border-right: 1px solid var(--border);
+  overflow: hidden; min-width: 0;
+}
+.activity-btn {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; color: var(--fg-muted);
+  cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 0; position: relative;
+}
+.activity-btn:hover, .activity-btn.active { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active::before {
+  content: ""; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 2px;
+  border-radius: 1px; background: var(--accent);
+}
+.activity-spacer { flex: 1 1 auto; }
+
+.side-panel {
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 7px 10px; flex: 0 0 auto; font-size: .79rem; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted); border-bottom: 1px solid var(--border);
+}
+.panel-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-header-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.session-total {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 5px;
+  border: 1px solid var(--border); border-radius: 5px;
+  color: var(--fg-muted); font-size: .72rem; font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.session-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 5px;
+  color: var(--fg-muted); font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer;
+}
+.session-add:hover { color: var(--fg); background: var(--accent-soft); }
+.collapse-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; border-radius: 5px;
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 1.07rem; line-height: 1;
+}
+.collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+.sessions-list {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  margin-right: 8px; padding: 6px 6px 10px;
+  overflow-y: auto; overflow-x: hidden;
+}
+.session-row-wrap { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.session-row {
+  position: relative; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center;
+  min-height: 30px; padding: 3px 6px 3px 10px;
+  background: none; border: 0; border-radius: 6px; color: var(--fg);
+  font: inherit; font-size: .9rem; line-height: 1.35;
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.session-row-wrap:hover .session-row:not([aria-current="true"]) { background: var(--bg-elev); }
+.session-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.session-row[aria-current="true"]::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 2px; height: 14px; margin-top: -7px;
+  border-radius: 0 1px 1px 0; background: var(--accent);
+}
+.session-name {
+  flex: 1 1 auto; min-width: 0; margin-right: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-dot {
+  flex: 0 0 8px; width: 8px; height: 8px; margin-right: 4px;
+  border-radius: 50%; background: var(--accent);
+}
+.session-count {
+  flex: 0 0 auto; min-width: 2ch; text-align: right;
+  font-size: .76rem; font-variant-numeric: tabular-nums; color: var(--ws-fg-muted);
+}
+.session-row[aria-current="true"] .session-count { color: var(--fg); font-weight: 400; }
+.session-more {
+  flex: 0 0 24px; display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 5px;
+  color: var(--fg-muted); font: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.session-row-wrap.is-active .session-more,
+.session-row-wrap:hover .session-more { color: var(--fg); }
+.session-more:hover { color: var(--fg); background: var(--accent-soft); }
+.sessions-foot {
+  flex: 0 0 auto; display: flex; align-items: flex-start; gap: 8px;
+  margin: 0; padding: 9px 12px 10px; border-top: 1px solid var(--border);
+  color: var(--ws-fg-muted); font-size: .76rem; line-height: 1.45;
+}
+.sessions-foot-pin { flex: 0 0 auto; font-size: .72rem; line-height: 1.5; color: var(--fg-muted); }
+
+.editor-pane { background: var(--bg); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tab-bar {
+  display: flex; align-items: flex-end; gap: 2px;
+  --tab-min-width: 120px; --tab-width: 170px; --tab-max-width: 220px;
+  flex: 0 0 auto; height: 34px; padding: 0 6px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); overflow: hidden;
+}
+.tab-pinned { display: flex; align-items: flex-end; gap: 2px; flex: 0 0 auto; max-width: 50%; height: 100%; overflow: hidden; }
+.tab-list { display: flex; align-items: flex-end; gap: 2px; flex: 1 1 auto; min-width: 0; height: 100%; overflow: hidden; }
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1 1 var(--tab-width); min-width: var(--tab-min-width); max-width: var(--tab-max-width);
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-bottom: none;
+  border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap;
+  font-size: .89rem; color: var(--fg-muted);
+}
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.tab .tab-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab.pinned { flex: 0 0 auto; max-width: none; padding-right: 10px; }
+.tab .tab-close { background: none; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 3px; font-family: inherit; }
+.outline-toggle { align-self: center; flex: 0 0 auto; font-size: 1rem; padding: 2px 6px; }
+.editor-body { flex: 1 1 auto; min-height: 0; padding: 28px 32px; overflow: hidden; }
+.doc-h1 { font-size: 1.55rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -.2px; }
+.doc-p { color: var(--fg-muted); margin: 0 0 8px; max-width: 48ch; }
+.doc-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; max-width: 48ch; }
+
+/* ---- the phone shell (board 6) ----------------------------------- */
+.phone .topbar { height: 52px; gap: 4px; padding: 0 4px; }
+.phone .topbar .brand,
+.phone .topbar .topbar-divider,
+.phone .topbar .topbar-session { display: none; }
+.phone .topbar .ws-chip {
+  width: 44px; height: 44px; padding: 0; gap: 0; justify-content: center; flex: 0 0 auto;
+}
+.phone .topbar .workspace-glyph { width: 20px; height: 20px; flex: 0 0 20px; }
+.phone .topbar .workspace-name {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.phone .topbar .workspace-caret { display: none; }
+.phone .topbar .topbar-actions { flex: 1 1 auto; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.phone .m-btn {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 8px;
+  color: var(--fg); font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.phone .m-btn[disabled] { color: var(--fg-muted); opacity: .4; cursor: default; }
+.phone .m-title {
+  flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 4px;
+  background: none; border: 0; border-radius: 8px; color: var(--fg);
+  font: 600 16px/1.25 inherit; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- the drawn native tooltip (board 4) --------------------------- */
+.tipbox {
+  width: 520px; max-width: 100%;
+  padding: 56px 20px 20px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tip-host { position: relative; }
+.tip {
+  position: absolute; left: 0; bottom: calc(100% + 9px);
+  padding: 3px 7px; border-radius: 4px;
+  background: #eceef2; color: #1f2330;
+  font-size: .78rem; line-height: 1.35; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+  pointer-events: none;
+}
+.tip::after {
+  content: ""; position: absolute; left: 14px; top: 100%;
+  border: 5px solid transparent; border-top-color: #eceef2;
+}
+
+/* ---- tables ------------------------------------------------------- */
+.spec {
+  width: 100%; border-collapse: collapse; font-size: .94rem;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+.spec th, .spec td { padding: 8px 11px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.spec th { font-size: .72rem; text-transform: uppercase; letter-spacing: .7px; color: var(--fg-muted); font-weight: 600; }
+.spec td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
+.spec tr:last-child td { border-bottom: 0; }
+.spec code { color: var(--fg-muted); }
+.spec--dark { background: #1c1d23; border-color: #33343d; color: #e6e6ea; }
+.spec-wrap { max-width: 1180px; margin: 0 auto 46px; }
+.spec-wrap h2 {
+  font-size: .88rem; text-transform: uppercase; letter-spacing: 1.1px;
+  color: #8b8d98; margin: 0 0 8px; font-weight: 600;
+}
+body[data-theme="light"] .spec-wrap h2 { color: #5d6470; }
+</style>
+</head>
+<body data-theme="dark">
+
+<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+    <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+    <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </symbol>
+  <!-- The session glyph: two stacked bars, a set. Deliberately not the
+       workspace's two stacked cards, so the two labels never read as the
+       same kind of thing. 1.3 stroke at a 12 px box, like the chip. -->
+  <symbol id="nb-icon-session" viewBox="0 0 16 16">
+    <rect x="2.5" y="3.3" width="11" height="3.8" rx="1.4" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+    <rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+  </symbol>
+</svg>
+
+<header class="page-head">
+  <div>
+    <h1>Top bar — the active session name</h1>
+    <p class="lead">The current session is named beside the workspace chip: <b>Notebook&nbsp;│&nbsp;Notes&nbsp;│&nbsp;Deep
+      work</b>. It is a label, not a control — no face, no border, no hover, no new tab stop. It is filled by the client
+      from the session model, so it survives a rename, a switch and a delete without a reload.</p>
+  </div>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<!-- ============================ 1 ============================ -->
+<section class="board">
+  <h2>1 · In the shell</h2>
+  <p class="cap">The shipped top bar plus one element. Reading left to right: the brand, the workspace chip (a
+    control — filled face, border, caret), then the session name (context — bare muted text). The Sessions view is open
+    so the label and the active row can be compared: they always name the same session.</p>
+
+  <div class="win win--shell">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip" title="Notes — /home/shaun/projects/notebook">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="topbar-session">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="Session: Deep work">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name">Deep work</span>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+        <button class="activity-btn active" title="Sessions" aria-label="Sessions" aria-pressed="true">🗂</button>
+        <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+        <button class="activity-btn" title="Bookmarks" aria-label="Bookmarks">🔖</button>
+        <button class="activity-btn" title="Recent files" aria-label="Recent files">🕒</button>
+        <button class="activity-btn" title="Search" aria-label="Search">🔍</button>
+        <button class="activity-btn" title="AI Assistant" aria-label="AI Assistant">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel" aria-label="Sessions">
+        <div class="panel-header">
+          <div class="panel-heading">
+            <span class="panel-title">Sessions</span>
+            <span class="session-total"><span class="session-total-n">3</span><span class="sr-only"> sessions</span></span>
+          </div>
+          <div class="panel-header-actions">
+            <button class="session-add" title="New session" aria-label="New session">+</button>
+            <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+          </div>
+        </div>
+
+        <div class="sessions-list">
+          <div class="session-row-wrap is-active">
+            <button class="session-row" aria-current="true" title="Deep work">
+              <span class="session-name">Deep work</span>
+              <span class="session-count">2<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Deep work actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap">
+            <button class="session-row" title="Firmware bring-up">
+              <span class="session-name">Firmware bring-up</span>
+              <span class="session-count">0<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Firmware bring-up actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap">
+            <button class="session-row" title="Reading">
+              <span class="session-name">Reading</span>
+              <span class="session-dot" aria-hidden="true"></span>
+              <span class="sr-only">, unsaved changes</span>
+              <span class="session-count">4<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Reading actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+        </div>
+
+        <p class="sessions-foot"><span class="sessions-foot-pin" aria-hidden="true">📌</span><span>Pinned tabs are shared by every session.</span></p>
+      </aside>
+
+      <section class="editor-pane">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+        <div class="editor-body">
+          <h1 class="doc-h1">Sensors</h1>
+          <p class="doc-p">Calibration runs on a 10 Hz timer. The raw stream is filtered before it reaches the log.</p>
+          <hr class="doc-rule">
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <p class="note"><b>Why after the chip:</b> a session lives inside a workspace, so the row reads container → set. Putting
+    it before the chip would claim the session is global, and the sessions model is stored per workspace
+    (<code>workspaceState[&lt;id&gt;]</code>).</p>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="board">
+  <h2>2 · Before / after</h2>
+  <p class="cap">The same shell, the same session. Only one element is added. Nothing moves: the label takes space out of
+    the <code>.topbar-spacer</code>, which sits between it and the actions, so the right-hand controls stay put.</p>
+
+  <div class="row">
+    <div style="flex:1 1 100%;">
+      <p class="slice-label">Before — shipped</p>
+      <div class="win win--bar">
+        <div class="topbar">
+          <button class="brand"><span class="brand-icon"></span>Notebook</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button class="ws-chip">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <span class="spacer"></span>
+          <button class="icon-btn" title="Back">←</button>
+          <button class="icon-btn" title="Edit Markdown source">📝</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1 1 100%;">
+      <p class="slice-label">After — the active session named</p>
+      <div class="win win--bar">
+        <div class="topbar">
+          <button class="brand"><span class="brand-icon"></span>Notebook</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button class="ws-chip">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <span class="topbar-session">
+            <span class="topbar-divider" aria-hidden="true"></span>
+            <span class="topbar-session-chip" title="Session: Deep work">
+              <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+              <span class="sr-only">Session: </span>
+              <span class="topbar-session-name">Deep work</span>
+            </span>
+          </span>
+          <span class="spacer"></span>
+          <button class="icon-btn" title="Back">←</button>
+          <button class="icon-btn" title="Edit Markdown source">📝</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>One session, named “Main”, still shows.</b> The label states the current session, always. It is not a
+    “you have more than one session” badge, so it never appears or disappears as sessions are created and deleted.</p>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="board">
+  <h2>3 · Sizes and colour</h2>
+  <p class="cap">The label is the workspace chip's type size with one step less emphasis: <code>.84rem</code> at weight
+    500 in <code>--fg-muted</code>, no face. The glyph is 12 px, the same box as the chip's. The whole label is inside
+    the 46 px row, so the bar keeps its height.</p>
+
+  <div class="win win--bar" style="margin-bottom:18px;">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="topbar-session">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="Session: Deep work">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name">Deep work</span>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+
+  <table class="spec spec--dark">
+    <thead>
+      <tr><th>Part</th><th>Spec</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>placement</td><td>after <code>#workspace-bar</code>, before <code>.topbar-spacer</code></td><td>container → set; the divider keeps the two labels apart</td></tr>
+      <tr><td>divider</td><td>the shipped <code>.topbar-divider</code>: 1 × 16 px, <code>--border</code></td><td>the same rule that already separates the brand from the chip</td></tr>
+      <tr><td>wrapper</td><td><code>.topbar-session</code>: <code>display:flex</code>, <code>gap:12px</code> (the topbar's gap), <code>flex:0 1 auto</code>, <code>min-width:0</code></td><td>one node to hide; shrinks rather than pushing the actions</td></tr>
+      <tr><td>glyph</td><td>12 × 12, <code>stroke:currentColor</code> 1.3, <code>--fg-muted</code>, <code>aria-hidden</code></td><td>the chip's glyph box; a set of two bars means “session”, not “workspace”</td></tr>
+      <tr><td>name</td><td><code>.84rem</code>, 500, <code>--fg-muted</code>, <code>max-width:17em</code> (200 px), ellipsis + <code>title</code></td><td>one weight below the chip's 600 in <code>--fg</code>; the name is context, not the control</td></tr>
+      <tr><td>height</td><td>none; the row stays 46 px</td><td>the label is inline content, not a control box</td></tr>
+      <tr><td>states</td><td>none — no hover, no focus, no pressed</td><td>it is not interactive, and it must not look as if it were</td></tr>
+      <tr><td>empty</td><td><code>.topbar-session[hidden]</code> until the model has a name</td><td>no empty slot and no stray divider on the first frame</td></tr>
+    </tbody>
+  </table>
+
+  <table class="spec spec--dark" style="margin-top:18px;">
+    <thead>
+      <tr><th>Pair</th><th>Dark</th><th>Light</th><th>Verdict</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>--fg-muted</code> on <code>--bg-panel</code> — the name</td><td>4.74</td><td>5.56</td><td>passes 4.5:1</td></tr>
+      <tr><td><code>--fg-muted</code> on <code>--bg-panel</code> — the glyph</td><td>4.74</td><td>5.56</td><td>decorative and <code>aria-hidden</code>; still above 3:1</td></tr>
+      <tr><td><code>--fg</code> at 600 on <code>--bg-elev</code> — the chip beside it</td><td>11.30</td><td>13.48</td><td>the emphasis step the label must not match</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="board">
+  <h2>4 · A long name</h2>
+  <p class="cap">Session names cap at 40 characters. The label ellipsises at 17em and carries the full string in its
+    <code>title</code>, prefixed so a hover explains the element as well as the name. The tooltip below is drawn — a real
+    <code>title</code> cannot be screenshotted.</p>
+
+  <div class="win win--bar">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="topbar-session">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="Session: Sensor calibration — Q4 hardware sync">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name">Sensor calibration — Q4 hardware sync</span>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+
+  <p class="slice-label" style="margin-top:18px;">the label with its tooltip, drawn</p>
+  <div class="tipbox">
+    <span class="topbar-session-chip tip-host" title="Session: Sensor calibration — Q4 hardware sync">
+      <span class="tip">Session: Sensor calibration — Q4 hardware sync</span>
+      <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+      <span class="sr-only">Session: </span>
+      <span class="topbar-session-name">Sensor calibration — Q4 hardware sync</span>
+    </span>
+  </div>
+
+  <p class="note"><b>Why 17em and not no cap:</b> an uncapped label would push against the spacer, and in a short window
+    would take room the workspace name needs. The name is never truncated in the model — only in this one line, with the
+    full string one hover away.</p>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="board">
+  <h2>5 · A narrow desktop window</h2>
+  <p class="cap">The topbar at 861 px — the narrowest width that is still the desktop shell. A long brand, a long
+    workspace name and a long session name share the shortfall: all three ellipsise, and nothing overflows. The actions
+    keep their width because a flex item never shrinks below its content.</p>
+
+  <div class="win win--bar" style="width:861px;">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Shaun’s engineering notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Firmware bring-up board</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="topbar-session">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="Session: Sensor calibration — Q4 hardware sync">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name">Sensor calibration — Q4 hardware sync</span>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+
+  <p class="note"><b>Below 861 px</b> the phone shell takes over and the label is gone (board 6). There is no desktop
+    width where it needs a second rule.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="board">
+  <h2>6 · Top bar hidden, and the phone</h2>
+  <p class="cap">Left: the user's “Hide top bar” setting. The label goes with the bar — it is a part of that bar, exactly
+    like the chip. Nothing is lost that the settings row does not explain: the session list is still one rail click away
+    (<b>🗂</b>) and the tab strip still shows that session's tabs. Right: the phone, where sessions do not exist
+    — the reader has one document and no tab bar — so the label is hidden with the same query that hides the Sessions
+    view.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">topbar hidden</p>
+      <div class="win" style="width:420px; height:180px;">
+        <div class="layout" style="grid-template-columns: var(--activity-bar-width) 1fr;">
+          <nav class="activity-bar" aria-label="Activity bar">
+            <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+            <button class="activity-btn" title="Sessions" aria-label="Sessions">🗂</button>
+            <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+            <span class="activity-spacer"></span>
+            <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+          </nav>
+          <section class="editor-pane">
+            <div class="tab-bar">
+              <div class="tab-list">
+                <div class="tab active"><span class="tab-label">Sensors.md</span><span class="tab-close" aria-hidden="true">×</span></div>
+              </div>
+            </div>
+            <div class="editor-body" style="padding:20px;">
+              <h1 class="doc-h1" style="font-size:1.2rem;">Sensors</h1>
+              <p class="doc-p">No bar, no session label. The 🗂 rail icon is the only way back to the list.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">phone · 390 px — the label is absent</p>
+      <div class="win win--phone phone">
+        <div class="topbar">
+          <button class="ws-chip" title="Workspace: Notes" aria-label="Workspace: Notes">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+          </button>
+          <div class="topbar-actions">
+            <button class="m-btn" title="Back" aria-label="Back" disabled>←</button>
+            <button class="m-title" type="button">Sensors</button>
+            <button class="m-btn" title="Quick capture" aria-label="Quick capture">＋</button>
+            <button class="m-btn" title="Note menu" aria-label="Note menu">⋯</button>
+          </div>
+        </div>
+        <div class="editor-body" style="padding:16px 20px;">
+          <h1 class="doc-h1" style="font-size:1.1rem;">Sensors</h1>
+          <p class="doc-p">The phone top bar names the note, not a session.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="board">
+  <h2>7 · Light theme</h2>
+  <p class="cap">The same pair: <code>#5d6470</code> on <code>#f6f7f9</code> is 5.56:1. The label keeps its one step of
+    emphasis below the chip.</p>
+
+  <div class="win win--bar" data-theme="light">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="topbar-session">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="topbar-session-chip" title="Session: Deep work">
+          <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="topbar-session-name">Deep work</span>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section class="board">
+  <h2>8 · The alternatives, and why not</h2>
+  <p class="cap">Each of these was drawn and rejected. The reasons are the design, not a matter of taste: each one adds a
+    second job to an element that already has one.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">A · a chip that opens Sessions</p>
+      <div class="win win--bar" style="width:520px;">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>Notebook</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button class="ws-chip">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <button class="ws-chip" style="max-width:160px;">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span class="workspace-name">Deep work</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <span class="spacer"></span>
+          <button class="icon-btn" title="Back">←</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">B · merged into the workspace chip</p>
+      <div class="win win--bar" style="width:520px;">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>Notebook</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button class="ws-chip" style="max-width:260px;">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+            <span style="flex:0 0 auto; color:var(--fg-muted);">·</span>
+            <span style="flex:0 0 auto; color:var(--fg-muted); font-weight:500;">Deep work</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <span class="spacer"></span>
+          <button class="icon-btn" title="Back">←</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">C · in the tab bar</p>
+      <div class="win win--bar" style="width:520px;">
+        <div class="topbar" style="gap:8px;">
+          <button class="brand"><span class="brand-icon"></span>Notebook</button>
+          <span class="topbar-divider" aria-hidden="true"></span>
+          <button class="ws-chip" style="max-width:160px;">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+            <span class="workspace-caret" aria-hidden="true">▾</span>
+          </button>
+          <span class="spacer"></span>
+          <button class="icon-btn" title="Back">←</button>
+        </div>
+        <div class="tab-bar" style="height:34px;">
+          <span style="display:flex; align-items:center; gap:5px; padding:0 8px 0 4px; color:var(--fg-muted); font-size:.8rem; max-width:150px;">
+            <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Deep work</span>
+          </span>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table class="spec spec--dark" style="margin-top:18px;">
+    <thead><tr><th>Direction</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>A · a chip that opens Sessions</td><td><b>Rejected.</b> It adds a second control that switches the side panel, duplicating the 🗂 rail icon, plus a tab stop, a hover face and a focus ring — for a request to <i>show</i> a name. Hover would also promise a menu, because that is what the chip beside it does.</td></tr>
+      <tr><td>B · merged into the workspace chip</td><td><b>Rejected.</b> The chip is the workspace picker: its menu lists workspaces, not sessions. Clicking a label that names a session to open a workspace list is a lie. It also makes a 40-character session name compete with the workspace name inside one 240 px box.</td></tr>
+      <tr><td>C · in the tab bar</td><td><b>Rejected.</b> The strip is the session's content; session chrome there competes with the tabs at exactly the widths where tabs need the room.</td></tr>
+      <tr><td>D · right-aligned by the actions</td><td><b>Rejected.</b> Placed at the right edge it reads as a status readout and moves whenever an action appears or disappears. The left cluster is the identity of what you are looking at.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<div class="spec-wrap">
+  <h2>9 · States, ARIA and the update path</h2>
+  <table class="spec spec--dark">
+    <thead><tr><th>Case</th><th>What the label does</th></tr></thead>
+    <tbody>
+      <tr><td>first paint</td><td>shipped <code>hidden</code>; <code>sessions.js</code> fills it at module load and removes <code>hidden</code>. The bar is between the chip and the spacer, so nothing else moves — no layout shift</td></tr>
+      <tr><td>switch a session</td><td>text and <code>title</code> update from the same <code>tabs:changed</code> render that repaints the rows</td></tr>
+      <tr><td>rename the active session</td><td>updates in place, without a reload</td></tr>
+      <tr><td>create a session</td><td>the new session becomes active, so the label names it</td></tr>
+      <tr><td>delete the active session</td><td>names the neighbour the app switched to</td></tr>
+      <tr><td>delete an inactive session</td><td>unchanged</td></tr>
+      <tr><td>rename an inactive session</td><td>unchanged</td></tr>
+      <tr><td>40-character name</td><td>ellipsised at 17em; the full name in <code>title</code></td></tr>
+      <tr><td>viewer role</td><td>identical; a viewer may switch, and the label follows</td></tr>
+      <tr><td>unsaved edits</td><td><b>no dot.</b> The active tab already carries the dirty dot; a second marker on chrome that has no action would read as an alert</td></tr>
+      <tr><td>top bar hidden</td><td>gone with the bar</td></tr>
+      <tr><td>phone / coarse pointer</td><td><code>display:none</code> with the Sessions view; the phone names the note instead</td></tr>
+      <tr><td>accessible text</td><td>“Session: Deep work” — an <code>.sr-only</code> prefix inside the label. Not a live region: a rename is confirmed by the dialog and by the Sessions row</td></tr>
+    </tbody>
+  </table>
+
+  <p class="note"><b>ARIA:</b> the wrapper and the label are plain <code>span</code> elements with no role, no
+    <code>aria-label</code> and no tab stop. The value is read as text. The glyph is <code>aria-hidden</code>. The
+    divider is <code>aria-hidden</code>. There is nothing to announce and nothing to focus.</p>
+</div>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-btn]"));
+    function setTheme(theme) {
+      document.body.dataset.theme = theme;
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.themeBtn === theme ? "true" : "false");
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () { setTheme(b.dataset.themeBtn); });
+    });
+    setTheme("dark");
+  })();
+</script>
+</body>
+</html>

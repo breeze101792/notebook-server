@@ -230,6 +230,12 @@ The strip already shows that session's tabs, and no strip-level command acts on
 second indicator on the rail, the strip or the topbar would duplicate a fact the
 view states and add chrome to a bar that was just cleared of it.
 
+> **Revised after shipping:** the top bar now names the active session as a
+> plain, non-interactive label — the user's decision, recorded in
+> [`topbar-session.md`](topbar-session.md). The rail, the strip, the view and the
+> tab bar are still untouched, and nothing above is duplicated: the label shows
+> the name, the view shows the set.
+
 **D15 — The header `+` uses `aria-disabled`, not native `disabled`.** At the
 20-session cap and for a viewer the action is unavailable, but the reason must
 remain reachable: an `aria-disabled` button keeps its tab stop, its `title` and

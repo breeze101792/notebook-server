@@ -65,6 +65,7 @@
   const FOOT_TEXT = "Pinned tabs are shared by every session.";
   const ACTION_RENAME = "Rename…";
   const ACTION_DELETE = "Delete…";
+  const LABEL_SESSION = "Session: ";
 
   const viewEl = document.getElementById(VIEW_ID);
   // A shell without the host (an old cached index.html) gets no session UI
@@ -87,6 +88,16 @@
   let listEl = null;
   let addBtn = null;
   let totalNumEl = null;
+  // The top-bar label. Null in an older harness or a cached shell, so every
+  // use is guarded.
+  const topbarLabel = {
+    bar: document.getElementById("session-bar"),
+    name: document.getElementById("topbar-session-name"),
+    chip: null,
+  };
+  if (topbarLabel.bar) {
+    topbarLabel.chip = topbarLabel.bar.querySelector(".topbar-session-chip");
+  }
   // Row model, in list order: { id, name, count, dirty, active }.
   let sessions = [];
   let activeId = "";
@@ -181,8 +192,27 @@
     sessions = readSessions();
     activeId = readActiveId();
     for (const s of sessions) s.active = s.id === activeId;
+    renderTopbarLabel();
     if (signature() === lastSignature) { updateAddBtn(); return; }
     render();
+  }
+
+  /* The top bar names the active session. Called from refresh() before the
+   * signature guard: a rename or a switch must repaint the label even when
+   * the row list is unchanged. Every node is guarded, because the DOM
+   * harness is not this shell. */
+  function renderTopbarLabel() {
+    if (!topbarLabel.bar || !topbarLabel.name) return;
+    const active = sessions.find((s) => s.id === activeId);
+    if (!active) { topbarLabel.bar.hidden = true; return; }
+    if (topbarLabel.name.textContent !== active.name) {
+      topbarLabel.name.textContent = active.name;
+    }
+    if (topbarLabel.chip) {
+      const title = LABEL_SESSION + active.name;
+      if (topbarLabel.chip.title !== title) topbarLabel.chip.title = title;
+    }
+    topbarLabel.bar.hidden = false;
   }
 
   function readSessions() {

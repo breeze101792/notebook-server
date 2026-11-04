@@ -7908,6 +7908,37 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 .workspace-switch[aria-expanded="true"] .workspace-caret { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .workspace-caret { transition: none; } }
 
+/* The active session: context, not a control. It follows the chip because a
+ * session lives inside a workspace. No face, no hover, no tab stop, and the
+ * same 12 px gap the topbar uses, so the divider reads as a divider.
+ *
+ * The topbar- prefix is load-bearing: .session-name already names the
+ * Sessions row label (see the sessions view rules below), so an unprefixed
+ * rule here would repaint every row name and inherit its flex behaviour. */
+.topbar-session {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* sessions.js fills it. An empty label must never paint an empty slot or a
+ * stray rule on the first frame. */
+.topbar-session[hidden] { display: none; }
+.topbar-session-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.topbar-session-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+.topbar-session-name {
+  min-width: 0;
+  max-width: 17em;          /* 200 px at .84rem; the full name is in title */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .84rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg-muted);
+}
+
 /* The popover: one node shared by both mounts, appended to <body> at boot
  * because #activity-bar (overflow: hidden) and .tab-bar would clip a child.
  * position: fixed plus left/top set by workspaces.js from whichever trigger
@@ -8069,6 +8100,8 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
    * control keeps its accessible name. */
   #topbar .topbar-divider { display: none; }
   #workspace-bar { flex: 0 0 auto; }
+  /* Sessions are desktop-only (sessions.md D12); the phone names the note. */
+  #session-bar { display: none; }
   #topbar .workspace-switch {
     width: var(--m-hit);
     height: var(--m-hit);

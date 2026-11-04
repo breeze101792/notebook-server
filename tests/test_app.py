@@ -107,6 +107,21 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("wallpaper-intensity-bold", html)
         self.assertIn("wallpaper-fixed", html)
 
+    def test_index_renders_the_session_label_hidden_after_the_chip(self):
+        # The top-bar session label ships empty and hidden: the client owns
+        # the session model's normalisation, so the shell must not guess a
+        # name. It sits after the workspace chip and before the spacer, and
+        # only inside the workspace block -- the locked shell has no chip and
+        # must not show a session either.
+        html = self.client.get("/").get_data(as_text=True)
+        chip = html.index('id="workspace-bar"')
+        bar = html.index('id="session-bar"')
+        spacer = html.index('class="topbar-spacer"')
+        self.assertLess(chip, bar)
+        self.assertLess(bar, spacer)
+        self.assertIn('id="session-bar" class="topbar-session" hidden', html)
+        self.assertIn('id="topbar-session-name"></span>', html)
+
     def test_index_defaults_when_config_empty(self):
         # Fresh install: the same defaults app.js's DEFAULTS use, so the
         # first frame is correct even before any config is saved.
@@ -210,6 +225,9 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("--font-scale: 1.0", html)
         self.assertIn("--side-panel-width: 240px", html)
         self.assertNotIn("Secret Title", html)
+        # No chip and no session label before login: both live inside the
+        # workspace block, which needs a role or auth-off full access.
+        self.assertNotIn('id="session-bar"', html)
         self.assertIn("wallpaper-none", html)
         # The saved theme is not a secret; keep it so the login screen
         # matches the user's chosen theme.
