@@ -1024,6 +1024,74 @@ def _paths_overlap(path_a, path_b):
             or real_b.startswith(real_a + os.sep))
 
 
+def _same_file(path_a, path_b):
+    """True when both paths resolve to one existing file, else False."""
+    try:
+        return os.path.samefile(path_a, path_b)
+    except (OSError, ValueError):
+        return False
+
+
+def _same_entry(path_a, path_b):
+    """True when both paths name one existing directory entry.
+
+    lstat() is compared as a stat pair, so an intermediate symlink is
+    followed but a final-component symlink is not: a link and its target are
+    two entries, not one.
+    """
+    try:
+        st_a = os.lstat(path_a)
+        st_b = os.lstat(path_b)
+    except (OSError, ValueError):
+        return False
+    # A filesystem that reports st_ino 0 makes samestat() compare st_dev
+    # alone; without this a case-differing pair could look like one entry.
+    if not st_a.st_ino or not st_b.st_ino:
+        return False
+    return os.path.samestat(st_a, st_b)
+
+
+def _same_file_ignoring_case(path_a, path_b):
+    """True when both paths name one entry in two spellings of one case.
+
+    The casefold compare is what fires on macOS, where normcase() is the
+    identity.
+    """
+    if path_a == path_b:
+        return False
+    if not _same_entry(path_a, path_b):
+        return False
+    return (os.path.normcase(path_a).casefold()
+        == os.path.normcase(path_b).casefold())
+
+
+def _resolves_to_root(path, root):
+    """True when `path` is the notebook root itself; a symlink to it is not."""
+    if path == root:
+        return True
+    if os.path.islink(path):
+        return False
+    return _same_file(path, root)
+
+
+def _is_within(path, folder):
+    """True when `path` sits inside `folder` once symlinks are resolved.
+
+    Each existing ancestor is compared by inode, so a case-insensitive
+    filesystem cannot spell its way past the check and a symlinked folder is
+    followed the way the move or copy will follow it.
+    """
+    folder_real = os.path.realpath(folder)
+    current = os.path.realpath(path)
+    while True:
+        parent = os.path.dirname(current)
+        if parent == current:
+            return False
+        current = parent
+        if _same_file(current, folder_real):
+            return True
+
+
 def _workspace_name_problem(name, items, exclude_id=None):
     """Return (message, code) for an invalid name, or None when it is fine."""
     if not isinstance(name, str) or not name.strip():
@@ -3342,13 +3410,30 @@ def move():
     # self-clobber at worst (overwrite removes the destination -- which
     # IS the source -- before the copy), so reject it outright.
     norm_data = os.path.normpath(current_root())
-    if src == norm_data or dst == norm_data:
+    if _resolves_to_root(src, norm_data) or _resolves_to_root(dst, norm_data):
         return err("Invalid path", 400)
-    if src == dst:
+    # Two spellings can name one entry through a symlinked parent; only the
+    # case-only rename below may get past this guard.
+    if src == dst or (_same_entry(src, dst)
+                      and not _same_file_ignoring_case(src, dst)):
         return err("Source and destination are the same path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
     src_is_dir = os.path.isdir(src) and not os.path.islink(src)
+
+    # A case-only rename names the source under another spelling; rename in
+    # place rather than take the conflict branch, which would delete it.
+    if _same_file_ignoring_case(src, dst):
+        try:
+            os.rename(src, dst)
+        except OSError as exc:
+            return err("Could not move: %s" % exc, 500)
+        return jsonify({"from": data["from"], "to": data["to"]})
+
+    # A destination inside the source is refused before the conflict branch
+    # can delete the subtree that the failing rename would leave destroyed.
+    if src_is_dir and _is_within(dst, src):
+        return err("Cannot move a folder into itself", 400)
 
     if os.path.exists(dst):
         response, proceed = _conflict_response("to", data["to"], on_conflict)
@@ -3415,13 +3500,25 @@ def copy():
     # replaceable object, and copying onto the source itself would (with
     # overwrite) delete the file before copying it -- silent data loss.
     norm_data = os.path.normpath(current_root())
-    if src == norm_data or dst == norm_data:
+    if _resolves_to_root(src, norm_data) or _resolves_to_root(dst, norm_data):
         return err("Invalid path", 400)
-    if src == dst:
+    # Two spellings can name one entry through a symlinked parent.
+    if src == dst or _same_entry(src, dst):
         return err("Source and destination are the same path", 400)
     if not os.path.exists(src):
         return err("Source not found", 404)
     src_is_dir = os.path.isdir(src) and not os.path.islink(src)
+
+    # A copy onto itself under another case is refused untouched: the
+    # conflict branch would delete the source before copying it.
+    if _same_file_ignoring_case(src, dst):
+        return err("Source and destination are the same path", 400)
+
+    # A destination inside the source is refused before the conflict branch
+    # can delete the subtree that the failing copy would leave destroyed.
+    # A symlinked folder source is included: it cannot be copied as a file.
+    if os.path.isdir(src) and _is_within(dst, src):
+        return err("Cannot copy a folder into itself", 400)
 
     if os.path.exists(dst):
         response, proceed = _conflict_response("to", data["to"], on_conflict)

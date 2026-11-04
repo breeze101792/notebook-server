@@ -769,6 +769,78 @@ class TestMove(BaseTest):
         code, data = self.jget("/api/file?path=v.md")
         self.assertEqual(data["content"], "IMPORTANT")
 
+    def test_move_case_only_rename_keeps_the_file(self):
+        # Emulate a case-insensitive filesystem: the two spellings are one
+        # entry. The move must rename in place, never take the conflict
+        # branch -- "overwrite" would delete the source first.
+        self.post("/api/file", {"path": "Case.md", "content": "IMPORTANT"})
+        # A case-insensitive filesystem holds one entry for both spellings;
+        # on a case-sensitive one the second file makes the conflict branch
+        # reachable, which is what the overwrite call below exercises.
+        if not os.path.exists(os.path.join(nb.DATA_DIR, "case.md")):
+            self.post("/api/file", {"path": "case.md", "content": "OTHER"})
+        with mock.patch.object(nb, "_same_file_ignoring_case",
+                               return_value=True), \
+             mock.patch.object(nb, "_remove_path") as remove:
+            r = self.post("/api/move", {"from": "Case.md", "to": "case.md",
+                                        "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 200)
+        remove.assert_not_called()
+        code, data = self.jget("/api/file?path=case.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_move_onto_symlink_target_is_a_conflict(self):
+        # A symlink and its target resolve to one inode but are not case
+        # variants, so the destination is a real conflict.
+        self.post("/api/file", {"path": "a.md", "content": "IMPORTANT"})
+        os.symlink(os.path.join(nb.DATA_DIR, "a.md"),
+                   os.path.join(nb.DATA_DIR, "l.md"))
+        r = self.post("/api/move", {"from": "l.md", "to": "a.md"})
+        self.assertEqual(r.status_code, 409)
+        code, data = self.jget("/api/file?path=a.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_move_onto_symlink_named_like_a_case_variant_conflicts(self):
+        # Two directory entries, one inode: the names differ only by case but
+        # this is not a case-only rename, so it must not rename over the link.
+        self.post("/api/file", {"path": "a.md", "content": "IMPORTANT"})
+        os.symlink(os.path.join(nb.DATA_DIR, "a.md"),
+                   os.path.join(nb.DATA_DIR, "A.md"))
+        r = self.post("/api/move", {"from": "a.md", "to": "A.md"})
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(os.path.islink(os.path.join(nb.DATA_DIR, "A.md")))
+        code, data = self.jget("/api/file?path=a.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_move_same_entry_through_symlinked_parent_rejected(self):
+        # real/j.md and link/j.md are one entry. Overwrite would delete it
+        # before the rename fails, so the guard must reject it up front.
+        self.post("/api/create", {"path": "real", "type": "dir"})
+        self.post("/api/file", {"path": "real/j.md", "content": "KEEPME"})
+        os.symlink(os.path.join(nb.DATA_DIR, "real"),
+                   os.path.join(nb.DATA_DIR, "link"))
+        r = self.post("/api/move", {"from": "real/j.md", "to": "link/j.md",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        code, data = self.jget("/api/file?path=real/j.md")
+        self.assertEqual(data["content"], "KEEPME")
+
+    def test_move_dir_into_itself_rejected(self):
+        # A destination inside the source must not reach the overwrite
+        # branch: it deletes the destination subtree before rename() fails.
+        self.post("/api/create", {"path": "d", "type": "dir"})
+        self.post("/api/create", {"path": "d/sub", "type": "dir"})
+        self.post("/api/create", {"path": "d/sub/d", "type": "dir"})
+        self.post("/api/file", {"path": "d/sub/d/old.md", "content": "OLD"})
+        self.post("/api/file", {"path": "d/keep.md", "content": "KEEP"})
+        r = self.post("/api/move", {"from": "d", "to": "d/sub/d",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "d", "sub", "d", "old.md")))
+        self.assertTrue(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "d", "keep.md")))
+
     def test_move_to_root_rejected(self):
         # The notebook root is not a valid destination: with overwrite,
         # the conflict resolution would rmtree the whole data tree.
@@ -823,6 +895,58 @@ class TestCopy(BaseTest):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(os.path.isfile(os.path.join(nb.DATA_DIR, "d2", "x.md")))
 
+    def test_copy_same_file_ignoring_case_rejected(self):
+        # On a case-insensitive filesystem the destination can be the source
+        # under another spelling; "overwrite" would delete the source before
+        # the copy. A copy onto itself is rejected without touching anything.
+        self.post("/api/file", {"path": "Case.md", "content": "IMPORTANT"})
+        with mock.patch.object(nb, "_same_file_ignoring_case",
+                               return_value=True):
+            r = self.post("/api/copy", {"from": "Case.md", "to": "case.md",
+                                        "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        code, data = self.jget("/api/file?path=Case.md")
+        self.assertEqual(data["content"], "IMPORTANT")
+
+    def test_copy_same_entry_through_symlinked_parent_rejected(self):
+        # real/j.md and link/j.md are one entry; overwrite would truncate it.
+        self.post("/api/create", {"path": "real", "type": "dir"})
+        self.post("/api/file", {"path": "real/j.md", "content": "KEEPME"})
+        os.symlink(os.path.join(nb.DATA_DIR, "real"),
+                   os.path.join(nb.DATA_DIR, "link"))
+        r = self.post("/api/copy", {"from": "real/j.md", "to": "link/j.md",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        code, data = self.jget("/api/file?path=real/j.md")
+        self.assertEqual(data["content"], "KEEPME")
+
+    def test_copy_symlinked_dir_into_its_target_rejected(self):
+        # A symlinked folder cannot be copied as a file; without the guard
+        # the overwrite branch deletes the destination before the copy fails.
+        self.post("/api/create", {"path": "d", "type": "dir"})
+        self.post("/api/create", {"path": "d/sub", "type": "dir"})
+        self.post("/api/file", {"path": "d/sub/old.md", "content": "OLD"})
+        os.symlink(os.path.join(nb.DATA_DIR, "d"),
+                   os.path.join(nb.DATA_DIR, "l"))
+        r = self.post("/api/copy", {"from": "l", "to": "d/sub",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "d", "sub", "old.md")))
+
+    def test_copy_dir_into_itself_rejected(self):
+        # Overwrite would delete the destination subtree before the copy
+        # fails, so a destination inside the source is refused up front.
+        self.post("/api/create", {"path": "d", "type": "dir"})
+        self.post("/api/create", {"path": "d/sub", "type": "dir"})
+        self.post("/api/create", {"path": "d/sub/d", "type": "dir"})
+        self.post("/api/file", {"path": "d/sub/d/old.md", "content": "OLD"})
+        r = self.post("/api/copy", {"from": "d", "to": "d/sub/d",
+                                    "onConflict": "overwrite"})
+        self.assertEqual(r.status_code, 400)
+        self.assertTrue(os.path.isfile(
+            os.path.join(nb.DATA_DIR, "d", "sub", "d", "old.md")))
+
     def test_copy_onto_existing_conflict(self):
         self.post("/api/file", {"path": "a.md", "content": "A"})
         self.post("/api/file", {"path": "b.md", "content": "B"})
@@ -874,6 +998,45 @@ class TestCopy(BaseTest):
         r = self.post("/api/copy", {"from": "a.md", "to": "b.md",
                                     "onConflict": "dedupe"})
         self.assertEqual(r.status_code, 400)
+
+
+class TestPathHelpers(BaseTest):
+    def test_symlink_named_like_a_case_variant_is_not_one_entry(self):
+        # A symlink and its target are two entries. Treating them as a case
+        # variant would rename over the link under onConflict: "error".
+        self.post("/api/file", {"path": "a.md", "content": "A"})
+        os.symlink(os.path.join(nb.DATA_DIR, "a.md"),
+                   os.path.join(nb.DATA_DIR, "A.md"))
+        self.assertFalse(nb._same_file_ignoring_case(
+            os.path.join(nb.DATA_DIR, "a.md"),
+            os.path.join(nb.DATA_DIR, "A.md")))
+
+    def test_hard_link_pair_with_case_names_is_one_file(self):
+        # Two hard links share an inode; rename(2) then no-ops on POSIX.
+        a = os.path.join(nb.DATA_DIR, "h.md")
+        with open(a, "w") as f:
+            f.write("H")
+        os.link(a, os.path.join(nb.DATA_DIR, "H.md"))
+        self.assertTrue(nb._same_file_ignoring_case(
+            a, os.path.join(nb.DATA_DIR, "H.md")))
+
+    def test_is_within_ignores_a_shared_prefix(self):
+        self.post("/api/create", {"path": "d", "type": "dir"})
+        self.post("/api/create", {"path": "dd", "type": "dir"})
+        self.assertTrue(nb._is_within(
+            os.path.join(nb.DATA_DIR, "d", "x", "y"),
+            os.path.join(nb.DATA_DIR, "d")))
+        self.assertFalse(nb._is_within(
+            os.path.join(nb.DATA_DIR, "dd", "x"),
+            os.path.join(nb.DATA_DIR, "d")))
+
+    def test_is_within_follows_a_symlinked_source(self):
+        self.post("/api/create", {"path": "d", "type": "dir"})
+        os.symlink(os.path.join(nb.DATA_DIR, "d"),
+                   os.path.join(nb.DATA_DIR, "l"))
+        self.assertTrue(nb._is_within(
+            os.path.join(nb.DATA_DIR, "d", "sub"),
+            os.path.join(nb.DATA_DIR, "l")))
 
 
 class TestDelete(BaseTest):

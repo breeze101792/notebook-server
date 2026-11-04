@@ -109,7 +109,10 @@ atomically written), `/api/create` (optional `upsert: true` = idempotent
 ensure-exists that never clobbers; optional `content` seeds new files),
 `/api/move`, `/api/copy` (both take `onConflict: error|skip|overwrite`;
 absent-destination file moves use atomic link+unlink, copies use exclusive
-create), `/api/delete`, `/api/search`, `/api/graph`; plus the ungated
+create; both reject a destination inside the source folder (move exempts a
+symlinked source, which moves as a link), and a case-only move renames in
+place rather than conflicting), `/api/delete`, `/api/search`,
+`/api/graph`; plus the ungated
 `/agent.md` route, which serves the project-root `agent.md` verbatim as
 text/markdown with the current auth state substituted into a
 `{{auth_state}}` placeholder — a machine-readable API guide for AI agents,

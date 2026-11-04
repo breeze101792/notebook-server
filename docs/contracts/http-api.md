@@ -314,6 +314,18 @@ move uses atomic `link()` + `unlink()`, which fails with `EEXIST` if another
 writer creates the target concurrently; filesystems without hardlink support
 fall back to check-then-rename. File copies use `open(..., "xb")`.
 
+Both routes refuse a destination inside the source folder with 400 (`Cannot
+move a folder into itself` / `Cannot copy a folder into itself`). The guard
+runs before the conflict branch, so `overwrite` can never delete a subtree
+that the failing move or copy then leaves destroyed. `/api/move` skips the
+guard for a symlinked source, which moves as a link.
+
+`/api/move` treats a case-only rename as a plain rename: when the destination
+names the source itself under another spelling (macOS, Windows), it calls
+`os.rename` and returns 200 whatever `onConflict` says, instead of 409 or
+deleting the source. `/api/copy` rejects that same-file case with 400
+(`Source and destination are the same path`).
+
 ### Search
 
 | Method | Path | Auth | Notes |
