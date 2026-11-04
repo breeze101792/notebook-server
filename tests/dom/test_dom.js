@@ -19469,6 +19469,42 @@ function check(label, cond, extra) {
     await tick(10);
   }
 
+  console.log("== rename re-keys recents and lastFile ==");
+  // app.js writes both only on file:open, so the file:moved listener has to
+  // re-key them or the Recent view keeps a dead path after a rename.
+  {
+    const cfg = window.NB.app.getCfg();
+    cfg.recentFiles = ["notes/old.md", "Welcome.md", "notes/old/child.md"];
+    cfg.lastFile = "notes/old.md";
+    window.NB.evt.emit("file:moved", { from: "notes/old.md", to: "notes/new.md" });
+    await tick(10);
+    check("rename: recents re-key to the new path",
+      cfg.recentFiles[0] === "notes/new.md", JSON.stringify(cfg.recentFiles));
+    check("rename: lastFile re-keys to the new path",
+      cfg.lastFile === "notes/new.md", String(cfg.lastFile));
+
+    // A folder move re-keys descendants, and an entry colliding with an
+    // existing one is deduped rather than listed twice.
+    cfg.recentFiles = ["notes/dir/a.md", "notes/arch/a.md"];
+    window.NB.evt.emit("file:moved", { from: "notes/dir", to: "notes/arch" });
+    await tick(10);
+    check("rename: a folder move re-keys descendants and dedupes",
+      cfg.recentFiles.join(",") === "notes/arch/a.md",
+      JSON.stringify(cfg.recentFiles));
+
+    // Let the debounced config flush land and assert the re-key persisted:
+    // dropping the persistConfig call would leave recents dead on reload.
+    await tick(350);
+    const cfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("rename: the re-key is persisted",
+      /"recentFiles":\["notes\/arch\/a\.md"\]/.test(cfgPost), cfgPost);
+
+    // Leave a clean in-memory list behind. The stub's last config keeps the
+    // re-keyed value; later blocks seed their own fixtures.
+    cfg.recentFiles = ["Welcome.md"];
+    cfg.lastFile = "Welcome.md";
+  }
+
   console.log("== graph view ==");
   // The 3D renderer reads every canvas colour from a --graph-*-rgb token,
   // so both the dark root block and the light body block must declare them,
@@ -22391,6 +22427,19 @@ function check(label, cond, extra) {
   check("rename keeps active -> new path", window.NB.tabs.getActive() === "notes/renamed.md");
   check("rename carries dirty state",
     window.document.querySelector('.tab[data-path="notes/renamed.md"]').classList.contains("dirty"));
+
+  // A conflict badge travels with the rename. Without the re-key the flag
+  // stays keyed to the old path: the badge is missing on the renamed tab and a
+  // re-created file at the old path would wrongly show it.
+  window.NB.evt.emit("viewer:conflict", { path: "notes/renamed.md", conflict: true });
+  await tick(10);
+  window.NB.tabs.rename("notes/renamed.md", "notes/conflicted.md");
+  await tick(10);
+  check("rename moves the conflict badge",
+    !!window.document.querySelector('.tab[data-path="notes/conflicted.md"] .tab-conflict'));
+  window.NB.evt.emit("viewer:conflict", { path: "notes/conflicted.md", conflict: false });
+  window.NB.tabs.rename("notes/conflicted.md", "notes/renamed.md");
+  await tick(10);
 
   // save() clears the dirty dot. (In the new topbar model you have to be
   // in edit mode to save -- the standalone Save button is gone.)
@@ -40536,6 +40585,9 @@ function check(label, cond, extra) {
     await tick(20);
     await S.swapTo("s1");
     await tick(40);
+    // A conflict flag on a hidden session's tab must be re-keyed too: the
+    // live strip does not hold this path, so `liveChanged` is false.
+    window.NB.evt.emit("viewer:conflict", { path: "notes/d.md", conflict: true });
     S.rename("notes/d.md", "notes/d2.md");
     await tick(30);
     const ssRenamed = ssSnap().find((s) => s.id === "s2");
@@ -40553,6 +40605,10 @@ function check(label, cond, extra) {
       ssPaths().join(",") === "notes/c.md,notes/d2.md" &&
       S.getActive() === "notes/d2.md",
       ssPaths().join(",") + " active=" + S.getActive());
+    check("sessions hidden rename: the conflict badge follows",
+      !!window.document.querySelector('.tab[data-path="notes/d2.md"] .tab-conflict'));
+    window.NB.evt.emit("viewer:conflict", { path: "notes/d2.md", conflict: false });
+    await tick(10);
 
     await ssLoad([
       { id: "s1", name: "One",

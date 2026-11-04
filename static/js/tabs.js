@@ -980,6 +980,10 @@
       }
     }
     if (!pairs.length) return;
+    // A conflict flag can outlive the live strip: closing one occurrence keeps
+    // it while another session still holds the path, so re-key it whether or
+    // not the live strip changed (a no-op when nothing matches).
+    rekeyMembers(conflictSet, remap);
     if (liveChanged) {
       rekeyMembers(openSet, remap);
       rekeyMembers(pinned, remap);

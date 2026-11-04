@@ -139,8 +139,8 @@ pre-workspace format and the fallback for a page without a workspace.
 
 | Key | Effect |
 | --- | --- |
-| `lastFile` | The file opened most recently (`app.js`) |
-| `recentFiles` | Array for the Quick open view (`app.js`) |
+| `lastFile` | The file opened most recently (`app.js`, desktop); re-keyed on a rename/move |
+| `recentFiles` | Array for the Quick open view (`app.js`); re-keyed on a rename/move |
 | `openFiles` | **Mirror** of the active session's live strip, pinned tabs included; the full tab sets live in `sessions` (`app.js`) |
 | `activeFile` | **Mirror** of the active session's selected tab (`app.js`) |
 | `pinnedFiles` | Array of pinned tabs; workspace-global and shared by every session (`app.js`) |

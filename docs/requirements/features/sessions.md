@@ -110,8 +110,9 @@ workspace:
 - Closing a tab with unsaved edits prompts and discards on OK (`close()` in
   `tabs.js`). Closing the last tab calls `NB.viewer.clear()` → `showWelcome()`,
   which also clears the whole content cache (`tabs.js`, `viewer.js`).
-- File rename/move re-keys `ordered`, `openSet`, `pinned`, `activePath`, the
-  frozen widths, and the viewer cache (`rename()` in `tabs.js`).
+- File rename/move re-keys `ordered`, `openSet`, `pinned`, `conflictSet`,
+  `activePath`, the frozen widths, and the viewer cache (`rename()` in
+  `tabs.js`).
 - Conflict badges are `conflictSet`, a `Set` of paths rendered onto open tabs
   (`tabs.js`).
 - An external change to a dirty file prompts and, on Cancel, flags the conflict

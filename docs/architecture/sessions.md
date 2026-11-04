@@ -352,8 +352,9 @@ close. A special tab's `onClose` runs only on the last close too, so a `§graph`
 open in another session keeps its module alive.
 
 **`rename(from, to)`** (`tabs.js`): apply `remap` to `ordered`,
-`openSet`, `pinned`, `frozenWidths` (existing) **and every stored session's
-`openFiles`/`activeFile`**, including every duplicate occurrence. Remove the
+`openSet`, `pinned`, `conflictSet`, `frozenWidths` (existing) **and every
+stored session's `openFiles`/`activeFile`**, including every duplicate
+occurrence. Remove the
 `if (!pairs.length) return` early-out (`tabs.js`) or move it after the stored
 pass: a file that exists only in an inactive session must still be re-keyed.
 Call `NB.viewer.rename` for every pair; it is a safe no-op for an uncached path

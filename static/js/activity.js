@@ -307,9 +307,10 @@
   /* --- Recent / Quick open view -------------------------------------- */
   /* A side-panel view listing recently edited files with a fuzzy filter.
    * Reads from cfg.recentFiles (kept up-to-date by app.js on every file
-   * open) and re-renders on every activation so a stale list isn't
-   * shown. The filter input lives at the top of the view; the list
-   * below it updates as the user types. Enter opens the top match.
+   * open and re-keyed on a rename/move) and re-renders on every activation
+   * so a stale list isn't shown. The filter input lives at the top of the
+   * view; the list below it updates as the user types. Enter opens the top
+   * match.
    *
    * Mount is lazy: the host is empty until the first time the Recent
    * icon is activated, so the view costs nothing until the user asks

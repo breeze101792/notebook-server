@@ -629,6 +629,44 @@
     persistConfig();
   }
 
+  /* Map a path -- or any path under it -- from an old location to a new one.
+   * Returns null when the path is not affected by the move. */
+  function remapMovedPath(p, from, to) {
+    if (p === from) return to;
+    if (typeof p === "string" && p.startsWith(from + "/")) {
+      return to + p.slice(from.length);
+    }
+    return null;
+  }
+
+  /* Recents and lastFile are written only on file:open, so a rename/move has
+   * to re-key them or the Recent view keeps a dead path. */
+  function rekeyRecentFiles(from, to) {
+    if (!from || !to || from === to) return;
+    const seen = new Set();
+    const recents = [];
+    let changed = false;
+    for (const p of cfg.recentFiles || []) {
+      const mapped = remapMovedPath(p, from, to);
+      if (mapped !== null) changed = true;
+      const next = mapped !== null ? mapped : p;
+      if (seen.has(next)) continue;   // a rename can collide with an older entry
+      seen.add(next);
+      recents.push(next);
+    }
+    if (!isPhoneMode() && cfg.lastFile) {
+      const mappedLast = remapMovedPath(cfg.lastFile, from, to);
+      if (mappedLast !== null) {
+        cfg.lastFile = mappedLast;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    cfg.recentFiles = recents;
+    if (isPhoneMode()) persistConfig(["recentFiles"]);
+    else persistConfig();
+  }
+
   /* --- wiring -------------------------------------------------------- */
   function wire() {
     // sidebar -> tabs (open / activate)
@@ -652,6 +690,9 @@
       if (activeSessionId !== undefined) cfg.activeSessionId = activeSessionId;
       persistConfig();
     });
+
+    // a rename / move re-keys the Recent view and lastFile
+    NB.evt.on("file:moved", ({ from, to }) => rekeyRecentFiles(from, to));
 
     // search-case toggle persists config
     NB.evt.on("search-case-changed", (val) => {
