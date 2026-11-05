@@ -37,6 +37,12 @@
   let activateToken = 0;
   let showPreview = true;  // preview pane visible in edit mode
   let liveTimer = null;    // debounce timer for live preview
+  // The source editor's explicit save while its POST is in flight. The
+  // Close button awaits it before deciding whether the buffer is dirty:
+  // savedContent is only updated when the write resolves, so without this
+  // a Save-then-Close sequence prompted to discard the bytes the user had
+  // just saved and reverted the buffer under the write.
+  let pendingSave = null;
 
   function cur() { return active ? cache.get(active) : null; }
 
@@ -709,6 +715,40 @@
     if (NB.editbar) NB.editbar.hide();
   }
 
+  /* Write the source editor's buffer for tab `t` and refresh the cache.
+   * `path` is captured before the first await so a tab switch mid-write
+   * cannot save this buffer to a different file. */
+  async function writeSourceSave(t) {
+    const path = active;
+    const content = NB.cmEditor.getValue();
+    // Open the self-save window before the write: the server changes the
+    // file while the POST is in flight, and a watcher tick that lands in
+    // that gap would report our own bytes as an external change (and
+    // prompt to discard the buffer the user just saved).
+    if (NB.watcher) NB.watcher.noteSelfSave(path);
+    await NB.api.saveFile(path, content);
+    t.content = content;
+    t.savedContent = content;
+    delete t.draft;
+    hideDraftBar();
+    // Stay in edit mode after save — the user might still be editing.
+    // Just refresh the toolbar (Save button hides because no longer dirty).
+    refreshTopbar();
+    // Re-fetch to pick up the new mtime the server stamped on the file.
+    try {
+      const data = await NB.api.getFile(path);
+      if (data && data.mtime != null) {
+        t.mtime = data.mtime;
+        if (NB.watcher) NB.watcher.noteOpened(path, data.mtime);
+      }
+    } catch (_) { /* non-fatal; the file did save */ }
+    // The live buffer may have changed during the POST; report the truth
+    // rather than a blanket "clean".
+    NB.evt.emit("viewer:dirty-changed",
+      { path: path, dirty: viewer.isDirty(path) });
+    NB.evt.emit("file:saved", path);
+  }
+
   /* --- public API ----------------------------------------------------- */
   const viewer = {
     // Shared with hybrid.js and export.js: drop marked's task-item
@@ -877,9 +917,13 @@
     },
     /* Close button: exit edit mode, but prompt before discarding unsaved
      * edits. Returns true if the user chose to proceed, false if they
-     * stayed in edit mode. */
-    closeEdit() {
+     * stayed in edit mode. A Save click that is still in flight is
+     * awaited first: savedContent is only updated when the write lands,
+     * so without it the prompt fired for bytes the user had just saved
+     * and accepting reverted the buffer under the write. */
+    async closeEdit() {
       const t = cur(); if (!t) return false;
+      await viewer.flushPendingSave();
       if (viewer.isDirty(active)) {
         const ok = confirm('You have unsaved changes in "' + active + '".\n\n' +
           'Discard them and exit edit mode?');
@@ -898,7 +942,7 @@
      * content CM6 then loads. */
     async toggleEdit() {
       const t = cur(); if (!t) return;
-      if (t.editMode) { this.closeEdit(); return; }
+      if (t.editMode) { await this.closeEdit(); return; }
       if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
         await NB.hybrid.exit(false);
       }
@@ -1007,27 +1051,20 @@
       const t = cur();
       if (!t) { alert("No file open."); return; }
       if (!t.editMode) return;                 // no toolbar in preview mode
-      const content = NB.cmEditor.getValue();
-      await NB.api.saveFile(active, content);
-      t.content = content;
-      t.savedContent = content;
-      delete t.draft;
-      hideDraftBar();
-      // Stay in edit mode after save — the user might still be editing.
-      // Just refresh the toolbar (Save button hides because no longer dirty).
-      refreshTopbar();
-      // Tell the watcher our next save's mtime echo should be ignored.
-      if (NB.watcher) NB.watcher.noteSelfSave(active);
-      // Re-fetch to pick up the new mtime the server stamped on the file.
+      pendingSave = writeSourceSave(t);
       try {
-        const data = await NB.api.getFile(active);
-        if (data && data.mtime != null) {
-          t.mtime = data.mtime;
-          if (NB.watcher) NB.watcher.noteOpened(active, data.mtime);
-        }
-      } catch (_) { /* non-fatal; the file did save */ }
-      NB.evt.emit("viewer:dirty-changed", { path: active, dirty: false });
-      NB.evt.emit("file:saved", active);
+        await pendingSave;
+      } finally {
+        pendingSave = null;
+      }
+    },
+
+    /* Await an explicit source save that is still in flight. closeEdit()
+     * calls this so a Close click cannot prompt to discard bytes that are
+     * already being written. Rejections are surfaced by save() itself. */
+    async flushPendingSave() {
+      if (!pendingSave) return;
+      try { await pendingSave; } catch (_) { /* reported by save() */ }
     },
 
     /* Another module (the AI assistant, or hybrid/WYSIWYG mode) wrote
@@ -1184,6 +1221,11 @@
     // under the still-active session.
     if (NB.hybrid && typeof NB.hybrid.isActive === "function" &&
         NB.hybrid.isActive() && path === active) {
+      // A dirty WYSIWYG session owns the conflict prompt (hybrid.js asks
+      // before reloading). Do not move the cache baseline under it: on
+      // Cancel the user keeps a buffer built on the saved bytes, and the
+      // next exit must not re-render the external content over it.
+      if (NB.hybrid.isDirty && NB.hybrid.isDirty()) return;
       t.content = fresh.content;
       t.savedContent = fresh.content;
       return;

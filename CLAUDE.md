@@ -317,7 +317,17 @@ checks index.html / sw.js / the ai.js prompt / agent.md all mention it.
 **Hybrid write-back contract.** A save that changes nothing writes nothing:
 `isNoOpMarkdown` compares the serialized DOM against the form captured at
 `enter()` and skips `POST /api/file` in every save caller (`save`, `onClose`,
-`commitForTabSwitch`, `flushAutosave`, `exit`). Empty headings and
+`commitForTabSwitch`, `flushAutosave`, `exit`). The explicit exit paths
+(`onClose`, `commitForTabSwitch`) decide on the serialized content diff, never
+on the `dirty` flag alone: `onInput` marks dirty synchronously (`markDirty`, no
+debounce) and those paths call `pendingMarkdown()`, so a click that lands
+between a keystroke and the debounced UI pass still writes the edit. `onClose`
+re-checks after each write and writes again for bytes typed while the POST was
+in flight. The watcher's self-save window opens before the POST, and an
+external-change event whose content equals the session baseline or the
+in-flight write is treated as our own echo (never a conflict); a genuine
+change while dirty prompts discard/reload versus keep-and-mark-conflict.
+Empty headings and
 empty list items keep their markers; whitespace-only inline code runs are
 carried through a clone with sentinels (a NUL-prefixed token for code spaces,
 because a private-use char occurs in real notes). Tables are always emitted as

@@ -229,6 +229,12 @@
   // baseline, NOT the current DOM: undo/redo change the DOM but must not
   // move this until a write lands.
   let sessionSource = "";
+  // The bytes of a save whose POST has not resolved yet: {path, content}
+  // or null. The watcher can report our own write as an external change
+  // while the request is in flight (the file changes before the promise
+  // resolves), so the external-change handler compares against this and
+  // never treats our own bytes as a conflict.
+  let writeInFlight = null;
   // The serialization of the DOM as it was at enter() time (and after
   // each successful write). The no-op comparison targets this rather
   // than sessionSource's raw bytes so a clean save on a file the
@@ -6461,9 +6467,21 @@
 
   let dirty = false;
   let restoring = false;
-  function onContentChange() {
+
+  /* Mark the session dirty at the instant the DOM changes. The save and
+   * exit paths read `dirty` and `editGeneration`, so they must not wait
+   * for the debounced onContentChange() UI pass: a Close click that lands
+   * inside that debounce saw a clean session, skipped the write, and let
+   * exit() re-render the cache over the edit. onContentChange() calls
+   * this too; editGeneration is a change counter, so a second bump for
+   * the same edit is harmless. */
+  function markDirty() {
     dirty = true;
     editGeneration += 1;
+  }
+
+  function onContentChange() {
+    markDirty();
     saveBtn.hidden = false;
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
@@ -6632,6 +6650,11 @@
    * note -- one save per quiet period, not per keystroke. */
   const AUTOSAVE_DELAY_FALLBACK_S = 5;
   const AUTOSAVE_MAX_DIRTY_MS = 60000;
+  // Upper bound on the save loop in onClose(). Each pass writes the bytes
+  // serialized in the previous pass; a pass only exists because the user
+  // typed while that POST was in flight. Three is enough for any human
+  // typing rate and guarantees the exit terminates.
+  const EXIT_SAVE_MAX_ATTEMPTS = 3;
   const AUTOSAVE_ACTIVITY_EVENTS = [
     "keydown", "mousemove", "mousedown", "pointerdown",
     "wheel", "touchstart", "touchmove", "scroll",
@@ -6764,9 +6787,12 @@
       // item's marker renders too. Idempotent and cheap.
       addListPlaceholders();
     }, 0);
-    // Typing resumed: restart the quiet period. onContentChange() will
-    // also arm it after its debounce, but a fast typist can generate
-    // several inputs before that fires.
+    // Typing resumed: mark the session dirty NOW and restart the quiet
+    // period. The UI pass (buttons, dirty event, snapshot) stays debounced
+    // below, but the save/exit contract must never lag the DOM: a Close or
+    // Save click inside the 50 ms window used to read a clean session and
+    // drop the keystroke. armAutosave needs the dirty flag set first.
+    markDirty();
     armAutosave();
     clearTimeout(inputDebounce);
     inputDebounce = setTimeout(onContentChange, 50);
@@ -6889,6 +6915,17 @@
 
   async function enter(path) {
     if (active) return;
+    // The CM6 source editor and the WYSIWYG surface must never be active
+    // together. The dirty-changed safety net at module load exits hybrid
+    // the moment both are open, which silently drops the WYSIWYG buffer
+    // the user just typed into. toggle() folds the source buffer first,
+    // but callers can enter directly (the phone's "Edit note" menu does),
+    // so the invariant is enforced here, once.
+    const editToggle = document.getElementById("edit-toggle");
+    if (editToggle && editToggle.classList.contains("editing")) {
+      if (!NB.viewer.endEdit) return;
+      NB.viewer.endEdit();
+    }
     const t = NB.viewer && NB.viewer.getPath ? null : null;
     // Get the current file's content from the viewer cache.
     activePath = path || (NB.viewer && NB.viewer.getPath ? NB.viewer.getPath() : null);
@@ -7108,6 +7145,18 @@
     return md === sessionSerialized || md === sessionSource;
   }
 
+  /* The bytes the live DOM would write, or null when it still matches the
+   * saved baseline. The explicit exit and tab-switch paths decide on this
+   * content diff, not on the `dirty` flag alone: the flag also drives UI
+   * state, while the diff is the write contract (I3, docs §4.3).
+   * Serializing here costs one clone + turndown, which is acceptable for
+   * a user-initiated exit. */
+  function pendingMarkdown() {
+    if (!active) return null;
+    const md = domToMarkdown();
+    return isNoOpMarkdown(md) ? null : md;
+  }
+
   /* Re-seat the no-op baseline and the splice baseline on `source` and on
    * the current DOM. Called when hybrid enters, after a successful write,
    * and after an external change re-renders the note. The last case is
@@ -7136,19 +7185,31 @@
     const writtenAlignment = buildAlignment(writtenBlocks);
     const writtenAux = rootAuxCount();
     const generation = editGeneration;
-    await NB.api.saveFile(activePath, md);
+    const path = activePath;
+    // Open the watcher's self-save window BEFORE the write. The server
+    // changes the file while this POST is in flight, so a watcher poll
+    // (5 s by default) or native observer can report our own bytes as an
+    // external conflict before this promise resolves -- and the old
+    // external-change handler answered that by discarding the session.
+    // Marking the write first makes the echo unambiguously ours.
+    if (NB.watcher) NB.watcher.noteSelfSave(path);
+    writeInFlight = { path: path, content: md };
+    try {
+      await NB.api.saveFile(path, md);
+    } finally {
+      writeInFlight = null;
+    }
     // Update the viewer's cache so the next activate shows the saved content.
     // We emit file:saved so the watcher etc. stay in sync.
-    NB.evt.emit("file:saved", activePath);
+    NB.evt.emit("file:saved", path);
     // Tell the viewer the cache now holds the saved bytes (avoids a stale
-    // re-render after exit), and the watcher to ignore the self-save echo.
-    if (NB.viewer && NB.viewer.noteSaved) NB.viewer.noteSaved(activePath, md);
-    else if (NB.watcher) NB.watcher.noteSelfSave(activePath);
+    // re-render after exit), and refresh the watcher's self-save window.
+    if (NB.viewer && NB.viewer.noteSaved) NB.viewer.noteSaved(path, md);
     // Re-fetch to pick up the new mtime.
     try {
-      const data = await NB.api.getFile(activePath);
+      const data = await NB.api.getFile(path);
       if (data && data.mtime != null && NB.watcher) {
-        NB.watcher.noteOpened(activePath, data.mtime);
+        NB.watcher.noteOpened(path, data.mtime);
       }
     } catch (_) {}
     // Move the baselines to the saved bytes and the alignment captured
@@ -7203,20 +7264,37 @@
   async function onClose(e) {
     if (e) { e.stopPropagation(); e.preventDefault(); }
     if (!active) return;
-    if (dirty) {
-      const ok = confirm('You have unsaved changes in "' + activePath + '".\n\n' +
-        'Save them before exiting WYSIWYG mode?');
-      if (ok) {
-        try {
-          await awaitPendingAutosave();
-          const md = domToMarkdown();
-          if (isNoOpMarkdown(md)) resetDirty();
-          else await doSave(md);
-        } catch (err) {
-          alert("Save failed: " + (err && err.message ? err.message : err));
-          return;
-        }
+    // Settle an autosave that is already mid-write: its bytes are older
+    // than the DOM serialized below, and the exit save must be the last
+    // write to reach the file.
+    await awaitPendingAutosave();
+    let md;
+    try {
+      md = pendingMarkdown();
+    } catch (err) {
+      alert("Save failed: " + (err && err.message ? err.message : err));
+      return;
+    }
+    let ask = true;
+    let attempts = 0;
+    // The loop covers bytes typed while a POST is in flight: doSave
+    // re-seats the baseline on the written bytes, so the next
+    // pendingMarkdown() returns only what landed after that snapshot.
+    while (md != null && attempts < EXIT_SAVE_MAX_ATTEMPTS) {
+      if (ask) {
+        ask = false;
+        const ok = confirm('You have unsaved changes in "' + activePath + '".\n\n' +
+          'Save them before exiting WYSIWYG mode?');
+        if (!ok) break;          // Cancel: discard and exit, as before
       }
+      try {
+        await doSave(md);
+      } catch (err) {
+        alert("Save failed: " + (err && err.message ? err.message : err));
+        return;                  // stay in the editor with the edits intact
+      }
+      attempts += 1;
+      md = pendingMarkdown();
     }
     await exit(false);
   }
@@ -7239,14 +7317,23 @@
   }
 
   /* Commit before navigating away (tab switch). If hybrid mode is
-   * active with unsaved changes, prompt the user to save; on Cancel
-   * or a failed save, abort the switch (return false). If clean or
-   * the user saves successfully, exit hybrid mode and return true so
-   * the caller can proceed. If hybrid mode is not active, return true
-   * immediately (no-op guard). */
+   * active with unsaved changes, save silently when autosave is on;
+   * otherwise stash the buffer as a recoverable draft. A failed save
+   * aborts the switch (return false). The decision is the serialized
+   * content diff, not the `dirty` flag: a switch right after a keystroke
+   * used to read a clean session and drop the edit. */
   async function commitForTabSwitch() {
     if (!active) return true;
-    if (!dirty) {
+    await awaitPendingAutosave();
+    let md;
+    try {
+      md = pendingMarkdown();
+    } catch (err) {
+      alert("Could not keep the unsaved edits: " +
+        (err && err.message ? err.message : err));
+      return false;
+    }
+    if (md == null) {
       await exit(false);
       return true;
     }
@@ -7254,10 +7341,7 @@
     // tab switch still writes silently.
     if (autosaveEnabled()) {
       try {
-        await awaitPendingAutosave();
-        const md = domToMarkdown();
-        if (isNoOpMarkdown(md)) resetDirty();
-        else await doSave(md);
+        await doSave(md);
       } catch (err) {
         alert("Save failed: " + (err && err.message ? err.message : err));
         return false;
@@ -7268,19 +7352,6 @@
     // Otherwise keep the WYSIWYG buffer in the viewer cache and switch.
     // The preview shows the saved bytes; the tab dot and Recover bar
     // surface the draft, and recoverDraft() puts it back undoably.
-    let md;
-    try {
-      md = domToMarkdown();
-    } catch (err) {
-      alert("Could not keep the unsaved edits: " +
-        (err && err.message ? err.message : err));
-      return false;
-    }
-    if (md === sessionSerialized) {
-      resetDirty();
-      await exit(false);
-      return true;
-    }
     if (!NB.viewer || !NB.viewer.setDraft ||
         !NB.viewer.setDraft(activePath, { content: md, mode: "hybrid" })) {
       return false;
@@ -8989,33 +9060,47 @@
   /* --- external change handling ---------------------------------- */
   /* If the file changes on disk while hybrid-editing, re-render. The
    * viewer's file:external-change handler will also fire; we intercept
-   * here to stay in hybrid mode with the fresh content. */
-  NB.evt.on("file:external-change", async ({ path }) => {
+   * here to stay in hybrid mode with the fresh content. A dirty session
+   * gets the same explicit choice the source editor offers: discard and
+   * reload, or keep the buffer (and mark the tab as a conflict). Exiting
+   * silently here was a data-loss path -- the viewer's handler returns
+   * early while hybrid is active, so no prompt was ever shown. */
+  NB.evt.on("file:external-change", async ({ path, data }) => {
     if (!active || path !== activePath) return;
-    // Re-fetch and re-render. If dirty, the viewer's handler will
-    // prompt; we let it handle the conflict flow and just exit hybrid.
-    if (dirty) {
-      // The viewer's handler will prompt; we exit hybrid to avoid
-      // clobbering the user's edits. The viewer will re-render.
-      await exit(false);
-    } else {
-      // Re-render from the fresh content.
-      try {
-        const data = await NB.api.getFile(path);
-        if (data && data.content != null) {
-          // An identical re-read is our own save's echo (the watcher poll
-          // can beat its self-save window). Re-rendering would reset the
-          // caret and scroll for bytes that did not change.
-          if (data.content === sessionSource) return;
-          renderMarkdown(data.content);
-          // Rebase the no-op baseline on the externally written bytes.
-          // Without this the next clean save compares against the stale
-          // pre-change baseline, sees a difference, and rewrites the file
-          // -- canonicalizing an external edit the user never made.
-          rebaseSession(data.content);
-        }
-      } catch (_) {}
+    let fresh = data;
+    if (!fresh) {
+      try { fresh = await NB.api.getFile(path); } catch (_) { return; }
     }
+    if (!fresh || fresh.content == null) return;
+    // An identical re-read is our own save's echo: the watcher poll can
+    // beat its self-save window, and a native observer can fire while the
+    // POST is still resolving. Compare BEFORE prompting -- a conflict
+    // prompt for the user's own bytes can talk them into discarding the
+    // edits they just made. Re-rendering would also reset the caret and
+    // scroll for bytes that did not change.
+    if (fresh.content === sessionSource) return;
+    if (writeInFlight && writeInFlight.path === path &&
+        fresh.content === writeInFlight.content) return;
+    if (dirty) {
+      const ok = confirm('"' + path + '" changed on disk.\n\n' +
+        'Discard your unsaved edits and reload from disk?\n' +
+        '(Cancel keeps your edits and marks the tab as a conflict.)');
+      if (!ok) {
+        NB.evt.emit("viewer:conflict", { path, conflict: true });
+        return;
+      }
+    }
+    renderMarkdown(fresh.content);
+    // Rebase the no-op baseline on the externally written bytes. Without
+    // this the next clean save compares against the stale pre-change
+    // baseline, sees a difference, and rewrites the file -- canonicalizing
+    // an external edit the user never made.
+    rebaseSession(fresh.content);
+    // The viewer's cache must hold these bytes too, or the next exit
+    // re-renders the pre-change source over the reloaded DOM.
+    if (NB.viewer && NB.viewer.noteSaved) NB.viewer.noteSaved(path, fresh.content);
+    resetDirty();
+    NB.evt.emit("viewer:conflict", { path, conflict: false });
   });
 
   /* Re-render the live session from bytes written by an approved AI

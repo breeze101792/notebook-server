@@ -241,9 +241,23 @@ I2. **No format lost unintentionally.** A construct the user did not touch keeps
     source bytes; a construct the user did touch is re-emitted in its canonical
     serialized form (Appendix A).
 I3. **A no-op writes nothing.** If `domToMarkdown()` equals the session baseline,
-    every save caller skips `POST /api/file` (`isNoOpMarkdown` at `hybrid.js`;
-    callers `save` `:3497`, `onClose` `:3528`,
-    `commitForTabSwitch` `:3576`, `flushAutosave` `:3114`, `exit` `:3354`).
+    every save caller skips `POST /api/file` (`isNoOpMarkdown` and
+    `pendingMarkdown` in `hybrid.js`; callers `save`, `onClose`,
+    `commitForTabSwitch`, `flushAutosave`, `exit`).
+I3a. **Exit is decided on the diff, not the dirty flag.** The explicit exit
+    paths (`onClose`, `commitForTabSwitch`) serialize the live DOM and compare
+    it to the baseline instead of reading `dirty`. `onInput` marks the session
+    dirty synchronously (`markDirty`), so the flag is also current; the diff is
+    the second, authoritative check that cannot lag a keystroke. `onClose`
+    re-checks after each write and writes again for bytes typed while the POST
+    was in flight (bounded by `EXIT_SAVE_MAX_ATTEMPTS`).
+I3b. **Our own write is never a conflict.** The watcher's self-save window
+    opens before the POST, and an external-change event whose bytes equal
+    `sessionSource` or the in-flight write (`writeInFlight`) returns before any
+    prompt. A genuine external change while the buffer is dirty asks: discard
+    and reload, or keep the buffer and mark the tab as a conflict
+    (`viewer:conflict`). The clean path still reloads in place and rebases
+    (`rebaseSession`).
 I4. **Output is always plain Markdown, never HTML.** No `<tag>` may reach a file
     outside a fence (`PLAN.md`). Turndown's unknown-markup default unwraps
     to text (`vendor/turndown.browser.js`); tables are forced into GFM
@@ -1209,17 +1223,35 @@ blocks, whose bytes are carried raw. The rule, stated once:
   region). Verified in Chromium and jsdom.
 - Root-level text/comment count still guards the aux nodes (`:901`).
 
-### 5.6 No-op and undo
+### 5.6 No-op, exit, and undo
 
 - A save whose output equals `sessionSerialized` or `sessionSource` writes nothing
-  (`isNoOpMarkdown` `:3426`).
+  (`isNoOpMarkdown`).
+- The explicit exit paths do not trust `dirty`. `onClose` and
+  `commitForTabSwitch` call `pendingMarkdown()`: it serializes the live DOM and
+  returns the bytes only when they differ from the baseline. `onInput` also
+  marks dirty synchronously (`markDirty`), so the flag, the autosave arm, and
+  the generation guard are current before the 50 ms UI debounce fires. A Close
+  or tab switch clicked between a keystroke and that debounce therefore still
+  writes (or stashes) the edit. `onClose` re-serializes after each successful
+  write and writes again for bytes typed during the POST, up to
+  `EXIT_SAVE_MAX_ATTEMPTS`.
+- `doSave` opens the watcher's self-save window before the POST and records the
+  bytes in `writeInFlight` until it resolves. The external-change handler
+  compares the fresh content against `sessionSource` and `writeInFlight` before
+  prompting, so a poll or native-observer echo of our own write is never shown
+  as a conflict. A genuine change while dirty prompts; Cancel keeps the buffer
+  and emits `viewer:conflict`, OK re-renders, rebases, and refreshes the cache.
+- In source mode `viewer.save()` exposes the in-flight write and `closeEdit()`
+  awaits it before checking `isDirty`, so Save-then-Close does not prompt to
+  discard bytes that are already being written.
 - Undo/redo restore whole-DOM snapshots (`restoreSnapshot`); node
   identity is deliberately not relied upon (`PLAN.md`). A snapshot that
   restores an in-place fence re-wires it but leaves the caret beside it, so the
   next Ctrl+Z stays hybrid's own undo instead of the rebuilt editor's empty
   native stack. The splice baseline is
   re-seated only on enter, after a write, and on external change
-  (`rebaseSession` `:3439`); undo relies on the hash/count checks, not a
+  (`rebaseSession`); undo relies on the hash/count checks, not a
   rebase.
 
 ---

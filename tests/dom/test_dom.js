@@ -9903,6 +9903,83 @@ function check(label, cond, extra) {
       "save=" + JSON.stringify($("save-btn").textContent) +
       " exit=" + JSON.stringify($("close-edit-btn").textContent));
 
+    // --- hybrid: an exit inside the input debounce must still write ---
+    // onInput marks the session dirty synchronously. Before that, a Close
+    // that landed inside the 50 ms UI debounce read a clean session,
+    // skipped the write, and let exit() re-render the cache over the
+    // keystroke -- the reported "save & exit lost my text" bug.
+    await window.NB.hybrid.enter();
+    await tick(20);
+    vc.innerHTML += "<p>debounced exit edit</p>";
+    vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const deBefore = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    const deConfirm = window.confirm;
+    window.confirm = () => true;                      // "save them"
+    $("close-edit-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    window.confirm = deConfirm;
+    const deAfter = fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    check("hybrid: Close inside the input debounce still saves",
+      deAfter - deBefore === 1, "delta=" + (deAfter - deBefore));
+    check("hybrid: Close inside the input debounce keeps the text",
+      (FILES["notes/a.md"] || "").includes("debounced exit edit"),
+      JSON.stringify(FILES["notes/a.md"] || "").slice(0, 160));
+    check("hybrid: Close inside the input debounce exits",
+      !window.NB.hybrid.isActive(), "active=" + window.NB.hybrid.isActive());
+
+    // --- hybrid: a tab switch inside the input debounce keeps a draft ---
+    {
+      const swCfg = window.NB.app.getCfg();
+      const swAutosave = swCfg.autosave;
+      swCfg.autosave = false;
+      await window.NB.tabs.open("notes/b.md");
+      await tick(20);
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      vc.innerHTML += "<p>debounced switch edit</p>";
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      // No tick: the switch must see the edit before the debounce fires.
+      await window.NB.tabs.activate("notes/b.md");
+      await tick(40);
+      const draft = window.NB.viewer.getDraft("notes/a.md");
+      check("hybrid switch: a switch inside the input debounce keeps a draft",
+        !!draft && /debounced switch edit/.test(draft.content || ""),
+        JSON.stringify(draft));
+      check("hybrid switch: a switch inside the input debounce exits hybrid",
+        !window.NB.hybrid.isActive(), "active=" + window.NB.hybrid.isActive());
+      swCfg.autosave = swAutosave;
+      // Drop the stashed draft so the rest of the run starts clean.
+      await window.NB.tabs.activate("notes/a.md");
+      await tick(20);
+      window.NB.viewer.discardDraft();
+      await tick(20);
+    }
+
+    // --- source mode: Close while a Save is still in flight ---
+    // savedContent updates only when the POST resolves. A Close clicked
+    // right after Save used to prompt to discard bytes that were already
+    // being written, then revert the editor under the write.
+    window.NB.viewer.startEdit();
+    await tick(20);
+    cmSetValue("# File A\n\nsource save race\n");
+    cmFireInput();
+    await tick(10);
+    let srcConfirmCalled = false;
+    const srcConfirmOrig = window.confirm;
+    window.confirm = () => { srcConfirmCalled = true; return false; };
+    const saving = window.NB.viewer.save();
+    const closing = window.NB.viewer.closeEdit();   // waits for `saving`
+    await Promise.all([saving, closing]);
+    window.confirm = srcConfirmOrig;
+    check("source: Close during an in-flight save does not prompt to discard",
+      !srcConfirmCalled, "confirmCalled=" + srcConfirmCalled);
+    check("source: Close during an in-flight save keeps the saved bytes",
+      (FILES["notes/a.md"] || "").includes("source save race"),
+      JSON.stringify(FILES["notes/a.md"] || "").slice(0, 140));
+    check("source: Close during an in-flight save exits edit mode", cmIsHidden());
+
     // --- hybrid keyboard-save delegation ---
     // NB.viewer.save() delegates to NB.hybrid.save() while hybrid is
     // active, so Ctrl+S / vim :w works in WYSIWYG mode.
@@ -15135,6 +15212,81 @@ function check(label, cond, extra) {
       check("hybrid external-change: cache takes the fresh bytes",
         window.NB.viewer.getContent() === FILES["notes/a.md"],
         JSON.stringify(window.NB.viewer.getContent()));
+
+      // (11) A save echo is not a conflict. The watcher can report the
+      // bytes we just wrote as an external change (poll racing the
+      // self-save window, or a native observer firing mid-POST). Prompting
+      // there invites the user to discard the edits they just made, so
+      // the handler must compare the content first.
+      const hvc = $("viewer-content");
+      hvc.innerHTML += "<p>saved then typed more</p>";
+      hvc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await window.NB.hybrid.save();
+      await tick(40);
+      const savedEcho = FILES["notes/a.md"];
+      hvc.innerHTML += "<p>typed after save</p>";
+      hvc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      const echoOrig = window.confirm;
+      let echoPrompted = false;
+      window.confirm = () => { echoPrompted = true; return false; };
+      window.NB.evt.emit("file:external-change", {
+        path: "notes/a.md",
+        data: { path: "notes/a.md", content: savedEcho, mtime: 104,
+                size: savedEcho.length },
+      });
+      await tick(80);
+      window.confirm = echoOrig;
+      check("hybrid conflict: a save echo never prompts",
+        !echoPrompted, "prompted=" + echoPrompted);
+      check("hybrid conflict: a save echo keeps the newer buffer",
+        /typed after save/.test($("viewer-content").textContent),
+        $("viewer-content").textContent.slice(0, 100));
+
+      // (12) An external change while the WYSIWYG buffer is dirty must ask.
+      // The old handler exited hybrid with exit(false) and no prompt: the
+      // viewer's handler returns early while hybrid is active, so the
+      // buffer was discarded silently.
+      hvc.innerHTML += "<p>local conflict edit</p>";
+      hvc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      const conflictOrig = window.confirm;
+      const onDiskBefore = FILES["notes/a.md"];
+      const externalDoc = "# File A\n\nexternal during edit\n";
+      window.confirm = () => false;                   // keep my edits
+      window.NB.evt.emit("file:external-change", {
+        path: "notes/a.md",
+        data: { path: "notes/a.md", content: externalDoc, mtime: 102,
+                size: externalDoc.length },
+      });
+      await tick(80);
+      window.confirm = conflictOrig;
+      check("hybrid conflict: Cancel keeps the WYSIWYG session",
+        window.NB.hybrid.isActive(), "active=" + window.NB.hybrid.isActive());
+      check("hybrid conflict: Cancel keeps the typed text",
+        /local conflict edit/.test($("viewer-content").textContent),
+        $("viewer-content").textContent.slice(0, 100));
+      check("hybrid conflict: Cancel does not touch the file",
+        FILES["notes/a.md"] === onDiskBefore,
+        JSON.stringify(FILES["notes/a.md"]));
+      check("hybrid conflict: Cancel marks the tab as a conflict",
+        !!window.document.querySelector('.tab[data-path="notes/a.md"] .tab-conflict'),
+        window.document.querySelector('.tab[data-path="notes/a.md"] .tab-conflict') ? "marked" : "missing");
+
+      window.confirm = () => true;                    // discard and reload
+      window.NB.evt.emit("file:external-change", {
+        path: "notes/a.md",
+        data: { path: "notes/a.md", content: externalDoc, mtime: 103,
+                size: externalDoc.length },
+      });
+      await tick(80);
+      window.confirm = conflictOrig;
+      check("hybrid conflict: OK reloads the external bytes",
+        /external during edit/.test($("viewer-content").textContent),
+        $("viewer-content").textContent.slice(0, 100));
+      check("hybrid conflict: OK clears dirty",
+        !window.NB.hybrid.isDirty(), "dirty=" + window.NB.hybrid.isDirty());
     }
     await window.NB.hybrid.exit(false);
     await tick(20);

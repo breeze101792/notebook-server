@@ -213,6 +213,16 @@ The full route list is in the [HTTP API reference](../contracts/http-api.md).
 - **A no-op hybrid save writes nothing.** `isNoOpMarkdown` compares the
   serialized DOM against the baseline captured at `enter()` and skips the write
   in every save caller.
+- **Exit decides on the content diff, not the dirty flag.** WYSIWYG typing marks
+  the session dirty synchronously; Save, Close, and a tab switch serialize the
+  DOM (`pendingMarkdown`) and write only what differs from the baseline. An
+  exit clicked right after a keystroke cannot skip the write, and bytes typed
+  while the save's POST is in flight are written by a follow-up pass.
+- **A save echo is not a conflict.** The watcher's self-save window opens
+  before the POST, and an external-change event whose bytes equal the session
+  baseline or the in-flight write is ignored. A genuine external change while
+  the WYSIWYG buffer is dirty asks before reloading: discard and reload, or
+  keep the edits and mark the tab as a conflict.
 - **One `Enter` adds one line break** in hybrid mode. No idle action adds a
   break, and no `<br>` reaches the file.
 - **Structural edits preserve untouched blocks.** Only the changed region is
