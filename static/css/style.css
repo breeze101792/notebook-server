@@ -2379,7 +2379,18 @@ body[data-theme="light"] #settings-overlay {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px 40px 200px;
+  /* No elastic overscroll at the ends. The bounce translates the scrolled
+   * content, but a background-attachment: local wallpaper is pinned to
+   * the clamped scroll offset, so the words slide off the pattern as soon
+   * as the bounce starts. `none` and not `contain`: `contain` still
+   * allows the bounce. */
+  overscroll-behavior-y: none;
+  /* Scroll tail below the last line, as a named value because the split,
+   * hybrid and phone rules all override it. Keep it small: a long tail
+   * scrolls the words away and leaves a band of bare wallpaper under
+   * them, which reads as the words and the pattern coming apart. */
+  --viewer-tail: 48px;
+  padding: 16px 40px var(--viewer-tail);
   max-width: 100%;
 }
 
@@ -2551,7 +2562,7 @@ body[data-theme="light"] #viewer-content {
   min-width: 0;
 }
 .edit-split.split #viewer-content {
-  padding: 16px 24px 200px;
+  padding: 16px 24px var(--viewer-tail);
 }
 
 /* Welcome page: shown when there are no open tabs. Sibling of #viewer
@@ -2731,7 +2742,7 @@ body[data-theme="light"] #viewer-content {
  * the outline doesn't hug the content. */
 #viewer.hybrid-active #viewer-content {
   padding-top: 20px;
-  padding-bottom: 200px;
+  padding-bottom: var(--viewer-tail);
 }
 
 /* In hybrid mode, headings and paragraphs should be clearly editable.
@@ -7171,7 +7182,7 @@ body[data-theme="light"] #dw-designer-overlay {
   body.edit-open #mobile-more { display: none; }
   body.edit-open #app { height: calc(100dvh - var(--m-kb, 0px)); }
   body.edit-open #viewer-content {
-    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    --viewer-tail: calc(24px + env(safe-area-inset-bottom));
   }
 
   /* ---- bottom rail ------------------------------------------------ */
@@ -7441,12 +7452,17 @@ body[data-theme="light"] #dw-designer-overlay {
     width: 100%;
     max-width: calc(var(--m-reader-max) + 2 * var(--m-gutter));
     margin-inline: auto;
+    /* Only the rail clearance is needed at the end of the note; the rest
+     * of the tail would be bare wallpaper behind the fixed rail. */
+    --viewer-tail: calc(var(--m-rail-h) + env(safe-area-inset-bottom) + 24px);
     padding: 16px calc(var(--m-gutter) + env(safe-area-inset-right))
-             calc(var(--m-rail-h) + env(safe-area-inset-bottom) + 24px)
+             var(--viewer-tail)
              calc(var(--m-gutter) + env(safe-area-inset-left));
     font-size: calc(16px * var(--font-scale));
     line-height: 1.65;
-    overscroll-behavior: contain;
+    /* `none`, not `contain`: contain still allows the bounce, and the
+     * bounce is what slides the words off the local-attached wallpaper. */
+    overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
   }
   .markdown-body h1 { font-size: 1.7em; line-height: 1.2; margin: 0 0 .45em; padding-bottom: .2em; }

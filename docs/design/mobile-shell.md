@@ -360,8 +360,9 @@ absent; the row is one tap.
   the mermaid lightbox click and `cursor: zoom-in` on phone.
 - Block padding never exceeds the gutter; no element may widen the scroller.
 - Scroll restoration: `#viewer-content.scrollTop` survives rotation and back
-  (`viewer.js` restore path). `overscroll-behavior-y: contain` stops
-  pull-to-refresh.
+  (`viewer.js` restore path). `overscroll-behavior-y: none` stops
+  pull-to-refresh and the end-of-scroll bounce; the bounce would slide the
+  words off the `background-attachment: local` wallpaper.
 - Focus/selection: body text is selectable; chrome is not (`user-select`).
 
 Loading: existing skeleton/spinner; no new state.
@@ -516,6 +517,8 @@ in flight is not repeated (the send guard survives rotation).
 `#file-tree`, `.search-panel-list`, `.recent-list`, the drawer body and the
 capture textarea. `overscroll-behavior: contain` on those scrollers: no
 pull-to-refresh, no horizontal back-swipe while panning a table or diagram.
+`#viewer-content` uses `none` instead, because `contain` still allows the
+end-of-scroll bounce and the bounce separates the words from the wallpaper.
 The page itself never scrolls sideways.
 
 **Hover / right-click.** Under `(hover: none) and (pointer: coarse)`:
