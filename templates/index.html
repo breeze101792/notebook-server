@@ -364,13 +364,16 @@
                NB.cmEditor.{getValue,setValue,...} so the rest of the
                app never touches CM6 directly. -->
           <div id="cm-host" class="cm-host" hidden></div>
-          <!-- #viewer is a non-scrolling shell (visibility, flex sizing);
-               the inner #viewer-content is the actual scroller and
-               holds the rendered markdown. Wallpaper lives on
-               #viewer-content so it's anchored to the content itself
-               and scrolls in perfect lockstep with the text. -->
+          <!-- #viewer is a non-scrolling shell (visibility, flex sizing,
+               overlay coordinates); #viewer-scroll is the only scroll
+               container. #viewer-content is the page: it holds the
+               rendered markdown, the padding and, in "scroll" mode, the
+               wallpaper, so the pattern moves with the words even during
+               the elastic overscroll. -->
           <div id="viewer">
-            <div id="viewer-content" class="markdown-body {{ boot.wallpaper_classes }}"></div>
+            <div id="viewer-scroll">
+              <div id="viewer-content" class="markdown-body {{ boot.wallpaper_classes }}"></div>
+            </div>
           </div>
           <!-- After a tab switch, an unsaved buffer is kept in the viewer
                cache instead of forcing a save/discard prompt. This bar

@@ -98,7 +98,7 @@ logs `ok` / `FAIL`. The whole file is one async IIFE that ends with a
 
 So the exit code is `0` only when every assertion passed. The suite announces
 **120 `== name ==` section headings** (119 distinct names — `== export ==` is
-announced twice) and printed **4,777 checks** in the last full run, covering
+announced twice) and printed **4,811 checks** in the last full run, covering
 boot, sidebar and tree, theme, viewer and outline, the six renderers, the
 blocks registry, tabs (open/close/reorder/pin/ghost animation), clear-text
 control, case in Advanced, the side-panel search options
@@ -110,6 +110,11 @@ watcher polling and tree sync, settings, auth, passwords, tokens, export,
 wallpaper, welcome, deep links, wikilinks, vim mode and vimrc, keyboard
 scroll, AI, sessions, workspaces, the mermaid visual designer, lazy vendor
 loading, and first-paint boot state.
+
+Scroll assertions target `#viewer-scroll` (the only scroll container);
+`#viewer-content` is the non-scrolling page that holds the markdown and, in
+`scroll` mode, the wallpaper. The hybrid checks assert that the page never
+grows an `overflow-x` of its own.
 
 ### Canned SSE for the AI tests
 

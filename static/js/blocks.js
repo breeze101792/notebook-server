@@ -633,7 +633,7 @@
 
   /* Remove any inner-scroll state left by the earlier scroll model (or by
    * a stale in-page upgrade). The wrapper only sizes and centres the SVG
-   * now; the card grows and #viewer-content scrolls. */
+   * now; the card grows and #viewer-scroll scrolls. */
   function clearViewportScroll(vp) {
     vp.style.removeProperty("height");
     vp.style.removeProperty("max-height");
@@ -666,13 +666,13 @@
   }
 
   function measureViewportH(host) {
-    const el = host || document.getElementById("viewer-content");
+    const el = host || document.getElementById("viewer-scroll");
     if (!el || !(el.clientHeight > 0)) return 0;
     return el.clientHeight * VIEWPORT_RATIO;
   }
 
   /* hostOf(el) -> the nearest scrolling ancestor that bounds a figure's
-   * viewport: #viewer-content for a note, .ai-chat-log for an AI reply.
+   * viewport: #viewer-scroll for a note, .ai-chat-log for an AI reply.
    * Found by shape (a scroll container) so a new render root needs no
    * registration here. The height is not required, so a host that is
    * collapsed at first layout is still returned -- and observed -- and
@@ -684,7 +684,7 @@
       if (oy === "auto" || oy === "scroll" || oy === "overlay") return node;
       node = node.parentElement;
     }
-    return document.getElementById("viewer-content");
+    return document.getElementById("viewer-scroll");
   }
 
   /* layoutFigure(card[, metrics]) -- apply the matrix to one card.
@@ -856,7 +856,7 @@
        * resized AI panel re-fits its own figures. */
       for (const entry of entries) scheduleRelayout(entry.target);
     });
-    observeHost(document.getElementById("viewer-content"));
+    observeHost(document.getElementById("viewer-scroll"));
     return resizeObserver;
   }
 

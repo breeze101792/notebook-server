@@ -359,10 +359,11 @@ absent; the row is one tap.
   legibility. **Tap-to-zoom is not offered in v1** (`mobile.md` §2.2): suppress
   the mermaid lightbox click and `cursor: zoom-in` on phone.
 - Block padding never exceeds the gutter; no element may widen the scroller.
-- Scroll restoration: `#viewer-content.scrollTop` survives rotation and back
-  (`viewer.js` restore path). `overscroll-behavior-y: none` stops
-  pull-to-refresh and the end-of-scroll bounce; the bounce would slide the
-  words off the `background-attachment: local` wallpaper.
+- Scroll restoration: `#viewer-scroll.scrollTop` survives rotation and back
+  (`viewer.js` restore path). `overscroll-behavior: contain` stops
+  pull-to-refresh and scroll chaining but keeps the end-of-scroll bounce:
+  the wallpaper is painted on `#viewer-content` (the page), so the words and
+  the pattern bounce together.
 - Focus/selection: body text is selectable; chrome is not (`user-select`).
 
 Loading: existing skeleton/spinner; no new state.
@@ -513,13 +514,13 @@ The capture textarea is focused after opening, not during the slide.
 recomputes, `#viewer-content.scrollTop` is preserved by the browser. A request
 in flight is not repeated (the send guard survives rotation).
 
-**Momentum scroll.** `-webkit-overflow-scrolling: touch` on `#viewer-content`,
+**Momentum scroll.** `-webkit-overflow-scrolling: touch` on `#viewer-scroll`,
 `#file-tree`, `.search-panel-list`, `.recent-list`, the drawer body and the
 capture textarea. `overscroll-behavior: contain` on those scrollers: no
-pull-to-refresh, no horizontal back-swipe while panning a table or diagram.
-`#viewer-content` uses `none` instead, because `contain` still allows the
-end-of-scroll bounce and the bounce separates the words from the wallpaper.
-The page itself never scrolls sideways.
+pull-to-refresh, no horizontal back-swipe while panning a table or diagram,
+and the bounce is kept on the reader. `#viewer-content` (the page) never
+scrolls; wide tables pan `#viewer-scroll`. The page itself never scrolls
+sideways.
 
 **Hover / right-click.** Under `(hover: none) and (pointer: coarse)`:
 `.code-copy-btn { opacity: 1 }`; `.tree-star`, `.tree-pin` and the table-view

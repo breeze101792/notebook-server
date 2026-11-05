@@ -2344,18 +2344,16 @@ body[data-theme="light"] #settings-overlay {
   margin: 4px 0 0;
 }
 
-/* The viewer is split into a non-scrolling shell (#viewer) and the
- * actual scroll container (#viewer-content, which also holds the
- * rendered markdown and the wallpaper). Splitting them is what makes
- * the wallpaper actually scroll with the content: putting the pattern
- * on the same element that scrolls means the background is anchored to
- * the content, not to the scroll viewport, so it can never drift out
- * of sync with the text. */
+/* The viewer is split into a non-scrolling shell (#viewer), a scroll
+ * container (#viewer-scroll), and the page (#viewer-content, which holds the
+ * rendered markdown and, in "scroll" mode, the wallpaper). The page is
+ * painted inside the scroller, so the words and the pattern move together as
+ * one sheet -- while scrolling and during the elastic overscroll. */
 #viewer {
-  /* Flex column so #viewer-content (the only child) can fill the
-   * available space with `flex: 1` and become a real scroll container.
-   * Without this the inner scroller would collapse to its content size
-   * and there'd be nothing to scroll. */
+  /* Flex column so #viewer-scroll (the only child) can fill the available
+   * space with `flex: 1` and become a real scroll container. The shell
+   * itself never scrolls; the drag overlays are its children and take
+   * their coordinates from it. */
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -2373,88 +2371,88 @@ body[data-theme="light"] #settings-overlay {
  * with #welcome for the column's space, pushing the welcome into the
  * bottom half. */
 #viewer[hidden] { display: none; }
-#viewer-content {
+/* The only scroll container. All scroll state lives here: scrollTop,
+ * scrollHeight/clientHeight, the scroll event, and the elastic overscroll.
+ * `contain` keeps the iOS/macOS bounce (the page is the paper and moves with
+ * it) while blocking scroll chaining and pull-to-refresh. */
+#viewer-scroll {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  /* No elastic overscroll at the ends. The bounce translates the scrolled
-   * content, but a background-attachment: local wallpaper is pinned to
-   * the clamped scroll offset, so the words slide off the pattern as soon
-   * as the bounce starts. `none` and not `contain`: `contain` still
-   * allows the bounce. */
-  overscroll-behavior-y: none;
-  /* Scroll tail below the last line, as a named value because the split,
-   * hybrid and phone rules all override it. Keep it small: a long tail
-   * scrolls the words away and leaves a band of bare wallpaper under
-   * them, which reads as the words and the pattern coming apart. */
+  overscroll-behavior-y: contain;
+}
+/* The page. Direct parent of the rendered blocks, and the hybrid
+ * contentEditable root. It carries the padding and, in "scroll" mode, the
+ * wallpaper. It must never scroll: a non-visible overflow would make it a
+ * scroll container again and steal the figure viewport from #viewer-scroll. */
+#viewer-content {
+  /* Scroll tail below the last line. The split, hybrid and phone rules
+   * override it. Keep it small: a long tail scrolls the words away and
+   * leaves a band of bare wallpaper under them. */
   --viewer-tail: 48px;
+  min-height: 100%;
   padding: 16px 40px var(--viewer-tail);
   max-width: 100%;
 }
 
-/* Wallpaper patterns for the preview area. The pattern, color, and
- * intensity are all set by classes on #viewer-content (added by
- * app.js:applyWallpaper). The default "none" leaves background-image
- * unset so the body color shows through. The same set of patterns
- * (none / lines / grid) can be combined with any color (neutral / blue
- * / green / purple / amber) and any intensity (subtle / medium / bold)
- * -- three independent controls, so the user can pick the visual
- * they like without being locked in.
+/* Wallpaper patterns for the preview area. app.js adds the classes to the
+ * element that owns the pattern's motion:
  *
- * Two CSS variables drive the actual paint:
- *   --wp-rgb: space-separated "R G B" components of the stroke color
+ *   "scroll" -> #viewer-content (the page). The pattern is painted on the
+ *               page, so it moves with the words -- including the elastic
+ *               overscroll, which translates the page but not the clamped
+ *               scroll offset. This is the paper.
+ *   "fixed"  -> #viewer-scroll (the scrollport). The pattern is anchored to
+ *               the scrollport, so the page moves over a stationary pattern
+ *               (windowpane).
+ *
+ * Both hosts use the default background-attachment: scroll, i.e. the
+ * pattern is anchored to its own element. `local` and `fixed` are not used:
+ * `local` pins the pattern to the clamped scroll offset, so it detaches from
+ * the page during the bounce, and `fixed` is unreliable on iOS.
+ *
+ * The default "none" leaves background-image unset so the body colour shows
+ * through. The same set of patterns (none / lines / grid) combines with any
+ * colour (neutral / blue / green / purple / amber) and any intensity (subtle
+ * / medium / bold) -- three independent controls.
+ *
+ * Two CSS variables drive the paint:
+ *   --wp-rgb: space-separated "R G B" components of the stroke colour
  *   --wp-a:   alpha (0..1) for the stroke
- * The base rules below define the gradient with rgb(var(--wp-rgb) /
- * var(--wp-a)), so changing either variable is the only thing the
- * color / intensity classes need to do.
+ * The base rules define the gradients with rgb(var(--wp-rgb) / var(--wp-a)),
+ * so changing either variable is the only thing the colour / intensity
+ * classes do.
  *
- * The colors are mid-saturation so the same RGB works on both dark
- * and light themes: a faint blue stroke shows on a dark body as a
- * soft glow and on a light body as a soft tint. The single base
- * definition is reused; no per-pattern light-theme overrides are
- * needed.
- *
- * background-attachment: local is the load-bearing piece for the
- * "Scroll with content" option. The default value `scroll` would pin
- * the background to the element's border box (windowpane feel);
- * `local` instead pins it to the element's contents, so the pattern
- * moves with the text as the user scrolls (paper-rolled-along).
- * Without `local`, the "Scroll with content" option wouldn't actually
- * scroll the wallpaper -- which is exactly the bug an earlier
- * iteration shipped.
- *
- * The .wallpaper-fixed modifier switches to background-attachment:
- * fixed, which pins the pattern to the viewport so the text scrolls
- * past a stationary wallpaper. */
-#viewer-content {
-  /* Defaults: neutral white at subtle intensity. The wallpaper-* classes
-   * override these; the body[data-theme="light"] override below flips
-   * the neutral color to black so the "neutral" preset stays visible
-   * on a light body. The color presets (blue/green/purple/amber) work
-   * on both themes at the same RGB because they're mid-saturation. */
+ * The colours are mid-saturation so the same RGB works on both dark and light
+ * themes: a faint blue stroke shows on a dark body as a soft glow and on a
+ * light body as a soft tint. */
+:is(#viewer-content, #viewer-scroll) {
+  /* Defaults: neutral white at subtle intensity. The colour classes override
+   * these; body[data-theme="light"] flips neutral to black so it stays
+   * visible on a light body. */
   --wp-rgb: 255 255 255;
   --wp-a: 0.05;
 }
-body[data-theme="light"] #viewer-content {
+body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
   --wp-rgb: 0 0 0;
 }
 /* Color presets. Mid-saturation so the same RGB reads on both dark
  * and light bodies (a faint blue stroke is a soft glow on dark, a
  * soft tint on light). Adding a new color is one rule. */
-#viewer-content.wallpaper-color-blue   { --wp-rgb: 124 156 255; }
-#viewer-content.wallpaper-color-green  { --wp-rgb:  90 200 120; }
-#viewer-content.wallpaper-color-purple { --wp-rgb: 180 130 230; }
-#viewer-content.wallpaper-color-amber  { --wp-rgb: 230 170  70; }
+:is(#viewer-content, #viewer-scroll).wallpaper-color-blue   { --wp-rgb: 124 156 255; }
+:is(#viewer-content, #viewer-scroll).wallpaper-color-green  { --wp-rgb:  90 200 120; }
+:is(#viewer-content, #viewer-scroll).wallpaper-color-purple { --wp-rgb: 180 130 230; }
+:is(#viewer-content, #viewer-scroll).wallpaper-color-amber  { --wp-rgb: 230 170  70; }
 /* Intensity presets. Subtle is a barely-there hint, Bold is a clear
  * but still secondary pattern. The default (subtle) keeps the wallpaper
  * out of the way unless the user actively dials it up. */
-#viewer-content.wallpaper-intensity-subtle { --wp-a: 0.05; }
-#viewer-content.wallpaper-intensity-medium { --wp-a: 0.10; }
-#viewer-content.wallpaper-intensity-bold   { --wp-a: 0.18; }
+:is(#viewer-content, #viewer-scroll).wallpaper-intensity-subtle { --wp-a: 0.05; }
+:is(#viewer-content, #viewer-scroll).wallpaper-intensity-medium { --wp-a: 0.10; }
+:is(#viewer-content, #viewer-scroll).wallpaper-intensity-bold   { --wp-a: 0.18; }
 
-#viewer-content.wallpaper-lines {
+:is(#viewer-content, #viewer-scroll).wallpaper-lines {
   background-image: repeating-linear-gradient(
     to bottom,
     transparent 0,
@@ -2462,22 +2460,12 @@ body[data-theme="light"] #viewer-content {
     rgb(var(--wp-rgb) / var(--wp-a)) calc(1.5em - 1px),
     rgb(var(--wp-rgb) / var(--wp-a)) 1.5em
   );
-  background-attachment: local;
 }
-#viewer-content.wallpaper-grid {
+:is(#viewer-content, #viewer-scroll).wallpaper-grid {
   background-image:
     linear-gradient(to right,  rgb(var(--wp-rgb) / var(--wp-a)) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(var(--wp-rgb) / var(--wp-a)) 1px, transparent 1px);
   background-size: 24px 24px;
-  background-attachment: local;
-}
-/* "Fixed" mode: the wallpaper stays in the viewport while the text
- * scrolls past it. Higher specificity than the base rules so the
- * `background-attachment` change wins without having to repeat the
- * gradient. */
-#viewer-content.wallpaper-lines.wallpaper-fixed,
-#viewer-content.wallpaper-grid.wallpaper-fixed {
-  background-attachment: fixed;
 }
 /* The CodeMirror 6 mount (#cm-host) is a flex item inside
  * .edit-split. CM6 injects its own .cm-editor / .cm-scroller
@@ -2733,7 +2721,11 @@ body[data-theme="light"] #viewer-content {
 #viewer-content.hybrid-editing pre code {
   display: block;
 }
-#viewer-content.hybrid-editing {
+/* Wide tables pan the scrollport, not the page: an overflow-x on the
+ * contentEditable page would compute overflow-y: auto and make the page a
+ * second scroll container, which would then be mistaken for the figure
+ * viewport (see blocks.js hostOf). */
+#viewer.hybrid-active #viewer-scroll {
   overflow-x: auto;
 }
 
@@ -7448,6 +7440,10 @@ body[data-theme="light"] #dw-designer-overlay {
   .bookmarks-empty { font-size: 14px; padding: 16px 12px; }
 
   /* ---- reader ----------------------------------------------------- */
+  #viewer-scroll {
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
   #viewer-content {
     width: 100%;
     max-width: calc(var(--m-reader-max) + 2 * var(--m-gutter));
@@ -7460,10 +7456,6 @@ body[data-theme="light"] #dw-designer-overlay {
              calc(var(--m-gutter) + env(safe-area-inset-left));
     font-size: calc(16px * var(--font-scale));
     line-height: 1.65;
-    /* `none`, not `contain`: contain still allows the bounce, and the
-     * bounce is what slides the words off the local-attached wallpaper. */
-    overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
   }
   .markdown-body h1 { font-size: 1.7em; line-height: 1.2; margin: 0 0 .45em; padding-bottom: .2em; }
   .markdown-body h2 { font-size: 1.4em; line-height: 1.25; }

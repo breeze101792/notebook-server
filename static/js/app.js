@@ -313,70 +313,76 @@
   }
 
   /* --- wallpaper --------------------------------------------------- */
-  // The wallpaper lives on #viewer-content (the actual scroller / content
-  // element) so it's anchored to the content and can never drift out of
-  // sync with the text as the user scrolls. The class is always set (even
-  // when off) so the default state is explicit and the CSS can grow more
-  // variants later without JS changes.
+  // The wallpaper is painted on the element that owns its motion:
+  //   "scroll" -> #viewer-content (the page). The pattern is part of the
+  //               page, so it travels with the words -- including the
+  //               elastic overscroll, which moves the page but not the
+  //               clamped scroll offset.
+  //   "fixed"  -> #viewer-scroll (the scrollport). The pattern is anchored
+  //               to the scrollport, so the page moves over it.
+  // The wallpaper-* classes move between the two hosts when the mode
+  // changes. The class is always set (even when off) so the default state is
+  // explicit and the CSS can grow more variants later without JS changes.
   //
   // Three independent settings:
   //   wallpaper  -> pattern (none / lines / grid)
   //   wallpaperColor    -> stroke color (neutral / blue / green / purple / amber)
   //   wallpaperIntensity-> stroke alpha (subtle / medium / bold)
-  //   wallpaperScroll   -> scroll behavior (scroll / fixed)
-  // Each is a separate class on #viewer-content. The CSS variables
-  // --wp-rgb and --wp-a drive the actual paint, so the color and
-  // intensity classes are just one-line variable overrides.
+  //   wallpaperScroll   -> pattern host (scroll / fixed)
+  // The CSS variables --wp-rgb and --wp-a drive the actual paint, so the
+  // color and intensity classes are just one-line variable overrides.
   const WALLPAPERS = ["none", "lines", "grid"];
   const WALLPAPER_COLORS = ["neutral", "blue", "green", "purple", "amber"];
   const WALLPAPER_INTENSITIES = ["subtle", "medium", "bold"];
   const WALLPAPER_SCROLL = ["scroll", "fixed"];
-  const viewerEl = document.getElementById("viewer-content");
-  function applyWallpaper(name) {
-    const w = WALLPAPERS.indexOf(name) >= 0 ? name : "none";
-    cfg.wallpaper = w;
-    if (viewerEl) {
-      viewerEl.classList.remove("wallpaper-none", "wallpaper-lines", "wallpaper-grid");
-      viewerEl.classList.add("wallpaper-" + w);
+  const WALLPAPER_PREFIX = "wallpaper-";
+  const viewerPageEl = document.getElementById("viewer-content");
+  const viewerScrollEl = document.getElementById("viewer-scroll");
+  function wallpaperHost() {
+    return (cfg.wallpaperScroll === "fixed" && viewerScrollEl)
+      ? viewerScrollEl
+      : viewerPageEl;
+  }
+  function wallpaperClassList() {
+    const classes = [
+      "wallpaper-" + cfg.wallpaper,
+      "wallpaper-intensity-" + cfg.wallpaperIntensity,
+    ];
+    if (cfg.wallpaperColor !== "neutral") {
+      classes.push("wallpaper-color-" + cfg.wallpaperColor);
     }
+    if (cfg.wallpaperScroll === "fixed") classes.push("wallpaper-fixed");
+    return classes;
+  }
+  // Move the whole wallpaper-* set to the host for the current mode.
+  // Clearing both first guarantees only one host ever paints a pattern.
+  function syncWallpaperClasses() {
+    for (const el of [viewerPageEl, viewerScrollEl]) {
+      if (!el) continue;
+      for (const name of Array.from(el.classList)) {
+        if (name.indexOf(WALLPAPER_PREFIX) === 0) el.classList.remove(name);
+      }
+    }
+    const host = wallpaperHost();
+    if (host) host.classList.add(...wallpaperClassList());
+  }
+  function applyWallpaper(name) {
+    cfg.wallpaper = WALLPAPERS.indexOf(name) >= 0 ? name : "none";
+    syncWallpaperClasses();
   }
   function applyWallpaperColor(name) {
-    const c = WALLPAPER_COLORS.indexOf(name) >= 0 ? name : "neutral";
-    cfg.wallpaperColor = c;
-    if (viewerEl) {
-      // "neutral" is the absence of a color modifier (the CSS default
-      // is white-in-dark / black-in-light, set by body[data-theme]).
-      // For all other presets, set the explicit color class.
-      viewerEl.classList.remove(
-        "wallpaper-color-neutral",
-        "wallpaper-color-blue",
-        "wallpaper-color-green",
-        "wallpaper-color-purple",
-        "wallpaper-color-amber"
-      );
-      if (c !== "neutral") viewerEl.classList.add("wallpaper-color-" + c);
-    }
+    // "neutral" is the absence of a color modifier (the CSS default is
+    // white-in-dark / black-in-light, set by body[data-theme]).
+    cfg.wallpaperColor = WALLPAPER_COLORS.indexOf(name) >= 0 ? name : "neutral";
+    syncWallpaperClasses();
   }
   function applyWallpaperIntensity(name) {
-    const i = WALLPAPER_INTENSITIES.indexOf(name) >= 0 ? name : "subtle";
-    cfg.wallpaperIntensity = i;
-    if (viewerEl) {
-      viewerEl.classList.remove(
-        "wallpaper-intensity-subtle",
-        "wallpaper-intensity-medium",
-        "wallpaper-intensity-bold"
-      );
-      viewerEl.classList.add("wallpaper-intensity-" + i);
-    }
+    cfg.wallpaperIntensity = WALLPAPER_INTENSITIES.indexOf(name) >= 0 ? name : "subtle";
+    syncWallpaperClasses();
   }
   function applyWallpaperScroll(mode) {
-    const m = WALLPAPER_SCROLL.indexOf(mode) >= 0 ? mode : "scroll";
-    cfg.wallpaperScroll = m;
-    if (viewerEl) {
-      // Always remove + re-add so the class is in a known state even
-      // after the user switches back to "scroll" from "fixed".
-      viewerEl.classList.toggle("wallpaper-fixed", m === "fixed");
-    }
+    cfg.wallpaperScroll = WALLPAPER_SCROLL.indexOf(mode) >= 0 ? mode : "scroll";
+    syncWallpaperClasses();
   }
 
   /* --- top bar + site title ----------------------------------------- */

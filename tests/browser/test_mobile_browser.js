@@ -42,6 +42,8 @@ const NOTES = {
   "Second.md": "# Second\n\nAnother root note.\n",
   "notes/a.md": "# File A\n\nTODO fix this bug.\n",
   "notes/b.md": "# File B\n\nAnother TODO fix this here.\n",
+  "Long.md": "# Long\n\n" + Array.from({ length: 200 }, (_, i) =>
+    "Paragraph " + (i + 1) + " with enough text to scroll the phone reader past the resume offset.").join("\n\n") + "\n",
 };
 for (const [rel, body] of Object.entries(NOTES)) {
   const p = path.join(DATA, rel);
@@ -629,14 +631,22 @@ async function main() {
       await page.goto(BASE + "/");
       await bootApp(page);
       await page.evaluate(() => localStorage.setItem("nb:mobileResume",
-        JSON.stringify({ v: 1, path: "notes/a.md", scroll: 0 })));
+        JSON.stringify({ v: 1, path: "Long.md", scroll: 600 })));
       await page.reload();
       await bootApp(page);
       await page.waitForFunction(
-        () => window.NB.tabs.getActive() === "notes/a.md", null, { timeout: 8000 });
+        () => window.NB.tabs.getActive() === "Long.md", null, { timeout: 8000 });
       const resumeActive = await page.evaluate(() => window.NB.tabs.getActive());
       check("history: resume boot opens the note",
-        resumeActive === "notes/a.md", resumeActive);
+        resumeActive === "Long.md", resumeActive);
+      // The resume offset must be applied to the scrollport, not to the
+      // page element (which does not scroll).
+      const resumeScroll = await page.waitForFunction(
+        () => Math.abs(document.getElementById("viewer-scroll").scrollTop - 600) < 2,
+        null, { timeout: 5000 }).then(() => true).catch(() => false);
+      check("history: resume boot restores the scroll position",
+        resumeScroll,
+        await page.evaluate(() => document.getElementById("viewer-scroll").scrollTop));
       await page.goBack();
       await page.waitForFunction(
         () => !document.getElementById("mobile-home").hidden, null, { timeout: 5000 });

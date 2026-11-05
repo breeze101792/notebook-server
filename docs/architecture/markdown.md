@@ -182,14 +182,14 @@ stretch the drawing's internal text to the reading column. Unknown sizes
 stay on the safe intrinsic-CSS fallback.
 
 The matrix is measured at layout time from the card's content width and
-70% of the nearest scrolling host's `clientHeight` — `#viewer-content` for a
+70% of the nearest scrolling host's `clientHeight` — `#viewer-scroll` for a
 note, `.ai-chat-log` for an AI reply — found by shape, so a render root
 outside the viewer fits its own pane.
 
 - **normal** — the diagram fits the width and the measured viewport.
 - **tall** — it fits the width but is taller than the viewport, up to
   three viewports. The width-fitted size is kept; the card grows and the
-  note page (`#viewer-content`) is the only scroller. There is no nested
+  note scrollport (`#viewer-scroll`) is the only scroller. There is no nested
   diagram scroller, no bounded wrapper height, and no scroll-specific
   focus/tab/ARIA state.
 - **fit** — it is more than three viewports tall; the whole diagram is

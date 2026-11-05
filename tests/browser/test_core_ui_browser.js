@@ -808,7 +808,7 @@ async function main() {
     await targetOutline.locator("a").click();
     check("outline: clicking a heading scrolls the viewer",
       await waitFor(() => page.evaluate(() =>
-        document.getElementById("viewer-content").scrollTop > 100), 5000));
+        document.getElementById("viewer-scroll").scrollTop > 100), 5000));
     const clickActive = await waitFor(() => page.evaluate((id) => {
       const a = document.querySelector("#outline .outline-item.active");
       return !!a && a.dataset.id === id;
@@ -817,7 +817,7 @@ async function main() {
     await sleep(1000);
     const clickGeom = await page.evaluate((id) => {
       const h = document.getElementById(id);
-      const v = document.getElementById("viewer-content");
+      const v = document.getElementById("viewer-scroll");
       const a = document.querySelector("#outline .outline-item.active");
       return {
         active: a ? a.dataset.id : "(none)",
@@ -831,7 +831,7 @@ async function main() {
 
     // Force the scroller back to the top.
     await page.evaluate(() => {
-      const v = document.getElementById("viewer-content");
+      const v = document.getElementById("viewer-scroll");
       v.scrollTo({ top: 0, behavior: "auto" });
       v.dispatchEvent(new Event("scroll"));
     });
@@ -841,7 +841,7 @@ async function main() {
     }, null), 4000);
     const topGeom = await page.evaluate(() => {
       const h = document.querySelector("#viewer-content h1");
-      const v = document.getElementById("viewer-content");
+      const v = document.getElementById("viewer-scroll");
       const a = document.querySelector("#outline .outline-item.active");
       return {
         active: a ? a.dataset.id : "(none)",

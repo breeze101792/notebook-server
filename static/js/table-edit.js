@@ -25,6 +25,7 @@
 
   let viewerEl = null;       // #viewer: overlay host, position:relative
   let viewerContentEl = null;
+  let viewerScrollEl = null;
   let overlay = null;        // .nb-table-overlay
   let enabled = false;
   let activeTable = null;
@@ -165,7 +166,7 @@
     viewerContentEl.addEventListener("mouseout", onOut);
     viewerContentEl.addEventListener("focusin", onFocusIn);
     viewerContentEl.addEventListener("focusout", onFocusOut);
-    viewerContentEl.addEventListener("scroll", hide, { passive: true });
+    viewerScrollEl.addEventListener("scroll", hide, { passive: true });
     window.addEventListener("resize", hide);
   }
 
@@ -179,14 +180,15 @@
     viewerContentEl.removeEventListener("mouseout", onOut);
     viewerContentEl.removeEventListener("focusin", onFocusIn);
     viewerContentEl.removeEventListener("focusout", onFocusOut);
-    viewerContentEl.removeEventListener("scroll", hide);
+    viewerScrollEl.removeEventListener("scroll", hide);
     window.removeEventListener("resize", hide);
   }
 
   function build() {
     viewerEl = document.getElementById("viewer");
     viewerContentEl = document.getElementById("viewer-content");
-    if (!viewerEl || !viewerContentEl) return;
+    viewerScrollEl = document.getElementById("viewer-scroll");
+    if (!viewerEl || !viewerContentEl || !viewerScrollEl) return;
     overlay = el("div", "nb-table-overlay");
     overlay.hidden = false;   // visibility is CSS-driven; empty == invisible
     // The overlay is appended on enable() (a child of #viewer, outside

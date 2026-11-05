@@ -284,7 +284,7 @@ async function main() {
           scrollHeight: vp.scrollHeight,
           scrollWidth: vp.scrollWidth,
           cardHeight: card.getBoundingClientRect().height,
-          viewerScrollHeight: document.getElementById("viewer-content").scrollHeight,
+          viewerScrollHeight: document.getElementById("viewer-scroll").scrollHeight,
           overflowY: cs.overflowY,
           inlineOverflowY: vp.style.overflowY || "",
           inlineMaxHeight: vp.style.maxHeight || "",
@@ -712,7 +712,7 @@ async function main() {
     // Wheel over the tall diagram: the note page scrolls; the wrapper
     // never does (there is no nested scroller).
     await page.evaluate(() => {
-      const viewer = document.getElementById("viewer-content");
+      const viewer = document.getElementById("viewer-scroll");
       viewer.scrollTop = 0;
       document.querySelector("#f-a11y-scroll .nb-figure-viewport").scrollTop = 0;
     });
@@ -721,7 +721,7 @@ async function main() {
     await page.mouse.wheel(0, 300);
     await page.waitForTimeout(250);
     const scrollState = await page.evaluate(() => ({
-      viewer: document.getElementById("viewer-content").scrollTop,
+      viewer: document.getElementById("viewer-scroll").scrollTop,
       inner: document.querySelector("#f-a11y-scroll .nb-figure-viewport").scrollTop,
     }));
     check("wheel over a tall diagram scrolls the note page, not an inner scroller",
@@ -731,17 +731,17 @@ async function main() {
     // Wheel over the normal diagram: the page-level scroller also
     // receives the event.
     await page.evaluate(() => {
-      const viewer = document.getElementById("viewer-content");
+      const viewer = document.getElementById("viewer-scroll");
       viewer.scrollTop = 0;
     });
     const beforePage = await page.evaluate(
-      () => document.getElementById("viewer-content").scrollTop);
+      () => document.getElementById("viewer-scroll").scrollTop);
     const nb = await box("#f-a11y-normal svg");
     await page.mouse.move(nb.left + nb.width / 2, nb.top + nb.height / 2);
     await page.mouse.wheel(0, 320);
     await page.waitForTimeout(250);
     const afterPage = await page.evaluate(
-      () => document.getElementById("viewer-content").scrollTop);
+      () => document.getElementById("viewer-scroll").scrollTop);
     check("wheel over a normal diagram still scrolls the page",
       afterPage > beforePage,
       JSON.stringify({ before: beforePage, after: afterPage }));
@@ -756,11 +756,11 @@ async function main() {
       "f-lb": { contentW: 1000, ref: 14, viewportH: 500 },
     });
     await page.evaluate(() => {
-      document.getElementById("viewer-content").scrollTop = 50;
+      document.getElementById("viewer-scroll").scrollTop = 50;
     });
     const lbSvg = await box("#f-lb .nb-figure-viewport > svg");
     const beforeLb = await page.evaluate(() => ({
-      page: document.getElementById("viewer-content").scrollTop,
+      page: document.getElementById("viewer-scroll").scrollTop,
     }));
     await page.mouse.click(lbSvg.left + Math.min(20, lbSvg.width / 2),
       Math.max(0, lbSvg.top) + 40);
@@ -784,7 +784,7 @@ async function main() {
     const closed = await page.evaluate(() => ({
       hidden: document.getElementById("mermaid-lightbox").hidden,
       empty: document.getElementById("mermaid-lightbox-body").children.length === 0,
-      page: document.getElementById("viewer-content").scrollTop,
+      page: document.getElementById("viewer-scroll").scrollTop,
     }));
     check("closing restores the page scroll position",
       closed.hidden && closed.empty && closed.page === beforeLb.page,

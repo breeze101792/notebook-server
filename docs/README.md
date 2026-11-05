@@ -114,6 +114,7 @@ Each `.md` has a sibling `.html` mockup where one exists.
 | --- | --- |
 | [`design/settings-modal.md`](design/settings-modal.md) | Settings modal: seven tabs, layout, and states. |
 | [`design/mobile-shell.md`](design/mobile-shell.md) | Mobile shell: breakpoints, anatomy, component states, tokens, and the file-by-file change list. |
+| [`design/viewer-scroll-container.md`](design/viewer-scroll-container.md) | The shipped split of the preview into a scroll container and a page: wallpaper host per mode, scroller ownership, retarget map, and acceptance criteria. |
 | [`design/table-editor.md`](design/table-editor.md) | Table editor: shell, grid, toolbar, sort, blocked state, keyboard, tokens, and responsive rules. |
 | [`design/table-editor-selection.md`](design/table-editor-selection.md) | Selection and clipboard: the wash and edge treatment, the clipboard toolbar group, status strings, and the blocked state. |
 | [`design/mermaid-editor.md`](design/mermaid-editor.md) | Mermaid editor: the edit UI redesign. |

@@ -111,6 +111,7 @@
 
   let viewerEl = null;         // #viewer: overlay host, position:relative
   let viewerContentEl = null;
+  let viewerScrollEl = null;
   let overlay = null;          // .nb-tv-overlay
   let controls = null;         // .nb-tv-controls (icon + toolbar; child of overlay)
   let toggle = null;           // .nb-tv-toggle icon; click opens the toolbar
@@ -1168,7 +1169,8 @@
   function build() {
     viewerEl = document.getElementById("viewer");
     viewerContentEl = document.getElementById("viewer-content");
-    if (!viewerEl || !viewerContentEl) return;
+    viewerScrollEl = document.getElementById("viewer-scroll");
+    if (!viewerEl || !viewerContentEl || !viewerScrollEl) return;
     overlay = el("div", "nb-tv-overlay");
     // One control row in the table's LEFT gutter: the always-on icon plus
     // the toolbar it opens. Keeping both in one absolutely-positioned box
@@ -1216,7 +1218,7 @@
     viewerContentEl.addEventListener("keydown", onHeaderKey);
     // Positions are rect-based and drift on scroll; the cheapest correct
     // behaviour is to hide and re-reveal on the next interaction.
-    viewerContentEl.addEventListener("scroll", hide, { passive: true });
+    viewerScrollEl.addEventListener("scroll", hide, { passive: true });
     window.addEventListener("resize", hide);
     document.addEventListener("pointerdown", onDocPointerDown, true);
     document.addEventListener("keydown", onDocKey);

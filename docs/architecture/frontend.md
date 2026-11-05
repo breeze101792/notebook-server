@@ -74,6 +74,8 @@ HTML shell before any script runs, avoiding a visible reflow once the
 async `GET /api/config` lands. The values become an inline style on
 `<html>` (`index.html`), classes on `<body>`/`#viewer-content`, and the
 `hidden` attribute on every `.side-panel-view` host except the active view.
+The wallpaper classes are painted on `#viewer-content` (the page); `app.js`
+moves them to `#viewer-scroll` when the fixed mode is active.
 
 Only chrome values are embedded: theme, site title, font scale, pane
 widths, collapse state, the active side-panel view, and wallpaper classes.
@@ -135,12 +137,12 @@ implemented today.
 | `htmlpreview.js` | 304 | `NB.htmlpreview` | ` ```html-live ` renderer into a sandboxed iframe `srcdoc` (`allow-scripts`, no `allow-same-origin`). |
 | `svg.js` | 157 | `NB.svg` | ` ```svg ` renderer. Parses the fence as SVG XML, strips script / `foreignObject` / `on*` / external refs, inlines the result, and opens it in the shared lightbox on click. |
 | `copy-image.js` | 863 | `NB.copyButton` | One owner of the Copy affordances: source text for code/KaTeX, PNG rasterization for mermaid/wavedrom/graphviz/html-live, and the clipboard fallback. |
-| `viewer.js` | 1565 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension, and the stashed-draft Recover/Discard bar. |
+| `viewer.js` | 1610 | `NB.viewer`, `NB.slugify` | Markdown render pipeline (marked + highlight.js), per-file content/edit cache, edit/view toggle, wikilink extension, and the stashed-draft Recover/Discard bar. |
 | `editbar.js` | 1073 | `NB.editbar` | Formatting toolbar in edit mode. Talks only to `NB.cmEditor`. Table insert/edit ops. |
 | `hybrid.js` | 9089 | `NB.hybrid` | WYSIWYG ("hybrid") edit mode. The largest module. `contentEditable` viewer, Turndown round-trip back to Markdown, the in-place fence editor, undo snapshots, raw-HTML preservation, table mutation API, and draft stash/recover. See [hybrid-editing.md](hybrid-editing.md). |
-| `table-edit.js` | 212 | `NB.tableEdit` | Hybrid-mode "Edit table" control: one 24px button in the active table's left gutter, outside the table's content box and `contentEditable` subtree. Picks the table from the pointer or the caret; opens `table-editor.js`. It owns no table operation. |
-| `list-edit.js` | 647 | `NB.listEdit` | Hybrid-mode list-item drag handles and reorder overlay (Pointer Events, outside the contentEditable subtree). |
-| `table-view.js` | 1253 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v2). An entry applies only when header, full-cell hash and same-header ordinal all match; otherwise it is ignored. Tears down before hybrid edit. |
+| `table-edit.js` | 214 | `NB.tableEdit` | Hybrid-mode "Edit table" control: one 24px button in the active table's left gutter, outside the table's content box and `contentEditable` subtree. Picks the table from the pointer or the caret; opens `table-editor.js`. It owns no table operation. |
+| `list-edit.js` | 649 | `NB.listEdit` | Hybrid-mode list-item drag handles and reorder overlay (Pointer Events, outside the contentEditable subtree). |
+| `table-view.js` | 1255 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort. A title click toggles the sort; the per-header menu icon opens the column menu. Persisted in `localStorage` under `nb:tableView` (schema v2). An entry applies only when header, full-cell hash and same-header ordinal all match; otherwise it is ignored. Tears down before hybrid edit. |
 | `table-select.js` | 433 | `NB.tableSelect` | Ctrl+drag (Cmd on macOS) over table cells paints a rectangle; Ctrl+C copies it as TSV (`text/plain`) plus an HTML `<table>` (`text/html`). One engine for preview and hybrid edit. The selection classes are transient chrome, stripped before serialization and undo snapshots. |
 | `table-editor.js` | 2140 | `NB.tableEditor` | Hybrid-only "Edit table" modal (`#table-editor-overlay`, a static `.settings-overlay`): spreadsheet grid over a snapshot of the table's cell HTML and per-cell alignment. Moves, inserts, adds and deletes rows and columns (buttons and pointer drag on the row/column grips), cycles column alignment, sorts body rows stably, transposes, deletes the table. Apply rebuilds one GFM table, flushes the pending undo snapshot first, replaces the source node, and calls `onContentChange()`; an unchanged table closes without a write. Merged-cell tables open read-only with a notice. |
 | `watcher.js` | 337 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
@@ -163,9 +165,9 @@ implemented today.
 | `activity.js` | 1371 | `NB.activity` | Left activity bar and side-panel view switcher. Registers seven views: Explorer, Sessions, Pinned, Bookmarks, Recent (fuzzy quick-open), Search, AI. The Search view has a clear × inside the query field (hidden for an empty/whitespace query); match case, target, grouping, and sort live in the Advanced disclosure. `openSearch()` activates Search, expands the panel or phone drawer, and focuses the query. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
 | `bookmarks.js` | 453 | `NB.bookmarks` | Bookmarks side-panel view: ordered list, star toggle, drag reorder, context menu, auto-prune, rename re-key. |
 | `shortcuts.js` | 411 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+E`, toggleHybrid `Mod+Shift+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
-| `mobile.js` | 1252 | `NB.mobile` | Phone shell: mode mirror, drawer, Home list, quick capture, mobile settings sheet. |
+| `mobile.js` | 1253 | `NB.mobile` | Phone shell: mode mirror, drawer, Home list, quick capture, mobile settings sheet. |
 | `workspaces.js` | 1111 | `NB.workspaces` | Workspace picker (topbar chip and activity-bar glyph, one shared popover), the add/rename workspace dialog (`#workspace-dialog`), and the Settings → Workspaces list. Rows come from `GET /api/workspaces`; the active row is `aria-current="page"`. |
-| `app.js` | 1335 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
+| `app.js` | 1399 | `NB.app` | Bootstrap: `DEFAULTS` config schema, config load/merge, theme/font/wallpaper/topbar, pane resize/collapse, deep links, toast, debounced `persistConfig`. |
 
 ## 4. Code-block renderer pipeline
 
@@ -195,7 +197,7 @@ The note viewer, the hybrid editor, the exporter, and the AI panel
 (`ai.js`, per assistant reply) all run `renderAll` on their own render
 root. Figure sizing is host-local: each card measures its nearest
 scrolling ancestor, so an AI reply fits the chat log and a note fits
-`#viewer-content` in the same pass.
+`#viewer-scroll` (the note's scroll container) in the same pass.
 
 ### The six renderers
 
@@ -524,7 +526,11 @@ stripped before any save or undo snapshot.
 The sidebar keeps an ordered `bookmarks` array, reordered by drag-and-drop
 and pruned silently on the next tree refresh. The Appearance tab sets the
 wallpaper pattern, color, intensity, and scroll mode; the server paints
-the resulting classes on first load through `boot_state()`. `windows.js`
+the resulting classes on first load through `boot_state()`. The pattern is
+painted on `#viewer-content` (the page) for `scroll` and on `#viewer-scroll`
+(the scrollport) for `fixed`, so the elastic overscroll moves the words and
+the pattern together in the first mode and leaves the pattern stationary in
+the second. `windows.js`
 makes each settings modal a draggable, resizable, maximizable window
 whose geometry persists per modal under `nb:windowGeometry`
 ([window-maximize.md](window-maximize.md)).

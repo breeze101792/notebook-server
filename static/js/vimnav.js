@@ -273,7 +273,7 @@
     if (target && NB.outline.setVimCursor) NB.outline.setVimCursor(target.dataset.id);
   }
   function editorJump(where) {
-    const vc = document.getElementById("viewer-content");
+    const vc = document.getElementById("viewer-scroll");
     if (!vc) return;
     if (where === "top") vc.scrollTop = 0;
     else vc.scrollTop = vc.scrollHeight;
@@ -342,13 +342,13 @@
     if (k === "?") { openHelp(); return; }
   }
   function scrollEditor(direction) {
-    const vc = document.getElementById("viewer-content");
+    const vc = document.getElementById("viewer-scroll");
     if (!vc) return;
     const lineH = 24;
     vc.scrollTop += (direction === "down" ? 1 : -1) * lineH;
   }
   function scrollEditorHalf(direction) {
-    const vc = document.getElementById("viewer-content");
+    const vc = document.getElementById("viewer-scroll");
     if (!vc) return;
     const half = vc.clientHeight / 2;
     vc.scrollTop += (direction === "down" ? 1 : -1) * half;

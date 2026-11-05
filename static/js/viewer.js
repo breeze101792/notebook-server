@@ -10,11 +10,14 @@
   "use strict";
   window.NB = window.NB || {};
 
-  // #viewer is the non-scrolling shell; #viewer-content is the scroller
-  // that holds the rendered markdown. Operations on the content (render,
-  // scroll, query) target viewerContentEl; visibility toggles target
-  // viewerEl (the shell) so the whole pane disappears at once.
+  // #viewer is the non-scrolling shell; #viewer-scroll is the only scroll
+  // container; #viewer-content is the page that holds the rendered markdown
+  // (and, in "scroll" mode, the wallpaper). Scroll state and scroll
+  // listeners target viewerScrollEl; render and query operations target
+  // viewerContentEl; visibility toggles target viewerEl (the shell) so the
+  // whole pane disappears at once.
   const viewerEl        = document.getElementById("viewer");
+  const viewerScrollEl  = document.getElementById("viewer-scroll");
   const viewerContentEl = document.getElementById("viewer-content");
   const welcomeEl       = document.getElementById("welcome");
   // #cm-host is the CodeMirror 6 mount point. We no longer talk
@@ -480,7 +483,7 @@
     // Only rebuild the outline for the "real" render (not live preview).
     if (content === undefined && NB.outline) {
       NB.outline.build(viewerContentEl);
-      NB.outline.startWatching(viewerContentEl);
+      NB.outline.startWatching(viewerScrollEl);
     }
 
     // Render-complete signal. `live` is true for the editing live
@@ -558,11 +561,11 @@
 
   function onEditorScroll() {
     const scroller = NB.cmEditor.scrollDOM();
-    if (scroller) syncScroll(scroller, viewerContentEl);
+    if (scroller) syncScroll(scroller, viewerScrollEl);
   }
   function onViewerScroll() {
     const scroller = NB.cmEditor.scrollDOM();
-    if (scroller) syncScroll(viewerContentEl, scroller);
+    if (scroller) syncScroll(viewerScrollEl, scroller);
   }
 
   /* --- per-file scroll position memory ------------------------------ */
@@ -577,11 +580,11 @@
     if (scrollTrackTicking) return;
     scrollTrackTicking = true;
     requestAnimationFrame(() => {
-      if (active != null) scrollPositions.set(active, viewerContentEl.scrollTop);
+      if (active != null) scrollPositions.set(active, viewerScrollEl.scrollTop);
       scrollTrackTicking = false;
     });
   }
-  viewerContentEl.addEventListener("scroll", onViewerScrollTrack, { passive: true });
+  viewerScrollEl.addEventListener("scroll", onViewerScrollTrack, { passive: true });
 
   function showViewer() {
     clearTimeout(liveTimer);
@@ -600,7 +603,7 @@
     if (welcomeEl) welcomeEl.hidden = true;
     const scroller = NB.cmEditor.scrollDOM();
     if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
-    viewerContentEl.removeEventListener("scroll", onViewerScroll);
+    viewerScrollEl.removeEventListener("scroll", onViewerScroll);
     refreshTopbar();
     if (NB.editbar) NB.editbar.hide();
     // Hide any special-tab content containers that live as siblings of
@@ -649,12 +652,12 @@
       render(NB.cmEditor.getValue());
       const scroller = NB.cmEditor.scrollDOM();
       if (scroller) scroller.addEventListener("scroll", onEditorScroll, { passive: true });
-      viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
+      viewerScrollEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       editSplit.classList.remove("split");
       const scroller = NB.cmEditor.scrollDOM();
       if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
-      viewerContentEl.removeEventListener("scroll", onViewerScroll);
+      viewerScrollEl.removeEventListener("scroll", onViewerScroll);
     }
     refreshTopbar();
     NB.cmEditor.focus();
@@ -684,7 +687,7 @@
     editSplit.classList.remove("split");
     const scroller = NB.cmEditor.scrollDOM();
     if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
-    viewerContentEl.removeEventListener("scroll", onViewerScroll);
+    viewerScrollEl.removeEventListener("scroll", onViewerScroll);
     if (cmHostEl) cmHostEl.hidden = true;
     viewerEl.hidden = true;
     welcomeEl.hidden = false;
@@ -1155,12 +1158,12 @@
       editSplit.classList.add("split");
       render(NB.cmEditor.getValue());
       if (scroller) scroller.addEventListener("scroll", onEditorScroll, { passive: true });
-      viewerContentEl.addEventListener("scroll", onViewerScroll, { passive: true });
+      viewerScrollEl.addEventListener("scroll", onViewerScroll, { passive: true });
     } else {
       viewerEl.hidden = true;
       editSplit.classList.remove("split");
       if (scroller) scroller.removeEventListener("scroll", onEditorScroll);
-      viewerContentEl.removeEventListener("scroll", onViewerScroll);
+      viewerScrollEl.removeEventListener("scroll", onViewerScroll);
     }
   });
   if (draftRecoverBtn) draftRecoverBtn.addEventListener("click", recoverDraft);
@@ -1351,7 +1354,7 @@
       if (!resolved) return; // unresolvable -> nothing to do
       const currentPath = (NB.viewer.getPath() || "").replace(/^\/+/, "");
       const fromFile = currentPath || null;
-      const fromScroll = viewerContentEl.scrollTop;
+      const fromScroll = viewerScrollEl.scrollTop;
       pushNav({ type: "cross-note", fromFile, fromScroll });
       NB.app.openDeepLink({ file: resolved.path, heading: resolved.heading });
       return;
@@ -1378,7 +1381,7 @@
       // Same-file in-page anchor. We own the scroll so we can also
       // record a navStack entry the back button can pop.
       e.preventDefault();
-      const preScroll = viewerContentEl.scrollTop;
+      const preScroll = viewerScrollEl.scrollTop;
       const slug = decodeURIComponent(url.hash.replace(/^#/, ""));
       pushNav({ type: "in-page", file: currentPath, scroll: preScroll });
       if (NB.mobile && NB.mobile.noteInPage) NB.mobile.noteInPage(currentPath);
@@ -1395,7 +1398,7 @@
     e.preventDefault();
     const heading = url.hash ? decodeURIComponent(url.hash.replace(/^#/, "")) : null;
     const fromFile = currentPath || null;
-    const fromScroll = viewerContentEl.scrollTop;
+    const fromScroll = viewerScrollEl.scrollTop;
     pushNav({ type: "cross-note", fromFile, fromScroll });
     NB.app.openDeepLink({ file: linkPath, heading });
   });
@@ -1421,7 +1424,7 @@
   const SCROLL_LINE = 48;   // px per Arrow Up/Down press
   function scrollViewerBy(dy) {
     if (!viewerContentEl) return;
-    viewerContentEl.scrollTop += dy;
+    viewerScrollEl.scrollTop += dy;
   }
   function viewerScrollTargetHasFocus() {
     const a = document.activeElement;
@@ -1446,8 +1449,8 @@
     let dy = 0;
     if (e.key === "ArrowUp") dy = -SCROLL_LINE;
     else if (e.key === "ArrowDown") dy = SCROLL_LINE;
-    else if (e.key === "PageUp") dy = -(viewerContentEl.clientHeight || 0);
-    else if (e.key === "PageDown") dy = (viewerContentEl.clientHeight || 0);
+    else if (e.key === "PageUp") dy = -(viewerScrollEl.clientHeight || 0);
+    else if (e.key === "PageDown") dy = (viewerScrollEl.clientHeight || 0);
     else return;
     e.preventDefault();
     scrollViewerBy(dy);
@@ -1504,7 +1507,7 @@
         // (activate -> viewer.activate -> render) to settle; setting
         // scrollTop before then would race the layout.
         requestAnimationFrame(() => {
-          viewerContentEl.scrollTop = entry.fromScroll || 0;
+          viewerScrollEl.scrollTop = entry.fromScroll || 0;
         });
       } catch (err) {
         console.warn("back cross-note restore failed", err);
@@ -1512,7 +1515,7 @@
     } else if (entry.type === "in-page") {
       // Same file -- just restore the scroll. No tab swap.
       requestAnimationFrame(() => {
-        viewerContentEl.scrollTop = entry.scroll || 0;
+        viewerScrollEl.scrollTop = entry.scroll || 0;
       });
     }
   }
@@ -1550,7 +1553,7 @@
     // forward is the file we're leaving from). Capture it on the
     // entry before mirroring it onto the redo stack.
     const curFile = (NB.viewer.getPath() || "").replace(/^\/+/, "") || null;
-    const curScroll = viewerContentEl.scrollTop;
+    const curScroll = viewerScrollEl.scrollTop;
     entry._forwardTarget = { file: curFile, scroll: curScroll };
     // Mirror onto the redo stack so goForward can re-apply it.
     redoStack.push(entry);
@@ -1585,7 +1588,7 @@
         await NB.tabs.open(t.file);
       }
       requestAnimationFrame(() => {
-        viewerContentEl.scrollTop = t.scroll || 0;
+        viewerScrollEl.scrollTop = t.scroll || 0;
       });
     } catch (err) {
       console.warn("forward cross-note restore failed", err);

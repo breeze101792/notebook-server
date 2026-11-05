@@ -312,7 +312,9 @@ const html = `<!DOCTYPE html><html><head>
         <div id="edit-split" class="edit-split">
           <div id="cm-host" class="cm-host" hidden></div>
           <div id="viewer">
-            <div id="viewer-content" class="markdown-body"></div>
+            <div id="viewer-scroll">
+              <div id="viewer-content" class="markdown-body"></div>
+            </div>
           </div>
           <div id="draft-bar" hidden>
             <span id="draft-bar-msg"></span>
@@ -7761,19 +7763,19 @@ function check(label, cond, extra) {
   const cmScroller = window.NB.cmEditor.scrollDOM();
   Object.defineProperty(cmScroller, "scrollHeight", { value: 2000, configurable: true });
   Object.defineProperty(cmScroller, "clientHeight", { value: 400, configurable: true });
-  Object.defineProperty($("viewer-content"), "scrollHeight", { value: 1000, configurable: true });
-  Object.defineProperty($("viewer-content"), "clientHeight", { value: 400, configurable: true });
+  Object.defineProperty($("viewer-scroll"), "scrollHeight", { value: 1000, configurable: true });
+  Object.defineProperty($("viewer-scroll"), "clientHeight", { value: 400, configurable: true });
   // Scroll the editor to 50%.
   cmScroller.scrollTop = 800;  // (2000-400)*0.5 = 800
   cmScroller.dispatchEvent(new window.Event("scroll", { bubbles: true }));
   await tick(20);
   // Viewer should be at 50% of its range: (1000-400)*0.5 = 300
   check("scroll sync: editor->viewer proportional",
-    Math.abs($("viewer-content").scrollTop - 300) < 5,
-    "viewer-content.scrollTop=" + $("viewer-content").scrollTop);
+    Math.abs($("viewer-scroll").scrollTop - 300) < 5,
+    "viewer-scroll.scrollTop=" + $("viewer-scroll").scrollTop);
   // Scroll the viewer to 75%.
-  $("viewer-content").scrollTop = 450;  // (1000-400)*0.75 = 450
-  $("viewer-content").dispatchEvent(new window.Event("scroll", { bubbles: true }));
+  $("viewer-scroll").scrollTop = 450;  // (1000-400)*0.75 = 450
+  $("viewer-scroll").dispatchEvent(new window.Event("scroll", { bubbles: true }));
   await tick(20);
   // Editor should be at 75%: (2000-400)*0.75 = 1200
   check("scroll sync: viewer->editor proportional",
@@ -11008,17 +11010,22 @@ function check(label, cond, extra) {
     // code block or table whose inner element owns a horizontal scroller
     // (highlight.js sets `pre code { overflow-x: auto }`, and the app's
     // own pre/table rules do too). Hybrid mode drops those inner
-    // scrollers and scrolls #viewer-content instead. jsdom has no layout
-    // engine, so we assert the CSS rules directly -- the same approach
-    // the code-copy-button regression above uses.
+    // scrollers and pans the scrollport (#viewer-scroll) instead -- not
+    // #viewer-content, whose overflow-x would compute overflow-y: auto and
+    // make the page a second scroll container. jsdom has no layout engine,
+    // so we assert the CSS rules directly -- the same approach the
+    // code-copy-button regression above uses.
     {
       const hybridCss = read("static/css/style.css");
       check("hybrid fx-caret: pre/pre code/table override inner overflow",
         /#viewer-content\.hybrid-editing pre,[\s\S]*?#viewer-content\.hybrid-editing pre code,[\s\S]*?#viewer-content\.hybrid-editing table\s*\{[^}]*overflow:\s*visible/.test(hybridCss),
         "no hybrid overflow:visible rule for pre/pre code/table");
-      check("hybrid fx-caret: #viewer-content becomes the horizontal scroller",
-        /#viewer-content\.hybrid-editing\s*\{[^}]*overflow-x:\s*auto/.test(hybridCss),
-        "no #viewer-content.hybrid-editing{overflow-x:auto} rule");
+      check("hybrid fx-caret: #viewer-scroll becomes the horizontal scroller",
+        /#viewer\.hybrid-active #viewer-scroll\s*\{[^}]*overflow-x:\s*auto/.test(hybridCss),
+        "no #viewer.hybrid-active #viewer-scroll{overflow-x:auto} rule");
+      check("hybrid fx-caret: the page never scrolls on its own",
+        !/#viewer-content\.hybrid-editing\s*\{[^}]*overflow-x/.test(hybridCss),
+        "found #viewer-content.hybrid-editing{overflow-x:...}");
     }
 
     // --- table reordering (moveRow / moveCol / drag overlay) ---------
@@ -26969,29 +26976,40 @@ function check(label, cond, extra) {
   //     pattern tied to the content; "fixed" keeps it in the viewport.
   console.log("== wallpaper scroll ==");
   const wpsRadio = (v) => window.document.querySelector('input[name="wallpaperScroll"][value="' + v + '"]');
-  const hasFixedClass = () => viewerEl.classList.contains("wallpaper-fixed");
+  const viewerScroller = window.document.getElementById("viewer-scroll");
+  const hostHasFixed = (el) => el.classList.contains("wallpaper-fixed");
   window.NB.settings.open(); await tick(20);
   check("wallpaper scroll: settings has scroll radio", !!wpsRadio("scroll"));
   check("wallpaper scroll: settings has fixed radio", !!wpsRadio("fixed"));
   check("wallpaper scroll: default 'scroll' radio is checked",
     wpsRadio("scroll") && wpsRadio("scroll").checked === true);
-  // Pick "fixed": live class swap is immediate.
+  // Pick "fixed": the classes move to the scrollport, so the page moves over
+  // a stationary pattern. The swap is immediate.
   wpsRadio("fixed").checked = true;
   wpsRadio("fixed").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("wallpaper scroll: fixed pick -> #viewer-content has wallpaper-fixed class immediately",
-    hasFixedClass(), "classes=" + viewerEl.className);
+  check("wallpaper scroll: fixed pick -> #viewer-scroll has wallpaper-fixed class immediately",
+    hostHasFixed(viewerScroller), "classes=" + viewerScroller.className);
+  check("wallpaper scroll: fixed pick -> pattern classes move to #viewer-scroll",
+    viewerScroller.classList.contains("wallpaper-none") &&
+      !viewerEl.classList.contains("wallpaper-none"),
+    "page=" + viewerEl.className + " scroll=" + viewerScroller.className);
   await tick(400);
   const wpsPosts = fetchLog.filter(l => l.startsWith("POST /api/config"));
   const lastWpsPost = wpsPosts[wpsPosts.length - 1] || "";
   check("wallpaper scroll: fixed pick -> config body has wallpaperScroll:\"fixed\"",
     /"wallpaperScroll":"fixed"/.test(lastWpsPost), lastWpsPost);
-  // Revert to "scroll".
+  // Revert to "scroll": the classes move back to the page.
   wpsRadio("scroll").checked = true;
   wpsRadio("scroll").dispatchEvent(new window.Event("change", { bubbles: true }));
   await tick(20);
-  check("wallpaper scroll: scroll pick -> #viewer-content has no wallpaper-fixed class",
-    !hasFixedClass(), "classes=" + viewerEl.className);
+  check("wallpaper scroll: scroll pick -> no wallpaper-fixed class on either host",
+    !hostHasFixed(viewerEl) && !hostHasFixed(viewerScroller),
+    "page=" + viewerEl.className + " scroll=" + viewerScroller.className);
+  check("wallpaper scroll: scroll pick -> pattern classes return to #viewer-content",
+    viewerEl.classList.contains("wallpaper-none") &&
+      !viewerScroller.classList.contains("wallpaper-none"),
+    "page=" + viewerEl.className + " scroll=" + viewerScroller.className);
   await tick(400);
   const wpsPosts2 = fetchLog.filter(l => l.startsWith("POST /api/config"));
   const lastWpsPost2 = wpsPosts2[wpsPosts2.length - 1] || "";
@@ -27088,95 +27106,72 @@ function check(label, cond, extra) {
   window.NB.settings.close();
   await tick(10);
 
-  // CSS source checks. The wallpaper styles are pure CSS gradients; jsdom
+  // CSS source checks. The wallpaper rules are pure CSS gradients; jsdom
   // can't fully resolve the computed style of var()/calc() chains, so we
-  // assert against the production stylesheet source. The rules live on
-  // #viewer-content (the scroller + content element) and use
-  // background-attachment: local so the pattern actually scrolls with
-  // the content (the default `scroll` value would pin the background to
-  // the border box, which is the windowpane feel the user does NOT
-  // want). The wallpaper-fixed modifier flips it to `fixed` for the
-  // windowpane option.
+  // assert against the production stylesheet source. The pattern is painted
+  // on whichever element owns its motion: #viewer-content (the page) for
+  // "scroll", #viewer-scroll (the scrollport) for "fixed". Both use the
+  // default background-attachment: scroll; `local` (pinned to the clamped
+  // scroll offset) and `fixed` (unreliable on iOS) are gone, because the page
+  // must move as one sheet during the elastic overscroll.
   {
     const css = read("static/css/style.css");
-    const linesBlock = css.match(/#viewer-content\.wallpaper-lines\s*\{[^}]*\}/);
-    check("wallpaper: #viewer-content.wallpaper-lines rule exists in stylesheet",
+    const host = ":is\\(#viewer-content, #viewer-scroll\\)";
+    const linesBlock = css.match(new RegExp(host + "\\.wallpaper-lines\\s*\\{[^}]*\\}"));
+    check("wallpaper: pattern rule exists for both hosts",
       !!linesBlock, linesBlock ? linesBlock[0].slice(0, 80) : "(not found)");
-    check("wallpaper: #viewer-content.wallpaper-lines sets background-image (repeating-linear-gradient)",
+    check("wallpaper: lines sets background-image (repeating-linear-gradient)",
       !!linesBlock && /repeating-linear-gradient/.test(linesBlock[0]),
       linesBlock ? linesBlock[0] : "(not found)");
-    // Uses 1.5em so the line spacing tracks the body line-height and
-    // re-spaces when the user changes the font size.
-    check("wallpaper: #viewer-content.wallpaper-lines uses 1.5em (font-size aware)",
+    check("wallpaper: lines uses 1.5em (font-size aware)",
       !!linesBlock && /1\.5em/.test(linesBlock[0]),
       linesBlock ? linesBlock[0] : "(not found)");
-    // background-attachment: local is the load-bearing piece for the
-    // "Scroll with content" option. The default value `scroll` would
-    // pin the background to the element's border box (windowpane feel);
-    // `local` pins it to the element's contents so it actually scrolls
-    // with the text.
-    check("wallpaper: #viewer-content.wallpaper-lines has background-attachment: local (scrolls with content)",
-      !!linesBlock && /background-attachment\s*:\s*local/.test(linesBlock[0]),
-      linesBlock ? linesBlock[0] : "(not found)");
-
-    const gridBlock = css.match(/#viewer-content\.wallpaper-grid\s*\{[^}]*\}/);
-    check("wallpaper: #viewer-content.wallpaper-grid rule exists in stylesheet",
+    const gridBlock = css.match(new RegExp(host + "\\.wallpaper-grid\\s*\\{[^}]*\\}"));
+    check("wallpaper: grid rule exists for both hosts",
       !!gridBlock, gridBlock ? gridBlock[0].slice(0, 80) : "(not found)");
-    check("wallpaper: #viewer-content.wallpaper-grid sets background-image (linear-gradient)",
+    check("wallpaper: grid sets background-image (linear-gradient)",
       !!gridBlock && /linear-gradient/.test(gridBlock[0]),
       gridBlock ? gridBlock[0] : "(not found)");
-    check("wallpaper: #viewer-content.wallpaper-grid sets background-size: 24px 24px",
+    check("wallpaper: grid sets background-size: 24px 24px",
       !!gridBlock && /background-size\s*:\s*24px\s+24px/.test(gridBlock[0]),
       gridBlock ? gridBlock[0] : "(not found)");
-    check("wallpaper: #viewer-content.wallpaper-grid has background-attachment: local (scrolls with content)",
-      !!gridBlock && /background-attachment\s*:\s*local/.test(gridBlock[0]),
-      gridBlock ? gridBlock[0] : "(not found)");
-
-    // Both rules should target #viewer-content specifically (not a global
-    // class), so the wallpaper stays scoped to the preview area and
-    // doesn't bleed into the editor split-pane or other surfaces.
-    check("wallpaper: both wallpaper rules target #viewer-content specifically",
-      /#viewer-content\.wallpaper-(lines|grid)/.test(css),
-      "found #viewer-content.wallpaper-* selectors");
-    // The fixed-mode rule toggles background-attachment: fixed when the
-    // user picks the "Fixed in viewport" option. Both wallpaper classes
-    // should be covered by the same rule (one rule, two selectors) so
-    // adding a new pattern automatically gets the fixed behavior too.
-    check("wallpaper: #viewer-content.wallpaper-{lines,grid}.wallpaper-fixed sets background-attachment: fixed",
-      /#viewer-content\.wallpaper-lines\.wallpaper-fixed\s*,\s*\n?\s*#viewer-content\.wallpaper-grid\.wallpaper-fixed\s*\{[^}]*background-attachment\s*:\s*fixed/.test(css),
-      "looking for combined .wallpaper-fixed rule");
+    // The pattern host is the page or the scrollport, never a global class,
+    // so the wallpaper never bleeds into other surfaces.
+    check("wallpaper: both hosts can carry the pattern",
+      /:is\(#viewer-content, #viewer-scroll\)\.wallpaper-(lines|grid)/.test(css),
+      "found :is(#viewer-content, #viewer-scroll).wallpaper-* selectors");
+    check("wallpaper: no background-attachment: local remains",
+      !/background-attachment\s*:\s*local/.test(css),
+      "found background-attachment: local");
+    check("wallpaper: no background-attachment: fixed remains",
+      !/background-attachment\s*:\s*fixed/.test(css),
+      "found background-attachment: fixed");
+    check("wallpaper: the scroller keeps the elastic overscroll",
+      /#viewer-scroll\s*\{[^}]*overscroll-behavior-y\s*:\s*contain/.test(css),
+      "no #viewer-scroll{overscroll-behavior-y:contain}");
+    check("wallpaper: the page never scrolls",
+      !/#viewer-content\s*\{[^}]*overflow/.test(css),
+      "found an overflow in the #viewer-content base rule");
 
     // The color + intensity modifiers are one-line CSS variable overrides:
-    // the wallpaper-color-* classes set --wp-rgb (a 3-channel RGB value
-    // used inside rgb(var(--wp-rgb) / var(--wp-a))), and wallpaper-
-    // intensity-* classes set --wp-a (the stroke alpha). Verify the
-    // expected presets exist so picking them actually changes the paint.
-    check("wallpaper: #viewer-content.wallpaper-color-blue sets --wp-rgb",
-      /#viewer-content\.wallpaper-color-blue\s*\{[^}]*--wp-rgb\s*:/.test(css),
-      "looking for #viewer-content.wallpaper-color-blue { --wp-rgb: ... }");
-    check("wallpaper: #viewer-content.wallpaper-color-green sets --wp-rgb",
-      /#viewer-content\.wallpaper-color-green\s*\{[^}]*--wp-rgb\s*:/.test(css));
-    check("wallpaper: #viewer-content.wallpaper-color-purple sets --wp-rgb",
-      /#viewer-content\.wallpaper-color-purple\s*\{[^}]*--wp-rgb\s*:/.test(css));
-    check("wallpaper: #viewer-content.wallpaper-color-amber sets --wp-rgb",
-      /#viewer-content\.wallpaper-color-amber\s*\{[^}]*--wp-rgb\s*:/.test(css));
-    check("wallpaper: #viewer-content.wallpaper-intensity-subtle sets --wp-a",
-      /#viewer-content\.wallpaper-intensity-subtle\s*\{[^}]*--wp-a\s*:/.test(css));
-    check("wallpaper: #viewer-content.wallpaper-intensity-medium sets --wp-a",
-      /#viewer-content\.wallpaper-intensity-medium\s*\{[^}]*--wp-a\s*:/.test(css));
-    check("wallpaper: #viewer-content.wallpaper-intensity-bold sets --wp-a",
-      /#viewer-content\.wallpaper-intensity-bold\s*\{[^}]*--wp-a\s*:/.test(css));
-    // The base wallpaper rules (lines + grid) must actually use the
-    // --wp-rgb / --wp-a variables in their stroke color so the
-    // color/intensity modifiers have an effect. Without this, the
-    // modifiers are dead.
+    // the wallpaper-color-* classes set --wp-rgb (a 3-channel RGB value used
+    // inside rgb(var(--wp-rgb) / var(--wp-a))), and wallpaper-intensity-*
+    // classes set --wp-a (the stroke alpha).
+    for (const c of ["blue", "green", "purple", "amber"]) {
+      check("wallpaper: wallpaper-color-" + c + " sets --wp-rgb",
+        new RegExp(host + "\\.wallpaper-color-" + c + "\\s*\\{[^}]*--wp-rgb\\s*:").test(css));
+    }
+    for (const i of ["subtle", "medium", "bold"]) {
+      check("wallpaper: wallpaper-intensity-" + i + " sets --wp-a",
+        new RegExp(host + "\\.wallpaper-intensity-" + i + "\\s*\\{[^}]*--wp-a\\s*:").test(css));
+    }
     const usesRgb = !!linesBlock && /rgb\(\s*var\(--wp-rgb\)/.test(linesBlock[0]);
     const usesAlpha = !!linesBlock && /var\(--wp-a\)/.test(linesBlock[0]);
-    check("wallpaper: #viewer-content.wallpaper-lines uses --wp-rgb / --wp-a",
+    check("wallpaper: lines uses --wp-rgb / --wp-a",
       usesRgb && usesAlpha, linesBlock ? linesBlock[0] : "(not found)");
     const gridUsesRgb = !!gridBlock && /rgb\(\s*var\(--wp-rgb\)/.test(gridBlock[0]);
     const gridUsesAlpha = !!gridBlock && /var\(--wp-a\)/.test(gridBlock[0]);
-    check("wallpaper: #viewer-content.wallpaper-grid uses --wp-rgb / --wp-a",
+    check("wallpaper: grid uses --wp-rgb / --wp-a",
       gridUsesRgb && gridUsesAlpha, gridBlock ? gridBlock[0] : "(not found)");
   }
 
@@ -27986,7 +27981,7 @@ function check(label, cond, extra) {
   // viewer is visible and the user isn't typing. The content lives in an
   // inner scroller (#viewer-content), so we route the keys to it.
   {
-    const vc = $("viewer-content");
+    const vc = $("viewer-scroll");
     // Ensure a file is active and the viewer is shown (preview mode).
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
@@ -28097,7 +28092,7 @@ function check(label, cond, extra) {
     // rAF-debounced scroll listener updates scrollPositions on every
     // scroll event; for the test we directly poke viewerContentEl
     // and dispatch a scroll event so the listener fires.
-    const vc = window.document.getElementById("viewer-content");
+    const vc = window.document.getElementById("viewer-scroll");
     function setViewerScroll(px) {
       vc.scrollTop = px;
       vc.dispatchEvent(new window.Event("scroll", { bubbles: true }));
@@ -28825,7 +28820,7 @@ function check(label, cond, extra) {
       "cursor=" + window.NB.outline.getVimCursor());
     pressKey("w", { ctrlKey: true });   // outline -> sidebar
     pressKey("w", { ctrlKey: true });   // sidebar -> editor (normalise)
-    const vcScroll = $("viewer-content");
+    const vcScroll = $("viewer-scroll");
     Object.defineProperty(vcScroll, "scrollHeight", { value: 500, configurable: true });
     vcScroll.scrollTop = 100;
     pressKey("g"); pressKey("g");

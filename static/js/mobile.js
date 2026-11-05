@@ -54,6 +54,7 @@
   const shell = {
     title: document.getElementById("mobile-title"),
     viewerContent: document.getElementById("viewer-content"),
+    viewerScroll: document.getElementById("viewer-scroll"),
     captureInput: document.getElementById("capture-input"),
     captureSend: document.getElementById("capture-send"),
     captureStatus: document.getElementById("capture-status"),
@@ -175,7 +176,7 @@
   function saveResumeNow() {
     const path = activePath();
     if (!path) return;
-    const vc = shell.viewerContent;
+    const vc = shell.viewerScroll;
     const scroll = vc ? Math.round(vc.scrollTop) : 0;
     lsSet(resumeKey(), JSON.stringify({ v: 1, path, scroll }));
   }
@@ -1077,7 +1078,7 @@
         resumeScrollDone = true;
         const resume = resumeState;
         if (resume && resume.path === path && resume.scroll > 0) {
-          const vc = shell.viewerContent;
+          const vc = shell.viewerScroll;
           requestAnimationFrame(() => {
             requestAnimationFrame(() => { if (vc) vc.scrollTop = resume.scroll; });
           });
@@ -1175,7 +1176,7 @@
       });
     }
 
-    const vc = shell.viewerContent;
+    const vc = shell.viewerScroll;
     if (vc) {
       vc.addEventListener("scroll", () => {
         if (!isOn() || scrollRaf) return;

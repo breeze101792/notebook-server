@@ -335,7 +335,8 @@ Notes:
   already safe: clicking the input is a mousedown, which cleared the rectangle
   (row 1) — by the time Ctrl+C fires, `isActive()` is false and the handler
   declines.
-- Scroll of `#viewer-content` is deliberately NOT a trigger (section 2).
+- Scroll of `#viewer-scroll` (the note's scroll container) is deliberately NOT a
+  trigger (section 2).
 
 ---
 

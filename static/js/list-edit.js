@@ -56,6 +56,7 @@
 
   let viewerEl = null;        // #viewer: overlay host, position:relative
   let viewerContentEl = null;
+  let viewerScrollEl = null;
   let overlay = null;        // .nb-list-overlay
   let liveRegion = null;      // polite aria-live announcer
   let built = false;
@@ -572,7 +573,7 @@
     viewerEl.addEventListener("pointercancel", onPointerCancel);
     document.addEventListener("keydown", onDragKey, true);
     document.addEventListener("selectionchange", onSelectionChange);
-    viewerContentEl.addEventListener("scroll", hide, { passive: true });
+    viewerScrollEl.addEventListener("scroll", hide, { passive: true });
     window.addEventListener("resize", hide);
   }
 
@@ -592,14 +593,15 @@
     viewerEl.removeEventListener("pointercancel", onPointerCancel);
     document.removeEventListener("keydown", onDragKey, true);
     document.removeEventListener("selectionchange", onSelectionChange);
-    viewerContentEl.removeEventListener("scroll", hide);
+    viewerScrollEl.removeEventListener("scroll", hide);
     window.removeEventListener("resize", hide);
   }
 
   function build() {
     viewerEl = document.getElementById("viewer");
     viewerContentEl = document.getElementById("viewer-content");
-    if (!viewerEl || !viewerContentEl) return;
+    viewerScrollEl = document.getElementById("viewer-scroll");
+    if (!viewerEl || !viewerContentEl || !viewerScrollEl) return;
     overlay = el("div", "nb-list-overlay");
     overlay.hidden = false;   // visibility is CSS-driven; empty == invisible
     liveRegion = el("div", "nb-list-live");
