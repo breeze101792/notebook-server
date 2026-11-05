@@ -107,12 +107,14 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("wallpaper-intensity-bold", html)
         self.assertIn("wallpaper-fixed", html)
 
-    def test_index_renders_the_session_label_hidden_after_the_chip(self):
-        # The top-bar session label ships empty and hidden: the client owns
+    def test_index_renders_the_session_picker_hidden_after_the_chip(self):
+        # The top-bar session picker ships empty and hidden: the client owns
         # the session model's normalisation, so the shell must not guess a
-        # name. It sits after the workspace chip and before the spacer, and
-        # only inside the workspace block -- the locked shell has no chip and
-        # must not show a session either.
+        # name. The trigger is a menu button for #session-menu, and the menu
+        # ships empty and hidden -- sessions.js fills it and moves it to
+        # <body>. The bar sits after the workspace chip and before the
+        # spacer, and only inside the workspace block: the locked shell has
+        # no chip and must not show a session either.
         html = self.client.get("/").get_data(as_text=True)
         chip = html.index('id="workspace-bar"')
         bar = html.index('id="session-bar"')
@@ -120,7 +122,26 @@ class TestIndexAndSeed(BaseTest):
         self.assertLess(chip, bar)
         self.assertLess(bar, spacer)
         self.assertIn('id="session-bar" class="topbar-session" hidden', html)
-        self.assertIn('id="topbar-session-name"></span>', html)
+        block = html[bar:spacer]
+        # The trigger: a button whose accessible name is the sr-only prefix
+        # plus the empty name span, wired to the menu it controls (AC2, AC14).
+        self.assertIn('<button type="button" id="session-switch" '
+                      'class="session-switch"', block)
+        self.assertIn('aria-haspopup="menu"', block)
+        self.assertIn('aria-expanded="false"', block)
+        self.assertIn('aria-controls="session-menu"', block)
+        self.assertIn('<span class="sr-only">Session: </span>', block)
+        self.assertIn('id="topbar-session-name"></span>', block)
+        # The caret and the glyph are decorative; the caret never joins the
+        # accessible name.
+        self.assertIn('class="topbar-session-caret" aria-hidden="true">'
+                      '\u25be</span>', block)
+        self.assertIn('class="topbar-session-glyph" aria-hidden="true"', block)
+        # The menu is a labelled menu, empty and hidden at first paint.
+        self.assertIn('id="session-menu" class="session-menu" hidden', block)
+        self.assertIn('id="session-menu-list" class="session-menu-list" '
+                      'role="menu"', block)
+        self.assertIn('aria-labelledby="session-switch"', block)
 
     def test_index_defaults_when_config_empty(self):
         # Fresh install: the same defaults app.js's DEFAULTS use, so the
@@ -225,7 +246,7 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("--font-scale: 1.0", html)
         self.assertIn("--side-panel-width: 240px", html)
         self.assertNotIn("Secret Title", html)
-        # No chip and no session label before login: both live inside the
+        # No chip and no session picker before login: both live inside the
         # workspace block, which needs a role or auth-off full access.
         self.assertNotIn('id="session-bar"', html)
         self.assertIn("wallpaper-none", html)

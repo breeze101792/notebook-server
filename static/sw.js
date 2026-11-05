@@ -40,7 +40,9 @@
 /* Bumped v23 -> v24: the viewer split into #viewer-scroll (the scroller) and
  * #viewer-content (the page). The shell and viewer.js must refresh together,
  * so an installed worker must re-precache both. */
-const CACHE = "notebook-v24";
+/* Bumped v24 -> v25: the top-bar session label became a picker, so the shell,
+ * style.css and sessions.js must refresh together. */
+const CACHE = "notebook-v25";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

@@ -147,20 +147,27 @@
           <p class="ws-foot">Switching reloads the page.</p>
         </div>
       </div>
-      {# The active session: context, not a control -- no face and no tab
-         stop. It ships hidden and sessions.js fills it, because the client
-         owns the session model's normalisation: an absent label is honest, a
-         name the model then corrects is not. The topbar- prefix is
-         load-bearing -- .session-name already names the Sessions row label
-         (style.css). #}
-      <span id="session-bar" class="topbar-session" hidden>
+      {# The active session: a picker, the same shape as the workspace chip.
+         It ships hidden and sessions.js fills it, because the client owns the
+         model's normalisation. The menu is empty here; sessions.js builds the
+         rows and moves the node to <body>, the workspace menu's pattern.
+         The topbar- prefix is load-bearing: .session-name already names the
+         Sessions row label (style.css). #}
+      <div id="session-bar" class="topbar-session" hidden>
         <span class="topbar-divider" aria-hidden="true"></span>
-        <span class="topbar-session-chip" title="">
+        <button type="button" id="session-switch" class="session-switch"
+                aria-haspopup="menu" aria-expanded="false"
+                aria-controls="session-menu" title="">
           <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
           <span class="sr-only">Session: </span>
           <span class="topbar-session-name" id="topbar-session-name"></span>
-        </span>
-      </span>
+          <span class="topbar-session-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="session-menu" class="session-menu" hidden>
+          <div id="session-menu-list" class="session-menu-list" role="menu"
+               aria-labelledby="session-switch"></div>
+        </div>
+      </div>
       {% endif %}
       {% endif %}
       <div class="topbar-spacer"></div>

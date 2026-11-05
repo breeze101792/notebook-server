@@ -185,6 +185,8 @@ async function main() {
           editorLeft: rect("editor-pane").left,
           outlineLeft: rect("outline-pane").left,
           mobileTitle: cs("mobile-title").display,
+          sessionBar: cs("session-bar").display,
+          sessionBtnW: rect("session-switch").width,
           overflow: document.documentElement.scrollWidth - window.innerWidth,
         };
       });
@@ -203,6 +205,9 @@ async function main() {
         "display=" + d.tabDisplay + " height=" + d.tabHeight);
       check("desktop 1280: mobile chrome is hidden",
         d.mobileTitle === "none", d.mobileTitle);
+      check("desktop 1280: the top-bar session picker is visible",
+        d.sessionBar !== "none" && d.sessionBtnW > 0,
+        "display=" + d.sessionBar + " w=" + d.sessionBtnW);
       check("desktop 1280: no horizontal overflow", d.overflow <= 1, String(d.overflow));
       check("desktop 1280: no uncaught page errors", pageErrors.length === 0,
         pageErrors.join(" | "));
@@ -263,6 +268,8 @@ async function main() {
           bodyOverflow: document.body.scrollWidth - window.innerWidth,
           tabDisplay: cs("tab-bar").display,
           outlineDisplay: cs("outline-pane").display,
+          sessionDisplay: cs("session-bar").display,
+          sessionBtnW: rect("session-switch").width,
           railPosition: cs("activity-bar").position,
           railBottom: rail.bottom,
           viewportH: window.innerHeight,
@@ -287,6 +294,9 @@ async function main() {
       });
       check(size.name + ": the editor area fills at least one column",
         layout.editorW > 0, "editor=" + layout.editorW);
+      check(size.name + ": the phone shell has no session picker",
+        layout.sessionDisplay === "none" && layout.sessionBtnW === 0,
+        "display=" + layout.sessionDisplay + " w=" + layout.sessionBtnW);
       check(size.name + ": the page has no horizontal overflow",
         layout.overflow <= 1 && layout.bodyOverflow <= 1,
         "doc=" + layout.overflow + " body=" + layout.bodyOverflow);

@@ -190,14 +190,21 @@ const html = `<!DOCTYPE html><html><head>
   <div id="app">
     <header id="topbar">
       <button type="button" id="brand" class="brand" title="Reload content from disk" aria-label="Reload content from disk"><img class="brand-icon" src="/static/favicon.svg" alt="" aria-hidden="true">📓 Notebook</button>
-      <span id="session-bar" class="topbar-session" hidden>
+      <div id="session-bar" class="topbar-session" hidden>
         <span class="topbar-divider" aria-hidden="true"></span>
-        <span class="topbar-session-chip" title="">
+        <button type="button" id="session-switch" class="session-switch"
+                aria-haspopup="menu" aria-expanded="false"
+                aria-controls="session-menu" title="">
           <svg class="topbar-session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
           <span class="sr-only">Session: </span>
           <span class="topbar-session-name" id="topbar-session-name"></span>
-        </span>
-      </span>
+          <span class="topbar-session-caret" aria-hidden="true">▾</span>
+        </button>
+        <div id="session-menu" class="session-menu" hidden>
+          <div id="session-menu-list" class="session-menu-list" role="menu"
+               aria-labelledby="session-switch"></div>
+        </div>
+      </div>
       <button id="back-btn" class="icon-btn" disabled>←</button>
       <button id="mobile-title" class="mobile-title" aria-label="Browse notes"></button>
       <button id="mobile-capture" class="icon-btn" title="Quick capture" aria-label="Quick capture" hidden>＋</button>
@@ -19035,9 +19042,13 @@ function check(label, cond, extra) {
       read("templates/index.html").indexOf("/static/js/table-select.js") !== -1);
     check("table select completeness: table-select.js is in sw.js PRECACHE",
       read("static/sw.js").indexOf("/static/js/table-select.js") !== -1);
-    check("table select completeness: sw.js CACHE is notebook-v23",
-      /const CACHE = "notebook-v23"/.test(read("static/sw.js")),
-      JSON.stringify(read("static/sw.js").split("\n").find((l) => l.indexOf("const CACHE") === 0)));
+    // The CACHE name is versioned and must never fall below the bump this
+    // feature shipped with; a later feature bumps it again, so the check is
+    // a floor rather than an exact match.
+    const tsSwVersion = Number(
+      (/const CACHE = "notebook-v(\d+)"/.exec(read("static/sw.js")) || [])[1] || 0);
+    check("table select completeness: sw.js CACHE is at least notebook-v23",
+      tsSwVersion >= 23, "v" + tsSwVersion);
 
     // --- (15) B2: a structural edit cannot snapshot the classes ------
     // A snapshot only funnels through pushSnapshot when a coalescing timer
@@ -36703,8 +36714,11 @@ function check(label, cond, extra) {
         check("dw completeness: " + f + " is in sw.js PRECACHE",
           sw.indexOf("/static/js/" + f) !== -1);
       }
-      check("dw completeness: sw.js CACHE bumped to notebook-v23",
-        /const CACHE = "notebook-v23"/.test(sw));
+      // A floor, not an exact match: a later feature bumps CACHE again.
+      const dwSwVersion = Number(
+        (/const CACHE = "notebook-v(\d+)"/.exec(sw) || [])[1] || 0);
+      check("dw completeness: sw.js CACHE is at least notebook-v23",
+        dwSwVersion >= 23, "v" + dwSwVersion);
       check("dw completeness: no new vendor bundle is eagerly loaded",
         idx.indexOf("visimer.bundle.js") === -1 &&
         sw.indexOf("visimer.bundle.js") === -1);
@@ -40932,64 +40946,403 @@ function check(label, cond, extra) {
       ssPaths().join(",") === "notes/a.md" && S.getActive() === "notes/a.md",
       "res=" + ssRaceRes);
 
-    // --- top-bar label -------------------------------------------------
-    // The label is context, not a control: it names the active session and
-    // must follow every model change without a reload.
+    // --- the top-bar session picker -------------------------------------
+    // docs/ui/topbar-session.md §8 AC1, AC3-AC9, AC11, AC12, AC14, AC15.
+    // The name is a control now: the trigger names the active session and
+    // opens a popover listing every session plus the admin-only New row.
+    // The harness has no workspace chip, so the cross-picker case belongs to
+    // the browser suite (§9).
+    const tbBar = () => $("session-bar");
+    const tbBtn = () => $("session-switch");
+    const tbName = () => $("topbar-session-name");
+    const tbGlyph = () => tbBar().querySelector(".topbar-session-glyph");
+    const tbCaret = () => tbBar().querySelector(".topbar-session-caret");
+    const tbMenu = () => $("session-menu");
+    const tbList = () => $("session-menu-list");
+    const tbAll = () => Array.from(tbList().querySelectorAll(".session-item"));
+    const tbRows = () => Array.from(
+      tbList().querySelectorAll(".session-item[data-session-id]"));
+    const tbRowIds = () => tbRows().map((r) => r.dataset.sessionId);
+    const tbRow = (id) => tbList().querySelector(
+      '.session-item[data-session-id="' + id + '"]');
+    const tbNewRow = () => tbList().querySelector('.session-item[data-action="new"]');
+    const tbSep = () => tbList().querySelector(".session-menu-sep");
+    const tbFocus = () => window.document.activeElement;
+    const tbIsOpen = () => tbMenu().hidden === false;
+    const tbStops = () => tbAll().filter((r) => r.tabIndex === 0);
+    const tbClick = (el) => el.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    const tbKey = (el, k) => el.dispatchEvent(new window.KeyboardEvent(
+      "keydown", { key: k, bubbles: true, cancelable: true }));
+    const tbOpen = async () => { tbClick(tbBtn()); await tick(20); };
+    const tbShut = async () => {
+      if (!tbIsOpen()) return;
+      tbKey(tbMenu(), "Escape");
+      await tick(20);
+    };
+
+    // AC1, AC14: the shipped trigger names the active session and is the
+    // menu button for #session-menu.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/b.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    check("topbar picker: the bar is visible and names the active session",
+      !tbBar().hidden && tbName().textContent === "One" &&
+      tbBtn().title === "Session: One",
+      tbBar().hidden + "/" + tbName().textContent + "/" + tbBtn().title);
+    check("topbar picker: the accessible name is 'Session: {name}'",
+      tbBtn().tagName === "BUTTON" &&
+      tbBtn().querySelector(".sr-only").textContent === "Session: " &&
+      tbBtn().querySelector(".sr-only").textContent + tbName().textContent ===
+        "Session: One" &&
+      tbCaret().getAttribute("aria-hidden") === "true" &&
+      tbGlyph().getAttribute("aria-hidden") === "true" &&
+      tbBar().querySelector(".topbar-divider")
+        .getAttribute("aria-hidden") === "true",
+      JSON.stringify(tbBtn().textContent));
+    check("topbar picker: the trigger is the menu button for #session-menu",
+      tbBtn().getAttribute("aria-haspopup") === "menu" &&
+      tbBtn().getAttribute("aria-expanded") === "false" &&
+      tbBtn().getAttribute("aria-controls") === "session-menu" &&
+      tbList().getAttribute("role") === "menu" &&
+      tbList().getAttribute("aria-labelledby") === "session-switch");
+    check("topbar picker: the menu ships hidden and lives on <body>",
+      tbMenu().hidden === true && tbMenu().parentNode === window.document.body &&
+      !tbBar().contains(tbMenu()));
+
+    // AC3: one row per session, in creation order, with the panel's counts
+    // and dirty marker. s2 holds a cached draft, so it is the dirty row.
+    await S.swapTo("s2");
+    await tick(40);
+    window.NB.viewer.setDraft("notes/c.md", { content: "C", mode: "source" });
+    await tick(20);
+    await S.swapTo("s1");
+    await tick(40);
+    await tbOpen();
+    check("topbar picker: clicking the trigger opens the menu",
+      tbIsOpen() && tbBtn().getAttribute("aria-expanded") === "true");
+    check("topbar picker: one row per session in creation order",
+      tbRowIds().join(",") === "s1,s2,s3" &&
+      tbRows().every((r) => r.getAttribute("role") === "menuitem"),
+      tbRowIds().join(","));
+    check("topbar picker: the active row is marked and checked",
+      tbRow("s1").getAttribute("aria-current") === "true" &&
+      tbRow("s1").querySelector(".session-check").textContent === "\u2713" &&
+      tbRow("s1").querySelector(".session-check")
+        .getAttribute("aria-hidden") === "true" &&
+      !tbRow("s2").hasAttribute("aria-current") &&
+      tbRow("s2").querySelector(".session-check").textContent === "",
+      JSON.stringify(tbRow("s1").textContent));
+    check("topbar picker: the counts carry their sr-only unit",
+      tbRow("s1").querySelector(".session-item-count").textContent === "2 tabs" &&
+      tbRow("s2").querySelector(".session-item-count").textContent === "1 tab" &&
+      tbRow("s3").querySelector(".session-item-count").textContent === "0 tabs",
+      tbRows().map((r) => r.querySelector(".session-item-count").textContent)
+        .join("|"));
+    check("topbar picker: the dirty row carries the dot and its sr-only text",
+      !!tbRow("s2").querySelector(".session-item-dot") &&
+      tbRow("s2").querySelector(".session-item-dot")
+        .getAttribute("aria-hidden") === "true" &&
+      tbRow("s2").textContent.indexOf(", unsaved changes") >= 0 &&
+      !tbRow("s1").querySelector(".session-item-dot") &&
+      !tbRow("s3").querySelector(".session-item-dot"),
+      JSON.stringify(tbRow("s2").textContent));
+    check("topbar picker: the admin New row follows a separator",
+      !!tbNewRow() && !!tbSep() &&
+      tbSep().nextElementSibling === tbNewRow() &&
+      tbList().lastElementChild === tbNewRow() &&
+      tbNewRow().textContent.indexOf("New session") >= 0 &&
+      tbNewRow().getAttribute("role") === "menuitem");
+    check("topbar picker: the active row is the only tab stop and takes focus",
+      tbStops().length === 1 && tbStops()[0] === tbRow("s1") &&
+      tbFocus() === tbRow("s1"),
+      String(tbStops().length));
+
+    // AC5, AC14: the arrow keys move the roving tabindex and wrap; Escape
+    // closes and returns focus to the trigger.
+    tbKey(tbFocus(), "ArrowDown");
+    check("topbar picker: ArrowDown moves the roving tab stop forward",
+      tbFocus() === tbRow("s2") && tbRow("s2").tabIndex === 0 &&
+      tbRow("s1").tabIndex === -1);
+    tbKey(tbFocus(), "ArrowDown");
+    tbKey(tbFocus(), "ArrowDown");
+    check("topbar picker: the arrow keys reach the New row",
+      tbFocus() === tbNewRow(), tbFocus() && tbFocus().className);
+    tbKey(tbFocus(), "Home");
+    check("topbar picker: Home moves to the first row", tbFocus() === tbRow("s1"));
+    tbKey(tbFocus(), "End");
+    check("topbar picker: End moves to the last row", tbFocus() === tbNewRow());
+    tbKey(tbFocus(), "ArrowDown");
+    check("topbar picker: ArrowDown wraps from the last row to the first",
+      tbFocus() === tbRow("s1"));
+    tbKey(tbFocus(), "ArrowUp");
+    check("topbar picker: ArrowUp wraps from the first row to the last",
+      tbFocus() === tbNewRow());
+    tbKey(tbFocus(), "Escape");
+    await tick(20);
+    check("topbar picker: Escape closes and returns focus to the trigger",
+      !tbIsOpen() && tbBtn().getAttribute("aria-expanded") === "false" &&
+      tbFocus() === tbBtn());
+    tbKey(tbBtn(), "ArrowDown");
+    check("topbar picker: ArrowDown on the trigger opens on the first row",
+      tbIsOpen() && tbFocus() === tbRow("s1"));
+    await tbShut();
+    tbKey(tbBtn(), "ArrowUp");
+    check("topbar picker: ArrowUp on the trigger opens on the last row",
+      tbIsOpen() && tbFocus() === tbNewRow());
+    await tbShut();
+
+    // AC4: a pick switches the session, repaints the trigger, moves the
+    // check and returns focus.
+    await tbOpen();
+    tbClick(tbRow("s2"));
+    await tick(60);
+    check("topbar picker: a pick switches the session and closes the menu",
+      S.getActiveSessionId() === "s2" && !tbIsOpen() &&
+      tbBtn().getAttribute("aria-expanded") === "false",
+      S.getActiveSessionId());
+    check("topbar picker: the trigger name and title follow the switch",
+      tbName().textContent === "Two" && tbBtn().title === "Session: Two",
+      tbName().textContent + " / " + tbBtn().title);
+    check("topbar picker: focus returns to the trigger after a pick",
+      tbFocus() === tbBtn());
+    await tbOpen();
+    check("topbar picker: the check moves to the picked row",
+      tbRow("s2").getAttribute("aria-current") === "true" &&
+      tbRow("s2").querySelector(".session-check").textContent === "\u2713" &&
+      tbRow("s1").querySelector(".session-check").textContent === "" &&
+      tbFocus() === tbRow("s2"));
+    await tbShut();
+
+    // AC6: an outside click and a scroll behind the popover close it without
+    // moving focus; a scroll inside the list does not.
+    await tbOpen();
+    tbClick($("activity-bar"));
+    await tick(20);
+    check("topbar picker: an outside click closes it without moving focus",
+      !tbIsOpen() && tbFocus() === tbRow("s2"));
+    await tbOpen();
+    tbList().dispatchEvent(new window.Event("scroll"));
+    check("topbar picker: a scroll inside the list leaves it open", tbIsOpen());
+    $("editor-pane").dispatchEvent(new window.Event("scroll"));
+    check("topbar picker: a scroll behind the popover closes it", !tbIsOpen());
+
+    // AC7, AC8: rename and delete repaint the trigger through the same
+    // refresh() as the panel.
     await ssLoad([
       { id: "s1", name: "One",
         openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
       { id: "s2", name: "Two",
         openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
     ], "s1");
-    const tbBar = () => $("session-bar");
-    const tbName = () => $("topbar-session-name");
-    const tbChip = () => tbBar().querySelector(".topbar-session-chip");
-    check("topbar session: names the active session at load",
-      !tbBar().hidden && tbName().textContent === "One" &&
-      tbChip().title === "Session: One",
-      tbName().textContent + " / " + tbChip().title);
-    check("topbar session: reads 'Session: {name}' and adds no tab stop",
-      tbBar().textContent.replace(/\s+/g, " ").trim() === "Session: One" &&
-      tbBar().querySelector("a, button, [tabindex], [contenteditable]") === null,
-      JSON.stringify(tbBar().textContent));
-    check("topbar session: the glyph and divider are hidden from assistive tech",
-      tbBar().querySelector(".topbar-session-glyph")
-        .getAttribute("aria-hidden") === "true" &&
-      tbBar().querySelector(".topbar-divider")
-        .getAttribute("aria-hidden") === "true");
-
-    await S.swapTo("s2");
-    await tick(50);
-    check("topbar session: a switch repaints the label",
-      tbName().textContent === "Two" && tbChip().title === "Session: Two",
-      tbName().textContent);
-
-    S.renameSession("s2", "Firmware bring-up");
-    await tick(30);
-    check("topbar session: renaming the active session repaints the label",
+    await S.renameSession("s1", "Firmware bring-up");
+    await tick(40);
+    check("topbar picker: renaming the active session repaints the trigger",
       tbName().textContent === "Firmware bring-up" &&
-      tbChip().title === "Session: Firmware bring-up",
-      tbName().textContent);
-
-    S.renameSession("s1", "Inactive rename");
-    await tick(30);
-    check("topbar session: renaming an inactive session leaves the label",
-      tbName().textContent === "Firmware bring-up", tbName().textContent);
-
-    await S.deleteSession("s2");
-    await tick(50);
-    check("topbar session: deleting the active session names the neighbour",
-      S.getActiveSessionId() === "s1" &&
-      tbName().textContent === "Inactive rename",
+      tbBtn().title === "Session: Firmware bring-up", tbName().textContent);
+    await tbOpen();
+    check("topbar picker: the open menu shows the renamed row",
+      tbRow("s1").querySelector(".session-item-name").textContent ===
+        "Firmware bring-up");
+    await tbShut();
+    await tbOpen();
+    tbKey(tbFocus(), "ArrowDown");           // focus the inactive row
+    await S.renameSession("s2", "Inactive rename");
+    await tick(40);
+    check("topbar picker: renaming an inactive session leaves the trigger alone",
+      tbName().textContent === "Firmware bring-up" &&
+      tbRow("s2").querySelector(".session-item-name").textContent ===
+        "Inactive rename", tbName().textContent);
+    check("topbar picker: a tabs:changed rebuild while open keeps the focus",
+      tbIsOpen() && tbFocus() === tbRow("s2") && tbRow("s2").tabIndex === 0,
+      String(tbFocus() && tbFocus().className));
+    await tbShut();
+    await S.deleteSession("s1");
+    await tick(60);
+    check("topbar picker: deleting the active session names its neighbour",
+      S.getActiveSessionId() === "s2" &&
+      tbName().textContent === "Inactive rename" &&
+      tbBtn().title === "Session: Inactive rename",
       S.getActiveSessionId() + "/" + tbName().textContent);
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1");
+    await S.deleteSession("s2");
+    await tick(60);
+    check("topbar picker: deleting an inactive session leaves the trigger alone",
+      S.getActiveSessionId() === "s1" && tbName().textContent === "One");
+    await tbOpen();
+    check("topbar picker: the deleted row is gone from the menu",
+      tbRowIds().join(",") === "s1" && !tbRow("s2"), tbRowIds().join(","));
+    await tbShut();
 
+    // AC9: the whole name stays in the text and the title; the browser suite
+    // proves the 240 px ellipsis.
     const ssLong = "Sensor calibration — Q4 hardware sync v2";
     await ssLoad([{ id: "s1", name: ssLong,
                     openFiles: [], activeFile: null }], "s1");
-    check("topbar session: a 40-character name is kept whole in text and title",
+    check("topbar picker: a 40-character name is kept whole in text and title",
       tbName().textContent === ssLong &&
-      tbChip().title === "Session: " + ssLong,
+      tbBtn().title === "Session: " + ssLong,
       tbName().textContent);
+
+    // AC10: a viewer may open and pick; no New row and no separator.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1");
+    const tbRoleOrig = window.NB.pageRole;
+    window.NB.pageRole = () => "viewer";
+    try {
+      window.NB.sessions.refresh();
+      await tick(20);
+      await tbOpen();
+      check("topbar picker: a viewer gets the rows and no New row or separator",
+        tbRowIds().join(",") === "s1,s2" && !tbNewRow() && !tbSep(),
+        tbRowIds().join(","));
+      tbClick(tbRow("s2"));
+      await tick(60);
+      check("topbar picker: a viewer can pick a session",
+        S.getActiveSessionId() === "s2" && tbName().textContent === "Two",
+        S.getActiveSessionId() + "/" + tbName().textContent);
+    } finally {
+      window.NB.pageRole = tbRoleOrig;
+      if (tbIsOpen()) tbKey(tbFocus(), "Escape");
+      window.NB.sessions.refresh();
+      await tick(20);
+    }
+
+    // AC11: at the 20-session cap the New row and its separator are absent
+    // and the active row is scrolled into view inside the scroll container.
+    const tbMany = Array.from({ length: 20 }, (_, i) => ({
+      id: "m" + i, name: "S" + i, openFiles: [], activeFile: null,
+    }));
+    await ssLoad(tbMany, "m0");
+    const tbScrollOrigEl = window.Element.prototype.scrollIntoView;
+    const tbScrollOrigHtml = window.HTMLElement.prototype.scrollIntoView;
+    const tbScrolled = [];
+    const tbScrollSpy = function () { tbScrolled.push(this); };
+    window.Element.prototype.scrollIntoView = tbScrollSpy;
+    window.HTMLElement.prototype.scrollIntoView = tbScrollSpy;
+    try {
+      await tbOpen();
+    } finally {
+      window.Element.prototype.scrollIntoView = tbScrollOrigEl;
+      window.HTMLElement.prototype.scrollIntoView = tbScrollOrigHtml;
+    }
+    check("topbar picker: the cap renders 20 rows with no New row or separator",
+      tbRowIds().length === 20 && tbRowIds()[19] === "m19" &&
+      !tbNewRow() && !tbSep(),
+      String(tbRowIds().length));
+    check("topbar picker: the cap scrolls the active row into view",
+      tbScrolled.indexOf(tbRow("m0")) >= 0 && tbFocus() === tbRow("m0"));
+    check("topbar picker: the popover is the list's scroll container",
+      tbMenu().classList.contains("session-menu") &&
+      tbList().parentNode === tbMenu() && tbList().children.length === 20);
+    await tbShut();
+
+    // AC12: New session… closes the menu, opens the dialog with focus in the
+    // name field, and names the trigger as the dialog's fallback focus.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "s1");
+    const tbDlgOpenOrig = window.NB.dialog.open;
+    let tbDlgOpts = null;
+    window.NB.dialog.open = function (overlay, opts) {
+      tbDlgOpts = opts;
+      return tbDlgOpenOrig.call(this, overlay, opts);
+    };
+    try {
+      await tbOpen();
+      tbClick(tbNewRow());
+      await tick(30);
+    } finally {
+      window.NB.dialog.open = tbDlgOpenOrig;
+    }
+    check("topbar picker: New session… closes the menu and opens the dialog",
+      !tbIsOpen() && tbBtn().getAttribute("aria-expanded") === "false" &&
+      ssDialog().hidden === false &&
+      $("session-dialog-title").textContent === "New session",
+      ssDialog().hidden + "/" + $("session-dialog-title").textContent);
+    check("topbar picker: the dialog opens with focus in the name field",
+      tbFocus() === ssName());
+    check("topbar picker: the trigger is the dialog's fallback focus",
+      !!tbDlgOpts && tbDlgOpts.fallbackFocus === tbBtn() &&
+      tbDlgOpts.initialFocus === ssName(),
+      !!tbDlgOpts);
+    // dialog.js drops an opener with no geometry, so give the trigger some.
+    tbBtn().getClientRects = () => [{ width: 10, height: 10 }];
+    tbClick($("session-cancel"));
+    await tick(30);
+    delete tbBtn().getClientRects;
+    check("topbar picker: closing the dialog returns focus to the trigger",
+      ssDialog().hidden === true && tbFocus() === tbBtn(),
+      String(tbFocus() && tbFocus().id));
+
+    // AC15: no active session hides the bar and closes the menu; a resize
+    // with the trigger off-screen closes it too.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+    ], "s1");
+    await tbOpen();
+    const tbActiveOrig = S.getActiveSessionId;
+    S.getActiveSessionId = () => "";
+    try {
+      window.NB.sessions.refresh();
+      await tick(20);
+      check("topbar picker: no active session hides the bar and closes the menu",
+        tbBar().hidden === true && !tbIsOpen() &&
+        tbBtn().getAttribute("aria-expanded") === "false");
+    } finally {
+      S.getActiveSessionId = tbActiveOrig;
+      window.NB.sessions.refresh();
+      await tick(20);
+    }
+    check("topbar picker: the bar returns with an active session",
+      !tbBar().hidden && tbName().textContent === "One");
+    await tbOpen();
+    tbBtn().getClientRects = () => [{ width: 10, height: 10 }];
+    tbMenu().style.left = "";
+    tbMenu().style.top = "";
+    window.dispatchEvent(new window.Event("resize"));
+    check("topbar picker: a resize keeps a visible trigger's menu open",
+      tbIsOpen() && tbMenu().style.left !== "" && tbMenu().style.top !== "",
+      tbMenu().style.left + "/" + tbMenu().style.top);
+    tbBtn().getClientRects = () => [];
+    window.dispatchEvent(new window.Event("resize"));
+    check("topbar picker: a resize with the trigger off-screen closes it",
+      !tbIsOpen() && tbBtn().getAttribute("aria-expanded") === "false");
+    delete tbBtn().getClientRects;
+
+    // AC15: opening this picker closes the row context menu, so the two
+    // popovers never stack.
+    await ssLoad([
+      { id: "s1", name: "One",
+        openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Two",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1");
+    window.document.querySelector('.tab[data-path="notes/a.md"]')
+      .dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, clientX: 40, clientY: 10 }));
+    await tick(20);
+    check("topbar picker: the row context menu opens first",
+      $("nb-menu").hidden === false);
+    await tbOpen();
+    check("topbar picker: opening it closes the row context menu",
+      $("nb-menu").hidden === true && tbIsOpen());
+    await tbShut();
 
     window.NB.menu.close();
   }

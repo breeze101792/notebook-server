@@ -7916,13 +7916,11 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 .workspace-switch[aria-expanded="true"] .workspace-caret { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) { .workspace-caret { transition: none; } }
 
-/* The active session: context, not a control. It follows the chip because a
- * session lives inside a workspace. No face, no hover, no tab stop, and the
- * same 12 px gap the topbar uses, so the divider reads as a divider.
- *
- * The topbar- prefix is load-bearing: .session-name already names the
- * Sessions row label (see the sessions view rules below), so an unprefixed
- * rule here would repaint every row name and inherit its flex behaviour. */
+/* The active session: a picker with the workspace chip's chrome. It follows
+ * the chip because a session lives inside a workspace. The topbar- prefix is
+ * load-bearing: .session-name already names the Sessions row label (see the
+ * sessions view rules below), so an unprefixed rule here would repaint every
+ * row name and inherit its flex behaviour. */
 .topbar-session {
   display: flex;
   align-items: center;
@@ -7933,19 +7931,108 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 /* sessions.js fills it. An empty label must never paint an empty slot or a
  * stray rule on the first frame. */
 .topbar-session[hidden] { display: none; }
-.topbar-session-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.topbar-session-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
-.topbar-session-name {
+/* The session trigger copies the workspace chip: two pickers in one bar
+ * must not invent two faces. The 240 px cap is the chip's own, so the two
+ * names yield at the same rate when the bar is tight. */
+#topbar .session-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  max-width: 17em;          /* 200 px at .84rem; the full name is in title */
+  max-width: 240px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: .84rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+#topbar .session-switch[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+#topbar .session-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+#topbar .topbar-session-glyph {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: var(--fg-muted);
+}
+
+.topbar-session-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: .84rem;
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.2;
-  color: var(--fg-muted);
+  color: var(--fg);
 }
+.topbar-session-caret {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-size: .72rem;
+  line-height: 1;
+  transition: transform .12s ease;
+}
+.session-switch[aria-expanded="true"] .topbar-session-caret { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .topbar-session-caret { transition: none; } }
+
+/* The session popover: moved to <body> by sessions.js and positioned fixed
+ * from the trigger's rect, so the tokens live on the node itself. */
+.session-menu {
+  --session-row-h: 32px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 200;          /* above the phone rail (150), below the modals */
+  width: 300px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.session-menu[hidden] { display: none; }
+.session-menu-list { display: flex; flex-direction: column; }
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--session-row-h);
+  padding: 6px 8px;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  font-size: .93rem;
+  text-align: left;
+  cursor: pointer;
+}
+.session-item:hover { background: var(--accent-soft); }
+.session-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-check { flex: 0 0 14px; width: 14px; text-align: center; font-size: .8rem; line-height: 1; color: var(--accent); }
+.session-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-item-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.session-item-count {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  text-align: right;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-fg-muted);
+}
+.session-item[aria-current="true"] { color: var(--accent); font-weight: 600; }
+.session-item[aria-current="true"]:hover { background: none; }
+.session-item[aria-current="true"] .session-item-count { color: var(--accent); font-weight: 400; }
+.session-menu-sep { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
 
 /* The popover: one node shared by both mounts, appended to <body> at boot
  * because #activity-bar (overflow: hidden) and .tab-bar would clip a child.

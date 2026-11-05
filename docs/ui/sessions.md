@@ -231,10 +231,11 @@ second indicator on the rail, the strip or the topbar would duplicate a fact the
 view states and add chrome to a bar that was just cleared of it.
 
 > **Revised after shipping:** the top bar now names the active session as a
-> plain, non-interactive label — the user's decision, recorded in
+> picker that can switch sessions — the user's decision, recorded in
 > [`topbar-session.md`](topbar-session.md). The rail, the strip, the view and the
-> tab bar are still untouched, and nothing above is duplicated: the label shows
-> the name, the view shows the set.
+> tab bar are still untouched. The picker is a second door to the same list: the
+> view keeps create, rename and delete, and both read the one model in `tabs.js`.
+> This reverses the sentence above for switching only.
 
 **D15 — The header `+` uses `aria-disabled`, not native `disabled`.** At the
 20-session cap and for a viewer the action is unavailable, but the reason must

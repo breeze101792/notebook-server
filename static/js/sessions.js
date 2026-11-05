@@ -39,6 +39,16 @@
   // The row's ⋯ menu sits 2 px under the button.
   const MENU_GAP = 2;
 
+  // The top-bar picker: 6 px under the trigger, 8 px from a viewport edge,
+  // one row per session plus the admin-only New row.
+  const POP_GAP = 6;
+  const POP_MARGIN = 8;
+  const ROW_SELECTOR = ".session-item";
+  const ACTION_NEW = "new";
+  const NEW_LABEL = "New session…";
+  const CHECK = "✓";
+  const PLUS = "+";
+
   const MODE_CREATE = "create";
   const MODE_RENAME = "rename";
 
@@ -88,15 +98,20 @@
   let listEl = null;
   let addBtn = null;
   let totalNumEl = null;
-  // The top-bar label. Null in an older harness or a cached shell, so every
+  // The top-bar picker. Null in an older harness or a cached shell, so every
   // use is guarded.
-  const topbarLabel = {
+  const topbar = {
     bar: document.getElementById("session-bar"),
+    trigger: document.getElementById("session-switch"),
     name: document.getElementById("topbar-session-name"),
-    chip: null,
+    menu: document.getElementById("session-menu"),
+    list: document.getElementById("session-menu-list"),
   };
-  if (topbarLabel.bar) {
-    topbarLabel.chip = topbarLabel.bar.querySelector(".topbar-session-chip");
+  // The popover is moved to <body>, the workspace menu's pattern: it is
+  // positioned fixed and must not ride inside the bar's hidden subtree
+  // (workspaces.js:117-122).
+  if (topbar.menu && topbar.menu.parentNode !== document.body) {
+    document.body.appendChild(topbar.menu);
   }
   // Row model, in list order: { id, name, count, dirty, active }.
   let sessions = [];
@@ -192,27 +207,169 @@
     sessions = readSessions();
     activeId = readActiveId();
     for (const s of sessions) s.active = s.id === activeId;
-    renderTopbarLabel();
+    renderTopbar();
     if (signature() === lastSignature) { updateAddBtn(); return; }
+    renderMenu();
     render();
   }
 
-  /* The top bar names the active session. Called from refresh() before the
-   * signature guard: a rename or a switch must repaint the label even when
-   * the row list is unchanged. Every node is guarded, because the DOM
-   * harness is not this shell. */
-  function renderTopbarLabel() {
-    if (!topbarLabel.bar || !topbarLabel.name) return;
+  /* The top bar names the active session and is the picker's trigger. Called
+   * from refresh() before the signature guard: a rename or a switch must
+   * repaint the trigger even when the row list is unchanged. Every node is
+   * guarded, because the DOM harness is not this shell. */
+  function renderTopbar() {
+    if (!topbar.bar || !topbar.name || !topbar.trigger) return;
     const active = sessions.find((s) => s.id === activeId);
-    if (!active) { topbarLabel.bar.hidden = true; return; }
-    if (topbarLabel.name.textContent !== active.name) {
-      topbarLabel.name.textContent = active.name;
+    if (!active) {
+      topbar.bar.hidden = true;
+      closePicker(false);
+      return;
     }
-    if (topbarLabel.chip) {
-      const title = LABEL_SESSION + active.name;
-      if (topbarLabel.chip.title !== title) topbarLabel.chip.title = title;
+    if (topbar.name.textContent !== active.name) {
+      topbar.name.textContent = active.name;
     }
-    topbarLabel.bar.hidden = false;
+    const title = LABEL_SESSION + active.name;
+    if (topbar.trigger.title !== title) topbar.trigger.title = title;
+    topbar.bar.hidden = false;
+  }
+
+  /* Rebuild the rows from the model. Focus and the roving row are captured
+   * by row key before the rebuild, so a count changing under the user's
+   * hands cannot drop the keyboard to <body> (the panel's pattern). */
+  function renderMenu() {
+    if (!topbar.list || !topbar.menu || topbar.menu.hidden) return;
+    const keep = focusedRowKey();
+    const roving = rovingKey();
+    topbar.list.textContent = "";
+    for (const s of sessions) topbar.list.appendChild(buildMenuItem(s));
+    if (canCreate()) {
+      const sep = document.createElement("hr");
+      sep.className = "session-menu-sep";
+      sep.setAttribute("role", "separator");
+      topbar.list.appendChild(sep);
+      topbar.list.appendChild(buildNewItem());
+    }
+    restoreMenuFocus(keep);
+    setRoving(rowByKey(keep) || rowByKey(roving) || activeRow() ||
+      menuRows()[0]);
+    // Emptying the list clamps its scrollTop to 0; bring the kept row back.
+    const focused = rowByKey(keep);
+    if (focused) focused.scrollIntoView({ block: "nearest" });
+  }
+
+  function buildMenuItem(s) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "session-item";
+    row.setAttribute("role", "menuitem");
+    row.tabIndex = -1;
+    row.dataset.sessionId = s.id;
+    row.title = s.name;
+    if (s.active) row.setAttribute("aria-current", "true");
+
+    const check = document.createElement("span");
+    check.className = "session-check";
+    check.setAttribute("aria-hidden", "true");
+    check.textContent = s.active ? CHECK : "";
+    row.appendChild(check);
+
+    const name = document.createElement("span");
+    name.className = "session-item-name";
+    name.textContent = s.name;
+    row.appendChild(name);
+
+    if (s.dirty) {
+      const dot = document.createElement("span");
+      dot.className = "session-item-dot";
+      dot.setAttribute("aria-hidden", "true");
+      row.appendChild(dot);
+      const sr = document.createElement("span");
+      sr.className = "sr-only";
+      sr.textContent = ", unsaved changes";
+      row.appendChild(sr);
+    }
+
+    const count = document.createElement("span");
+    count.className = "session-item-count";
+    count.textContent = String(s.count);
+    const unit = document.createElement("span");
+    unit.className = "sr-only";
+    unit.textContent = s.count === 1 ? " tab" : " tabs";
+    count.appendChild(unit);
+    row.appendChild(count);
+
+    row.addEventListener("click", () => pick(s.id));
+    return row;
+  }
+
+  function buildNewItem() {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "session-item";
+    row.setAttribute("role", "menuitem");
+    row.tabIndex = -1;
+    row.dataset.action = ACTION_NEW;
+
+    const plus = document.createElement("span");
+    plus.className = "session-check";
+    plus.setAttribute("aria-hidden", "true");
+    plus.textContent = PLUS;
+    row.appendChild(plus);
+
+    const name = document.createElement("span");
+    name.className = "session-item-name";
+    name.textContent = NEW_LABEL;
+    row.appendChild(name);
+
+    row.addEventListener("click", () => {
+      closePicker(true);
+      openCreate(topbar.trigger);
+    });
+    return row;
+  }
+
+  function menuRows() {
+    if (!topbar.list) return [];
+    return Array.from(topbar.list.querySelectorAll(ROW_SELECTOR));
+  }
+
+  function rowKey(row) {
+    return row.dataset.action || row.dataset.sessionId || "";
+  }
+
+  function rowByKey(key) {
+    if (!topbar.list || !key) return null;
+    return menuRows().find((row) => rowKey(row) === key) || null;
+  }
+
+  function activeRow() {
+    if (!activeId) return null;
+    return menuRows()
+      .find((row) => row.dataset.sessionId === activeId) || null;
+  }
+
+  function rovingKey() {
+    const row = menuRows().find((r) => r.tabIndex === 0);
+    return row ? rowKey(row) : "";
+  }
+
+  function focusedRowKey() {
+    const active = document.activeElement;
+    if (!topbar.list || !active || !topbar.list.contains(active)) return "";
+    return rowKey(active);
+  }
+
+  function restoreMenuFocus(key) {
+    const row = rowByKey(key);
+    if (row) row.focus({ preventScroll: true });
+  }
+
+  // One row is the menu's Tab stop; focus and the arrow keys move it.
+  function setRoving(target) {
+    const rows = menuRows();
+    if (!rows.length) return;
+    const next = target && rows.indexOf(target) >= 0 ? target : rows[0];
+    for (const row of rows) row.tabIndex = row === next ? 0 : -1;
   }
 
   function readSessions() {
@@ -364,6 +521,175 @@
     else addBtn.removeAttribute("aria-describedby");
   }
 
+  /* --- the top-bar picker ---------------------------------------------- */
+
+  function isPickerOpen() {
+    return !!(topbar.menu && !topbar.menu.hidden);
+  }
+
+  // Both the trigger and the popover count as inside: the popover lives on
+  // <body>, so containment is by identity, not by a common ancestor.
+  function isInsidePicker(node) {
+    if (!node) return false;
+    if (topbar.menu && topbar.menu.contains(node)) return true;
+    return !!(topbar.trigger && topbar.trigger.contains(node));
+  }
+
+  function openPicker(focusMode) {
+    if (!topbar.menu || !topbar.list || !topbar.trigger) return;
+    // One popover at a time: the row context menu must never stack.
+    if (NB.menu) NB.menu.close();
+    topbar.menu.hidden = false;
+    topbar.trigger.setAttribute("aria-expanded", "true");
+    renderMenu();
+    // Measure after the rows exist: the flip-above test needs the height.
+    placeMenu();
+
+    const rows = menuRows();
+    if (!rows.length) { closePicker(false); return; }
+    let target;
+    if (focusMode === "first") target = rows[0];
+    else if (focusMode === "last") target = rows[rows.length - 1];
+    else target = activeRow() || rows[0];
+    setRoving(target);
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "nearest" });
+  }
+
+  function closePicker(returnFocus) {
+    if (!isPickerOpen()) return;
+    topbar.menu.hidden = true;
+    if (topbar.trigger) {
+      topbar.trigger.setAttribute("aria-expanded", "false");
+    }
+    if (returnFocus && topbar.trigger && topbar.trigger.isConnected) {
+      topbar.trigger.focus({ preventScroll: true });
+    }
+  }
+
+  /* Below the trigger's left edge, 6 px down; flip above when the bottom
+   * would overflow and clamp to an 8 px viewport margin. One mount, so
+   * there is no rail branch. */
+  function placeMenu() {
+    if (!topbar.menu || !topbar.trigger) return;
+    const rect = topbar.trigger.getBoundingClientRect();
+    const width = topbar.menu.offsetWidth;
+    const height = topbar.menu.offsetHeight;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const left = Math.max(POP_MARGIN,
+      Math.min(rect.left, vw - width - POP_MARGIN));
+    let top = rect.bottom + POP_GAP;
+    if (top + height > vh - POP_MARGIN) top = rect.top - height - POP_GAP;
+    top = Math.max(POP_MARGIN, Math.min(top, vh - height - POP_MARGIN));
+
+    topbar.menu.style.left = left + "px";
+    topbar.menu.style.top = top + "px";
+  }
+
+  function pick(id) {
+    closePicker(true);               // focus returns to the trigger
+    if (!id || !NB.tabs || typeof NB.tabs.swapTo !== "function") return;
+    // A refused commit changes nothing: the name stays truthful, the menu
+    // is already closed, and no message is shown.
+    settle(NB.tabs.swapTo(id));
+  }
+
+  function onPickerFocusOut(e) {
+    if (!isPickerOpen()) return;
+    if (e.relatedTarget && isInsidePicker(e.relatedTarget)) return;
+    // Removing the focused row during a re-render fires focusout before the
+    // replacement row is focused. Defer the decision so that transient
+    // state is not treated as a real exit.
+    setTimeout(() => {
+      if (!isPickerOpen()) return;
+      if (isInsidePicker(document.activeElement)) return;
+      closePicker(false);
+    }, 0);
+  }
+
+  function wirePicker() {
+    if (!topbar.trigger || !topbar.menu) return;
+
+    topbar.trigger.addEventListener("click", () => {
+      if (isPickerOpen()) closePicker(true);
+      else openPicker("current");
+    });
+
+    topbar.trigger.addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      if (isPickerOpen()) return;
+      openPicker(e.key === "ArrowDown" ? "first" : "last");
+    });
+
+    // Leaving the trigger for the popover (or back) is not a real exit.
+    topbar.trigger.addEventListener("focusout", onPickerFocusOut);
+
+    topbar.menu.addEventListener("keydown", (e) => {
+      if (!isPickerOpen()) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePicker(true);
+        return;
+      }
+      const rows = menuRows();
+      if (!rows.length) return;
+      const current = rows.indexOf(document.activeElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = current < 0
+          ? (step > 0 ? rows[0] : rows[rows.length - 1])
+          : rows[(current + step + rows.length) % rows.length];
+        setRoving(next);
+        next.focus({ preventScroll: true });
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        const next = e.key === "Home" ? rows[0] : rows[rows.length - 1];
+        setRoving(next);
+        next.focus({ preventScroll: true });
+      }
+    });
+
+    // Roving tabindex follows focus so a later Tab starts from the row the
+    // user left.
+    topbar.menu.addEventListener("focusin", (e) => {
+      if (e.target.classList && e.target.classList.contains("session-item")) {
+        setRoving(e.target);
+      }
+    });
+
+    topbar.menu.addEventListener("focusout", onPickerFocusOut);
+
+    document.addEventListener("click", (e) => {
+      if (!isPickerOpen()) return;
+      if (isInsidePicker(e.target)) return;
+      closePicker(false);
+    });
+
+    // The popover is placed with fixed coordinates, so it cannot follow a
+    // scroll: close on any scroll behind it instead. Its own list may scroll
+    // without dismissing it.
+    window.addEventListener("scroll", (e) => {
+      if (!isPickerOpen()) return;
+      if (e.target && topbar.menu.contains(e.target)) return;
+      closePicker(false);
+    }, true);
+
+    window.addEventListener("resize", () => {
+      if (!isPickerOpen()) return;
+      // The phone query or a hidden top bar stops the trigger rendering;
+      // never re-anchor the popover to a button nobody can see.
+      if (topbar.trigger.getClientRects().length === 0) {
+        closePicker(false);
+        return;
+      }
+      placeMenu();
+    });
+  }
+
   /* --- public actions -------------------------------------------------- */
 
   function switchTo(id) {
@@ -374,9 +700,9 @@
     settle(NB.tabs.swapTo(id));
   }
 
-  function openCreate() {
+  function openCreate(openerEl) {
     if (!isWritable() || sessions.length >= MAX_SESSIONS) return;
-    openDialog(MODE_CREATE, null, { opener: addBtn });
+    openDialog(MODE_CREATE, null, { opener: openerEl || addBtn });
   }
 
   function openRename(id) {
@@ -669,6 +995,12 @@
     return NB.pageRole ? NB.pageRole() === "admin" : true;
   }
 
+  // A viewer, the cap and a shell without the dialog get neither the New
+  // row nor its separator.
+  function canCreate() {
+    return !!dlg && isWritable() && sessions.length < MAX_SESSIONS;
+  }
+
   // A model call whose failure means "nothing changed": the strip is left
   // as it was, so the rejection must not surface on the console.
   function settle(promise) {
@@ -718,6 +1050,7 @@
 
   buildView();
   wireDialog();
+  wirePicker();
   refresh();
 
   // Re-render even while the view is hidden, so opening it never shows a

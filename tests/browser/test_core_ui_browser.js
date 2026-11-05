@@ -1765,6 +1765,62 @@ async function main() {
         /Pinned tabs are shared by every session/.test(
           (document.querySelector("#sessions-view .sessions-foot") || {}).textContent || "")));
 
+    // The top bar's session picker: the same model behind a second door.
+    // docs/ui/topbar-session.md §8 AC1, AC2, AC3, AC5, AC14.
+    const pkOpen = async () => {
+      await page.click("#session-switch");
+      await page.waitForFunction(() =>
+        !document.getElementById("session-menu").hidden, null, { timeout: 5000 });
+    };
+    const pkShut = async () => {
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() =>
+        document.getElementById("session-menu").hidden, null, { timeout: 5000 });
+    };
+    check("picker: the top bar names the active session and carries its full title",
+      await waitFor(() => page.evaluate(() => {
+        const bar = document.getElementById("session-bar");
+        const btn = document.getElementById("session-switch");
+        const name = document.getElementById("topbar-session-name");
+        const active = NB.tabs.getSessionList()
+          .find((s) => s.id === NB.tabs.getActiveSessionId());
+        return !!active && !bar.hidden && bar.getBoundingClientRect().width > 0 &&
+          name.textContent === active.name &&
+          btn.title === "Session: " + active.name;
+      }), 6000));
+    check("picker: the trigger is a menu button and the menu ships on <body>",
+      await page.evaluate(() => {
+        const btn = document.getElementById("session-switch");
+        const menu = document.getElementById("session-menu");
+        const list = document.getElementById("session-menu-list");
+        return btn.tagName === "BUTTON" &&
+          btn.getAttribute("aria-haspopup") === "menu" &&
+          btn.getAttribute("aria-expanded") === "false" &&
+          btn.getAttribute("aria-controls") === "session-menu" &&
+          menu.hidden && menu.parentNode === document.body &&
+          list.getAttribute("role") === "menu" &&
+          list.getAttribute("aria-labelledby") === "session-switch";
+      }));
+    await pkOpen();
+    check("picker: clicking the trigger opens the menu on the active row",
+      await page.evaluate(() => {
+        const active = NB.tabs.getActiveSessionId();
+        const rows = Array.from(document.querySelectorAll(
+          "#session-menu-list .session-item[data-session-id]"));
+        const row = rows.find((r) => r.dataset.sessionId === active);
+        return rows.length === NB.tabs.getSessionList().length &&
+          !!row && row.getAttribute("aria-current") === "true" &&
+          row.querySelector(".session-check").textContent === "\u2713" &&
+          document.activeElement === row &&
+          document.getElementById("session-switch")
+            .getAttribute("aria-expanded") === "true";
+      }));
+    await pkShut();
+    check("picker: Escape closes it and returns focus to the trigger",
+      await page.evaluate(() =>
+        document.getElementById("session-switch").getAttribute("aria-expanded") === "false" &&
+        document.activeElement === document.getElementById("session-switch")));
+
     // Known strip: one shared pin plus two unpinned tabs in the active session.
     await page.evaluate(async () => {
       if (NB.hybrid.isActive()) await NB.hybrid.exit(false);
@@ -1869,6 +1925,55 @@ async function main() {
         return NB.tabs.getSessionList().length === 2 &&
           w && w.querySelector(".session-name").textContent === "Renamed Session";
       }, createdId), 6000));
+
+    // Picking a row in the top-bar picker switches without a reload (AC4).
+    await pkOpen();
+    await page.locator('#session-menu-list .session-item[data-session-id="' +
+      createdId + '"]').click();
+    check("picker: picking a row switches the session and repaints the trigger",
+      await waitFor(() => page.evaluate((id) => {
+        const btn = document.getElementById("session-switch");
+        const name = document.getElementById("topbar-session-name");
+        return NB.tabs.getActiveSessionId() === id &&
+          document.getElementById("session-menu").hidden &&
+          btn.getAttribute("aria-expanded") === "false" &&
+          name.textContent === "Renamed Session" &&
+          btn.title === "Session: Renamed Session" &&
+          document.activeElement === btn;
+      }, createdId), 8000));
+    await pkOpen();
+    check("picker: the check moved to the newly active row",
+      await page.evaluate((id) => {
+        const rows = Array.from(document.querySelectorAll(
+          "#session-menu-list .session-item[data-session-id]"));
+        const row = rows.find((r) => r.dataset.sessionId === id);
+        const checked = rows.filter((r) =>
+          r.querySelector(".session-check").textContent === "\u2713");
+        return !!row && row.getAttribute("aria-current") === "true" &&
+          checked.length === 1 && checked[0] === row &&
+          document.activeElement === row;
+      }, createdId));
+    await page.locator('#session-menu-list .session-item[data-session-id="' +
+      mainId + '"]').click();
+    await page.waitForFunction((id) => NB.tabs.getActiveSessionId() === id, mainId,
+      { timeout: 8000 });
+
+    // The New row opens the same dialog, with the name field focused (AC12).
+    await pkOpen();
+    await page.locator('#session-menu-list .session-item[data-action="new"]').click();
+    await page.waitForFunction(() =>
+      !document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+    check("picker: New session… closes the menu and opens the dialog on the name field",
+      await page.evaluate(() =>
+        document.getElementById("session-menu").hidden &&
+        document.getElementById("session-switch").getAttribute("aria-expanded") === "false" &&
+        document.activeElement && document.activeElement.id === "session-name"));
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() =>
+      document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+    check("picker: closing the dialog returns focus to the trigger",
+      await waitFor(() => page.evaluate(() =>
+        document.activeElement === document.getElementById("session-switch")), 4000));
 
     // A dirty source buffer in the hidden session shows a row dot; coming
     // back shows the tab dot and the Recover bar.
@@ -1993,6 +2098,210 @@ async function main() {
       !!lightRow && lightRow.theme === "light" && lightRow.height > 0 &&
       lightRow.bg !== "rgba(0, 0, 0, 0)" && lightRow.color !== lightRow.bg,
       JSON.stringify(lightRow));
+
+    // One popover at a time: opening the session picker closes the
+    // workspace picker (AC15). Last, because it needs no session state and
+    // it leaves both menus closed.
+    await page.click("#workspace-switch");
+    await page.waitForFunction(() =>
+      !document.getElementById("workspace-menu").hidden, null, { timeout: 8000 });
+    await page.click("#session-switch");
+    check("picker: opening it closes the open workspace picker",
+      await waitFor(() => page.evaluate(() => {
+        const wsMenu = document.getElementById("workspace-menu");
+        const ssMenu = document.getElementById("session-menu");
+        return wsMenu.hidden && !ssMenu.hidden &&
+          document.getElementById("session-switch").getAttribute("aria-expanded") === "true" &&
+          document.getElementById("workspace-switch").getAttribute("aria-expanded") === "false";
+      }), 5000));
+
+    // Narrowing past the phone query stops the trigger rendering, so the
+    // popover closes instead of anchoring to a hidden button (AC15).
+    await page.setViewportSize({ width: 860, height: VIEW.height });
+    check("picker: the menu closes when the viewport narrows under 861 px",
+      await waitFor(() => page.evaluate(() => {
+        const bar = document.getElementById("session-bar");
+        return document.getElementById("session-menu").hidden &&
+          document.getElementById("session-switch").getAttribute("aria-expanded") === "false" &&
+          (getComputedStyle(bar).display === "none" ||
+            bar.getBoundingClientRect().width === 0);
+      }), 5000));
+    await page.setViewportSize(VIEW);
+    check("picker: the trigger returns with the desktop viewport",
+      await waitFor(() => page.evaluate(() => {
+        const btn = document.getElementById("session-switch");
+        return !document.getElementById("session-bar").hidden &&
+          btn.getBoundingClientRect().width > 0;
+      }), 5000));
+
+    // AC17: the bar never overflows at the narrowest desktop width.
+    await page.setViewportSize({ width: 861, height: VIEW.height });
+    check("picker: the bar does not overflow at 861 px",
+      await waitFor(() => page.evaluate(() => {
+        const bar = document.getElementById("topbar");
+        const actions = bar.querySelector(".topbar-actions");
+        const btn = document.getElementById("session-switch");
+        return getComputedStyle(document.documentElement)
+            .getPropertyValue("--ui-mode").trim() === "desktop" &&
+          bar.scrollWidth <= bar.clientWidth + 1 &&
+          !!actions && actions.getBoundingClientRect().width > 0 &&
+          btn.getBoundingClientRect().width > 0 &&
+          document.documentElement.scrollWidth <= window.innerWidth + 1;
+      }), 5000),
+      await page.evaluate(() => {
+        const bar = document.getElementById("topbar");
+        return "overflow=" + (bar.scrollWidth - bar.clientWidth);
+      }));
+    await page.setViewportSize(VIEW);
+
+    // AC9: a 40-character name ellipsises at the 240 px cap and the trigger's
+    // title keeps the whole string. §7 gives the picker no second title slot,
+    // so the row is asserted on its text, which is the whole name.
+    const pkLong = "Sensor calibration — Q4 hardware sync v2";
+    await page.evaluate(async (name) => {
+      await NB.tabs.renameSession(NB.tabs.getActiveSessionId(), name);
+    }, pkLong);
+    await page.waitForFunction((name) =>
+      document.getElementById("topbar-session-name").textContent === name, pkLong,
+      { timeout: 5000 });
+    await pkOpen();
+    check("picker AC9: the 40-character name ellipsises at the 240 px cap",
+      await page.evaluate((name) => {
+        const el = document.getElementById("topbar-session-name");
+        const btn = document.getElementById("session-switch");
+        return el.scrollWidth > el.clientWidth &&
+          getComputedStyle(btn).maxWidth === "240px" &&
+          btn.title === "Session: " + name;
+      }, pkLong),
+      await page.evaluate(() => {
+        const el = document.getElementById("topbar-session-name");
+        return "scroll=" + (el.scrollWidth - el.clientWidth) +
+          " client=" + el.clientWidth;
+      }));
+    check("picker AC9: the open row carries the whole name",
+      await page.evaluate((name) => {
+        const row = document.querySelector(
+          '#session-menu-list .session-item[data-session-id="' +
+          NB.tabs.getActiveSessionId() + '"]');
+        const el = row && row.querySelector(".session-item-name");
+        return !!el && el.textContent === name &&
+          row.getAttribute("aria-current") === "true";
+      }, pkLong));
+    await pkShut();
+    await page.evaluate(async () => {
+      await NB.tabs.renameSession(NB.tabs.getActiveSessionId(), "Main");
+    });
+    await page.waitForFunction(() =>
+      document.getElementById("topbar-session-name").textContent === "Main",
+      null, { timeout: 5000 });
+
+    // AC16: the picker's text pairs clear 4.5:1 (the caret 3:1) in both
+    // themes, measured on resting faces. A translucent layer -- the hover or
+    // expanded --accent-soft face -- is composited over its parent before the
+    // ratio is taken; a transparent background is resolved against the
+    // painted ancestor (#topbar for the trigger, .session-menu for rows).
+    await page.evaluate(async () => {
+      await NB.tabs.createSession("Contrast row");
+    });
+    await page.waitForFunction(() => NB.tabs.getSessionList().length === 2 &&
+      document.getElementById("topbar-session-name").textContent === "Contrast row",
+      null, { timeout: 8000 });
+    const pkPaint = () => page.evaluate(() => {
+      const parse = (s) => {
+        const m = /rgba?\(([^)]+)\)/.exec(s || "");
+        if (!m) return null;
+        const p = m[1].split(",").map((v) => parseFloat(v));
+        if (p.length < 3 || p.some((v) => Number.isNaN(v))) return null;
+        return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+      };
+      const over = (top, under) => ({
+        r: top.r * top.a + under.r * (1 - top.a),
+        g: top.g * top.a + under.g * (1 - top.a),
+        b: top.b * top.a + under.b * (1 - top.a),
+        a: 1,
+      });
+      // The painted backdrop under `el`: every translucent layer in turn,
+      // each composited over the next, until one is opaque. Stops after
+      // `stop` so a stray ancestor cannot stand in for the real paint.
+      const backdrop = (el, stop) => {
+        let acc = null;
+        for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
+          const bg = parse(getComputedStyle(cur).backgroundColor);
+          if (bg && bg.a > 0) acc = acc ? over(acc, bg) : bg;
+          if (acc && acc.a >= 1) return acc;
+          if (cur === stop) break;
+        }
+        return acc || { r: 0, g: 0, b: 0, a: 1 };
+      };
+      const chan = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      };
+      const lum = (c) => 0.2126 * chan(c.r) + 0.7152 * chan(c.g) + 0.0722 * chan(c.b);
+      const contrast = (el, stop) => {
+        const fg = parse(el && getComputedStyle(el).color);
+        if (!fg) return 0;
+        const bg = backdrop(el, stop);
+        const ink = fg.a >= 1 ? fg : over(fg, bg);
+        const a = lum(ink);
+        const b = lum(bg);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      const btn = document.getElementById("session-switch");
+      const topbar = document.getElementById("topbar");
+      const menu = document.getElementById("session-menu");
+      const out = {
+        theme: document.body.dataset.theme || "",
+        expanded: btn.getAttribute("aria-expanded") === "true",
+        name: contrast(document.getElementById("topbar-session-name"), topbar),
+        caret: contrast(document.querySelector("#topbar .topbar-session-caret"), topbar),
+        triggerBg: backdrop(btn, topbar),
+        rows: null,
+      };
+      if (!menu.hidden) {
+        const rows = Array.from(menu.querySelectorAll(
+          ".session-item[data-session-id]"));
+        const activeId = NB.tabs.getActiveSessionId();
+        const active = rows.find((r) => r.dataset.sessionId === activeId);
+        const idle = rows.find((r) => r.dataset.sessionId !== activeId);
+        out.rows = {
+          count: rows.length,
+          active: active ? contrast(active, menu) : 0,
+          inactive: idle ? contrast(idle.querySelector(".session-item-name"), menu) : 0,
+          inactiveCount: idle
+            ? contrast(idle.querySelector(".session-item-count"), menu) : 0,
+          bg: backdrop(menu, menu),
+        };
+      }
+      return out;
+    });
+    const pkThemeOrig = await page.evaluate(() => document.body.dataset.theme || "");
+    const pkRound = (v) => Number(v || 0).toFixed(2);
+    for (const pkTheme of ["dark", "light"]) {
+      await page.evaluate((t) => { document.body.dataset.theme = t; }, pkTheme);
+      // Park the pointer off the bar so no hover face tints the trigger.
+      await page.mouse.move(5, 400);
+      await page.waitForFunction(() =>
+        document.getElementById("session-menu").hidden, null, { timeout: 5000 });
+      const pkTrig = await pkPaint();
+      check("picker AC16 (" + pkTheme + "): trigger name ≥ 4.5:1, caret ≥ 3:1",
+        !pkTrig.expanded && pkTrig.name >= 4.5 && pkTrig.caret >= 3.0,
+        "name=" + pkRound(pkTrig.name) + " caret=" + pkRound(pkTrig.caret) +
+        " bg=" + JSON.stringify(pkTrig.triggerBg));
+      await pkOpen();
+      const pkRows = await pkPaint();
+      check("picker AC16 (" + pkTheme + "): active row, inactive row and count ≥ 4.5:1",
+        !!pkRows.rows && pkRows.rows.count >= 2 && pkRows.rows.active >= 4.5 &&
+        pkRows.rows.inactive >= 4.5 && pkRows.rows.inactiveCount >= 4.5,
+        JSON.stringify({
+          active: pkRound(pkRows.rows && pkRows.rows.active),
+          inactive: pkRound(pkRows.rows && pkRows.rows.inactive),
+          count: pkRound(pkRows.rows && pkRows.rows.inactiveCount),
+          bg: pkRows.rows && pkRows.rows.bg,
+        }));
+      await pkShut();
+    }
+    await page.evaluate((t) => { document.body.dataset.theme = t; }, pkThemeOrig);
 
     // Clean up every session the section created.
     await page.evaluate(async () => {
