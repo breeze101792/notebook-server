@@ -1332,6 +1332,9 @@
    * routed through NB.app.openDeepLink -- the SPA stays mounted and
    * the target tab opens in place.
    *
+   * An external http(s) link opens in a new tab instead, so the SPA
+   * never navigates away from the note.
+   *
    * For the back button, we also record the source position in a
    * module-local `navStack` (defined in the back-button section at
    * the bottom of this IIFE). Two entry shapes:
@@ -1371,11 +1374,22 @@
       NB.app.openDeepLink({ file: resolved.path, heading: resolved.heading });
       return;
     }
-    // Same-origin only. new URL(broken) throws -- bail on bad input.
+    // new URL(broken) throws -- bail on bad input.
     let url;
     try { url = new URL(a.getAttribute("href"), window.location.href); }
     catch (_) { return; }
-    if (url.origin !== window.location.origin) return;
+    // External web link: open a new tab instead of navigating the SPA
+    // away from the note. Other schemes (mailto:, etc.) keep the
+    // browser default.
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      if (url.origin !== window.location.origin) {
+        e.preventDefault();
+        window.open(url.href, "_blank", "noopener,noreferrer");
+        return;
+      }
+    } else {
+      return;
+    }
     // The boot path replaces the URL with `/`, so the current "active
     // note" for routing purposes is NB.viewer.getPath() (the file
     // actually shown in the viewer), not window.location.pathname
