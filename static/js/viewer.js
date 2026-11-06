@@ -446,6 +446,18 @@
       assignHeadingId(h);
     });
 
+    // Record the AUTHORED fence language before highlight.js runs. On a
+    // bare fence hljs appends the language it guessed, and the fence's
+    // header band would then show a language the note never had. marked's
+    // class is the first token; a leading `hljs` means "bare". Mirrors
+    // hybrid's captureFenceLanguages. Runs in view mode and in the split
+    // preview alike: the band is drawn from the shared stylesheet in both.
+    viewerContentEl.querySelectorAll("pre > code").forEach((code) => {
+      const first = (code.className || "").trim().split(/\s+/)[0] || "";
+      const m = first.match(/^language-([\w+-]+)$/);
+      if (m) code.parentElement.setAttribute("data-fence-lang", m[1]);
+    });
+
     // Syntax highlighting via highlight.js (vendored). Highlight
     // FIRST so the <code> elements get their hljs classes; the
     // mermaid pass below looks for `code.language-mermaid` and

@@ -132,6 +132,7 @@ Each `.md` has a sibling `.html` mockup where one exists.
 | [`ui/sessions.md`](ui/sessions.md) | Sessions side-panel view: activity-bar placement, header and rows, row menu, tab-menu item, name dialog, copy, keyboard/ARIA, and the CSS to add. Mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
 | [`ui/topbar-session.md`](ui/topbar-session.md) | The top-bar session picker: placement after the workspace chip, the trigger and popover markup, CSS, the `sessions.js` picker, states, ARIA and acceptance criteria. Mockup: [`ui/topbar-session-mockup.html`](ui/topbar-session-mockup.html). |
 | [`ui/workspace-placement-mockup.html`](ui/workspace-placement-mockup.html) | Workspace placement mockup. |
+| [`ui/code-block-chip.md`](ui/code-block-chip.md) | Code fence header (E1): the padding that caused click growth, the chosen quiet top band carrying the language and the copy button, exact CSS, authored-language capture, the vendored-theme caveat, phone sizes, measured heights, and what to verify. Mockup: [`ui/code-block-chip-mockup.html`](ui/code-block-chip-mockup.html). |
 
 ## Research
 

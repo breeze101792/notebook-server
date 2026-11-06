@@ -3273,6 +3273,12 @@ body > #nb-menu .submenu.open {
   overflow-wrap: anywhere;
   overflow-x: clip;
 }
+/* A fence reserves a top band for its language header in every state, so
+ * clicking it never changes the block's height. Plugin error boxes hold a
+ * text-only <pre>, so the :has() keeps the band off them. */
+.markdown-body pre:has(> code) {
+  padding-top: 22px;
+}
 .markdown-body pre code,
 .markdown-body pre code.hljs {
   white-space: pre-wrap;
@@ -3326,29 +3332,51 @@ body > #nb-menu .submenu.open {
 .code-copy-btn:hover { background: var(--accent-soft); color: var(--fg); }
 .code-copy-btn.copied { color: var(--accent); border-color: var(--accent); }
 
-/* Language chip on a code block being edited in hybrid mode: an inline
- * editable label on the block's TOP-LEFT showing the fence's language
- * (shell, python, mermaid, ...). Click and type to change it -- Enter
- * commits, Esc cancels. Always visible while the block is in edit
- * mode; clicking it never disturbs the code selection below.
+/* Language header on a code fence: the authored language is drawn as
+ * generated text in the fence's reserved top band (see the padding-top on
+ * .markdown-body pre:has(> code) above), so the type is visible in read and
+ * edit mode alike and clicking the fence changes no height. No node is
+ * added: the label cannot take a caret, be selected, copied or saved.
  *
- * The padding-top override must out-specify .markdown-body pre's own
- * padding (14px) or the chip overlaps the first line of the source --
- * reported on mermaid blocks, whose source starts immediately. */
-.markdown-body pre.hybrid-plugin-editing {
-  position: relative;
-  padding-top: 34px;
+ * While the fence is edited, the chip below replaces the label in the same
+ * place; the band and the padding never change. */
+.markdown-body pre:has(> code)[data-fence-lang]:not([data-fence-lang=""])::after {
+  content: attr(data-fence-lang);
+  position: absolute;
+  top: 6px;
+  left: 16px;
+  max-width: calc(100% - 96px);
+  font: .72em/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
+.markdown-body pre.hybrid-plugin-editing::after {
+  display: none;
+}
+/* The copy button sits in the band, not over the first code line. */
+.markdown-body pre:has(> code) > .code-copy-btn {
+  top: 1px;
+  right: 10px;
+  z-index: 2;
+}
+/* Language chip on a code block being edited in hybrid mode. Click and type
+ * to change the fence language -- Enter commits, Esc cancels. The box keeps
+ * the app's chip look so an empty language stays visible; it is absolutely
+ * positioned, so it cannot change the block's height. Its text starts at
+ * x = 16 (7 + 8 padding + 1 border), matching the generated label. */
 .hybrid-lang-pill {
   position: absolute;
-  top: 7px;
-  left: 8px;
+  top: 2px;
+  left: 7px;
   box-sizing: border-box;
-  height: 20px;
-  font: .72rem/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  padding: 2px 8px;
+  height: 18px;
+  font: .72em/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 0 8px;
   border-radius: 4px;
-  border: 1px dashed transparent;
+  border: 1px dashed var(--border);
   background: var(--bg-elev);
   color: var(--fg-muted);
   cursor: text;
@@ -7467,6 +7495,28 @@ body[data-theme="light"] #dw-designer-overlay {
     padding: 12px 14px;
     font-size: 13px;
     /* Long lines wrap on the phone too; no inner code scrollbar. */
+  }
+  /* A fence keeps a band tall enough for the touch copy target. */
+  .markdown-body pre:has(> code) {
+    padding: 44px 14px 12px;
+  }
+  .markdown-body pre:has(> code)[data-fence-lang]:not([data-fence-lang=""])::after {
+    top: 13px;
+    left: 14px;
+  }
+  .hybrid-lang-pill {
+    top: 12px;
+    left: 5px;
+  }
+  /* Must out-specify the desktop pre > .code-copy-btn rule. */
+  .markdown-body pre:has(> code) > .code-copy-btn {
+    top: 0;
+    right: 0;
+    width: var(--m-hit);
+    height: var(--m-hit);
+    padding: 0;
+    opacity: 1;
+    font-size: 12px;
   }
   .code-copy-btn {
     top: 0;

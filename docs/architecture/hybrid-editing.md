@@ -827,6 +827,14 @@ rule `vendor:181-215`). `pre > code` is never touched by inline rules
 (`:1110-1113`); click-to-edit swaps in an editable `<pre>`
 (`editPluginSource` `:4080`).
 
+A fence reserves a 22px top band (44px on a phone) in every state. The authored
+language is drawn there as generated text (`pre:has(> code)[data-fence-lang]::after`;
+the value is captured before highlight.js runs), and the Copy button sits at the band's
+right, revealed on hover. Clicking the fence swaps that text for the language chip
+without changing the block's height, and puts the caret at the clicked source
+position (a rendered plugin block has no source there, so it opens at the end).
+Plugin containers and error boxes get no band; see `docs/ui/code-block-chip.md`.
+
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
 | ∅ | G (` ``` `) + ↵ | `` | fenced block, language from the info string | ✅ `:2601-2616`, test `4465-4478` |

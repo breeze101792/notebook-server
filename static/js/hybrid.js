@@ -3894,7 +3894,7 @@
     const hit = codeBlockAt(e.target);
     if (!hit) return;
     e.preventDefault();
-    editPluginSource(hit);
+    editPluginSource(hit, { x: e.clientX, y: e.clientY });
   }
 
   /* --- list indentation (Tab / Shift+Tab) --------------------------- */
@@ -8631,7 +8631,7 @@
     return pre;
   }
 
-  function editPluginSource(hit) {
+  function editPluginSource(hit, point) {
     if (!hit) return;
     // Rendered plugin containers become a raw fence first; raw code
     // blocks are focused where they are.
@@ -8651,11 +8651,44 @@
       pre.classList.add("hybrid-plugin-editing");
       onContentChange();
     }
-    // Focus and put the caret at the end of the source.
+    // A plain fence opened by a click keeps the caret the click placed;
+    // a rendered plugin has no source where the click landed, and the
+    // context-menu entry has no point at all, so both take the end.
     pre.setAttribute("contenteditable", "true");
-    focusCodeEnd(pre, code);
+    if (hit.plugin || !point) {
+      focusCodeEnd(pre, code);
+    } else if (!focusCodeAt(pre, code, point)) {
+      // The click missed the source text (the header band or the block's
+      // padding): the start of the source is the nearest sensible caret.
+      pre.focus();
+      caretToEdge(code, false);
+    }
     addLanguagePill(pre, code);
     wireCommit(pre);
+  }
+
+  /* Put the caret at a viewport point inside a fence. Returns false when
+   * the point does not resolve to the fence's source text, so the caller
+   * can pick a fallback instead of leaving the caret elsewhere. */
+  function focusCodeAt(pre, code, point) {
+    let range = null;
+    if (typeof document.caretRangeFromPoint === "function") {
+      range = document.caretRangeFromPoint(point.x, point.y);
+    } else if (typeof document.caretPositionFromPoint === "function") {
+      const pos = document.caretPositionFromPoint(point.x, point.y);
+      if (pos && pos.offsetNode) {
+        range = document.createRange();
+        range.setStart(pos.offsetNode, pos.offset);
+        range.collapse(true);
+      }
+    }
+    if (!range || !code.contains(range.startContainer)) return false;
+    pre.focus();
+    const sel = window.getSelection();
+    if (!sel) return false;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    return true;
   }
 
   /* The language chip: an editable control on the block's top-left while
@@ -8672,7 +8705,10 @@
     chip.setAttribute("aria-label", "Fence language");
     chip.value = pre.getAttribute(LANG_ATTR) || "";
     const resize = () => {
-      chip.style.width = Math.max(2, chip.value.length + 1) + "ch";
+      // The chip is border-box with 16px of horizontal padding and a 1px
+      // border; add them so the label is not clipped. One extra cell holds
+      // the caret.
+      chip.style.width = "calc(" + Math.max(2, chip.value.length + 1) + "ch + 18px)";
     };
     resize();
     chip.addEventListener("mousedown", (e) => {

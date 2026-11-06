@@ -179,6 +179,27 @@ async function main() {
     check("open: source is unchanged", s.text === "print(\"hello\")\n",
       JSON.stringify(s.text));
 
+    // --- 1b. the opening click places the caret where it lands ---------
+    console.log("\n== fence editor: click caret ==");
+    await boot(PLAIN);
+    await block().click({ position: { x: 44, y: 40 } });
+    await page.waitForFunction(
+      () => !!document.querySelector("#viewer-content pre.hybrid-plugin-editing"),
+      null, { timeout: 5000 });
+    await sleep(80);
+    const landed = await page.evaluate(() => {
+      const sel = window.getSelection();
+      const code = document.querySelector("#viewer-content pre.hybrid-plugin-editing code");
+      if (!sel || !sel.rangeCount || !code || !code.contains(sel.anchorNode)) return null;
+      return { offset: sel.anchorOffset, len: (sel.anchorNode.nodeValue || "").length };
+    });
+    check("open: the caret lands at the click, not at the source end",
+      landed && landed.offset > 0 && landed.offset < landed.len,
+      JSON.stringify(landed));
+    // Restore the state group 1 left for the chip group below.
+    await boot(PLAIN);
+    await openBlock();
+
     // --- 2. select-all in the chip must not touch the note --------------
     console.log("\n== fence editor: language chip ==");
     await chip().click();
@@ -508,6 +529,15 @@ async function main() {
 
     // --- 13. re-entering the same fence works -------------------------
     await openBlock();
+    await page.evaluate(() => {
+      const code = document.querySelector("#viewer-content pre code");
+      const r = document.createRange();
+      r.selectNodeContents(code);
+      r.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    });
     await page.keyboard.type("Z");
     await commitAndSave();
     check("re-enter: a second edit commits and saves",
