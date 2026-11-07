@@ -885,6 +885,28 @@ const html = `<!DOCTYPE html><html><head>
                 title="Close" aria-label="Close">×</button>
       </div>
       <div class="edit-bar">
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <button id="table-editor-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="table-editor-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+        </div>
         <div class="edit-bar-actions">
         <div id="table-editor-toolbar" class="te-toolbar" role="toolbar" aria-label="Table tools">
           <div class="te-group" role="group" aria-label="Rows">
@@ -1002,28 +1024,6 @@ const html = `<!DOCTYPE html><html><head>
           </div>
         </div>
         </div>
-        <div class="edit-bar-history" role="group" aria-label="History">
-          <span class="edit-bar-seam" aria-hidden="true"></span>
-          <button id="table-editor-undo" class="edit-bar-btn" type="button"
-                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
-            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="1.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
-              <path d="M6.4 3.6 4 6l2.4 2.4"/>
-            </svg>
-          </button>
-          <button id="table-editor-redo" class="edit-bar-btn" type="button"
-                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
-                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
-            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="1.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
-              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
-            </svg>
-          </button>
-        </div>
       </div>
       <div class="te-body">
         <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
@@ -1065,6 +1065,28 @@ const html = `<!DOCTYPE html><html><head>
         <button id="designer-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
       </div>
       <div class="edit-bar">
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <button id="designer-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="designer-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+        </div>
         <div class="edit-bar-actions">
         <div class="edit-bar-toolbar" role="toolbar" aria-label="Diagram actions">
           <div class="edit-bar-group" role="group" aria-label="Canvas mode">
@@ -1095,28 +1117,6 @@ const html = `<!DOCTYPE html><html><head>
                     title="Jump to Chart" disabled>Chart</button>
           </div>
         </div>
-        </div>
-        <div class="edit-bar-history" role="group" aria-label="History">
-          <span class="edit-bar-seam" aria-hidden="true"></span>
-          <button id="designer-undo" class="edit-bar-btn" type="button"
-                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
-            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="1.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
-              <path d="M6.4 3.6 4 6l2.4 2.4"/>
-            </svg>
-          </button>
-          <button id="designer-redo" class="edit-bar-btn" type="button"
-                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
-                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
-            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
-                 fill="none" stroke="currentColor" stroke-width="1.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
-              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
-            </svg>
-          </button>
         </div>
       </div>
       <div class="settings-body designer-body">
@@ -1272,20 +1272,7 @@ const html = `<!DOCTYPE html><html><head>
         <button id="dw-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
       </div>
       <div class="edit-bar">
-        <div class="edit-bar-actions">
-        <div class="edit-bar-toolbar" role="toolbar" aria-label="Timing actions">
-          <div class="edit-bar-group" role="group" aria-label="Build">
-            <button type="button" class="edit-chip" data-compact="add"
-                    title="Add" aria-label="Add">Add</button>
-            <button type="button" class="edit-chip" data-compact="chart"
-                    title="Chart" aria-label="Chart">Chart</button>
-            <button type="button" class="edit-chip" data-compact="source"
-                    title="Source" aria-label="Source">Source</button>
-          </div>
-        </div>
-        </div>
         <div class="edit-bar-history" role="group" aria-label="History">
-          <span class="edit-bar-seam" aria-hidden="true"></span>
           <button id="dw-undo" class="edit-bar-btn" type="button"
                   title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
             <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
@@ -1305,6 +1292,19 @@ const html = `<!DOCTYPE html><html><head>
               <path d="M9.6 3.6 12 6l-2.4 2.4"/>
             </svg>
           </button>
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+        </div>
+        <div class="edit-bar-actions">
+        <div class="edit-bar-toolbar" role="toolbar" aria-label="Timing actions">
+          <div class="edit-bar-group" role="group" aria-label="Build">
+            <button type="button" class="edit-chip" data-compact="add"
+                    title="Add" aria-label="Add">Add</button>
+            <button type="button" class="edit-chip" data-compact="chart"
+                    title="Chart" aria-label="Chart">Chart</button>
+            <button type="button" class="edit-chip" data-compact="source"
+                    title="Source" aria-label="Source">Source</button>
+          </div>
+        </div>
         </div>
       </div>
       <div class="settings-body designer-body">
@@ -13315,13 +13315,14 @@ function check(label, cond, extra) {
       overlay.className = "settings-overlay";
       overlay.innerHTML =
         '<div class="edit-bar">' +
-        '<div class="edit-bar-actions"></div>' +
         '<div class="edit-bar-history">' +
         '<button id="' + prefix + '-undo" class="edit-bar-btn" ' +
         'type="button" disabled></button>' +
         '<button id="' + prefix + '-redo" class="edit-bar-btn" ' +
         'type="button" disabled></button>' +
-        "</div></div>";
+        "</div>" +
+        '<div class="edit-bar-actions"></div>' +
+        "</div>";
       doc.body.appendChild(overlay);
       const engine = window.NB.editWindow.attach(Object.assign({
         overlay: overlay,
@@ -34699,6 +34700,30 @@ function check(label, cond, extra) {
         editMacro.indexOf('class="edit-bar-actions"') !== -1 &&
         editMacro.indexOf('class="edit-bar-history"') !== -1 &&
         editMacro.indexOf("{{ caller() }}") !== -1);
+      // The shipped bar anatomy is [history group][actions group], with the
+      // seam last inside history. The three hand-maintained fixtures must
+      // mirror that order or they test a bar the browser never renders.
+      {
+        const bars = ["#table-editor-overlay", "#designer-overlay",
+          "#dw-designer-overlay"].map((sel) => {
+          const bar = window.document.querySelector(sel + " .edit-bar");
+          if (!bar) return null;
+          const history = bar.querySelector(".edit-bar-history");
+          return {
+            order: Array.from(bar.children).map((k) =>
+              k.classList.contains("edit-bar-history") ? "history"
+                : k.classList.contains("edit-bar-actions") ? "actions" : "?"),
+            seamLast: !!history && !!history.querySelector(".edit-bar-seam") &&
+              history.lastElementChild ===
+                history.querySelector(".edit-bar-seam"),
+          };
+        });
+        check("shared edit bar: every fixture puts history before actions " +
+          "and the seam last in history",
+          bars.every((b) => b && b.order.join(",") === "history,actions" &&
+            b.seamLast),
+          JSON.stringify(bars));
+      }
       check("designer: the bar chips Add and Chart are in index.html",
         idxHtml.indexOf('id="designer-bar-add"') !== -1 &&
         idxHtml.indexOf('id="designer-bar-chart"') !== -1);

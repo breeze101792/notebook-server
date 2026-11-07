@@ -50,9 +50,9 @@ Body + Apply + history means this shell — never a fourth tool surface.
 | Slot | Contract |
 | --- | --- |
 | Slot | `.edit-bar-actions`, `flex: 1 1 auto`, horizontal scroll, no role of its own. The window's inner `.edit-bar-toolbar` carries `role="toolbar"` and its own `aria-label`; each group is `role="group"` + `aria-label`. Window actions only — no title, Cancel/Apply, or undo/redo. One line, items `flex: 0 0 auto`. |
-| Seam | `.edit-bar-seam`, `aria-hidden`, first child of `.edit-bar-history`; separates window actions from document history. |
+| Seam | `.edit-bar-seam`, `aria-hidden`, last child of `.edit-bar-history`; separates document history from the window actions. |
 | History | `.edit-bar-history`, `role="group" aria-label="History"`, holds the pinned `.edit-bar-btn` pair `#<prefix>-undo` / `-redo`; icon-only, 44 px, `aria-label` + `title` with the chord. Never scrolls. |
-| Future action | Design reservation only — nothing is rendered. A new per-window control goes after the history pair. No `+` placeholder. |
+| Future action | Design reservation only — nothing is rendered. A new per-window control goes into the actions slot. No `+` placeholder. |
 | Overflow | `.edit-bar-actions.is-scrollable` fades the right edge; toggled from `scrollWidth > clientWidth + 1` on window resize and through a `ResizeObserver`. No `…` menu, no second row. |
 
 ### 3.3 Footer
@@ -140,7 +140,7 @@ used twice becomes a token.
 | Header | `.edit-header`, `.edit-badge`, `.icon-btn.win-max` | Title, badge, maximize, close | `edit-window.md` §2; mockup `:root` |
 | Bar | `.edit-bar`, `.edit-bar-actions`; `--edit-bar-h`, `--edit-bar-pad-x`, `--edit-bar-pad-y`, `--edit-bar-gap` | One row, `--bg-elev`, bottom seam only | `edit-window.md` §2 |
 | Tools | `.edit-bar-toolbar`, `.edit-bar-group`, `.edit-bar-sep`, `.te-tool`, `.edit-chip`; `--edit-bar-tool`, `--edit-bar-sep-h` | Interior row and separators | `edit-window.md` §2, §8 |
-| History | `.edit-bar-history`, `.edit-bar-seam`, `.edit-bar-btn` | Chrome pair, pinned right | `edit-window.md` §4 |
+| History | `.edit-bar-history`, `.edit-bar-seam`, `.edit-bar-btn` | Chrome pair, pinned left | `edit-window.md` §4 |
 | Footer | `.edit-footer`, `.settings-action`; `--edit-foot-*` | Order and action size | mockup `:root`; `edit-window.md` §6 |
 | Status | `.te-status`, `.designer-status`, `[role="status"]` | One live region, left, muted | `edit-window.md` §6 |
 

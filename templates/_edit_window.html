@@ -3,7 +3,7 @@
 
    Anatomy (docs/ui/edit-window-guide.md §2):
      header  [title][badge] ... [maximize][close]
-     bar     [window actions, one scrolling line] | [undo][redo]
+     bar     [undo][redo] | [window actions, one scrolling line]
      footer  [status][Cancel][Apply]
 
    windows.js wraps the LAST header button (close) in
@@ -22,9 +22,7 @@
 
 {% macro edit_bar(prefix) %}
   <div class="edit-bar">
-    <div class="edit-bar-actions">{{ caller() }}</div>
     <div class="edit-bar-history" role="group" aria-label="History">
-      <span class="edit-bar-seam" aria-hidden="true"></span>
       <button id="{{ prefix }}-undo" class="edit-bar-btn" type="button"
               title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
         <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
@@ -44,7 +42,9 @@
           <path d="M9.6 3.6 12 6l-2.4 2.4"/>
         </svg>
       </button>
+      <span class="edit-bar-seam" aria-hidden="true"></span>
     </div>
+    <div class="edit-bar-actions">{{ caller() }}</div>
   </div>
 {% endmacro %}
 

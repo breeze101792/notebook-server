@@ -11,13 +11,14 @@ three places:
 
 | Mockup | Shipped |
 | --- | --- |
-| A dashed `+` slot after the history pair | Not rendered; the future-action slot is a design reservation only (§4). |
+| A dashed `+` slot at the end of the bar | Not rendered; the future-action slot is a design reservation only (§4). |
+| History on the right of the window actions | Shipped puts the history pair on the left and the window actions on the right (§3.2). |
 | An `…` button when the slot overflows | No menu, no popover; a right-edge mask fade on `.edit-bar-actions.is-scrollable` (§5). |
 | Fixed 1280 / 720 stages in a 1320 × 768 box | `width: min(1320px, 96vw); height: min(85vh, 92vh)`; ≤ 520 px is full viewport. |
 
 The windows are the table editor (`#table-editor-overlay`), the Mermaid designer
 (`#designer-overlay`) and the Graphviz / WaveDrom designer (`#dw-designer-overlay`).
-One shell, one bar, three contents: **window actions left, document history right.**
+One shell, one bar, three contents: **document history left, window actions right.**
 
 ## 1. The shell
 
@@ -178,7 +179,7 @@ its body, the designers' sidebar sections, and WaveDrom's strip. That is three p
 look, three places to add the next action, and no answer at all to "where does this
 window's Undo go?"
 
-One bar gives every window the same anatomy — actions on the left, history on the right,
+One bar gives every window the same anatomy — history on the left, actions on the right,
 same height, same padding, same seam — so a user learns the shape once. It also gives the
 code one component and one place for the next action, instead of a fourth surface when
 the next feature lands. The cost is honest: 57 px of body height in the two designers, and

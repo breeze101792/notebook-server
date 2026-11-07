@@ -1,7 +1,7 @@
 # Frontend test suites
 
 The frontend is tested in two places. `tests/dom/test_dom.js` is the primary
-suite: 42,660 lines with a hand-rolled harness, no framework, loading the real
+suite: 42,685 lines with a hand-rolled harness, no framework, loading the real
 app into jsdom. The twelve Playwright scripts under `tests/browser/` cover
 behavior only a real browser can produce: the hybrid editing engine, the
 hybrid block types (lists, tasks, tables, selection), the fence editor, the

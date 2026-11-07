@@ -203,7 +203,7 @@ All four are user-initiated closes:
 
 ### 4.6 Window-level undo/redo
 
-The window's action bar carries **Undo** and **Redo** at its right end, above
+The window's action bar carries **Undo** and **Redo** at its left end, above
 the canvas; the footer is commit-only.
 Each structural edit is one step; text bursts coalesce into one step. Undo and
 redo restore the window's draft and preview, clear the selection, and update

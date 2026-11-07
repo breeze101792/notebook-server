@@ -234,7 +234,7 @@ async function main() {
       normalNotice.hidden && normalNotice.display === "none",
       JSON.stringify(normalNotice));
 
-    // --- the bar's left slot fades only while it scrolls ------------
+    // --- the bar's actions slot fades only while it scrolls ---------
     // syncOverflow() toggles is-scrollable from the measured scrollWidth, so
     // the class must always match the overflow at the current width.
     const barSlot = async (width) => {

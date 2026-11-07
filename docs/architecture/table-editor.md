@@ -90,7 +90,7 @@ after `#export-overlay` (id `table-editor-overlay`, class `settings-overlay`,
 direct body child). Inner `.settings-modal.table-editor-modal[role="dialog"]
 [aria-modal]` with the shared header (`h2#table-editor-title`, a `Table` badge,
 ×), the shared action bar (`#table-editor-toolbar` in the left slot, the pinned
-`#table-editor-undo` / `#table-editor-redo` pair on the right), `.te-body`
+`#table-editor-undo` / `#table-editor-redo` pair on the left), `.te-body`
 (notice strip + `#table-editor-grid` scroll host), and the shared commit footer
 (`#table-editor-status`, `Esc cancels`, Cancel, Apply). The box matches the
 designers: `min(1320px, 96vw)` × `min(85vh, 92vh)`. Static, not module-built,
