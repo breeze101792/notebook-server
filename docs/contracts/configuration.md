@@ -416,6 +416,8 @@ camelCase.
 - `custom_prompt` is a global assistant instruction, stored outside the
   server list (`app.py`).
 - `searxng_url` is the optional SearXNG instance the search tool queries.
+  When it is empty or unreachable, the tool falls back to a keyless Yahoo
+  results page fetched by the server.
 
 Secret handling: the stored `api_key` is never echoed to any client.
 `GET /api/ai/config` returns `hasKey` (a boolean) instead (`app.py`).

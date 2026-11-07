@@ -40,7 +40,9 @@ Open Settings → AI. The tab is admin-gated while auth is on, and live.
   (`app.py`).
 - Custom prompt: global text appended to the built-in contract. It can
   steer style and focus but cannot invent tools (see `customPromptSuffix()`).
-- Web search: sets the SearXNG instance URL used by the search tool.
+- Web search: sets the SearXNG instance URL. SearXNG is the supported
+  search provider; when it is unset or fails, the search tool falls back to
+  a keyless Yahoo results page, parsed best-effort from the HTML.
 
 Editing a profile never re-sends the stored key. A blank API key plus
 `replaceSecret: true` carries the previous key over server-side
@@ -166,9 +168,17 @@ called by the model as fenced ` ```nb-tool ` JSON blocks.
 | `list` | Enumerates the note tree. | automatically, shown as a trace line |
 | `read` | Fetches one note's content. | automatically |
 | `fetch` | Fetches a URL server-side via `/api/ai/fetch`, which is CORS-safe. | automatically |
-| `search` | Queries the configured SearXNG instance via `/api/ai/search`. Fails if no instance is configured. | automatically |
+| `search` | Queries the web via `/api/ai/search`: the configured SearXNG instance first, else a keyless Yahoo results-page fallback. | automatically |
 | `write` | Creates a NEW file. | needs permission (Apply/Reject card) |
 | `patch` | Edits an existing file through a batch of `/api/edit` ops. | needs permission (Apply/Reject card) |
+
+**Search providers.** SearXNG is the supported provider: configure an
+instance and `/api/ai/search` queries its JSON output. The keyless fallback
+is best-effort — it fetches Yahoo's results page with a browser User-Agent
+and parses the result markup, so a change on Yahoo's side breaks it. It
+exists so search works with no setup, not as a guarantee. With no instance
+configured, every query leaves the machine to `search.yahoo.com` from the
+server, including anything the model puts in the query text.
 
 The model's own rules, stated in `systemPrompt()`:
 
@@ -424,9 +434,10 @@ Caps:
 - `fetch` — 512 KiB body, 15-second timeout
   (`AI_FETCH_MAX_BYTES` at `app.py`, `AI_FETCH_TIMEOUT` at
   `app.py`).
-- `search` — top 10 results, 15-second timeout
-  (`AI_SEARXNG_TIMEOUT` at `app.py`, `AI_SEARXNG_MAX_RESULTS` at
-  `app.py`).
+- `search` — top 10 results from either provider; 15-second SearXNG
+  timeout, 20-second fallback timeout, 1 MiB body
+  (`AI_SEARXNG_MAX_RESULTS`, `AI_SEARXNG_TIMEOUT`,
+  `AI_FALLBACK_SEARCH_TIMEOUT`, `AI_SEARCH_MAX_BYTES` at `app.py`).
 
 Upstream HTTP errors during chat are re-emitted in-band as SSE
 `event: error` frames, so the browser can display them
@@ -466,8 +477,10 @@ written.
 
 ### "Search the web for the current Graphviz release and add it to notes/tools.md"
 
-1. The model calls `search` (automatic). If no SearXNG URL is configured,
-   the trace line shows a failure and the model says so.
+1. The model calls `search` (automatic). It queries the configured SearXNG
+   instance when there is one and otherwise the keyless Yahoo results-page
+   fallback, so search works with no setup; the trace line names the engine
+   that answered.
 2. It may call `fetch` on a result URL (automatic, server-side,
    CORS-safe).
 3. It proposes a `patch` on `notes/tools.md` with a `find_replace` op. The

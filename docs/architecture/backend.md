@@ -312,11 +312,14 @@ including the agent's filesystem trust boundary.
 tool, since the browser cannot cross CORS. Only http(s) is allowed. The
 body is capped at `AI_FETCH_MAX_BYTES` (512 KiB) and times out after
 `AI_FETCH_TIMEOUT` (15s) (`app.py`, route `app.py`).
-`POST /api/ai/search` queries a SearXNG instance's JSON output and returns
-the top `AI_SEARXNG_MAX_RESULTS` (10) results with a 15-second
-`AI_SEARXNG_TIMEOUT` (`app.py`, route `app.py`). With no
-`searxng_url` configured it returns 400, and the model is told the tool is
-disabled.
+`POST /api/ai/search` queries the web for the assistant's search tool. The
+configured `searxng_url` is preferred, queried with its JSON output format;
+when it is unset or fails, a keyless Yahoo results-page fallback answers.
+Either way
+the route returns the top `AI_SEARXNG_MAX_RESULTS` (10) results
+(`app.py`, route `app.py`). The SearXNG request times out after
+`AI_SEARXNG_TIMEOUT` (15s), the fallback after `AI_FALLBACK_SEARCH_TIMEOUT`
+(20s). Only bad input is 400, and only both providers failing is 502.
 
 ## 6. Security posture
 

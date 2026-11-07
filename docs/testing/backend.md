@@ -77,7 +77,7 @@ a low cost factor so tests stay fast.
 | 20 | `TestAuthSetPasswords` | 17 | `POST /api/auth/passwords`: admin-only, set/change/clear viewer and admin passwords, current-password requirement, clear-admin also clears the viewer password, password-length rule, first-save rule, no-op clear, and non-string/missing-key rejection |
 | 21 | `TestApiTokens` | 13 | `/api/auth/tokens`: token shown exactly once, duplicate-name conflict, validation, refused when auth is off, admin-only, admin token reads/writes without a session, viewer token read-only, invalid token fails hard with no session fallback, non-Bearer ignored, revocation, delete missing, clearing the admin password clears tokens, and the rate limiter applies to bad tokens |
 | 22 | `TestAgentGuide` | 6 | `/agent.md`: served as markdown with key sections, old `/agent/` URL falls through to the SPA, `{{auth_state}}` substitution, not cached and no secrets, served while auth is on, and the notice reflects auth state |
-| 23 | `TestAiTools` | 7 | `POST /api/ai/fetch` and `/api/ai/search`: fetch body, bad URLs rejected, upstream error becomes 502, search requires a configured instance, search queries the instance, bad query rejected, and both tools are admin-gated when auth is on |
+| 23 | `TestAiTools` | 13 | `POST /api/ai/fetch` and `/api/ai/search`: fetch body, bad URLs rejected, upstream error becomes 502, search falls back to the Yahoo results page when unconfigured or when SearXNG fails, an empty results page is 200 with no results, non-http result targets skipped, sponsored Bing click trackers skipped, an unexpected SearXNG JSON shape falling back, 502 only when both fail, search queries the instance, bad query rejected, and both tools are admin-gated when auth is on |
 | 24 | `TestAiConfig` | 9 | `GET`/`POST /api/ai/config`: empty default, masked key on round-trip, `replaceSecret` carries the stored key, trailing `/v1` stripped from base URLs, global custom prompt and SearXNG URL round-trips, rename carries the key via `replaceSecretFor`, validation errors, and admin-only when auth is on |
 | 25 | `TestAiChat` | 15 | `POST /api/ai/chat` SSE relay: relays frames and forwards the stored key/model, the message-part array (accepted, bad parts rejected, the eight-image cap, per-message extra keys stripped, an image send writes no file), the 32 MiB body cap returning JSON 413, unknown server, message validation, upstream HTTP error becomes an in-band SSE error event, probe unreachable/reachable/unknown-server, `/api/ai/config` readable while chat stays gated, and an ACP name collision routing to the OpenAI profile |
 
@@ -120,9 +120,14 @@ socket.
   `TestAiChat` asserts on what the relay actually forwarded.
 - `_StubWebHandler` stands in for the fetch and
   search targets. `GET /page` returns a small HTML body, `GET /error`
-  returns 500, and `GET /search?q=...&format=json` returns a SearXNG-style
-  JSON result list. It records the last request path into `nb.LAST_WEB`.
-  `TestAiTools` uses it.
+  returns 500, `GET /search?q=...&format=json` returns a SearXNG-style
+  JSON result list, `GET /search-array` a JSON array, `GET /results`
+  returns a two-result Yahoo results page
+  for the fallback, `GET /results-empty` a page with no result titles, and
+  `GET /results-unsafe` a page whose targets are `javascript:` and
+  `mailto:` URLs plus one http URL, and `GET /results-ad` a page whose
+  first block is a Bing sponsored click tracker. It records the last
+  request path into `nb.LAST_WEB`. `TestAiTools` uses it.
 
 Both handlers override `log_message` to keep test output clean. Each of
 `TestAiTools` and `TestAiChat` starts its stub in `setUpClass` and shuts it

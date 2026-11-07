@@ -16,6 +16,8 @@ authentication whenever the server is bound to a non-loopback address.
 import argparse
 import dataclasses
 import fnmatch
+import html
+import http.client
 import ipaddress
 import itertools
 import json
@@ -2154,8 +2156,39 @@ ACP_LABEL = "ACP"
 AI_FETCH_MAX_BYTES = 512 * 1024      # 512 KiB of body
 AI_FETCH_TIMEOUT = 15                # seconds
 AI_SEARXNG_TIMEOUT = 15              # seconds
-AI_SEARXNG_MAX_RESULTS = 10
+AI_SEARXNG_MAX_RESULTS = 10          # cap for both search providers
 AI_PROBE_TIMEOUT = 8                 # seconds for the /api/ai/probe ping
+
+# Keyless fallback search provider (Yahoo's HTML results page), used when no
+# SearXNG instance is configured or the configured one fails. No API key is
+# needed, but the page is parsed, so a Yahoo markup change breaks it.
+AI_FALLBACK_SEARCH_URL = "https://search.yahoo.com/search"
+AI_FALLBACK_SEARCH_TIMEOUT = 20      # seconds
+AI_SEARCH_MAX_BYTES = 1024 * 1024    # 1 MiB of body
+# Yahoo serves a results-free shell to a plain agent UA, so the fallback must
+# present a browser UA to get the result list back.
+AI_FALLBACK_SEARCH_UA = ("Mozilla/5.0 (X11; Linux x86_64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/124.0 Safari/537.36")
+
+# Result-page markup for the fallback provider: each result is one <li> whose
+# <h3 class="title"> holds the title and whose href carries the target
+# percent-encoded as RU=<encoded>/RK=.
+AI_FALLBACK_TITLE_RE = re.compile(
+    r'<h3[^>]*class="[^"]*\btitle\b[^"]*"[^>]*>(.*?)</h3>', re.DOTALL)
+AI_FALLBACK_LINK_RE = re.compile(r'RU=([^/"]+)/RK=')
+AI_FALLBACK_PARA_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.DOTALL)
+AI_FALLBACK_TAG_RE = re.compile(r"<[^>]+>")
+# Sponsored blocks are served as Bing click trackers inside the results list;
+# they are irrelevant to the query and must not reach the model.
+AI_FALLBACK_AD_RE = re.compile(r"^https?://(?:www\.)?bing\.com/aclick",
+                               re.IGNORECASE)
+AI_FALLBACK_LOOKBACK = 4096          # chars before a title to find its link
+AI_FALLBACK_SNIPPET_WINDOW = 2048    # chars after a title to find a snippet
+AI_FALLBACK_MAX_TITLE_TAGS = 200     # guards the non-greedy title regex
+AI_FALLBACK_TITLE_MAX = 300          # chars kept per result title
+AI_FALLBACK_SNIPPET_MAX = 500        # chars kept per result snippet
+AI_FALLBACK_URL_MAX = 2000           # same cap /api/ai/fetch applies
 
 # A vision user turn may carry image_url parts. This per-message cap bounds
 # vision token cost and request size; image parts are rejected on any other
@@ -2933,6 +2966,25 @@ def ai_chat():
                              "X-Accel-Buffering": "no"})
 
 
+def _http_get(url, timeout, max_bytes, headers=None):
+    """GET `url` and return (content_type, body, truncated).
+
+    Reads at most max_bytes + 1 bytes, so truncation is detected without
+    trusting Content-Length; body is capped at max_bytes. Transport errors
+    (HTTPError/URLError/OSError/ValueError) propagate to the caller.
+    """
+    req = urllib.request.Request(url, method="GET", headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            body = resp.read(max_bytes + 1)
+    except http.client.HTTPException as exc:
+        # A malformed status line is a provider failure, not a server bug.
+        raise ValueError("upstream sent a malformed response: %s" % exc)
+    truncated = len(body) > max_bytes
+    return ctype, body[:max_bytes], truncated
+
+
 @app.route("/api/ai/fetch", methods=["POST"])
 @admin_required
 def ai_fetch():
@@ -2957,20 +3009,17 @@ def ai_fetch():
         return err("url must be an http(s) URL", 400)
     if len(url) > 2000:
         return err("url is longer than 2000 chars", 400)
-    req = urllib.request.Request(url, method="GET", headers={
+    headers = {
         "User-Agent": "notebook-ai-fetch/1.0",
         "Accept": "text/html,text/plain,application/json,text/markdown,*/*",
-    })
+    }
     try:
-        with urllib.request.urlopen(req, timeout=AI_FETCH_TIMEOUT) as resp:
-            ctype = resp.headers.get("Content-Type", "")
-            body = resp.read(AI_FETCH_MAX_BYTES + 1)
+        ctype, body, truncated = _http_get(url, AI_FETCH_TIMEOUT,
+                                           AI_FETCH_MAX_BYTES, headers)
     except urllib.error.HTTPError as exc:
         return err("fetch failed: HTTP %d" % exc.code, 502)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         return err("fetch failed: %s" % exc, 502)
-    truncated = len(body) > AI_FETCH_MAX_BYTES
-    body = body[:AI_FETCH_MAX_BYTES]
     text = body.decode("utf-8", "replace")
     return jsonify({
         "url": url,
@@ -2980,15 +3029,123 @@ def ai_fetch():
     })
 
 
+def _provider_error(exc):
+    """One-line description of a failed search provider call."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return "HTTP %d" % exc.code
+    return (str(exc) or exc.__class__.__name__)[:200]
+
+
+def _searxng_search(q):
+    """Query the configured SearXNG instance; raise on any failure.
+
+    Uses the instance's JSON output format and returns at most
+    AI_SEARXNG_MAX_RESULTS {title, url, snippet} dicts.
+    """
+    base = load_ai_config().get("searxng_url")
+    base = base.strip() if isinstance(base, str) else ""
+    if not base:
+        raise ValueError("no instance configured")
+    if not base.lower().startswith(("http://", "https://")):
+        raise ValueError("instance URL is not http(s)")
+    url = (base.rstrip("/") + "/search?q=" + urllib.parse.quote(q)
+           + "&format=json")
+    headers = {
+        "User-Agent": "notebook-ai-search/1.0",
+        "Accept": "application/json",
+    }
+    _, raw, _ = _http_get(url, AI_SEARXNG_TIMEOUT, AI_SEARCH_MAX_BYTES,
+                          headers)
+    try:
+        parsed = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        raise ValueError("search returned non-JSON")
+    if not isinstance(parsed, dict) or not isinstance(
+            parsed.get("results"), list):
+        raise ValueError("search returned an unexpected JSON shape")
+    results = []
+    for r in parsed["results"][:AI_SEARXNG_MAX_RESULTS]:
+        if not isinstance(r, dict):
+            continue
+        results.append({
+            "title": r.get("title", ""),
+            "url": r.get("url", ""),
+            "snippet": r.get("content", ""),
+        })
+    return results
+
+
+def _html_text(fragment):
+    """Plain text from an HTML fragment: tags stripped, entities unescaped,
+    whitespace collapsed."""
+    return " ".join(
+        html.unescape(AI_FALLBACK_TAG_RE.sub(" ", fragment)).split())
+
+
+def _yahoo_search(q):
+    """Query the keyless Yahoo results page; raise on any failure.
+
+    Parses the result list out of the raw HTML: no feed, no API key. Returns
+    at most AI_SEARXNG_MAX_RESULTS {title, url, snippet} dicts. A page with
+    no result titles is a successful empty result, not an error.
+    """
+    url = AI_FALLBACK_SEARCH_URL + "?p=" + urllib.parse.quote(q)
+    headers = {
+        "User-Agent": AI_FALLBACK_SEARCH_UA,
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    _, raw, truncated = _http_get(url, AI_FALLBACK_SEARCH_TIMEOUT,
+                                  AI_SEARCH_MAX_BYTES, headers)
+    if truncated:
+        raise ValueError("results page is larger than %d bytes"
+                         % AI_SEARCH_MAX_BYTES)
+    page = raw.decode("utf-8", "replace")
+    # The title regex scans to end-of-string for an unclosed <h3, so a page
+    # with many openers would stall the server; real pages carry under ten.
+    if page.count("<h3") > AI_FALLBACK_MAX_TITLE_TAGS:
+        raise ValueError("results page has too many title tags")
+    results = []
+    for match in AI_FALLBACK_TITLE_RE.finditer(page):
+        # The target sits percent-encoded in the anchor's href as RU=<url>/RK=.
+        # Nav chrome contributes its own RU= links, so pair by look-back: the
+        # nearest one before the title belongs to it.
+        window = page[max(0, match.start() - AI_FALLBACK_LOOKBACK):
+                      match.start()]
+        links = AI_FALLBACK_LINK_RE.findall(window)
+        if not links:
+            continue
+        target = urllib.parse.unquote(html.unescape(links[-1]))
+        if not target.lower().startswith(("http://", "https://")):
+            continue
+        if AI_FALLBACK_AD_RE.match(target):
+            continue
+        if len(target) > AI_FALLBACK_URL_MAX:
+            continue
+        title = _html_text(match.group(1))[:AI_FALLBACK_TITLE_MAX]
+        if not title:
+            continue
+        snippet = ""
+        para = AI_FALLBACK_PARA_RE.search(
+            page, match.end(),
+            min(len(page), match.end() + AI_FALLBACK_SNIPPET_WINDOW))
+        if para:
+            snippet = _html_text(para.group(1))[:AI_FALLBACK_SNIPPET_MAX]
+        results.append({"title": title, "url": target, "snippet": snippet})
+        if len(results) >= AI_SEARXNG_MAX_RESULTS:
+            break
+    return results
+
+
 @app.route("/api/ai/search", methods=["POST"])
 @admin_required
 def ai_search():
-    """Search the configured SearXNG instance for the AI assistant.
+    """Search the web for the AI assistant.
 
-    Body: {"q": "<query>"}. Requires a searxngUrl in config/ai.json; when
-    none is configured the tool is disabled (the model is told so). The
-    instance is queried with the JSON output format and the top
-    AI_SEARXNG_MAX_RESULTS results are returned as {title, url, snippet}.
+    Body: {"q": "<query>"}. SearXNG is the preferred provider: when a
+    searxngUrl is configured it is queried first, and any failure falls
+    through to the keyless Yahoo results-page fallback. The top
+    AI_SEARXNG_MAX_RESULTS results come back as {title, url, snippet},
+    tagged with the engine that answered.
     """
     data, error = expect_json("q")
     if error:
@@ -3001,35 +3158,20 @@ def ai_search():
         return err("q is longer than 500 chars", 400)
     base = load_ai_config().get("searxng_url")
     base = base.strip() if isinstance(base, str) else ""
-    if not base:
-        return err("No SearXNG instance configured", 400)
-    base = base.rstrip("/")
-    url = base + "/search?q=" + urllib.parse.quote(q) + "&format=json"
-    req = urllib.request.Request(url, method="GET", headers={
-        "User-Agent": "notebook-ai-search/1.0",
-        "Accept": "application/json",
-    })
+    errors = []
+    if base:
+        try:
+            results = _searxng_search(q)
+            return jsonify({"query": q, "engine": "searxng",
+                            "results": results})
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            errors.append("searxng: %s" % _provider_error(exc))
     try:
-        with urllib.request.urlopen(req, timeout=AI_SEARXNG_TIMEOUT) as resp:
-            raw = resp.read(1024 * 1024)
-    except urllib.error.HTTPError as exc:
-        return err("search failed: HTTP %d" % exc.code, 502)
+        results = _yahoo_search(q)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        return err("search failed: %s" % exc, 502)
-    try:
-        parsed = json.loads(raw.decode("utf-8", "replace"))
-    except ValueError:
-        return err("search returned non-JSON", 502)
-    results = []
-    for r in (parsed.get("results") or [])[:AI_SEARXNG_MAX_RESULTS]:
-        if not isinstance(r, dict):
-            continue
-        results.append({
-            "title": r.get("title", ""),
-            "url": r.get("url", ""),
-            "snippet": r.get("content", ""),
-        })
-    return jsonify({"query": q, "results": results})
+        errors.append("fallback: %s" % _provider_error(exc))
+        return err("search failed: " + "; ".join(errors), 502)
+    return jsonify({"query": q, "engine": "yahoo", "results": results})
 
 
 def _upstream_auth_headers(stored):

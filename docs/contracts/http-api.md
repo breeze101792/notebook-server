@@ -400,7 +400,7 @@ the profile names. All routes below are admin-gated **only while auth is on**.
 | GET | `/api/ai/probe` (`app.py`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
 | POST | `/api/ai/chat` (`ai_chat`) | admin | `{server, messages, workspace?}` | SSE relay. Serves ACP profiles too. See below. |
 | POST | `/api/ai/fetch` (`app.py`) | admin | `{url}` | Server-side fetch. See below. |
-| POST | `/api/ai/search` (`app.py`) | admin | `{q}` | SearXNG search. See below. |
+| POST | `/api/ai/search` (`app.py`) | admin | `{q}` | Web search (SearXNG, else fallback). See below. |
 
 On `POST /api/ai/config`, a profile with `apiKey: ""` plus `replaceSecret: true`
 carries over the previously stored key server-side, so the browser never echoes
@@ -468,11 +468,16 @@ replacement. Upstream failures are 502. Only the scheme and length are checked;
 loopback, private, and cloud-metadata addresses are reachable and redirects are
 followed, so scheme filtering is not SSRF protection.
 
-On `POST /api/ai/search`, `q` is capped at 500 characters. A `searxng_url` must
-be configured, otherwise the route returns 400. It queries the instance's JSON
-output and returns the top `AI_SEARXNG_MAX_RESULTS` = 10 results as
-`{query, results: [{title, url, snippet}]}`. The request times out after
-`AI_SEARXNG_TIMEOUT` = 15 seconds. Upstream failures are 502.
+On `POST /api/ai/search`, `q` is capped at 500 characters; an empty or longer
+query is 400. The route prefers the configured `searxng_url`, queried with the
+instance's JSON output format, and falls back to a keyless Yahoo results page
+(`AI_FALLBACK_SEARCH_URL`) when none is configured or the instance fails. It
+returns the top `AI_SEARXNG_MAX_RESULTS` = 10 results as
+`{query, engine, results: [{title, url, snippet}]}`, where `engine` is
+`searxng` or `yahoo`. The SearXNG request times out after
+`AI_SEARXNG_TIMEOUT` = 15 seconds; the fallback times out after
+`AI_FALLBACK_SEARCH_TIMEOUT` = 20 seconds and a body cap of
+`AI_SEARCH_MAX_BYTES` = 1 MiB. Only when both providers fail is the route 502.
 
 ## Partial edits: POST /api/edit
 

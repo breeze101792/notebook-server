@@ -799,8 +799,8 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-ai-searxng">SearXNG instance URL</label>
               <input id="settings-ai-searxng" type="text" class="auth-input settings-auth-input"
                      autocomplete="off" disabled
-                     placeholder="https://searxng.example.com  (blank = search tool disabled)">
-              <span class="settings-hint">Lets the assistant search the web. Leave blank to disable the search tool.</span>
+                     placeholder="https://searxng.example.com  (optional; blank = built-in fallback)">
+              <span class="settings-hint">Lets the assistant search the web. Leave blank to use the built-in fallback (queries leave this machine).</span>
             </div>
             <div class="settings-form-actions">
               <span id="settings-ai-searxng-status" class="settings-hint" hidden></span>

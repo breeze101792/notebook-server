@@ -136,7 +136,8 @@ SSE relay — your API keys never leave the server.
 - `list` — enumerate notes (runs automatically, shown as a trace line).
 - `read` — fetch a note's content (runs automatically).
 - `fetch` — fetch a web page server-side (runs automatically; CORS-safe).
-- `search` — query a SearXNG instance (runs automatically).
+- `search` — search the web (SearXNG first, keyless fallback otherwise; runs
+  automatically).
 - `patch` — edit an existing note (an Apply/Reject card appears).
 - `write` — create a **new** note (an Apply/Reject card appears).
 
@@ -157,7 +158,9 @@ tabs changes the "current file" it references.
 **Settings → AI.** Add/name/remove provider profiles (base URL, model,
 API key), pick a default, and Test connectivity. The **Custom prompt**
 applied to whichever provider is active sits below the provider list, and
-the **Web search** field sets the SearXNG instance for the `search` tool.
+the **Web search** field sets the SearXNG instance for the `search` tool
+(the preferred provider; a keyless fallback answers when it is unset or
+unreachable).
 If an ACP profile is configured, it appears here as a read-only row (it is
 edited in `config/acp.json`, not in this list).
 
@@ -480,7 +483,7 @@ plain-Markdown agent guide) with the current auth state filled in.
 | GET    | `/api/ai/probe`       | Provider reachability check (admin)                |
 | POST   | `/api/ai/chat`        | SSE relay to the selected provider (admin)         |
 | POST   | `/api/ai/fetch`       | Server-side URL fetch for the fetch tool (admin)   |
-| POST   | `/api/ai/search`      | SearXNG search for the search tool (admin)         |
+| POST   | `/api/ai/search`      | Web search for the search tool (admin)             |
 | GET    | `/agent.md`           | Agent API guide, auth state substituted            |
 
 All file routes resolve the user-supplied relative path through

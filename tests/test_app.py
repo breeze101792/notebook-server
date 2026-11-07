@@ -3030,11 +3030,82 @@ class TestAiTools(BaseTest):
         r = self.post("/api/ai/fetch", {"url": "http://127.0.0.1:%d/error" % self.port})
         self.assertEqual(r.status_code, 502)
 
-    def test_search_requires_configured_instance(self):
-        # No searxngUrl configured -> the tool is disabled.
-        r = self.post("/api/ai/search", {"q": "hello"})
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("No SearXNG", r.get_json()["error"])
+    def test_search_falls_back_when_unconfigured(self):
+        # No searxngUrl configured -> the keyless Yahoo fallback answers.
+        url = "http://127.0.0.1:%d/results" % self.port
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL", url):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["engine"], "yahoo")
+        self.assertEqual(len(body["results"]), 2)
+        self.assertEqual(body["results"][0]["title"], "Result One")
+        # The r.search.yahoo.com wrapper is unwrapped: RU= holds the target.
+        self.assertEqual(body["results"][0]["url"], "http://example.com/one")
+        self.assertEqual(body["results"][0]["snippet"], "First snippet")
+        # A snippet whose text follows the date chip keeps the chip's text.
+        self.assertEqual(body["results"][1]["snippet"],
+                         "Sep 4, 2024 · Second snippet")
+
+    def test_search_falls_back_when_searxng_fails(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://127.0.0.1:1"})
+        url = "http://127.0.0.1:%d/results" % self.port
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL", url):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["engine"], "yahoo")
+
+    def test_search_empty_results_is_200(self):
+        # A page with no result titles is an empty result, not a failure.
+        url = "http://127.0.0.1:%d/results-empty" % self.port
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL", url):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual(body["engine"], "yahoo")
+        self.assertEqual(body["results"], [])
+
+    def test_search_skips_non_http_targets(self):
+        # javascript: and mailto: targets in a result block are dropped.
+        url = "http://127.0.0.1:%d/results-unsafe" % self.port
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL", url):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_json()
+        self.assertEqual([x["title"] for x in body["results"]], ["Good"])
+        self.assertEqual(body["results"][0]["url"], "http://example.com/ok")
+
+    def test_search_skips_sponsored_results(self):
+        # Sponsored blocks are Bing click trackers, not answers.
+        url = "http://127.0.0.1:%d/results-ad" % self.port
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL", url):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([x["title"] for x in r.get_json()["results"]],
+                         ["Good"])
+
+    def test_search_falls_back_on_unexpected_json(self):
+        # A JSON array (not an object) is a provider failure, not a 500.
+        self.post("/api/ai/config", {
+            "servers": [], "default": "",
+            "searxngUrl": "http://127.0.0.1:%d/search-array" % self.port})
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL",
+                               "http://127.0.0.1:%d/results" % self.port):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["engine"], "yahoo")
+
+    def test_search_502_when_both_fail(self):
+        self.post("/api/ai/config", {"servers": [], "default": "",
+                                     "searxngUrl": "http://127.0.0.1:1"})
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL",
+                               "http://127.0.0.1:1/results"):
+            r = self.post("/api/ai/search", {"q": "hello"})
+        self.assertEqual(r.status_code, 502)
+        message = r.get_json()["error"]
+        self.assertIn("searxng:", message)
+        self.assertIn("fallback:", message)
 
     def test_search_queries_instance(self):
         self.post("/api/ai/config", {"servers": [], "default": "",
@@ -3043,6 +3114,7 @@ class TestAiTools(BaseTest):
         self.assertEqual(r.status_code, 200)
         body = r.get_json()
         self.assertEqual(body["query"], "embedded systems")
+        self.assertEqual(body["engine"], "searxng")
         self.assertEqual(len(body["results"]), 2)
         self.assertEqual(body["results"][0]["title"], "Result One")
         self.assertIn("http://", body["results"][0]["url"])
@@ -3075,9 +3147,59 @@ class _StubWebHandler(BaseHTTPRequestHandler):
     """A tiny stand-in for the fetch/search targets.
 
     GET /page returns a small HTML body; GET /error returns 500; GET
-    /search?q=...&format=json returns a SearXNG-style JSON result list.
-    Records the last request path in the module-level LAST_WEB dict.
+    /search?q=...&format=json returns a SearXNG-style JSON result list;
+    GET /search-array returns a JSON array instead of the expected object;
+    GET /results returns a two-result Yahoo results page, GET
+    /results-empty a page with no result titles, and GET /results-unsafe a
+    page whose result targets are a javascript: and a mailto: URL plus one
+    http: URL, and GET /results-ad a page whose first block is a Bing
+    sponsored click tracker. Records the last request path in the
+    module-level LAST_WEB dict.
     """
+
+    _RESULTS_BODY = (
+        b'<html><body><ol class="dd algo">'
+        b'<li><div class="dd algo algo-sr"><div class="compTitle">'
+        b'<a href="https://r.search.yahoo.com/_ylt=A/RV=2/RO=10/'
+        b'RU=http%3a%2f%2fexample.com%2fone/RK=2/RS=abc-">'
+        b'<h3 style="display:block" class="title fc-2015C2-imp">'
+        b'<span class="d-b">Result One</span></h3></a></div>'
+        b'<div class="compText aAbs"><p class="fc-dustygray">'
+        b'First snippet</p></div></div></li>'
+        b'<li><div class="dd algo algo-sr"><div class="compTitle">'
+        b'<a href="https://r.search.yahoo.com/_ylt=B/RV=2/RO=10/'
+        b'RU=https%3a%2f%2fexample.com%2ftwo/RK=2/RS=def-">'
+        b'<h3 class="title"><span class="d-b">Result Two</span></h3></a></div>'
+        b'<div class="compText aAbs"><p class="fc-dustygray">'
+        b'<span class="fc-smoke">Sep 4, 2024 \xc2\xb7 </span>'
+        b'Second snippet</p></div></div></li>'
+        b'</ol></body></html>'
+    )
+    _RESULTS_EMPTY_BODY = b'<html><body><ol class="dd algo"></ol></body></html>'
+    _RESULTS_UNSAFE_BODY = (
+        b'<html><body><ol class="dd algo">'
+        b'<li><a href="https://r.search.yahoo.com/_ylt=C/RV=2/'
+        b'RU=javascript%3aalert%281%29/RK=2/RS=x-">'
+        b'<h3 class="title">Bad JS</h3></a></li>'
+        b'<li><a href="https://r.search.yahoo.com/_ylt=D/RV=2/'
+        b'RU=mailto%3afoo%40example.com/RK=2/RS=y-">'
+        b'<h3 class="title">Bad Mail</h3></a></li>'
+        b'<li><a href="https://r.search.yahoo.com/_ylt=E/RV=2/'
+        b'RU=http%3a%2f%2fexample.com%2fok/RK=2/RS=z-">'
+        b'<h3 class="title">Good</h3></a></li>'
+        b'</ol></body></html>'
+    )
+
+    _RESULTS_AD_BODY = (
+        b'<html><body><ol class="dd algo">'
+        b'<li><a href="https://r.search.yahoo.com/_ylt=F/RV=2/'
+        b'RU=https%3a%2f%2fwww.bing.com%2faclick%3fld%3dxyz/RK=2/RS=a-">'
+        b'<h3 class="title">Sponsored</h3></a></li>'
+        b'<li><a href="https://r.search.yahoo.com/_ylt=G/RV=2/'
+        b'RU=https%3a%2f%2fexample.com%2fok/RK=2/RS=b-">'
+        b'<h3 class="title">Good</h3></a></li>'
+        b'</ol></body></html>'
+    )
 
     def do_GET(self):
         import app as _nb
@@ -3085,6 +3207,26 @@ class _StubWebHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/error"):
             self.send_response(500)
             self.end_headers()
+            return
+        if self.path.startswith("/results-ad"):
+            self._send_html(self._RESULTS_AD_BODY)
+            return
+        if self.path.startswith("/results-unsafe"):
+            self._send_html(self._RESULTS_UNSAFE_BODY)
+            return
+        if self.path.startswith("/results-empty"):
+            self._send_html(self._RESULTS_EMPTY_BODY)
+            return
+        if self.path.startswith("/results"):
+            self._send_html(self._RESULTS_BODY)
+            return
+        if self.path.startswith("/search-array"):
+            body = b"[]"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if self.path.startswith("/search"):
             body = json.dumps({"results": [
@@ -3100,6 +3242,13 @@ class _StubWebHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         body = b"<html><body>hello from stub</body></html>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_html(self, body):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -4823,14 +4972,24 @@ class TestAiUpstreamErrorPaths(BaseTest):
     def test_search_connection_error(self):
         self.post("/api/ai/config", {"servers": [], "default": "",
                                      "searxngUrl": "http://127.0.0.1:1"})
-        r = self.post("/api/ai/search", {"q": "x"})
+        # Pin the fallback to a refused port too, so this stays a 502 and
+        # never reaches the live network.
+        with mock.patch.object(nb, "AI_FALLBACK_SEARCH_URL",
+                               "http://127.0.0.1:1/results"):
+            r = self.post("/api/ai/search", {"q": "x"})
         self.assertEqual(r.status_code, 502)
 
     def test_search_non_json_and_mixed_results(self):
         self.post("/api/ai/config", {"servers": [], "default": "",
                                      "searxngUrl": "http://stub"})
+        def searxng_not_json(req, *args, **kwargs):
+            if getattr(req, "full_url", str(req)).startswith("http://stub/"):
+                return _FakeHttpResponse(b"not json")
+            # The fallback is unreachable too, so the route must 502 rather
+            # than reach the live network.
+            raise nb.urllib.error.URLError("fallback unreachable")
         with mock.patch.object(nb.urllib.request, "urlopen",
-                               return_value=_FakeHttpResponse(b"not json")):
+                               side_effect=searxng_not_json):
             r = self.post("/api/ai/search", {"q": "x"})
         self.assertEqual(r.status_code, 502)
         mixed = json.dumps({"results": [

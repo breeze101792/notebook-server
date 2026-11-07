@@ -210,11 +210,14 @@ while auth is off, like every other admin route):
   only http(s) is allowed, the body is capped at `AI_FETCH_MAX_BYTES`
   (512 KiB) and the request times out after `AI_FETCH_TIMEOUT` (15s).
   Returns `{url, contentType, truncated, content}`.
-- `POST /api/ai/search` — SearXNG search for the assistant's search tool.
-  Body `{"q": "<query>"}`. Requires a `searxngUrl` in `config/ai.json`;
-  when none is configured it returns 400 (the model is told the tool is
-  disabled). Queries the instance's JSON output format and returns the top
-  `AI_SEARXNG_MAX_RESULTS` (10) results as `{title, url, snippet}`.
+- `POST /api/ai/search` — web search for the assistant's search tool.
+  Body `{"q": "<query>"}`. SearXNG is preferred: a configured `searxngUrl`
+  is queried first, and its absence or failure falls through to a keyless
+  Yahoo results page (`AI_FALLBACK_SEARCH_URL`). Returns the top
+  `AI_SEARXNG_MAX_RESULTS` (10) results as
+  `{query, engine, results: [{title, url, snippet}]}`; `engine` is
+  `searxng` or `yahoo`. 400 is bad input only; 502 only when both providers
+  fail.
 
 **ACP provider (second provider kind).** `config/acp.json` (own hand-edited
 file, never written by any route) holds one `{name, agent, command, args, cwd,
@@ -468,7 +471,8 @@ Module responsibilities:
 
   - **Six tools** are declared in `systemPrompt()` and called by the model as
     fenced ` ```nb-tool ` JSON blocks: `list` (tree, auto), `read` (file body,
-    auto), `fetch` (server-side URL fetch, auto), `search` (SearXNG, auto),
+    auto), `fetch` (server-side URL fetch, auto), `search` (SearXNG first,
+    keyless fallback, auto),
     `write` (create **new** file, permission card), `patch` (edit an
     existing file via a batch of `/api/edit` ops, permission card). Writes on
     an existing path are blocked client-side ("ask the AI to patch it
@@ -531,8 +535,10 @@ Module responsibilities:
   `replaceSecret: true` carries the stored one over server-side), and
   every commit also refreshes the side-panel picker via
   `NB.ai.loadAiConfig()`. The **Web search** field (same AI tab) sets the
-  global SearXNG instance URL for the assistant's search tool; it has its
-  own Save button and is preserved across provider saves.
+  global SearXNG instance URL for the assistant's search tool — the
+  preferred provider, with a keyless Yahoo results-page fallback when it is
+  unset or unreachable. It has its own Save button and is preserved across provider
+  saves.
 - `export.js` — Export modal (opened via **Export…** in the file-tree,
   bookmark, and tab right-click menus, each targeting that specific file).
   Exports a note to **PDF** or a self-contained **HTML** file.
