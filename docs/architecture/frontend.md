@@ -420,6 +420,19 @@ every scrollable ancestor). A pinned active tab and a hidden strip
 (`clientWidth === 0`) are no-ops. The strip keeps its hidden scrollbar; there
 is no fade or chevron affordance.
 
+A wheel over either region is translated onto that region's `scrollLeft`
+(`onTabWheel`): a plain vertical wheel would otherwise do nothing, because
+browsers scroll the axis the wheel delta names and the regions scroll on X
+only. The mapping applies only while the region under the pointer genuinely
+overflows, so a fitting strip leaves the event to the browser, and a
+`ctrl+wheel` is skipped so pinch-zoom over the bar still reaches the page.
+`deltaMode` is honored: a line-based wheel (`WHEEL_DELTA_LINE`) is scaled by
+`WHEEL_LINE_PX`, and a page-based one (`WHEEL_DELTA_PAGE`) by the region's
+`clientWidth`. The scroll is issued as `behavior: "instant"` to override the
+strip's CSS `scroll-behavior: smooth`, which would otherwise restart a smooth
+animation on every notch; the pinned region has no smooth behavior and takes
+the same call.
+
 ### Special tabs
 
 Tabs whose id starts with `§` open a non-file view instead of a note

@@ -6290,6 +6290,98 @@ function check(label, cond, extra) {
   check("outline toggle is a sibling of #tab-list",
     outlineToggleEl && outlineToggleEl.parentElement === barEl && !tabListEl.contains(outlineToggleEl));
   check("active tab is notes/a.md", activeTabPath() === "notes/a.md");
+  // Wheel scroll: browsers map a wheel onto the axis its delta names, so a
+  // vertical wheel over the X-only strip is ignored without tabs.js. jsdom has
+  // no layout and no Element.scrollBy, so both are stubbed here: scrollBy
+  // records the options it receives and applies `left`, which exercises the
+  // production call instead of a fallback.
+  const wheelCalls = [];
+  const stubWheelRegion = (el, client, scroll) => {
+    Object.defineProperty(el, "clientWidth", { configurable: true, value: client });
+    Object.defineProperty(el, "scrollWidth", { configurable: true, value: scroll });
+    el.scrollLeft = 0;
+    el.scrollBy = (opts) => { wheelCalls.push(opts); el.scrollLeft += opts.left || 0; };
+  };
+  const unstubWheelRegion = (el) => {
+    delete el.clientWidth;
+    delete el.scrollWidth;
+    delete el.scrollBy;
+  };
+  const fireWheel = (target, init) => {
+    const ev = new window.WheelEvent("wheel",
+      Object.assign({ bubbles: true, cancelable: true }, init));
+    target.dispatchEvent(ev);
+    return ev;
+  };
+  const wheelRegion = window.document.getElementById("tab-list");
+  const pinnedRegion = window.document.getElementById("tab-pinned");
+  stubWheelRegion(wheelRegion, 200, 600);
+  try {
+    const wheelDown = fireWheel(tabs()[0], { deltaY: 120 });
+    check("tab wheel: vertical wheel scrolls the strip right",
+      wheelRegion.scrollLeft === 120, "scrollLeft=" + wheelRegion.scrollLeft);
+    check("tab wheel: vertical wheel calls preventDefault", wheelDown.defaultPrevented);
+    check("tab wheel: scrollBy gets left + instant behavior",
+      wheelCalls.length === 1 && wheelCalls[0].left === 120 &&
+      wheelCalls[0].behavior === "instant",
+      JSON.stringify(wheelCalls[0]));
+
+    wheelCalls.length = 0;
+    wheelRegion.scrollLeft = 0;
+    fireWheel(tabs()[0], { deltaY: 3, deltaMode: 1 });
+    check("tab wheel: line-mode wheel (deltaMode=1) scrolls 3 lines",
+      wheelRegion.scrollLeft === 48, "scrollLeft=" + wheelRegion.scrollLeft);
+
+    wheelCalls.length = 0;
+    wheelRegion.scrollLeft = 0;
+    fireWheel(tabs()[0], { deltaX: 90, deltaY: 10 });
+    check("tab wheel: a larger horizontal delta wins",
+      wheelRegion.scrollLeft === 90, "scrollLeft=" + wheelRegion.scrollLeft);
+
+    wheelCalls.length = 0;
+    wheelRegion.scrollLeft = 0;
+    fireWheel(tabs()[0], { deltaY: 1, deltaMode: 2 });
+    check("tab wheel: page-mode wheel scrolls one viewport",
+      wheelRegion.scrollLeft === 200, "scrollLeft=" + wheelRegion.scrollLeft);
+
+    wheelCalls.length = 0;
+    wheelRegion.scrollLeft = 0;
+    const wheelCtrl = fireWheel(tabs()[0], { deltaY: 120, ctrlKey: true });
+    check("tab wheel: ctrl+wheel (pinch-zoom) is left to the page",
+      !wheelCtrl.defaultPrevented && wheelCalls.length === 0,
+      "calls=" + wheelCalls.length);
+
+    wheelCalls.length = 0;
+    Object.defineProperty(wheelRegion, "scrollWidth", { configurable: true, value: 200 });
+    wheelRegion.scrollLeft = 0;
+    const wheelFit = fireWheel(tabs()[0], { deltaY: 120 });
+    check("tab wheel: a non-overflowing strip keeps the browser's scroll",
+      !wheelFit.defaultPrevented && wheelCalls.length === 0 &&
+      wheelRegion.scrollLeft === 0,
+      "prevented=" + wheelFit.defaultPrevented + " scrollLeft=" + wheelRegion.scrollLeft);
+
+    // The pinned region is a separate scroller with no smooth behavior, so it
+    // needs its own proof that the same handler reaches it.
+    window.NB.tabs.togglePin("notes/a.md");
+    await tick(10);
+    const pinnedTab = pinnedRegion.querySelector(".tab");
+    check("tab wheel: notes/a.md is pinned into #tab-pinned",
+      !!pinnedTab && window.NB.tabs.isPinned("notes/a.md"));
+    stubWheelRegion(pinnedRegion, 100, 300);
+    wheelCalls.length = 0;
+    fireWheel(pinnedTab, { deltaY: 120 });
+    check("tab wheel: wheel over the pinned region scrolls it",
+      pinnedRegion.scrollLeft === 120, "scrollLeft=" + pinnedRegion.scrollLeft);
+    check("tab wheel: pinned scrollBy gets left + instant behavior",
+      wheelCalls.length === 1 && wheelCalls[0].left === 120 &&
+      wheelCalls[0].behavior === "instant",
+      JSON.stringify(wheelCalls[0]));
+    unstubWheelRegion(pinnedRegion);
+    window.NB.tabs.togglePin("notes/a.md");
+    await tick(10);
+  } finally {
+    unstubWheelRegion(wheelRegion);
+  }
   // open a second file -> new tab, becomes active
   await window.NB.tabs.open("Welcome.md");
   await tick(20);
@@ -11211,8 +11303,8 @@ function check(label, cond, extra) {
           idxHtml.indexOf("/static/js/edit-window.js") <
             idxHtml.indexOf("/static/js/table-editor.js") &&
           read("static/sw.js").includes('"/static/js/edit-window.js"'));
-        check("table editor: sw.js CACHE is notebook-v26",
-          /const CACHE = "notebook-v26"/.test(read("static/sw.js")));
+        check("table editor: sw.js CACHE is at least notebook-v26",
+          ((/const CACHE = "notebook-v(\d+)"/.exec(read("static/sw.js")) || [])[1] || 0) >= 26);
         check("table editor: module + overlay loaded",
           !!window.NB.tableEditor && !!$("table-editor-overlay"));
 

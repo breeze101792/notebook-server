@@ -105,6 +105,17 @@
   const TAB_GHOST_FALLBACK_MS = 280;   // >= close duration; per-ghost backstop
   const ghosts = [];                   // { path, label, width, index, startedAt, node, timer }
 
+  // Wheel-to-horizontal scroll. Browsers map a wheel delta onto the axis it
+  // names, so a plain vertical wheel over a strip that scrolls only on X is
+  // ignored: an overflowing bar could only be scrolled with shift+wheel or a
+  // trackpad's horizontal axis. onTabWheel translates the delta onto
+  // scrollLeft instead. The deltaMode constants are the WheelEvent values for
+  // a line-based wheel (Firefox) and a page-based one; a line-based delta
+  // counts lines, not px, and a page-based delta counts viewport widths.
+  const WHEEL_DELTA_LINE = 1;
+  const WHEEL_DELTA_PAGE = 2;
+  const WHEEL_LINE_PX = 16;
+
   function baseName(p) { const i = p.lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
   function isPinned(path) { return pinned.has(path); }
   function pinnedCount() { return pinned.size; }
@@ -1297,6 +1308,30 @@
    * harness, which cannot see the fade in jsdom. */
   function ghostCount() { return ghosts.length; }
   function isGhosting() { return ghosts.length > 0; }
+
+  /* --- wheel scrolling of the two tab regions ------------------------ */
+  /* The pinned region and the strip both scroll on X only, so a vertical
+   * wheel over them must be translated onto their scrollLeft. Only when the
+   * region under the pointer actually overflows; otherwise the event is left
+   * to the browser. A ctrl+wheel (pinch-zoom) is left alone too, so zoom over
+   * the bar still reaches the page. */
+  function onTabWheel(e) {
+    if (e.ctrlKey) return;
+    const start = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target;
+    const region = start && start.closest ? start.closest(".tab-list, .tab-pinned") : null;
+    if (!region || region.scrollWidth <= region.clientWidth) return;
+    const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (!delta) return;
+    e.preventDefault();
+    let px = delta;
+    if (e.deltaMode === WHEEL_DELTA_LINE) px *= WHEEL_LINE_PX;
+    else if (e.deltaMode === WHEEL_DELTA_PAGE) px *= region.clientWidth;
+    // "instant" overrides the CSS scroll-behavior: smooth, so each wheel notch
+    // tracks the wheel instead of starting a fresh smooth animation from the
+    // strip's current position.
+    region.scrollBy({ left: px, behavior: "instant" });
+  }
+  barEl.addEventListener("wheel", onTabWheel, { passive: false });
 
   /* --- bulk close (close others / right / left) ---------------------- */
   /* `paths` is already filtered to exclude pinned tabs. Confirms once if any

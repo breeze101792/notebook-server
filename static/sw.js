@@ -43,7 +43,9 @@
 /* Bumped v24 -> v25: the top-bar session label became a picker, so the shell,
  * style.css and sessions.js must refresh together. */
 /* Bumped v25 -> v26: the shared edit-window history module joins the precache. */
-const CACHE = "notebook-v26";
+/* Bumped v26 -> v27: the tab strip scrolls on a plain mouse wheel, so tabs.js
+ * (and its CSS comment) must reach already installed workers. */
+const CACHE = "notebook-v27";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

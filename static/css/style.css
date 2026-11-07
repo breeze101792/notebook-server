@@ -512,9 +512,11 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   height: 100%;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Hide the native horizontal scrollbar (Firefox + old Edge/IE); the strip
-   * still scrolls via wheel/trackpad/drag/keyboard. Keeps the 34px row free
-   * of a 6px scrollbar that would eat into the tab labels. */
+  /* Hide the native horizontal scrollbar (Firefox + old Edge/IE). The strip
+   * still scrolls via a trackpad's horizontal axis and via the mouse wheel,
+   * which tabs.js maps onto scrollLeft (a vertical wheel alone is ignored by
+   * the browser). Keeps the 34px row free of a 6px scrollbar that would eat
+   * into the tab labels. */
   scrollbar-width: none;
   -ms-overflow-style: none;
   scroll-behavior: smooth;
