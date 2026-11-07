@@ -57,6 +57,7 @@
   let sortDirEl = null;
   let applyBtn = null;
   let cancelBtn = null;
+  let hist = null;
 
   let originalTable = null;
   let viewerContentEl = null;
@@ -331,6 +332,9 @@
       if (span) span.removeAttribute("contenteditable");
     }
     editing = false;
+    // A burst in the next cell must start a new history step rather than
+    // rewrite the entry this cell's typing produced.
+    if (hist) hist.breakCoalesce();
   }
 
   function startEdit(row, col, opts) {
@@ -354,6 +358,7 @@
       span.appendChild(document.createTextNode(opts.insertText));
       syncCellFromDom(row, col);
       state.changed = true;
+      captureHistory("text");
     }
     span.focus({ preventScroll: true });
     if (opts.point) placeCaretAtPoint(span, opts.point.x, opts.point.y);
@@ -576,16 +581,18 @@
   }
 
   function onOverlayKeydown(e) {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (fill) {
-      fill = null;
-      clearFillPreview();
-      paintSelection();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      if (fill) {
+        fill = null;
+        clearFillPreview();
+        paintSelection();
+        return;
+      }
+      cancel();
       return;
     }
-    cancel();
   }
 
   /* --- grid pointer / input ---------------------------------------- */
@@ -611,6 +618,7 @@
     syncCellFromDom(row, col);
     state.changed = true;
     if (row === 0) rebuildSortOptions(sortColEl.value);
+    captureHistory("text");
   }
 
   function onGridFocusOut(e) {
@@ -801,6 +809,7 @@
     setStatusMessage(single
       ? "Pasted 1 cell into " + (height * width) + " cells"
       : "Pasted " + height + " × " + width);
+    captureHistory("structural");
     return true;
   }
 
@@ -818,6 +827,7 @@
     if (changed) markChanged();
     finishStructure(true);
     setStatusMessage(changed ? "Cleared " + sizeLabel(r) : "Nothing to clear");
+    captureHistory("structural");
     return changed;
   }
 
@@ -973,6 +983,7 @@
     }
     syncCellFromDom(activeRow, activeCol);
     state.changed = true;
+    captureHistory("text");
   }
 
   /* --- fill handle -------------------------------------------------- */
@@ -1071,6 +1082,7 @@
     setStatusMessage(count
       ? "Filled " + count + (count === 1 ? " cell" : " cells")
       : "Nothing to fill");
+    captureHistory("structural");
     return changed;
   }
 
@@ -1509,6 +1521,57 @@
     return { cells };
   }
 
+  /* --- undo / redo -------------------------------------------------- */
+  /* `changed` is part of the snapshot: undoing back to the opening state
+   * must restore `changed:false`, or apply() would rewrite a ragged source
+   * table whose padded rebuild never compares equal. The stack itself lives
+   * in NB.editWindow; this module only snapshots and repaints. */
+
+  function snapshotState() {
+    return JSON.stringify({
+      cols: state.cols,
+      rows: state.rows,
+      changed: state.changed,
+      sortedCol,
+      sortedDir,
+    });
+  }
+
+  /* Repaint one snapshot. The module owns the index; this returns false
+   * while a pointer gesture still owns the grid. */
+  function restoreSnapshot(snapJson) {
+    if (!state || readOnly || fill || press || drag) return false;
+    const wasEditing = editing;
+    const row = activeRow;
+    const col = activeCol;
+    commitEdit();
+    const snap = JSON.parse(snapJson);
+    state = { cols: snap.cols, rows: snap.rows, changed: snap.changed };
+    sortedCol = snap.sortedCol;
+    sortedDir = snap.sortedDir;
+    editing = false;
+    finishStructure(true);
+    // finishStructure rebuilds the sort options from the pre-restore select
+    // value, so the restored column is written back after that rebuild.
+    if (sortColEl) {
+      sortColEl.value = sortedCol >= 0 && sortedCol < state.cols
+        ? String(sortedCol) : "";
+    }
+    if (wasEditing) {
+      // The caret returns to the same cell so the chord never leaves the
+      // grid in a state where typing goes nowhere.
+      const r = clamp(row, 0, Math.max(0, state.rows.length - 1));
+      const c = clamp(col, 0, Math.max(0, state.cols - 1));
+      startEdit(r, c);
+    }
+    return true;
+  }
+
+  function captureHistory(kind) {
+    if (!hist) return;
+    hist.capture(kind);
+  }
+
   /* Insert a body row at `index` (1..rows.length). Row 0 is the fixed
    * header: GFM has no row above it. */
   function insertRowAt(index) {
@@ -1521,6 +1584,7 @@
     activeCol = Math.min(activeCol, state.cols - 1);
     finishStructure();
     setStatusMessage("Inserted a row");
+    captureHistory("structural");
   }
 
   /* Move a body row to `dest` (1..rows.length-1). Returns false when the
@@ -1536,6 +1600,7 @@
     markChanged();
     activeRow = to;
     finishStructure();
+    captureHistory("structural");
     return true;
   }
 
@@ -1552,6 +1617,7 @@
     if (sortedCol >= at) sortedCol += 1;
     finishStructure();
     setStatusMessage("Inserted a column");
+    captureHistory("structural");
   }
 
   function moveColTo(from, dest) {
@@ -1569,6 +1635,7 @@
     if (sortedCol === from) sortedCol = to;
     else if (sortedCol === to) sortedCol = from;
     finishStructure();
+    captureHistory("structural");
     return true;
   }
 
@@ -1612,6 +1679,7 @@
     finishStructure();
     setStatusMessage(rows.length === 1 ? "Deleted 1 row"
       : "Deleted " + rows.length + " rows");
+    captureHistory("structural");
   }
 
   function addColumn() {
@@ -1647,6 +1715,7 @@
     finishStructure();
     setStatusMessage(cols.length === 1 ? "Deleted 1 column"
       : "Deleted " + cols.length + " columns");
+    captureHistory("structural");
   }
 
   function moveRowStep(dir) {
@@ -1724,6 +1793,7 @@
     markChanged();
     finishStructure();
     setStatusMessage("Column " + (activeCol + 1) + " aligned " + next);
+    captureHistory("structural");
   }
 
   function parseNumber(text) {
@@ -1776,6 +1846,7 @@
     const label = htmlToText(state.rows[0].cells[col].html).trim() || "Column " + (col + 1);
     setStatusMessage("Sorted by " + label + ", " +
       (sortedDir === "asc" ? "ascending" : "descending"));
+    captureHistory("structural");
   }
 
   function toggleSortDirection() {
@@ -1815,6 +1886,7 @@
     rebuildSortOptions();
     focusCell(0, 0);
     setStatusMessage("Transposed: " + newCols + " columns × " + newRows + " rows");
+    captureHistory("structural");
   }
 
   /* --- status ------------------------------------------------------- */
@@ -1935,6 +2007,7 @@
       applyBtn.disabled = blocked;
     }
     if (gridEl) gridEl.setAttribute("aria-readonly", blocked ? "true" : "false");
+    if (hist) hist.sync();
   }
 
   function open(table) {
@@ -1956,6 +2029,9 @@
     sortedCol = -1;
     sortedDir = "asc";
     setBlocked(blocked);
+    // Seeding is last: the snapshot stores the sort fields, so an earlier
+    // seed would carry the previous table's sort marker into this window.
+    if (hist) hist.reset();
 
     overlayEl.hidden = false;
     renderGrid();
@@ -2020,6 +2096,7 @@
     readOnly = false;
     if (gridEl) gridEl.textContent = "";
     if (statusEl) statusEl.textContent = "";
+    if (hist) hist.clear();
   }
 
   function isOpen() {
@@ -2038,6 +2115,17 @@
     sortDirEl = byId("te-sort-dir");
     applyBtn = byId("table-editor-apply");
     cancelBtn = byId("table-editor-cancel");
+
+    hist = NB.editWindow.attach({
+      overlay: overlayEl,
+      prefix: "table-editor",
+      isOpen: isOpen,
+      enabled: () => !!state && !readOnly,
+      ownsKey: () => true,
+      snapshot: snapshotState,
+      restore: restoreSnapshot,
+      onError: (msg) => setStatusMessage(msg),
+    });
 
     overlayEl.addEventListener("keydown", onOverlayKeydown);
     overlayEl.addEventListener("click", (e) => {
@@ -2115,6 +2203,12 @@
     rebuildTable,
     _apply: apply,
     _cancel: cancel,
+    _undo() { return hist ? hist.undo() : null; },
+    _redo() { return hist ? hist.redo() : null; },
+    _history() {
+      return hist ? hist.info()
+        : { mode: "stack", depth: 0, index: -1, canUndo: false, canRedo: false };
+    },
     overlayEl() { return overlayEl; },
     // Model verbs behind the Move/Insert buttons and the drag path.
     moveRowTo,

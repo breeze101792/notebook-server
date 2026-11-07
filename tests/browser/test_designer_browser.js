@@ -222,6 +222,116 @@ async function main() {
         window.__designerEditor));
     check("designer browser: the Visimer bundle loaded in the real browser", wrapped);
 
+    // --- shared shell: bar history + Add/Chart chips -----------------
+    {
+      await openDesigner();
+      const shell = await page.evaluate(() => {
+        const overlay = document.getElementById("designer-overlay");
+        const bar = overlay.querySelector(".edit-bar");
+        const history = overlay.querySelector(".edit-bar-history");
+        const add = document.getElementById("designer-bar-add");
+        const chart = document.getElementById("designer-bar-chart");
+        return {
+          header: !!overlay.querySelector(".settings-header.edit-header"),
+          heading: !!overlay.querySelector(".designer-heading.edit-heading"),
+          badge: document.getElementById("designer-type").classList
+            .contains("edit-badge"),
+          undoInBar: !!history && history.contains(
+            document.getElementById("designer-undo")) &&
+            history.contains(document.getElementById("designer-redo")),
+          btnClass: document.getElementById("designer-undo").classList
+            .contains("edit-bar-btn") &&
+            document.getElementById("designer-redo").classList
+              .contains("edit-bar-btn"),
+          footer: Array.from(
+            overlay.querySelector(".designer-footer").querySelectorAll("button"))
+            .map((b) => b.id).join(","),
+          noSidebarHistory: !document.getElementById("designer-history-title") &&
+            !overlay.querySelector(".designer-section--history"),
+          addChip: !!add && bar.contains(add) && add.classList.contains("edit-chip"),
+          chartChip: !!chart && bar.contains(chart) &&
+            chart.classList.contains("edit-chip"),
+          undoDisabled: document.getElementById("designer-undo").disabled,
+          redoDisabled: document.getElementById("designer-redo").disabled,
+        };
+      });
+      check("designer browser: the modal uses the shared header/bar/footer shell",
+        shell.header && shell.heading && shell.badge && shell.undoInBar &&
+        shell.btnClass &&
+        shell.footer === "designer-cancel,designer-apply" &&
+        shell.noSidebarHistory && shell.addChip && shell.chartChip,
+        JSON.stringify(shell));
+      check("designer browser: both history buttons start disabled on open",
+        shell.undoDisabled === true && shell.redoDisabled === true,
+        JSON.stringify(shell));
+
+      const code0 = await page.evaluate(() => window.__designerEditor.code);
+      await page.evaluate(() => {
+        const ed = window.__designerEditor;
+        if (ed && typeof ed.dispatch === "function") ed.dispatch({ type: "addNode" });
+      });
+      await page.waitForFunction(
+        () => !document.getElementById("designer-undo").disabled,
+        null, { timeout: 5000 });
+      const code1 = await page.evaluate(() => window.__designerEditor.code);
+      check("designer browser: a model change enables the bar Undo",
+        code1 !== code0 &&
+        await page.evaluate(() =>
+          !document.getElementById("designer-undo").disabled &&
+          document.getElementById("designer-redo").disabled));
+
+      // Designer history is async (restore then awaited preview), so wait
+      // for the code to settle rather than asserting in the next tick.
+      await page.click("#designer-undo");
+      await page.waitForFunction(
+        (expected) => window.__designerEditor.code === expected, code0,
+        { timeout: 5000 });
+      check("designer browser: bar Undo restores the previous diagram and enables Redo",
+        await page.evaluate(() =>
+          document.getElementById("designer-undo").disabled &&
+          !document.getElementById("designer-redo").disabled));
+      await page.click("#designer-redo");
+      await page.waitForFunction(
+        (expected) => window.__designerEditor.code === expected, code1,
+        { timeout: 5000 });
+      check("designer browser: bar Redo re-applies the change",
+        await page.evaluate(() =>
+          !document.getElementById("designer-undo").disabled &&
+          document.getElementById("designer-redo").disabled));
+
+      // Chips focus the matching sidebar section (they never copy a form).
+      await page.click("#designer-bar-add");
+      check("designer browser: the Add chip focuses the add form/tabs",
+        await page.evaluate(() => {
+          const a = document.activeElement;
+          const form = document.getElementById("designer-add-form");
+          const tabs = document.getElementById("designer-add-tabs");
+          return !!a && (form.contains(a) || tabs.contains(a));
+        }),
+        await page.evaluate(() => document.activeElement &&
+          (document.activeElement.id || document.activeElement.tagName)));
+      await page.click("#designer-bar-chart");
+      check("designer browser: the Chart chip focuses the Chart section",
+        await page.evaluate(() => {
+          const a = document.activeElement;
+          const chart = document.getElementById("designer-chart");
+          return !!a && !chart.hidden && chart.contains(a);
+        }),
+        await page.evaluate(() => document.activeElement &&
+          (document.activeElement.id || document.activeElement.tagName)));
+
+      // Return to the opening copy so Cancel closes without a prompt.
+      await page.click("#designer-undo");
+      await page.waitForFunction(
+        (expected) => window.__designerEditor.code === expected, code0,
+        { timeout: 5000 });
+      await page.click("#designer-cancel");
+      await closeDesigner();
+      check("designer browser: the shell block leaves the window closed",
+        await page.evaluate(() => document.getElementById("designer-overlay").hidden));
+    }
+
+
     // --- (7b) add a node -> Apply -> fence lands, untouched bytes ----
     {
       const before = readNote(NOTE);
@@ -311,6 +421,124 @@ async function main() {
         await page.evaluate(() => window.NB.hybrid.isActive()));
       check("designer browser: Esc writes nothing",
         readNote(NOTE) === before, JSON.stringify(readNote(NOTE)));
+    }
+
+    // --- (9b) Ctrl+Y redo routing over the real canvas --------------
+    // Ctrl+Y is the module's everywhere (Visimer binds no y); Ctrl+Z stays
+    // vendor-owned on the canvas so it undoes exactly once.
+    {
+      const before = readNote(NOTE);
+      await openDesigner();
+      const code0 = await page.evaluate(() => window.__designerEditor.code);
+      const code1 = await page.evaluate(() => {
+        const ed = window.__designerEditor;
+        if (ed && typeof ed.dispatch === "function") ed.dispatch({ type: "addNode" });
+        return ed ? ed.code : null;
+      });
+      const code2 = await page.evaluate(() => {
+        const ed = window.__designerEditor;
+        if (ed && typeof ed.dispatch === "function") ed.dispatch({ type: "addNode" });
+        return ed ? ed.code : null;
+      });
+      check("designer browser: two dispatches change the model twice",
+        code1 !== code0 && code2 !== code1,
+        JSON.stringify({ code0: code0, code1: code1 }));
+
+      // Canvas focused: one Ctrl+Z, exactly one step back.
+      await page.locator("#designer-canvas").focus();
+      const canvasFocused = await page.evaluate(() =>
+        document.activeElement && document.activeElement.id === "designer-canvas");
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(150);
+      const afterCanvasUndo = await page.evaluate(() => window.__designerEditor.code);
+      check("designer browser: canvas Ctrl+Z undoes exactly once",
+        canvasFocused && afterCanvasUndo === code1,
+        JSON.stringify({ focused: canvasFocused, code: afterCanvasUndo }));
+
+      // Canvas focused: Ctrl+Y is ours, so it redoes.
+      await page.locator("#designer-canvas").focus();
+      await page.keyboard.press("Control+y");
+      await page.waitForTimeout(150);
+      const afterCanvasRedo = await page.evaluate(() => window.__designerEditor.code);
+      check("designer browser: Ctrl+Y on the canvas redoes the diagram",
+        afterCanvasRedo === code2,
+        JSON.stringify({ code: afterCanvasRedo }));
+      check("designer browser: canvas undo/redo never touch the note",
+        readNote(NOTE) === before, JSON.stringify(readNote(NOTE)));
+
+      // Outside the canvas (a footer button) the same chord redoes too.
+      await page.locator("#designer-canvas").focus();
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(150);
+      await page.locator("#designer-cancel").focus();
+      const outsideFocused = await page.evaluate(() => {
+        const a = document.activeElement;
+        return !!(a && a.id === "designer-cancel") &&
+          !document.getElementById("designer-canvas").contains(a);
+      });
+      await page.keyboard.press("Control+y");
+      await page.waitForTimeout(150);
+      const afterOutsideRedo = await page.evaluate(() => window.__designerEditor.code);
+      check("designer browser: Ctrl+Y outside the canvas also redoes",
+        outsideFocused && afterOutsideRedo === code2,
+        JSON.stringify({ focused: outsideFocused, code: afterOutsideRedo }));
+      check("designer browser: Ctrl+Y outside the canvas leaves the note unchanged",
+        readNote(NOTE) === before);
+
+      // The working copy is dirty (two dispatched nodes), so closing asks
+      // for confirmation -- accept it, as a user would.
+      const acceptDiscard = (d) => d.accept();
+      page.on("dialog", acceptDiscard);
+      await page.click("#designer-cancel");
+      page.off("dialog", acceptDiscard);
+      await closeDesigner();
+      check("designer browser: the history-chord block closes cleanly",
+        await page.evaluate(() => document.getElementById("designer-overlay").hidden));
+    }
+
+    // --- (9c) an inspector field keeps native undo ------------------
+    // A text field must not forward the chord: the diagram stays as it is
+    // and the browser's own field undo runs instead.
+    {
+      writeNote(FLOW, FLOWSRC);
+      await page.goto(BASE + "/?file=" + encodeURIComponent(FLOW));
+      await page.waitForSelector("#viewer-content .mermaid-container", { timeout: 15000 });
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+      await openDesigner();
+      await page.locator('#designer-canvas [data-mw-entity^="node:"]').first().click();
+      await page.waitForSelector("#designer-node-label", { timeout: 5000 });
+      const beforeField = readNote(FLOW);
+      const codeBeforeField = await page.evaluate(() => window.__designerEditor.code);
+      await page.locator("#designer-node-label").click();
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type("FieldEdit");
+      await page.keyboard.press("Control+z");
+      await page.waitForTimeout(150);
+      const fieldState = await page.evaluate(() => ({
+        code: window.__designerEditor.code,
+        value: document.getElementById("designer-node-label").value,
+        focused: document.activeElement &&
+          document.activeElement.id === "designer-node-label",
+        open: !document.getElementById("designer-overlay").hidden,
+      }));
+      check("designer browser: Ctrl+Z in an inspector field is not intercepted",
+        fieldState.focused && fieldState.open &&
+        fieldState.code === codeBeforeField,
+        JSON.stringify(fieldState));
+      check("designer browser: the field's own undo ran instead",
+        fieldState.value !== "FieldEdit",
+        JSON.stringify({ value: fieldState.value }));
+      check("designer browser: the inspector-field chord writes nothing",
+        readNote(FLOW) === beforeField);
+      // The field's uncommitted text is not the model's, so the copy is
+      // still clean and Cancel needs no discard confirmation.
+      await page.click("#designer-cancel");
+      await closeDesigner();
+      check("designer browser: the inspector-field block wrote nothing",
+        readNote(FLOW) === beforeField);
     }
 
     // --- inspector selection, focus retention, double edge --------

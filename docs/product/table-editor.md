@@ -1,7 +1,7 @@
 # Table edit window — product definition
 
-**Status:** shipped (table edit window). No visual or technical design chosen here.
-**Date:** 2026-10-31 · **Owner:** `product-designer` · **Scope:** hybrid (WYSIWYG) edit mode only.
+**Status:** shipped (table edit window; in-modal undo/redo in the shared action bar).
+**Date:** 2026-10-31, amended 2026-11-07 (shared edit-window shell) · **Owner:** `product-designer` · **Scope:** hybrid (WYSIWYG) edit mode only.
 Related: `docs/architecture/hybrid-editing.md` (G3/G3b — tables edit through a table tool and write GFM), `docs/product/hybrid-shortcuts.md`, `docs/architecture/table-select.md`.
 
 ## 1. Goal and audience
@@ -10,9 +10,9 @@ The owner is editing their own note in hybrid mode and wants to change a table's
 
 ## 2. Scope
 
-**In scope:** both entry points, the grid, the toolbar operations (row and column move, insert, delete, add, alignment, sort, transpose, delete table), pointer drag reordering, Apply/Cancel, merged-cell refusal, keyboard access.
-**Out of scope (fixed):** formulas; number formatting; CSV import; column resize; more than one editor at a time; persistence of editor state across close or reload. Multi-cell range selection and range paste moved in scope; see `docs/product/table-editor-selection.md`, which supersedes those two entries and amends AC4, AC5, AC6 and AC12.
-**MVP line:** everything in §3–§6 works and AC1–AC18 pass. Nothing else.
+**In scope:** both entry points, the grid, the toolbar operations (row and column move, insert, delete, add, alignment, sort, transpose, delete table), pointer drag reordering, in-modal undo/redo, Apply/Cancel, merged-cell refusal, keyboard access.
+**Out of scope (fixed):** formulas; number formatting; CSV import; column resize; more than one editor at a time; persistence of editor state or of the undo history across close or reload. Multi-cell range selection and range paste moved in scope; see `docs/product/table-editor-selection.md`, which supersedes those two entries and amends AC4, AC5, AC6 and AC12.
+**MVP line:** everything in §3–§6 works and AC1–AC18 plus AC45–AC46 pass. Nothing else.
 
 ## 3. Entry points (hybrid only)
 
@@ -37,11 +37,13 @@ Both open the modal titled **Edit table**, bound to that table. Preview mode has
 
 **Transpose.** Pinned semantics (standard matrix transpose, the Excel behavior): `new[r][c] = old[c][r]`. The old first column becomes the new header row, and the old header row becomes the new first column (its first cell is the new header's first cell). All column alignment resets to left. Transposing twice restores the content but not the alignment.
 
+**History.** The window's action bar carries Undo and Redo at its right end, above the grid; the footer is commit-only. The history covers the working copy only: every cell edit, structural operation, paste, fill, sort, transpose, and alignment change pushes one step. A typing burst is one step (350 ms coalescing); each structural operation is its own step. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y redo. Undo and Redo are disabled at the ends of the history, and both are disabled on a merged-cell table. A click into a cell does not make the keys dead: undo commits the cell, restores the previous working copy, and returns the caret to the same cell. The history is capped at 100 snapshots and at 4 M characters (UTF-16 code units) of snapshot text and dies with the window: Cancel, Esc, Close, and Apply discard it.
+
 **Apply.** Replace the source table with one equivalent GFM table: same header, body rows, order, alignment, and cell inline formatting. The note is marked dirty and the replacement is exactly one undo step; bytes outside the table are unchanged. If nothing changed, Apply closes the window, writes nothing, leaves the note clean, and adds no undo entry.
 
 **Cancel.** Discard every working change and close. Esc, the close control, and the Cancel button do the same: no write, no dirty mark, no undo entry.
 
-**Merged cells.** When `tableHasSpans()` is true the table cannot be represented in GFM. Both entry points still open the modal, but it shows a clear notice ("This table has merged cells and cannot be edited here") and refuses to edit: grid and toolbar disabled, Apply absent or disabled, only Cancel closes. No write is possible.
+**Merged cells.** When `tableHasSpans()` is true the table cannot be represented in GFM. Both entry points still open the modal, but it shows a clear notice ("This table has merged cells and cannot be edited here") and refuses to edit: grid and toolbar disabled, Apply absent or disabled, Undo and Redo in the action bar present but disabled, only Cancel closes. No write is possible.
 
 ## 5. Edge cases
 
@@ -54,10 +56,13 @@ Both open the modal titled **Edit table**, bound to that table. Preview mode has
 - Large tables scroll inside the modal; text wraps. No column resize.
 - If the note is reloaded or the table disappears while open, the window closes and discards without writing.
 - Sort on a column whose keys are all equal changes nothing.
+- Undoing back to the opening state restores the pristine working copy: Apply then closes without writing, even for a ragged source table — while the opening snapshot is still on the stack (within the 99 steps the 100-snapshot cap allows).
+- The history is not persisted: reopening the window starts an empty one.
 
 ## 6. Constraints
 
 - Reuse the app's `.settings-overlay > .settings-modal` pattern: modal semantics, free-floating/draggable behaviour, and the shared window geometry from `windows.js`. Geometry is window chrome, not persisted editor state.
+- Use the shared hybrid edit-window shell (`docs/ui/edit-window-guide.md`): the same header, action bar, and commit-only footer as the two design windows. The table supplies only the bar's action slot and the grid.
 - Writes go through the existing hybrid write path; the modal never writes Markdown itself. Apply flushes any pending typing snapshot first so the replacement is one undo step. The editor never invents HTML in the note (hybrid invariant G4).
 - Numeric parsing is an assumption: optional sign, decimal point, optional exponent, no thousands separators or units. Marked as an assumption to confirm.
 
@@ -75,9 +80,14 @@ Both open the modal titled **Edit table**, bound to that table. Preview mode has
 10. **AC10** Apply replaces exactly the source table with one GFM table, leaves all bytes outside it unchanged, marks the note dirty, and one undo restores the previous table with its inline formatting; a second undo does not re-apply.
 11. **AC11** Apply with no change closes the window, writes nothing, leaves the note clean, and adds no undo entry.
 12. **AC12** Cancel and Esc close the window, write nothing, leave the table unchanged, and do not clear an existing dirty mark.
-13. **AC13** For a table with merged cells, the modal opens refused with the merged-cells notice, disabled grid and toolbar, no working Apply, and only Cancel available; no write occurs.
+13. **AC13** For a table with merged cells, the modal opens refused with the merged-cells notice, disabled grid and toolbar, no working Apply, Undo and Redo in the action bar present but disabled, and only Cancel closes; no write occurs.
 14. **AC14** Opening moves focus into the modal; Tab from the last focusable control wraps to the first and Shift+Tab from the first wraps to the last; focus never leaves the modal; closing returns focus to the table or entry point.
 15. **AC15** Bold, italic, inline code, and links in an untouched cell survive Apply as equivalent GFM; editing around them does not corrupt them; unsupported inline HTML is flattened to text and never written as HTML.
 16. **AC16** Empty cells remain cells in their positions after Apply and sort last in both directions.
-17. **AC17** Every toolbar and dialog control is reachable by Tab, activatable by Enter or Space, and has an accessible name.
+17. **AC17** Every enabled toolbar and dialog control is reachable by Tab, activatable by Enter or Space, and has an accessible name; a disabled Undo or Redo is skipped by Tab.
 18. **AC18** The window is a labelled modal dialog (title "Edit table") and follows the app's existing modal focus and close conventions.
+
+History criteria — AC45–AC46 continue the sequence after AC19–AC44 in `docs/product/table-editor-selection.md`, which remain in force:
+
+- **AC45** The action bar shows Undo and Redo at its right end. A clean open has both disabled; the first working-copy change enables Undo; Undo restores the previous working copy and enables Redo. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y redo. At the ends of the history the keys and the buttons do nothing. A typing burst is one step and each structural operation is its own step. Undo while a cell is being edited commits the cell, restores the previous working copy, and puts the caret back in that cell.
+- **AC46** Undo and Redo change only the working copy and never the note. Undoing to the opening state leaves Apply a no-op: no write, no dirty mark, no note undo entry, and this holds while the opening snapshot is still retained. The history holds at most 100 snapshots and 4 M characters (UTF-16 code units) of snapshot text — the opening state plus 99 changes — and drops the oldest when full. It is discarded by Cancel, Esc, Close, and Apply. On a merged-cell table both controls are disabled and the keys do nothing.

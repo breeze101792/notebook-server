@@ -195,6 +195,37 @@ async function main() {
     const openedActive = await activeInfo(page);
     check("real browser: opening moves focus into the modal",
       openedActive.inOverlay, JSON.stringify(openedActive));
+    const shell = await page.evaluate(() => {
+      const overlay = document.getElementById("table-editor-overlay");
+      const bar = overlay.querySelector(".edit-bar");
+      const history = overlay.querySelector(".edit-bar-history");
+      const footer = overlay.querySelector(".te-footer");
+      return {
+        header: !!overlay.querySelector(".settings-header.edit-header"),
+        badge: document.getElementById("table-editor-type").textContent,
+        barActionsHasToolbar: !!overlay.querySelector(
+          ".edit-bar-actions #table-editor-toolbar"),
+        toolbarInBody: overlay.querySelector(".te-body")
+          .contains(document.getElementById("table-editor-toolbar")),
+        historyInBar: !!history && history.contains(
+          document.getElementById("table-editor-undo")) &&
+          history.contains(document.getElementById("table-editor-redo")),
+        btnClass: document.getElementById("table-editor-undo")
+          .classList.contains("edit-bar-btn") &&
+          document.getElementById("table-editor-redo")
+            .classList.contains("edit-bar-btn"),
+        footerIds: Array.from(footer.querySelectorAll("button"))
+          .map((b) => b.id).join(","),
+        mode: window.NB.tableEditor._history().mode,
+      };
+    });
+    check("real browser: the modal uses the shared header/bar/footer shell",
+      shell.header && shell.badge === "Table" && shell.barActionsHasToolbar &&
+      !shell.toolbarInBody && shell.historyInBar && shell.btnClass &&
+      shell.footerIds === "table-editor-cancel,table-editor-apply",
+      JSON.stringify(shell));
+    check("real browser: the table window's history mode is stack",
+      shell.mode === "stack", shell.mode);
     const normalNotice = await page.evaluate(() => {
       const n = document.getElementById("table-editor-notice");
       return { hidden: n.hidden, display: getComputedStyle(n).display };
@@ -202,6 +233,64 @@ async function main() {
     check("real browser: a normal table opens with no notice strip",
       normalNotice.hidden && normalNotice.display === "none",
       JSON.stringify(normalNotice));
+
+    // --- the bar's left slot fades only while it scrolls ------------
+    // syncOverflow() toggles is-scrollable from the measured scrollWidth, so
+    // the class must always match the overflow at the current width.
+    const barSlot = async (width) => {
+      await page.setViewportSize({ width: width, height: 720 });
+      await page.waitForTimeout(200);
+      return page.evaluate(() => {
+        const a = document.querySelector(
+          "#table-editor-overlay .edit-bar-actions");
+        return {
+          cw: a.clientWidth,
+          sw: a.scrollWidth,
+          cls: a.classList.contains("is-scrollable"),
+        };
+      });
+    };
+    for (const width of [1000, 900]) {
+      const slot = await barSlot(width);
+      check("real browser: the bar slot fades at " + width + "px",
+        slot.cls === true && slot.sw > slot.cw + 1, JSON.stringify(slot));
+    }
+    {
+      // The table modal now matches the designers' 1320 px box, so at a
+      // 1280 px viewport its toolbar fits and the fade is correctly off.
+      // Assert the class tracks the real overflow, then collapse the
+      // toolbar to prove the off path and re-check at 1000 px for the on path.
+      const slot = await barSlot(1280);
+      check("real browser: the bar slot fade matches its overflow at 1280px",
+        slot.cls === (slot.sw > slot.cw + 1), JSON.stringify(slot));
+      await page.evaluate(() => {
+        const t = document.getElementById("table-editor-toolbar");
+        if (t) t.style.display = "none";
+        window.dispatchEvent(new Event("resize"));
+      });
+      await page.waitForTimeout(120);
+      const cleared = await page.evaluate(() => {
+        const a = document.querySelector(
+          "#table-editor-overlay .edit-bar-actions");
+        return {
+          cw: a.clientWidth,
+          sw: a.scrollWidth,
+          cls: a.classList.contains("is-scrollable"),
+        };
+      });
+      check("real browser: the bar slot fade clears when it no longer scrolls",
+        cleared.cls === false && cleared.sw <= cleared.cw + 1,
+        JSON.stringify(cleared));
+      await page.evaluate(() => {
+        const t = document.getElementById("table-editor-toolbar");
+        if (t) t.style.display = "";
+        window.dispatchEvent(new Event("resize"));
+      });
+      await page.waitForTimeout(120);
+      const back = await barSlot(1000);
+      check("real browser: the bar slot fade returns when it scrolls again",
+        back.cls === true && back.sw > back.cw + 1, JSON.stringify(back));
+    }
 
     // --- AC14: Tab wraps inside the dialog ------------------------
     // windows.js injects its maximize control ahead of the header close
@@ -774,6 +863,335 @@ async function main() {
       null, { timeout: 5000 });
     check("real browser: Esc closes the modal and writes nothing",
       readNote(NOTE) === bytesBeforeEsc);
+
+    // --- in-modal undo/redo history (AC45/AC46) --------------------
+    // A fresh note and a fresh page, so the history assertions do not
+    // depend on the edit/undo sequence above. Every change here happens
+    // inside the working copy: the note must never move.
+    {
+      const HIST = "notes/history.md";
+      const HIST_SRC =
+        "# History\n\nBefore.\n\n" +
+        "| Name | Qty | Note |\n" +
+        "| :-- | :-: | --: |\n" +
+        "| Bolt | 10 | fine |\n" +
+        "| Nut | 2 |  |\n\n" +
+        "After.\n";
+      // Flush and leave hybrid first: the page is dirty from the block above.
+      await leaveHybrid(page);
+      writeNote(HIST, HIST_SRC);
+      await page.goto(BASE + "/?file=" + encodeURIComponent(HIST));
+      await page.waitForSelector("#viewer-content table", { timeout: 15000 });
+      await enterHybrid(page);
+      await openViaOverlay(page);
+
+      const footerState = () => page.evaluate(() => {
+        const f = document.querySelector("#table-editor-overlay .te-footer");
+        const first = Array.from(f.querySelectorAll(
+          "button, [href], input, select, textarea"))
+          .find((n) => !n.disabled && !n.hidden && n.offsetParent !== null);
+        return {
+          undo: document.getElementById("table-editor-undo").disabled,
+          redo: document.getElementById("table-editor-redo").disabled,
+          first: first ? first.id || first.textContent.trim() : null,
+        };
+      });
+      const cellInfo = (r, c) => page.evaluate(([row, col]) => {
+        const td = document.querySelector(
+          '#table-editor-grid .te-cell[data-row="' + row + '"]' +
+          '[data-col="' + col + '"]');
+        const a = document.activeElement;
+        const sel = window.getSelection();
+        return {
+          span: td ? td.querySelector(".te-cell-text").textContent : null,
+          html: window.NB.tableEditor.getState().rows[row].cells[col].html,
+          editable: !!(a && a.classList &&
+            a.classList.contains("te-cell-text") &&
+            a.getAttribute("contenteditable") === "true"),
+          inCell: !!(a && a.closest && a.closest(
+            '.te-cell[data-row="' + row + '"][data-col="' + col + '"]')),
+          caretInSpan: !!(td && sel && sel.anchorNode &&
+            td.querySelector(".te-cell-text").contains(sel.anchorNode)),
+          hist: window.NB.tableEditor._history(),
+        };
+      }, [r, c]);
+
+      // Clean open: both history controls are disabled, so the footer's
+      // first enabled control is still Cancel.
+      const cleanFooter = await footerState();
+      check("real browser: a clean open disables both history buttons",
+        cleanFooter.undo === true && cleanFooter.redo === true &&
+        cleanFooter.first === "table-editor-cancel",
+        JSON.stringify(cleanFooter));
+
+      // The first typed character enables Undo.
+      await cell(1, 1).click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("1");
+      const afterType = await footerState();
+      const afterTypeCell = await cellInfo(1, 1);
+      check("real browser: the first typing enables Undo",
+        afterType.undo === false && afterType.redo === true &&
+        afterTypeCell.html === "101" &&
+        afterTypeCell.hist.mode === "stack" &&
+        afterTypeCell.hist.depth === 2 && afterTypeCell.hist.index === 1,
+        JSON.stringify({ footer: afterType, cell: afterTypeCell }));
+
+      // Ctrl+Z with the caret in the cell: the cell reverts and the caret
+      // comes back into it, still editable.
+      await page.keyboard.press("Control+z");
+      const undoneCell = await cellInfo(1, 1);
+      check("real browser: Ctrl+Z reverts the cell and returns the caret to it",
+        undoneCell.html === "10" && undoneCell.span === "10" &&
+        undoneCell.editable && undoneCell.inCell && undoneCell.caretInSpan &&
+        undoneCell.hist.canRedo === true,
+        JSON.stringify(undoneCell));
+
+      await page.keyboard.press("Control+Shift+z");
+      const redoShift = await cellInfo(1, 1);
+      check("real browser: Ctrl+Shift+Z redoes the change",
+        redoShift.html === "101" && redoShift.editable, JSON.stringify(redoShift));
+      await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+y");
+      const redoY = await cellInfo(1, 1);
+      check("real browser: Ctrl+Y redoes the change",
+        redoY.html === "101" && redoY.hist.canRedo === false,
+        JSON.stringify(redoY));
+
+      // A paste is one step: execCommand("insertText") fires input and
+      // insertPlainText also records, and the snapshot dedup must keep that
+      // one step, so a single Ctrl+Z reverts the whole paste.
+      await cell(2, 0).click();
+      const beforePaste = await cellInfo(2, 0);
+      await page.evaluate(() => {
+        const td = document.querySelector(
+          '#table-editor-grid .te-cell[data-row="2"][data-col="0"]');
+        const span = td.querySelector(".te-cell-text");
+        // Select the cell's text so the paste replaces it (the clipboard
+        // model the keyboard path uses).
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "pasted-word");
+        td.dispatchEvent(new ClipboardEvent("paste",
+          { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      const afterPaste = await cellInfo(2, 0);
+      await page.keyboard.press("Control+z");
+      const afterPasteUndo = await cellInfo(2, 0);
+      check("real browser: a paste is exactly one history step",
+        afterPaste.html === "pasted-word" &&
+        afterPaste.hist.depth === beforePaste.hist.depth + 1 &&
+        afterPaste.hist.index === beforePaste.hist.index + 1 &&
+        afterPasteUndo.html === "Nut" &&
+        afterPasteUndo.hist.index === beforePaste.hist.index,
+        JSON.stringify({ before: beforePaste, pasted: afterPaste,
+          undone: afterPasteUndo }));
+
+      // A row-grip drag is one structural step and Ctrl+Z restores the order.
+      const orderBeforeDrag = await gridOrder();
+      const histBeforeDrag = await page.evaluate(() =>
+        window.NB.tableEditor._history());
+      const lastRow = page.locator("#table-editor-grid tbody tr").last();
+      await lastRow.hover();
+      const gripBox = await lastRow.locator(".te-row-grip").boundingBox();
+      const firstRowBox = await page.locator(
+        "#table-editor-grid tbody tr").first().boundingBox();
+      if (gripBox && firstRowBox) {
+        await page.mouse.move(gripBox.x + gripBox.width / 2,
+          gripBox.y + gripBox.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(firstRowBox.x + 40, firstRowBox.y + 2,
+          { steps: 8 });
+        await page.mouse.up();
+      }
+      const orderAfterDrag = await gridOrder();
+      const histAfterDrag = await page.evaluate(() =>
+        window.NB.tableEditor._history());
+      // Put the keyboard back inside the modal before pressing the chord.
+      await cell(1, 0).click();
+      await page.keyboard.press("Control+z");
+      const orderAfterUndo = await gridOrder();
+      check("real browser: a row drag is one step and Ctrl+Z restores the order",
+        orderAfterDrag !== orderBeforeDrag &&
+        histAfterDrag.index === histBeforeDrag.index + 1 &&
+        histAfterDrag.canRedo === false &&
+        orderAfterUndo === orderBeforeDrag,
+        JSON.stringify({ before: orderBeforeDrag, dragged: orderAfterDrag,
+          undone: orderAfterUndo, hist: histAfterDrag }));
+
+      // Undo all the way back to the opening state, then Apply: no write,
+      // no dirty mark, and the note file stays byte-identical.
+      await page.click("#table-editor-cancel");
+      await page.waitForFunction(
+        () => document.getElementById("table-editor-overlay").hidden,
+        null, { timeout: 5000 });
+      const bytesBeforeUndoAll = readNote(HIST);
+      await openViaOverlay(page);
+      await cell(1, 0).click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("Z");
+      await page.keyboard.press("Control+z");
+      const pristine = await page.evaluate(() => ({
+        hist: window.NB.tableEditor._history(),
+        changed: window.NB.tableEditor.getState().changed,
+        dirty: window.NB.hybrid.isDirty(),
+      }));
+      await page.click("#table-editor-apply");
+      await page.waitForFunction(
+        () => document.getElementById("table-editor-overlay").hidden,
+        null, { timeout: 5000 });
+      const dirtyAfterPristineApply = await page.evaluate(() =>
+        window.NB.hybrid.isDirty());
+      check("real browser: undo to open then Apply writes nothing",
+        pristine.hist.index === 0 && pristine.hist.canUndo === false &&
+        pristine.changed === false && pristine.dirty === false &&
+        dirtyAfterPristineApply === false &&
+        readNote(HIST) === bytesBeforeUndoAll,
+        JSON.stringify({ pristine: pristine, dirty: dirtyAfterPristineApply,
+          bytesSame: readNote(HIST) === bytesBeforeUndoAll }));
+
+      // A merged-cell table: both controls disabled and Ctrl+Z does nothing.
+      await page.evaluate(() => {
+        const t = document.createElement("table");
+        t.id = "te-merged-history";
+        t.innerHTML = "<tbody><tr><th>A</th><th>B</th></tr>" +
+          '<tr><td colspan="2">wide</td></tr></tbody>';
+        document.getElementById("viewer-content").appendChild(t);
+      });
+      await page.hover("#te-merged-history td");
+      await page.waitForSelector("#viewer .nb-table-overlay .nb-te-open",
+        { timeout: 5000 });
+      await page.evaluate(() => {
+        const btn = document.querySelector("#viewer .nb-table-overlay .nb-te-open");
+        if (btn) { btn.focus(); btn.click(); }
+      });
+      await page.waitForSelector("#table-editor-overlay:not([hidden])",
+        { timeout: 5000 });
+      const mergedFooter = await footerState();
+      const mergedBefore = await page.evaluate(() =>
+        JSON.stringify(window.NB.tableEditor.getState()));
+      await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+y");
+      const mergedAfter = await page.evaluate(() => ({
+        state: JSON.stringify(window.NB.tableEditor.getState()),
+        hist: window.NB.tableEditor._history(),
+        blocked: window.NB.tableEditor.isBlocked(),
+      }));
+      check("real browser: merged cells disable both controls and ignore the chords",
+        mergedFooter.undo === true && mergedFooter.redo === true &&
+        mergedAfter.blocked && mergedAfter.state === mergedBefore &&
+        mergedAfter.hist.depth === 1 && mergedAfter.hist.index === 0,
+        JSON.stringify({ footer: mergedFooter, after: mergedAfter.hist }));
+      await page.evaluate(() => {
+        window.NB.tableEditor.close();
+        const t = document.getElementById("te-merged-history");
+        if (t) t.remove();
+      });
+    }
+
+    // --- the ends of the history are inert with a live caret ---------
+    // restoreStep() tests the bounds before commitEdit(), so at an end of
+    // the stack the chord must leave an open cell open, focused, and still
+    // writing to the model. Only a real caret can prove the last part.
+    {
+      const ENDS = "notes/history-ends.md";
+      const ENDS_SRC =
+        "# History ends\n\nBefore.\n\n" +
+        "| Name | Qty |\n" +
+        "| :-- | --: |\n" +
+        "| Bolt | 10 |\n" +
+        "| Nut | 2 |\n\n" +
+        "After.\n";
+      await leaveHybrid(page);
+      writeNote(ENDS, ENDS_SRC);
+      await page.goto(BASE + "/?file=" + encodeURIComponent(ENDS));
+      await page.waitForSelector("#viewer-content table", { timeout: 15000 });
+      await enterHybrid(page);
+      await openViaOverlay(page);
+
+      const endsCell = (r, c) => page.evaluate(([row, col]) => {
+        const td = document.querySelector(
+          '#table-editor-grid .te-cell[data-row="' + row + '"]' +
+          '[data-col="' + col + '"]');
+        const span = td && td.querySelector(".te-cell-text");
+        const a = document.activeElement;
+        const sel = window.getSelection();
+        return {
+          span: span ? span.textContent : null,
+          html: window.NB.tableEditor.getState().rows[row].cells[col].html,
+          editable: !!(span && span.getAttribute("contenteditable") === "true"),
+          focused: !!span && a === span,
+          caretInSpan: !!(span && sel && sel.anchorNode &&
+            span.contains(sel.anchorNode)),
+          hist: window.NB.tableEditor._history(),
+        };
+      }, [r, c]);
+
+      await cell(1, 1).click();
+      await page.keyboard.press("End");
+      await page.keyboard.type("7");
+      const typed = await endsCell(1, 1);
+      check("real browser: the typed cell is the top of the history",
+        typed.html === "107" && typed.hist.index === 1 && typed.editable &&
+        typed.focused, JSON.stringify(typed));
+
+      // One undo: the cell reverts and comes back open with the caret in it.
+      await page.keyboard.press("Control+z");
+      const atBottom = await endsCell(1, 1);
+      check("real browser: Ctrl+Z at index 1 reverts the cell and keeps it open",
+        atBottom.html === "10" && atBottom.span === "10" &&
+        atBottom.hist.index === 0 && atBottom.hist.canUndo === false &&
+        atBottom.editable && atBottom.focused && atBottom.caretInSpan,
+        JSON.stringify(atBottom));
+
+      // Ctrl+Z at index 0: inert. Model, cell and caret all stay put.
+      await page.keyboard.press("Control+z");
+      const inertBottom = await endsCell(1, 1);
+      check("real browser: Ctrl+Z at index 0 leaves the open cell untouched",
+        inertBottom.html === "10" && inertBottom.span === "10" &&
+        inertBottom.hist.index === 0 && inertBottom.hist.canUndo === false &&
+        inertBottom.editable && inertBottom.focused &&
+        inertBottom.caretInSpan, JSON.stringify(inertBottom));
+
+      // Typing still reaches the model after that chord.
+      await page.keyboard.type("8");
+      const retried = await endsCell(1, 1);
+      check("real browser: typing after the inert bottom chord still writes the model",
+        retried.html === "108" && retried.hist.index === 1 &&
+        retried.hist.canRedo === false, JSON.stringify(retried));
+
+      // The top of the stack is inert for both redo chords.
+      await page.keyboard.press("Control+Shift+z");
+      const inertShift = await endsCell(1, 1);
+      check("real browser: Ctrl+Shift+Z at the top leaves the open cell untouched",
+        inertShift.html === "108" && inertShift.hist.index === 1 &&
+        inertShift.hist.canRedo === false && inertShift.editable &&
+        inertShift.focused && inertShift.caretInSpan,
+        JSON.stringify(inertShift));
+      await page.keyboard.press("Control+y");
+      const inertY = await endsCell(1, 1);
+      check("real browser: Ctrl+Y at the top leaves the open cell untouched",
+        inertY.html === "108" && inertY.hist.index === 1 &&
+        inertY.hist.canRedo === false && inertY.editable &&
+        inertY.focused && inertY.caretInSpan, JSON.stringify(inertY));
+      await page.keyboard.type("9");
+      const topRetried = await endsCell(1, 1);
+      check("real browser: typing after the inert top chords still writes the model",
+        topRetried.html === "1089" && topRetried.hist.canRedo === false,
+        JSON.stringify(topRetried));
+
+      check("real browser: the inert chords write nothing to the note",
+        readNote(ENDS) === ENDS_SRC, JSON.stringify(readNote(ENDS)));
+
+      await page.click("#table-editor-cancel");
+      await page.waitForFunction(
+        () => document.getElementById("table-editor-overlay").hidden,
+        null, { timeout: 5000 });
+    }
 
     check("real browser: no uncaught page errors", pageErrors.length === 0,
       pageErrors.join(" | "));

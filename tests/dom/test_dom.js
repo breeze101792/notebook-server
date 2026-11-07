@@ -876,19 +876,16 @@ const html = `<!DOCTYPE html><html><head>
   <div id="table-editor-overlay" class="settings-overlay" hidden>
     <div class="settings-modal table-editor-modal" role="dialog" aria-modal="true"
          aria-labelledby="table-editor-title" tabindex="-1">
-      <div class="settings-header">
-        <h2 id="table-editor-title">Edit table</h2>
+      <div class="settings-header edit-header">
+        <div class="designer-heading edit-heading">
+          <h2 id="table-editor-title">Edit table</h2>
+          <span class="designer-type edit-badge" id="table-editor-type">Table</span>
+        </div>
         <button id="table-editor-close" class="icon-btn" type="button"
                 title="Close" aria-label="Close">×</button>
       </div>
-      <div class="te-body">
-        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
-          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
-          <div>
-            <p>This table has merged cells and cannot be edited here.</p>
-            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
-          </div>
-        </div>
+      <div class="edit-bar">
+        <div class="edit-bar-actions">
         <div id="table-editor-toolbar" class="te-toolbar" role="toolbar" aria-label="Table tools">
           <div class="te-group" role="group" aria-label="Rows">
             <button id="te-move-row-up" class="te-tool" type="button"
@@ -991,7 +988,7 @@ const html = `<!DOCTYPE html><html><head>
             </button>
           </div>
 
-          <div class="te-spacer"></div>
+          <div class="te-sep" aria-hidden="true"></div>
 
           <div class="te-group" role="group" aria-label="Table">
             <button id="te-transpose" class="te-tool" type="button"
@@ -1004,18 +1001,51 @@ const html = `<!DOCTYPE html><html><head>
             </button>
           </div>
         </div>
-
+        </div>
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+          <button id="table-editor-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="table-editor-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="te-body">
+        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
+          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
+          <div>
+            <p>This table has merged cells and cannot be edited here.</p>
+            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
+          </div>
+        </div>
         <div class="te-scroll">
           <table id="table-editor-grid" class="te-grid" role="grid"
                  aria-label="Table cells"></table>
         </div>
       </div>
-      <div class="settings-footer te-footer">
+      <div class="settings-footer edit-footer te-footer">
         <span id="table-editor-status" class="te-status" role="status"
               aria-live="polite" aria-atomic="true"></span>
         <span class="te-hint" aria-hidden="true">Esc cancels</span>
-        <button id="table-editor-cancel" class="settings-action" type="button">Cancel</button>
-        <button id="table-editor-apply" class="settings-action settings-action--primary" type="button">Apply</button>
+        <button id="table-editor-cancel" class="settings-action" type="button"
+                aria-keyshortcuts="Escape">Cancel</button>
+        <button id="table-editor-apply"
+                class="settings-action settings-action--primary" type="button">Apply</button>
       </div>
     </div>
   </div>
@@ -1027,48 +1057,73 @@ const html = `<!DOCTYPE html><html><head>
   <div id="designer-overlay" class="settings-overlay" hidden>
     <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
          aria-labelledby="designer-title">
-      <div class="settings-header designer-header">
-        <div class="designer-heading">
+      <div class="settings-header edit-header">
+        <div class="designer-heading edit-heading">
           <h2 id="designer-title">Design diagram</h2>
-          <span class="designer-type" id="designer-type"></span>
+          <span class="designer-type edit-badge" id="designer-type"></span>
         </div>
-        <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+        <button id="designer-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="edit-bar">
+        <div class="edit-bar-actions">
+        <div class="edit-bar-toolbar" role="toolbar" aria-label="Diagram actions">
+          <div class="edit-bar-group" role="group" aria-label="Canvas mode">
+            <button id="designer-tool-select" class="designer-iconbtn" type="button"
+                    aria-pressed="true" title="Select tool" aria-label="Select tool">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
+              </svg>
+            </button>
+            <button id="designer-tool-connect" class="designer-iconbtn" type="button"
+                    aria-pressed="false" title="Connect tool — or Alt+drag from a node"
+                    aria-label="Connect tool">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                <path d="M3 13 12.5 3.5"></path>
+                <path d="M8 3.5h4.5v4.5"></path>
+              </svg>
+            </button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group" role="group" aria-label="Add and chart">
+            <button id="designer-bar-add" class="edit-chip" type="button"
+                    title="Jump to Add" disabled>Add</button>
+            <button id="designer-bar-chart" class="edit-chip" type="button"
+                    title="Jump to Chart" disabled>Chart</button>
+          </div>
+        </div>
+        </div>
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+          <button id="designer-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="designer-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="settings-body designer-body">
-        <!-- Designer sidebar, filled/shown by mermaid-designer.js.
-             Scoped families (flowchart, sequence, pie) get tabbed add forms
-             and chart controls; every other editable family keeps the
-             dispatch()-backed palette. Hidden until ready and for types
-             with no add action. -->
+        <!-- Designer sidebar, filled/shown by mermaid-designer.js. History
+             lives in the bar; the Tools/History sidebar sections are gone. -->
         <aside class="designer-sidebar" id="designer-sidebar" hidden
                aria-labelledby="designer-add-title">
-          <section class="designer-section designer-section--tools"
-                   aria-labelledby="designer-tools-title">
-            <h3 class="designer-sidebar-title" id="designer-tools-title">Tools</h3>
-            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
-              <button id="designer-tool-select" class="designer-iconbtn" type="button"
-                      aria-pressed="true" title="Select tool" aria-label="Select tool">
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
-                </svg>
-              </button>
-              <button id="designer-tool-connect" class="designer-iconbtn" type="button"
-                      aria-pressed="false" title="Connect tool — or Alt+drag from a node"
-                      aria-label="Connect tool">
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M3 13 12.5 3.5"></path>
-                  <path d="M8 3.5h4.5v4.5"></path>
-                </svg>
-              </button>
-            </div>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-
           <section class="designer-section designer-section--add"
                    aria-labelledby="designer-add-title">
             <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
@@ -1115,33 +1170,6 @@ const html = `<!DOCTYPE html><html><head>
               </span>
             </label>
             <p class="designer-scope-note" id="designer-pie-header-note" hidden></p>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-
-          <section class="designer-section designer-section--history"
-                   aria-labelledby="designer-history-title">
-            <h3 class="designer-sidebar-title" id="designer-history-title">History</h3>
-            <div class="designer-history" role="toolbar" aria-label="History">
-              <button id="designer-undo" class="designer-iconbtn" type="button"
-                      title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M4 6h5a4 4 0 0 1 4 4v2"></path>
-                  <path d="M6.4 3.6 4 6l2.4 2.4"></path>
-                </svg>
-              </button>
-              <button id="designer-redo" class="designer-iconbtn" type="button"
-                      title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M12 6H7a4 4 0 0 0-4 4v2"></path>
-                  <path d="M9.6 3.6 12 6l-2.4 2.4"></path>
-                </svg>
-              </button>
-            </div>
           </section>
         </aside>
 
@@ -1220,10 +1248,13 @@ const html = `<!DOCTYPE html><html><head>
           <div class="designer-inspector-body" id="designer-inspector-body"></div>
         </aside>
       </div>
-      <div class="settings-footer designer-footer">
-        <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>
-        <button id="designer-cancel" class="settings-action">Cancel</button>
-        <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
+      <div class="settings-footer edit-footer designer-footer">
+        <span id="designer-status" class="designer-status" role="status"
+              aria-live="polite" aria-atomic="true"></span>
+        <button id="designer-cancel" class="settings-action" type="button"
+                aria-keyshortcuts="Escape">Cancel</button>
+        <button id="designer-apply"
+                class="settings-action settings-action--primary" type="button">Apply</button>
       </div>
     </div>
 
@@ -1233,27 +1264,51 @@ const html = `<!DOCTYPE html><html><head>
   <div id="dw-designer-overlay" class="settings-overlay" hidden>
     <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
          aria-labelledby="dw-title">
-      <div class="settings-header designer-header">
-        <div class="designer-heading">
+      <div class="settings-header edit-header">
+        <div class="designer-heading edit-heading">
           <h2 id="dw-title">Design diagram</h2>
-          <span class="designer-type" id="dw-type"></span>
+          <span class="designer-type edit-badge" id="dw-type"></span>
         </div>
-        <button id="dw-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+        <button id="dw-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="edit-bar">
+        <div class="edit-bar-actions">
+        <div class="edit-bar-toolbar" role="toolbar" aria-label="Timing actions">
+          <div class="edit-bar-group" role="group" aria-label="Build">
+            <button type="button" class="edit-chip" data-compact="add"
+                    title="Add" aria-label="Add">Add</button>
+            <button type="button" class="edit-chip" data-compact="chart"
+                    title="Chart" aria-label="Chart">Chart</button>
+            <button type="button" class="edit-chip" data-compact="source"
+                    title="Source" aria-label="Source">Source</button>
+          </div>
+        </div>
+        </div>
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+          <button id="dw-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="dw-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="settings-body designer-body">
         <aside class="designer-sidebar" id="dw-sidebar" hidden>
-          <div class="dw-compact-nav" aria-label="Design sections">
-            <button type="button" class="designer-btn" data-compact="add"
-                    title="Add" aria-label="Add">+</button>
-            <button type="button" class="designer-btn" data-compact="chart"
-                    title="Chart" aria-label="Chart">▦</button>
-            <button type="button" class="designer-btn" data-compact="source"
-                    title="Source" aria-label="Source">⌨</button>
-            <button type="button" class="designer-btn" data-compact="undo"
-                    title="Undo" aria-label="Undo">↶</button>
-            <button type="button" class="designer-btn" data-compact="redo"
-                    title="Redo" aria-label="Redo">↷</button>
-          </div>
           <section class="designer-section designer-section--add" id="dw-add-section">
             <h3 class="designer-sidebar-title" id="dw-add-title">Add</h3>
             <div class="designer-add-tabs" id="dw-add-tabs" role="tablist"
@@ -1269,26 +1324,6 @@ const html = `<!DOCTYPE html><html><head>
           <div class="designer-divider" id="dw-chart-divider" hidden aria-hidden="true"></div>
           <section class="designer-section designer-section--chart" id="dw-chart"
                    aria-label="Chart" hidden></section>
-          <div class="designer-divider" aria-hidden="true"></div>
-          <section class="designer-section designer-section--source">
-            <button id="dw-edit-source" class="designer-btn designer-btn--ghost
-                    designer-btn--block dw-source" type="button">
-              Edit source instead
-            </button>
-            <p class="designer-scope-note">Closes this window and opens the block’s Markdown.</p>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-          <section class="designer-section designer-section--history" id="dw-history"
-                   aria-labelledby="dw-history-title">
-            <h3 class="designer-sidebar-title" id="dw-history-title">History</h3>
-            <div class="designer-history-actions">
-              <button id="dw-undo" class="designer-btn designer-btn--ghost"
-                      type="button" title="Undo" aria-label="Undo" disabled>Undo</button>
-              <button id="dw-redo" class="designer-btn designer-btn--ghost"
-                      type="button" title="Redo" aria-label="Redo" disabled>Redo</button>
-            </div>
-          </section>
         </aside>
         <div class="designer-stage">
           <div class="designer-stage-main">
@@ -1368,10 +1403,13 @@ const html = `<!DOCTYPE html><html><head>
 </div>
 
       </div>
-      <div class="settings-footer designer-footer">
-        <span class="designer-status" id="dw-status" role="status" aria-live="polite"></span>
-        <button id="dw-cancel" class="settings-action">Cancel</button>
-        <button id="dw-apply" class="settings-action settings-action--primary">Apply</button>
+      <div class="settings-footer edit-footer designer-footer">
+        <span id="dw-status" class="designer-status" role="status"
+              aria-live="polite" aria-atomic="true"></span>
+        <button id="dw-cancel" class="settings-action" type="button"
+                aria-keyshortcuts="Escape">Cancel</button>
+        <button id="dw-apply"
+                class="settings-action settings-action--primary" type="button">Apply</button>
       </div>
     </div>
   </div>
@@ -2368,6 +2406,7 @@ evalIn(read("static/vendor/purify.min.js"));
   evalIn(read("static/js/list-edit.js"));
   evalIn(read("static/js/table-view.js"));
   evalIn(read("static/js/table-select.js"));
+  evalIn(read("static/js/edit-window.js"));
   evalIn(read("static/js/table-editor.js"));
 evalIn(read("static/js/watcher.js"));
 evalIn(read("static/js/outline.js"));
@@ -11167,6 +11206,13 @@ function check(label, cond, extra) {
             idxHtml.indexOf("/static/js/table-select.js"));
         check("table editor: sw.js precaches table-editor.js",
           read("static/sw.js").includes('"/static/js/table-editor.js"'));
+        check("table editor: edit-window.js loads before table-editor.js and is precached",
+          idxHtml.indexOf("/static/js/edit-window.js") !== -1 &&
+          idxHtml.indexOf("/static/js/edit-window.js") <
+            idxHtml.indexOf("/static/js/table-editor.js") &&
+          read("static/sw.js").includes('"/static/js/edit-window.js"'));
+        check("table editor: sw.js CACHE is notebook-v26",
+          /const CACHE = "notebook-v26"/.test(read("static/sw.js")));
         check("table editor: module + overlay loaded",
           !!window.NB.tableEditor && !!$("table-editor-overlay"));
 
@@ -11697,6 +11743,24 @@ function check(label, cond, extra) {
           spanGrid.querySelectorAll(".te-cell.is-selected,.te-cell.is-active")
             .length === 0 &&
           !spanGrid.getAttribute("aria-multiselectable"));
+        check("table editor: merged cells disable undo/redo and the chords",
+          $("table-editor-undo").disabled === true &&
+          $("table-editor-redo").disabled === true &&
+          (() => {
+            const before = JSON.stringify(window.NB.tableEditor.getState());
+            const chord = (init) => {
+              $("table-editor-overlay").dispatchEvent(new window.KeyboardEvent(
+                "keydown", Object.assign(
+                  { bubbles: true, cancelable: true }, init)));
+            };
+            chord({ key: "z", ctrlKey: true });
+            chord({ key: "y", ctrlKey: true });
+            window.NB.tableEditor._undo();
+            window.NB.tableEditor._redo();
+            const h = window.NB.tableEditor._history();
+            return JSON.stringify(window.NB.tableEditor.getState()) === before &&
+              h.depth === 1 && h.index === 0 && !h.canUndo && !h.canRedo;
+          })());
         $("te-copy").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         check("table editor: an inert clipboard control explains the refusal",
           /merged cells/i.test($("table-editor-status").textContent),
@@ -11859,15 +11923,46 @@ function check(label, cond, extra) {
             edgeEvt.defaultPrevented);
 
           // At the grid's last cell Tab is left to the footer (not swallowed).
+          // AC45: the history pair now lives in the bar above the body, so
+          // the footer's first enabled control is always Cancel, clean or
+          // dirty. `focusOutsideGrid` reads exactly this list.
           key("ArrowDown");
           key("ArrowDown");
+          const footerFirst = () => Array.from(
+            $("table-editor-overlay").querySelector(".te-footer")
+              .querySelectorAll("button, [href], input, select, textarea"))
+            .find((el) => !el.disabled && !el.hidden &&
+              el.getAttribute("aria-disabled") !== "true") || null;
           const lastEvt = new window.KeyboardEvent("keydown",
             { key: "Tab", bubbles: true, cancelable: true });
           active().dispatchEvent(lastEvt);
           check("table editor: Tab at the grid's last cell leaves to the footer",
             cell(2, 2).classList.contains("is-active") &&
             lastEvt.defaultPrevented &&
-            window.document.activeElement === $("table-editor-cancel"));
+            $("table-editor-undo").disabled === true &&
+            footerFirst() === $("table-editor-cancel"),
+            window.document.activeElement && window.document.activeElement.id);
+
+          // The same Tab-out after a model edit still lands on Cancel, and
+          // Undo above the body is enabled instead.
+          key("Enter");
+          const probeSpan = cell(2, 2).querySelector(".te-cell-text");
+          probeSpan.textContent = "c2 edited";
+          probeSpan.dispatchEvent(new window.Event("input", { bubbles: true }));
+          const editedTab = new window.KeyboardEvent("keydown",
+            { key: "Tab", bubbles: true, cancelable: true });
+          active().dispatchEvent(editedTab);
+          check("table editor: Tab-out after an edit still lands on Cancel",
+            editedTab.defaultPrevented &&
+            $("table-editor-undo").disabled === false &&
+            window.document.activeElement === $("table-editor-cancel") &&
+            footerFirst() === $("table-editor-cancel"),
+            window.document.activeElement && window.document.activeElement.id);
+
+          // Reopen so the rest of the block starts from a clean history
+          // (Cancel is the first enabled footer control again).
+          window.NB.tableEditor._cancel();
+          window.NB.tableEditor.open(tKeys);
 
           // Enter starts editing; while editing it commits and moves down.
           key("ArrowUp");
@@ -11927,13 +12022,16 @@ function check(label, cond, extra) {
             window.document.activeElement &&
               window.document.activeElement.tagName);
 
-          // Tab at the final cell leaves to the first footer control.
+          // Tab at the final cell leaves to the first footer control, which
+          // is Cancel while the history is clean (Undo stays disabled).
           key("ArrowDown");
           key("Enter");
           const finalEdit = new window.KeyboardEvent("keydown",
             { key: "Tab", bubbles: true, cancelable: true });
           active().dispatchEvent(finalEdit);
           check("table editor: Tab in edit mode at the final cell leaves to the footer",
+            $("table-editor-undo").disabled === true &&
+            footerFirst() === $("table-editor-cancel") &&
             window.document.activeElement === $("table-editor-cancel") &&
             finalEdit.defaultPrevented,
             window.document.activeElement &&
@@ -12117,7 +12215,8 @@ function check(label, cond, extra) {
           const ov = $("table-editor-overlay");
           const dialog = ov.querySelector('[role="dialog"]');
           const controls = Array.from(ov.querySelectorAll(
-            ".te-tool, #te-sort-col, #table-editor-cancel, " +
+            ".te-tool, #te-sort-col, #table-editor-undo, " +
+            "#table-editor-redo, #table-editor-cancel, " +
             "#table-editor-apply, #table-editor-close"));
           check("table editor: dialog is a labelled modal titled Edit table",
             dialog && dialog.getAttribute("role") === "dialog" &&
@@ -12125,14 +12224,42 @@ function check(label, cond, extra) {
             dialog.getAttribute("aria-labelledby") === "table-editor-title" &&
             $("table-editor-title").textContent === "Edit table");
           check("table editor: every control has an accessible name or title",
-            controls.length >= 9 && controls.every((n) =>
+            controls.length >= 11 && controls.every((n) =>
               !!(n.getAttribute("aria-label") || n.getAttribute("title") ||
                 n.textContent.trim())),
             "n=" + controls.length);
+          check("table editor: the bar carries Undo and Redo above the body",
+            $("table-editor-undo").classList.contains("edit-bar-btn") &&
+            $("table-editor-redo").classList.contains("edit-bar-btn") &&
+            $("table-editor-undo").parentElement.classList.contains("edit-bar-history") &&
+            $("table-editor-redo").parentElement.classList.contains("edit-bar-history") &&
+            $("table-editor-overlay").querySelector(".edit-bar .edit-bar-history")
+              .contains($("table-editor-undo")) &&
+            !$("table-editor-overlay").querySelector(".te-footer")
+              .contains($("table-editor-undo")) &&
+            $("table-editor-undo").getAttribute("aria-label") === "Undo (Ctrl+Z)" &&
+            $("table-editor-redo").getAttribute("aria-label") ===
+              "Redo (Ctrl+Shift+Z or Ctrl+Y)" &&
+            $("table-editor-undo").nextElementSibling === $("table-editor-redo") &&
+            $("table-editor-undo").disabled && $("table-editor-redo").disabled);
+          check("table editor: the footer is Cancel then Apply only",
+            Array.from($("table-editor-overlay").querySelector(".te-footer")
+              .querySelectorAll("button")).map((b) => b.id).join(",") ===
+              "table-editor-cancel,table-editor-apply");
           check("table editor: toolbar and groups carry accessible roles",
             ov.querySelector('[role="toolbar"][aria-label]') &&
             ov.querySelectorAll('[role="group"][aria-label]').length >= 4 &&
             $("te-sort-col").getAttribute("aria-label"));
+          check("table editor: #table-editor-toolbar lives in .edit-bar-actions, not .te-body",
+            $("table-editor-toolbar").parentElement.classList.contains(
+              "edit-bar-actions") &&
+            !ov.querySelector(".te-body").contains($("table-editor-toolbar")));
+          check("table editor: every window carries the shared edit header/bar/footer",
+            ov.querySelector(".settings-header.edit-header") &&
+            ov.querySelector(".edit-heading") &&
+            ov.querySelector(".edit-badge#table-editor-type") &&
+            ov.querySelector(".edit-bar") &&
+            ov.querySelector(".settings-footer.edit-footer.te-footer"));
         }
 
         // --- AC14: focus containment and return (overlay path) -------
@@ -12505,6 +12632,863 @@ function check(label, cond, extra) {
       atomic.remove();
 
       navTbl.remove();
+    }
+  }
+
+  console.log("== table editor history ==");
+  // AC45/AC46 (docs/product/table-editor.md, docs/architecture/table-editor.md
+  // §5c): the modal keeps its own linear history of the working copy, and it
+  // never reaches the note. jsdom fires no focus events and has no caret, so
+  // the exported model verbs plus the `_history()` hook drive the assertions;
+  // the real-caret and real-keyboard paths live in the browser suite.
+  {
+    const vc = $("viewer-content");
+    const teGrid = $("table-editor-grid");
+    const undoBtn = () => $("table-editor-undo");
+    const redoBtn = () => $("table-editor-redo");
+    const hist = () => window.NB.tableEditor._history();
+    const histIs = (depth, index, canUndo, canRedo) => {
+      const h = hist();
+      return h.mode === "stack" && h.depth === depth && h.index === index &&
+        h.canUndo === canUndo && h.canRedo === canRedo;
+    };
+    const histText = () => JSON.stringify(hist());
+    const mkTe = (inner) => {
+      const t = window.document.createElement("table");
+      t.innerHTML = inner;
+      vc.appendChild(t);
+      window.NB.hybrid.flattenTheads();
+      return t;
+    };
+    const cellEl = (row, col) => teGrid.querySelector(
+      '.te-cell[data-row="' + row + '"][data-col="' + col + '"]');
+    const cellSpan = (row, col) => cellEl(row, col)
+      .querySelector(".te-cell-text");
+    // A press and release enters the cell's text-edit path (startEdit).
+    const tePress = (row, col) => {
+      const td = cellEl(row, col);
+      const base = { bubbles: true, cancelable: true, button: 0,
+        clientX: 1, clientY: 1 };
+      td.dispatchEvent(new window.MouseEvent("pointerdown", base));
+      teGrid.dispatchEvent(new window.MouseEvent("pointerup", base));
+      return td;
+    };
+    // Type into a cell the way the grid sees it: a real `input` event on
+    // the editable span.
+    const typeIn = (row, col, text) => {
+      tePress(row, col);
+      const span = cellSpan(row, col);
+      span.textContent = text;
+      span.dispatchEvent(new window.Event("input", { bubbles: true }));
+      return span;
+    };
+    const chord = (init) => {
+      const ev = new window.KeyboardEvent("keydown", Object.assign(
+        { bubbles: true, cancelable: true }, init));
+      $("table-editor-overlay").dispatchEvent(ev);
+      return ev;
+    };
+
+    // Start from a clean note so "undo to pristine writes nothing" is
+    // assertable without depending on earlier tests' dirty state.
+    await window.NB.hybrid.exit(false);
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+
+    // --- clean open -------------------------------------------------
+    const tHist = mkTe(
+      "<thead><tr><th>Name</th><th>Qty</th></tr></thead>" +
+      "<tbody><tr><td>alpha</td><td>1</td></tr>" +
+      "<tr><td>beta</td><td>2</td></tr></tbody>");
+    window.NB.tableEditor.open(tHist);
+    check("table history: a clean open seeds depth 1 with both buttons disabled",
+      histIs(1, 0, false, false) &&
+      undoBtn().disabled === true && redoBtn().disabled === true,
+      histText() + " undo=" + undoBtn().disabled +
+        " redo=" + redoBtn().disabled);
+
+    // --- the first change pushes one step ---------------------------
+    typeIn(1, 0, "alpha!");
+    check("table history: the first typed character enables Undo",
+      histIs(2, 1, true, false) &&
+      undoBtn().disabled === false && redoBtn().disabled === true,
+      histText());
+
+    // --- undo restores the previous cell, redo reapplies ------------
+    await window.NB.tableEditor._undo();
+    check("table history: _undo() restores the previous cell HTML",
+      window.NB.tableEditor.getState().rows[1].cells[0].html === "alpha" &&
+      cellSpan(1, 0).textContent === "alpha" &&
+      histIs(2, 0, false, true) && redoBtn().disabled === false,
+      histText() + " cell=" + cellSpan(1, 0).textContent);
+    await window.NB.tableEditor._redo();
+    check("table history: _redo() reapplies the change",
+      window.NB.tableEditor.getState().rows[1].cells[0].html === "alpha!" &&
+      cellSpan(1, 0).textContent === "alpha!" && histIs(2, 1, true, false),
+      histText() + " cell=" + cellSpan(1, 0).textContent);
+
+    // --- typing after a redo starts a new step ----------------------
+    // AC45: undo/redo reset the coalescing window (docs/architecture/
+    // table-editor.md §5c), so the next keystroke is its own step. A burst
+    // inside that new step then coalesces. edit-window.js step() clears
+    // lastKind/lastAt before moving, so the first keystroke cannot merge
+    // into the restored snapshot.
+    const burstFrom = hist().index;
+    typeIn(2, 1, "2x");
+    const afterFirstOfBurst = hist().index;
+    typeIn(2, 1, "2xy");
+    check("table history: typing after a redo is a new step, then one burst",
+      afterFirstOfBurst === burstFrom + 1 &&
+      hist().index === afterFirstOfBurst && hist().depth === afterFirstOfBurst + 1,
+      "burstFrom=" + burstFrom + " afterFirst=" + afterFirstOfBurst +
+        " now=" + histText());
+    const beforeSecond = hist().index;
+    typeIn(1, 1, "1x");
+    check("table history: a second cell starts a new step",
+      hist().index === beforeSecond + 1 &&
+      hist().depth === beforeSecond + 2,
+      histText());
+
+    // --- redo tail truncation --------------------------------------
+    const beforeTruncate = hist();
+    await window.NB.tableEditor._undo();
+    check("table history: undo enables Redo",
+      hist().index === beforeTruncate.index - 1 && hist().canRedo === true,
+      histText());
+    await window.NB.tableEditor._undo();
+    typeIn(1, 1, "1z");
+    check("table history: typing after an undo drops the redo branch",
+      hist().canRedo === false &&
+      hist().depth === beforeTruncate.index &&
+      hist().index === beforeTruncate.index - 1,
+      histText() + " before=" + JSON.stringify(beforeTruncate));
+
+    // --- a structural verb is one step, a no-op repeat adds none ----
+    window.NB.tableEditor._select(2, 1, 2, 1);
+    const cellBeforeClear = window.NB.tableEditor.getState()
+      .rows[2].cells[1].html;
+    const beforeClear = hist();
+    window.NB.tableEditor.clearSelection();
+    const afterClear = hist();
+    window.NB.tableEditor.clearSelection();
+    check("table history: a structural verb is one step, a no-op repeat adds none",
+      afterClear.index === beforeClear.index + 1 &&
+      afterClear.depth === beforeClear.depth + 1 &&
+      hist().index === afterClear.index && hist().depth === afterClear.depth,
+      "before=" + JSON.stringify(beforeClear) +
+        " after=" + JSON.stringify(afterClear) + " now=" + histText());
+    await window.NB.tableEditor._undo();
+    check("table history: undoing the structural step restores the cell",
+      window.NB.tableEditor.getState().rows[2].cells[1].html === cellBeforeClear &&
+      cellBeforeClear !== "",
+      JSON.stringify(window.NB.tableEditor.getState().rows[2].cells[1].html) +
+        " expected=" + JSON.stringify(cellBeforeClear));
+
+    // --- the buttons do the same work as the hooks ------------------
+    {
+      const beforeBtn = hist();
+      $("table-editor-undo").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(5);
+      const afterBtnUndo = hist();
+      $("table-editor-redo").dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      await tick(5);
+      check("table history: the footer buttons undo and redo one step each",
+        afterBtnUndo.index === beforeBtn.index - 1 &&
+        hist().index === beforeBtn.index, histText());
+    }
+    window.NB.tableEditor._cancel();
+    if (vc.contains(tHist)) tHist.remove();
+
+    // --- undo to pristine: Apply writes nothing (ragged source) -----
+    // The pristine snapshot stores `changed:false`, so Apply's short-circuit
+    // holds even for a ragged row the padded rebuild can never match.
+    {
+      const tPristine = mkTe(
+        "<thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>" +
+        "<tbody><tr><td>only</td></tr></tbody>");
+      tPristine.setAttribute("data-te-test", "hist-pristine");
+      const mdPristine = window.NB.hybrid.domToMarkdown();
+      window.NB.tableEditor.open(tPristine);
+      typeIn(1, 0, "only-edited");
+      window.NB.tableEditor.insertRowAt(1);
+      check("table history: two mutations leave two undoable steps",
+        histIs(3, 2, true, false), histText());
+      await window.NB.tableEditor._undo();
+      await window.NB.tableEditor._undo();
+      const pristineState = window.NB.tableEditor.getState();
+      check("table history: undo back to pristine restores changed:false",
+        hist().index === 0 && hist().canUndo === false &&
+        pristineState.changed === false &&
+        pristineState.rows.length === 2 &&
+        pristineState.rows[1].cells.length === 3 &&
+        pristineState.rows[1].cells[0].html === "only",
+        histText() + " changed=" + pristineState.changed);
+      window.NB.tableEditor._apply();
+      check("table history: undo to pristine leaves Apply a no-op (ragged source)",
+        !window.NB.tableEditor.isOpen() && vc.contains(tPristine) &&
+        window.NB.hybrid.domToMarkdown() === mdPristine &&
+        window.NB.hybrid.isDirty() === false,
+        "dirty=" + window.NB.hybrid.isDirty());
+      if (vc.contains(tPristine)) tPristine.remove();
+    }
+
+    // --- close drops the history, reopen seeds it -------------------
+    {
+      const tReopen = mkTe(
+        "<thead><tr><th>K</th></tr></thead>" +
+        "<tbody><tr><td>v</td></tr></tbody>");
+      window.NB.tableEditor.open(tReopen);
+      typeIn(1, 0, "v2");
+      check("table history: an edit before close is undoable",
+        histIs(2, 1, true, false), histText());
+      window.NB.tableEditor.close();
+      check("table history: close() drops the stack to depth 0 and disables both",
+        histIs(0, -1, false, false) &&
+        undoBtn().disabled === true && redoBtn().disabled === true, histText());
+      window.NB.tableEditor.open(tReopen);
+      check("table history: reopening seeds one snapshot",
+        histIs(1, 0, false, false) && undoBtn().disabled === true,
+        histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tReopen)) tReopen.remove();
+    }
+
+    // --- keyboard --------------------------------------------------
+    {
+      const tChord = mkTe(
+        "<thead><tr><th>K</th></tr></thead>" +
+        "<tbody><tr><td>v</td></tr></tbody>");
+      window.NB.tableEditor.open(tChord);
+      typeIn(1, 0, "v-typed");
+      const keyed = hist();
+      const zEv = chord({ key: "z", ctrlKey: true });
+      await tick(5);
+      check("table history: Ctrl+Z on the overlay undoes",
+        zEv.defaultPrevented && hist().index === keyed.index - 1 &&
+        hist().canRedo === true &&
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v",
+        histText());
+      // Shift makes the browser report "Z", so the handler must fold case.
+      const shiftZEv = chord({ key: "Z", ctrlKey: true, shiftKey: true });
+      await tick(5);
+      check("table history: Ctrl+Shift+Z redoes",
+        shiftZEv.defaultPrevented && hist().index === keyed.index &&
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v-typed",
+        histText());
+      chord({ key: "z", ctrlKey: true });
+      await tick(5);
+      const yEv = chord({ key: "y", ctrlKey: true });
+      await tick(5);
+      check("table history: Ctrl+Y redoes",
+        yEv.defaultPrevented && hist().index === keyed.index &&
+        hist().canRedo === false, histText());
+      // Cmd on a Mac is the same chord.
+      const metaEv = chord({ key: "z", metaKey: true });
+      await tick(5);
+      check("table history: Cmd+Z is the same chord as Ctrl+Z",
+        metaEv.defaultPrevented && hist().index === keyed.index - 1, histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tChord)) tChord.remove();
+    }
+
+    // --- read-only (merged cells) ignores all three chords ----------
+    {
+      const tSpan = mkTe(
+        "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+        "<tbody><tr><td colspan=\"2\">wide</td></tr></tbody>");
+      window.NB.tableEditor.open(tSpan);
+      const before = JSON.stringify(window.NB.tableEditor.getState());
+      chord({ key: "z", ctrlKey: true });
+      chord({ key: "Z", ctrlKey: true, shiftKey: true });
+      chord({ key: "y", ctrlKey: true });
+      check("table history: a read-only modal ignores Ctrl+Z/Z/Y",
+        window.NB.tableEditor.isBlocked() &&
+        JSON.stringify(window.NB.tableEditor.getState()) === before &&
+        histIs(1, 0, false, false) &&
+        undoBtn().disabled === true && redoBtn().disabled === true, histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tSpan)) tSpan.remove();
+    }
+
+    // --- undo while a cell is being edited --------------------------
+    // The ordinary click-into-a-cell path: undo commits the cell, restores
+    // the previous copy, and puts the caret back in that cell so typing
+    // does not go nowhere.
+    {
+      const tEdit = mkTe(
+        "<thead><tr><th>K</th></tr></thead>" +
+        "<tbody><tr><td>v</td></tr></tbody>");
+      window.NB.tableEditor.open(tEdit);
+      const span = typeIn(1, 0, "v-edit");
+      check("table history: the cell being edited is live before the undo",
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v-edit" &&
+        span.getAttribute("contenteditable") === "true", histText());
+      await window.NB.tableEditor._undo();
+      const backSpan = cellSpan(1, 0);
+      const sel = window.getSelection();
+      const anchored = !!(sel && sel.anchorNode &&
+        (backSpan === sel.anchorNode || backSpan.contains(sel.anchorNode)));
+      check("table history: undo while editing restores the cell and reopens it",
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v" &&
+        backSpan.textContent === "v" &&
+        backSpan.getAttribute("contenteditable") === "true" &&
+        cellEl(1, 0).classList.contains("is-active") &&
+        window.document.activeElement === backSpan && anchored,
+        "editable=" + backSpan.getAttribute("contenteditable") +
+          " active=" + (window.document.activeElement &&
+            window.document.activeElement.className) + " anchored=" + anchored);
+      // Typing again must reach the model: the caret is not dead.
+      backSpan.textContent = "v-retry";
+      backSpan.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check("table history: typing after that undo still writes the model",
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v-retry" &&
+        hist().canRedo === false && hist().index === 1,
+        histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tEdit)) tEdit.remove();
+    }
+
+    // --- the ends of the history are inert --------------------------
+    // restoreStep() tests the bounds before commitEdit(): at an end of the
+    // stack the chord must leave an open cell open, focused, and still
+    // writing to the model.
+    {
+      const tInert = mkTe(
+        "<thead><tr><th>K</th></tr></thead>" +
+        "<tbody><tr><td>v</td></tr></tbody>");
+      window.NB.tableEditor.open(tInert);
+      typeIn(1, 0, "v-top");
+      await window.NB.tableEditor._undo();
+      const bottomSpan = cellSpan(1, 0);
+      const bottomBefore = JSON.stringify(window.NB.tableEditor.getState());
+      const bottomEv = chord({ key: "z", ctrlKey: true });
+      check("table history: Ctrl+Z at index 0 leaves the model and the open cell alone",
+        bottomEv.defaultPrevented &&
+        JSON.stringify(window.NB.tableEditor.getState()) === bottomBefore &&
+        histIs(2, 0, false, true) &&
+        bottomSpan.getAttribute("contenteditable") === "true" &&
+        cellEl(1, 0).classList.contains("is-active") &&
+        window.document.activeElement === bottomSpan,
+        histText() + " editable=" + bottomSpan.getAttribute("contenteditable"));
+      bottomSpan.textContent = "v-live";
+      bottomSpan.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check("table history: typing after the inert bottom chord still writes the model",
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v-live" &&
+        histIs(2, 1, true, false), histText());
+
+      const topSpan = cellSpan(1, 0);
+      const topBefore = JSON.stringify(window.NB.tableEditor.getState());
+      const topShiftEv = chord({ key: "Z", ctrlKey: true, shiftKey: true });
+      const topYEv = chord({ key: "y", ctrlKey: true });
+      check("table history: Ctrl+Shift+Z and Ctrl+Y at the top of the stack are inert",
+        topShiftEv.defaultPrevented && topYEv.defaultPrevented &&
+        JSON.stringify(window.NB.tableEditor.getState()) === topBefore &&
+        histIs(2, 1, true, false) &&
+        topSpan.getAttribute("contenteditable") === "true" &&
+        cellEl(1, 0).classList.contains("is-active") &&
+        window.document.activeElement === topSpan,
+        histText() + " editable=" + topSpan.getAttribute("contenteditable"));
+      topSpan.textContent = "v-live2";
+      topSpan.dispatchEvent(new window.Event("input", { bubbles: true }));
+      check("table history: typing after the inert top chord still writes the model",
+        window.NB.tableEditor.getState().rows[1].cells[0].html === "v-live2" &&
+        hist().index === hist().depth - 1 && hist().canRedo === false, histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tInert)) tInert.remove();
+    }
+
+    // --- a sorted state survives undo -------------------------------
+    {
+      const sortSelect = () => $("te-sort-col");
+      const sortByCol = (col) => {
+        sortSelect().value = String(col);
+        sortSelect().dispatchEvent(new window.Event("change", { bubbles: true }));
+      };
+      const sortMarker = (col) => {
+        const head = cellEl(0, col);
+        return head ? head.getAttribute("aria-sort") : null;
+      };
+      const bodyOrder = () => Array.from(teGrid.querySelectorAll("tbody tr"))
+        .map((tr) => Array.from(tr.cells)
+          .map((c) => c.textContent.trim()).join("|")).join(" / ");
+      const clickTe = (id) => $(id).dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }));
+      const mkSortable = () => mkTe(
+        "<thead><tr><th>Name</th><th>Qty</th><th>Note</th></tr></thead>" +
+        "<tbody><tr><td>cab</td><td>30</td><td>y</td></tr>" +
+        "<tr><td>ape</td><td>10</td><td>z</td></tr>" +
+        "<tr><td>bee</td><td>20</td><td>x</td></tr></tbody>");
+
+      // Undo into a snapshot that is sorted: the sort select is rebuilt from
+      // the PRE-restore value, so the restored column must be written back
+      // after that rebuild or the select falls back to the placeholder.
+      {
+        const tSort = mkSortable();
+        window.NB.tableEditor.open(tSort);
+        const unsorted = bodyOrder();
+        sortByCol(1);
+        const sorted = bodyOrder();
+        check("table history: sorting by a non-first column reorders and names it",
+          sorted === "ape|10|z / bee|20|x / cab|30|y" && sorted !== unsorted &&
+          sortSelect().value === "1" && sortMarker(1) === "ascending" &&
+          hist().index === 1,
+          "order=" + sorted + " select=" + sortSelect().value);
+        typeIn(1, 0, "ape!");
+        await window.NB.tableEditor._undo();
+        check("table history: undoing into a sorted snapshot restores the sort select",
+          sortSelect().value === "1" && sortMarker(1) === "ascending" &&
+          bodyOrder() === sorted,
+          "select=" + JSON.stringify(sortSelect().value) +
+            " marker=" + sortMarker(1) + " order=" + bodyOrder());
+        await window.NB.tableEditor._undo();
+        check("table history: a second undo returns to the unsorted opening state",
+          sortSelect().value === "" && sortMarker(1) === null &&
+          bodyOrder() === unsorted && hist().index === 0,
+          "select=" + JSON.stringify(sortSelect().value) +
+            " marker=" + sortMarker(1) + " order=" + bodyOrder());
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tSort)) tSort.remove();
+      }
+
+      // Sort by the LAST column, then delete a column to its left: the
+      // delete clamps the select to the placeholder, so the undo has to name
+      // the restored column itself rather than keep the stale value.
+      {
+        const tSort2 = mkSortable();
+        window.NB.tableEditor.open(tSort2);
+        sortByCol(2);
+        const sorted2 = bodyOrder();
+        check("table history: sorting by the last column marks that header",
+          sorted2 === "bee|20|x / cab|30|y / ape|10|z" &&
+          sortSelect().value === "2" && sortMarker(2) === "ascending",
+          "order=" + sorted2 + " select=" + sortSelect().value);
+        window.NB.tableEditor._select(0, 0, 1, 0);
+        clickTe("te-delete-col");
+        check("table history: deleting the column to the left clamps the sort select",
+          window.NB.tableEditor.getState().cols === 2 &&
+          sortSelect().value === "",
+          "cols=" + window.NB.tableEditor.getState().cols +
+            " select=" + JSON.stringify(sortSelect().value));
+        await window.NB.tableEditor._undo();
+        check("table history: undoing that delete names the restored sorted column",
+          window.NB.tableEditor.getState().cols === 3 &&
+          sortSelect().value === "2" && sortMarker(2) === "ascending" &&
+          bodyOrder() === sorted2,
+          "cols=" + window.NB.tableEditor.getState().cols +
+            " select=" + JSON.stringify(sortSelect().value) +
+            " marker=" + sortMarker(2));
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tSort2)) tSort2.remove();
+      }
+
+      // --- the capture is taken after the sort bookkeeping ----------
+      // A sort, its direction flip, and a transpose all capture state they
+      // have just written; the redo snapshot proves the capture site.
+      {
+        const tCapSort = mkSortable();
+        window.NB.tableEditor.open(tCapSort);
+        const unsorted = bodyOrder();
+        sortByCol(1);
+        const asc = bodyOrder();
+        await window.NB.tableEditor._undo();
+        check("table history: sorting then undoing restores the pre-sort order and no sort",
+          bodyOrder() === unsorted && sortSelect().value === "" &&
+          sortMarker(1) === null && hist().index === 0,
+          "order=" + bodyOrder() + " select=" + JSON.stringify(sortSelect().value));
+        await window.NB.tableEditor._redo();
+        check("table history: redoing the sort restores its order and marker",
+          bodyOrder() === asc && sortSelect().value === "1" &&
+          sortMarker(1) === "ascending" && hist().canRedo === false,
+          "order=" + bodyOrder() + " select=" + sortSelect().value +
+            " marker=" + sortMarker(1));
+
+        clickTe("te-sort-dir");
+        const desc = bodyOrder();
+        check("table history: flipping the direction re-sorts and marks the header",
+          desc !== asc && desc === "cab|30|y / bee|20|x / ape|10|z" &&
+          sortSelect().value === "1" && sortMarker(1) === "descending",
+          "order=" + desc + " marker=" + sortMarker(1));
+        typeIn(1, 0, "cab!");
+        await window.NB.tableEditor._undo();
+        check("table history: a descending sort is part of the snapshot",
+          sortMarker(1) === "descending" && bodyOrder() === desc &&
+          sortSelect().value === "1",
+          "order=" + bodyOrder() + " marker=" + sortMarker(1));
+        await window.NB.tableEditor._undo();
+        check("table history: undoing the direction flip restores the ascending sort",
+          bodyOrder() === asc && sortMarker(1) === "ascending" &&
+          sortSelect().value === "1",
+          "order=" + bodyOrder() + " marker=" + sortMarker(1));
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tCapSort)) tCapSort.remove();
+      }
+
+      // --- transpose captures sortedCol = -1 ------------------------
+      {
+        const tTrans = mkSortable();
+        window.NB.tableEditor.open(tTrans);
+        sortByCol(1);
+        const sorted = bodyOrder();
+        clickTe("te-transpose");
+        check("table history: transpose clears the sort marker and the grid",
+          hist().index === 2 && window.NB.tableEditor.getState().cols === 4 &&
+          bodyOrder() !== sorted && sortMarker(1) === null,
+          "cols=" + window.NB.tableEditor.getState().cols +
+            " marker=" + sortMarker(1));
+        await window.NB.tableEditor._undo();
+        check("table history: undoing a transpose restores the sorted grid",
+          window.NB.tableEditor.getState().cols === 3 && bodyOrder() === sorted &&
+          sortSelect().value === "1" && sortMarker(1) === "ascending",
+          "cols=" + window.NB.tableEditor.getState().cols +
+            " order=" + bodyOrder() + " select=" + sortSelect().value +
+            " marker=" + sortMarker(1));
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tTrans)) tTrans.remove();
+      }
+      {
+        const tTrans2 = mkSortable();
+        window.NB.tableEditor.open(tTrans2);
+        const before = bodyOrder();
+        clickTe("te-transpose");
+        await window.NB.tableEditor._undo();
+        check("table history: undoing a transpose of an unsorted grid restores sortedCol -1",
+          window.NB.tableEditor.getState().cols === 3 && bodyOrder() === before &&
+          sortSelect().value === "" && sortMarker(0) === null &&
+          sortMarker(1) === null && sortMarker(2) === null,
+          "cols=" + window.NB.tableEditor.getState().cols +
+            " select=" + JSON.stringify(sortSelect().value));
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tTrans2)) tTrans2.remove();
+      }
+
+      // --- every structural verb is exactly one undo step -----------
+      {
+        const tVerb = mkSortable();
+        window.NB.tableEditor.open(tVerb);
+        // `changed` is not part of the comparison: a verb that only flipped
+        // it would look like a real mutation.
+        const plainState = () => {
+          const s = window.NB.tableEditor.getState();
+          return JSON.stringify({ cols: s.cols, rows: s.rows });
+        };
+        const verb = async (label, fn) => {
+          const before = plainState();
+          const h0 = hist();
+          fn();
+          const h1 = hist();
+          const changed = plainState() !== before;
+          await window.NB.tableEditor._undo();
+          const restored = plainState() === before;
+          const h2 = hist();
+          check("table history: " + label + " is one step and one undo restores it",
+            changed && h1.index === h0.index + 1 && h1.canRedo === false &&
+            restored && h2.index === h0.index &&
+            h2.canUndo === h0.canUndo,
+            "h0=" + JSON.stringify(h0) + " h1=" + JSON.stringify(h1) +
+              " h2=" + JSON.stringify(h2) + " changed=" + changed +
+              " restored=" + restored + " state=" + plainState().slice(0, 80));
+        };
+        window.NB.tableEditor._select(1, 1, 1, 1);
+        await verb("an alignment cycle", () => clickTe("te-align-col"));
+        await verb("inserting a row", () => window.NB.tableEditor.insertRowAt(1));
+        await verb("inserting a column", () => window.NB.tableEditor.insertColAt(1));
+        await verb("moving a row", () => window.NB.tableEditor.moveRowTo(1, 2));
+        await verb("moving a column", () => window.NB.tableEditor.moveColTo(0, 2));
+        await verb("deleting a row", () => {
+          window.NB.tableEditor._select(1, 0, 1, 0);
+          clickTe("te-delete-row");
+        });
+        await verb("deleting a column", () => {
+          window.NB.tableEditor._select(0, 1, 1, 1);
+          clickTe("te-delete-col");
+        });
+        window.NB.tableEditor._cancel();
+        if (vc.contains(tVerb)) tVerb.remove();
+      }
+    }
+
+    // --- a burst in a new cell is one step ---------------------------
+    // commitEdit() calls hist.breakCoalesce() (table-editor.js:337) when a
+    // cell edit ends, so entering another cell closes the previous typing
+    // window. The next burst therefore starts its own step and coalesces
+    // inside it, even after a prior edit.
+    {
+      const tBurst = mkTe(
+        "<thead><tr><th>K</th><th>V</th></tr></thead>" +
+        "<tbody><tr><td>a</td><td>1</td></tr></tbody>");
+      tBurst.setAttribute("data-te-test", "hist-burst");
+      window.NB.tableEditor.open(tBurst);
+      typeIn(1, 0, "a1");
+      const burstA = hist().index;
+      typeIn(1, 0, "a12");
+      check("table history: a burst in the first cell is one step",
+        hist().index === burstA && hist().depth === burstA + 1, histText());
+      typeIn(1, 1, "9");
+      const burstB = hist().index;
+      typeIn(1, 1, "98");
+      check("table history: a burst in a newly entered cell is one step",
+        hist().index === burstB && hist().depth === burstB + 1,
+        "burstB=" + burstB + " now=" + histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tBurst)) tBurst.remove();
+    }
+
+    // --- a keystroke after a redo starts a new step ------------------
+    // docs/architecture/table-editor.md §5c says undo/redo reset the
+    // coalescing window. The restored cell is re-entered in edit mode, and
+    // step() clears lastKind/lastAt, so a keystroke after a redo pushes a new
+    // step instead of rewriting the restored one.
+    {
+      const tRedo = mkTe(
+        "<thead><tr><th>K</th></tr></thead>" +
+        "<tbody><tr><td>r</td></tr></tbody>");
+      tRedo.setAttribute("data-te-test", "hist-redo-burst");
+      window.NB.tableEditor.open(tRedo);
+      typeIn(1, 0, "r1");
+      typeIn(1, 0, "r12");
+      await window.NB.tableEditor._undo();
+      await window.NB.tableEditor._redo();
+      const redoTop = hist();
+      typeIn(1, 0, "r123");
+      check("table history: a keystroke after a redo starts a new step",
+        hist().depth === redoTop.depth + 1 &&
+        hist().index === redoTop.index + 1,
+        "redoTop=" + JSON.stringify(redoTop) + " now=" + histText());
+      window.NB.tableEditor._cancel();
+      if (vc.contains(tRedo)) tRedo.remove();
+    }
+
+    // --- the history cap --------------------------------------------
+    // HISTORY_LIMIT counts snapshots INCLUDING the opening one, so the
+    // 100th mutation shifts the opening snapshot (changed:false) off the
+    // bottom. That is the documented cost: after the cap trims it, Apply is
+    // no longer guaranteed to be a no-op.
+    {
+      const CAP = 100;
+      const N = 105;
+      const tCap = mkTe(
+        "<thead><tr><th>K</th><th>V</th></tr></thead>" +
+        "<tbody><tr><td>a</td><td>1</td></tr></tbody>");
+      tCap.setAttribute("data-te-test", "hist-cap");
+      const mdCap = window.NB.hybrid.domToMarkdown();
+      window.NB.tableEditor.open(tCap);
+      for (let i = 0; i < N; i++) window.NB.tableEditor.insertRowAt(1);
+      check("table history: the stack caps at 100 snapshots and index 99",
+        histIs(CAP, CAP - 1, true, false), histText());
+      for (let i = 0; i < CAP - 1; i++) await window.NB.tableEditor._undo();
+      const bottom = hist();
+      const bottomState = window.NB.tableEditor.getState();
+      const trimmed = 1 + N - CAP;
+      check("table history: 99 undos reach index 0 with nothing left to undo",
+        bottom.index === 0 && bottom.depth === CAP && bottom.canUndo === false &&
+        bottom.canRedo === true, histText());
+      check("table history: the cap drops the opening snapshot, so index 0 is changed",
+        bottomState.changed === true &&
+        bottomState.rows.length === 2 + trimmed,
+        histText() + " changed=" + bottomState.changed +
+          " rows=" + bottomState.rows.length + " expected=" + (2 + trimmed));
+      window.NB.tableEditor._apply();
+      check("table history: past the cap, undo-all then Apply is no longer a no-op",
+        !window.NB.tableEditor.isOpen() &&
+        window.NB.hybrid.domToMarkdown() !== mdCap &&
+        window.NB.hybrid.isDirty() === true,
+        "dirty=" + window.NB.hybrid.isDirty());
+      const capTable = vc.querySelector('table[data-te-test="hist-cap"]');
+      if (capTable) capTable.remove();
+    }
+  }
+
+  console.log("== shared edit-window engine ==");
+  // The engine behind all three windows: stack mode owns the snapshots and
+  // the char cap; delegate mode leaves history to the body. These tests
+  // build a throwaway overlay + button pair and drive the module directly.
+  {
+    const doc = window.document;
+    let seq = 0;
+    function makeEngine(opts) {
+      const prefix = "ew-test-" + (++seq);
+      let alive = true;
+      const overlay = doc.createElement("div");
+      overlay.className = "settings-overlay";
+      overlay.innerHTML =
+        '<div class="edit-bar">' +
+        '<div class="edit-bar-actions"></div>' +
+        '<div class="edit-bar-history">' +
+        '<button id="' + prefix + '-undo" class="edit-bar-btn" ' +
+        'type="button" disabled></button>' +
+        '<button id="' + prefix + '-redo" class="edit-bar-btn" ' +
+        'type="button" disabled></button>' +
+        "</div></div>";
+      doc.body.appendChild(overlay);
+      const engine = window.NB.editWindow.attach(Object.assign({
+        overlay: overlay,
+        prefix: prefix,
+        isOpen: () => alive,
+      }, opts));
+      return {
+        engine: engine,
+        undoBtn: () => doc.getElementById(prefix + "-undo"),
+        redoBtn: () => doc.getElementById(prefix + "-redo"),
+        cleanup: () => {
+          alive = false;      // retire the document-level chord listener
+          engine.clear();
+          overlay.remove();
+        },
+      };
+    }
+
+    // --- maxChars: the size cap evicts the oldest entries ----------
+    {
+      const live = { value: "" };
+      const restored = [];
+      const h = makeEngine({
+        maxChars: 120,
+        snapshot: () => live.value,
+        restore: (v) => { restored.push(v); return true; },
+      });
+      const values = [
+        "A".repeat(10),
+        "B".repeat(20),
+        "C".repeat(30),
+        "D".repeat(40),
+        "E".repeat(50),
+      ];
+      live.value = values[0];
+      h.engine.reset();
+      for (let i = 1; i < values.length; i++) {
+        live.value = values[i];
+        h.engine.capture("structural");
+      }
+      let info = h.engine.info();
+      const surviving = values.slice(values.length - info.depth);
+      check("edit-window cap: the oldest entries are evicted to fit maxChars",
+        info.mode === "stack" && info.depth === 3 && info.index === 2 &&
+        info.canUndo === true && info.canRedo === false,
+        JSON.stringify(info));
+      check("edit-window cap: the retained entries fit the cap",
+        surviving.reduce((n, v) => n + v.length, 0) <= 120 &&
+        surviving.length === info.depth,
+        "retained=" + JSON.stringify(surviving.map((v) => v.length)));
+      await h.engine.undo();
+      check("edit-window cap: index still points at the live tail after undo",
+        h.engine.info().index === 1 && restored[restored.length - 1] === values[3],
+        "index=" + h.engine.info().index +
+          " restored=" + (restored[restored.length - 1] || "").length);
+      await h.engine.undo();
+      await h.engine.redo();
+      await h.engine.redo();
+      check("edit-window cap: redo returns to the newest retained snapshot",
+        h.engine.info().index === 2 && h.engine.info().canRedo === false &&
+        restored[restored.length - 1] === values[4],
+        "index=" + h.engine.info().index +
+          " restored=" + (restored[restored.length - 1] || "").length);
+      h.cleanup();
+    }
+
+    // --- maxChars: one oversized snapshot is kept, not the tail ----
+    {
+      const live = { value: "" };
+      const h = makeEngine({
+        maxChars: 120,
+        snapshot: () => live.value,
+        restore: () => true,
+      });
+      live.value = "X".repeat(200);
+      h.engine.reset();
+      live.value = "Y".repeat(50);
+      h.engine.capture("structural");
+      check("edit-window cap: a cap-crossing capture leaves one entry",
+        h.engine.info().depth === 1 && h.engine.info().index === 0 &&
+        h.engine.info().canUndo === false,
+        JSON.stringify(h.engine.info()));
+      live.value = "Z".repeat(200);
+      h.engine.capture("structural");
+      check("edit-window cap: an oversized current snapshot is kept in place",
+        h.engine.info().depth === 1 && h.engine.info().index === 0 &&
+        h.engine.info().canUndo === false && h.engine.info().canRedo === false,
+        JSON.stringify(h.engine.info()));
+      h.cleanup();
+    }
+
+    // --- breakCoalesce splits a typing burst into two steps --------
+    {
+      const live = { value: "" };
+      const h = makeEngine({
+        snapshot: () => live.value,
+        restore: () => true,
+      });
+      live.value = "A";
+      h.engine.capture("text");
+      live.value = "AB";
+      h.engine.capture("text");
+      check("edit-window coalesce: a text burst without breakCoalesce is one step",
+        h.engine.info().depth === 1 && h.engine.info().index === 0 &&
+        h.engine.info().canUndo === false,
+        JSON.stringify(h.engine.info()));
+      live.value = "ABC";
+      h.engine.breakCoalesce();
+      h.engine.capture("text");
+      check("edit-window coalesce: breakCoalesce makes the next burst a new step",
+        h.engine.info().depth === 2 && h.engine.info().index === 1 &&
+        h.engine.info().canUndo === true,
+        JSON.stringify(h.engine.info()));
+      h.cleanup();
+    }
+
+    // --- the mode reported to the caller ---------------------------
+    {
+      const stack = makeEngine({
+        snapshot: () => "v",
+        restore: () => true,
+      });
+      check("edit-window mode: snapshot/restore attaches in stack mode",
+        stack.engine.info().mode === "stack", stack.engine.info().mode);
+      stack.cleanup();
+
+      let undoCalls = 0;
+      const delegate = makeEngine({
+        undo: () => { undoCalls++; },
+        redo: () => {},
+        canUndo: () => true,
+        canRedo: () => false,
+      });
+      check("edit-window mode: undo/redo/canUndo/canRedo attaches in delegate mode",
+        delegate.engine.info().mode === "delegate", delegate.engine.info().mode);
+      check("edit-window mode: a delegate capture adds no local entries",
+        (delegate.engine.capture("structural"), delegate.engine.info().depth === 0),
+        JSON.stringify(delegate.engine.info()));
+      await delegate.engine.undo();
+      check("edit-window mode: delegate undo calls the body's undo()",
+        undoCalls === 1, "calls=" + undoCalls);
+      delegate.cleanup();
+    }
+
+    // --- a failed restore reverts the index and reports -----------
+    {
+      const live = { value: "" };
+      const errors = [];
+      const h = makeEngine({
+        snapshot: () => live.value,
+        restore: () => false,
+        onError: (msg) => errors.push(msg),
+      });
+      live.value = "one";
+      h.engine.reset();
+      live.value = "two";
+      h.engine.capture("structural");
+      const before = h.engine.info();
+      await h.engine.undo();
+      const after = h.engine.info();
+      check("edit-window restore: a failed restore keeps the previous index",
+        before.index === 1 && after.index === 1 && after.canUndo === true,
+        "before=" + JSON.stringify(before) + " after=" + JSON.stringify(after));
+      check("edit-window restore: a failed restore calls onError",
+        errors.length === 1 && /could not be restored/.test(errors[0]),
+        JSON.stringify(errors));
+      h.cleanup();
     }
   }
 
@@ -33656,30 +34640,68 @@ function check(label, cond, extra) {
         idxHtml.indexOf("/static/js/mermaid-designer.js") !== -1);
       check("designer: mermaid-designer.js is in sw.js PRECACHE",
         swJs.indexOf("/static/js/mermaid-designer.js") !== -1);
+      check("designer: index.html imports the shared edit-window macros",
+        /\{%\s*from\s+"_edit_window\.html"\s+import\s+edit_header,\s*edit_bar,\s*edit_footer\s*%\}/.test(idxHtml));
+      {
+        const count = (re) => (idxHtml.match(re) || []).length;
+        const headers = count(/\{\{\s*edit_header\(/g);
+        const bars = count(/\{%\s*call\s+edit_bar\(/g);
+        const footers = count(/\{\{\s*edit_footer\(/g);
+        check("designer: index.html calls each edit-window macro three times",
+          headers === 3 && bars === 3 && footers === 3,
+          "header=" + headers + " bar=" + bars + " footer=" + footers);
+        check("designer: each edit_bar is a {% call %} so the caller content is used",
+          !/\{\{\s*edit_bar\s*\(/.test(idxHtml) &&
+          ["table-editor", "designer", "dw"].every(
+            (p) => idxHtml.indexOf('{% call edit_bar("' + p + '") %}') !== -1),
+          "bare=" + (idxHtml.match(/\{\{\s*edit_bar\s*\(/g) || []).length);
+      }
       check("designer: visimer.bundle.js is NOT eagerly loaded by index.html",
         idxHtml.indexOf("visimer.bundle.js") === -1);
       check("designer: visimer.bundle.js is NOT in sw.js PRECACHE",
         swJs.indexOf("visimer.bundle.js") === -1);
-      // The stage toolbar was removed: its controls moved into
-      // #designer-sidebar as icon buttons. The template must no longer carry
-      // the old toolbar, but must carry the tool/history ids the module
-      // binds at eval time.
+      // The stage toolbar was removed and the sidebar's Tools/History
+      // sections are gone: the tool pair and the history pair now live in
+      // the shared edit bar. #designer-tool-select / -connect stay literal
+      // in index.html (they are the caller content); the history pair is
+      // templated by _edit_window.html, so index.html must only carry the
+      // macro calls.
       check("designer: #designer-toolbar is gone from index.html",
         idxHtml.indexOf('id="designer-toolbar"') === -1);
-      for (const id of ["designer-tool-select", "designer-tool-connect",
-        "designer-undo", "designer-redo"]) {
+      for (const id of ["designer-tool-select", "designer-tool-connect"]) {
         check("designer: #" + id + " is in index.html",
           idxHtml.indexOf('id="' + id + '"') !== -1);
       }
-      // The add action lives in the sidebar palette; the sidebar carries
-      // Tools / Add / History sections. All must be present in the template.
+      // The add action lives in the sidebar palette; the sidebar carries the
+      // Add and Chart sections only.
       check("designer: #designer-tool-addnode is gone from index.html",
         idxHtml.indexOf("designer-tool-addnode") === -1);
       for (const id of ["designer-sidebar", "designer-add-title", "designer-palette",
-        "designer-tools-title", "designer-history-title"]) {
+        "designer-chart"]) {
         check("designer: #" + id + " is in index.html",
           idxHtml.indexOf('id="' + id + '"') !== -1);
       }
+      // History is above the body now; the sidebar section is removed and
+      // the shared macro file owns the bar pair.
+      for (const gone of ["designer-history-title", "designer-section--history"]) {
+        check("designer: " + gone + " is gone from index.html",
+          idxHtml.indexOf(gone) === -1);
+      }
+      const editMacro = read("templates/_edit_window.html");
+      check("designer: _edit_window.html templates #designer-undo and #designer-redo",
+        editMacro.indexOf('id="{{ prefix }}-undo"') !== -1 &&
+        editMacro.indexOf('id="{{ prefix }}-redo"') !== -1);
+      check("designer: _edit_window.html owns the header/bar/footer structure",
+        /macro edit_header\(/.test(editMacro) &&
+        /macro edit_bar\(/.test(editMacro) &&
+        /macro edit_footer\(/.test(editMacro) &&
+        editMacro.indexOf('class="edit-bar"') !== -1 &&
+        editMacro.indexOf('class="edit-bar-actions"') !== -1 &&
+        editMacro.indexOf('class="edit-bar-history"') !== -1 &&
+        editMacro.indexOf("{{ caller() }}") !== -1);
+      check("designer: the bar chips Add and Chart are in index.html",
+        idxHtml.indexOf('id="designer-bar-add"') !== -1 &&
+        idxHtml.indexOf('id="designer-bar-chart"') !== -1);
       // The narrow Visimer global must re-export the headless capability
       // probe mermaid-designer.js's capabilityFor() calls.
       const entrySrc = read("static/vendor/visimer.entry.js");
@@ -34628,6 +35650,8 @@ function check(label, cond, extra) {
       await tick(80);
       contentChanges = 0;
       __visimer.undos = 0;
+      __visimer.canUndo = true;
+      __visimer.canRedo = false;
       const ev = new window.KeyboardEvent("keydown",
         { key: "z", ctrlKey: true, bubbles: true, cancelable: true });
       window.document.dispatchEvent(ev);
@@ -34638,6 +35662,124 @@ function check(label, cond, extra) {
         __visimer.undos === 1 && contentChanges === 0);
       clickEv($("designer-cancel"));
       await tick(20);
+    }
+
+    // --- Ctrl+Y redo routing, and the vendor-owned canvas Ctrl+Z -----
+    // The history chords live on the document listener, not the overlay:
+    // text fields keep native undo (the designer-shell.js rule), the canvas
+    // keeps Visimer's own z / shift+z (it does not stop propagation, so
+    // intercepting there would undo twice), and Ctrl+Y is the module's
+    // everywhere because Visimer binds no y.
+    {
+      const hit = window.NB.hybrid.codeBlockAt(vc.querySelector(".mermaid-container"));
+      window.NB.mermaidDesign.open(hit);
+      await tick(80);
+      const canvas = $("designer-canvas");
+      const keyOn = (target, init) => {
+        const ev = new window.KeyboardEvent("keydown",
+          Object.assign({ bubbles: true, cancelable: true }, init));
+        target.dispatchEvent(ev);
+        return ev;
+      };
+      contentChanges = 0;
+
+      __visimer.redos = 0;
+      __visimer.canRedo = true;
+      const canvasY = keyOn(canvas, { key: "y", ctrlKey: true });
+      await tick(20);
+      check("designer: Ctrl+Y on the canvas redoes the diagram",
+        canvasY.defaultPrevented && __visimer.redos === 1 &&
+        contentChanges === 0,
+        "redos=" + __visimer.redos + " contentChanges=" + contentChanges);
+
+      __visimer.redos = 0;
+      __visimer.canRedo = true;
+      const bodyY = keyOn(window.document.body, { key: "y", ctrlKey: true });
+      await tick(20);
+      check("designer: Ctrl+Y outside the canvas also redoes",
+        bodyY.defaultPrevented && __visimer.redos === 1 &&
+        contentChanges === 0, "redos=" + __visimer.redos);
+
+      // An inspector field (built at runtime) keeps native undo/redo.
+      const inspectorInput = window.document.createElement("input");
+      inspectorInput.type = "text";
+      inspectorInput.id = "designer-test-inspector-field";
+      $("designer-inspector-body").appendChild(inspectorInput);
+      __visimer.undos = 0;
+      __visimer.redos = 0;
+      const fieldZ = keyOn(inspectorInput, { key: "z", ctrlKey: true });
+      const fieldY = keyOn(inspectorInput, { key: "y", ctrlKey: true });
+      await tick(20);
+      check("designer: an inspector field keeps native Ctrl+Z and Ctrl+Y",
+        !fieldZ.defaultPrevented && !fieldY.defaultPrevented &&
+        __visimer.undos === 0 && __visimer.redos === 0 &&
+        contentChanges === 0,
+        "undos=" + __visimer.undos + " redos=" + __visimer.redos);
+      // The sidebar's own text field follows the same rule.
+      __visimer.undos = 0;
+      const pieZ = keyOn($("designer-pie-title"), { key: "z", ctrlKey: true });
+      await tick(20);
+      check("designer: a sidebar text field keeps native Ctrl+Z",
+        !pieZ.defaultPrevented && __visimer.undos === 0);
+      inspectorInput.remove();
+
+      // The guard is a tag list, not just <input>: a <select> and a
+      // <textarea> keep the browser's own history too, so the document
+      // handler must decline for them as well.
+      const inspectorSelect = window.document.createElement("select");
+      inspectorSelect.id = "designer-test-inspector-select";
+      const probeOpt = window.document.createElement("option");
+      probeOpt.value = "a";
+      probeOpt.textContent = "A";
+      inspectorSelect.appendChild(probeOpt);
+      const inspectorArea = window.document.createElement("textarea");
+      inspectorArea.id = "designer-test-inspector-area";
+      $("designer-inspector-body").appendChild(inspectorSelect);
+      $("designer-inspector-body").appendChild(inspectorArea);
+      __visimer.undos = 0;
+      __visimer.redos = 0;
+      const selectZ = keyOn(inspectorSelect, { key: "z", ctrlKey: true });
+      const selectY = keyOn(inspectorSelect, { key: "y", ctrlKey: true });
+      const areaZ = keyOn(inspectorArea, { key: "z", ctrlKey: true });
+      const areaY = keyOn(inspectorArea, { key: "y", ctrlKey: true });
+      const areaShiftZ = keyOn(inspectorArea,
+        { key: "Z", ctrlKey: true, shiftKey: true });
+      await tick(20);
+      check("designer: a select keeps native Ctrl+Z and Ctrl+Y",
+        !selectZ.defaultPrevented && !selectY.defaultPrevented &&
+        __visimer.undos === 0 && __visimer.redos === 0 &&
+        contentChanges === 0,
+        "undos=" + __visimer.undos + " redos=" + __visimer.redos);
+      check("designer: a textarea keeps native Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z",
+        !areaZ.defaultPrevented && !areaY.defaultPrevented &&
+        !areaShiftZ.defaultPrevented &&
+        __visimer.undos === 0 && __visimer.redos === 0 &&
+        contentChanges === 0,
+        "undos=" + __visimer.undos + " redos=" + __visimer.redos);
+      inspectorSelect.remove();
+      inspectorArea.remove();
+
+      // Canvas Ctrl+Z stays vendor-owned: exactly the editor's own undo,
+      // never a second one from the document listener.
+      __visimer.undos = 0;
+      const canvasZ = keyOn(canvas, { key: "z", ctrlKey: true });
+      await tick(20);
+      check("designer: canvas Ctrl+Z is left to the vendor (no double undo)",
+        !canvasZ.defaultPrevented && __visimer.undos === 0 &&
+        contentChanges === 0, "undos=" + __visimer.undos);
+      const canvasShiftZ = keyOn(canvas,
+        { key: "Z", ctrlKey: true, shiftKey: true });
+      await tick(20);
+      check("designer: canvas Ctrl+Shift+Z is left to the vendor too",
+        !canvasShiftZ.defaultPrevented && __visimer.undos === 0 &&
+        __visimer.redos === 0);
+
+      check("designer: the history chords never write the note",
+        contentChanges === 0 && !overlay.hidden);
+      clickEv($("designer-cancel"));
+      await tick(20);
+      check("designer: the history-chord block leaves the modal closed",
+        overlay.hidden);
     }
 
     // --- abort paths: a stale target writes nothing -----------------
@@ -34831,128 +35973,192 @@ function check(label, cond, extra) {
         !!errEl && errEl.tabIndex === 0, errEl ? "tabIndex=" + errEl.tabIndex : "no error block");
     }
 
-    // --- sidebar controls: Tools (Select/Connect) + History (Undo/Redo) ---
-    // The stage toolbar was removed; its controls moved into #designer-sidebar
-    // as icon buttons. These checks drive the real click handlers in
-    // mermaid-designer.js against the fake canvas and assert the state
-    // machine: the buttons live in the sidebar, it is hidden until ready,
-    // aria-pressed mirrors the view's toolChange, the history buttons track
-    // canUndo/canRedo, and everything resets on close.
-    console.log("== designer sidebar controls ==");
+    // --- bar controls: Tools (Select/Connect) + History (Undo/Redo) ---
+    // The stage toolbar was removed and the controls moved into the shared
+    // edit bar: Select/Connect are caller content in .edit-bar-actions, the
+    // history pair lives in .edit-bar-history. The sidebar keeps only the
+    // Add palette and the Chart section. These checks drive the real click
+    // handlers in mermaid-designer.js against the fake canvas and assert the
+    // state machine: the bar owns the buttons, the sidebar is hidden until
+    // ready, aria-pressed mirrors the view's toolChange, the history buttons
+    // track canUndo/canRedo, and everything resets on close.
+    console.log("== designer bar controls ==");
     {
       const sidebar = $("designer-sidebar");
       const selBtn = $("designer-tool-select");
       const conBtn = $("designer-tool-connect");
+      const barAdd = $("designer-bar-add");
+      const barChart = $("designer-bar-chart");
       const toolUndo = $("designer-undo");
       const toolRedo = $("designer-redo");
+      const bar = overlay.querySelector(".edit-bar");
+      const barActions = overlay.querySelector(".edit-bar-actions");
+      const barHistory = overlay.querySelector(".edit-bar-history");
+      const footer = overlay.querySelector(".designer-footer");
 
-      // --- fixture markup: tools + history live in the sidebar -------
-      check("designer sidebar controls: #designer-sidebar exists", !!sidebar);
-      check("designer sidebar controls: Select/Connect are descendants of #designer-sidebar",
-        !!sidebar && sidebar.contains(selBtn) && sidebar.contains(conBtn));
-      check("designer sidebar controls: Undo/Redo are descendants of #designer-sidebar",
-        !!sidebar && sidebar.contains(toolUndo) && sidebar.contains(toolRedo));
-      check("designer sidebar controls: tool + history buttons carry designer-iconbtn",
-        !!selBtn && !!conBtn && !!toolUndo && !!toolRedo &&
-        selBtn.classList.contains("designer-iconbtn") &&
-        conBtn.classList.contains("designer-iconbtn") &&
-        toolUndo.classList.contains("designer-iconbtn") &&
-        toolRedo.classList.contains("designer-iconbtn"));
-      check("designer sidebar controls: Select/Connect carry aria-pressed; Undo/Redo start disabled",
+      // --- fixture markup: tools + history live in the bar -----------
+      check("designer bar controls: #designer-sidebar exists", !!sidebar);
+      check("designer bar controls: Select/Connect live in .edit-bar-actions, not the sidebar",
+        !!barActions && barActions.contains(selBtn) && barActions.contains(conBtn) &&
+        !sidebar.contains(selBtn) && !sidebar.contains(conBtn));
+      check("designer bar controls: Undo/Redo live in .edit-bar-history, not the sidebar or footer",
+        !!barHistory && barHistory.contains(toolUndo) && barHistory.contains(toolRedo) &&
+        !sidebar.contains(toolUndo) && !sidebar.contains(toolRedo) &&
+        !footer.contains(toolUndo) && !footer.contains(toolRedo));
+      check("designer bar controls: the history pair carries edit-bar-btn",
+        !!toolUndo && !!toolRedo &&
+        toolUndo.classList.contains("edit-bar-btn") &&
+        toolRedo.classList.contains("edit-bar-btn") &&
+        toolUndo.getAttribute("aria-label") === "Undo (Ctrl+Z)" &&
+        toolRedo.getAttribute("aria-label") === "Redo (Ctrl+Shift+Z or Ctrl+Y)");
+      check("designer bar controls: Select/Connect carry aria-pressed; Undo/Redo start disabled",
         !!selBtn && !!conBtn && !!toolUndo && !!toolRedo &&
         selBtn.getAttribute("aria-pressed") === "true" &&
         conBtn.getAttribute("aria-pressed") === "false" &&
         toolUndo.disabled === true && toolRedo.disabled === true);
-      check("designer sidebar controls: hidden by default", !!sidebar && sidebar.hidden === true);
-      check("designer sidebar controls: empty-state text references the palette",
+      check("designer bar controls: the Add/Chart chips are disabled chips in the bar",
+        !!bar && bar.contains(barAdd) && bar.contains(barChart) &&
+        barAdd.classList.contains("edit-chip") &&
+        barChart.classList.contains("edit-chip") &&
+        barAdd.disabled === true && barChart.disabled === true);
+      check("designer bar controls: the sidebar Tools/History sections are gone",
+        overlay.querySelector("#designer-tools-title") === null &&
+        overlay.querySelector("#designer-history-title") === null &&
+        overlay.querySelector(".designer-section--history") === null);
+      check("designer bar controls: the header/bar/footer are the shared shell",
+        overlay.querySelector(".settings-header.edit-header") &&
+        overlay.querySelector(".designer-heading.edit-heading") &&
+        overlay.querySelector(".edit-badge#designer-type") &&
+        overlay.querySelector(".settings-footer.edit-footer.designer-footer"));
+      check("designer bar controls: no history button in the footer",
+        Array.from(footer.querySelectorAll("button")).map((b) => b.id).join(",") ===
+          "designer-cancel,designer-apply");
+      check("designer bar controls: hidden by default", !!sidebar && sidebar.hidden === true);
+      check("designer bar controls: empty-state text references the palette",
         /Use the palette to add your first item/.test($("designer-empty").textContent),
         $("designer-empty").textContent.trim().slice(0, 60));
-      check("designer sidebar controls: hint starts hidden and empty",
+      check("designer bar controls: hint starts hidden and empty",
         $("designer-hint").hidden === true && $("designer-hint").textContent.trim() === "",
         "hidden=" + $("designer-hint").hidden + " text=" + JSON.stringify($("designer-hint").textContent));
 
       // --- hidden until ready, shown in ready -----------------------
       let c = await resetDesigner();
-      check("designer sidebar controls: precondition, live mermaid block", !!c);
+      check("designer bar controls: precondition, live mermaid block", !!c);
       if (c) {
         const hit = window.NB.hybrid.codeBlockAt(c);
         __visimer.tools.length = 0;
         __visimer.addNodes.length = 0;
+        __visimer.canUndo = false;
+        __visimer.canRedo = false;
         window.NB.mermaidDesign.open(hit);
-        check("designer sidebar controls: hidden while loading",
-          sidebar.hidden === true, "hidden=" + sidebar.hidden);
+        check("designer bar controls: hidden while loading",
+          sidebar.hidden === true && barAdd.disabled === true &&
+          barChart.disabled === true, "hidden=" + sidebar.hidden);
         await tick(80);
-        check("designer sidebar controls: visible in the ready state (Apply enabled)",
+        check("designer bar controls: visible in the ready state (Apply enabled)",
           sidebar.hidden === false && $("designer-apply").disabled === false,
           "hidden=" + sidebar.hidden + " applyDisabled=" + $("designer-apply").disabled);
-        check("designer sidebar controls: flowchart hint is type-specific",
+        check("designer bar controls: the Add chip is enabled with a visible sidebar",
+          barAdd.disabled === false && sidebar.hidden === false,
+          "disabled=" + barAdd.disabled + " sidebarHidden=" + sidebar.hidden);
+        check("designer bar controls: flowchart hint is type-specific",
           $("designer-hint").hidden === false &&
           /node or edge/.test($("designer-hint").textContent),
           JSON.stringify($("designer-hint").textContent));
-        check("designer sidebar controls: mount resets Select pressed + Undo/Redo disabled",
+        check("designer bar controls: mount resets Select pressed + Undo/Redo disabled",
           selBtn.getAttribute("aria-pressed") === "true" &&
           conBtn.getAttribute("aria-pressed") === "false" &&
           toolUndo.disabled === true && toolRedo.disabled === true);
 
+        // --- Add / Chart chips focus the matching sidebar section ----
+        barAdd.focus();
+        clickEv(barAdd);
+        await tick(20);
+        check("designer bar controls: the Add chip focuses a control in the sidebar",
+          sidebar.contains(window.document.activeElement) &&
+          ($("designer-add-form").contains(window.document.activeElement) ||
+            $("designer-add-tabs").contains(window.document.activeElement) ||
+            $("designer-palette").contains(window.document.activeElement)),
+          "active=" + (window.document.activeElement &&
+            (window.document.activeElement.id ||
+              window.document.activeElement.tagName)));
+        barChart.focus();
+        clickEv(barChart);
+        await tick(20);
+        check("designer bar controls: the Chart chip focuses the Chart section",
+          $("designer-chart").hidden === false &&
+          $("designer-chart").contains(window.document.activeElement),
+          "active=" + (window.document.activeElement &&
+            (window.document.activeElement.id ||
+              window.document.activeElement.tagName)));
+
         // --- Select / Connect ---------------------------------------
         clickEv(selBtn);
-        check("designer sidebar controls: Select calls view.setTool('select')",
+        check("designer bar controls: Select calls view.setTool('select')",
           __visimer.tools[__visimer.tools.length - 1] === "select",
           JSON.stringify(__visimer.tools));
-        check("designer sidebar controls: Select sets aria-pressed select=true/connect=false",
+        check("designer bar controls: Select sets aria-pressed select=true/connect=false",
           selBtn.getAttribute("aria-pressed") === "true" &&
           conBtn.getAttribute("aria-pressed") === "false");
         clickEv(conBtn);
-        check("designer sidebar controls: Connect calls view.setTool('connect')",
+        check("designer bar controls: Connect calls view.setTool('connect')",
           __visimer.tools[__visimer.tools.length - 1] === "connect",
           JSON.stringify(__visimer.tools));
-        check("designer sidebar controls: Connect flips the aria-pressed pair",
+        check("designer bar controls: Connect flips the aria-pressed pair",
           conBtn.getAttribute("aria-pressed") === "true" &&
           selBtn.getAttribute("aria-pressed") === "false");
-        check("designer sidebar controls: connect mode toggles the canvas class",
+        check("designer bar controls: connect mode toggles the canvas class",
           $("designer-canvas").classList.contains("mw-tool-connect"));
 
         // --- Undo / Redo + history-button state ---------------------
         const ed = __visimer.editors[__visimer.editors.length - 1];
         __visimer.canUndo = false; __visimer.canRedo = false;
         ed._emit("change");
-        check("designer sidebar controls: Undo/Redo disabled with empty history",
+        check("designer bar controls: Undo/Redo disabled with empty history",
           toolUndo.disabled === true && toolRedo.disabled === true);
         __visimer.canUndo = true; __visimer.canRedo = false;
         ed._emit("change");
-        check("designer sidebar controls: Undo enabled when canUndo is true",
+        check("designer bar controls: Undo enabled when canUndo is true",
           toolUndo.disabled === false && toolRedo.disabled === true);
         __visimer.canUndo = false; __visimer.canRedo = true;
         ed._emit("change");
-        check("designer sidebar controls: Redo enabled when canRedo is true",
+        check("designer bar controls: Redo enabled when canRedo is true",
           toolUndo.disabled === true && toolRedo.disabled === false);
         __visimer.canUndo = true; __visimer.canRedo = true;
         ed._emit("change");
         __visimer.undos = 0; __visimer.redos = 0;
         clickEv(toolUndo);
+        await tick(20);
+        // The delegate path is async (restore + awaited preview), so the
+        // second click must wait for the first to finish.
         clickEv(toolRedo);
-        check("designer sidebar controls: Undo/Redo delegate to editor.undo()/redo()",
+        await tick(20);
+        check("designer bar controls: Undo/Redo delegate to editor.undo()/redo()",
           __visimer.undos === 1 && __visimer.redos === 1,
           "undos=" + __visimer.undos + " redos=" + __visimer.redos);
 
         // --- reset on close -----------------------------------------
         clickEv($("designer-cancel"));
         await tick(40);
-        check("designer sidebar controls: hidden after close", sidebar.hidden === true);
-        check("designer sidebar controls: reset after close (Select pressed, Undo/Redo disabled)",
+        check("designer bar controls: hidden after close", sidebar.hidden === true);
+        check("designer bar controls: reset after close (Select pressed, Undo/Redo disabled)",
           selBtn.getAttribute("aria-pressed") === "true" &&
           conBtn.getAttribute("aria-pressed") === "false" &&
-          toolUndo.disabled === true && toolRedo.disabled === true);
+          toolUndo.disabled === true && toolRedo.disabled === true &&
+          barAdd.disabled === true && barChart.disabled === true);
       }
 
-      // --- hidden in the non-editable (error) state -----------------
+      // --- the chips are inert while the sidebar is hidden ----------
       {
         __visimer.capability = "render";
         const hit = window.NB.hybrid.codeBlockAt(await resetDesigner());
         window.NB.mermaidDesign.open(hit);
         await tick(80);
-        check("designer sidebar controls: hidden for a non-editable (error) type",
-          sidebar.hidden === true, "hidden=" + sidebar.hidden);
+        check("designer bar controls: chips disabled while the sidebar is hidden",
+          sidebar.hidden === true && barAdd.disabled === true &&
+          barChart.disabled === true,
+          "hidden=" + sidebar.hidden + " add=" + barAdd.disabled +
+            " chart=" + barChart.disabled);
         window.NB.mermaidDesign.close();
         await tick(20);
         __visimer.capability = "edit";
@@ -35092,6 +36298,80 @@ function check(label, cond, extra) {
           }
           closeDesigner();
           await tick(20);
+        }
+      }
+
+      // --- (1a) the Chart chip follows the Chart section ------------
+      // A chip that focuses a hidden section is inert, so Chart is enabled
+      // only when the sidebar is visible AND #designer-chart is shown.
+      {
+        const barAdd = $("designer-bar-add");
+        const barChart = $("designer-bar-chart");
+        const chartSection = $("designer-chart");
+
+        // flowchart: a direction Chart section exists.
+        {
+          const f = await openFamily("flowchart");
+          check("designer chart chip: flowchart precondition", !!f.c);
+          if (f.c) {
+            check("designer chart chip: flowchart shows the Chart section",
+              sidebar.hidden === false && chartSection.hidden === false,
+              "sidebar=" + sidebar.hidden + " chart=" + chartSection.hidden);
+            check("designer chart chip: flowchart enables Add and Chart",
+              barAdd.disabled === false && barChart.disabled === false,
+              "add=" + barAdd.disabled + " chart=" + barChart.disabled);
+          }
+          closeDesigner();
+          await tick(20);
+        }
+
+        // er: a scoped family whose body has no Chart section.
+        {
+          const f = await openFamily("er");
+          check("designer chart chip: er precondition", !!f.c);
+          if (f.c) {
+            check("designer chart chip: er shows the sidebar with no Chart section",
+              sidebar.hidden === false && chartSection.hidden === true,
+              "sidebar=" + sidebar.hidden + " chart=" + chartSection.hidden);
+            check("designer chart chip: er enables Add but disables Chart",
+              barAdd.disabled === false && barChart.disabled === true,
+              "add=" + barAdd.disabled + " chart=" + barChart.disabled);
+          }
+          closeDesigner();
+          await tick(20);
+        }
+
+        // gantt: a palette-only family, no scoped add form or Chart section.
+        {
+          const f = await openFamily("gantt");
+          check("designer chart chip: gantt precondition", !!f.c);
+          if (f.c) {
+            check("designer chart chip: palette-only gantt disables Chart",
+              sidebar.hidden === false && chartSection.hidden === true &&
+              barAdd.disabled === false && barChart.disabled === true,
+              "sidebar=" + sidebar.hidden + " chart=" + chartSection.hidden +
+                " add=" + barAdd.disabled + " chartBtn=" + barChart.disabled);
+          }
+          closeDesigner();
+          await tick(20);
+        }
+
+        // loading: the sidebar is hidden until the editor is ready, so both
+        // chips are inert.
+        {
+          const c = await resetDesigner();
+          check("designer chart chip: loading precondition, live block", !!c);
+          if (c) {
+            window.NB.mermaidDesign.open(window.NB.hybrid.codeBlockAt(c));
+            check("designer chart chip: loading hides the sidebar and disables both chips",
+              sidebar.hidden === true && barAdd.disabled === true &&
+              barChart.disabled === true,
+              "sidebar=" + sidebar.hidden + " add=" + barAdd.disabled +
+                " chart=" + barChart.disabled);
+            await tick(80);
+            closeDesigner();
+            await tick(20);
+          }
         }
       }
 
@@ -36727,6 +38007,21 @@ function check(label, cond, extra) {
         /body\[data-theme="light"\] #designer-overlay,\nbody\[data-theme="light"\] #dw-designer-overlay/.test(css));
       check("dw completeness: white WaveDrom card token is scoped to the new overlay",
         /#dw-designer-overlay\s*\{[\s\S]*--dw-wavedrom-surface:\s*#fff/.test(css));
+      // The shared shell now owns both the history pair and the compact
+      // chips: the old sidebar strip, source button, and history section
+      // are gone from the template.
+      check("dw completeness: the old compact strip/source/history markup is gone",
+        idx.indexOf("dw-compact-nav") === -1 &&
+        idx.indexOf('id="dw-edit-source"') === -1 &&
+        idx.indexOf('id="dw-history"') === -1 &&
+        idx.indexOf("designer-section--history") === -1);
+      check("dw completeness: the bar carries the three compact chips",
+        (idx.match(/data-compact="(?:add|chart|source)"/g) || []).length === 3);
+      check("dw completeness: edit-window.js loads before designer-shell.js and is precached",
+        idx.indexOf("/static/js/edit-window.js") !== -1 &&
+        idx.indexOf("/static/js/edit-window.js") <
+          idx.indexOf("/static/js/designer-shell.js") &&
+        sw.indexOf("/static/js/edit-window.js") !== -1);
     }
 
     // --- capability probes (pure) ----------------------------------
@@ -37588,6 +38883,12 @@ function check(label, cond, extra) {
         const d = makeDotBlock("digraph G { A [label=\"Alpha\"]; A -> B; }");
         window.NB.dotDesign.open(window.NB.hybrid.codeBlockAt(d));
         await tick(90);
+        check("dw history: Undo and Redo live in the bar with edit-bar-btn",
+          $("dw-undo").classList.contains("edit-bar-btn") &&
+          $("dw-redo").classList.contains("edit-bar-btn") &&
+          overlay.querySelector(".edit-bar-history").contains($("dw-undo")) &&
+          overlay.querySelector(".edit-bar-history").contains($("dw-redo")) &&
+          !overlay.querySelector(".designer-footer").contains($("dw-undo")));
         check("dw history: Undo and Redo start disabled",
           $("dw-undo").disabled === true && $("dw-redo").disabled === true);
 
@@ -37839,10 +39140,18 @@ function check(label, cond, extra) {
         }
         check("dw compact: the overlay gets is-compact at <=960",
           overlay.classList.contains("is-compact"));
-        check("dw compact: the strip exposes Add/Chart/Source/Undo/Redo",
-          overlay.querySelectorAll(".dw-compact-nav [data-compact]").length === 5);
+        check("dw compact: the bar exposes Add/Chart/Source chips plus the history pair",
+          overlay.querySelectorAll(".edit-bar [data-compact]").length === 3 &&
+          !!overlay.querySelector('.edit-bar [data-compact="add"]') &&
+          !!overlay.querySelector('.edit-bar [data-compact="chart"]') &&
+          !!overlay.querySelector('.edit-bar [data-compact="source"]') &&
+          overlay.querySelector(".edit-bar-history").contains($("dw-undo")) &&
+          overlay.querySelector(".edit-bar-history").contains($("dw-redo")));
+        check("dw compact: the old sidebar strip and source button are gone",
+          overlay.querySelector(".dw-compact-nav") === null &&
+          overlay.querySelector("#dw-edit-source") === null);
 
-        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="add"]'));
+        clickEv(overlay.querySelector('.edit-bar [data-compact="add"]'));
         await tick(40);
         const sheet = $("dw-compact-sheet");
         const sheetBody = $("dw-compact-sheet-body");
@@ -37856,7 +39165,7 @@ function check(label, cond, extra) {
           " active=" + (window.document.activeElement &&
             window.document.activeElement.id));
 
-        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="chart"]'));
+        clickEv(overlay.querySelector('.edit-bar [data-compact="chart"]'));
         await tick(40);
         check("dw compact: Chart swaps the sheet content and restores Add",
           sheet.hidden === false && sheetBody.contains($("dw-chart")) &&
@@ -37873,7 +39182,7 @@ function check(label, cond, extra) {
           $("dw-sidebar").contains($("dw-chart")) &&
           $("dw-sidebar").contains($("dw-add-section")));
 
-        clickEv(overlay.querySelector('.dw-compact-nav [data-compact="add"]'));
+        clickEv(overlay.querySelector('.edit-bar [data-compact="add"]'));
         await tick(30);
         window.document.dispatchEvent(new window.KeyboardEvent("keydown",
           { key: "Escape", bubbles: true, cancelable: true }));
@@ -37941,7 +39250,7 @@ function check(label, cond, extra) {
           let fallbackPrompts = 0;
           try {
             window.confirm = () => { fallbackPrompts++; return false; };
-            clickEv($("dw-edit-source"));
+            clickEv(overlay.querySelector('.edit-bar [data-compact="source"]'));
             await tick(40);
           } finally {
             window.confirm = realConfirm2;

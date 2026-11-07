@@ -3,7 +3,8 @@
 Status: implemented (`static/js/table-editor.js`). The original blueprint: a
 modal spreadsheet-style editor for one GFM table in hybrid (WYSIWYG) mode.
 One new file (`static/js/table-editor.js`) plus small edits. No frameworks,
-no new deps.
+no new deps. The §5c undo/redo amendment and the shared edit-window shell
+(`templates/_edit_window.html`, `static/js/edit-window.js`) are implemented.
 
 ```mermaid
 flow LR
@@ -37,10 +38,15 @@ flow LR
 - `isOpen()` — the guards/dialog pattern (`mermaid-designer.js`).
 - Test hooks: `getState()` (the live model, §2), `rebuildTable()` (the built
   `<table>` before any apply, so jsdom can assert structure without mutating),
-  `_apply()`, `_cancel()`, and `overlayEl()`.
+  `_apply()`, `_cancel()`, `overlayEl()`, `_undo()`, `_redo()`, and
+  `_history()`. `_history()` returns `{mode: "stack", depth, index, canUndo,
+  canRedo}`. The history hooks exist because jsdom fires no focus events and
+  the keyboard path needs a direct driver.
 
 Callers deref `NB.tableEditor` lazily inside handlers (the `designMod` pattern,
-`hybrid.js`), so load order cannot break either side.
+`hybrid.js`), so load order cannot break either side. The history stack is
+delegated to `NB.editWindow` (`static/js/edit-window.js`, stack mode); the
+module is attached in `wire()`.
 
 ## 2. Data model
 
@@ -78,11 +84,16 @@ state = {
 
 ## 3. Modal markup and containment
 
-**Static in `templates/index.html`**, after `#export-overlay` (id
-`table-editor-overlay`, class `settings-overlay`, direct body child), inner
-`.settings-modal.table-editor-modal[role="dialog"][aria-modal]` with
-`.settings-header` (h2 + ×), `.settings-body` (toolbar + `#table-editor-grid`
-scroll host), `.settings-footer` (Cancel, Apply). Static, not module-built,
+**Static in `templates/index.html`** via the shared macros in
+`templates/_edit_window.html` (`edit_header`, `edit_bar`, `edit_footer`),
+after `#export-overlay` (id `table-editor-overlay`, class `settings-overlay`,
+direct body child). Inner `.settings-modal.table-editor-modal[role="dialog"]
+[aria-modal]` with the shared header (`h2#table-editor-title`, a `Table` badge,
+×), the shared action bar (`#table-editor-toolbar` in the left slot, the pinned
+`#table-editor-undo` / `#table-editor-redo` pair on the right), `.te-body`
+(notice strip + `#table-editor-grid` scroll host), and the shared commit footer
+(`#table-editor-status`, `Esc cancels`, Cancel, Apply). The box matches the
+designers: `min(1320px, 96vw)` × `min(85vh, 92vh)`. Static, not module-built,
 because: all five existing modals are static; `windows.js` wires at boot and
 persists geometry per overlay id; and the keyboard guards in `shortcuts.js`,
 `vimnav.js`, `table-select.js` match `body > .settings-overlay:not([hidden])`
@@ -199,6 +210,93 @@ Every existing verb keeps addressing the focus cell.
   four stay focusable, `aria-disabled`, and explain the refusal in the status
   line.
 
+## 5c. Undo/redo history
+
+The stack lives in the shared `NB.editWindow` module (`static/js/edit-window.js`).
+The table attaches it once in `wire()` in stack mode (`snapshot` / `restore`);
+the history is modal-local and never touches the note. Apply is still exactly
+one note-level step. Model: a linear stack of JSON snapshots of
+`{cols, rows, changed, sortedCol, sortedDir}`.
+
+- `HISTORY_LIMIT = 100` snapshots including the opening one,
+  `HISTORY_MAX_CHARS = 4 M` characters (UTF-16 code units) of snapshot text, and `HISTORY_COALESCE_MS = 350`.
+  The cap evicts the oldest entries first and never the entry the user is
+  standing on, so one huge snapshot may exceed the byte cap. A session
+  therefore offers at most 99 undo steps, and the opening snapshot is gone
+  after 99 changes (or earlier under the byte cap).
+- `history.stack[0]` is the pristine model, seeded in `open()` after `state`,
+  the active-cell and selection resets, the `sortedCol`/`sortedDir` reset, and
+  `setBlocked()`. Seeding earlier would carry the previous table's sort marker
+  into a reopened window, because the snapshot stores both. `close()` clears
+  the stack. `deleteTable()` applies and closes immediately, so it pushes no
+  modal step; its undo is the note-level one.
+- Storing `changed` in the snapshot is load-bearing. Undoing to the pristine
+  snapshot restores `changed:false`, so `apply()`'s `!state.changed`
+  short-circuit keeps a ragged source table byte-identical — its padded
+  rebuild is never `sameTable()` because `snapshotTable` pads ragged rows.
+- `sortedCol`/`sortedDir` are in the snapshot because `renderGrid` paints the
+  sort marker from them and the direction control reads them as a fallback.
+
+**Capture helper.** Called after every mutation with kind `text` or
+`structural`:
+
+1. Drop the snapshot when it equals `stack[index]`. `insertPlainText`'s
+   `execCommand("insertText")` also fires `onGridInput`; a no-op paste, clear,
+   or fill, a clear of already-empty cells, and a repeated identical sort would
+   otherwise add a dead step. A first sort always differs because it sets
+   `sortedCol`, so it is kept even when no row moves.
+2. Coalesce only when the new step is `text`, `lastKind === "text"`, and
+   `index === stack.length - 1`, within `HISTORY_COALESCE_MS`. `commitEdit()`
+   and undo/redo reset `lastKind`/`lastAt`, so typing in a second cell — or
+   after a step — starts a new entry instead of rewriting the restored one.
+3. Push, truncate the redo tail, trim to `HISTORY_LIMIT` and
+   `HISTORY_MAX_CHARS`, then update both buttons.
+4. `commitEdit()` calls `hist.breakCoalesce()` rather than adding a step, so a
+   burst in the next cell starts a new entry; undo and redo reset the window
+   too.
+
+Capture sites — post-mutation, never through `markChanged()` or
+`finishStructure()` (they miss the text paths and transpose, and sort would
+snapshot before `sortedCol` is assigned):
+
+| Kind | Sites |
+| --- | --- |
+| text (coalesced) | `onGridInput`, the `startEdit` insertText branch, `insertPlainText` |
+| structural | `pasteBlock`, `clearSelection`, `fillRect`, `insertRowAt`, `moveRowTo`, `insertColAt`, `moveColTo`, `deleteRow`, `deleteColumn`, `cycleAlign`, `sortByColumn` (after `sortedCol`), `transpose` (after the state swap and sort reset) |
+
+**Restore** (`restoreSnapshot(snap)`, called by the module): capture
+`wasEditing` and the active cell, `commitEdit()`, parse and restore `state`,
+`sortedCol`, `sortedDir`, `editing = false`, `finishStructure(true)`; then write
+`sortColEl.value` from the restored `sortedCol`, because `finishStructure`
+rebuilds the sort options from the pre-restore select value — writing earlier
+yields an empty select. If a cell was being edited, re-enter it with
+`startEdit(activeRow, activeCol)` (caret at end). Return `true`; return `false`
+for a live pointer gesture (`fill || press || drag`) or a parse failure. The
+module holds `restoring` across the repaint and the re-focus, reverts the index
+on `false`, and reports through `onError` → `setStatusMessage()`. Focus lands
+on the active cell; the buttons do not take focus and no new status text is
+announced.
+
+**Keyboard.** The shared module binds one document-level keydown per window:
+Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y, lowercasing `e.key` so the shift
+form (`"Z"`) matches. The table's `ownsKey` is `() => true`: the chord is modal
+in every target, including a cell in text edit and the sort `<select>`, because
+`commitEdit()` kills native cell undo. That is a deliberate difference from the
+design windows, where text fields keep native undo. `Esc` stays in the table's
+own `onOverlayKeydown`.
+
+**Buttons.** `#table-editor-undo` / `#table-editor-redo` live in
+`.edit-bar-history` and carry `.edit-bar-btn` (44×44 icon buttons), not
+`.settings-action` and not `.te-tool`: `syncToolbar`'s readOnly branch
+blanket-`aria-disabled`s `.te-tool`. `hist.sync()` owns `disabled` from
+`!state || readOnly` plus the stack bounds, and runs from capture, restore,
+`open()`, `close()`, and `setBlocked()`. The footer is commit-only, so
+`focusOutsideGrid`'s first enabled control is always Cancel.
+
+**Test hooks.** `NB.tableEditor._undo()` / `_redo()` return the module's
+promise; `_history()` returns `{mode: "stack", depth, index, canUndo,
+canRedo}`.
+
 ## 6. Transpose and sort
 
 - **Transpose**: `new[r][c] = old[c][r]` over the padded rectangle — old
@@ -226,11 +324,16 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
 
 ## 8. Integration edits, in order
 
-1. New `static/js/table-editor.js`.
-2. `templates/index.html`: modal markup after `#export-overlay` — the toolbar
-   carries Rows, Columns, a `.te-clip-group` (Cut, Copy, Paste, Clear),
-   Alignment, Sort, and the Table group — and `<script
-   src="/static/js/table-editor.js" defer>` immediately after `table-select.js`
+1. New `static/js/table-editor.js`; new `static/js/edit-window.js` (shared,
+   below the modals); new `templates/_edit_window.html` with the shared
+   `edit_header` / `edit_bar` / `edit_footer` macros.
+2. `templates/index.html`: import the macros and render the table modal after
+   `#export-overlay`. The header comes from `edit_header`; the bar's left slot
+   carries `#table-editor-toolbar` (Rows, Columns, `.te-clip-group`, Alignment,
+   Sort, Table) and its right slot the shared history pair; the footer comes
+   from `edit_footer` (status, `Esc cancels`, Cancel, Apply). Add
+   `<script src="/static/js/edit-window.js" defer>` before
+   `table-editor.js`, and `table-editor.js` immediately after `table-select.js`
    (after `hybrid.js`; runtime-lazy derefs, exact slot not load-bearing).
 3. `static/css/style.css`: `.te-*` grid/toolbar styles (reuse
    `.settings-action` chrome), the modal grips and drop markers, the selection
@@ -253,9 +356,11 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
    `moveRowBySelection`/`moveColBySelection` and stay.
    Do not touch `onContentChange`/`flushPendingSnapshot` — they are already
    exported (`hybrid.js`).
-6. `static/sw.js`: add `/static/js/table-editor.js` to `PRECACHE`, bump
-   `CACHE` v17→v18 with the customary comment line.
-7. `CLAUDE.md` module list: add the one-line responsibility entry.
+6. `static/sw.js`: add `/static/js/table-editor.js` and
+   `/static/js/edit-window.js` to `PRECACHE`, bump `CACHE` with the customary
+   comment line.
+7. `CLAUDE.md` module list: add the one-line responsibility entries for
+   `table-editor.js` and `edit-window.js`.
 8. Tests (§9). `table-view.js` is **not** touched: preview-only, torn down at
    `hybrid:will-enter`, and the rebuilt table is a fresh node so no stale
    `nb:tableView` session can attach.
@@ -275,15 +380,26 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
   pointer painting is driven through `_select(r0,c0,r1,c1)` and the exported
   `selectionPayload()`/`pasteBlock()`/`clearSelection()`/`_fill()`; `elementFromPoint`
   is missing in jsdom, so the handle drag itself is browser-only.
+- **History**: a clean open leaves both bar buttons disabled; the first typed
+  character enables Undo; one
+  `_undo()` restores the previous cell HTML;
+  each structural verb is one step and a typing burst is one; a duplicate
+  snapshot is dropped (no dead step); undoing to the pristine model then calling
+  `_apply()` writes nothing and leaves the note clean, including the ragged
+  source case; the merged-cell open leaves both buttons disabled. The embedded
+  markup fixture carries the bar pair, and the AC17 accessible-name selector
+  list includes them; `_history()` reports `mode: "stack"`.
 - Wiring guard (the `check()` pattern at `test_dom.js`): index.html
   loads `table-editor.js`; sw.js PRECACHE includes it.
 - Chromium (`tests/browser/test_table_editor_browser.js`, new file —
   `run_all.js` picks up every suite): real caret typing in a cell; focus
   return to the ▦ button after Cancel and to the header cell after the
   context-menu path; Esc/backdrop/× cancel; Apply → save round-trips through
-  `domToMarkdown` to the expected GFM; Ctrl+Z single-step; a real pointer drag
-  of a row grip and a column grip (drop marker, reordered grid); the modal
-  drags and resizes (windows.js wiring).
+  `domToMarkdown` to the expected GFM; note-level Ctrl+Z single-step after
+  Apply; a real pointer drag of a row grip and a column grip (drop marker,
+  reordered grid); the modal drags and resizes (windows.js wiring); in-modal
+  Undo/Redo and Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y over the working copy, including
+  paste into a cell as one step and the caret returning to the edited cell.
 
 ## 10. Risks
 
@@ -303,5 +419,16 @@ all: not in hybrid, the table is not in `#viewer-content`, or it has no rows.
   needs `fallbackFocus` or focus dies on body.
 - **Undo snapshot ordering**: flush *before* `replaceWith`, never after; an
   immediate extra `pushSnapshot` would make the apply two steps.
+- **History double-count**: the capture helper dedups identical snapshots.
+  Without it, `execCommand("insertText")` plus `insertPlainText` records the
+  same state twice and one Ctrl+Z looks dead. Pinned by a browser paste test.
+- **History cap**: trimming past `HISTORY_LIMIT` or `HISTORY_MAX_CHARS` drops
+  the pristine seed, so the "undo to pristine makes Apply a no-op" invariant
+  holds only while the seed is still on the stack. The `sameTable()` check
+  remains the second line of defence for content-identical cycles.
+- **Bar overflow**: the 20 table tools are 32 px and need ~950 px, so the left
+  slot scrolls below ~1150 px viewport width. `.is-scrollable` adds the
+  right-edge fade; there is no popover menu. The bar never wraps to a second
+  row.
 - **Ragged normalization**: first edited Apply silently pads ragged rows —
   one sentence in the module header, no prompt.

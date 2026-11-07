@@ -343,6 +343,32 @@ async function main() {
         () => document.getElementById("dw-inspector-kind").textContent === "Node",
         null, { timeout: 5000 });
 
+      const historyShell = await page.evaluate(() => {
+        const overlay = document.getElementById("dw-designer-overlay");
+        const history = overlay.querySelector(".edit-bar-history");
+        const footer = overlay.querySelector(".designer-footer");
+        return {
+          undoInBar: !!history && history.contains(
+            document.getElementById("dw-undo")) &&
+            history.contains(document.getElementById("dw-redo")),
+          btnClass: document.getElementById("dw-undo").classList
+            .contains("edit-bar-btn") &&
+            document.getElementById("dw-redo").classList.contains("edit-bar-btn"),
+          footerIds: Array.from(footer.querySelectorAll("button"))
+            .map((b) => b.id).join(","),
+          chips: overlay.querySelectorAll(".edit-bar [data-compact]").length,
+          oldNav: !!overlay.querySelector(".dw-compact-nav"),
+          oldSource: !!document.getElementById("dw-edit-source"),
+        };
+      });
+      check("dw dot browser: Undo/Redo live in the edit bar, not the footer",
+        historyShell.undoInBar && historyShell.btnClass &&
+        historyShell.footerIds === "dw-cancel,dw-apply",
+        JSON.stringify(historyShell));
+      check("dw dot browser: the bar carries three compact chips and the old strip is gone",
+        historyShell.chips === 3 && !historyShell.oldNav && !historyShell.oldSource,
+        JSON.stringify(historyShell));
+
       await page.click('#dw-inspector-body .dw-shape-btn[data-shape="ellipse"]');
       await page.waitForFunction(
         () => !document.getElementById("dw-undo").disabled,
@@ -644,14 +670,15 @@ async function main() {
         const body = document.querySelector(
           "#dw-designer-overlay .designer-body");
         const inspector = document.getElementById("dw-inspector");
-        const nav = overlay.querySelector(".dw-compact-nav");
-        const btn = nav.querySelector("[data-compact]");
+        const bar = overlay.querySelector(".edit-bar");
+        const chips = bar.querySelectorAll("[data-compact]");
         return {
           compact: overlay.classList.contains("is-compact"),
           sideDir: getComputedStyle(side).flexDirection,
-          nav: nav.querySelectorAll("[data-compact]").length,
-          stripH: nav.getBoundingClientRect().height,
-          btnW: btn.getBoundingClientRect().width,
+          chips: chips.length,
+          barH: bar.getBoundingClientRect().height,
+          undoInBar: overlay.querySelector(".edit-bar-history")
+            .contains(document.getElementById("dw-undo")),
           inspectorInStage: inspector.parentElement === stage,
           mainRatio: main.getBoundingClientRect().height /
             body.getBoundingClientRect().height,
@@ -665,14 +692,14 @@ async function main() {
           })(),
         };
       });
-      check("dw dot browser: <=960 applies the compact strip/sheet layout",
+      check("dw dot browser: <=960 applies the compact sheet layout",
         layout.compact === true && layout.sideDir === "row" &&
-        layout.nav === 5 && layout.stripH === 48 && layout.btnW === 40 &&
+        layout.chips === 3 && layout.barH > 0 && layout.undoInBar === true &&
         layout.inspectorInStage === true && layout.inspectorPos === "absolute" &&
         layout.mainRatio >= 0.45 && layout.footerVisible === true,
         JSON.stringify(layout));
 
-      await page.click('.dw-compact-nav [data-compact="add"]');
+      await page.click('.edit-bar [data-compact="add"]');
       const addSheet = await page.evaluate(() => {
         const sheet = document.getElementById("dw-compact-sheet");
         const stage = document.querySelector(
@@ -701,7 +728,7 @@ async function main() {
         addSheet.ratio > 0 && addSheet.ratio <= 0.55 + 0.01,
         "ratio=" + addSheet.ratio);
 
-      await page.click('.dw-compact-nav [data-compact="chart"]');
+      await page.click('.edit-bar [data-compact="chart"]');
       const chartSheet = await page.evaluate(() => {
         const sheet = document.getElementById("dw-compact-sheet");
         const body = document.getElementById("dw-compact-sheet-body");
@@ -729,14 +756,14 @@ async function main() {
           overlayOpen: !document.getElementById("dw-designer-overlay").hidden,
           addBack: side.contains(document.getElementById("dw-add-section")),
           chartBack: side.contains(document.getElementById("dw-chart")),
-          strip: document.querySelector(".dw-compact-nav")
-            .getBoundingClientRect().height,
+          barHeight: document.querySelector(
+            "#dw-designer-overlay .edit-bar").getBoundingClientRect().height,
         };
       });
-      check("dw compact: closing the sheet restores the strip without closing the window",
+      check("dw compact: closing the sheet restores the bar without closing the window",
         closed.hidden === true && closed.aria === "true" &&
         closed.overlayOpen === true && closed.addBack === true &&
-        closed.chartBack === true && closed.strip === 48,
+        closed.chartBack === true && closed.barHeight > 0,
         JSON.stringify(closed));
 
       // Return to desktop for hover/double-click: in the compact sheet the
@@ -788,7 +815,7 @@ async function main() {
       // Esc closes the build sheet first, then the window.
       await page.setViewportSize({ width: 900, height: 800 });
       await page.waitForTimeout(150);
-      await page.click('.dw-compact-nav [data-compact="add"]');
+      await page.click('.edit-bar [data-compact="add"]');
       await page.keyboard.press("Escape");
       check("dw compact: Esc closes the sheet and keeps the window open",
         await page.evaluate(() => {
@@ -873,7 +900,7 @@ async function main() {
       await bootNote(page, DOT_NOTE, ".viz-container");
       await openDesigner(page, ".viz-container");
 
-      await page.click("#dw-edit-source");
+      await page.click('.edit-bar [data-compact="source"]');
       await closeDesigner(page);
       const pre = page.locator(
         "#viewer-content pre.hybrid-plugin-editing > code.language-dot");
@@ -893,7 +920,7 @@ async function main() {
       await bootNote(page, WAVE_NOTE, ".wavedrom-container");
       await openDesigner(page, ".wavedrom-container");
 
-      await page.click("#dw-edit-source");
+      await page.click('.edit-bar [data-compact="source"]');
       await closeDesigner(page);
       const pre = page.locator(
         "#viewer-content pre.hybrid-plugin-editing > code.language-wavedrom");

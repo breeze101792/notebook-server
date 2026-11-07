@@ -98,9 +98,12 @@ listed in the product doc §10.
 
 Kept from the design doc: the three-region shell and dimensions, stage card +
 overlay selection chrome (§3.3, §5.1), hint pill, state coverage, all a11y
-patterns, and the ≤960px compact strip/sheet (the window is freely resizable by
+patterns, and the ≤960px compact sheet (the window is freely resizable by
 `windows.js` down to 320px; mirror the implemented Mermaid compact rules,
-scoped to `#dw-designer-overlay[data-designer-lang]`).
+scoped to `#dw-designer-overlay[data-designer-lang]`). The old compact strip is
+gone: Add / Chart / Source now live in the shared action bar, and window
+history is the bar's pinned Undo/Redo pair (`NB.editWindow`), not a sidebar
+History section.
 
 **D4 — Graphviz: a line-local editor over a strict single-graph grammar.**
 Untouched lines stay byte-identical; only the edited statement's own span (and
@@ -647,7 +650,7 @@ No backend tests — no backend change.
 | Risk | Handling |
 | --- | --- |
 | Parallel-edge SVG order vs source order was verified on one small fixture only | Playwright check: a graph with several same-pair edges; assert each selects its own statement. If Graphviz ever reorders, tighten capability rule 9 to all parallel edges |
-| jsdom has no layout — all bbox/hit/selection chrome, the focus ring, and the ≤960 compact strip are untestable there | Real-browser pass (Playwright, `tests/browser/`): hover/click on nodes, edges (incl. the 14px stroke hit), signal rows; Esc/Tab trap; compact layout; both themes + font scales |
+| jsdom has no layout — all bbox/hit/selection chrome, the focus ring, and the ≤960 compact sheet are untestable there | Real-browser pass (Playwright, `tests/browser/`): hover/click on nodes, edges (incl. the 14px stroke hit), signal rows; Esc/Tab trap; compact layout; both themes + font scales |
 | `renderString` on every live-preview keystroke could jank on large graphs | Debounce live preview (~150ms) inside the controllers; Apply always renders the final candidate once |
 | WaveDrom `renderWaveForm` paints errors instead of throwing | `renderSvgElement` treats "no `<svg>` in host" as a throw with the painted first line (today's renderOne behavior) |
 | The eval-based lenient parse runs on every right-click (capabilityFor) | It already runs on every note render today; capabilityFor result could be memoized per source string inside each module if profiling demands — do not build it preemptively |

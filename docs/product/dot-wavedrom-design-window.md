@@ -203,12 +203,15 @@ All four are user-initiated closes:
 
 ### 4.6 Window-level undo/redo
 
-The sidebar carries a sticky **History** section with **Undo** and **Redo**.
+The window's action bar carries **Undo** and **Redo** at its right end, above
+the canvas; the footer is commit-only.
 Each structural edit is one step; text bursts coalesce into one step. Undo and
 redo restore the window's draft and preview, clear the selection, and update
 the disabled button states. Field-level browser undo still works inside text
 inputs and is not intercepted by the window chord. Cancel still discards the
-whole draft.
+whole draft. The sidebar's old History section and the compact strip's
+Undo/Redo buttons are gone; the bar is the only history surface at every
+width.
 
 ## 5. Graphviz editor scope (v1)
 

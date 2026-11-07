@@ -44,7 +44,7 @@ Start here depending on the job:
 | [`operations/`](operations/README.md) | [`operations/README.md`](operations/README.md) | Repo layout, build/toolchain, vendoring, and the change checklists. |
 | [`product/`](product/mobile.md) | [`product/mobile.md`](product/mobile.md) | Shipped feature definitions: behavior, edge cases, acceptance criteria. |
 | [`design/`](design/settings-modal.md) | [`design/settings-modal.md`](design/settings-modal.md) | UI design handoffs and reference mockups for shipped features. |
-| [`ui/`](ui/workspaces.md) | [`ui/workspaces.md`](ui/workspaces.md) | Design handoffs for the workspace picker, the Sessions view, and the top-bar session picker. |
+| [`ui/`](ui/edit-window-guide.md) | [`ui/edit-window-guide.md`](ui/edit-window-guide.md) | Design handoffs for the shared edit window, the workspace picker, the Sessions view, and the top-bar session picker. |
 | [`research/`](research/mobile-support.md) | [`research/mobile-support.md`](research/mobile-support.md) | Dated fact packs: browsers, libraries, protocols, and device constraints. |
 
 ## Architecture
@@ -61,9 +61,9 @@ Start here depending on the job:
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, ACP profiles, the six tools, the tool loop, and reviewing edits. |
 | [`architecture/acp-provider-review.md`](architecture/acp-provider-review.md) | Superseded design review of the ACP provider; read `ai-assistant.md` for the as-built contract. |
 | [`architecture/table-select.md`](architecture/table-select.md) | Rectangular table-cell selection and TSV/HTML clipboard copy. |
-| [`architecture/table-editor.md`](architecture/table-editor.md) | The hybrid "Edit table" modal: model, modal containment, grid, Apply ordering, sort/transpose, the merged-cell refusal, and the test seams. |
+| [`architecture/table-editor.md`](architecture/table-editor.md) | The hybrid "Edit table" modal: model, modal containment, grid, in-modal undo/redo, Apply ordering, sort/transpose, the merged-cell refusal, and the test seams. |
 | [`architecture/dot-wavedrom-designer.md`](architecture/dot-wavedrom-designer.md) | The Graphviz and WaveDrom design windows: parsing subsets, preview, and Apply order. |
-| [`architecture/mermaid-designer.md`](architecture/mermaid-designer.md) | The visual Mermaid editor: the Visimer decision, the modal, parse/serialize boundaries, and Apply. |
+| [`architecture/mermaid-designer.md`](architecture/mermaid-designer.md) | The visual Mermaid editor: the Visimer decision, the modal, parse/serialize boundaries, history keys, and Apply. |
 | [`architecture/mermaid-designer-coverage.md`](architecture/mermaid-designer-coverage.md) | The add-sidebar coverage per Mermaid diagram type. |
 | [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation record: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
 | [`architecture/bugfix-preview-overflow-tabs-focus.md`](architecture/bugfix-preview-overflow-tabs-focus.md) | Shipped structural fixes for preview overflow, modal focus, and tab-strip scroll. |
@@ -95,8 +95,8 @@ Start here depending on the job:
 | Guide | Covers |
 | --- | --- |
 | [`product/mobile.md`](product/mobile.md) | Mobile v1 product definition: ranked jobs, flows, edge cases, acceptance criteria, and the v2 boundary. |
-| [`product/table-editor.md`](product/table-editor.md) | Table edit window: the two entry points, grid and toolbar behavior, Apply/Cancel, merged-cell refusal, edge cases, and AC1–AC18. |
-| [`product/table-editor-selection.md`](product/table-editor-selection.md) | Range selection and clipboard for the table editor: gestures, copy/cut/paste/clear, the TSV + HTML contract, grid growth, accessibility, AC19–AC40. |
+| [`product/table-editor.md`](product/table-editor.md) | Table edit window: the two entry points, grid and toolbar behavior, in-modal undo/redo, Apply/Cancel, merged-cell refusal, edge cases, and AC1–AC18 plus AC45–AC46. |
+| [`product/table-editor-selection.md`](product/table-editor-selection.md) | Range selection and clipboard for the table editor: gestures, copy/cut/paste/clear, the TSV + HTML contract, grid growth, accessibility, AC19–AC44. |
 | [`product/mermaid-chart-editing.md`](product/mermaid-chart-editing.md) | Mermaid chart editing: what the visual editor must offer over typing the fence. |
 | [`product/dot-wavedrom-design-window.md`](product/dot-wavedrom-design-window.md) | Graphviz and WaveDrom design windows: entry points, scope, and Apply behavior. |
 | [`product/search-options.md`](product/search-options.md) | Side-panel Search options; the shipped control set is in `design/search-panel-advanced.md`. |
@@ -128,6 +128,8 @@ Each `.md` has a sibling `.html` mockup where one exists.
 | [`design/search-panel-clear.md`](design/search-panel-clear.md) | Side-panel Search: the clear control. |
 | [`design/search-panel-controls.md`](design/search-panel-controls.md) | Side-panel Search: the labelled filter stack (superseded by Advanced). |
 | [`design/bugfix-preview-overflow-tabs-focus.md`](design/bugfix-preview-overflow-tabs-focus.md) | The visual fix for preview overflow, focus, and tab visibility. |
+| [`ui/edit-window-guide.md`](ui/edit-window-guide.md) | The shared hybrid edit-window playbook: header, action bar, commit footer, the history contract, responsive and accessibility rules, and the checklist for adding a window. |
+| [`ui/edit-window.md`](ui/edit-window.md) | The measured spec for the same shell: tokens, ids, bar slots, states, and the implementation deltas. Mockup: [`ui/edit-window-mockup.html`](ui/edit-window-mockup.html). |
 | [`ui/workspaces.md`](ui/workspaces.md) | Workspace picker: the bar, picker, add/rename dialog, Settings list, code-keyed error table, keyboard rules, and the shipped CSS. Mockup: [`ui/workspaces-mockup.html`](ui/workspaces-mockup.html). |
 | [`ui/sessions.md`](ui/sessions.md) | Sessions side-panel view: activity-bar placement, header and rows, row menu, tab-menu item, name dialog, copy, keyboard/ARIA, and the CSS to add. Mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
 | [`ui/topbar-session.md`](ui/topbar-session.md) | The top-bar session picker: placement after the workspace chip, the trigger and popover markup, CSS, the `sessions.js` picker, states, ARIA and acceptance criteria. Mockup: [`ui/topbar-session-mockup.html`](ui/topbar-session-mockup.html). |

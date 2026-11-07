@@ -1,0 +1,2276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit window — one shared shell and one action bar for all three hybrid editors</title>
+<style>
+/* ==================================================================
+   MOCKUP — ONE SHARED SHELL for the three hybrid-mode edit windows:
+   table editor, Mermaid designer, Graphviz / WaveDrom designer.
+
+   The decision this page proves:
+
+     HEADER   [title + type badge] … [seam] [max][close]. 65 px, 44 px
+              controls, 10 px padding. No history here any more.
+
+     BAR      One action bar under the header, identical in all three:
+              full width, 57 px, --bg-elev, one 1 px seam below.
+              Left  = the window's own actions, one scrolling line.
+              Right = 1 px seam, the shared 44 px Undo/Redo pair, and one
+                      reserved slot for future per-window actions.
+              The table's old tool strip becomes this bar; the designers
+              gain it.
+
+     BODY     One frame, three interiors. The table is a flush grid under
+              the bar; the designers keep sidebar / canvas / inspector.
+
+     FOOTER   [status][Cancel][Apply] — identical in all three.
+              44 px actions, 12 px 18 px padding, 8 px gap, status left.
+
+   Controls: Layout (Edit bar / Header history / Current), Width
+   (1280 / 720), Theme. "Edit bar" is the default and the decision;
+   "Header history" is the previous variant (history in the header, no
+   bar for the designers, the table keeps its own tool row); "Current"
+   is today's shipped chrome.
+
+   Colours, spacing and type are the app's own:
+     static/css/style.css:4-131        theme tokens (dark + light)
+     static/css/style.css:1799-1925    .settings-modal / -header / -body
+     static/css/style.css:2143-2162    .settings-action
+     static/css/style.css:2255-2263    .settings-footer
+     static/css/style.css:5794-6134    table editor (--te-* tokens)
+     static/css/style.css:6141-6205    designer tokens + sidebar
+     static/css/style.css:6408-6417    .designer-canvas dot grid
+     static/css/style.css:6486-6534    .designer-inspector
+     static/css/style.css:6555-6566    .designer-footer + primary action
+     static/css/style.css:6894-6958    DW compact strip
+     static/js/windows.js:101-136     injected [max][close] cluster
+
+   Deviations from the app, deliberate, documented in
+   docs/ui/edit-window.md:
+     - the table box is 1320 x 768 (app: 960 x 640), one .edit-modal
+       shared by all three windows;
+     - every header control is 44 x 44 (app icon buttons are 28), and
+       the header pads 10 px instead of 14 px so it stays 65 px;
+     - the action bar is new; the table's tools are 32 px inside it
+       (app: 28 px in a 44 px strip) and the history pair is 44 px;
+     - footer actions are 44 px (app .settings-action is ~32 px);
+     - the DW compact strip is 44 px per button (was 40).
+
+   Nothing animates. Bodies are stubs that only prove the chrome sits
+   correctly around them.
+   ================================================================== */
+
+
+/* ---- app tokens: verbatim ---------------------------------------- */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --accent-fg: #14151a;
+  --te-fg-muted: #9799a4;
+  --te-row-hover: var(--bg-elev);
+  --te-sel-fill: rgba(124, 156, 255, .10);
+  --designer-canvas-bg: #14151a;
+  --designer-grid: rgba(124, 156, 255, .12);
+  --designer-grid-size: 24px;
+  --dw-wavedrom-surface: #fff;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --designer-space-1: 4px;
+  --designer-space-2: 6px;
+  --designer-space-3: 8px;
+  --designer-space-4: 12px;
+  --designer-space-5: 16px;
+  --designer-space-6: 24px;
+  --designer-radius-sm: 6px;
+  --designer-radius-md: 8px;
+  --designer-radius-pill: 999px;
+  --designer-sidebar-w: 236px;
+  --designer-inspector-w: 296px;
+  --designer-field-h: 32px;
+
+  --te-space-1: 4px;
+  --te-space-2: 6px;
+  --te-space-3: 8px;
+  --te-space-4: 12px;
+  --te-space-5: 16px;
+  --te-radius: 6px;
+  --te-tool: 32px;
+  --te-strip-h: 48px;
+  --te-cell-min-w: 140px;
+  --te-cell-max-w: 380px;
+
+  /* ---- the shared shell: the numbers this page argues for ---- */
+  --edit-head-h: 65px;      /* 44 control + 10 pad + 10 pad + 1 border */
+  --edit-head-pad-x: 18px;
+  --edit-head-gap: 10px;
+  --edit-icon: 44px;
+  --edit-icon-gap: 2px;
+  --edit-seam-h: 24px;
+  --edit-bar-h: 57px;       /* 44 line + 6 pad + 6 pad + 1 border */
+  --edit-bar-pad-x: 12px;
+  --edit-bar-pad-y: 6px;
+  --edit-bar-gap: 8px;
+  --edit-bar-tool: 32px;    /* the left slot's control size */
+  --edit-bar-sep-h: 20px;
+  --edit-foot-h: 69px;      /* 44 control + 12 pad + 12 pad + 1 border */
+  --edit-foot-pad-x: 18px;
+  --edit-foot-gap: 8px;
+  --edit-badge-max: 120px;
+}
+body[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #2faa66;
+  --warn: #c9831d;
+  --accent-fg: #ffffff;
+  --te-fg-muted: #5d6470;
+  --te-sel-fill: rgba(47, 95, 208, .08);
+  --designer-canvas-bg: #f7f8fb;
+  --designer-grid: rgba(47, 95, 208, .14);
+}
+/* The designer scope raises --fg-muted for 4.5:1 on --bg-elev. */
+.win.mm, .win.dw { --fg-muted: #9799a4; }
+body[data-theme="light"] .win.mm,
+body[data-theme="light"] .win.dw { --fg-muted: #5d6470; }
+
+/* ---- page furniture ---------------------------------------------- */
+html { font-size: 14px; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.5 var(--font-sans);
+}
+h1, h2, h3, h4, p, ol, ul, figure { margin: 0; }
+code { font-family: var(--font-mono); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+#board { padding: 28px 32px 72px; }
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.eyebrow {
+  font: 500 .7rem/1 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 8px;
+}
+h1 { font-size: 1.5rem; font-weight: 650; letter-spacing: -.01em; }
+.lede {
+  margin-top: 8px;
+  max-width: 78ch;
+  color: var(--fg-muted);
+  font-size: .93rem;
+  line-height: 1.55;
+}
+.lede b { color: var(--fg); font-weight: 600; }
+.lede code { color: var(--fg); font-size: .86em; }
+
+.controls { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.ctrl-row { display: flex; align-items: center; gap: 10px; }
+.ctrl-label {
+  font-size: .72rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--fg-muted); min-width: 74px;
+  text-align: right;
+}
+.seg {
+  display: inline-flex; gap: 2px; padding: 2px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--designer-radius-md);
+}
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--fg-muted);
+  font: inherit; font-size: .84rem; line-height: 1.2;
+  padding: 7px 12px; min-height: 32px; border-radius: 6px; cursor: pointer;
+  white-space: nowrap;
+}
+.seg button:hover { color: var(--fg); background: var(--accent-soft); }
+.seg button[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--fg); font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---- stages, slots, pins ----------------------------------------- */
+.stage { margin-top: 26px; }
+.stage-bar {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px;
+  margin-bottom: 12px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: .82rem; color: var(--fg-muted);
+}
+.stage-tag {
+  font: 600 .7rem/1 var(--font-mono); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--fg);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 7px;
+}
+.frames { display: flex; align-items: flex-start; gap: 24px; }
+.slot { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.slot-head {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: .76rem; color: var(--fg-muted);
+}
+.slot-name { font-weight: 600; color: var(--fg); }
+.slot-size { font-family: var(--font-mono); font-size: .7rem; }
+.slot-body { position: relative; flex: 0 0 auto; }
+.frame { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+/* Stage visibility is the only layout switch on the page. Three
+   layouts: Edit bar (default) / Header history / Current. */
+body[data-layout="bar"] #stage-header,
+body[data-layout="bar"] #stage-current { display: none; }
+body[data-layout="header"] #stage-bar,
+body[data-layout="header"] #stage-current { display: none; }
+body[data-layout="current"] #stage-bar,
+body[data-layout="current"] #stage-header { display: none; }
+
+.pin {
+  position: absolute; z-index: 6;
+  width: 22px; height: 22px; border-radius: 999px;
+  display: grid; place-items: center;
+  font: 600 .68rem/1 var(--font-mono);
+  background: var(--accent); color: var(--accent-fg);
+  border: 2px solid var(--bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .45);
+  pointer-events: none;
+}
+/* Pins that only make sense at one width hide themselves. */
+.stage[data-compact="false"] [data-only="compact"] { display: none !important; }
+.stage[data-compact="true"] [data-only="wide"] { display: none !important; }
+/* Callouts sit outside a stage, so they follow the body-level mirror. */
+body[data-compact="false"] .legend [data-only="compact"] { display: none !important; }
+
+/* ---- window chrome (app) ----------------------------------------- */
+.win {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+  overflow: hidden;
+}
+.win .settings-header {
+  display: flex; align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: move;
+}
+
+/* ---- THE HEADER --------------------------------------------------
+   Header-history variant: [heading (title + badge)] … [undo][redo]
+   [seam] [max][close]. The edit-bar variant drops the history pair
+   and keeps [heading] … [seam] [max][close].
+
+   .win-history and .win-seam are direct children of .settings-header.
+   windows.js wraps only the LAST header button (close) in
+   .settings-header-actions and inserts maximize before it, so undo and
+   redo stay outside that group and the seam lands between the two
+   clusters. Nothing may be placed after close. */
+.win-header .settings-header,
+.win-bar .settings-header {
+  gap: var(--edit-head-gap);
+  padding: 10px var(--edit-head-pad-x);
+  min-height: var(--edit-head-h);
+}
+.edit-heading {
+  flex: 1 1 auto; min-width: 0; overflow: hidden;
+  display: flex; align-items: baseline; gap: 10px;
+}
+.edit-heading h2 {
+  flex: 0 1 auto; min-width: 0; margin: 0;
+  font-size: 1.14rem; font-weight: 600; letter-spacing: .3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Badge slot: only the designers have a type, so only they render the
+   span. It never shrinks and never takes reserved space when empty. */
+.edit-badge {
+  flex: 0 0 auto;
+  max-width: var(--edit-badge-max);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--fg-muted); background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: var(--designer-radius-pill);
+  padding: 2px 9px;
+}
+.edit-badge:empty { display: none; }
+
+.win-history {
+  display: flex; align-items: center; gap: var(--edit-icon-gap);
+  flex: 0 0 auto;
+}
+/* The seam: 1 px, 24 px tall, the header gap on either side. */
+.win-seam {
+  flex: 0 0 auto; width: 1px; height: var(--edit-seam-h);
+  background: var(--border);
+}
+.settings-header-actions { display: flex; align-items: center; gap: var(--edit-icon-gap); flex: 0 0 auto; }
+
+/* Every header control is one 44 px square. */
+.win-history-btn,
+.win-header .settings-header .icon-btn,
+.win-bar .settings-header .icon-btn {
+  appearance: none; background: none; border: 0; padding: 0;
+  width: var(--edit-icon); height: var(--edit-icon);
+  border-radius: var(--designer-radius-md);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--fg-muted); font: inherit; line-height: 1;
+  cursor: pointer; flex: 0 0 auto;
+}
+.win-header .settings-header .icon-btn,
+.win-bar .settings-header .icon-btn { font-size: 1.35rem; }
+.win-history-btn:hover:not(:disabled),
+.win-header .settings-header .icon-btn:hover,
+.win-bar .settings-header .icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.win-history-btn:disabled { opacity: .4; cursor: not-allowed; }
+.win-history-btn svg, .icon-btn svg { display: block; }
+.win-max .win-max-restore { display: none; }
+
+/* Today's header, drawn for the Current stage: title + close only,
+   14 px padding, 28 px close. */
+.win-current .settings-header { justify-content: space-between; }
+.icon-btn {
+  appearance: none; background: none; border: 0; color: var(--fg-muted);
+  font: inherit; font-size: 1.3rem; line-height: 1; padding: 0;
+  width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+/* ---- THE UNIFIED FOOTER ------------------------------------------
+   [status][Cancel][Apply] — identical in all three windows. No hint
+   slot: the table's "Esc cancels" goes, so the anatomy is the same in
+   all three. Esc still cancels; Cancel carries aria-keyshortcuts. */
+.edit-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--edit-foot-gap);
+  padding: 12px var(--edit-foot-pad-x);
+  min-height: var(--edit-foot-h);
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+.edit-status {
+  margin-right: auto; flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .82rem; line-height: 1.3; color: var(--fg-muted);
+}
+.settings-action {
+  appearance: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 16px;
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; font-size: .93rem; line-height: 1.2;
+  cursor: pointer; white-space: nowrap; flex: 0 0 auto;
+}
+.settings-action:hover { background: var(--accent-soft); border-color: var(--accent); }
+.settings-action:disabled {
+  opacity: .5; cursor: not-allowed;
+  background: var(--bg-elev); border-color: var(--border);
+}
+.settings-action--primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--accent-fg); font-weight: 600;
+}
+.settings-action--primary:hover { background: var(--accent); filter: brightness(1.06); }
+
+/* Today's footer, drawn for the Current stage: 32 px actions. */
+.win-current .edit-footer { min-height: 0; padding: 12px 18px; }
+.win-current .settings-action { min-height: 32px; padding: 0 14px; }
+
+/* Footer wrap at <=720: status takes its own row, Cancel / Apply stay
+   right-aligned on row two. */
+.stage[data-narrow="true"] .edit-footer { flex-wrap: wrap; row-gap: 6px; }
+.stage[data-narrow="true"] .edit-status { flex: 1 1 100%; margin: 0; white-space: normal; }
+
+/* ---- THE ACTION BAR ----------------------------------------------
+   One row, full width, directly under the header, identical in all
+   three windows: 57 px = 6 + 44 + 6 + 1, --bg-elev, one 1 px seam
+   below. Left = the window's own actions (scrolls sideways, never
+   wraps); then a 1 px seam, the shared 44 px history pair and one
+   reserved slot at the far right.
+
+   The table's 20 tools and its sort field live here now; the designers
+   get four and three chips. The row height and padding do not change
+   between windows -- only the contents of the left slot do. */
+.edit-bar {
+  display: flex; align-items: center;
+  gap: var(--edit-bar-gap);
+  padding: var(--edit-bar-pad-y) var(--edit-bar-pad-x);
+  min-height: var(--edit-bar-h);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* The left slot: one scrolling line. Children keep their size. */
+.edit-bar-left {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 0;
+  overflow-x: auto; overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.edit-bar-left::-webkit-scrollbar { display: none; }
+.edit-bar-left > * { flex: 0 0 auto; }
+.edit-bar-left > .te-spacer { flex: 1 1 auto; min-width: 8px; }
+
+.bar-group { display: inline-flex; align-items: center; gap: 2px; }
+
+/* Group separator: 1 px, 20 px tall, 8 px either side. */
+.edit-bar-sep {
+  flex: 0 0 auto; width: 1px; height: var(--edit-bar-sep-h);
+  background: var(--border); margin: 0 var(--edit-bar-gap);
+}
+
+/* Designer left slots: text chips, the left slot's 32 px size. */
+.bar-chip {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center;
+  height: var(--edit-bar-tool); padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--te-radius);
+  background: transparent; color: var(--fg);
+  font: inherit; font-size: .8rem; line-height: 1.2;
+  cursor: pointer; white-space: nowrap;
+}
+.bar-chip:hover { background: var(--accent-soft); color: var(--fg); }
+.bar-chip[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Overflow: appears only where the left slot actually overflows. */
+.edit-bar-more {
+  display: none; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: var(--edit-bar-tool); height: var(--edit-bar-tool);
+  padding: 0; border: 1px solid var(--border); border-radius: var(--te-radius);
+  background: transparent; color: var(--fg-muted);
+  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.edit-bar-more:hover { background: var(--accent-soft); color: var(--fg); border-color: var(--accent); }
+.stage[data-compact="true"] .edit-bar-left[data-overflow="true"] ~ .edit-bar-more { display: inline-flex; }
+
+/* Right cluster: seam, 44 px history pair, one reserved slot. */
+.edit-bar-seam {
+  flex: 0 0 auto; width: 1px; height: var(--edit-seam-h);
+  background: var(--border); margin-left: 2px;
+}
+.edit-bar .win-history { flex: 0 0 auto; }
+.edit-bar-slot {
+  flex: 0 0 auto; width: 28px; height: 28px; margin-left: 4px;
+  display: grid; place-items: center;
+  border: 1px dashed var(--border); border-radius: 6px;
+  color: var(--fg-muted); font-size: .9rem; line-height: 1;
+}
+
+/* ---- table window body: the designers' body, turned 90 degrees ----
+
+   .designer-body is a row of flush regions: no padding, no background of
+   its own, no inner border, no inner radius. The modal's 1 px border is
+   the outer edge and its overflow:hidden clips the corners. The table
+   body is the same thing as a column:
+
+     region 1  tool strip   = the designers' 48 px top row
+     region 2  grid         = the designers' canvas (the only surface)
+
+   Nothing else. No sidebar, no inspector. */
+.te-body {
+  display: flex; flex-direction: column;
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  padding: 0; background: none;
+}
+.table-win { --fg-muted: var(--te-fg-muted); }
+
+/* Region 1 — the strip. Metrics come from .designer-inspector-head:
+   48 px = 8 + 32 + 8, --bg-elev, one 1 px seam, .76 rem labels. Tools
+   are 32 px, the family's icon-button size (.designer-iconbtn). */
+.te-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--designer-space-2);
+  min-height: var(--te-strip-h);
+  padding: var(--designer-space-3) var(--designer-space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+  flex: 0 0 auto;
+}
+.te-group { display: inline-flex; align-items: center; gap: var(--te-space-1); }
+.te-sep { width: 1px; height: 18px; background: var(--border); margin: 0 var(--te-space-1); flex: 0 0 auto; }
+.te-spacer { flex: 1 1 auto; }
+.te-tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--te-tool); height: var(--te-tool); padding: 0;
+  border: 1px solid transparent; border-radius: var(--te-radius);
+  background: transparent; color: var(--fg-muted); font-family: inherit;
+  cursor: pointer;
+}
+.te-tool svg { width: 16px; height: 16px; display: block; }
+.te-tool:hover { background: var(--accent-soft); color: var(--fg); }
+.te-tool.is-danger:hover { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.te-tool[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+/* Label: .designer-field-label scale. Field: .designer-field. */
+.te-sort-label {
+  font-size: .76rem; line-height: 1.2; color: var(--fg-muted);
+  margin: 0 var(--te-space-1) 0 0; white-space: nowrap;
+}
+.te-sort-col {
+  height: var(--te-tool); min-width: 132px; max-width: 190px;
+  background: var(--code-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--te-radius);
+  font: inherit; font-size: .84rem; padding: 0 var(--te-space-3);
+}
+.te-sort-col:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Region 2 — the grid. Flush: no gutter, no inset. The surface is the
+   designers' canvas tone: the grid is this family's document surface,
+   exactly as the canvas is theirs. */
+.te-scroll {
+  flex: 1 1 auto; min-height: 0;
+  overflow: auto; overscroll-behavior: contain;
+  background: var(--designer-canvas-bg);
+  padding: 0;
+}
+.te-grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.te-cell {
+  position: relative; min-width: var(--te-cell-min-w);
+  padding: var(--te-space-2) 10px;
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: .93rem; line-height: 1.35; text-align: left; font-weight: 400;
+  background: transparent;
+}
+/* The outer cell borders go: the modal border and the strip's seam are
+   the frame. Keeping them would draw a 2 px double line on the left,
+   right and bottom edge. */
+.te-cell:first-child { border-left: 0; }
+.te-cell:last-child { border-right: 0; }
+thead .te-cell {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--bg-elev); border-top: 0; font-weight: 600;
+}
+tbody tr:last-child .te-cell { border-bottom: 0; }
+tbody tr:nth-child(even) .te-cell { background: var(--bg); }
+tbody tr:hover .te-cell { background: var(--te-row-hover); }
+.te-cell.is-active { background-color: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); z-index: 1; }
+.te-cell.is-selected:not(.is-active) {
+  background-image: linear-gradient(var(--te-sel-fill), var(--te-sel-fill));
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.te-cell.is-empty::after { content: "\00b7"; color: var(--fg-muted); opacity: .45; }
+.stage[data-narrow="true"] .te-toolbar { row-gap: var(--te-space-2); }
+
+/* ---- designer shell (Mermaid + DW) -------------------------------- */
+.designer-body { display: flex; flex-direction: row; min-height: 0; min-width: 0; padding: 0; flex: 1 1 auto; }
+.designer-sidebar {
+  flex: 0 0 var(--designer-sidebar-w); width: var(--designer-sidebar-w); min-width: 0;
+  display: flex; flex-direction: column; gap: var(--designer-space-3);
+  overflow-y: auto; overflow-x: hidden;
+  padding: var(--designer-space-4) var(--designer-space-3);
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+}
+.designer-section { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.designer-sidebar-title {
+  margin: 0; font-size: .72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--fg-muted);
+}
+.designer-divider { height: 1px; background: var(--border); margin: 2px 0; flex: 0 0 auto; }
+.designer-add-tabs {
+  display: flex; gap: 2px; padding: 2px;
+  border: 1px solid var(--border); border-radius: var(--designer-radius-sm);
+  background: var(--bg); min-width: 0;
+}
+.designer-tab {
+  appearance: none; flex: 1 1 0; min-width: 0; padding: 5px 4px;
+  border: 0; border-radius: 4px; background: transparent; color: var(--fg-muted);
+  font: inherit; font-size: .78rem; line-height: 1.2; cursor: pointer;
+}
+.designer-tab[aria-selected="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.designer-add-form, .designer-fields { display: flex; flex-direction: column; gap: var(--designer-space-3); min-width: 0; }
+.designer-field-row { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.designer-field-label { font-size: .76rem; line-height: 1.2; color: var(--fg-muted); }
+.designer-field {
+  width: 100%; height: var(--designer-field-h); min-width: 0; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: var(--designer-radius-sm);
+  background: var(--code-bg); color: var(--fg); font: inherit; font-size: .84rem;
+}
+.designer-btn {
+  appearance: none; display: inline-flex; align-items: center; justify-content: center;
+  gap: 5px; min-height: 30px; padding: 5px 10px;
+  border: 1px solid var(--border); background: var(--bg-elev); color: var(--fg);
+  font: inherit; font-size: .82rem; line-height: 1.2; border-radius: var(--designer-radius-sm);
+  cursor: pointer; text-align: center;
+}
+.designer-btn:hover { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.designer-btn--commit {
+  width: 100%; background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+.designer-btn--ghost {
+  background: transparent; border-color: transparent; color: var(--fg-muted);
+  padding: 3px 7px; min-height: 26px;
+}
+.designer-btn--block { width: 100%; }
+.designer-scope-note { font-size: .74rem; line-height: 1.35; color: var(--fg-muted); }
+.designer-switch-row { display: flex; align-items: center; gap: var(--designer-space-3); min-width: 0; }
+.designer-switch-label { font-size: .82rem; color: var(--fg); }
+.designer-switch-word { margin-left: auto; font-size: .72rem; color: var(--fg-muted); }
+.designer-switch { position: relative; flex: 0 0 auto; width: 34px; height: 18px; }
+.designer-switch-track { display: block; position: absolute; inset: 0; border-radius: 999px; background: var(--border); }
+.designer-switch-track::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%; background: var(--fg);
+}
+.designer-switch.on .designer-switch-track { background: var(--accent); }
+.designer-switch.on .designer-switch-track::after { transform: translateX(16px); background: var(--accent-fg); }
+.designer-direction { display: flex; gap: 4px; }
+.designer-chip-text {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 26px; padding: 0 7px;
+  border: 1px solid var(--border); border-radius: var(--designer-radius-pill);
+  background: var(--bg); color: var(--fg-muted); font-size: .72rem; line-height: 1;
+}
+.designer-chip-text[data-on] {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+
+.designer-stage { position: relative; flex: 1 1 auto; min-height: 0; min-width: 0; overflow: hidden; }
+.designer-canvas {
+  position: absolute; inset: 0;
+  background-color: var(--designer-canvas-bg);
+  background-image: radial-gradient(circle, var(--designer-grid) 1px, transparent 1px);
+  background-size: var(--designer-grid-size) var(--designer-grid-size);
+  background-position: center;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.designer-hint {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  margin: 0; padding: 4px 10px; border-radius: 999px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--fg-muted); font-size: .74rem; white-space: nowrap;
+}
+.designer-inspector {
+  flex: 0 0 var(--designer-inspector-w); width: var(--designer-inspector-w);
+  min-width: 0; display: flex; flex-direction: column;
+  background: var(--bg-elev); border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+.designer-inspector-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--designer-space-3);
+  min-height: 48px; padding: 8px var(--designer-space-4);
+  border-bottom: 1px solid var(--border);
+}
+.designer-inspector-glyph {
+  flex: 0 0 auto; width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--accent);
+  font-size: .78rem; font-weight: 700;
+}
+.designer-inspector-titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.designer-inspector-kind { margin: 0; font-size: .92rem; font-weight: 600; line-height: 1.2; }
+.designer-inspector-meta {
+  font-size: .72rem; line-height: 1.2; color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+.designer-inspector-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: var(--designer-space-4);
+  display: flex; flex-direction: column; gap: var(--designer-space-4);
+}
+.designer-group { display: flex; flex-direction: column; gap: var(--designer-space-2); padding-top: 10px; border-top: 1px solid var(--border); }
+.designer-group:first-child { padding-top: 0; border-top: 0; }
+.designer-group-title {
+  margin: 0 0 2px; font-size: .7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--fg-muted);
+}
+.designer-btn--danger { width: 100%; background: transparent; border-color: transparent; color: var(--danger); justify-content: flex-start; }
+/* Today's sidebar History section — Current stage only. */
+.designer-history { display: flex; gap: 6px; }
+.designer-history .designer-btn { flex: 1 1 0; }
+
+/* DW canvas: the white WaveDrom card */
+.dw-stage { display: flex; align-items: center; justify-content: center; padding: 18px; }
+.dw-card {
+  position: relative; margin: auto; max-width: 90%; max-height: 78%;
+  padding: 14px 16px;
+  background: var(--dw-wavedrom-surface);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.dw-card svg { display: block; max-width: 100%; max-height: 100%; }
+
+/* DW compact strip: + ▦ ⌨, three 44 px buttons, no history. */
+.dw-compact-nav { display: none; gap: 4px; }
+.dw-compact-nav .designer-btn {
+  flex: 0 0 var(--edit-icon); width: var(--edit-icon); height: var(--edit-icon);
+  min-height: var(--edit-icon); padding: 0; font-size: 1rem;
+}
+.stage[data-compact="true"] .dw-compact-nav { display: flex; }
+
+/* ---- compact designer layouts (frame-width driven) ---------------- */
+.stage[data-compact="true"] .designer-body { flex-direction: column; min-height: 0; }
+.stage[data-compact="true"] .designer-inspector { display: none; }
+
+/* Mermaid at <=960: sections become one scrolling strip. */
+.stage[data-compact="true"] .mm .designer-sidebar {
+  flex: 0 0 auto; width: 100%; max-height: 240px;
+  flex-direction: row; align-items: flex-start;
+  gap: var(--designer-space-4);
+  padding: var(--designer-space-3) 10px;
+  overflow: auto; border-right: 0; border-bottom: 1px solid var(--border);
+}
+.stage[data-compact="true"] .mm .designer-sidebar .designer-section {
+  flex: 0 0 auto; flex-direction: row; align-items: flex-start;
+  gap: var(--designer-space-3);
+}
+.stage[data-compact="true"] .mm .designer-sidebar-title,
+.stage[data-compact="true"] .mm .designer-divider { display: none; }
+.stage[data-compact="true"] .mm .designer-section--add {
+  flex-direction: column; align-items: stretch; min-width: 210px; max-width: 380px;
+}
+.stage[data-compact="true"] .mm .designer-fields {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px;
+}
+.stage[data-compact="true"] .mm .designer-section--source { align-items: center; }
+.stage[data-compact="true"] .mm .designer-scope-note { display: none; }
+
+/* DW at <=960: 48px nav strip, sections hidden. */
+.stage[data-compact="true"] .dw .designer-sidebar {
+  flex: 0 0 auto; width: 100%; height: 48px; min-height: 48px; max-height: 48px;
+  flex-direction: row; flex-wrap: nowrap; align-items: center;
+  gap: var(--designer-space-4); padding: 0 10px;
+  overflow-x: auto; overflow-y: hidden;
+  border-right: 0; border-bottom: 1px solid var(--border);
+}
+.stage[data-compact="true"] .dw .designer-sidebar > .designer-section,
+.stage[data-compact="true"] .dw .designer-sidebar > .designer-divider { display: none; }
+
+/* The table keeps its desktop body at every width: its own breakpoints
+   change the modal box, not the chrome. */
+
+/* ---- legend, detail strip, notes ---------------------------------- */
+.stage-note { margin-top: 14px; font-size: .8rem; color: var(--fg-muted); }
+.stage-note b { color: var(--fg); font-weight: 600; }
+
+.legend {
+  list-style: none; margin: 30px 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px 24px;
+}
+.legend li {
+  display: grid; grid-template-columns: 22px 1fr; gap: 10px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.legend .num {
+  width: 22px; height: 22px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-fg);
+  font: 600 .68rem/1 var(--font-mono);
+}
+.legend b { display: block; font-weight: 600; font-size: .86rem; }
+.legend p { margin-top: 2px; font-size: .82rem; line-height: 1.45; color: var(--fg-muted); }
+.legend code { font-size: .9em; color: var(--fg); }
+
+/* Today's table footer, drawn at 1:1 next to the Current window. */
+.detail {
+  margin-top: 28px; padding-top: 18px;
+  border-top: 1px dashed var(--border);
+  max-width: 720px;
+}
+.detail h2 { font-size: .9rem; font-weight: 650; margin-bottom: 2px; }
+.detail p { font-size: .8rem; color: var(--fg-muted); margin-bottom: 12px; }
+.detail .win { box-shadow: none; border-radius: 10px; }
+.detail .settings-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; background: var(--bg-panel); }
+.detail .edit-status { font-size: .8rem; margin-right: auto; }
+.detail .settings-action { min-height: 32px; padding: 0 14px; }
+.detail .te-hint { margin-left: var(--te-space-3); font-size: .78rem; color: var(--fg-muted); white-space: nowrap; }
+
+.anatomy {
+  margin-top: 34px; padding-top: 20px; border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px;
+}
+.anatomy h2 { font-size: .95rem; font-weight: 650; }
+.anatomy .sub { font-size: .78rem; color: var(--fg-muted); margin-bottom: 12px; }
+.order { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: .78rem; color: var(--fg-muted); margin-bottom: 8px; }
+.chip {
+  font: 500 .74rem/1 var(--font-mono);
+  padding: 5px 8px; border-radius: 6px;
+  background: var(--bg-elev); border: 1px solid var(--border); color: var(--fg);
+}
+.chip.primary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.chip.seam { background: transparent; border-style: dashed; color: var(--fg-muted); }
+.card {
+  background: var(--bg-panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px 18px;
+}
+.card dt { color: var(--fg-muted); }
+.card dd { margin: 0; }
+.card dl { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: .82rem; }
+
+@media (max-width: 860px) {
+  #board { padding: 20px 16px 56px; }
+  .controls { align-items: flex-start; }
+  .ctrl-label { text-align: left; min-width: 0; }
+  .frames { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body data-theme="dark" data-layout="bar">
+<main id="board">
+
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">Hybrid mode &middot; table / Mermaid / Graphviz&middot;WaveDrom</p>
+      <h1>One edit window shell</h1>
+      <p class="lede">
+        All three hybrid editors share one chrome, one box and now one
+        <b>action bar</b>: a single full-width row under the header that holds whatever
+        the window can do, with the same <b>Undo/Redo pair</b> pinned at its right edge.
+        The table&rsquo;s tool row <em>becomes</em> that bar; the designers gain it.
+        <b>Edit bar</b> is the default, <b>Header history</b> is the previous variant,
+        <b>Current</b> is today&rsquo;s shipped chrome.
+      </p>
+    </div>
+    <div class="controls">
+      <div class="ctrl-row">
+        <span class="ctrl-label" id="layout-label">Layout</span>
+        <div class="seg" role="group" aria-labelledby="layout-label">
+          <button type="button" data-act="layout" data-value="bar" aria-pressed="true">Edit bar</button>
+          <button type="button" data-act="layout" data-value="header" aria-pressed="false">Header history</button>
+          <button type="button" data-act="layout" data-value="current" aria-pressed="false">Current</button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label" id="width-label">Width</span>
+        <div class="seg" role="group" aria-labelledby="width-label">
+          <button type="button" data-act="width" data-value="1280" aria-pressed="true">1280</button>
+          <button type="button" data-act="width" data-value="720" aria-pressed="false">720</button>
+        </div>
+      </div>
+      <div class="ctrl-row">
+        <span class="ctrl-label" id="theme-label">Theme</span>
+        <div class="seg" role="group" aria-labelledby="theme-label">
+          <button type="button" id="theme-toggle" aria-pressed="false">Light</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================================================== EDIT BAR == -->
+  <section class="stage" id="stage-bar" data-w="1280"
+           data-compact="false" data-narrow="false"
+           aria-label="Edit bar: the three edit windows with one shared action bar">
+
+    <div class="stage-bar">
+      <span class="stage-tag">Edit bar</span>
+      <span>The default. One 57&nbsp;px bar under the header in all three windows: left,
+        the window&rsquo;s own actions on one scrolling line; right, the shared
+        Undo/Redo pair behind a seam. Scaled to fit; controls are really 44 and
+        32&nbsp;px.</span>
+    </div>
+
+    <div class="frames">
+
+      <!-- ================= TABLE ================================= -->
+      <figure class="slot" data-kind="table" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Table editor</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-bar edit-modal table-win">
+
+              <!-- Header: title + badge, seam, window controls. History is
+                   no longer here. -->
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="table-editor-title">Edit table</h2>
+                  <span class="edit-badge" id="table-editor-type">Table</span>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <!-- The action bar. The table's old 48 px tool strip is this
+                   bar now: same tools, same order, one 57 px row. -->
+              <div class="edit-bar">
+                <div class="edit-bar-left" role="toolbar" aria-label="Table actions" data-overflow="true">
+                  <div class="te-group" role="group" aria-label="Rows">
+                    <button class="te-tool" type="button" title="Move row up" aria-label="Move row up"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 11V4M5 7l3-3 3 3"/></svg></button>
+                    <button class="te-tool" type="button" title="Move row down" aria-label="Move row down"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 5v7M5 9l3 3 3-3"/></svg></button>
+                    <span class="te-sep" aria-hidden="true"></span>
+                    <button class="te-tool" type="button" title="Insert row above" aria-label="Insert row above"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h10"/><path d="M8 9v4M6 11h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Insert row below" aria-label="Insert row below"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10h10"/><path d="M8 2v4M6 4h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Add row at the end" aria-label="Add row at the end"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M8 10v4M6 12h4"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete row" aria-label="Delete row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M6 12.5h4"/></svg></button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Columns">
+                    <button class="te-tool" type="button" title="Move column left" aria-label="Move column left"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4M7 5 4 8l3 3"/></svg></button>
+                    <button class="te-tool" type="button" title="Move column right" aria-label="Move column right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8M9 5l3 3-3 3"/></svg></button>
+                    <span class="te-sep" aria-hidden="true"></span>
+                    <button class="te-tool" type="button" title="Insert column left" aria-label="Insert column left"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 3v10"/><path d="M8 8h5M10.5 5.5v5"/></svg></button>
+                    <button class="te-tool" type="button" title="Insert column right" aria-label="Insert column right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M11 3v10"/><path d="M3 8h5M5.5 5.5v5"/></svg></button>
+                    <button class="te-tool" type="button" title="Add column at the right" aria-label="Add column at the right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M11 8h4M13 6v4"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete column" aria-label="Delete column"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M10 8h4"/></svg></button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Clipboard">
+                    <button class="te-tool" type="button" title="Cut" aria-label="Cut"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.5 3l7 7M11.5 3l-7 7"/><circle cx="3.5" cy="12" r="1.6"/><circle cx="12.5" cy="12" r="1.6"/></svg></button>
+                    <button class="te-tool" type="button" title="Copy" aria-label="Copy"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="9"/><path d="M2.5 5.5v8h8"/></svg></button>
+                    <button class="te-tool" type="button" title="Paste" aria-label="Paste"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3.5" width="10" height="10"/><path d="M6 3.5V2h4v1.5M5 8h6M5 11h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Clear contents" aria-label="Clear contents"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10.5l6-6 3 3-6 6z"/><path d="M9.5 4.5l2-2 3 3-2 2"/><path d="M2 14h12"/></svg></button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Column alignment">
+                    <button class="te-tool" type="button" title="Cycle column alignment (left)" aria-label="Cycle column alignment"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 7.5h7M2 11h12"/></svg></button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Sort">
+                    <span class="te-sort-label" aria-hidden="true">Sort</span>
+                    <select class="te-sort-col" aria-label="Sort by column"><option>Sort by…</option></select>
+                    <button class="te-tool" type="button" title="Sort ascending" aria-label="Sort ascending" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5"/></svg></button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Table">
+                    <button class="te-tool" type="button" title="Transpose table" aria-label="Transpose table"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5h7M7 2.5 9.5 5 7 7.5"/><path d="M13.5 11h-7M9 8.5 6.5 11 9 13.5"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete table" aria-label="Delete table"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+
+                <button class="edit-bar-more" type="button"
+                        title="More table actions" aria-label="More table actions">&hellip;</button>
+
+                <span class="edit-bar-seam" aria-hidden="true"></span>
+
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="table-editor-undo"
+                          title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="table-editor-redo"
+                          title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+
+                <!-- Reserved. Not a control, not in the tab order: the slot
+                     future per-window actions go in. -->
+                <span class="edit-bar-slot" aria-hidden="true" data-reserved="actions">+</span>
+              </div>
+
+              <div class="te-body">
+                <div class="te-scroll">
+                  <table class="te-grid" role="grid" aria-label="Table cells">
+                    <thead>
+                      <tr>
+                        <th class="te-cell is-active" scope="col">Item</th>
+                        <th class="te-cell is-selected" scope="col">Qty</th>
+                        <th class="te-cell is-selected" scope="col">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="te-cell is-selected">Starter plan</td>
+                        <td class="te-cell">3</td>
+                        <td class="te-cell">renews May 2</td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Seat add-on</td>
+                        <td class="te-cell">12</td>
+                        <td class="te-cell is-empty"></td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Support retainer</td>
+                        <td class="te-cell">1</td>
+                        <td class="te-cell">quarterly</td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Tax</td>
+                        <td class="te-cell">&mdash;</td>
+                        <td class="te-cell">excl.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="table-editor-status" role="status" aria-live="polite" aria-atomic="true">Ready</span>
+                <button class="settings-action" id="table-editor-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="table-editor-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+          <span class="pin" data-only="wide" style="left:1.2%; top:11.2%" title="One action bar under the header">1</span>
+          <span class="pin" data-only="wide" style="left:46%; top:11.2%" title="Left slot: this window's own actions">2</span>
+          <span class="pin" data-only="wide" style="left:86%; top:11.2%" title="Shared history pair, right of the seam">3</span>
+          <span class="pin" data-only="wide" style="left:96%; top:11.2%" title="Reserved slot for future actions">4</span>
+          <span class="pin" style="left:20%; bottom:2.6%" title="Commit-only footer">5</span>
+          <span class="pin" data-only="compact" style="left:79%; top:15.4%" title="Overflow, not a second row">6</span>
+        </div>
+      </figure>
+
+      <!-- ================= MERMAID =============================== -->
+      <figure class="slot" data-kind="designer" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Mermaid designer</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-bar edit-modal mm">
+
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="designer-title">Design diagram</h2>
+                  <span class="edit-badge" id="designer-type">Flowchart</span>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <!-- Mermaid left slot: four chips. The sidebar keeps the
+                   add form, the chart controls and the inspector. -->
+              <div class="edit-bar">
+                <div class="edit-bar-left" role="toolbar" aria-label="Diagram actions">
+                  <div class="bar-group" role="group" aria-label="Canvas mode">
+                    <button class="bar-chip" type="button" aria-pressed="true">Select</button>
+                    <button class="bar-chip" type="button" aria-pressed="false">Connect</button>
+                  </div>
+                  <div class="edit-bar-sep" aria-hidden="true"></div>
+                  <div class="bar-group" role="group" aria-label="Add and chart">
+                    <button class="bar-chip" type="button">Add</button>
+                    <button class="bar-chip" type="button">Chart</button>
+                  </div>
+                </div>
+
+                <span class="edit-bar-seam" aria-hidden="true"></span>
+
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="designer-undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="designer-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+
+                <span class="edit-bar-slot" aria-hidden="true" data-reserved="actions">+</span>
+              </div>
+
+              <div class="designer-body">
+
+                <aside class="designer-sidebar" aria-label="Build">
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Add</h3>
+                    <div class="designer-add-tabs" role="tablist" aria-label="Add an element">
+                      <button class="designer-tab" role="tab" aria-selected="true" type="button">Node</button>
+                      <button class="designer-tab" role="tab" aria-selected="false" type="button">Edge</button>
+                    </div>
+                    <form class="designer-add-form">
+                      <div class="designer-fields">
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Label</span>
+                          <input class="designer-field" type="text" value="Charge card" readonly>
+                        </div>
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Shape</span>
+                          <input class="designer-field" type="text" value="Process" readonly>
+                        </div>
+                      </div>
+                      <button class="designer-btn designer-btn--commit" type="button" disabled>Add node</button>
+                    </form>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Chart</h3>
+                    <div class="designer-direction" role="group" aria-label="Flowchart direction">
+                      <span class="designer-chip-text" data-on>TB</span>
+                      <span class="designer-chip-text">LR</span>
+                    </div>
+                    <div class="designer-switch-row">
+                      <span class="designer-switch-label">Autonumber messages</span>
+                      <span class="designer-switch-word">Off</span>
+                      <span class="designer-switch"><span class="designer-switch-track"></span></span>
+                    </div>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <button class="designer-btn designer-btn--ghost designer-btn--block" type="button">Edit source instead</button>
+                    <p class="designer-scope-note">Closes this window and opens the block&rsquo;s Markdown.</p>
+                  </section>
+                </aside>
+
+                <div class="designer-stage">
+                  <div class="designer-canvas" tabindex="0" role="application" aria-label="Diagram canvas">
+                    <svg viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet"
+                         style="width:100%;height:100%" role="img"
+                         aria-label="Flowchart: Start to Validate to Charge card to Done">
+                      <defs>
+                        <marker id="mm-arrow-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                          <path d="M0 0 L10 5 L0 10 z" fill="var(--fg-muted)"></path>
+                        </marker>
+                      </defs>
+                      <g stroke="var(--fg-muted)" stroke-opacity=".6" stroke-width="1.4" fill="none" marker-end="url(#mm-arrow-b)">
+                        <path d="M136 192 H190"></path>
+                        <path d="M340 192 H396"></path>
+                        <path d="M556 192 H596"></path>
+                        <path d="M265 214 V280"></path>
+                        <path d="M190 302 H150 V236"></path>
+                      </g>
+                      <g font-family="-apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+                        <rect x="40" y="170" width="96" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="88" y="197" text-anchor="middle" fill="var(--fg)">Start</text>
+
+                        <rect x="190" y="170" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="197" text-anchor="middle" fill="var(--fg)">Validate card</text>
+
+                        <rect x="396" y="170" width="160" height="44" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"></rect>
+                        <text x="476" y="197" text-anchor="middle" fill="var(--fg)" font-weight="600">Charge card</text>
+
+                        <rect x="596" y="170" width="120" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="656" y="197" text-anchor="middle" fill="var(--fg)">Done</text>
+
+                        <rect x="190" y="280" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="307" text-anchor="middle" fill="var(--fg)">Retry</text>
+
+                        <text x="150" y="256" fill="var(--fg-muted)" font-size="11">fail</text>
+                      </g>
+                    </svg>
+                  </div>
+                  <p class="designer-hint">Drag a node to move &middot; Alt-drag to connect</p>
+                </div>
+
+                <aside class="designer-inspector" aria-label="Inspector">
+                  <div class="designer-inspector-head">
+                    <span class="designer-inspector-glyph" aria-hidden="true">&#9671;</span>
+                    <div class="designer-inspector-titles">
+                      <h4 class="designer-inspector-kind">Process</h4>
+                      <span class="designer-inspector-meta">id n3 &middot; 1 of 4</span>
+                    </div>
+                  </div>
+                  <div class="designer-inspector-body">
+                    <div class="designer-group">
+                      <h4 class="designer-group-title">Node</h4>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Label</span>
+                        <input class="designer-field" type="text" value="Charge card" readonly>
+                      </div>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Shape</span>
+                        <input class="designer-field" type="text" value="Process" readonly>
+                      </div>
+                    </div>
+                    <div class="designer-group">
+                      <button class="designer-btn designer-btn--danger" type="button">Delete node</button>
+                    </div>
+                  </div>
+                </aside>
+
+              </div>
+
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="designer-status" role="status" aria-live="polite" aria-atomic="true">Unsaved changes</span>
+                <button class="settings-action" id="designer-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="designer-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+          <span class="pin" data-only="wide" style="left:1.2%; top:11.2%" title="One action bar under the header">1</span>
+          <span class="pin" data-only="wide" style="left:12%; top:11.2%" title="Left slot: four chips">2</span>
+          <span class="pin" data-only="wide" style="left:86%; top:11.2%" title="Shared history pair, right of the seam">3</span>
+          <span class="pin" data-only="wide" style="left:96%; top:11.2%" title="Reserved slot for future actions">4</span>
+          <span class="pin" style="left:20%; bottom:2.6%" title="Commit-only footer">5</span>
+          <span class="pin" data-only="wide" style="left:6%; top:52%" title="No History section in the sidebar">7</span>
+        </div>
+      </figure>
+
+      <!-- ================= GRAPHVIZ / WAVEDROM =================== -->
+      <figure class="slot" data-kind="designer" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Graphviz / WaveDrom</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-bar edit-modal dw">
+
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="dw-title">Design timing</h2>
+                  <span class="edit-badge" id="dw-type">WaveDrom</span>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <!-- DW left slot: Add, Chart, Source. Source leaves the
+                   sidebar and lives here now. -->
+              <div class="edit-bar">
+                <div class="edit-bar-left" role="toolbar" aria-label="Timing actions">
+                  <div class="bar-group" role="group" aria-label="Build">
+                    <button class="bar-chip" type="button">Add</button>
+                    <button class="bar-chip" type="button">Chart</button>
+                    <button class="bar-chip" type="button">Source</button>
+                  </div>
+                </div>
+
+                <span class="edit-bar-seam" aria-hidden="true"></span>
+
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="dw-undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="dw-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+
+                <span class="edit-bar-slot" aria-hidden="true" data-reserved="actions">+</span>
+              </div>
+
+              <div class="designer-body">
+
+                <aside class="designer-sidebar" aria-label="Build">
+                  <!-- Compact strip at 720: + ▦ ⌨, three 44 px buttons. -->
+                  <div class="dw-compact-nav" role="group" aria-label="Design sections">
+                    <button class="designer-btn" type="button" title="Add" aria-label="Add">+</button>
+                    <button class="designer-btn" type="button" title="Chart" aria-label="Chart">&#9638;</button>
+                    <button class="designer-btn" type="button" title="Source" aria-label="Source">&#9000;</button>
+                  </div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Add</h3>
+                    <div class="designer-add-tabs" role="tablist" aria-label="Add an element">
+                      <button class="designer-tab" role="tab" aria-selected="true" type="button">Wave</button>
+                      <button class="designer-tab" role="tab" aria-selected="false" type="button">Bit</button>
+                    </div>
+                    <form class="designer-add-form">
+                      <div class="designer-fields">
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Name</span>
+                          <input class="designer-field" type="text" value="data" readonly>
+                        </div>
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Period</span>
+                          <input class="designer-field" type="text" value="4" readonly>
+                        </div>
+                      </div>
+                      <button class="designer-btn designer-btn--commit" type="button" disabled>Add wave</button>
+                    </form>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Chart</h3>
+                    <div class="designer-switch-row">
+                      <span class="designer-switch-label">Show labels</span>
+                      <span class="designer-switch-word">On</span>
+                      <span class="designer-switch on"><span class="designer-switch-track"></span></span>
+                    </div>
+                  </section>
+                </aside>
+
+                <div class="designer-stage dw-stage">
+                  <div class="dw-card">
+                    <svg viewBox="0 0 520 220" width="520" height="220" role="img" aria-label="Timing diagram with clk, data and valid waves">
+                      <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" fill="#111">
+                        <text x="6" y="46">clk</text>
+                        <text x="6" y="106">data</text>
+                        <text x="6" y="166">valid</text>
+                      </g>
+                      <path d="M60 60 H100 V30 H140 V60 H180 V30 H220 V60 H260 V30 H300 V60 H340 V30 H380 V60 H420 V30 H460 V60"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <path d="M60 120 H100 V90 H140 V120 H300 V90 H340 V120 H460"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <path d="M60 180 H120 V150 H400 V180 H460"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <g stroke="#c9ccd6" stroke-width="1" stroke-dasharray="3 3">
+                        <path d="M60 24 V190"></path>
+                        <path d="M140 24 V190"></path>
+                        <path d="M220 24 V190"></path>
+                        <path d="M300 24 V190"></path>
+                        <path d="M380 24 V190"></path>
+                        <path d="M460 24 V190"></path>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+
+                <aside class="designer-inspector" aria-label="Inspector">
+                  <div class="designer-inspector-head">
+                    <span class="designer-inspector-glyph" aria-hidden="true">&#9671;</span>
+                    <div class="designer-inspector-titles">
+                      <h4 class="designer-inspector-kind">Wave</h4>
+                      <span class="designer-inspector-meta">data &middot; 4 periods</span>
+                    </div>
+                  </div>
+                  <div class="designer-inspector-body">
+                    <div class="designer-group">
+                      <h4 class="designer-group-title">Wave</h4>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Name</span>
+                        <input class="designer-field" type="text" value="data" readonly>
+                      </div>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Phase</span>
+                        <input class="designer-field" type="text" value="0.5" readonly>
+                      </div>
+                    </div>
+                    <div class="designer-group">
+                      <button class="designer-btn designer-btn--danger" type="button">Delete wave</button>
+                    </div>
+                  </div>
+                </aside>
+
+              </div>
+
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="dw-status" role="status" aria-live="polite" aria-atomic="true">Unsaved changes</span>
+                <button class="settings-action" id="dw-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="dw-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+          <span class="pin" data-only="wide" style="left:1.2%; top:11.2%" title="One action bar under the header">1</span>
+          <span class="pin" data-only="wide" style="left:10%; top:11.2%" title="Left slot: three chips">2</span>
+          <span class="pin" data-only="wide" style="left:86%; top:11.2%" title="Shared history pair, right of the seam">3</span>
+          <span class="pin" data-only="wide" style="left:96%; top:11.2%" title="Reserved slot for future actions">4</span>
+          <span class="pin" style="left:20%; bottom:2.6%" title="Commit-only footer">5</span>
+          <span class="pin" data-only="compact" style="left:3%; top:17%" title="Compact strip: + &#9638; &#9000;">7</span>
+        </div>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- =============================================== HEADER HISTORY == -->
+  <section class="stage" id="stage-header" data-w="1280"
+           data-compact="false" data-narrow="false"
+           aria-label="Header history: the three edit windows with history in the header">
+
+    <div class="stage-bar">
+      <span class="stage-tag">Header history</span>
+      <span>The previous variant. Same box and footer; Undo/Redo sits in the header
+        instead of a bar. The designers get no bar at all &mdash; their sidebars still
+        carry the work. The table keeps its own 48&nbsp;px tool row inside its body.</span>
+    </div>
+
+    <div class="frames">
+
+      <!-- ================= TABLE ================================= -->
+      <figure class="slot" data-kind="table" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Table editor</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-header edit-modal table-win">
+
+              <!-- Same header anatomy as the designers, badge included. -->
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="table-editor-title">Edit table</h2>
+                  <span class="edit-badge" id="table-editor-type">Table</span>
+                </div>
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="table-editor-undo"
+                          title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="table-editor-redo"
+                          title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <div class="te-body">
+                <div class="te-toolbar" role="toolbar" aria-label="Table tools">
+                  <div class="te-group" role="group" aria-label="Rows">
+                    <button class="te-tool" type="button" title="Move row up" aria-label="Move row up"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 11V4M5 7l3-3 3 3"/></svg></button>
+                    <button class="te-tool" type="button" title="Move row down" aria-label="Move row down"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 5v7M5 9l3 3 3-3"/></svg></button>
+                    <span class="te-sep" aria-hidden="true"></span>
+                    <button class="te-tool" type="button" title="Insert row above" aria-label="Insert row above"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h10"/><path d="M8 9v4M6 11h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Insert row below" aria-label="Insert row below"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10h10"/><path d="M8 2v4M6 4h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Add row at the end" aria-label="Add row at the end"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M8 10v4M6 12h4"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete row" aria-label="Delete row"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3h12M2 7h12"/><path d="M6 12.5h4"/></svg></button>
+                  </div>
+                  <div class="te-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Columns">
+                    <button class="te-tool" type="button" title="Move column left" aria-label="Move column left"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4M7 5 4 8l3 3"/></svg></button>
+                    <button class="te-tool" type="button" title="Move column right" aria-label="Move column right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8M9 5l3 3-3 3"/></svg></button>
+                    <span class="te-sep" aria-hidden="true"></span>
+                    <button class="te-tool" type="button" title="Insert column left" aria-label="Insert column left"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 3v10"/><path d="M8 8h5M10.5 5.5v5"/></svg></button>
+                    <button class="te-tool" type="button" title="Insert column right" aria-label="Insert column right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M11 3v10"/><path d="M3 8h5M5.5 5.5v5"/></svg></button>
+                    <button class="te-tool" type="button" title="Add column at the right" aria-label="Add column at the right"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M11 8h4M13 6v4"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete column" aria-label="Delete column"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 2v12M7 2v12"/><path d="M10 8h4"/></svg></button>
+                  </div>
+                  <div class="te-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Clipboard">
+                    <button class="te-tool" type="button" title="Cut" aria-label="Cut"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M4.5 3l7 7M11.5 3l-7 7"/><circle cx="3.5" cy="12" r="1.6"/><circle cx="12.5" cy="12" r="1.6"/></svg></button>
+                    <button class="te-tool" type="button" title="Copy" aria-label="Copy"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="5.5" y="2.5" width="8" height="9"/><path d="M2.5 5.5v8h8"/></svg></button>
+                    <button class="te-tool" type="button" title="Paste" aria-label="Paste"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><rect x="3" y="3.5" width="10" height="10"/><path d="M6 3.5V2h4v1.5M5 8h6M5 11h4"/></svg></button>
+                    <button class="te-tool" type="button" title="Clear contents" aria-label="Clear contents"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 10.5l6-6 3 3-6 6z"/><path d="M9.5 4.5l2-2 3 3-2 2"/><path d="M2 14h12"/></svg></button>
+                  </div>
+                  <div class="te-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Column alignment">
+                    <button class="te-tool" type="button" title="Cycle column alignment (left)" aria-label="Cycle column alignment"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12M2 7.5h7M2 11h12"/></svg></button>
+                  </div>
+                  <div class="te-sep" aria-hidden="true"></div>
+                  <div class="te-group" role="group" aria-label="Sort">
+                    <span class="te-sort-label" aria-hidden="true">Sort</span>
+                    <select class="te-sort-col" aria-label="Sort by column"><option>Sort by…</option></select>
+                    <button class="te-tool" type="button" title="Sort ascending" aria-label="Sort ascending" aria-pressed="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M4.5 6.5 8 3l3.5 3.5"/></svg></button>
+                  </div>
+                  <div class="te-spacer"></div>
+                  <div class="te-group" role="group" aria-label="Table">
+                    <button class="te-tool" type="button" title="Transpose table" aria-label="Transpose table"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5h7M7 2.5 9.5 5 7 7.5"/><path d="M13.5 11h-7M9 8.5 6.5 11 9 13.5"/></svg></button>
+                    <button class="te-tool is-danger" type="button" title="Delete table" aria-label="Delete table"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+
+                <div class="te-scroll">
+                  <table class="te-grid" role="grid" aria-label="Table cells">
+                    <thead>
+                      <tr>
+                        <th class="te-cell is-active" scope="col">Item</th>
+                        <th class="te-cell is-selected" scope="col">Qty</th>
+                        <th class="te-cell is-selected" scope="col">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td class="te-cell is-selected">Starter plan</td>
+                        <td class="te-cell">3</td>
+                        <td class="te-cell">renews May 2</td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Seat add-on</td>
+                        <td class="te-cell">12</td>
+                        <td class="te-cell is-empty"></td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Support retainer</td>
+                        <td class="te-cell">1</td>
+                        <td class="te-cell">quarterly</td>
+                      </tr>
+                      <tr>
+                        <td class="te-cell">Tax</td>
+                        <td class="te-cell">&mdash;</td>
+                        <td class="te-cell">excl.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Commit-only footer, identical in all three windows:
+                   status, Cancel, Apply. No Esc hint. -->
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="table-editor-status" role="status" aria-live="polite" aria-atomic="true">Ready</span>
+                <button class="settings-action" id="table-editor-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="table-editor-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </figure>
+
+      <!-- ================= MERMAID =============================== -->
+      <figure class="slot" data-kind="designer" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Mermaid designer</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-header edit-modal mm">
+
+              <!-- Same header anatomy: badge filled, same slot as the table's
+                   "Table" badge. -->
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="designer-title">Design diagram</h2>
+                  <span class="edit-badge" id="designer-type">Flowchart</span>
+                </div>
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="designer-undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="designer-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <div class="designer-body">
+
+                <!-- No History section: Add, Chart, Source. -->
+                <aside class="designer-sidebar" aria-label="Build">
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Add</h3>
+                    <div class="designer-add-tabs" role="tablist" aria-label="Add an element">
+                      <button class="designer-tab" role="tab" aria-selected="true" type="button">Node</button>
+                      <button class="designer-tab" role="tab" aria-selected="false" type="button">Edge</button>
+                    </div>
+                    <form class="designer-add-form">
+                      <div class="designer-fields">
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Label</span>
+                          <input class="designer-field" type="text" value="Charge card" readonly>
+                        </div>
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Shape</span>
+                          <input class="designer-field" type="text" value="Process" readonly>
+                        </div>
+                      </div>
+                      <button class="designer-btn designer-btn--commit" type="button" disabled>Add node</button>
+                    </form>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Chart</h3>
+                    <div class="designer-direction" role="group" aria-label="Flowchart direction">
+                      <span class="designer-chip-text" data-on>TB</span>
+                      <span class="designer-chip-text">LR</span>
+                    </div>
+                    <div class="designer-switch-row">
+                      <span class="designer-switch-label">Autonumber messages</span>
+                      <span class="designer-switch-word">Off</span>
+                      <span class="designer-switch"><span class="designer-switch-track"></span></span>
+                    </div>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <button class="designer-btn designer-btn--ghost designer-btn--block" type="button">Edit source instead</button>
+                    <p class="designer-scope-note">Closes this window and opens the block&rsquo;s Markdown.</p>
+                  </section>
+                </aside>
+
+                <div class="designer-stage">
+                  <div class="designer-canvas" tabindex="0" role="application" aria-label="Diagram canvas">
+                    <svg viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet"
+                         style="width:100%;height:100%" role="img"
+                         aria-label="Flowchart: Start to Validate to Charge card to Done">
+                      <defs>
+                        <marker id="mm-arrow-u" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                          <path d="M0 0 L10 5 L0 10 z" fill="var(--fg-muted)"></path>
+                        </marker>
+                      </defs>
+                      <g stroke="var(--fg-muted)" stroke-opacity=".6" stroke-width="1.4" fill="none" marker-end="url(#mm-arrow-u)">
+                        <path d="M136 192 H190"></path>
+                        <path d="M340 192 H396"></path>
+                        <path d="M556 192 H596"></path>
+                        <path d="M265 214 V280"></path>
+                        <path d="M190 302 H150 V236"></path>
+                      </g>
+                      <g font-family="-apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+                        <rect x="40" y="170" width="96" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="88" y="197" text-anchor="middle" fill="var(--fg)">Start</text>
+
+                        <rect x="190" y="170" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="197" text-anchor="middle" fill="var(--fg)">Validate card</text>
+
+                        <rect x="396" y="170" width="160" height="44" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"></rect>
+                        <text x="476" y="197" text-anchor="middle" fill="var(--fg)" font-weight="600">Charge card</text>
+
+                        <rect x="596" y="170" width="120" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="656" y="197" text-anchor="middle" fill="var(--fg)">Done</text>
+
+                        <rect x="190" y="280" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="307" text-anchor="middle" fill="var(--fg)">Retry</text>
+
+                        <text x="150" y="256" fill="var(--fg-muted)" font-size="11">fail</text>
+                      </g>
+                    </svg>
+                  </div>
+                  <p class="designer-hint">Drag a node to move &middot; Alt-drag to connect</p>
+                </div>
+
+                <aside class="designer-inspector" aria-label="Inspector">
+                  <div class="designer-inspector-head">
+                    <span class="designer-inspector-glyph" aria-hidden="true">&#9671;</span>
+                    <div class="designer-inspector-titles">
+                      <h4 class="designer-inspector-kind">Process</h4>
+                      <span class="designer-inspector-meta">id n3 &middot; 1 of 4</span>
+                    </div>
+                  </div>
+                  <div class="designer-inspector-body">
+                    <div class="designer-group">
+                      <h4 class="designer-group-title">Node</h4>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Label</span>
+                        <input class="designer-field" type="text" value="Charge card" readonly>
+                      </div>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Shape</span>
+                        <input class="designer-field" type="text" value="Process" readonly>
+                      </div>
+                    </div>
+                    <div class="designer-group">
+                      <button class="designer-btn designer-btn--danger" type="button">Delete node</button>
+                    </div>
+                  </div>
+                </aside>
+
+              </div>
+
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="designer-status" role="status" aria-live="polite" aria-atomic="true">Unsaved changes</span>
+                <button class="settings-action" id="designer-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="designer-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </figure>
+
+      <!-- ================= GRAPHVIZ / WAVEDROM =================== -->
+      <figure class="slot" data-kind="designer" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Graphviz / WaveDrom</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-header edit-modal dw">
+
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2 id="dw-title">Design timing</h2>
+                  <span class="edit-badge" id="dw-type">WaveDrom</span>
+                </div>
+                <div class="win-history" role="group" aria-label="History">
+                  <button class="win-history-btn" type="button" data-id="dw-undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                  <button class="win-history-btn" type="button" data-id="dw-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)"><svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                </div>
+                <span class="win-seam" aria-hidden="true"></span>
+                <div class="settings-header-actions">
+                  <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+                    <svg class="win-max-icon" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+                    <svg class="win-max-restore" viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6h4V2M14 6h-4V2M14 10h-4v4M2 10h4v4"/></svg>
+                  </button>
+                  <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+                </div>
+              </div>
+
+              <div class="designer-body">
+
+                <aside class="designer-sidebar" aria-label="Build">
+                  <!-- Compact strip: three buttons. Undo/Redo live in the header. -->
+                  <div class="dw-compact-nav" role="group" aria-label="Design sections">
+                    <button class="designer-btn" type="button" title="Add" aria-label="Add">+</button>
+                    <button class="designer-btn" type="button" title="Chart" aria-label="Chart">&#9638;</button>
+                    <button class="designer-btn" type="button" title="Source" aria-label="Source">&#9000;</button>
+                  </div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Add</h3>
+                    <div class="designer-add-tabs" role="tablist" aria-label="Add an element">
+                      <button class="designer-tab" role="tab" aria-selected="true" type="button">Wave</button>
+                      <button class="designer-tab" role="tab" aria-selected="false" type="button">Bit</button>
+                    </div>
+                    <form class="designer-add-form">
+                      <div class="designer-fields">
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Name</span>
+                          <input class="designer-field" type="text" value="data" readonly>
+                        </div>
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Period</span>
+                          <input class="designer-field" type="text" value="4" readonly>
+                        </div>
+                      </div>
+                      <button class="designer-btn designer-btn--commit" type="button" disabled>Add wave</button>
+                    </form>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Chart</h3>
+                    <div class="designer-switch-row">
+                      <span class="designer-switch-label">Show labels</span>
+                      <span class="designer-switch-word">On</span>
+                      <span class="designer-switch on"><span class="designer-switch-track"></span></span>
+                    </div>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <button class="designer-btn designer-btn--ghost designer-btn--block" type="button">Edit source instead</button>
+                    <p class="designer-scope-note">Closes this window and opens the block&rsquo;s Markdown.</p>
+                  </section>
+                </aside>
+
+                <div class="designer-stage dw-stage">
+                  <div class="dw-card">
+                    <svg viewBox="0 0 520 220" width="520" height="220" role="img" aria-label="Timing diagram with clk, data and valid waves">
+                      <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" fill="#111">
+                        <text x="6" y="46">clk</text>
+                        <text x="6" y="106">data</text>
+                        <text x="6" y="166">valid</text>
+                      </g>
+                      <path d="M60 60 H100 V30 H140 V60 H180 V30 H220 V60 H260 V30 H300 V60 H340 V30 H380 V60 H420 V30 H460 V60"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <path d="M60 120 H100 V90 H140 V120 H300 V90 H340 V120 H460"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <path d="M60 180 H120 V150 H400 V180 H460"
+                            fill="none" stroke="#111" stroke-width="1.6"></path>
+                      <g stroke="#c9ccd6" stroke-width="1" stroke-dasharray="3 3">
+                        <path d="M60 24 V190"></path>
+                        <path d="M140 24 V190"></path>
+                        <path d="M220 24 V190"></path>
+                        <path d="M300 24 V190"></path>
+                        <path d="M380 24 V190"></path>
+                        <path d="M460 24 V190"></path>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+
+                <aside class="designer-inspector" aria-label="Inspector">
+                  <div class="designer-inspector-head">
+                    <span class="designer-inspector-glyph" aria-hidden="true">&#9671;</span>
+                    <div class="designer-inspector-titles">
+                      <h4 class="designer-inspector-kind">Wave</h4>
+                      <span class="designer-inspector-meta">data &middot; 4 periods</span>
+                    </div>
+                  </div>
+                  <div class="designer-inspector-body">
+                    <div class="designer-group">
+                      <h4 class="designer-group-title">Wave</h4>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Name</span>
+                        <input class="designer-field" type="text" value="data" readonly>
+                      </div>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Phase</span>
+                        <input class="designer-field" type="text" value="0.5" readonly>
+                      </div>
+                    </div>
+                    <div class="designer-group">
+                      <button class="designer-btn designer-btn--danger" type="button">Delete wave</button>
+                    </div>
+                  </div>
+                </aside>
+
+              </div>
+
+              <div class="settings-footer edit-footer">
+                <span class="edit-status" id="dw-status" role="status" aria-live="polite" aria-atomic="true">Unsaved changes</span>
+                <button class="settings-action" id="dw-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+                <button class="settings-action settings-action--primary" id="dw-apply" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </figure>
+
+    </div>
+  </section>
+
+  <!-- ===================================================== CURRENT == -->
+  <section class="stage" id="stage-current" data-w="1280"
+           data-compact="false" data-narrow="false"
+           aria-label="Current shell: the Mermaid designer as it is today">
+
+    <div class="stage-bar">
+      <span class="stage-tag">Current</span>
+      <span>Mermaid designer today &mdash; the same body, unchanged. Only the chrome
+        differs: no header history, a sidebar History section, 28&nbsp;px window
+        controls, 32&nbsp;px footer actions.</span>
+    </div>
+
+    <div class="frames">
+      <figure class="slot" data-kind="designer" data-natural="1320" data-h="768">
+        <figcaption class="slot-head">
+          <span class="slot-name">Mermaid designer &mdash; today</span>
+          <span class="slot-size">1280 &times; 768</span>
+        </figcaption>
+        <div class="slot-body">
+          <div class="frame">
+            <div class="win win-current mm">
+
+              <!-- Today's header: title + badge, then close. 57 px. -->
+              <div class="settings-header">
+                <div class="edit-heading">
+                  <h2>Design diagram</h2>
+                  <span class="edit-badge">Flowchart</span>
+                </div>
+                <button class="icon-btn" type="button" title="Close" aria-label="Close">&times;</button>
+              </div>
+
+              <div class="designer-body">
+
+                <aside class="designer-sidebar" aria-label="Build">
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Add</h3>
+                    <div class="designer-add-tabs" role="tablist" aria-label="Add an element">
+                      <button class="designer-tab" role="tab" aria-selected="true" type="button">Node</button>
+                      <button class="designer-tab" role="tab" aria-selected="false" type="button">Edge</button>
+                    </div>
+                    <form class="designer-add-form">
+                      <div class="designer-fields">
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Label</span>
+                          <input class="designer-field" type="text" value="Charge card" readonly>
+                        </div>
+                        <div class="designer-field-row">
+                          <span class="designer-field-label">Shape</span>
+                          <input class="designer-field" type="text" value="Process" readonly>
+                        </div>
+                      </div>
+                      <button class="designer-btn designer-btn--commit" type="button" disabled>Add node</button>
+                    </form>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">Chart</h3>
+                    <div class="designer-direction" role="group" aria-label="Flowchart direction">
+                      <span class="designer-chip-text" data-on>TB</span>
+                      <span class="designer-chip-text">LR</span>
+                    </div>
+                    <div class="designer-switch-row">
+                      <span class="designer-switch-label">Autonumber messages</span>
+                      <span class="designer-switch-word">Off</span>
+                      <span class="designer-switch"><span class="designer-switch-track"></span></span>
+                    </div>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <!-- The section this decision deletes. -->
+                  <section class="designer-section">
+                    <h3 class="designer-sidebar-title">History</h3>
+                    <div class="designer-history">
+                      <button class="designer-btn" type="button" data-id="designer-undo" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)">Undo</button>
+                      <button class="designer-btn" type="button" data-id="designer-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>Redo</button>
+                    </div>
+                  </section>
+
+                  <div class="designer-divider" aria-hidden="true"></div>
+
+                  <section class="designer-section">
+                    <button class="designer-btn designer-btn--ghost designer-btn--block" type="button">Edit source instead</button>
+                    <p class="designer-scope-note">Closes this window and opens the block&rsquo;s Markdown.</p>
+                  </section>
+                </aside>
+
+                <div class="designer-stage">
+                  <div class="designer-canvas" tabindex="0" role="application" aria-label="Diagram canvas">
+                    <svg viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet"
+                         style="width:100%;height:100%" role="img"
+                         aria-label="Flowchart: Start to Validate to Charge card to Done">
+                      <defs>
+                        <marker id="mm-arrow-c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                          <path d="M0 0 L10 5 L0 10 z" fill="var(--fg-muted)"></path>
+                        </marker>
+                      </defs>
+                      <g stroke="var(--fg-muted)" stroke-opacity=".6" stroke-width="1.4" fill="none" marker-end="url(#mm-arrow-c)">
+                        <path d="M136 192 H190"></path>
+                        <path d="M340 192 H396"></path>
+                        <path d="M556 192 H596"></path>
+                        <path d="M265 214 V280"></path>
+                        <path d="M190 302 H150 V236"></path>
+                      </g>
+                      <g font-family="-apple-system, Segoe UI, Roboto, sans-serif" font-size="13">
+                        <rect x="40" y="170" width="96" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="88" y="197" text-anchor="middle" fill="var(--fg)">Start</text>
+                        <rect x="190" y="170" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="197" text-anchor="middle" fill="var(--fg)">Validate card</text>
+                        <rect x="396" y="170" width="160" height="44" rx="4" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"></rect>
+                        <text x="476" y="197" text-anchor="middle" fill="var(--fg)" font-weight="600">Charge card</text>
+                        <rect x="596" y="170" width="120" height="44" rx="10" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="656" y="197" text-anchor="middle" fill="var(--fg)">Done</text>
+                        <rect x="190" y="280" width="150" height="44" rx="4" fill="var(--bg-panel)" stroke="var(--border)" stroke-width="1.4"></rect>
+                        <text x="265" y="307" text-anchor="middle" fill="var(--fg)">Retry</text>
+                        <text x="150" y="256" fill="var(--fg-muted)" font-size="11">fail</text>
+                      </g>
+                    </svg>
+                  </div>
+                  <p class="designer-hint">Drag a node to move &middot; Alt-drag to connect</p>
+                </div>
+
+                <aside class="designer-inspector" aria-label="Inspector">
+                  <div class="designer-inspector-head">
+                    <span class="designer-inspector-glyph" aria-hidden="true">&#9671;</span>
+                    <div class="designer-inspector-titles">
+                      <h4 class="designer-inspector-kind">Process</h4>
+                      <span class="designer-inspector-meta">id n3 &middot; 1 of 4</span>
+                    </div>
+                  </div>
+                  <div class="designer-inspector-body">
+                    <div class="designer-group">
+                      <h4 class="designer-group-title">Node</h4>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Label</span>
+                        <input class="designer-field" type="text" value="Charge card" readonly>
+                      </div>
+                      <div class="designer-field-row">
+                        <span class="designer-field-label">Shape</span>
+                        <input class="designer-field" type="text" value="Process" readonly>
+                      </div>
+                    </div>
+                    <div class="designer-group">
+                      <button class="designer-btn designer-btn--danger" type="button">Delete node</button>
+                    </div>
+                  </div>
+                </aside>
+
+              </div>
+
+              <!-- Today's footer: 32 px actions, no hint, no history here
+                   for the designers. -->
+              <div class="settings-footer edit-footer">
+                <span class="edit-status designer-status" id="designer-status-current" role="status" aria-live="polite" aria-atomic="true">Unsaved changes</span>
+                <button class="settings-action" type="button">Cancel</button>
+                <button class="settings-action settings-action--primary" type="button">Apply</button>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </figure>
+    </div>
+
+    <div class="detail">
+      <h2>Also today &mdash; the table footer</h2>
+      <p>The table keeps history at the bottom, as text buttons. In the bar shell
+        they are 44 px icons in the bar and the footer is commit-only.</p>
+      <div class="win">
+        <div class="settings-footer te-footer">
+          <span class="edit-status te-status" role="status">Ready</span>
+          <span class="te-hint" aria-hidden="true">Esc cancels</span>
+          <button class="settings-action" type="button" disabled>Undo</button>
+          <button class="settings-action" type="button" disabled>Redo</button>
+          <button class="settings-action" type="button">Cancel</button>
+          <button class="settings-action settings-action--primary" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="stage-note">
+    <b>Width</b> drives all three windows at once, all three sharing the same
+    1320&nbsp;&times;&nbsp;768 box. 1280: the bar&rsquo;s left slot fits the table&rsquo;s 20
+    tools and its sort field on one line. 720: the left slot scrolls sideways, the
+    history pair stays pinned and visible, the footer wraps its status onto its own
+    row, and the designers go compact (Mermaid strip, DW <em>+ &#9638; &#9000;</em>
+    nav). <b>Layout</b> swaps the chrome on the same bodies. The title ellipsises only
+    when the header runs out of room &mdash; without the history pair the header&rsquo;s
+    fixed cost is 147&nbsp;px, so at 720 it still has 573&nbsp;px.
+  </p>
+
+  <!-- ===================== callouts =============================== -->
+  <ol class="legend">
+    <li>
+      <span class="num" aria-hidden="true">1</span>
+      <div>
+        <b>One action bar, all three windows</b>
+        <p>The same row directly under the header: full width, 57&nbsp;px
+          (6&nbsp;+&nbsp;44&nbsp;+&nbsp;6&nbsp;+&nbsp;1), <code>--bg-elev</code>, one
+          1&nbsp;px seam below. The table&rsquo;s old 48&nbsp;px tool strip moves into
+          this bar; the designers gain it.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">2</span>
+      <div>
+        <b>The left slot is the window&rsquo;s own</b>
+        <p>Table: Rows, Columns, Clipboard, Alignment, Sort, Table &mdash; 20 icon tools
+          plus the sort field, in six groups with 1&nbsp;&times;&nbsp;20&nbsp;px
+          separators. Mermaid: <em>Select</em> <em>Connect</em> <em>Add</em>
+          <em>Chart</em>. WaveDrom: <em>Add</em> <em>Chart</em> <em>Source</em>.
+          Everything else stays where it was.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">3</span>
+      <div>
+        <b>History pair, right of a seam</b>
+        <p>One 44&nbsp;px Undo/Redo pair per window, <code>#&lt;prefix&gt;-undo</code> and
+          <code>#&lt;prefix&gt;-redo</code>, behind a 1&nbsp;&times;&nbsp;24&nbsp;px seam.
+          Icon-only, <code>aria-label</code> and a tooltip naming the chord. States here:
+          table both dead (clean open), Mermaid Undo live / Redo dead, WaveDrom both
+          live.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">4</span>
+      <div>
+        <b>A reserved slot, not an action</b>
+        <p>The dashed <em>+</em> at the far right is a placeholder for future
+          per-window actions. It is not a button, not in the tab order, and the mockup
+          invents nothing behind it. When a window gains a real action, a real control
+          takes the slot.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">5</span>
+      <div>
+        <b>Footer is commit-only, unchanged</b>
+        <p>Status, Cancel, Apply &mdash; same height, padding, gap and order in all
+          three. No hint anywhere; Cancel carries
+          <code>aria-keyshortcuts="Escape"</code>. At 720 the status takes its own row so
+          the actions stay 44&nbsp;px on row two.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">6</span>
+      <div>
+        <b>Overflow, never a second row</b>
+        <p>At 720 the table&rsquo;s tools do not fit one line, so the left slot scrolls
+          sideways behind a <em>&hellip;</em> affordance. The bar keeps its 57&nbsp;px
+          height and the history pair never scrolls away. A wrapped tool row would push
+          the grid down by 40&nbsp;px; a scroll costs nothing.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num" aria-hidden="true">7</span>
+      <div>
+        <b>What stayed put</b>
+        <p>Both sidebars keep the add form, the chart controls and the inspector, and
+          neither has a History section. WaveDrom&rsquo;s compact strip is still
+          <em>+</em> <em>&#9638;</em> <em>&#9000;</em>. The table body is a flush grid
+          under the bar, with no tool strip of its own.</p>
+      </div>
+    </li>
+  </ol>
+
+  <!-- ===================== anatomy ================================ -->
+  <section class="anatomy" aria-label="Shell anatomy">
+    <div class="card">
+      <h2>Header &mdash; no history</h2>
+      <p class="sub">65 px tall, 10 px gap, 44 px controls, badge in all three.</p>
+      <div class="order">
+        <span class="chip">title</span>
+        <span class="chip">badge</span>
+        <span class="chip seam">1 px seam</span>
+        <span class="chip">max</span>
+        <span class="chip">close</span>
+      </div>
+      <dl>
+        <dt>Badge</dt><dd><em>Table</em>, <em>Flowchart</em>, <em>WaveDrom</em>. Content-sized, no reserved width.</dd>
+        <dt>Title</dt><dd>Absorbs free space, ellipsises first; the badge never shrinks.</dd>
+        <dt>Fixed cost</dt><dd>147 px = 36 padding + 10 gap + 1 seam + 10 gap + 90 controls. At 720 the heading still gets 573 px.</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Action bar &mdash; one anatomy</h2>
+      <p class="sub">57 px tall, 6 px 12 px padding, 8 px cluster gap.</p>
+      <div class="order">
+        <span class="chip">left slot</span>
+        <span class="chip">overflow &hellip;</span>
+        <span class="chip seam">1 px seam</span>
+        <span class="chip">undo</span>
+        <span class="chip">redo</span>
+        <span class="chip">reserved +</span>
+      </div>
+      <dl>
+        <dt>Left</dt><dd>32 px controls; the family&rsquo;s tool size, so 20 tools fit.</dd>
+        <dt>Right</dt><dd>44 px history pair, then a 28 px reserved slot.</dd>
+        <dt>Separators</dt><dd>1 &times; 20 px, <code>--border</code>, 8 px either side. Inside the table&rsquo;s Rows and Columns groups: 1 &times; 18 px, 4 px.</dd>
+      </dl>
+    </div>
+    <div class="card">
+      <h2>Footer &mdash; one anatomy</h2>
+      <p class="sub">69 px tall, 12 px 18 px padding, 8 px gap.</p>
+      <div class="order">
+        <span class="chip">status</span>
+        <span class="chip">Cancel</span>
+        <span class="chip primary">Apply</span>
+      </div>
+      <dl>
+        <dt>Status</dt><dd>Left, <code>margin-right: auto</code>, one line, ellipsises.</dd>
+        <dt>Escape</dt><dd>Not written in the footer. Cancel carries <code>aria-keyshortcuts</code>.</dd>
+        <dt>Commit</dt><dd>Text labels here and only here. Cancel, then Apply.</dd>
+      </dl>
+    </div>
+  </section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var board = document.getElementById("board");
+  var stages = [
+    document.getElementById("stage-bar"),
+    document.getElementById("stage-header"),
+    document.getElementById("stage-current")
+  ];
+  var GAP = 24;
+  var state = { layout: "bar", width: 1280 };
+
+  function pressGroup(act, value) {
+    var buttons = document.querySelectorAll('[data-act="' + act + '"]');
+    Array.prototype.forEach.call(buttons, function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.value === value));
+    });
+  }
+
+  // Available content width, measured on the board itself so a hidden
+  // stage still lays out correctly.
+  function boardAvail() {
+    var cs = getComputedStyle(board);
+    return board.clientWidth -
+      parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  }
+
+  // The app's own clamps: .edit-modal is 1320 for every window.
+  function widthOf(slot) {
+    return Math.min(Number(slot.dataset.natural), state.width);
+  }
+
+  function applyWidths(stage) {
+    var slots = Array.prototype.slice.call(stage.querySelectorAll(".slot"));
+    slots.forEach(function (slot) {
+      var w = widthOf(slot);
+      var h = Number(slot.dataset.h);
+      var frame = slot.querySelector(".frame");
+      var win = slot.querySelector(".win");
+      frame.style.width = w + "px";
+      frame.style.height = h + "px";
+      win.style.width = w + "px";
+      win.style.height = h + "px";
+      slot.dataset.applied = String(w);
+      slot.querySelector(".slot-size").textContent = w + " \u00d7 " + h;
+    });
+  }
+
+  function layout(stage) {
+    var slots = Array.prototype.slice.call(stage.querySelectorAll(".slot"));
+    var total = 0;
+    slots.forEach(function (slot) { total += Number(slot.dataset.applied || 0); });
+    var avail = boardAvail();
+    var fit = total > 0
+      ? Math.min(1, (avail - GAP * Math.max(0, slots.length - 1)) / total)
+      : 1;
+    if (fit <= 0) fit = 1;
+    slots.forEach(function (slot) {
+      var frame = slot.querySelector(".frame");
+      var body = slot.querySelector(".slot-body");
+      var w = Number(slot.dataset.applied || 0);
+      var h = Number(slot.dataset.h);
+      frame.style.transform = "scale(" + fit + ")";
+      body.style.width = Math.round(w * fit) + "px";
+      body.style.height = Math.round(h * fit) + "px";
+    });
+  }
+
+  function apply() {
+    document.body.dataset.layout = state.layout;
+    document.body.dataset.compact = state.width <= 960 ? "true" : "false";
+    stages.forEach(function (stage) {
+      stage.dataset.w = String(state.width);
+      stage.dataset.compact = state.width <= 960 ? "true" : "false";
+      stage.dataset.narrow = state.width <= 720 ? "true" : "false";
+      applyWidths(stage);
+    });
+    stages.forEach(layout);
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("button[data-act]");
+    if (!button) return;
+    var act = button.dataset.act;
+    var value = button.dataset.value;
+    pressGroup(act, value);
+    if (act === "layout") state.layout = value;
+    if (act === "width") state.width = Number(value);
+    apply();
+  });
+
+  var themeButton = document.getElementById("theme-toggle");
+  themeButton.addEventListener("click", function () {
+    var light = document.body.dataset.theme !== "light";
+    document.body.dataset.theme = light ? "light" : "dark";
+    themeButton.setAttribute("aria-pressed", String(light));
+    themeButton.textContent = light ? "Dark" : "Light";
+  });
+
+  window.addEventListener("resize", function () { stages.forEach(layout); });
+  apply();
+})();
+</script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 # Table edit window — selection and clipboard — product definition
 
-**Status:** shipped (table edit window — selection and clipboard). No visual or technical design chosen here.
-**Date:** 2026-11-01 · **Owner:** `product-designer` · **Scope:** the hybrid (WYSIWYG) "Edit table" modal only.
-Related: `docs/product/table-editor.md` (the modal; AC1–AC18 remain in force), `docs/design/table-editor.md`, `docs/architecture/table-editor.md`.
+**Status:** shipped (table edit window — selection and clipboard; in-modal undo/redo in the shared action bar).
+**Date:** 2026-11-01, amended 2026-11-07 (shared edit-window shell) · **Owner:** `product-designer` · **Scope:** the hybrid (WYSIWYG) "Edit table" modal only.
+Related: `docs/product/table-editor.md` (the modal; AC1–AC18 and AC45–AC46 remain in force), `docs/design/table-editor.md`, `docs/architecture/table-editor.md`.
 
 ## 1. Goal and audience
 
@@ -166,7 +166,7 @@ Insert, add, delete, move, sort, transpose and delete-table change the grid's sh
 
 ### 3.11 Apply and Cancel
 
-Unchanged. Every selection and clipboard operation acts on the working copy only. Apply writes one GFM table as one undo step. Cancel discards. There is no undo inside the modal, and Ctrl+Z or Ctrl+Shift+Z inside the modal must not reach the document underneath.
+Every selection and clipboard operation acts on the working copy only. Apply writes one GFM table as one note-level undo step. Cancel discards. The modal has its own history (`docs/product/table-editor.md` AC45–AC46): Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y walk the working copy and never reach the note underneath.
 
 ### 3.12 Merged-cell refusal state
 
@@ -307,7 +307,7 @@ AC1–AC18 of `docs/product/table-editor.md` remain in force, with the four amen
 16. **AC34** With a cell in text edit, pasting plain text with no tab and no newline inserts it at the caret with whitespace runs collapsed to one space; pasting a table or a multi-line payload commits the edit and places the block with its top-left at that cell.
 17. **AC35** Delete row with a 3-row selection removes all three body rows and keeps row 0; Delete column with a 2-column selection removes both columns; both are disabled with a stated cause when the action would leave zero body rows or zero columns; a single-cell selection behaves exactly as before.
 18. **AC36** Insert, add, delete, move, sort, transpose and delete-table collapse the selection to the active cell, clamped into the new grid; copy, cut, paste and clear keep the rectangle.
-19. **AC37** Copy, cut, paste, clear and delete change only the working copy; Apply still writes exactly one GFM table in one undo step; Cancel restores the table and the grid; Ctrl+Z and Ctrl+Shift+Z inside the modal do not change the note; an operation that writes identical content does not mark the working copy changed.
+19. **AC37** Copy, cut, paste, clear and delete change only the working copy; Apply still writes exactly one GFM table in one undo step; Cancel restores the table and the grid; Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y inside the modal walk the modal's own history and do not change the note; an operation that writes identical content does not mark the working copy changed.
 20. **AC38** In the merged-cell refusal state the grid has no `aria-multiselectable` and no `aria-selected` cell, the clipboard controls are `aria-disabled` with the merged-cells reason, no selection gesture or key changes anything, and only Cancel closes the window.
 21. **AC39** In the editable state the grid has `aria-multiselectable="true"`, every cell has `aria-selected`, `aria-rowindex` and `aria-colindex`, the clipboard group's four controls are reachable by Tab and activate by Enter or Space with an accessible name, a keyboard-only user can select, copy and paste with the grid focused, focus after paste is on the written rectangle's top-left, and the status line announces every range change and every operation result.
 22. **AC40** A 10 × 3 block pasted into an empty 1 × 1 grid produces exactly 10 rows and 3 columns, applies in one mutation, and one Apply writes one table with the pasted content; no fixed row or column limit exists in the code path; a paste that fails to allocate leaves the grid and the working copy unchanged and reports the refusal.

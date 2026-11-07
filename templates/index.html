@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
+{% from "_edit_window.html" import edit_header, edit_bar, edit_footer %}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
@@ -1320,19 +1321,8 @@
   <div id="table-editor-overlay" class="settings-overlay" hidden>
     <div class="settings-modal table-editor-modal" role="dialog" aria-modal="true"
          aria-labelledby="table-editor-title" tabindex="-1">
-      <div class="settings-header">
-        <h2 id="table-editor-title">Edit table</h2>
-        <button id="table-editor-close" class="icon-btn" type="button"
-                title="Close" aria-label="Close">×</button>
-      </div>
-      <div class="te-body">
-        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
-          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
-          <div>
-            <p>This table has merged cells and cannot be edited here.</p>
-            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
-          </div>
-        </div>
+      {{ edit_header("table-editor", "Edit table", badge_id="table-editor-type", badge_text="Table") }}
+      {% call edit_bar("table-editor") %}
         <div id="table-editor-toolbar" class="te-toolbar" role="toolbar" aria-label="Table tools">
           <div class="te-group" role="group" aria-label="Rows">
             <button id="te-move-row-up" class="te-tool" type="button"
@@ -1435,7 +1425,7 @@
             </button>
           </div>
 
-          <div class="te-spacer"></div>
+          <div class="te-sep" aria-hidden="true"></div>
 
           <div class="te-group" role="group" aria-label="Table">
             <button id="te-transpose" class="te-tool" type="button"
@@ -1448,19 +1438,21 @@
             </button>
           </div>
         </div>
-
+      {% endcall %}
+      <div class="te-body">
+        <div id="table-editor-notice" class="te-notice-strip" role="status" hidden>
+          <span class="te-notice-glyph" aria-hidden="true">⚠</span>
+          <div>
+            <p>This table has merged cells and cannot be edited here.</p>
+            <p>GFM can't represent merged cells. Edit the Markdown source instead.</p>
+          </div>
+        </div>
         <div class="te-scroll">
           <table id="table-editor-grid" class="te-grid" role="grid"
                  aria-label="Table cells"></table>
         </div>
       </div>
-      <div class="settings-footer te-footer">
-        <span id="table-editor-status" class="te-status" role="status"
-              aria-live="polite" aria-atomic="true"></span>
-        <span class="te-hint" aria-hidden="true">Esc cancels</span>
-        <button id="table-editor-cancel" class="settings-action" type="button">Cancel</button>
-        <button id="table-editor-apply" class="settings-action settings-action--primary" type="button">Apply</button>
-      </div>
+      {{ edit_footer("table-editor", "te-footer", "te-status", hint="Esc cancels") }}
     </div>
   </div>
 
@@ -1472,13 +1464,38 @@
   <div id="designer-overlay" class="settings-overlay" hidden>
     <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
          aria-labelledby="designer-title">
-      <div class="settings-header designer-header">
-        <div class="designer-heading">
-          <h2 id="designer-title">Design diagram</h2>
-          <span class="designer-type" id="designer-type"></span>
+      {{ edit_header("designer", "Design diagram", badge_id="designer-type") }}
+      {% call edit_bar("designer") %}
+        <div class="edit-bar-toolbar" role="toolbar" aria-label="Diagram actions">
+          <div class="edit-bar-group" role="group" aria-label="Canvas mode">
+            <button id="designer-tool-select" class="designer-iconbtn" type="button"
+                    aria-pressed="true" title="Select tool" aria-label="Select tool">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
+              </svg>
+            </button>
+            <button id="designer-tool-connect" class="designer-iconbtn" type="button"
+                    aria-pressed="false" title="Connect tool — or Alt+drag from a node"
+                    aria-label="Connect tool">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
+                   stroke="currentColor" stroke-width="1.5"
+                   stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                <path d="M3 13 12.5 3.5"></path>
+                <path d="M8 3.5h4.5v4.5"></path>
+              </svg>
+            </button>
+          </div>
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+          <div class="edit-bar-group" role="group" aria-label="Add and chart">
+            <button id="designer-bar-add" class="edit-chip" type="button"
+                    title="Jump to Add" disabled>Add</button>
+            <button id="designer-bar-chart" class="edit-chip" type="button"
+                    title="Jump to Chart" disabled>Chart</button>
+          </div>
         </div>
-        <button id="designer-close" class="icon-btn" title="Close" aria-label="Close">×</button>
-      </div>
+      {% endcall %}
       <div class="settings-body designer-body">
         <!-- Designer sidebar, filled/shown by mermaid-designer.js.
              Scoped families (flowchart, sequence, pie) get tabbed add forms
@@ -1487,33 +1504,6 @@
              with no add action. -->
         <aside class="designer-sidebar" id="designer-sidebar" hidden
                aria-labelledby="designer-add-title">
-          <section class="designer-section designer-section--tools"
-                   aria-labelledby="designer-tools-title">
-            <h3 class="designer-sidebar-title" id="designer-tools-title">Tools</h3>
-            <div class="designer-tools" role="toolbar" aria-label="Diagram tools">
-              <button id="designer-tool-select" class="designer-iconbtn" type="button"
-                      aria-pressed="true" title="Select tool" aria-label="Select tool">
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z"></path>
-                </svg>
-              </button>
-              <button id="designer-tool-connect" class="designer-iconbtn" type="button"
-                      aria-pressed="false" title="Connect tool — or Alt+drag from a node"
-                      aria-label="Connect tool">
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M3 13 12.5 3.5"></path>
-                  <path d="M8 3.5h4.5v4.5"></path>
-                </svg>
-              </button>
-            </div>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-
           <section class="designer-section designer-section--add"
                    aria-labelledby="designer-add-title">
             <h3 class="designer-sidebar-title" id="designer-add-title"></h3>
@@ -1560,33 +1550,6 @@
               </span>
             </label>
             <p class="designer-scope-note" id="designer-pie-header-note" hidden></p>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-
-          <section class="designer-section designer-section--history"
-                   aria-labelledby="designer-history-title">
-            <h3 class="designer-sidebar-title" id="designer-history-title">History</h3>
-            <div class="designer-history" role="toolbar" aria-label="History">
-              <button id="designer-undo" class="designer-iconbtn" type="button"
-                      title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M4 6h5a4 4 0 0 1 4 4v2"></path>
-                  <path d="M6.4 3.6 4 6l2.4 2.4"></path>
-                </svg>
-              </button>
-              <button id="designer-redo" class="designer-iconbtn" type="button"
-                      title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none"
-                     stroke="currentColor" stroke-width="1.5"
-                     stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
-                  <path d="M12 6H7a4 4 0 0 0-4 4v2"></path>
-                  <path d="M9.6 3.6 12 6l-2.4 2.4"></path>
-                </svg>
-              </button>
-            </div>
           </section>
         </aside>
 
@@ -1665,11 +1628,7 @@
           <div class="designer-inspector-body" id="designer-inspector-body"></div>
         </aside>
       </div>
-      <div class="settings-footer designer-footer">
-        <span class="designer-status" id="designer-status" role="status" aria-live="polite"></span>
-        <button id="designer-cancel" class="settings-action">Cancel</button>
-        <button id="designer-apply" class="settings-action settings-action--primary">Apply</button>
-      </div>
+      {{ edit_footer("designer", "designer-footer", "designer-status") }}
     </div>
 
   </div>
@@ -1682,27 +1641,21 @@
   <div id="dw-designer-overlay" class="settings-overlay" hidden>
     <div class="settings-modal designer-modal" role="dialog" aria-modal="true"
          aria-labelledby="dw-title">
-      <div class="settings-header designer-header">
-        <div class="designer-heading">
-          <h2 id="dw-title">Design diagram</h2>
-          <span class="designer-type" id="dw-type"></span>
+      {{ edit_header("dw", "Design diagram", badge_id="dw-type") }}
+      {% call edit_bar("dw") %}
+        <div class="edit-bar-toolbar" role="toolbar" aria-label="Timing actions">
+          <div class="edit-bar-group" role="group" aria-label="Build">
+            <button type="button" class="edit-chip" data-compact="add"
+                    title="Add" aria-label="Add">Add</button>
+            <button type="button" class="edit-chip" data-compact="chart"
+                    title="Chart" aria-label="Chart">Chart</button>
+            <button type="button" class="edit-chip" data-compact="source"
+                    title="Source" aria-label="Source">Source</button>
+          </div>
         </div>
-        <button id="dw-close" class="icon-btn" title="Close" aria-label="Close">×</button>
-      </div>
+      {% endcall %}
       <div class="settings-body designer-body">
         <aside class="designer-sidebar" id="dw-sidebar" hidden>
-          <div class="dw-compact-nav" aria-label="Design sections">
-            <button type="button" class="designer-btn" data-compact="add"
-                    title="Add" aria-label="Add">+</button>
-            <button type="button" class="designer-btn" data-compact="chart"
-                    title="Chart" aria-label="Chart">▦</button>
-            <button type="button" class="designer-btn" data-compact="source"
-                    title="Source" aria-label="Source">⌨</button>
-            <button type="button" class="designer-btn" data-compact="undo"
-                    title="Undo" aria-label="Undo">↶</button>
-            <button type="button" class="designer-btn" data-compact="redo"
-                    title="Redo" aria-label="Redo">↷</button>
-          </div>
           <section class="designer-section designer-section--add" id="dw-add-section">
             <h3 class="designer-sidebar-title" id="dw-add-title">Add</h3>
             <div class="designer-add-tabs" id="dw-add-tabs" role="tablist"
@@ -1720,28 +1673,6 @@
 
           <section class="designer-section designer-section--chart" id="dw-chart"
                    aria-label="Chart" hidden></section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-
-          <section class="designer-section designer-section--source">
-            <button id="dw-edit-source" class="designer-btn designer-btn--ghost
-                    designer-btn--block dw-source" type="button">
-              Edit source instead
-            </button>
-            <p class="designer-scope-note">Closes this window and opens the block’s Markdown.</p>
-          </section>
-
-          <div class="designer-divider" aria-hidden="true"></div>
-          <section class="designer-section designer-section--history" id="dw-history"
-                   aria-labelledby="dw-history-title">
-            <h3 class="designer-sidebar-title" id="dw-history-title">History</h3>
-            <div class="designer-history-actions">
-              <button id="dw-undo" class="designer-btn designer-btn--ghost"
-                      type="button" title="Undo" aria-label="Undo" disabled>Undo</button>
-              <button id="dw-redo" class="designer-btn designer-btn--ghost"
-                      type="button" title="Redo" aria-label="Redo" disabled>Redo</button>
-            </div>
-          </section>
         </aside>
 
         <div class="designer-stage">
@@ -1828,11 +1759,7 @@
 
 
       </div>
-      <div class="settings-footer designer-footer">
-        <span class="designer-status" id="dw-status" role="status" aria-live="polite"></span>
-        <button id="dw-cancel" class="settings-action">Cancel</button>
-        <button id="dw-apply" class="settings-action settings-action--primary">Apply</button>
-      </div>
+      {{ edit_footer("dw", "designer-footer", "designer-status") }}
     </div>
   </div>
 
@@ -1955,6 +1882,7 @@
   <script src="/static/js/list-edit.js" defer></script>
   <script src="/static/js/table-view.js" defer></script>
   <script src="/static/js/table-select.js" defer></script>
+  <script src="/static/js/edit-window.js" defer></script>
   <script src="/static/js/table-editor.js" defer></script>
   <script src="/static/js/watcher.js" defer></script>
   <script src="/static/js/outline.js" defer></script>

@@ -5808,8 +5808,8 @@ body > #nb-menu .submenu.open {
   --fg-muted: var(--te-fg-muted);
 }
 .table-editor-modal {
-  width: min(960px, 94vw);
-  height: min(640px, 88vh);
+  width: min(var(--designer-modal-w), 96vw);
+  height: min(var(--designer-modal-h), 92vh);
   max-width: 96vw;
   max-height: 92vh;
 }
@@ -5836,12 +5836,11 @@ body > #nb-menu .submenu.open {
 .table-editor-modal .te-group { display: inline-flex; align-items: center; gap: 2px; }
 .table-editor-modal .te-sep {
   width: 1px;
-  height: 18px;
+  height: var(--edit-bar-sep-h, 20px);
   background: var(--border);
   margin: 0 var(--te-space-2);
   flex: 0 0 auto;
 }
-.table-editor-modal .te-spacer { flex: 1 1 auto; }
 .table-editor-modal .te-tool {
   display: inline-flex;
   align-items: center;
@@ -6118,9 +6117,6 @@ body > #nb-menu .submenu.open {
   color: var(--fg-muted);
 }
 
-@media (max-width: 860px) {
-  .table-editor-modal { width: min(94vw, 720px); }
-}
 @media (max-width: 520px) {
   .table-editor-modal {
     width: 100vw;
@@ -6129,7 +6125,6 @@ body > #nb-menu .submenu.open {
     max-height: 100vh;
     border-radius: 0;
   }
-  .table-editor-modal .te-toolbar { row-gap: var(--te-space-2); }
   .table-editor-modal .te-hint { display: none; }
 }
 
@@ -6205,16 +6200,8 @@ body[data-theme="light"] #dw-designer-overlay {
 .designer-sidebar-title:empty { display: none; }
 .designer-divider { flex: 0 0 auto; height: 1px; background: var(--border); }
 .designer-divider[hidden] { display: none; }
-.designer-section--history {
-  margin-top: auto; position: sticky; bottom: 0; z-index: 1;
-  padding-top: var(--designer-space-3);
-  border-top: 1px solid var(--border);
-  background: var(--bg-elev);
-}
 
-/* Tools + History icon buttons. */
-.designer-tools,
-.designer-history { display: flex; gap: 6px; }
+/* Tool icon buttons. */
 .designer-iconbtn {
   appearance: none; width: 32px; height: 32px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
@@ -6584,12 +6571,6 @@ body[data-theme="light"] #dw-designer-overlay {
     flex: 0 0 auto; flex-direction: row; align-items: flex-start;
     gap: var(--designer-space-3);
   }
-  .designer-modal[data-designer-family] .designer-section--tools,
-  .designer-modal[data-designer-family] .designer-section--history {
-    align-items: center;
-  }
-  .designer-modal[data-designer-family] .designer-section--tools .designer-sidebar-title,
-  .designer-modal[data-designer-family] .designer-section--history .designer-sidebar-title,
   .designer-modal[data-designer-family] .designer-section--chart .designer-sidebar-title,
   .designer-modal[data-designer-family] .designer-section--add .designer-sidebar-title {
     display: none;
@@ -6630,8 +6611,6 @@ body[data-theme="light"] #dw-designer-overlay {
  * rule to :not([data-designer-family]) keeps it from fighting the compact
  * scoped layout above. */
 @media (max-width: 720px) {
-  .designer-footer { flex-wrap: wrap; }
-  .designer-status { flex: 1 1 100%; margin: 0 0 6px; }
   .designer-modal:not([data-designer-family]) .designer-body { flex-direction: column; }
   .designer-modal:not([data-designer-family]) .designer-sidebar {
     flex: 0 0 auto; width: 100%; flex-direction: row; align-items: center;
@@ -6847,18 +6826,9 @@ body[data-theme="light"] #dw-designer-overlay {
   background: var(--bg-elev); border: 1px solid var(--accent);
   border-radius: 999px; white-space: nowrap;
 }
-#dw-designer-overlay .dw-compact-nav { display: none; }
 #dw-designer-overlay .dw-compact-sheet { display: none; }
 #dw-designer-overlay .dw-compact-sheet[hidden] { display: none; }
 #dw-designer-overlay .designer-btn--block { width: 100%; }
-#dw-designer-overlay .designer-section--history {
-  margin-top: auto; position: sticky; bottom: 0;
-  padding-bottom: 8px; background: var(--bg-elev);
-}
-#dw-designer-overlay .designer-history-actions {
-  display: flex; gap: 6px;
-}
-#dw-designer-overlay .designer-history-actions .designer-btn { flex: 1 1 0; }
 #dw-designer-overlay .dw-shape-grid {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;
 }
@@ -6885,8 +6855,6 @@ body[data-theme="light"] #dw-designer-overlay {
 #dw-designer-overlay .dw-data-row {
   grid-template-columns: 1fr auto; align-items: center;
 }
-#dw-designer-overlay .dw-source { justify-content: center; }
-#dw-designer-overlay .designer-section--source { gap: 4px; }
 
 #dw-designer-overlay.is-compact .designer-body {
   flex-direction: column; min-height: 0;
@@ -6934,28 +6902,10 @@ body[data-theme="light"] #dw-designer-overlay {
 #dw-designer-overlay .dw-compact-sheet-body > .designer-section {
   width: 100%; padding: 0;
 }
-#dw-designer-overlay.is-compact .designer-sidebar {
-  flex: 0 0 auto; width: 100%; height: 48px; min-height: 48px; max-height: 48px;
-  flex-direction: row; flex-wrap: nowrap; align-items: center;
-  gap: var(--designer-space-4);
-  padding: 0 10px;
-  overflow-x: auto; overflow-y: hidden;
-  border-right: 0; border-bottom: 1px solid var(--border);
-}
-#dw-designer-overlay.is-compact .designer-sidebar > .designer-section,
-#dw-designer-overlay.is-compact .designer-sidebar > .designer-divider {
-  display: none;
-}
-#dw-designer-overlay.is-compact .dw-compact-nav {
-  display: flex; flex: 0 0 100%; gap: 4px; overflow-x: auto;
-}
-#dw-designer-overlay.is-compact .dw-compact-nav .designer-btn {
-  flex: 0 0 40px; width: 40px; height: 40px; min-width: 40px;
-  padding: 0; font-size: 1rem;
-}
-#dw-designer-overlay.is-compact .dw-compact-nav {
-  height: 48px; align-items: center;
-}
+/* The bar carries Add / Chart / Source in every layout, so the compact
+ * sidebar strip has nothing left to show; the build sheet still receives
+ * the sections from openCompactSheet(). */
+#dw-designer-overlay.is-compact .designer-sidebar { display: none; }
 #dw-designer-overlay.is-compact .designer-section {
   flex: 0 0 auto; flex-direction: column;
 }
@@ -8562,4 +8512,241 @@ body > #nb-menu button.danger:hover {
 @media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
   .activity-btn[data-view="sessions"],
   #side-panel .side-panel-view[data-view="sessions"] { display: none; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared edit-window shell (docs/ui/edit-window-guide.md)            */
+/* ------------------------------------------------------------------ */
+/* One anatomy for the table editor, the Mermaid designer and the      */
+/* Graphviz / WaveDrom designer: a 65 px header, one 57 px action bar  */
+/* and a 69 px footer. The bar is a sibling of the body, never inside  */
+/* it. Values are shared tokens so the three windows cannot drift.     */
+#table-editor-overlay,
+#designer-overlay,
+#dw-designer-overlay {
+  --edit-head-h: 65px;
+  --edit-head-pad-x: 18px;
+  --edit-head-gap: 10px;
+  --edit-icon: 44px;
+  --edit-icon-gap: 2px;
+  --edit-seam-h: 24px;
+  --edit-bar-h: 57px;
+  --edit-bar-pad-x: 12px;
+  --edit-bar-pad-y: 6px;
+  --edit-bar-gap: 8px;
+  --edit-bar-tool: 32px;
+  --edit-bar-sep-h: 20px;
+  --edit-foot-h: 69px;
+  --edit-foot-pad-x: 18px;
+  --edit-foot-gap: 8px;
+  --edit-badge-max: 120px;
+}
+
+/* Header: title + badge, seam, maximize, close. The 44 px controls and
+ * 10 px padding make the row exactly 65 px. */
+.edit-header {
+  gap: var(--edit-head-gap);
+  padding: 10px var(--edit-head-pad-x);
+  min-height: var(--edit-head-h);
+}
+.edit-heading {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.edit-heading h2 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.14rem;
+  font-weight: 600;
+  letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.edit-badge {
+  flex: 0 0 auto;
+  max-width: var(--edit-badge-max);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-badge:empty { display: none; }
+.edit-header .icon-btn {
+  width: var(--edit-icon);
+  height: var(--edit-icon);
+  font-size: 1.35rem;
+  border-radius: var(--designer-radius-md, 6px);
+}
+
+/* Bar: one line, --bg-elev, a bottom seam only. The left slot scrolls;
+ * the history pair stays pinned. Scoped to the modal so it cannot leak to
+ * the markdown #edit-bar, which shares the class name. */
+.settings-modal .edit-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--edit-bar-gap);
+  min-height: var(--edit-bar-h);
+  padding: var(--edit-bar-pad-y) var(--edit-bar-pad-x);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.edit-bar-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: var(--edit-bar-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Slack for the 2px focus ring inside a 57 px bar. */
+  padding-block: 6px;
+  margin-block: -6px;
+  padding-inline: 3px;
+  margin-inline: -3px;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.edit-bar-actions::-webkit-scrollbar { display: none; }
+.edit-bar-actions > * { flex: 0 0 auto; }
+.edit-bar-actions.is-scrollable {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+}
+.edit-bar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--edit-bar-gap);
+  min-width: 0;
+}
+.edit-bar-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.edit-bar-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--edit-bar-sep-h);
+  background: var(--border);
+  margin: 0 var(--edit-bar-gap);
+}
+.edit-bar-history {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--edit-bar-gap);
+}
+.edit-bar-seam {
+  flex: 0 0 auto;
+  width: 1px;
+  height: var(--edit-seam-h);
+  background: var(--border);
+}
+.edit-bar-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: var(--edit-icon);
+  height: var(--edit-icon);
+  border-radius: var(--designer-radius-md, 6px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.edit-bar-btn:hover:not(:disabled) { color: var(--fg); background: var(--accent-soft); }
+.edit-bar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.edit-bar-btn:disabled { opacity: .4; cursor: not-allowed; }
+.edit-bar-btn svg { display: block; }
+
+/* Text chips in the designers' left slots, 32 px: the body-control size. */
+.edit-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--edit-bar-tool);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--te-radius, 6px);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: .8rem;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.edit-chip:hover:not(:disabled) { background: var(--accent-soft); color: var(--fg); }
+.edit-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.edit-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.edit-chip:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The table's old tool strip, reparented into the bar: one row, no own
+ * surface, horizontal overflow. */
+.edit-bar .te-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--te-space-1, 4px);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.edit-bar .te-toolbar > * { flex: 0 0 auto; }
+.edit-bar .te-tool {
+  width: var(--edit-bar-tool);
+  height: var(--edit-bar-tool);
+}
+.edit-bar .te-sort-col { height: var(--edit-bar-tool); }
+
+/* Footer: [status][hint][Cancel][Apply], 44 px actions. */
+.edit-footer {
+  min-height: var(--edit-foot-h);
+  padding: 12px var(--edit-foot-pad-x);
+  gap: var(--edit-foot-gap);
+}
+.edit-footer > [role="status"] {
+  margin-right: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .82rem;
+  line-height: 1.3;
+}
+.edit-footer .settings-action {
+  min-height: 44px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+/* Footer wraps at 720: status on its own row, Cancel / Apply below it. */
+@media (max-width: 720px) {
+  .edit-footer { flex-wrap: wrap; row-gap: 6px; }
+  .edit-footer > [role="status"] { flex: 1 1 100%; margin: 0; white-space: normal; }
 }

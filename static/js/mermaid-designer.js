@@ -305,8 +305,8 @@
   const errorDetEl = document.getElementById("designer-error-detail");
   const toolSelectBtn = document.getElementById("designer-tool-select");
   const toolConnectBtn = document.getElementById("designer-tool-connect");
-  const undoBtn = document.getElementById("designer-undo");
-  const redoBtn = document.getElementById("designer-redo");
+  const barAddBtn = document.getElementById("designer-bar-add");
+  const barChartBtn = document.getElementById("designer-bar-chart");
   const sidebarEl = document.getElementById("designer-sidebar");
   const addTitleEl = document.getElementById("designer-add-title");
   const paletteEl = document.getElementById("designer-palette");
@@ -378,6 +378,42 @@
   let addNoteText = "";
   let addErrorSticky = false;
 
+  const hist = NB.editWindow.attach({
+    overlay: overlay,
+    prefix: "designer",
+    isOpen: isOpen,
+    enabled: function () {
+      return !!editor && stateName === "ready" && !applying;
+    },
+    // The Visimer canvas keeps its own z / shift+z; only Ctrl+Y is ours.
+    ownsKey: function (e) {
+      return !NB.editWindow.isEditable(e) &&
+        !(((e.key || "").toLowerCase() === "z") &&
+          canvasEl && canvasEl.contains(e.target));
+    },
+    undo: function () { editor.undo(); },
+    redo: function () { editor.redo(); },
+    canUndo: function () { return !!(editor && editor.canUndo); },
+    canRedo: function () { return !!(editor && editor.canRedo); },
+    afterRestore: function () {
+      // Undo/redo restores a filtered old selection; line-index families can
+      // point at a different entity after a structural step. Clear it rather
+      // than let the inspector edit the wrong item.
+      if (scopeFamily === "sequence" || scopeFamily === "pie" ||
+          scopeFamily === "state" || scopeFamily === "class" ||
+          scopeFamily === "er") {
+        selection = null;
+        selectionSig = null;
+        if (editor) editor.clearSelection("ui");
+        renderInspector();
+      } else {
+        checkSelectionDrift();
+      }
+      updateStatus();
+      updateChartControls();
+    },
+  });
+
   function isOpen() { return !!overlay && !overlay.hidden; }
   function isScoped() { return SCOPED_FAMILIES.indexOf(scopeFamily) !== -1; }
 
@@ -434,6 +470,42 @@
     if (modalEl) modalEl.setAttribute("aria-describedby", "designer-hint");
   }
 
+  function updateBarChips() {
+    const visible = !!(sidebarEl && !sidebarEl.hidden);
+    if (barAddBtn) barAddBtn.disabled = !visible;
+    if (barChartBtn) {
+      barChartBtn.disabled = !visible || !(chartEl && !chartEl.hidden);
+    }
+  }
+
+  /* The bar chips focus the matching sidebar section; they never copy its
+   * form. Skip hidden rows: the chart section keeps its controls in the DOM
+   * but hides the ones a family does not use. */
+  function firstVisibleControl(root) {
+    const list = root.querySelectorAll("input, select, textarea, button");
+    for (let i = 0; i < list.length; i++) {
+      const el = list[i];
+      if (el.disabled || el.hidden) continue;
+      if (el.closest && el.closest("[hidden]")) continue;
+      return el;
+    }
+    return null;
+  }
+
+  function focusSidebarSection(kind) {
+    if (!sidebarEl || sidebarEl.hidden) return;
+    const target = kind === "chart"
+      ? chartEl
+      : (addFormEl && !addFormEl.hidden ? addFormEl
+        : (addTabsEl && !addTabsEl.hidden ? addTabsEl : paletteEl));
+    if (!target || target.hidden) return;
+    try { target.scrollIntoView({ block: "nearest" }); } catch (_) {}
+    const field = firstVisibleControl(target);
+    if (field && typeof field.focus === "function") {
+      try { field.focus({ preventScroll: true }); } catch (_) { field.focus(); }
+    }
+  }
+
   function setState(name) {
     stateName = name;
     for (const k in STATE_EL) {
@@ -445,7 +517,11 @@
     if (inspectorEl) inspectorEl.hidden = !(ready && isScoped());
     if (emptyEl) emptyEl.hidden = true;
     if (applyBtn) applyBtn.disabled = !ready;
+    if (toolSelectBtn) toolSelectBtn.disabled = !ready;
+    if (toolConnectBtn) toolConnectBtn.disabled = !ready || !connectable;
     updateHint();
+    updateBarChips();
+    hist.sync();
     if (!ready) updateGrabber();
   }
 
@@ -497,16 +573,9 @@
     if (toolConnectBtn) toolConnectBtn.setAttribute("aria-pressed", String(tool === "connect"));
   }
 
-  function updateHistoryButtons() {
-    const canUndo = !!(editor && editor.canUndo);
-    const canRedo = !!(editor && editor.canRedo);
-    if (undoBtn) undoBtn.disabled = !canUndo;
-    if (redoBtn) redoBtn.disabled = !canRedo;
-  }
-
   function resetToolbar() {
     setActiveTool("select");
-    updateHistoryButtons();
+    hist.sync();
   }
 
   function iconSvg(inner) {
@@ -639,6 +708,7 @@
     if (pieHeaderNoteEl) { pieHeaderNoteEl.hidden = true; pieHeaderNoteEl.textContent = ""; }
     if (chartEl) chartEl.hidden = true;
     if (chartDividerEl) chartDividerEl.hidden = true;
+    updateBarChips();
   }
 
   function resetPanels() {
@@ -1229,7 +1299,7 @@
         if (resolved) { selection = resolved; selectionSig = signatureOf(resolved); }
       }
       updateStatus();
-      updateHistoryButtons();
+      hist.sync();
       renderInspector();
       clearAddText();
       renderAddForm();
@@ -1452,6 +1522,7 @@
       if (chartEl) chartEl.hidden = false;
       if (chartDividerEl) chartDividerEl.hidden = false;
       buildDirectionChips(family);
+      updateBarChips();
       return;
     }
     if (family === "sequence") {
@@ -1459,6 +1530,7 @@
       if (chartDividerEl) chartDividerEl.hidden = false;
       if (autonumberEl) autonumberEl.hidden = false;
       updateChartControls();
+      updateBarChips();
       return;
     }
     if (family === "pie") {
@@ -1468,6 +1540,7 @@
       if (pieShowDataEl) pieShowDataEl.hidden = false;
       updateChartControls();
     }
+    updateBarChips();
     void ed;
   }
 
@@ -3381,7 +3454,7 @@
       }
     }
     updateStatus();
-    updateHistoryButtons();
+    hist.sync();
     updateChartControls();
     if (isScoped() && addFormEl && !addFormEl.contains(document.activeElement)) renderAddForm();
     return res;
@@ -3597,12 +3670,12 @@
     }
     view.on("toolChange", function (tool) { setActiveTool(tool); });
     setActiveTool("select");
-    updateHistoryButtons();
+    hist.sync();
     unsubSelection = ed.on("selectionChange", onSelectionChange);
     unsubChange = ed.on("change", function () {
       if (emptyEl) emptyEl.hidden = !(stateName === "ready" && modelEmpty(ed));
       updateStatus();
-      updateHistoryButtons();
+      hist.sync();
       if (!dispatching) {
         checkSelectionDrift();
         if (isScoped() && addFormEl && !addFormEl.contains(document.activeElement)) {
@@ -3685,6 +3758,7 @@
     applying = true;
     if (applyBtn) applyBtn.disabled = true;
     if (cancelBtn) cancelBtn.disabled = true;
+    hist.sync();
     clearAlert();
     setStatus("Applying\u2026", "");
     try {
@@ -3693,6 +3767,7 @@
       applying = false;
       if (applyBtn) applyBtn.disabled = false;
       if (cancelBtn) cancelBtn.disabled = false;
+      hist.sync();
       setStatus("Couldn\u2019t apply \u2014 invalid diagram", "error");
       showAlert("Couldn\u2019t apply \u2014 the diagram is not valid. " + firstLine(err), "apply");
       return;
@@ -3723,27 +3798,7 @@
     close(true);
   }
 
-  /* --- keyboard: Esc and Ctrl/Cmd+Z isolation ----------------------- */
-
-  function undoRedo(shift) {
-    if (!editor) return;
-    if (shift) editor.redo(); else editor.undo();
-    // Undo/redo restores a filtered old selection; line-index families can
-    // point at a different entity after a structural step. Clear it rather
-    // than let the inspector edit the wrong item.
-    if (scopeFamily === "sequence" || scopeFamily === "pie" ||
-        scopeFamily === "state" || scopeFamily === "class" || scopeFamily === "er") {
-      selection = null;
-      selectionSig = null;
-      editor.clearSelection("ui");
-      renderInspector();
-    } else {
-      checkSelectionDrift();
-    }
-    updateStatus();
-    updateHistoryButtons();
-    updateChartControls();
-  }
+  /* --- keyboard: Esc only; history chords live in NB.editWindow ---- */
 
   document.addEventListener("keydown", function (e) {
     if (!isOpen()) return;
@@ -3751,14 +3806,6 @@
       e.preventDefault();
       e.stopPropagation();
       close(false);
-      return;
-    }
-    if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!editor) return;
-      if (canvasEl && canvasEl.contains(e.target)) return;
-      undoRedo(e.shiftKey);
       return;
     }
   });
@@ -3791,14 +3838,12 @@
   }
   if (toolSelectBtn) toolSelectBtn.addEventListener("click", toolAction(function (v) { v.setTool("select"); }));
   if (toolConnectBtn) toolConnectBtn.addEventListener("click", toolAction(function (v) { v.setTool("connect"); }));
-  if (undoBtn) undoBtn.addEventListener("click", toolAction(function (v, ed) {
-    if (!ed) return;
-    undoRedo(false);
-  }));
-  if (redoBtn) redoBtn.addEventListener("click", toolAction(function (v, ed) {
-    if (!ed) return;
-    undoRedo(true);
-  }));
+  if (barAddBtn) barAddBtn.addEventListener("click", function () {
+    focusSidebarSection("add");
+  });
+  if (barChartBtn) barChartBtn.addEventListener("click", function () {
+    focusSidebarSection("chart");
+  });
   if (overlay) {
     overlay.addEventListener("click", function (e) {
       if (e.target === overlay) close(false);

@@ -1,0 +1,61 @@
+{# Shared chrome for the three hybrid edit windows: table editor, Mermaid
+   designer, Graphviz / WaveDrom designer.
+
+   Anatomy (docs/ui/edit-window-guide.md §2):
+     header  [title][badge] ... [maximize][close]
+     bar     [window actions, one scrolling line] | [undo][redo]
+     footer  [status][Cancel][Apply]
+
+   windows.js wraps the LAST header button (close) in
+   .settings-header-actions and inserts maximize before it, so the close
+   button must stay the final button in edit_header(). #}
+
+{% macro edit_header(prefix, title, badge_id=None, badge_text="") %}
+  <div class="settings-header edit-header">
+    <div class="designer-heading edit-heading">
+      <h2 id="{{ prefix }}-title">{{ title }}</h2>
+      {% if badge_id %}<span class="designer-type edit-badge" id="{{ badge_id }}">{{ badge_text }}</span>{% endif %}
+    </div>
+    <button id="{{ prefix }}-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+  </div>
+{% endmacro %}
+
+{% macro edit_bar(prefix) %}
+  <div class="edit-bar">
+    <div class="edit-bar-actions">{{ caller() }}</div>
+    <div class="edit-bar-history" role="group" aria-label="History">
+      <span class="edit-bar-seam" aria-hidden="true"></span>
+      <button id="{{ prefix }}-undo" class="edit-bar-btn" type="button"
+              title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+        <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+             fill="none" stroke="currentColor" stroke-width="1.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+          <path d="M6.4 3.6 4 6l2.4 2.4"/>
+        </svg>
+      </button>
+      <button id="{{ prefix }}-redo" class="edit-bar-btn" type="button"
+              title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+              aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+        <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+             fill="none" stroke="currentColor" stroke-width="1.5"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+          <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro edit_footer(prefix, modifier, status_class, hint=None) %}
+  <div class="settings-footer edit-footer {{ modifier }}">
+    <span id="{{ prefix }}-status" class="{{ status_class }}" role="status"
+          aria-live="polite" aria-atomic="true"></span>
+    {% if hint %}<span class="te-hint" aria-hidden="true">{{ hint }}</span>{% endif %}
+    <button id="{{ prefix }}-cancel" class="settings-action" type="button"
+            aria-keyshortcuts="Escape">Cancel</button>
+    <button id="{{ prefix }}-apply"
+            class="settings-action settings-action--primary" type="button">Apply</button>
+  </div>
+{% endmacro %}

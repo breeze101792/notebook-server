@@ -382,17 +382,27 @@ with MIT attribution, version, and source URL (F10).
 `docs/architecture/design/mermaid-designer-ui.md` + reference mockup
 `docs/architecture/design/mermaid-designer-mockup.html`.
 
-- Shell reuses `.settings-overlay` / `.settings-modal`; `.designer-modal` sizes
-  to 1320px × 85vh (`96vw`/`92vh` clamps) and carries a three-region body
-  (236px build sidebar, flexible stage, 296px inspector) for the scoped
-  families.
+- Shell reuses the shared edit-window macros (`templates/_edit_window.html`):
+  header, action bar (Select/Connect · Add/Chart on the left, Undo/Redo on the
+  right), three-region body (236px build sidebar, flexible stage, 296px
+  inspector) for the scoped families, and the commit footer
+  (`status`, Cancel, Apply). `.designer-modal` sizes to 1320px × 85vh
+  (`96vw`/`92vh` clamps).
 - Canvas states: loading / empty / error / preview-only (`readOnly:true`) /
   ready — mutually exclusive. Apply failures use the banner, not the error
   state.
 - New tokens: `--designer-canvas-bg`, `--designer-grid`, `--designer-grid-size`,
   `--designer-modal-w`, `--designer-modal-h`, `--accent-fg`.
-- Ctrl+Z is captured on the overlay and gated so it never reaches the note; the
-  only note write is Apply.
+- History lives in the bar and is delegated to Visimer through `NB.editWindow`
+  (`edit-window.js`): the module owns the document-level keydown, the button
+  states and the async restore. `input`, `textarea`, `select` and
+  `contenteditable` targets keep native undo. With no editable field focused:
+  Ctrl/Cmd+Z is gated off inside `#designer-canvas`, because Visimer's own
+  `onKeyDown` owns z / shift+z there and does not stop propagation — removing
+  that gate would undo twice; Ctrl/Cmd+Y is handled everywhere including the
+  canvas, because
+  Visimer binds no y. The Redo control names both chords in its title. The only
+  note write is Apply.
 - Trigger order: "Design diagram…" first, "Edit mermaid source" second.
 - Prerequisite: the `NB.auth.status()` role change (F4).
 
@@ -440,7 +450,10 @@ Playwright (`tests/browser/`), real bundle + real mermaid:
    byte-identical** (mandatory — closes the view-mounted no-op gate gap).
 8. Apply → **one Ctrl+Z restores the previous fence** (the headline "one undo
    step" claim; F8).
-9. Ctrl+Z inside the modal does not touch the note; Esc closes only the modal.
+9. Ctrl+Y redoes from the canvas (the vendor does not bind it) and from outside
+   it; Ctrl+Z on the canvas stays vendor-owned, touches neither the note nor a
+   second undo; Ctrl+Z in an inspector field is not intercepted; Esc closes only
+   the modal.
 10. Theme: the canvas follows `body[data-theme]` via `designerMermaid()`.
 
 Backend: no change → no new backend tests.

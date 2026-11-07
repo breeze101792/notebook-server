@@ -1,7 +1,7 @@
 # Frontend test suites
 
 The frontend is tested in two places. `tests/dom/test_dom.js` is the primary
-suite: 40,695 lines with a hand-rolled harness, no framework, loading the real
+suite: 42,660 lines with a hand-rolled harness, no framework, loading the real
 app into jsdom. The twelve Playwright scripts under `tests/browser/` cover
 behavior only a real browser can produce: the hybrid editing engine, the
 hybrid block types (lists, tasks, tables, selection), the fence editor, the
@@ -79,8 +79,9 @@ implement:
 `evalIn(src)` is `vm.runInContext(src, ctx)`. The
 harness evaluates the real vendor bundles (`marked.min.js`,
 `highlight.min.js`, `codemirror.bundle.js`, `turndown.browser.js`,
-`turndown-plugin-gfm.browser.js`) and all 45 app modules in the dependency
-order `index.html` uses, including `mermaid-designer.js` after `export.js` and
+`turndown-plugin-gfm.browser.js`) and all 46 app modules in the dependency
+order `index.html` uses, including `edit-window.js` before `table-editor.js`,
+`mermaid-designer.js` after `export.js`, and
 `workspaces.js` immediately before `app.js`. Each module is an IIFE extending
 `window.NB`, so the load order is load-bearing. `window.onerror` is captured
 into an `errors` array and asserted in the first section.
@@ -88,6 +89,27 @@ into an `errors` array and asserted in the first section.
 A new app module must be added to this list, to `templates/index.html`, and to
 the `static/sw.js` `PRECACHE` array. The wiring checks assert the modules and
 renderers they name; the registry guard covers every renderer module.
+
+### The shared edit-window shell
+
+The three hybrid edit modals (table editor, Mermaid designer, Graphviz /
+WaveDrom designer) share `static/js/edit-window.js` and the Jinja macros in
+`templates/_edit_window.html`. The fixture reproduces the rendered DOM exactly:
+each modal's header, `.edit-bar` (caller actions plus the pinned
+`.edit-bar-history` pair), body, and `.settings-footer.edit-footer`. A test
+compares the fixture's tag/id/class/role/aria order against a rendered `/` when
+the fixture is rebuilt, so a macro edit that is not mirrored here is caught.
+The source-text scans assert
+the `{% from "_edit_window.html" import ... %}` line, one `{% call edit_bar %}`
+per window, and that the templated ids live in the macro file while the
+removed sidebar sections and the old dw compact strip/source button are gone
+from `index.html`. `edit-window.js` is asserted ahead of `table-editor.js` and
+`designer-shell.js` and inside the `sw.js` `PRECACHE`; `CACHE` is
+`notebook-v26`.
+
+`_edit_window.html` has no Flask route and is never served directly; the
+routing tests cover only real page and API paths, so there is no
+"macro file is not a route" assertion to extend.
 
 ### The check counter and exit code
 
@@ -98,7 +120,7 @@ logs `ok` / `FAIL`. The whole file is one async IIFE that ends with a
 
 So the exit code is `0` only when every assertion passed. The suite announces
 **120 `== name ==` section headings** (119 distinct names — `== export ==` is
-announced twice) and printed **4,811 checks** in the last full run, covering
+announced twice) and printed **4,969 checks** in the last full run, covering
 boot, sidebar and tree, theme, viewer and outline, the six renderers, the
 blocks registry, tabs (open/close/reorder/pin/ghost animation), clear-text
 control, case in Advanced, the side-panel search options
@@ -235,21 +257,32 @@ a `result.typeInfo.capability`, a family-shaped `result` driven by
   delegates to `NB.hybrid.editPluginSource(hit)`; a bundle load failure closes
   with a toast;
 - `Ctrl+Z` while open is captured and forwarded to the canvas, never the note;
+  `Ctrl+Y` redoes from the canvas and from outside it (the bar's Redo button),
+  an inspector `input`, an inspector `select` and `textarea`, and a sidebar
+  text field keep native undo/redo (the tag guard is a list, not `input`
+  only), and a canvas `Ctrl+Z` / `Ctrl+Shift+Z` is left to the vendor so it
+  undoes exactly once and never double-fires;
 - wiring completeness: `mermaid-designer.js` is in `index.html` and the `sw.js`
   `PRECACHE`, and `visimer.bundle.js` is in neither (it stays a lazy bundle);
-  the stage toolbar row is gone — its Tools and History buttons now live in
-  `#designer-sidebar` — and `#designer-sidebar` / `#designer-add-title` /
-  `#designer-palette` are in `index.html`.
+  the stage toolbar row is gone — Select/Connect plus the Add/Chart chips now
+  live in the shared `.edit-bar` — and `#designer-sidebar` /
+  `#designer-add-title` / `#designer-palette` are in `index.html`. The history
+  pair is templated by `_edit_window.html`, so `index.html` carries only the
+  macro calls.
 
-The `== designer sidebar controls ==` section covers the Select / Connect /
-Undo / Redo icon buttons that Visimer does not ship, now inside
-`#designer-sidebar`: the buttons are descendants of the sidebar and carry
-`designer-iconbtn`, the sidebar is hidden by default, while loading, after
-close, and for a non-editable type, and visible in the ready state with a
-type-specific hint. Select/Connect call `view.setTool`, `aria-pressed` mirrors
-the view's `toolChange`, connect mode toggles the canvas class, Undo/Redo
-delegate to `editor.undo()`/`redo()` and track `canUndo`/`canRedo`, and close
-resets the pressed state and both history buttons.
+The `== designer bar controls ==` section covers the Select / Connect icon
+buttons and the Add / Chart chips that Visimer does not ship, now inside the
+shared `.edit-bar`: Select/Connect are in `.edit-bar-actions` (not the
+sidebar), Undo/Redo are `.edit-bar-btn` elements in `.edit-bar-history` (not
+the sidebar or the footer), the sidebar is hidden by default, while loading,
+after close, and for a non-editable type, and visible in the ready state with
+a type-specific hint. The chips are disabled while the sidebar is hidden and
+focus the Add form/tabs and the Chart section when the sidebar is visible.
+Select/Connect call `view.setTool`, `aria-pressed` mirrors the view's
+`toolChange`, connect mode toggles the canvas class, and Undo/Redo delegate to
+`editor.undo()`/`redo()` and track `canUndo`/`canRedo`; the delegate path is
+async, so a second click must wait a tick for the first restore to finish.
+Close resets the pressed state, both history buttons and both chips.
 
 The `== designer edit UI ==` section covers the three-column layout and its
 tokens (236 px sidebar, 296 px inspector, 1320 px modal), the Add tabs and
@@ -261,6 +294,64 @@ button. The add-only families (gantt, line-item) keep the sidebar without an
 inspector and hide Connect; the sequence family renders participant and message
 inspectors and rejects a comma in a name inline; a model-rejected rename
 restores the current name.
+
+### The table editor (`== table editor history ==`)
+
+`static/js/table-editor.js` keeps a modal-local history of the working copy
+(`docs/architecture/table-editor.md` §5c), owned by the shared
+`static/js/edit-window.js` stack mode. jsdom fires no focus events and has no
+caret, so the `== table editor history ==` section drives the exported model
+verbs and the `_history()` hook (`{mode, depth, index, canUndo, canRedo}`,
+`mode === "stack"`) instead of the keyboard. `_undo()` / `_redo()` return a
+promise (the shared engine awaits its repaint hook), so the tests await them.
+
+- the fixture's toolbar is the real one inside `.edit-bar-actions`;
+  `#table-editor-undo` and `#table-editor-redo` are `.edit-bar-btn` elements in
+  `.edit-bar-history` above the body. The footer is Cancel then Apply only.
+  The inline fixture is checked tag-for-tag against a rendered `/` so a missing
+  bound id cannot make the module silently no-op;
+- a clean open seeds depth 1 with both buttons disabled, the first typed
+  character enables Undo, `_undo()` restores the previous cell HTML and
+  `_redo()` reapplies it, and the bar buttons do the same one step each;
+- a typing burst inside the 350 ms window collapses to one step, a second cell
+  starts a new step, a structural verb is one step, a repeated no-op clear adds
+  none, and typing after an undo truncates the redo tail. A burst in a freshly
+  entered cell is one step: `commitEdit()` calls `breakCoalesce()` and the next
+  text capture starts a new entry;
+- undoing to the pristine snapshot restores `changed:false`, so `_apply()`
+  writes nothing and leaves the note clean — asserted on a ragged source table;
+- `close()` drops the stack to depth 0 and reopening seeds depth 1;
+- `Ctrl+Z`, `Ctrl+Shift+Z` and `Ctrl+Y` on the overlay undo/redo, `readOnly`
+  ignores all three, and undo while a cell is being edited restores that cell
+  with the caret back in it and typing still reaching the model; consecutive
+  chords in the same task must be separated by a tick because the engine's
+  `restoring` guard is held until the repaint await settles;
+- both ends of the stack are inert: `Ctrl+Z` at index 0 and `Ctrl+Shift+Z` /
+  `Ctrl+Y` at the top leave the model alone, keep the open cell
+  `contenteditable` and focused, and typing afterwards still writes the model
+  (`restoreStep()` bounds-tests before `commitEdit()`);
+- a sorted state survives undo: undo into a sorted snapshot restores
+  `#te-sort-col` and the header's `aria-sort`, undoing past it clears both,
+  redoing restores them again (the capture is taken after `sortedCol = col`),
+  and a sort-then-delete-the-left-column case proves the select is written
+  back after `finishStructure()` rebuilds its options (it would otherwise fall
+  back to the `Sort by…` placeholder);
+- sort, direction flip and transpose each capture the state they just wrote:
+  undo restores the pre-sort order and pre-sort sort fields, and a transpose
+  undone restores the grid with `sortedCol = -1`; align cycle, insert row and
+  column, move row and column, and delete row and column are each exactly one
+  step that one undo reverses;
+- the stack caps at 100 snapshots including the opening one, so 100+ inserts
+  stop at depth 100 / index 99, 99 undos reach index 0, and the trimmed
+  opening snapshot means index 0 is no longer pristine: undo-all then Apply is
+  documented as no longer a no-op and is asserted to write.
+
+The merged-cell refusal block asserts both bar buttons are `disabled` and the
+chords change nothing. The Tab-out assertions use the one-state rule: the
+history pair is above the body, so Cancel is always the footer's first enabled
+control, clean or dirty (`focusOutsideGrid` reads exactly that list). The AC17
+selector list includes the two bar ids, so their accessible names and disabled
+states are checked in the bar.
 
 ### Mobile v1 (`== mobile ==`)
 
@@ -295,14 +386,19 @@ the file back from disk. It exists because jsdom has no `contentEditable`
 engine, no selection, and no native markup insertion, so the DOM a real
 browser produces never appears there.
 
-`tests/browser/test_designer_browser.js` (568 lines) is the same harness for
+`tests/browser/test_designer_browser.js` (796 lines) is the same harness for
 the Mermaid designer: it loads the real Visimer bundle and real mermaid,
 opens the designer from the real right-click menu, drives the canvas model,
 and asserts the write-back contract against the file on disk — open → Apply
 with no gesture is byte-identical, adding a node lands the expected fence
 with untouched lines byte-identical, one `Ctrl+Z` restores the previous
-fence, `Ctrl+Z` inside the modal never touches the note, Esc closes only the
-modal, and the canvas follows `body[data-theme]`.
+fence, `Ctrl+Z` inside the modal never touches the note, `Ctrl+Y` redoes from
+the canvas and from outside it while a canvas `Ctrl+Z` still undoes exactly
+once, a `Ctrl+Z` in an inspector field is not intercepted, Esc closes only the
+modal, and the canvas follows `body[data-theme]`. It also checks the shared
+bar: Undo/Redo start disabled, track `canUndo`/`canRedo`, and are awaited
+because the designer's restore is async; the Add/Chart chips focus the
+matching sidebar section.
 
 `tests/browser/test_dw_designer_browser.js` is the same harness for the two
 `#dw-designer-overlay` windows. It writes one note with a ```dot fence and one
@@ -313,8 +409,8 @@ the SVG preview inside `#dw-diagram-card` (including the white WaveDrom card),
 selects a node or signal row on the canvas, edits the inspector field, applies,
 and reads the note back from disk. The Graphviz groups cover the shape grid, style select, edge line/arrow,
 byte-identical untouched lines/blank lines, single-line/shared-line statement
-preservation, item-level multi-line read-only, History undo/redo, hover,
-double-click, Home/End/Enter, and the ≤960 compact strip/sheet layout. The
+preservation, item-level multi-line read-only, History undo/redo in the bar,
+hover, double-click, Home/End/Enter, and the ≤960 compact bar/sheet layout. The
 compact test opens Add and Chart in `#dw-compact-sheet`, checks the sheet is
 inside the stage and ≤55%, verifies section swap/restore, focus, close, and
 Esc-closes-sheet-before-window. The WaveDrom groups
@@ -380,9 +476,17 @@ The audit suites cover the rest of the app end to end:
   and grid edges, a pointer drag painting a range and Shift+click extending it,
   copy writing TSV plus an HTML table through a real `ClipboardEvent` and paste
   writing a block back, Apply saving GFM with the bytes outside the table
-  unchanged, one-step undo/redo on both entry paths, the no-op Apply, the
-  merged-cell refusal strip, focus containment and return, and Esc writing
-  nothing.
+  unchanged, one-step note-level undo/redo on both entry paths, the no-op Apply,
+  the merged-cell refusal strip, focus containment and return, and Esc writing
+  nothing. The in-modal history is covered too: a clean open disables both
+  bar controls, the first typed character enables Undo, `Ctrl+Z` reverts the
+  cell and returns the caret to it, `Ctrl+Shift+Z` and `Ctrl+Y` redo, a real
+  paste into a cell is exactly one step, a row-grip drag is one step and
+  `Ctrl+Z` restores the row order, undoing back to the opening state makes
+  Apply a byte-identical no-op, and a merged-cell table disables both controls
+  and ignores the chords. The inert-end cases run with a real caret: `Ctrl+Z`
+  at index 0 and `Ctrl+Shift+Z` / `Ctrl+Y` at the top leave the open cell
+  editable, focused, and still writing typed characters to the model.
 - `test_figure_sizing_browser.js` — rendered SVG sizing: font-scale response,
   the wide/tall/huge/tiny layout matrix, per-engine units (Graphviz pt,
   WaveDrom px, Mermaid viewBox, inline-SVG viewBox/explicit), the tall-mode

@@ -27,7 +27,6 @@
   const STATUS_APPLYING = "Applying\u2026";
   const STATUS_LOADING = "Loading\u2026";
   const STATUS_NOOP = "No changes to apply";
-  const HISTORY_COALESCE_MS = 350;
   const PREVIEW_FAIL =
     "Preview can\u2019t render this change. Apply still validates before saving.";
 
@@ -48,7 +47,6 @@
     addSubmit: document.getElementById("dw-add-submit"),
     chart: document.getElementById("dw-chart"),
     chartDivider: document.getElementById("dw-chart-divider"),
-    editSource: document.getElementById("dw-edit-source"),
     canvas: document.getElementById("dw-canvas"),
     card: document.getElementById("dw-diagram-card"),
     overlayLayer: document.getElementById("dw-overlay-layer"),
@@ -70,16 +68,12 @@
     status: document.getElementById("dw-status"),
     cancel: document.getElementById("dw-cancel"),
     apply: document.getElementById("dw-apply"),
-    undo: document.getElementById("dw-undo"),
-    redo: document.getElementById("dw-redo"),
     stageScroll: document.getElementById("dw-stage-scroll"),
     sliceRuler: document.getElementById("dw-slice-ruler"),
     sliceBand: document.getElementById("dw-slice-band"),
     readonly: document.getElementById("dw-readonly"),
     readonlyMsg: document.getElementById("dw-readonly-msg"),
     readonlyEditSource: document.getElementById("dw-readonly-edit-source"),
-    compactNav: document.querySelector(
-      "#dw-designer-overlay .dw-compact-nav"),
     addSection: document.getElementById("dw-add-section"),
     compactSheet: document.getElementById("dw-compact-sheet"),
     compactSheetBody: document.getElementById("dw-compact-sheet-body"),
@@ -106,13 +100,31 @@
   let sheetKind = null;
   const sheetAnchors = { add: null, chart: null };
   let sheetInvoker = null;
-  const history = {
-    stack: [],
-    index: -1,
-    lastAt: 0,
-    lastKind: null,
-    restoring: false,
-  };
+
+  const hist = NB.editWindow.attach({
+    overlay: overlay,
+    prefix: "dw",
+    isOpen: isOpen,
+    enabled: function () {
+      return historySupported() && stateName === "ready" && !applying;
+    },
+    ownsKey: function (e) { return !NB.editWindow.isEditable(e); },
+    snapshot: function () { return controller.snapshot(); },
+    restore: function (src) { return controller.restore(src); },
+    afterRestore: async function () {
+      setStatus(controller.isNoOp(model) ? "Ready" : STATUS_DIRTY, "");
+      syncApply();
+      try {
+        await preview();
+      } catch (_) {
+        alert(PREVIEW_FAIL, "preview");
+      }
+      focusCanvas();
+    },
+    onError: function (msg) {
+      alert("Couldn\u2019t restore history \u2014 " + msg);
+    },
+  });
 
   function isOpen() {
     return !!overlay && !overlay.hidden;
@@ -148,10 +160,12 @@
   }
 
   function syncApply() {
-    if (!ui.apply) return;
     // A clean open must still expose Apply: the no-op branch in apply()
     // reports "No changes to apply" and closes without writing (A15).
-    ui.apply.disabled = !(stateName === "ready" && !applying && !blocked);
+    if (ui.apply) {
+      ui.apply.disabled = !(stateName === "ready" && !applying && !blocked);
+    }
+    hist.sync();
   }
 
   function setBlocked(flag) {
@@ -163,7 +177,7 @@
     if (stateName !== "ready") return;
     setStatus(STATUS_DIRTY, "");
     syncApply();
-    captureHistory(!!structural);
+    hist.capture(structural ? "structural" : "text");
   }
 
   function noun() {
@@ -179,90 +193,6 @@
   function historySupported() {
     return !!(controller && typeof controller.snapshot === "function" &&
       typeof controller.restore === "function");
-  }
-
-  function updateHistoryButtons() {
-    const can = historySupported();
-    if (ui.undo) ui.undo.disabled = !can || history.index <= 0;
-    if (ui.redo) {
-      ui.redo.disabled = !can || history.index >= history.stack.length - 1;
-    }
-  }
-
-  function resetHistory() {
-    history.stack = [];
-    history.index = -1;
-    history.lastAt = 0;
-    history.lastKind = null;
-    if (historySupported()) {
-      history.stack = [controller.snapshot()];
-      history.index = 0;
-    }
-    updateHistoryButtons();
-  }
-
-  function captureHistory(structural) {
-    if (!historySupported() || history.restoring) return;
-    const snap = controller.snapshot();
-    if (!history.stack.length) {
-      history.stack = [snap];
-      history.index = 0;
-      updateHistoryButtons();
-      return;
-    }
-    if (snap === history.stack[history.index]) return;
-    const now = Date.now();
-    if (!structural && history.lastKind === "text" &&
-        now - history.lastAt <= HISTORY_COALESCE_MS &&
-        history.index === history.stack.length - 1) {
-      history.stack[history.index] = snap;
-    } else {
-      history.stack = history.stack.slice(0, history.index + 1);
-      history.stack.push(snap);
-      history.index++;
-    }
-    history.lastKind = structural ? "structural" : "text";
-    history.lastAt = now;
-    updateHistoryButtons();
-  }
-
-  async function restoreHistory() {
-    if (!historySupported() || history.index < 0) return;
-    const source = history.stack[history.index];
-    history.restoring = true;
-    try {
-      const ok = controller.restore(source);
-      if (ok === false) throw new Error("The saved state could not be restored");
-    } catch (err) {
-      history.restoring = false;
-      alert("Couldn’t restore history — " + firstLine(err));
-      updateHistoryButtons();
-      return;
-    }
-    history.restoring = false;
-    history.lastKind = null;
-    history.lastAt = 0;
-    setStatus(controller.isNoOp(model) ? "Ready" : STATUS_DIRTY, "");
-    syncApply();
-    try {
-      await preview();
-    } catch (_) {
-      alert(PREVIEW_FAIL, "preview");
-    }
-    updateHistoryButtons();
-    focusCanvas();
-  }
-
-  function undo() {
-    if (!historySupported() || history.index <= 0) return;
-    history.index--;
-    restoreHistory();
-  }
-
-  function redo() {
-    if (!historySupported() || history.index >= history.stack.length - 1) return;
-    history.index++;
-    restoreHistory();
   }
 
   function isCompactSheetOpen() {
@@ -527,7 +457,7 @@
     setState("ready");
     if (controller.afterRender) controller.afterRender(model);
     syncInspectorSheet();
-    resetHistory();
+    hist.reset();
     setStatus("Ready", "");
     syncApply();
     focusCanvas();
@@ -583,12 +513,7 @@
     if (ui.hint) ui.hint.hidden = true;
     model = null;
     controller = null;
-    history.stack = [];
-    history.index = -1;
-    history.lastKind = null;
-    history.lastAt = 0;
-    history.restoring = false;
-    updateHistoryButtons();
+    hist.clear();
     applying = false;
     blocked = false;
     setState("loading");
@@ -646,6 +571,7 @@
     setInert(true);
     if (ui.apply) ui.apply.disabled = true;
     if (ui.cancel) ui.cancel.disabled = true;
+    hist.sync();
     clearAlert();
     setStatus(STATUS_APPLYING, "");
     let candidate;
@@ -655,6 +581,7 @@
       applying = false;
       setInert(false);
       if (ui.cancel) ui.cancel.disabled = false;
+      hist.sync();
       setStatus("Couldn\u2019t apply \u2014 invalid " + ctl.badge + " source", "error");
       alert("Couldn\u2019t apply \u2014 " + firstLine(err));
       syncApply();
@@ -668,6 +595,7 @@
       applying = false;
       setInert(false);
       if (ui.cancel) ui.cancel.disabled = false;
+      hist.sync();
       setStatus("Couldn\u2019t apply \u2014 invalid " + ctl.badge + " source", "error");
       alert("Couldn\u2019t apply \u2014 " + firstLine(err));
       syncApply();
@@ -678,6 +606,7 @@
       applying = false;
       setInert(false);
       if (ui.cancel) ui.cancel.disabled = false;
+      hist.sync();
       notify("Can\u2019t apply \u2014 the editor is no longer active");
       close(true);
       return;
@@ -687,6 +616,7 @@
       applying = false;
       setInert(false);
       if (ui.cancel) ui.cancel.disabled = false;
+      hist.sync();
       notify("Couldn\u2019t apply \u2014 the " + noun() + " changed");
       close(true);
       return;
@@ -702,6 +632,7 @@
     applying = false;
     setInert(false);
     if (ui.cancel) ui.cancel.disabled = false;
+    hist.sync();
     close(true);
   }
 
@@ -726,8 +657,6 @@
 
   function compactAction(action) {
     if (action === "source") { editSourceNow(); return; }
-    if (action === "undo") { undo(); return; }
-    if (action === "redo") { redo(); return; }
     if (action === "add" || action === "chart") {
       openCompactSheet(action, lastCompactInvoker);
     }
@@ -742,24 +671,6 @@
       else close(false);
       return;
     }
-    const key = (e.key || "").toLowerCase();
-    if ((e.ctrlKey || e.metaKey) && (key === "z" || key === "y")) {
-      const t = e.target;
-      const editable = t && (
-        t.tagName === "INPUT" || t.tagName === "TEXTAREA" ||
-        t.tagName === "SELECT" || t.isContentEditable ||
-        (t.closest && t.closest("input, textarea, select, [contenteditable='true']"))
-      );
-      if (!editable) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        if (key === "z" && e.shiftKey) redo();
-        else if (key === "z") undo();
-        else if (key === "y") redo();
-      }
-      return;
-    }
   });
 
   function retry() {
@@ -772,8 +683,6 @@
   }
 
   if (ui.apply) ui.apply.addEventListener("click", apply);
-  if (ui.undo) ui.undo.addEventListener("click", undo);
-  if (ui.redo) ui.redo.addEventListener("click", redo);
   if (ui.cancel) ui.cancel.addEventListener("click", function () { close(false); });
   if (ui.close) ui.close.addEventListener("click", function () { close(false); });
   if (ui.retry) ui.retry.addEventListener("click", retry);
@@ -782,10 +691,12 @@
     ui.readonlyEditSource.addEventListener("click", editSourceNow);
   }
   let lastCompactInvoker = null;
-  if (ui.compactNav) {
-    ui.compactNav.addEventListener("click", function (e) {
+  if (overlay) {
+    // The bar carries the Add / Chart / Source chips in every layout; the
+    // compact sheet still opens from them and restores focus to the chip.
+    overlay.addEventListener("click", function (e) {
       const button = e.target.closest("[data-compact]");
-      if (!button) return;
+      if (!button || !overlay.contains(button)) return;
       lastCompactInvoker = button;
       compactAction(button.dataset.compact);
     });
@@ -795,7 +706,6 @@
       closeCompactSheet(true);
     });
   }
-  if (ui.editSource) ui.editSource.addEventListener("click", editSourceNow);
   if (ui.alert) {
     const dismiss = ui.alert.querySelector(".designer-alert-dismiss");
     if (dismiss) dismiss.addEventListener("click", clearAlert);

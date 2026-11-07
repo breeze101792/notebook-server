@@ -252,7 +252,7 @@ apply.
 then app modules in dependency order: `api.js → dialog.js → auth.js → cm-bridge.js →
 lightbox.js → blocks.js → menu.js → mermaid.js → wavedrom.js → katex.js → viz.js →
 htmlpreview.js → svg.js → copy-image.js → viewer.js → editbar.js → hybrid.js →
-table-edit.js → list-edit.js → table-view.js → table-select.js → table-editor.js → watcher.js →
+table-edit.js → list-edit.js → table-view.js → table-select.js → edit-window.js → table-editor.js → watcher.js →
 outline.js → sidebar.js → graph-2d.js → graph-3d.js → graph.js → tabs.js → windows.js →
 settings.js → export.js → mermaid-designer.js → designer-shell.js →
 dot-designer.js → wavedrom-designer.js → vimnav.js → ai.js → activity.js →
@@ -433,6 +433,9 @@ Module responsibilities:
   `#viewer`, so no save, export, or undo snapshot sees it. Opens
   `NB.tableEditor`. It owns no table operation: row/column work lives in the
   modal.
+- `edit-window.js` (`NB.editWindow`) — the one history engine behind the three
+  edit windows' bar undo/redo pair: stack or delegate mode, coalescing,
+  Ctrl/Cmd+Z/Y ownership, and the shared `isEditable()` guard.
 - `table-editor.js` — hybrid-only "Edit table" modal (`#table-editor-overlay`):
   a spreadsheet-style grid over a snapshot of the table's cell HTML and per-cell
   alignment. Toolbar moves, inserts, adds and deletes rows and columns, cycles

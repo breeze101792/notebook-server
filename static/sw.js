@@ -42,7 +42,8 @@
  * so an installed worker must re-precache both. */
 /* Bumped v24 -> v25: the top-bar session label became a picker, so the shell,
  * style.css and sessions.js must refresh together. */
-const CACHE = "notebook-v25";
+/* Bumped v25 -> v26: the shared edit-window history module joins the precache. */
+const CACHE = "notebook-v26";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -84,6 +85,7 @@ const PRECACHE = [
   "/static/js/list-edit.js",
   "/static/js/table-view.js",
   "/static/js/table-select.js",
+  "/static/js/edit-window.js",
   "/static/js/table-editor.js",
   "/static/js/watcher.js",
   "/static/js/outline.js",
