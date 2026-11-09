@@ -43,8 +43,9 @@ control system, **one** status system, and a consistent "grouped form"
 rhythm across all seven tabs. The AI tab is reorganised into labelled groups
 separated by hairline rules so it reads as one panel. Its ACP block becomes a
 read-only status panel: per-agent rows with a clear **Installed / Adapter
-missing / Not installed** state, an obvious **Selected** marker on the agent
-the configured profile uses, and a visible **Read-only** affordance.
+missing / Not installed** state, an accent marker on each agent a configured
+profile uses, one profile block per configured profile, and a visible
+**Read-only** affordance.
 
 ---
 
@@ -163,7 +164,7 @@ inside the modal, so re-pointing it there has no other effect. The
 | Primary text | `--fg` | row values, card titles |
 | Secondary text | `--fg-muted` (scoped, §3.1) | labels, help, hints, captions |
 | Hairline | `--border` | group rules, card borders, field borders |
-| Accent (selected / primary) | `--accent`, `--accent-soft`, `--accent-fg` | active nav, primary button, checked chip, "Selected" tag |
+| Accent (selected / primary) | `--accent`, `--accent-soft`, `--accent-fg` | active nav, primary button, checked chip, "Default" tag |
 | Success (on / installed) | `--stg-ok` | watch "on", ACP "Installed" |
 | Warning (needs attention) | `--stg-warn` | watch "off", ACP "Adapter missing", vimrc error |
 | Danger (error / destructive) | `--danger`, `--danger-soft` | error text, Remove / Revoke hover |
@@ -525,7 +526,7 @@ Drop the old standalone global `.settings-watch-status` and
 leave them and let the scoped rules win. The neutral `.stg-status` (no
 modifier) keeps `--fg` text with a `--fg-muted` dot.
 
-**Tag** (uppercase micro-label, no dot): "Read-only", "Selected", "Default",
+**Tag** (uppercase micro-label, no dot): "Read-only", "Default",
 "key stored", "no key".
 
 ```css
@@ -625,8 +626,8 @@ button (Settings are live).
 ## 5. AI tab — read-only ACP / agent status presentation
 
 This is the headline change. The ACP block stops being a paragraph of grey
-sentences and becomes a **status panel** with three layers: a panel header, a
-configured-profile card, and a per-agent list.
+sentences and becomes a **status panel** with three layers: a panel header, one
+read-only block per configured profile, and a per-agent list.
 
 ### 5.1 Panel layout
 
@@ -634,12 +635,15 @@ configured-profile card, and a per-agent list.
 ┌───────────────────────────────────────────────────────────────┐
 │ ACP AGENTS                                        [🔒 READ-ONLY]│
 │ Local coding agents the assistant can drive over the Agent     │
-│ Client Protocol. Configured by editing config/acp.json on the  │
-│ server (not editable here).                                    │
+│ Client Protocol. config/acp.json may hold several profiles and  │
+│ is edited on the server (not editable here).                    │
 │                                                                │
-│ Configured profile                                             │
-│ ┃ ● opencode        [SELECTED] [DEFAULT]                       │
-│ ┃   allowlist key  opencode                                   │
+│ ┃ opencode                                     [DEFAULT]       │
+│ ┃   allowlist key  opencode                                    │
+│ ┃   agent model  ollama/qwen3.8:latest                         │
+│ ┃ local-agent                              [MAKE DEFAULT]      │
+│ ┃   This profile uses an explicit "command" instead of an      │
+│ ┃   allowlist key.                                             │
 │                                                                │
 │ Detected agents                                                │
 │   ● opencode       [Installed]        key: opencode           │
@@ -650,10 +654,13 @@ configured-profile card, and a per-agent list.
 ```
 
 The panel is appended by `renderAiList()` to `#settings-ai-list`, so it sits
-inside the provider list, above the "Add a provider" form (§3.4). It keeps the
-classes the DOM tests select: `.settings-ai-acp-row` (with `data-acp-name`)
-when a profile is configured, `.settings-ai-acp-info` when only agents are
-detected, and `.settings-ai-acp-agent[data-acp-key]` per detected agent.
+inside the provider list, above the "Add a provider" form (§3.4). It renders one
+`.settings-ai-acp-row` per config load, one
+`.settings-ai-acp-profile[data-acp-name]` block per valid profile, and
+`.settings-ai-acp-info` when only agents are detected. It keeps the classes the
+DOM tests select: `.settings-ai-acp-row`, `.settings-ai-acp-info`,
+`.settings-ai-acp-profile`, `.settings-ai-acp-agent[data-acp-key]`, and
+`.settings-ai-default` for the Make default action.
 
 **Display filter.** The server's PATH probe reports every known agent
 (`ACP_KNOWN_AGENTS`). The panel lists only the three core agents
@@ -670,12 +677,13 @@ info panel.
 | Installed | `--stg-ok` | "Installed" | `acpAgents[i].available` |
 | Adapter missing | `--stg-warn` | "Adapter missing" | `acpAgents[i].adapterMissing` |
 | Not installed | `--fg-muted` | "Not installed" | neither flag |
-| Selected | `--accent` | tag "Selected" + accent row rail | `acpAgents[i].key === acp.agent` |
-| Configured | `--accent` | profile card with left accent rail | `cfg.acp` present |
-| Default | `--accent` | tag "Default" | `cfg.acp.default` |
+| Selected | `--accent` | accent rail on the agent row (no word) | `acpAgents[i].key` matches any profile's `agent` |
+| Configured | `--accent` | profile block with left accent rail | every `acps` entry |
+| Default | `--accent` | tag "Default" | `profile.default` (resolved) |
+| Make default | `--accent` | button "Make default" | `!profile.default` |
 
-Colour is never the only signal: every state carries a word, and the dot is
-`aria-hidden` decoration.
+Colour is never the only signal: every state carries a word (or an action), and
+the dot is `aria-hidden` decoration.
 
 ### 5.3 Panel CSS
 
@@ -740,34 +748,43 @@ Colour is never the only signal: every state carries a word, and the dot is
 
 ### 5.4 Markup `settings.js` must emit
 
-Recommended (clean wording). **Class hooks kept:** `.settings-ai-acp-row`
-(+`data-acp-name`), `.settings-ai-acp-info`, `.settings-ai-acp-agents`,
-`.settings-ai-acp-agent` (+`data-acp-key`), `.settings-ai-acp-agent-status`.
-**Retired:** `.settings-ai-acp-selected` (its "Selected agent key: …" line is
-replaced by the profile card; no test selects it). The status `<span>` gains
-the shared state classes so it picks up the dot:
+Recommended (clean wording). **Class hooks kept:** `.settings-ai-acp-row`,
+`.settings-ai-acp-profile` (+`data-acp-name`), `.settings-ai-acp-info`,
+`.settings-ai-acp-agents`, `.settings-ai-acp-agent` (+`data-acp-key`),
+`.settings-ai-acp-agent-status`, `.settings-ai-default`. **Retired:**
+`.settings-ai-acp-selected` (its "Selected agent key: …" line is replaced by the
+per-profile blocks; no test selects it). The status `<span>` gains the shared
+state classes so it picks up the dot:
 
 ```html
-<!-- profile configured: .settings-ai-acp-row[data-acp-name] -->
-<div class="settings-ai-acp-row" data-acp-name="opencode">
+<!-- profiles configured: one .settings-ai-acp-row per config load -->
+<div class="settings-ai-acp-row">
   <div class="settings-ai-acp-head">
     <span class="settings-ai-acp-title">ACP agents</span>
     <span class="stg-tag" title="Configured by editing config/acp.json on the server"><span aria-hidden="true">🔒</span> Read-only</span>
   </div>
   <p class="settings-help">Local coding agents the assistant can drive over the
-    Agent Client Protocol. Configured by editing <code>config/acp.json</code> on
-    the server (not editable here).</p>
+    Agent Client Protocol. <code>config/acp.json</code> may hold several
+    profiles and is edited on the server (not editable here).</p>
 
-  <div class="settings-ai-acp-profile">
+  <div class="settings-ai-acp-profile" data-acp-name="opencode">
     <span class="settings-ai-acp-profile-name">opencode</span>
-    <span class="stg-tag stg-tag--accent">Selected</span>
-    <span class="stg-tag stg-tag--accent">Default</span>   <!-- only when acp.default -->
+    <span class="stg-tag stg-tag--accent">Default</span>   <!-- only when profile.default -->
     <span class="settings-ai-acp-profile-meta">allowlist key
       <code class="settings-ai-acp-key">opencode</code></span>
+    <span class="settings-ai-acp-profile-meta">agent model
+      <code class="settings-token-role">ollama/qwen3.8:latest</code></span>
   </div>
 
-  <!-- Rendered ONLY when acpAgents is non-empty (finding 7): no orphan
-       "Detected agents" heading. -->
+  <div class="settings-ai-acp-profile" data-acp-name="local-agent">
+    <span class="settings-ai-acp-profile-name">local-agent</span>
+    <button type="button" class="settings-action settings-ai-default">Make default</button>
+    <span class="settings-ai-acp-profile-meta">This profile uses an explicit
+      "command" instead of an allowlist key.</span>
+  </div>
+
+  <!-- Rendered ONLY when at least one agent row survives the display filter:
+       no orphan "Detected agents" heading. -->
   <span class="settings-ai-acp-title">Detected agents</span>
   <div class="settings-ai-acp-agents">
     <div class="settings-ai-acp-agent" data-acp-key="opencode" data-state="installed" data-selected="true">
@@ -790,12 +807,18 @@ the shared state classes so it picks up the dot:
 </div>
 ```
 
-When the profile has an empty `agent` (a hand-written `command`), the profile
-card's meta line reads: `This profile uses an explicit "command" instead of an
+The active default profile carries the static `Default` tag; every other profile
+carries a `Make default` button. The button only sets `ai.json`'s default name
+(`commitAiProviders`), so it never writes `config/acp.json`. The agent model
+line renders only when `profile.model` is a real model, not the `"ACP"`
+fallback.
+
+When a profile has an empty `agent` (a hand-written `command`), that block's
+meta line reads: `This profile uses an explicit "command" instead of an
 allowlist key.`
 
 No profile, agents detected — same panel shell under
-`.settings-ai-acp-info`, no profile card, plus (this keeps the exact phrases
+`.settings-ai-acp-info`, no profile block, plus (this keeps the exact phrases
 the current tests grep for):
 
 ```html
@@ -809,11 +832,12 @@ No profile and no agent detected: render nothing (current behaviour).
 
 ### 5.5 Read-only affordance
 
-Three signals, all non-interactive:
+Three signals:
 1. A **Read-only** `.stg-tag` in the panel header (with a lock glyph,
    `aria-hidden`; the word is the message).
-2. The panel is a plain `<div>`/`<span>` tree — no inputs, no buttons, so it is
-   not tabbable.
+2. The panel is a `<div>`/`<span>` tree with no inputs. The only interactive
+   element is **Make default**, which writes `ai.json`'s default name and never
+   edits `config/acp.json`.
 3. An inset surface (`--bg-elev` + border) visually distinct from the editable
    form fields, with no group rule above it.
 
@@ -921,11 +945,13 @@ installed" state carries no success/warning meaning, so it deliberately stays
   status (classes `settings-ai-acp-agent-status stg-status
   stg-status--<state>` and the words Installed / Adapter missing / Not
   installed), mono key chip, and the hint line only for adapter-missing; set
-  `data-state` and, when `a.key === aiAcpProfile.agent`,
+  `data-state` and, when any configured profile's `agent` equals `a.key`,
   `data-selected="true"`.
-- `buildAiAcpRow(acp, agents)`: build the panel head + help + profile
-  card + **a "Detected agents" sub-label only when `agents` has entries** +
-  the agent list. Stop emitting `.settings-ai-acp-selected`.
+- `buildAiAcpSection(profiles, agents)`: build the panel head + help + one
+  `buildAiAcpProfile(profile)` block per profile + **a "Detected agents"
+  sub-label only when the filtered `agents` list is non-empty** + the agent
+  list. Stop emitting `.settings-ai-acp-selected`. Each profile block shows a
+  `Default` tag or a `Make default` button and, when set, the agent model.
 - `buildAiAcpInfoRow(agents)`: same panel shell under
   `.settings-ai-acp-info`. Keep the "none is configured" / `"agent": "<key>"`
   note wording (§5.4) so the existing test regexes pass.
@@ -952,11 +978,11 @@ assertions change:
   `npm install -g @agentclientprotocol/claude-agent-acp`.
 - `/^Codex — not installed$/` → `Codex` + `Not installed`.
 - Keep `/ACP agent: acp-agent/`? **No** — that sentence is gone.
-  Change to assert the row contains the profile name `acp-agent`, a `Selected`
-  tag, and the key `opencode`; keep `/config\/acp\.json/` and
-  `/not editable here/` unchanged.
-- `/Selected agent key: opencode/` → assert the profile card's
-  key chip reads `opencode`.
+  Change to assert the row contains the profile name `acp-agent` and the key
+  `opencode`; keep `/config\/acp\.json/` and `/not editable here/` unchanged.
+- `/Selected agent key: opencode/` → assert the profile block's key chip reads
+  `opencode`; the active default profile shows a `Default` tag and the others a
+  `Make default` button.
 - **Unchanged**: the note keeps `none is configured`,
   `"agent": "<key>"`, and `config/acp.json`.
 - **Unchanged**: the empty-key note keeps
@@ -996,16 +1022,17 @@ normative.
       is accent-tinted and bold; `:has()` is used and `.is-checked` works as a
       fallback.
 - [ ] Provider rows and token rows share the card shape with `.shortcut-row`.
-- [ ] The ACP block renders as a read-only panel with a "Read-only" tag and no
-      tabbable controls; the "Detected agents" heading is absent when no agent
-      was detected.
+- [ ] The ACP block renders as a read-only panel with a "Read-only" tag; the only
+      interactive control is `Make default`, and the "Detected agents" heading is
+      absent when no agent was detected.
 - [ ] Each detected ACP agent has a dot + word state (Installed / Adapter
       missing / Not installed); the adapter-missing row shows the hint.
-- [ ] The agent the configured profile selects is marked "Selected" and
-      carries an accent row rail.
-- [ ] A configured profile shows a profile card named after `cfg.acp.name`
-      with its allowlist key; a null profile with a detected agent shows the
-      enable note; neither profile nor agents renders nothing.
+- [ ] Every agent any configured profile selects carries an accent row rail.
+- [ ] Each configured profile shows a block named after it with its allowlist key
+      (or the explicit-command note) and its configured model; the active default
+      shows a `Default` tag, the others a `Make default` button. A null profile
+      with a detected agent shows the enable note; neither profile nor agents
+      renders nothing.
 - [ ] Both themes and all four font scales render without horizontal overflow
       at the compact modal width; long row labels may wrap to a second line at
       XL.

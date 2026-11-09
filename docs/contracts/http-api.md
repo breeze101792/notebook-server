@@ -388,15 +388,16 @@ misrepresent the notebook.
 These routes read and write `config/ai.json` (`app.py`), which holds
 OpenAI-compatible provider profiles, the optional global custom prompt, and the
 optional SearXNG URL. A second provider kind, ACP, is configured separately in
-`config/acp.json` (`app.py`) and is **read-only from the server** — no
-route writes it. The stored key is never returned in a response to the browser,
-but the server attaches it to the upstream request sent to whatever `base_url`
-the profile names. All routes below are admin-gated **only while auth is on**.
+`config/acp.json` (`app.py`) as a list of profiles and is **read-only from the
+server** — no route writes it. The stored key is never returned in a response to
+the browser, but the server attaches it to the upstream request sent to whatever
+`base_url` the profile names. All routes below are admin-gated **only while auth
+is on**.
 
 | Method | Path | Auth | Body / params | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/ai/config` (`app.py`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acpAgents}`. The key is never echoed. `acp` is `{name, model, agent, default}` or `null`; `agent` is the selected known-agent key (`""` when the profile uses `command`). `acpAgents` is always present. |
-| POST | `/api/ai/config` (`app.py`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. Never touches `acp.json`. |
+| GET | `/api/ai/config` (`app.py`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acps, acpAgents}`. The key is never echoed. `acps` lists every ACP profile as `{name, model, hasModel, agent, default}`; `model` is the configured agent model or the label `"ACP"`, and `agent` is the selected known-agent key (`""` when the profile uses `command`). `acp` is the first entry (or `null`), kept for older clients. `default` may name a saved server or an ACP profile. `acpAgents` is always present. |
+| POST | `/api/ai/config` (`app.py`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. `default` may name an ACP profile. A server name that collides with an ACP profile is 400. Never touches `acp.json`. |
 | GET | `/api/ai/probe` (`app.py`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
 | POST | `/api/ai/chat` (`ai_chat`) | admin | `{server, messages, workspace?}` | SSE relay. Serves ACP profiles too. See below. |
 | POST | `/api/ai/fetch` (`app.py`) | admin | `{url}` | Server-side fetch. See below. |
@@ -411,7 +412,8 @@ key of the same-named stored profile is used. A profile is
 URLs are normalized: a trailing `/` and a trailing `/v1` are stripped. Names are
 limited to 60 characters, base URLs to 300, keys to 500, `customPrompt` to
 8000, and `searxngUrl` to 300; `searxngUrl` must be an http(s) URL. Duplicate
-server names and a `default` that is not a listed name are 400. `customPrompt`
+server names, a server name that collides with an ACP profile, and a `default`
+that names neither a listed server nor an ACP profile are 400. `customPrompt`
 and `searxngUrl` are preserved when omitted and cleared when sent as `""`.
 
 On `POST /api/ai/chat`, `messages` is a non-empty list of `{role, content}`
@@ -430,9 +432,9 @@ response body is the upstream byte stream relayed unmodified as
 connection failures are re-emitted in-band as `event: error` frames whose data
 is `{"error": true, "status", "message"}`. The upstream read timeout is 120 s.
 
-When the posted `server` is not an OpenAI profile but equals the `name` in
-`config/acp.json`, `POST /api/ai/chat` drives the ACP agent instead
-(`ai_chat`). `messages` is validated the same way, then the
+When the posted `server` is not an OpenAI profile but matches an ACP profile
+name (`_acp_profile`, `app.py`), `POST /api/ai/chat` drives that ACP agent
+instead (`ai_chat`). `messages` is validated the same way, then the
 system turn is dropped; a request left with no user/assistant turn is 400, any
 `image_url` content part is 400, and the flattened prompt is capped at
 `ACP_MAX_PROMPT_BYTES` = 8 MiB. An optional body field `workspace` selects the
@@ -440,9 +442,16 @@ workspace whose root becomes the agent's cwd (unless the ACP profile sets
 `cwd`) and whose `workspaceState.<id>.activeFile` is named in the context
 preamble. An unknown id is **404** `unknown_workspace`, not a silent fallback —
 the agent must not work in a different folder than the client thinks. Without
-it the request's resolved workspace is used. The preamble carries the notebook
-lead, the open note for that workspace, and the global custom prompt from
-`config/ai.json`. For an OpenAI-compatible profile the `workspace` field is
+it the request's resolved workspace is used. The profile's `model`, when set,
+is applied after `session/new` through the agent's model config option; an
+agent that exposes no model option, or rejects the value, ends the turn with the
+in-band error `"ACP agent does not expose a model option"`, `"ACP agent
+rejected the configured model"`, or `"ACP agent did not apply the configured
+model"` (the last when the agent echoes a different current model). The agent inherits the server's full
+environment, with the profile's `env` overlaid (the profile wins on a
+collision). The preamble carries the notebook lead, the open note for that
+workspace, and the global custom prompt from `config/ai.json`. For an
+OpenAI-compatible profile the `workspace` field is
 ignored and stripped from the upstream payload. The response uses the identical
 SSE envelope — OpenAI-shaped `data:` delta frames, `data: [DONE]` on completion,
 and `event: error` frames on failure — so clients parse it unchanged; one extra

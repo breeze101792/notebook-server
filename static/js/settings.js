@@ -1054,13 +1054,14 @@
 
   let aiProviders = [];      // working copy while the modal is open
   let aiDefaultName = "";
-  // The server-local ACP profile (config/acp.json), mirrored from the last
-  // GET/POST response. Deliberately kept OUT of aiProviders: that array is
-  // the POST payload for every save path, so anything in it is re-sent. The
-  // ACP entry is read-only here and must never round-trip through a save.
-  let aiAcpProfile = null;
+  // The server-local ACP profiles (config/acp.json, which may hold several),
+  // mirrored from the last GET/POST response. Deliberately kept OUT of
+  // aiProviders: that array is the POST payload for every save path, so
+  // anything in it is re-sent. ACP entries are read-only here and must never
+  // round-trip through a save.
+  let aiAcpProfiles = [];
   // The server's read-only PATH probe (cfg.acpAgents): which known ACP agent
-  // CLIs are installed. Display-only, like aiAcpProfile — never part of any
+  // CLIs are installed. Display-only, like aiAcpProfiles — never part of any
   // save payload.
   let aiAcpAgents = [];
   // The panel hides every known agent the server reports except these three
@@ -1263,7 +1264,8 @@
         payload, aiDefaultName, aiPromptEl ? aiPromptEl.value : undefined);
       aiProviders = (cfg && cfg.servers) || [];
       aiDefaultName = (cfg && cfg.default) || "";
-      aiAcpProfile = (cfg && cfg.acp) || null;
+      aiAcpProfiles = (cfg && cfg.acps) ||
+        (cfg && cfg.acp ? [cfg.acp] : []);
       aiAcpAgents = (cfg && cfg.acpAgents) || [];
       if (cfg && typeof cfg.customPrompt === "string") {
         aiPromptSaved = cfg.customPrompt;
@@ -1429,9 +1431,8 @@
         line.appendChild(hint);
       }
 
-      // The agent the configured profile selects gets an accent rail.
-      if (aiAcpProfile && aiAcpProfile.agent &&
-          a.key === aiAcpProfile.agent) {
+      // An agent any configured profile selects gets an accent rail.
+      if (aiAcpProfiles.some(p => p && p.agent && p.agent === a.key)) {
         line.dataset.selected = "true";
       }
       box.appendChild(line);
@@ -1439,14 +1440,76 @@
     return box;
   }
 
-  /* Read-only ACP panel, rendered straight from cfg.acp and never pushed
-   * into aiProviders (so a provider save cannot re-send or overwrite it).
-   * Uses .settings-ai-acp-row, not .settings-ai-row, so it is not mistaken
-   * for an editable provider. */
-  function buildAiAcpRow(acp, agents) {
+  /* One read-only profile block: name, the Default tag or a "Make default"
+   * action, the allowlist/command note, and the configured agent model.
+   * Making a profile the default only changes ai.json's default name; it
+   * never writes config/acp.json. */
+  function buildAiAcpProfile(profile) {
+    const box = document.createElement("div");
+    box.className = "settings-ai-acp-profile";
+    box.dataset.acpName = profile.name;
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "settings-ai-acp-profile-name";
+    nameEl.textContent = profile.name;
+    box.appendChild(nameEl);
+
+    if (profile.default) {
+      // The active default is a static accent tag, not a disabled button.
+      const defTag = document.createElement("span");
+      defTag.className = "stg-tag stg-tag--accent";
+      defTag.textContent = "Default";
+      box.appendChild(defTag);
+    } else {
+      const defBtn = document.createElement("button");
+      defBtn.type = "button";
+      defBtn.className = "settings-action settings-ai-default";
+      defBtn.textContent = "Make default";
+      defBtn.addEventListener("click", async () => {
+        aiDefaultName = profile.name;
+        await commitAiProviders("Default provider set to " + profile.name);
+      });
+      box.appendChild(defBtn);
+    }
+
+    // An empty key is legitimate -- the profile then carries an explicit
+    // `command` instead.
+    const meta = document.createElement("span");
+    meta.className = "settings-ai-acp-profile-meta";
+    if (profile.agent) {
+      meta.append(document.createTextNode("allowlist key "));
+      const keyEl = document.createElement("code");
+      keyEl.className = "settings-ai-acp-key";
+      keyEl.textContent = profile.agent;
+      meta.appendChild(keyEl);
+    } else {
+      meta.textContent = "This profile uses an explicit \"command\" instead " +
+        "of an allowlist key.";
+    }
+    box.appendChild(meta);
+
+    if (profile.hasModel) {
+      const model = document.createElement("span");
+      model.className = "settings-ai-acp-profile-meta";
+      model.append(document.createTextNode("agent model "));
+      const modelEl = document.createElement("code");
+      modelEl.className = "settings-token-role";
+      modelEl.textContent = profile.model;
+      model.appendChild(modelEl);
+      box.appendChild(model);
+    }
+    return box;
+  }
+
+  /* Read-only ACP panel: one head + help, then a block per profile in
+   * config/acp.json (the file may hold several), then the detected-agent
+   * list once. Rendered from cfg.acps and never pushed into aiProviders, so
+   * a provider save cannot re-send or overwrite a profile. Uses
+   * .settings-ai-acp-row, not .settings-ai-row, so it is not mistaken for an
+   * editable provider. */
+  function buildAiAcpSection(profiles, agents) {
     const row = document.createElement("div");
     row.className = "settings-ai-acp-row";
-    row.dataset.acpName = acp.name;
 
     row.appendChild(buildAcpPanelHead());
 
@@ -1454,46 +1517,15 @@
     help.className = "settings-help";
     help.append(document.createTextNode(
       "Local coding agents the assistant can drive over the Agent Client " +
-      "Protocol. Configured by editing "));
+      "Protocol. "));
     const cfgCode = document.createElement("code");
     cfgCode.textContent = "config/acp.json";
-    help.append(cfgCode,
-      document.createTextNode(" on the server (not editable here)."));
+    help.append(cfgCode, document.createTextNode(
+      " may hold several profiles and is edited on the server " +
+      "(not editable here)."));
     row.appendChild(help);
 
-    // Configured profile: name + Selected (+ Default) + the allowlist key.
-    // An empty key is legitimate -- the profile then carries an explicit
-    // `command` instead.
-    const profile = document.createElement("div");
-    profile.className = "settings-ai-acp-profile";
-    const nameEl = document.createElement("span");
-    nameEl.className = "settings-ai-acp-profile-name";
-    nameEl.textContent = acp.name;
-    profile.appendChild(nameEl);
-    const selTag = document.createElement("span");
-    selTag.className = "stg-tag stg-tag--accent";
-    selTag.textContent = "Selected";
-    profile.appendChild(selTag);
-    if (acp.default) {
-      const defTag = document.createElement("span");
-      defTag.className = "stg-tag stg-tag--accent";
-      defTag.textContent = "Default";
-      profile.appendChild(defTag);
-    }
-    const meta = document.createElement("span");
-    meta.className = "settings-ai-acp-profile-meta";
-    if (acp.agent) {
-      meta.append(document.createTextNode("allowlist key "));
-      const keyEl = document.createElement("code");
-      keyEl.className = "settings-ai-acp-key";
-      keyEl.textContent = acp.agent;
-      meta.appendChild(keyEl);
-    } else {
-      meta.textContent = "This profile uses an explicit \"command\" instead " +
-        "of an allowlist key.";
-    }
-    profile.appendChild(meta);
-    row.appendChild(profile);
+    for (const profile of profiles) row.appendChild(buildAiAcpProfile(profile));
 
     // "Detected agents" is only shown when at least one row actually
     // renders (an entry with no label/key is skipped): no orphan heading.
@@ -1550,8 +1582,9 @@
     aiCountEl.textContent = String(aiProviders.length);
     aiListEl.innerHTML = "";
     for (const p of aiProviders) aiListEl.appendChild(buildAiRow(p));
-    if (aiAcpProfile && aiAcpProfile.name) {
-      aiListEl.appendChild(buildAiAcpRow(aiAcpProfile, aiAcpAgents));
+    const profiles = aiAcpProfiles.filter(p => p && p.name);
+    if (profiles.length) {
+      aiListEl.appendChild(buildAiAcpSection(profiles, aiAcpAgents));
     } else if (aiAcpAgents.some(
         a => isAcpAgentShown(a) && (a.available || a.adapterMissing))) {
       // No profile, but a shown, usable agent exists: say so rather than
@@ -1566,7 +1599,7 @@
     if (!isAdmin()) {
       aiCountEl.textContent = "—";
       aiListEl.textContent = "";
-      aiAcpProfile = null;
+      aiAcpProfiles = [];
       aiAcpAgents = [];
       refreshAiControls();
       return;
@@ -1575,7 +1608,8 @@
       const cfg = await NB.api.aiGetConfig();
       aiProviders = (cfg && cfg.servers) || [];
       aiDefaultName = (cfg && cfg.default) || "";
-      aiAcpProfile = (cfg && cfg.acp) || null;
+      aiAcpProfiles = (cfg && cfg.acps) ||
+        (cfg && cfg.acp ? [cfg.acp] : []);
       aiAcpAgents = (cfg && cfg.acpAgents) || [];
       aiPromptSaved = (cfg && cfg.customPrompt) || "";
       if (aiPromptEl) aiPromptEl.value = aiPromptSaved;

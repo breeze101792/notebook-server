@@ -14,6 +14,13 @@ so initialize -> session/new -> prompt all happen inside a single
 `run_turn` and the child is killed when it returns. The stdin-EOF backstop is
 the agent's contract: when this server dies for any reason, the child's stdin
 closes and a conforming agent exits, so no orphan outlives the server.
+
+The agent inherits this server's environment, with the caller's `env`
+overlaid, so credentials and XDG paths exported by the server are visible to
+the child. A configured model is negotiated after session/new through the
+session's own model config option; an agent that advertises no such option
+or rejects the value ends the turn with an error instead of silently running
+a different model.
 """
 
 import asyncio
@@ -162,8 +169,26 @@ def _get_loop():
         return _LOOP
 
 
-async def _drive(client, command, args, cwd, env, prompt, timeout):
+def _model_option(options):
+    """The model config option in `options`, or None when not advertised.
+
+    Prefer the option whose category is "model", so an agent that renames the
+    id still matches; fall back to the conventional id "model".
+    """
+    for option in options or []:
+        if getattr(option, "category", None) == "model":
+            return option
+    for option in options or []:
+        if getattr(option, "id", None) == "model":
+            return option
+    return None
+
+
+async def _drive(client, command, args, cwd, env, prompt, timeout, model):
     """Run one ACP turn: spawn -> initialize -> session/new -> prompt.
+
+    When `model` is non-empty it is applied to the new session's model config
+    option before the prompt, so the configured model actually runs.
 
     The terminal event is enqueued only in the finally, *after* the spawn
     context manager has exited, so the SDK's subprocess kill ladder always
@@ -209,6 +234,33 @@ async def _drive(client, command, args, cwd, env, prompt, timeout):
                 return
             session = await conn.new_session(
                 cwd=str(cwd) if cwd else os.getcwd(), mcp_servers=[])
+            if model:
+                option = _model_option(
+                    getattr(session, "config_options", None))
+                if option is None:
+                    record({"type": "error", "message": (
+                        "ACP agent does not expose a model option")})
+                    return
+                try:
+                    result = await conn.set_config_option(
+                        config_id=option.id, session_id=session.session_id,
+                        value=model)
+                except Exception as exc:
+                    # The agent chooses its own model ids; a stale profile
+                    # value must fail loudly rather than run another model.
+                    _log.warning("ACP agent rejected configured model: %s", exc)
+                    record({"type": "error", "message": (
+                        "ACP agent rejected the configured model")})
+                    return
+                # A conforming agent echoes the updated options. When it does,
+                # require the requested value to actually be current; when it
+                # returns none, trust the success response.
+                applied = _model_option(getattr(result, "config_options", None))
+                if (applied is not None
+                        and getattr(applied, "current_value", None) != model):
+                    record({"type": "error", "message": (
+                        "ACP agent did not apply the configured model")})
+                    return
             result = await asyncio.wait_for(
                 conn.prompt(session_id=session.session_id,
                             prompt=[text_block(prompt)]),
@@ -244,8 +296,19 @@ async def _drive(client, command, args, cwd, env, prompt, timeout):
 
 
 def run_turn(command, args=(), cwd=None, env=None, prompt="", timeout=None,
-             keepalive=False):
+             keepalive=False, model=None):
     """Drive one ACP turn against `command` and yield its events.
+
+    `env` overrides this server's environment rather than replacing it: the
+    SDK's spawn transport would otherwise trim the child's environment to a
+    fixed handful (HOME, LOGNAME, PATH, SHELL, TERM, USER), silently dropping
+    the agent credentials and XDG paths the server exports. The caller's
+    entries are overlaid on the full inherited environment here so every
+    caller gets the same behaviour.
+
+    `model`, when non-empty, selects the agent's model after session/new; an
+    agent that exposes no model option, or rejects the value, ends the turn
+    with an error.
 
     Yields:
       {"type": "text", "text": str}        streamed agent message text
@@ -268,9 +331,12 @@ def run_turn(command, args=(), cwd=None, env=None, prompt="", timeout=None,
     loop = _get_loop()
     events = queue.Queue(maxsize=ACP_QUEUE_MAX)
     client = _Client(events)
+    merged_env = dict(os.environ)
+    merged_env.update(env or {})
     effective_timeout = ACP_TURN_TIMEOUT_DEFAULT if timeout is None else timeout
     future = asyncio.run_coroutine_threadsafe(
-        _drive(client, command, tuple(args), cwd, env, prompt, effective_timeout),
+        _drive(client, command, tuple(args), cwd, merged_env, prompt,
+               effective_timeout, model),
         loop)
     terminal_seen = False
     try:

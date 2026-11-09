@@ -33,6 +33,16 @@ variable so one fixture covers every failure path the backend must contain:
               advertised by the client) and echo the refusal error codes back
     trace     emit one tool_call update (the activity the backend translates
               to a trace frame) before streaming the normal chunks
+    env       stream the ACP_STUB_KEY and ACP_STUB_SERVER environment values
+              (proves the child inherits the server env with the profile
+              overlay winning)
+    model     advertise a "model" session config option, apply
+              session/set_config_option, and stream the resulting model
+    nomodel   advertise NO config options (drives the client's missing-model
+              error path)
+    modelreject
+              advertise a model option but reject session/set_config_option
+              (drives the client's rejected-model error path)
 
 `--pidfile PATH` records the stub's own PID so a test can assert the backend
 reaped the child process. `--session-id ID` overrides the session id.
@@ -70,6 +80,10 @@ MODE_EOF = "eof"
 MODE_PERM = "perm"
 MODE_CAP = "cap"
 MODE_TRACE = "trace"
+MODE_ENV = "env"
+MODE_MODEL = "model"
+MODE_NO_MODEL = "nomodel"
+MODE_MODEL_REJECT = "modelreject"
 
 # Correlated JSON-RPC ids for the agent->client requests the stub makes. Fixed
 # so the read loop can recognise the matching response; the client only ever
@@ -86,6 +100,17 @@ ALLOW_ONCE_ID = "allow-1"
 # trace frame. Distinctive so a test can assert the exact string round-trips.
 TRACE_TITLE = "Running a shell command"
 TRACE_TOOL_CALL_ID = "tc-trace-1"
+# `env` mode: two env var names. The shared key is set at both server and
+# profile level (the profile value must win); the server key is set only in the
+# server env (proves full inheritance).
+ENV_SHARED_KEY = "ACP_STUB_KEY"
+ENV_SERVER_KEY = "ACP_STUB_SERVER"
+# `model` mode: the session config option the client negotiates and the values
+# it may select. The stub records the selected value and echoes it back.
+MODEL_OPTION_ID = "model"
+MODEL_DEFAULT = "stub-default"
+MODEL_OTHER = "stub-other"
+MODEL_REJECT_CODE = -32602
 
 
 def _send(payload):
@@ -96,6 +121,11 @@ def _send(payload):
 
 def _reply(request_id, result):
     _send({"jsonrpc": "2.0", "id": request_id, "result": result})
+
+
+def _reply_error(request_id, code, message):
+    _send({"jsonrpc": "2.0", "id": request_id,
+           "error": {"code": code, "message": message}})
 
 
 def _notify(method, params):
@@ -134,6 +164,21 @@ def _stream_tool_call(session_id, title, tool_call_id):
             "status": "in_progress",
         },
     })
+
+
+def _model_config_options(current):
+    """The session config option advertising the selectable models."""
+    return [{
+        "id": MODEL_OPTION_ID,
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": current,
+        "options": [
+            {"value": MODEL_DEFAULT, "name": "Default"},
+            {"value": MODEL_OTHER, "name": "Other"},
+        ],
+    }]
 
 
 def _drain_until_eof():
@@ -231,7 +276,7 @@ def _handle_cap(args, request_id):
     _reply(request_id, {"stopReason": "end_turn"})
 
 
-def _handle_prompt(args, request_id, params, mode):
+def _handle_prompt(args, request_id, params, mode, state):
     if mode == MODE_HANG:
         # Deliberately never answer: the client must time the turn out and
         # reap us. Draining stdin means a stdin-EOF teardown ends us quickly.
@@ -242,6 +287,16 @@ def _handle_prompt(args, request_id, params, mode):
         return
     if mode == MODE_CAP:
         _handle_cap(args, request_id)
+        return
+    if mode == MODE_ENV:
+        _stream_chunk(args.session_id, "env key=%s server=%s" % (
+            os.environ.get(ENV_SHARED_KEY, ""),
+            os.environ.get(ENV_SERVER_KEY, "")))
+        _reply(request_id, {"stopReason": "end_turn"})
+        return
+    if mode == MODE_MODEL:
+        _stream_chunk(args.session_id, "model=%s" % state["model"])
+        _reply(request_id, {"stopReason": "end_turn"})
         return
     if mode == MODE_TRACE:
         _stream_tool_call(args.session_id, TRACE_TITLE, TRACE_TOOL_CALL_ID)
@@ -288,6 +343,7 @@ def main():
 
     version = (MISMATCH_PROTOCOL_VERSION if mode == MODE_MISMATCH
                else STUB_PROTOCOL_VERSION)
+    state = {"model": MODEL_DEFAULT}
 
     while True:
         line = sys.stdin.readline()
@@ -310,9 +366,22 @@ def main():
                 "agentCapabilities": {"loadSession": False},
             })
         elif method == "session/new":
-            _reply(request_id, {"sessionId": args.session_id})
+            result = {"sessionId": args.session_id}
+            if mode in (MODE_MODEL, MODE_MODEL_REJECT):
+                result["configOptions"] = _model_config_options(state["model"])
+            _reply(request_id, result)
+        elif method == "session/set_config_option":
+            if mode == MODE_MODEL_REJECT:
+                _reply_error(request_id, MODEL_REJECT_CODE,
+                             "model id not available")
+                continue
+            value = params.get("value")
+            if isinstance(value, str):
+                state["model"] = value
+            _reply(request_id,
+                   {"configOptions": _model_config_options(state["model"])})
         elif method == "session/prompt":
-            _handle_prompt(args, request_id, params, mode)
+            _handle_prompt(args, request_id, params, mode, state)
         # Any other request/notification (session/cancel, ...) is ignored.
 
 

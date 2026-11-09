@@ -289,22 +289,32 @@ re-emitted in-band as `event: error` frames (`app.py`), because
 EventSource cannot read a non-200 status; the relay handles `GeneratorExit`
 so an early disconnect does not become an error banner.
 
-**ACP branch.** The same route serves the ACP provider. `config/acp.json` is
-a separate, hand-edited file holding one agent profile (`name`, `agent` or
-`command`, `args`, `cwd`, `env`, `default`, `timeout`); `load_acp_config()`
-(`app.py`) validates the whole object and fails closed to `{}` on any
-violation, and it deliberately never comes through `POST /api/ai/config`
-(`app.py`) — a config blob any authed client can POST must not be
-able to choose a command to execute. `ai_chat` resolves an OpenAI profile
-first; when the posted `server` instead matches the ACP name it calls
+**ACP branch.** The same route serves ACP profiles. `config/acp.json` is a
+separate, hand-edited file holding one or more profiles (`name`, `agent` or
+`command`, `args`, `cwd`, `env`, `model`, `default`, `timeout`). Three shapes
+are accepted — `{"profiles": [...]}`, a bare array, and the legacy single
+object — and each entry is validated independently. `load_acp_configs()`
+(`app.py`) returns the valid profiles, dropping an invalid entry, a duplicate
+name, or a name that collides with an `ai.json` server; `load_acp_config()` is a
+compatibility wrapper returning the first profile or `{}`. The file
+deliberately never comes through `POST /api/ai/config` (`app.py`) — a config
+blob any authed client can POST must not be able to choose a command to
+execute. `ai_chat` resolves an OpenAI profile first; when the posted `server`
+instead matches an ACP profile (`_acp_profile`, `app.py`) it calls
 `_acp_chat_response` (`app.py`). Messages go through the shared
 `_validate_chat_messages` (`app.py`), the system turn is dropped, image
 parts are rejected, and the rest is flattened to one prompt
-(`_flatten_acp_prompt`, `app.py`). The turn is streamed by
-`acp_client.run_turn` as the same OpenAI delta frames plus `data: [DONE]`
-and `event: error` frames, so the browser parser is unchanged. `acp_client`
-is imported lazily (`app.py`), so a missing `agent-client-protocol`
-package disables only ACP rather than the server. See
+(`_flatten_acp_prompt`, `app.py`). The profile's `model`, when set, is passed to
+`acp_client.run_turn` and applied after `session/new` through the agent's model
+config option; `run_turn` also merges the server's full environment with the
+profile's `env` (the profile wins) before spawning. The turn is streamed as the
+same OpenAI delta frames plus `data: [DONE]` and `event: error` frames, so the
+browser parser is unchanged. `GET /api/ai/config` exposes the browser-safe list
+as `acps` (with `acp` as the first entry for older clients), and
+`_resolve_default_provider` (`app.py`) picks the default from `ai.json` or an
+ACP profile without ever writing the ACP file. `acp_client` is imported lazily
+(`app.py`), so a missing `agent-client-protocol` package disables only ACP
+rather than the server. See
 [ai-assistant.md](ai-assistant.md#acp-providers) for the full contract,
 including the agent's filesystem trust boundary.
 

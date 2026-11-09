@@ -1,16 +1,16 @@
 # Backend test suite
 
-`tests/test_app.py` is 6,504 lines of stdlib `unittest`. It drives the real
+`tests/test_app.py` is 7,106 lines of stdlib `unittest`. It drives the real
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **461 test methods across 51 test-bearing classes**.
-The file has 56 `class` statements; five of them hold no tests: the shared
-bases `BaseTest` and `WorkspaceTestBase`, the two loopback stubs
-`_StubOpenAIHandler` and `_StubWebHandler`, and the `_FakeHttpResponse` shim.
-The first table below maps the core route/file classes; the second accounts for
-every other class, so the two tables sum to the 461 total. Workspace coverage
-has its own table in the multi-workspace section.
+The suite currently holds **498 test methods across 52 test-bearing classes**.
+The file has 56 `class` statements; four of them hold no tests: the shared
+bases `BaseTest` and `WorkspaceTestBase`, and the two loopback stubs
+`_StubOpenAIHandler` and `_StubWebHandler`. The first table below maps the core
+route/file classes; the second accounts for every other class, so the two tables
+sum to the 498 total. Workspace coverage has its own table in the
+multi-workspace section.
 
 Run it:
 
@@ -55,14 +55,14 @@ a low cost factor so tests stay fast.
 
 | # | Class | Tests | Covers |
 | --- | --- | --- | --- |
-| 1 | `TestIndexAndSeed` | 21 | `GET /` HTML, first-paint boot state (sanitizing hostile config, clamping pane widths, not leaking content, defaults until authenticated, painting the saved active view and falling back to explorer for a bad one), the active-view allowlist matching the registry and the DOM, SPA catch-all boot state, seeding `Welcome.md` + empty config, seeded tree, and `Cache-Control: no-store` (plus an empty 401 body) on gated reads |
+| 1 | `TestIndexAndSeed` | 22 | `GET /` HTML, first-paint boot state (sanitizing hostile config, clamping pane widths, not leaking content, defaults until authenticated, painting the saved active view and falling back to explorer for a bad one), the active-view allowlist matching the registry and the DOM, SPA catch-all boot state, seeding `Welcome.md` + empty config, seeded tree, and `Cache-Control: no-store` (plus an empty 401 body) on gated reads |
 | 2 | `TestSpaCatchAll` | 6 | Root, file-path, subfolder, and deep-link-with-fragment requests serve the SPA shell; `/api/*` and search routes are unaffected |
 | 3 | `TestWebAppManifest` | 4 | The iOS web-clip paths (`/apple-touch-icon.png`, `-precomposed`) and the v2 PNG icons are served as real PNGs, not the SPA shell; the shell links the v2 icon and theme colour; `manifest.json` declares `/` scope, standalone display, and the 192/512 v2 icons |
 | 4 | `TestFileRead` | 6 | `GET /api/file`: read, missing file, invalid path, returned `mtime`, conditional 304 when unchanged, and fall-through when changed |
 | 5 | `TestFileSave` | 6 | `POST /api/file`: create + read back, overwrite, missing parent rejected, traversal rejected, missing fields, and concurrent atomic writes never crash or tear |
 | 6 | `TestCreate` | 9 | `/api/create` for files and folders, duplicate conflict, bad `type`, traversal, `upsert` create/idempotent/dir/type-mismatch, and `upsert` must be boolean |
-| 7 | `TestMove` | 11 | `/api/move`: rename, into subdir, conflict modes (`error`/`skip`/`overwrite`), missing source, move-onto-itself, move-to-root, symlinked-dir moves the link not the target, and directory overwrite |
-| 8 | `TestCopy` | 8 | `/api/copy`: file, recursive dir, conflict modes, copy-onto-itself, copy-to-root, and bad conflict mode |
+| 7 | `TestMove` | 16 | `/api/move`: rename, into subdir, conflict modes (`error`/`skip`/`overwrite`), missing source, move-onto-itself, move-to-root, symlinked-dir moves the link not the target, and directory overwrite |
+| 8 | `TestCopy` | 12 | `/api/copy`: file, recursive dir, conflict modes, copy-onto-itself, copy-to-root, and bad conflict mode |
 | 9 | `TestDelete` | 6 | `/api/delete`: file, dir, missing, root rejected, dot-variant paths rejected, and a symlinked dir removes the link not the target |
 | 10 | `TestSymlinkedDataDir` | 3 | Path safety when the data dir itself is symlinked: delete-root, clean relative paths from `/api/ls`, and move/copy root rejection |
 | 11 | `TestLs` | 5 | `GET /api/ls`: one-folder non-recursive listing of all types, root default, dirs-before-files sort, missing/non-folder paths, and traversal rejection |
@@ -80,21 +80,22 @@ a low cost factor so tests stay fast.
 | 23 | `TestAiTools` | 13 | `POST /api/ai/fetch` and `/api/ai/search`: fetch body, bad URLs rejected, upstream error becomes 502, search falls back to the Yahoo results page when unconfigured or when SearXNG fails, an empty results page is 200 with no results, non-http result targets skipped, sponsored Bing click trackers skipped, an unexpected SearXNG JSON shape falling back, 502 only when both fail, search queries the instance, bad query rejected, and both tools are admin-gated when auth is on |
 | 24 | `TestAiConfig` | 9 | `GET`/`POST /api/ai/config`: empty default, masked key on round-trip, `replaceSecret` carries the stored key, trailing `/v1` stripped from base URLs, global custom prompt and SearXNG URL round-trips, rename carries the key via `replaceSecretFor`, validation errors, and admin-only when auth is on |
 | 25 | `TestAiChat` | 15 | `POST /api/ai/chat` SSE relay: relays frames and forwards the stored key/model, the message-part array (accepted, bad parts rejected, the eight-image cap, per-message extra keys stripped, an image send writes no file), the 32 MiB body cap returning JSON 413, unknown server, message validation, upstream HTTP error becomes an in-band SSE error event, probe unreachable/reachable/unknown-server, `/api/ai/config` readable while chat stays gated, and an ACP name collision routing to the OpenAI profile |
+| 26 | `TestPathHelpers` | 4 | `_same_file_ignoring_case` and `_is_within`: a symlink and its target are two entries, a hard-link pair with case-variant names is one file, `_is_within` ignores a shared path prefix, and it follows a symlinked source |
 
-The remaining 216 tests live in 19 classes that round out the suite:
+The remaining 232 tests live in 19 classes that round out the suite:
 
 | Class | Tests | Covers |
 | --- | --- | --- |
 | `TestScanTimeout` | 4 | The search and graph scans run under a wall-clock deadline: a timed-out scan is reported as such in every search mode, and `/api/graph` answers 504 |
-| `TestAcpConfig` | 15 | `config/acp.json`: masked exposure, a missing/malformed file degrades to `None`, agent-key resolution and fail-closed unknowns, the agent/command exclusivity rules, and the read-only agent detection |
-| `TestAcpChat` | 20 | `POST /api/ai/chat` through the ACP branch against a stub agent: streamed deltas, a tool-call trace frame, the flattened preamble, validation, permission auto-allow, client-bound capabilities refused, and reaping on EOF/timeout/crash |
-| `TestAcpClient` | 7 | Direct unit tests for `acp_client.run_turn` with no Flask app: exactly one terminal event per turn, dead agent, timeout, version mismatch, and the elicitation override |
+| `TestAcpConfig` | 25 | `config/acp.json`: the three accepted shapes, per-entry validation and drop rules, duplicate names keeping the first, an `ai.json` name collision dropping the ACP entry, masked `acps`/`acp` exposure, default resolution, a POST `default` naming an ACP profile and a colliding server name rejected, agent-key resolution and fail-closed unknowns, the agent/command exclusivity rules, model bounds, and the read-only agent detection |
+| `TestAcpChat` | 22 | `POST /api/ai/chat` through the ACP branch against a stub agent: streamed deltas, a tool-call trace frame, the flattened preamble, validation, model negotiation, environment inheritance, permission auto-allow, client-bound capabilities refused, and reaping on EOF/timeout/crash |
+| `TestAcpClient` | 11 | Direct unit tests for `acp_client.run_turn` with no Flask app: exactly one terminal event per turn, dead agent, timeout, version mismatch, model negotiation, and the elicitation override |
 | `TestSeedMigration` | 5 | `seed()`: the legacy `data/` migration (source dropped only when emptied), template/bootstrap branches, and idempotence when a config already exists |
 | `TestBackendHelperBranches` | 17 | Direct unit coverage for helper error/edge branches: `safe_path`, `expect_json`, `build_tree`, boot-state clamping, config parsing, SSE joining, token lookup, stored-hash checks, and logout with auth off |
 | `TestEditValidationBranches` | 2 | Every `_EditError` validation branch in the patch engine leaves the file untouched; `text_to_lines` drops a trailing empty part |
 | `TestConfigAndPasswordErrors` | 3 | A config write failure is a 500; the password endpoint rejects a missing field and a non-string current password |
 | `TestAuthLoginValidation` | 1 | Login body validation behind the auth-enabled check |
-| `TestAcpConfigBranches` | 2 | `load_acp_config()` defaults for `args`/`cwd`/`env` |
+| `TestAcpConfigBranches` | 2 | The `load_acp_config()` compatibility wrapper: defaults for `args`/`cwd`, and an `env` that is not an object rejecting the entry |
 | `TestAiConfigErrorPaths` | 6 | The `/api/ai/config` validation table, save failure, the masked view, and `replaceSecret` across all stored servers |
 | `TestAiUpstreamErrorPaths` | 8 | Failure paths in probe / fetch / search / chat: bad base URLs, connection errors, non-JSON and mixed search results, and a chat connection failure as an in-band SSE error |
 | `TestAcpChatErrorPaths` | 5 | ACP SSE validation and disconnect paths: oversize prompt, corrupt config preamble, client disconnect, and an empty stream closing cleanly |

@@ -220,36 +220,51 @@ while auth is off, like every other admin route):
   fail.
 
 **ACP provider (second provider kind).** `config/acp.json` (own hand-edited
-file, never written by any route) holds one `{name, agent, command, args, cwd,
-env, default, timeout}` ACP agent profile; `agent` names a key in the
-server-side `ACP_KNOWN_AGENTS` table, which resolves the command line (and is
-mutually exclusive with `command`), so neither the file nor the browser ever
-supplies a command for the common case. The server is the ACP *client*:
+file, never written by any route) holds one or more `{name, agent, command,
+args, cwd, env, model, default, timeout}` ACP profiles, under a `profiles` list
+(a bare array and the legacy single object are also accepted).
+`load_acp_configs()` validates each entry on its own and drops only the invalid
+one, a duplicate name, or a name that collides with an `ai.json` server;
+`load_acp_config()` is the first-profile compatibility wrapper. `agent` names a
+key in the server-side `ACP_KNOWN_AGENTS` table, which resolves the command line
+(and is mutually exclusive with `command`), so neither the file nor the browser
+ever supplies a command for the common case. The server is the ACP *client*:
 `acp_client.py` (Flask-free; one asyncio loop on a daemon thread) spawns one
-agent process per turn, drives `initialize → session/new → prompt`,
+agent process per turn, inherits the server's full environment with the profile's
+`env` overlaid (profile wins), drives `initialize → session/new → prompt`,
+applies the profile's optional `model` after `session/new` through the session's
+model config option via `session/set_config_option` (an agent with no model
+option, or one that rejects the value, ends the turn with an in-band error),
 auto-allows tool permission (`allow_once`), advertises no fs/terminal/
 elicitation capability (those methods raise `method_not_found`), and yields
 `agent_message_chunk` prose plus one trace event per `tool_call` the agent
-starts. `GET /api/ai/config` exposes it under `acp`
-as `{name, model: "ACP", agent, default}` or null, and reports per-agent host
-availability in an always-present `acpAgents` array (a read-only `shutil.which`
-PATH lookup, plus an adapter-install hint for Claude Code / Codex);
-`loadAiConfig` appends one picker entry `<name> · ACP` and tags it
-`acp: true`, and Settings → AI shows a read-only ACP row (never in the editable
-provider list) that lists the detected agents' status read-only. An ACP-tagged provider
-strips `image_url` parts client-side, narrows the attach input to `text/*`,
-and the server rejects any image part with 400. `POST /api/ai/chat` serves it
-when the posted `server` matches the `acp.json` name: messages go through the
-same `_validate_chat_messages`, the system turn is dropped, and the rest
-is flattened to one prompt capped at 8 MiB — same SSE envelope; text arrives as
-OpenAI deltas, each started tool as a `data: {"acp":"trace"}` frame the panel
-renders as a trace line. Because the system turn is dropped,
-`_acp_context_preamble` rebuilds the agent's context server-side from
-`config/config.json` (`activeFile`) and `config/ai.json` (`custom_prompt`), so
-the custom prompt and open-note hint still reach the agent. `acp_client` is
-imported lazily, so a missing SDK disables only ACP. The agent runs as the
-server user with filesystem access; `safe_path` and the approval cards do not
-apply.
+starts. `GET /api/ai/config` exposes every profile in an `acps` array as
+`{name, model, hasModel, agent, default}` or an empty list, keeps `acp` as the first entry
+for older clients, and reports per-agent host availability in an always-present
+`acpAgents` array (a read-only `shutil.which` PATH lookup, plus an
+adapter-install hint for Claude Code / Codex); `model` is the configured model or
+the label `"ACP"`. `loadAiConfig` appends one picker entry per profile labelled
+`<name> · <model>` and tags each `acp: true`. Settings → AI shows one read-only
+block per profile (a `Default` tag or a `Make default` button), plus the detected
+agents' status read-only; the section is never in the editable provider list.
+`_resolve_default_provider` picks the default: a stored `ai.json` default that
+names a saved server or an ACP profile (so "Make default" always wins), else the
+first profile flagged `default: true`, else `""`; the server never writes
+`config/acp.json`. `POST /api/ai/config` accepts a `default` naming an ACP
+profile and rejects a server name that collides with one (400). An ACP-tagged
+provider strips `image_url` parts client-side, narrows the attach input to
+`text/*`, and the server rejects any image part with 400. `POST /api/ai/chat`
+serves it when the posted `server` matches an ACP profile (`_acp_profile`):
+messages go through the same `_validate_chat_messages`, the system turn is
+dropped, and the rest is flattened to one prompt capped at 8 MiB — same SSE
+envelope; text arrives as OpenAI deltas, each started tool as a
+`data: {"acp":"trace"}` frame the panel renders as a trace line. Because the
+system turn is dropped, `_acp_context_preamble` rebuilds the agent's context
+server-side from `config/config.json` (`activeFile`) and `config/ai.json`
+(`custom_prompt`), so the custom prompt and open-note hint still reach the agent.
+`acp_client` is imported lazily, so a missing SDK disables only ACP. The agent
+runs as the server user with filesystem access; `safe_path` and the approval
+cards do not apply.
 
 **Frontend — vanilla JS, no build step.** `templates/index.html` loads vendored libs
 then app modules in dependency order: `api.js → dialog.js → auth.js → cm-bridge.js →

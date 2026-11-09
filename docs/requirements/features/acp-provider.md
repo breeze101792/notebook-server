@@ -6,13 +6,15 @@
 No technical or visual design chosen here. Written after the build; it states the
 intent the build was meant to serve and whether the delivered behaviour serves it.
 **Inputs:** `acp_client.py` (`ACP_PROTOCOL_VERSION`,
-`ACP_TURN_TIMEOUT_DEFAULT`, `run_turn`); `app.py` (`ACP_FILE`,
-`ACP_KNOWN_AGENTS`, `ACP_CONTEXT_PREAMBLE`, `load_acp_config`,
-`_detect_acp_agents`, `_public_acp_config`, `_flatten_acp_prompt`,
+`ACP_TURN_TIMEOUT_DEFAULT`, `run_turn`, `_model_option`); `app.py` (`ACP_FILE`,
+`ACP_KNOWN_AGENTS`, `ACP_CONTEXT_PREAMBLE`, `load_acp_configs`,
+`load_acp_config`, `_acp_profile`, `_resolve_default_provider`,
+`_detect_acp_agents`, `_public_acp_configs`, `_flatten_acp_prompt`,
 `_acp_context_preamble`, `_acp_chat_response`, `ai_chat`, `ai_probe`);
 `static/js/ai.js` (`loadAiConfig`, the provider picker, `runToolLoop`, the ACP
 trace renderer); `static/js/api.js` (`aiChat`); `static/js/settings.js`
-(`buildAcpAgentLines`, `buildAiAcpRow`, `buildAiAcpInfoRow`); `config/acp.json`
+(`buildAcpAgentLines`, `buildAiAcpSection`, `buildAiAcpProfile`,
+`buildAiAcpInfoRow`, `commitAiProviders`); `config/acp.json`
 and `config/acp.json.example`; `tests/test_app.py` (`TestAcpConfig`,
 `TestAcpChat`, `TestAcpClient`, `TestAcpConfigBranches`,
 `TestAcpChatErrorPaths`, `TestAcpClientExtra`); `tests/dom/test_dom.js` (the
@@ -92,75 +94,97 @@ center of the validation in §9.
 
 **Delivered (MVP).**
 
-- A second provider type, ACP, surfaced in the existing picker.
-- Hand-edited `config/acp.json` with `name`, `agent`, `command`, `args`, `cwd`,
-  `env`, `default`, `timeout`. `agent` names an entry in the server-side
-  allowlist (`ACP_KNOWN_AGENTS`) and is mutually exclusive with `command`.
+- A second provider type, ACP, surfaced in the existing picker as one entry per
+  configured profile.
+- Hand-edited `config/acp.json` holding one or more profiles, each with `name`,
+  `agent`, `command`, `args`, `cwd`, `env`, `model`, `default`, `timeout`.
+  `agent` names an entry in the server-side allowlist (`ACP_KNOWN_AGENTS`) and is
+  mutually exclusive with `command`. `model` is optional and selects the
+  agent's own model.
+- Several ACP profiles may coexist with each other and with API providers; any
+  provider can be the default.
 - One agent process per turn, driven through `POST /api/ai/chat`, streamed in the
   OpenAI SSE delta shape so the browser parser is reused unchanged.
 - Prose streaming plus one trace line for each tool the agent starts; the
   transcript is replayed as one flattened prompt behind a server-built context
   preamble (custom prompt and open note).
-- `default: true` nominates the ACP profile as the startup pick.
+- Default resolution: a saved `ai.json` default (including "Make default" in
+  Settings → AI) wins, then an ACP profile flagged `default: true`, then the
+  first entry.
 - Failure modes surfaced in-band as an SSE `event: error`.
 
 **Out of scope / non-goals (accepted).**
 
 - Permission cards, `fs/*`, `terminal`, a cancel route, server-side sessions,
   multi-turn agent state, images.
-- An editable Settings → AI surface for the ACP profile. Settings → AI shows the
-  configured profile and the detected agents read-only; the config file is the
-  only write path.
+- An editable Settings → AI surface for the ACP profiles. Settings → AI shows
+  every configured profile and the detected agents read-only; the config file
+  is the only write path. "Make default" writes only `ai.json`'s default name.
 - Rendering thought, plan, usage, or tool output beyond the one-line trace of
   each tool the agent starts.
 - A notebook guarantee of confinement: `safe_path` and the approval cards do not
   apply to the agent.
 
-**MVP line.** The delivered set is the MVP: one ACP profile, picked and streamed
-in the existing panel. Everything in §10 is follow-up, not a missing MVP piece.
+**MVP line.** The delivered set is the MVP: one or more ACP profiles, picked and
+streamed in the existing panel. Everything in §10 is follow-up, not a missing
+MVP piece.
 
 ---
 
 ## 4. Verified current behavior (as built)
 
 - **Config is server-local and hand-edited.** `ACP_FILE = config/acp.json`.
-  `load_acp_config` validates the whole object and degrades to `{}`
-  on any violation — never raises. Bounds: name ≤ 60 chars
+  Three shapes are accepted: `{"profiles": [ ... ]}`, a bare JSON array, and the
+  legacy single profile object. `load_acp_configs` validates each entry on its
+  own and returns the valid profiles; `load_acp_config` is a compatibility
+  wrapper returning the first profile or `{}`. Neither raises: an unset,
+  unreadable, or malformed file yields no profiles. Bounds: name ≤ 60 chars
   (`ACP_MAX_NAME_LEN`), command ≤ 300 (`ACP_MAX_COMMAND_LEN`), args ≤ 32 entries
-  (`ACP_MAX_ARGS`) of ≤ 1000 chars (`ACP_MAX_ARG_LEN`), `timeout` a finite
-  positive number. A name that collides with an `ai.json` profile also fails
-  closed. The file is read on every request, so edits take effect on the next
-  send without a server restart.
+  (`ACP_MAX_ARGS`) of ≤ 1000 chars (`ACP_MAX_ARG_LEN`), model ≤ 200
+  (`ACP_MAX_MODEL_LEN`), `timeout` a finite positive number. An invalid entry is
+  dropped individually; duplicate names keep the first; an entry whose name
+  collides with an `ai.json` profile is dropped so the API profile keeps it. The
+  file is read on every request, so edits take effect on the next send without a
+  server restart.
 - **`agent` names an allowlist entry; `command` is the escape hatch.**
   `ACP_KNOWN_AGENTS` is the server-side table of known agents (opencode, Claude
   Code, Codex, Gemini CLI, Goose, Cursor, Qwen, Kimi, Cline, OpenHands, Augment,
   Copilot, and Kiro). With `agent` set, the executable and argv are resolved from
   the table (`_acp_known_agent`, `_acp_agent_command` — a read-only
   `shutil.which` lookup) and a `command` alongside it is rejected. An unknown
-  key, or a key whose executable is not on `PATH`, turns ACP off. `command` +
+  key, or a key whose executable is not on `PATH`, drops that entry. `command` +
   `args` remains for an agent the table does not know.
 - **It is deliberately not writable through `POST /api/ai/config`.** The comment
   on `ACP_FILE` states the reason: a config blob any authed client can POST must
   never choose a command to execute. Verified by
   `test_config_post_never_touches_acp_file`.
-- **Only the name, label, allowlist key, and default flag reach the browser.**
-  `_public_acp_config` returns `{name, model, agent, default}` and nothing else;
-  `command` / `args` / `env` / `cwd` / `timeout` stay server-side. `model` is the
-  fixed label `ACP_LABEL = "ACP"`; `agent` names a table entry, not a secret, and
-  the read-only Settings panel needs it to show which agent is selected (empty
-  for a `command` profile).
+- **Only the name, model, allowlist key, and default flag reach the browser.**
+  `_public_acp_configs` returns one `{name, model, hasModel, agent, default}` per profile
+  in an `acps` array (and keeps `acp` as the first entry or `null` for older
+  clients); `command` / `args` / `env` / `cwd` / `timeout` stay server-side.
+  `model` is the configured agent model, or the fallback label
+  `ACP_LABEL = "ACP"`; `agent` names a table entry, not a secret, and the
+  read-only Settings panel needs it to show which agent is selected (empty for a
+  `command` profile). `default` is computed from the resolved default provider,
+  not from the raw file flag.
 - **Agent detection is read-only.** `_detect_acp_agents` returns
   `{key, label, available}` per known agent, plus `adapterMissing` and the
   install `hint` when the wrapping CLI is installed but its ACP adapter is not.
   `GET /api/ai/config` exposes the list as `acpAgents`. `shutil.which` only
   resolves a name against `PATH`; nothing runs.
-- **One profile at a time.** The loader returns a single object, not a list, and
-  `loadAiConfig` appends exactly one entry to the picker. Multiple ACP profiles
-  cannot coexist, though any allowlisted agent can be the one.
-- **Routing.** `ai_chat` tries `_saved_server(name)` first; on a miss it loads
-  the ACP config and, if the name matches, calls `_acp_chat_response`. An
+- **Many profiles at once.** The loader returns a list, and `loadAiConfig`
+  appends one picker entry per profile. ACP profiles coexist with each other and
+  with API providers; any provider can be the default. "Make default" in
+  Settings → AI sets `ai.json`'s default name, so it wins over a profile's
+  `default: true` without the server rewriting `config/acp.json`.
+  `_resolve_default_provider` resolves in order: a stored `ai.json` default that
+  names a saved server or an ACP profile, the first ACP profile flagged
+  `default: true`, then `""` (the frontend falls back to the first entry).
+- **Routing.** `ai_chat` tries `_saved_server(name)` first; on a miss it asks
+  `_acp_profile(name)` and, if a profile matches, calls `_acp_chat_response`. An
   unknown name is a plain 400 "Unknown or missing server", never an accidental
-  ACP launch.
+  ACP launch. `POST /api/ai/config` rejects a posted server name that equals an
+  ACP profile name with 400, so the two lookups can never disagree.
 - **Prompt assembly.** Messages are validated by the shared
   `_validate_chat_messages` with `drop_system=True`, so the notebook's system
   turn — the six-tool contract — never reaches the agent. The context that turn
@@ -187,20 +211,32 @@ in the existing panel. Everything in §10 is follow-up, not a missing MVP piece.
   updates are dropped (`session_update`). `request_permission` auto-allows once.
   `fs/*`, `terminal/*`, and `elicitation/*` are refused with method-not-found
   (`read_text_file` … `create_elicitation`). A full-turn timeout defaults to
-  `ACP_TURN_TIMEOUT_DEFAULT` (900 s). Browser disconnect raises `GeneratorExit`,
+  `ACP_TURN_TIMEOUT_DEFAULT` (900 s). When a profile sets `model`, `_drive`
+  applies it after `session/new` through the session's model config option
+  (`category == "model"`, else id `"model"`) with `session/set_config_option`;
+  no such option yields `"ACP agent does not expose a model option"`, a
+  rejected value yields `"ACP agent rejected the configured model"`, and a
+  value the agent acknowledges without selecting yields `"ACP agent did not
+  apply the configured model"`. `run_turn`
+  merges the server's full environment with the profile's `env` (the profile
+  wins), so agent credentials and XDG paths are not trimmed away by the SDK's
+  spawn transport. Browser disconnect raises `GeneratorExit`,
   cancels the future, and runs the SDK kill ladder.
-- **Frontend.** `loadAiConfig` appends the ACP entry to the picker,
-  `refreshServerBar` renders `"<name> · <model>"`, and selecting it sets
+- **Frontend.** `loadAiConfig` appends every `acps` entry to the picker,
+  `refreshServerBar` renders `"<name> · <model>"`, and selecting one sets
   `currentServer`. `runToolLoop`, `regenerate`, `editLastMessage`, `Clear`, and
   the Stop button are provider-agnostic. The trace renderer inserts each
   `.ai-tool-trace` line above the growing answer bubble. `buildRequestMessages`
   and `send` strip image parts for an ACP profile and show one notice, so a stale
   image cannot poison later turns.
-- **Settings → AI shows ACP read-only.** `buildAiAcpRow` renders the configured
-  profile (name, Selected / Default, allowlist key) and `buildAcpAgentLines` the
-  detected agents with their status; `buildAiAcpInfoRow` shows the enable hint
-  when no profile is configured but an agent is detected. The ACP row is held
-  outside the editable provider list, so a provider save never carries it to the
+- **Settings → AI shows ACP read-only.** `buildAiAcpSection` renders one panel
+  head/help, then one block per profile (`buildAiAcpProfile`: name, a `Default`
+  tag or a `Make default` button, the allowlist/command note, and the configured
+  agent model), then one detected-agent list (`buildAcpAgentLines`).
+  `buildAiAcpInfoRow` shows the enable hint when no profile is configured but an
+  agent is detected. "Make default" posts `default: <profile name>` through the
+  provider save; it never edits the profile. The ACP section is held outside the
+  editable provider list, so a provider save never carries a profile to the
   server.
 - **Documentation status.** `README.md` and
   `docs/architecture/ai-assistant.md` document ACP, including the trust boundary
@@ -213,20 +249,22 @@ in the existing panel. Everything in §10 is follow-up, not a missing MVP piece.
 ## 5. Functional flows
 
 **F1 — Configure an agent.**
-The owner copies `config/acp.json.example` to `config/acp.json` and edits
-`agent` (or the `command` + `args` escape hatch), `cwd`, `env`, `default`,
-`timeout`. There is no editable UI step; Settings → AI shows the result read-only.
-A malformed file turns the feature off silently (the picker simply shows no ACP
-entry). Example: `{"name":"opencode","agent":"opencode","default":false}`.
+The owner copies `config/acp.json.example` to `config/acp.json` and adds one or
+more entries under `profiles`, editing `agent` (or the `command` + `args` escape
+hatch), `cwd`, `env`, `model`, `default`, `timeout`. There is no editable UI
+step; Settings → AI shows the result read-only. An invalid entry is dropped on
+its own, so a typo cannot disable the other profiles; when no valid profile
+remains the feature is off and the picker shows no ACP entry. Example:
+`{"profiles":[{"name":"opencode","agent":"opencode","default":false}]}`.
 
 **F2 — Pick the agent.**
-On panel mount, `loadAiConfig` fetches `/api/ai/config`; if `cfg.acp.name` is set,
-one option labelled `"<name> · ACP"` is appended after the OpenAI profiles. An
-ACP `default: true` makes it the startup selection and beats the `ai.json`
-default; otherwise the `ai.json` default or first server wins (`loadAiConfig`).
-Selecting it sets `currentServer`. A name or default change made after mount is
-not reflected until `loadAiConfig` runs again (page load, or a Settings save,
-which calls it).
+On panel mount, `loadAiConfig` fetches `/api/ai/config` and appends every `acps`
+entry as an option labelled `"<name> · <model>"` after the OpenAI profiles. The
+server has already resolved `cfg.default`: a saved `ai.json` default (including
+"Make default" in Settings → AI) wins when it names any provider, then the first
+ACP profile flagged `default: true`, then the first entry. Selecting an option
+sets `currentServer`. A name or default change made after mount is not reflected
+until `loadAiConfig` runs again (page load, or a Settings save, which calls it).
 
 **F3 — Send a turn.**
 `send` snapshots the composer, does the wire-size check, appends the user bubble,
@@ -235,7 +273,8 @@ request posts `{server, messages: [system, …conversation], workspace?}` to
 `/api/ai/chat` (`buildRequestMessages`, `ai.js`). The server detects the ACP name,
 validates and drops the system message, rejects images, flattens the rest into
 one prompt behind `_acp_context_preamble`, spawns the agent, sends
-`initialize → session/new → session/prompt` (`_drive`, `acp_client.py`), and
+`initialize → session/new → session/prompt` and applies the profile's `model`
+between `session/new` and `prompt` when set (`_drive`, `acp_client.py`), and
 streams `agent_message_chunk` text back as OpenAI deltas (`_acp_chat_response`).
 `aiChat` (`api.js`) renders each delta into the assistant bubble exactly as for a
 model.
@@ -291,14 +330,20 @@ All three are unchanged from the OpenAI path:
 
 | Case | Required / observed behavior |
 | --- | --- |
-| `config/acp.json` missing or malformed | Feature off; picker shows no ACP entry; no error (`load_acp_config`). |
-| `agent` key unknown, or its executable not on `PATH` | Feature off; no ACP entry. The name is resolved from `ACP_KNOWN_AGENTS` only, never executed as a shell string. |
-| `agent` and `command` both set | Rejected as ambiguous; feature off (`load_acp_config`). |
+| `config/acp.json` missing or malformed | No valid profile: feature off; picker shows no ACP entry; no error (`load_acp_configs`). |
+| One profile has an invalid field | That entry is dropped; the other profiles still load (`load_acp_configs`). |
+| Two profiles share a name | The first entry is kept and the duplicate dropped. |
+| Profile name equals an `ai.json` server name | The ACP entry is dropped; the API profile keeps the name, and a later POST of that server name is also rejected 400. |
+| `agent` key unknown, or its executable not on `PATH` | That entry is dropped; no picker entry for it. The name is resolved from `ACP_KNOWN_AGENTS` only, never executed as a shell string. |
+| `agent` and `command` both set | That entry is dropped as ambiguous; the other profiles still load. |
 | Command is a wrapper such as `systemd-run …` written into `command` | Fails to start (argv[0] is the whole string; no shell). The wrapper must be `command` + `args`. The example does not show this. |
 | Name matches neither an OpenAI profile nor the ACP profile | 400 "Unknown or missing server"; the ACP runner is not reached (`ai_chat`). |
 | `workspace` in the POST body names no known workspace | 404 `unknown_workspace` before any agent is spawned. |
-| ACP profile is `default: true` | Selected on panel mount; beats the `ai.json` default (`loadAiConfig`). |
-| Two ACP agents wanted at once | Not supported: one profile only (§4), though the one profile may name any allowlisted agent. |
+| ACP profile is `default: true` | It is the fallback default when `ai.json` names none; a saved `ai.json` default, including "Make default", wins (`_resolve_default_provider`). |
+| Two ACP agents wanted at once | Supported: `config/acp.json` holds a `profiles` list (or a bare array), and the picker lists every valid profile. |
+| `model` set but the agent exposes no model option | The turn ends with the in-band error "ACP agent does not expose a model option"; the agent does not silently run a different model. |
+| `model` set to a value the agent rejects | The turn ends with the in-band error "ACP agent rejected the configured model". Model ids are the agent's own, e.g. `ollama/qwen3.8:latest` for `opencode acp`. |
+| Agent needs a credential exported by the server | It is inherited: `run_turn` merges the server's full environment with the profile's `env`, so credentials and XDG paths are not trimmed away. A profile `env` value wins on a key collision. |
 | User attaches an image while ACP is selected | The attach picker hides images, and `send` strips any pasted or dropped image parts, keeping the text, before the turn is sent. One inline notice says the image was not sent. `_acp_chat_response` still rejects an image part 400 as a backstop. |
 | Image-bearing turn already in `conversation` | The images stay in the browser conversation and are stripped from the ACP request, so later ACP turns are not poisoned; switching back to an OpenAI profile sends them again. |
 | User expects Settings → AI → Custom prompt to apply to the agent | It does: `_acp_context_preamble` reads `custom_prompt` from `config/ai.json` and prepends it to every ACP prompt. The agent still brings its own system prompt. |
@@ -333,9 +378,9 @@ not yet verified.
    (the system text is absent from the echo; the user and assistant turns
    survive labelled). *Covered:
    `test_system_message_dropped_from_flattened_prompt`.*
-3. Frontend — with `cfg.acp` set, the picker lists `"<name> · ACP"` alongside the
-   OpenAI profiles; with `cfg.acp` null it lists none. *Covered by the `acp
-   provider` block in `tests/dom/test_dom.js`.*
+3. Frontend — with `cfg.acps` populated, the picker lists every profile as
+   `"<name> · <model>"` alongside the OpenAI profiles; with an empty list it
+   lists none. *Covered by the `acp provider` block in `tests/dom/test_dom.js`.*
 4. Frontend — selecting the ACP option makes it the active server and the chat
    request names it. *Covered by the `acp provider` block in
    `tests/dom/test_dom.js`.*
@@ -377,8 +422,10 @@ not yet verified.
 **Isolation and security**
 
 16. The browser never receives `command`, `args`, `env`, `cwd`, or `timeout`:
-    `GET /api/ai/config` exposes exactly `{name, model, agent, default}` for ACP.
-    *Covered: `test_valid_file_exposed_masked` asserts the exact key set;
+    `GET /api/ai/config` exposes every ACP profile in `acps` as exactly
+    `{name, model, hasModel, agent, default}`, and keeps `acp` as the first entry (or
+    `null`). *Covered: `test_public_profile_exposes_only_safe_keys` asserts the
+    exact key set per profile and the legacy `acp` alias;
     `test_known_agent_key_resolves_command` asserts `agent` is exposed and the
     command line is not.*
 17. No `POST /api/ai/config` path creates, edits, or deletes `config/acp.json`.
@@ -408,13 +455,18 @@ not yet verified.
     Clear empties the transcript and the attachments. *Covered generically by the
     existing turn-review tests; not asserted with `currentServer` set to an ACP
     profile. **Gap**.*
-24. Choosing ACP as `default: true` selects it on mount. *Covered in code
-    (`loadAiConfig`); not asserted in the DOM suite. **Gap**.*
-25. Settings → AI shows the configured ACP profile read-only (name, Selected /
-    Default, allowlist key) and the detected agents with installed / adapter
-    missing / not installed; the ACP entry is not in the editable provider list
-    and a provider save never posts it back. *Covered by the Settings ACP checks
-    in the `acp provider` block, `tests/dom/test_dom.js`.*
+24. The resolved default is selected on mount: a saved `ai.json` default wins
+    when it names any provider (including "Make default" on an ACP profile),
+    then the first ACP profile flagged `default: true`, then the first entry.
+    *Covered: `test_default_resolution` and
+    `test_post_accepts_default_naming_an_acp_profile` in `TestAcpConfig`; the
+    picker selection is asserted in the `acp provider` DOM block.*
+25. Settings → AI shows every configured ACP profile read-only (name, a `Default`
+    tag or `Make default`, allowlist/command note, and the configured agent
+    model) plus the detected agents with installed / adapter missing / not
+    installed; "Make default" posts only the profile name, and the ACP section is
+    not in the editable provider list. *Covered by the Settings ACP checks in the
+    `acp provider` block, `tests/dom/test_dom.js`.*
 26. Frontend — an ACP `trace` frame renders one `.ai-tool-trace` line above the
     growing answer bubble, and an OpenAI stream with no trace frames adds none.
     *Covered by the ACP tool-activity block in `tests/dom/test_dom.js`.*
@@ -438,6 +490,15 @@ not yet verified.
   flattening and the agent re-reads files every turn (`PLAN.md`).
 - **No shell.** `command`/`args` are passed to `create_subprocess_exec`; a wrapper
   must be split into `command` + `args`.
+- **Model ids belong to the agent.** `model` is applied through the agent's own
+  session config option; a value the agent does not offer ends the turn with an
+  error rather than falling back silently. Verified values for `opencode acp`
+  look like `ollama/qwen3.8:latest`.
+- **Environment is inherited.** The agent sees the server's full environment with
+  the profile's `env` overlaid (the profile wins), so it can use credentials and
+  XDG paths the server exports. This also means anything in the server's
+  environment is visible to the agent; confine it with the `command` wrapper if
+  that matters.
 - **Timeout is a backstop, not a budget.** The default is 900 s precisely because
   an agent may legitimately run a long tool loop (`ACP_TURN_TIMEOUT_DEFAULT`,
   `acp_client.py`).
@@ -446,9 +507,10 @@ not yet verified.
 - **No server storage.** No session file, no log, no artifact. `config/acp.json`
   is the only ACP state.
 - **Docs are in sync.** `README.md` and `docs/architecture/ai-assistant.md`
-  document ACP, including the trust boundary and the read-only Settings panel;
-  `agent.md` describes it. `PLAN.md` holds the plan and
-  `docs/architecture/acp-provider-review.md` the architecture review.
+  document ACP, including the trust boundary, the multiple-profile config, the
+  model option, and the read-only Settings panel; `agent.md` describes it.
+  `PLAN.md` holds the plan and `docs/architecture/acp-provider-review.md` the
+  architecture review.
 - **`ai_probe` cannot test an ACP profile.** `ai_probe` only searches `ai.json`,
   so an ACP name returns 404 "Unknown server". No UI exposes this today, but a
   future "Test" button would 404.
@@ -478,18 +540,19 @@ the break is deliberate.**
   provider" Settings tab would reintroduce exactly the LAN writable-RCE surface
   the plan set out to avoid. The allowlist (`agent`) narrows this further: the
   browser can name a known agent, never supply an argv.
-- Settings → AI shows the profile and the detected agents, so the feature is
-  discoverable; what the owner still cannot do there is add, edit, test, or remove
-  a profile — that is file-editing plus a page reload. `ai_probe` cannot test an
-  ACP profile at all (§8).
+- Settings → AI shows every profile and the detected agents, so the feature is
+  discoverable; what the owner still cannot do there is add, edit, test, or
+  remove a profile — that is file-editing plus a page reload, though "Make
+  default" is one click. `ai_probe` cannot test an ACP profile at all (§8).
 - **Ambiguity to state, not invent:** the goal lists *four* example agents
-  (opencode, Gemini CLI, Claude Code, Goose). The build supports **one profile**,
-  but any of the thirteen allowlisted agents can be that profile; adding a second
-  and switching between them at will is still not possible.
-- **Verdict:** acceptable as a deliberate, security-motivated decision for a
-  single agent. It is not "just another provider" in configuration; it is "just
-  another provider" only in selection and streaming. If the owner wants to switch
-  agents casually, the file edit will feel wrong.
+  (opencode, Gemini CLI, Claude Code, Goose). The build now supports **several
+  profiles** and switching between them in the picker; any of the thirteen
+  allowlisted agents can be a profile. Adding, editing, or removing one is still
+  a file edit.
+- **Verdict:** acceptable as a deliberate, security-motivated decision for
+  hand-edited profiles. It is not "just another provider" in configuration; it
+  is "just another provider" only in selection and streaming. If the owner wants
+  to add or remove agents casually, the file edit will feel wrong.
 
 ### 9(b) Prose plus a tool-start trace, no thought/progress detail — acceptable for an agent running its own multi-step tools?
 
@@ -553,10 +616,10 @@ consequence is now documented.**
    tool-start trace line now shows activity, but the detail the client already
    receives is dropped (`session_update`, `acp_client.py`), so a wrong direction
    is still hard to spot early.
-4. **Decide whether one profile is enough and whether a minimal Settings surface
-   (add/test/remove without exposing the command) is wanted.** *Why:* the intent
-   names several agents; the build supports one profile, though any allowlisted
-   agent can be the one, and `ai_probe` cannot test it.
+4. **Decide whether a minimal Settings surface (add/test/remove without exposing
+   the command) is wanted.** *Why:* several profiles are now configurable and
+   selectable, but adding or removing one is still a file edit, and `ai_probe`
+   cannot test it. The "Make default" action is the only Settings write.
 5. **Guard the provider-agnostic tool loop from an ACP agent's prose.** *Why:* a
    `nb-tool`/`nb-edit` fenced block in the agent's output is still parsed
    (`runToolLoop`, `ai.js`) and could create a card or execute a notebook tool for
@@ -564,18 +627,19 @@ consequence is now documented.**
 6. **Document/validate the wrapper form of `command`.** *Why:* `command` is argv[0]
    with no shell, so `"command": "systemd-run --scope opencode acp"` silently
    fails; only `command` + `args` works. The README now shows the split form.
-7. **Add the missing ACP test cases from §7 (criteria 14, 21, 22, 23, 24).**
+7. **Add the missing ACP test cases from §7 (criteria 14, 21, 22, 23).**
    *Why:* the isolation property is well tested; the client image strip, `cwd`
-   resolution, ACP-default, and ACP Regenerate/Edit paths are not.
+   resolution, and ACP Regenerate/Edit paths are not.
 
 ---
 
 ## 11. Open questions
 
-1. **One agent or many?** Is a single `config/acp.json` profile the intended
-   ceiling, or should the config be a list with a Settings surface for
-   add/test/remove? The intent text names several agents; the allowlist lets the
-   one profile name any known agent. Owner: product + user.
+1. **One agent or many?** *Resolved.* `config/acp.json` accepts several profiles
+   (`{"profiles": [...]}` or a bare array), the picker lists every valid one,
+   they coexist with API providers, and any provider can be the default. Adding,
+   editing, or removing a profile is still a file edit; a Settings surface for
+   that remains §10 item 4. Owner: product + user.
 2. **Where is the feature discovered?** *Resolved.* Settings → AI shows the
    configured profile, the detected agents, and — when no profile exists but an
    agent is installed — the `"agent": "<key>"` hint. The README repeats the setup.

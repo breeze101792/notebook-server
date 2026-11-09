@@ -159,6 +159,9 @@ function publicAiConfigBody() {
     customPrompt: aiConfig.customPrompt || "",
     searxngUrl: aiConfig.searxngUrl || "",
     acp: aiConfig.acp || null,
+    // Full profile list: always an array, mirroring the server. The legacy
+    // `acp` key is the first profile.
+    acps: aiConfig.acps || (aiConfig.acp ? [aiConfig.acp] : []),
     // Always-present read-only PATH probe: which known ACP agent CLIs the
     // server found. Display-only; never part of a config POST payload.
     acpAgents: aiConfig.acpAgents || [] };
@@ -2171,9 +2174,10 @@ window.fetch = async (url, opts) => {
         searxngUrl: d.searxngUrl !== undefined
           ? d.searxngUrl : (aiConfig.searxngUrl || ""),
         // config/acp.json is a separate server-local file the config POST
-        // never touches, so the masked ACP profile carries through. The
+        // never touches, so the masked ACP profiles carry through. The
         // acpAgents PATH probe is likewise re-run server-side, not sent up.
         acp: aiConfig.acp || null,
+        acps: aiConfig.acps || (aiConfig.acp ? [aiConfig.acp] : []),
         acpAgents: aiConfig.acpAgents || [],
       };
       body = publicAiConfigBody();
@@ -32983,8 +32987,11 @@ function check(label, cond, extra) {
       aiConfigLog = [];
     };
 
-    const ACP = { name: "acp-agent", model: "ACP", default: false,
+    const ACP = { name: "acp-a", model: "ACP", hasModel: false, default: true,
       agent: "opencode" };
+    const ACP_B = { name: "acp-b", model: "ollama/qwen3.8:latest",
+      hasModel: true, default: false, agent: "" };
+    const ACP_PROFILES = [ACP, ACP_B];
     // Read-only PATH probe the server returns alongside cfg.acp: one agent
     // is installed, one has its CLI but lacks the ACP adapter (with a fix
     // hint), one is absent entirely.
@@ -32996,10 +33003,11 @@ function check(label, cond, extra) {
       { key: "codex", label: "Codex", available: false },
     ];
 
-    // Baseline: with acp null the masked config has no ACP entry, and the
-    // picker therefore offers no ACP option.
+    // Baseline: with no ACP profiles the masked config has no ACP entry, and
+    // the picker therefore offers no ACP option.
     aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
-      model: "m-1", apiKey: "sk-stub" }], default: "stub", acp: null };
+      model: "m-1", apiKey: "sk-stub" }], default: "stub", acp: null,
+      acps: [] };
     await resetAcp();
     await window.NB.ai.loadAiConfig();
     await tick(20);
@@ -33010,19 +33018,28 @@ function check(label, cond, extra) {
         sel0 ? sel0.options.length + " opts" : "no select");
     }
 
-    // Now expose the ACP profile alongside the OpenAI one.
+    // Now expose two ACP profiles alongside the OpenAI one, with the server
+    // resolved default naming the first.
     aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
-      model: "m-1", apiKey: "sk-stub" }], default: "stub",
-      customPrompt: "", searxngUrl: "", acp: ACP, acpAgents: ACP_AGENTS };
+      model: "m-1", apiKey: "sk-stub" }], default: ACP.name,
+      customPrompt: "", searxngUrl: "", acp: ACP, acps: ACP_PROFILES,
+      acpAgents: ACP_AGENTS };
     await window.NB.ai.loadAiConfig();
     await tick(20);
 
     const sel = window.document.getElementById("ai-model-select");
     const acpOpt = sel
       ? Array.from(sel.options).find(o => o.value === ACP.name) : null;
+    const acpOptB = sel
+      ? Array.from(sel.options).find(o => o.value === ACP_B.name) : null;
     check("acp: picker lists the ACP profile as 'name · ACP'",
-      !!acpOpt && acpOpt.textContent === "acp-agent · ACP",
+      !!acpOpt && acpOpt.textContent === "acp-a · ACP",
       acpOpt ? acpOpt.textContent : "missing");
+    check("acp: picker lists the second profile with its model label",
+      !!acpOptB && acpOptB.textContent === "acp-b · ollama/qwen3.8:latest",
+      acpOptB ? acpOptB.textContent : "missing");
+    check("acp: the resolved default profile is selected",
+      !!sel && sel.value === ACP.name, sel ? sel.value : "no select");
     check("acp: the OpenAI profile is still listed alongside",
       !!sel && Array.from(sel.options).some(o => o.value === "stub"),
       sel ? sel.options.length + " opts" : "no select");
@@ -33123,25 +33140,50 @@ function check(label, cond, extra) {
       "rows=" + rows.length);
     check("acp: the ACP profile is not listed as an editable provider",
       window.document.querySelector(
-        "#settings-ai-list .settings-ai-row[data-name='acp-agent']") === null,
+        "#settings-ai-list .settings-ai-row[data-name='acp-a']") === null &&
+      window.document.querySelector(
+        "#settings-ai-list .settings-ai-row[data-name='acp-b']") === null,
       "count=" + window.document.getElementById("settings-ai-count").textContent);
 
-    // The read-only ACP row is rendered from cfg.acp, beside the editable
-    // providers.
+    // The read-only ACP section is rendered from cfg.acps: one row head, a
+    // profile block per profile, and the Default tag / Make default action.
     const acpRow = window.document.querySelector(
       "#settings-ai-list .settings-ai-acp-row");
-    const acpProfile = acpRow &&
-      acpRow.querySelector(".settings-ai-acp-profile");
-    const acpProfileKey = acpRow &&
-      acpRow.querySelector(".settings-ai-acp-profile .settings-ai-acp-key");
-    check("acp: settings AI tab renders a read-only ACP row",
-      !!acpRow && acpRow.dataset.acpName === ACP.name &&
-      !!acpProfile && /acp-agent/.test(acpProfile.textContent) &&
-      /Selected/.test(acpProfile.textContent) &&
-      !!acpProfileKey && acpProfileKey.textContent === "opencode" &&
+    const acpProfileEls = acpRow ? Array.from(
+      acpRow.querySelectorAll(".settings-ai-acp-profile")) : [];
+    const acpProfile = acpProfileEls.find(
+      p => p.dataset.acpName === ACP.name);
+    const acpProfileB = acpProfileEls.find(
+      p => p.dataset.acpName === ACP_B.name);
+    const acpProfileKey = acpProfile &&
+      acpProfile.querySelector(".settings-ai-acp-key");
+    const acpDefaultTags = acpRow ? Array.from(
+      acpRow.querySelectorAll(".stg-tag--accent"))
+      .filter(el => el.textContent === "Default") : [];
+    const acpDefaultBtns = acpRow ? Array.from(
+      acpRow.querySelectorAll(".settings-ai-default")) : [];
+    check("acp: settings AI tab renders one read-only ACP row",
+      !!acpRow &&
+      window.document.querySelectorAll(
+        "#settings-ai-list .settings-ai-acp-row").length === 1 &&
+      acpRow.querySelectorAll(".settings-ai-acp-head").length === 1 &&
       /config\/acp\.json/.test(acpRow.textContent) &&
       /not editable here/.test(acpRow.textContent),
       acpRow ? acpRow.textContent.slice(0, 90) : "missing");
+    check("acp: one profile block per profile with the right acpName",
+      acpProfileEls.length === 2 && !!acpProfile && !!acpProfileB &&
+      acpProfileEls[0].dataset.acpName === "acp-a" &&
+      acpProfileEls[1].dataset.acpName === "acp-b",
+      "profiles=" + acpProfileEls.map(p => p.dataset.acpName).join(","));
+    check("acp: the resolved default shows a Default tag, the other a button",
+      acpDefaultTags.length === 1 && acpDefaultBtns.length === 1 &&
+      /Default/.test(acpProfile.textContent) &&
+      /Make default/.test(acpProfileB.textContent),
+      "tags=" + acpDefaultTags.length + " btns=" + acpDefaultBtns.length);
+    check("acp: the profile card shows the selected allowlist key",
+      !!acpProfileKey && acpProfileKey.textContent === "opencode" &&
+      /explicit "command"/.test(acpProfileB.textContent),
+      acpProfileKey ? acpProfileKey.textContent : "missing");
 
     // Detected agents, one status row each: name + a dot/word state + the
     // allowlist key. An installed agent reads "Installed", an
@@ -33171,9 +33213,30 @@ function check(label, cond, extra) {
       !!acpProfileKey && acpProfileKey.textContent === "opencode",
       acpProfileKey ? acpProfileKey.textContent : "missing");
 
+    // "Make default" on the non-default profile posts the resolved default
+    // name and nothing from config/acp.json (the file stays server-side).
+    aiConfigLog = [];
+    acpDefaultBtns[0].click();
+    await tick(80);
+    const acpDefaultBody = aiConfigLog[aiConfigLog.length - 1];
+    check("acp: Make default posts the profile name as the default",
+      !!acpDefaultBody && acpDefaultBody.default === ACP_B.name &&
+      Array.isArray(acpDefaultBody.servers) &&
+      acpDefaultBody.servers.every(s => s.name === "stub"),
+      acpDefaultBody ? JSON.stringify(acpDefaultBody).slice(0, 110)
+        : "no save");
+    check("acp: Make default never sends acp/acps back to the server",
+      !!acpDefaultBody &&
+      !("acp" in acpDefaultBody) && !("acps" in acpDefaultBody) &&
+      !JSON.stringify(acpDefaultBody).includes(ACP.name) &&
+      !JSON.stringify(acpDefaultBody).includes(ACP_B.name + "·") &&
+      !JSON.stringify(acpDefaultBody).includes("opencode"),
+      acpDefaultBody ? JSON.stringify(acpDefaultBody).slice(0, 110)
+        : "no save");
+
     // A provider save must never carry the ACP entry back to the server.
     // The prompt Save posts the provider list (aiProviders) + prompt; the
-    // ACP profile is held outside that array, so it cannot appear.
+    // ACP profiles are held outside that array, so they cannot appear.
     aiConfigLog = [];
     const acpPromptEl = window.document.getElementById("settings-ai-custom-prompt");
     acpPromptEl.value = "an ACP-era prompt";
@@ -33185,7 +33248,8 @@ function check(label, cond, extra) {
       !!acpSaveBody &&
       (acpSaveBody.servers || []).every(s => s.name !== ACP.name) &&
       !JSON.stringify(acpSaveBody).includes(ACP.name) &&
-      !("acp" in acpSaveBody) && !("acpAgents" in acpSaveBody) &&
+      !("acp" in acpSaveBody) && !("acps" in acpSaveBody) &&
+      !("acpAgents" in acpSaveBody) &&
       !JSON.stringify(acpSaveBody).includes("opencode"),
       acpSaveBody ? JSON.stringify(acpSaveBody).slice(0, 110) : "no save");
 
@@ -33194,7 +33258,8 @@ function check(label, cond, extra) {
     const renderAcpTab = async (cfgAcp, agents) => {
       aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
         model: "m-1", apiKey: "sk-stub" }], default: "stub",
-        customPrompt: "", searxngUrl: "", acp: cfgAcp, acpAgents: agents };
+        customPrompt: "", searxngUrl: "", acp: cfgAcp,
+        acps: cfgAcp ? [cfgAcp] : [], acpAgents: agents };
       await window.NB.settings.close(); await tick(20);
       window.NB.settings.open(); await tick(30);
       window.document.querySelector('.settings-nav-item[data-tab="ai"]').click();
@@ -33263,7 +33328,7 @@ function check(label, cond, extra) {
     // Restore the ACP-exposed config and reset the panel transcript.
     aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
       model: "m-1", apiKey: "sk-stub" }], default: "stub",
-      customPrompt: "", searxngUrl: "", acp: ACP };
+      customPrompt: "", searxngUrl: "", acp: ACP, acps: ACP_PROFILES };
     await window.NB.ai.loadAiConfig();
     await tick(20);
 

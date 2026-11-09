@@ -161,8 +161,10 @@ applied to whichever provider is active sits below the provider list, and
 the **Web search** field sets the SearXNG instance for the `search` tool
 (the preferred provider; a keyless fallback answers when it is unset or
 unreachable).
-If an ACP profile is configured, it appears here as a read-only row (it is
-edited in `config/acp.json`, not in this list).
+If one or more ACP profiles are configured, Settings → AI shows them in a
+read-only section, one block per profile, each with a **Make default** action
+(it only changes which provider the panel selects, not the profile itself).
+ACP profiles are edited in `config/acp.json`, not in the provider list.
 
 ### ACP providers (external coding agents)
 
@@ -171,7 +173,7 @@ coding agent already installed on the host — `opencode acp`, Gemini CLI,
 Claude Code, Goose, and similar. The backend launches it as a subprocess,
 sends your conversation as one flattened prompt, and streams its reply back
 into the same chat panel and the same provider picker (labelled
-`<name> · ACP`). Each turn also carries a short context line naming the open
+`<name> · <model>`). Each turn also carries a short context line naming the open
 note and your global custom prompt. Unlike an OpenAI-compatible profile, the
 agent runs its **own** tools: the notebook's six-tool contract is not sent to
 it and its Apply/Reject cards are not part of the ACP flow — you see the
@@ -180,42 +182,69 @@ take no images: while an ACP profile is active the attach button offers text
 files only, and any image in a turn (from paste or drag) is dropped before
 sending.
 
-**Using it.** Start the server, open the **✨** assistant panel, pick
-`<name> · ACP` in the provider dropdown, and send a message. The agent runs in
-the notebook folder; its reply streams into the bubble and each tool it starts
-appears as a trace line above the answer. **Stop** ends the turn and kills the
-agent process. Nothing runs until you send — detection and configuration only
-populate the picker.
+**Using it.** Start the server, open the **✨** assistant panel, pick a profile in
+the provider dropdown, and send a message. The agent runs in the notebook folder;
+its reply streams into the bubble and each tool it starts appears as a trace line
+above the answer. **Stop** ends the turn and kills the agent process. Nothing runs
+until you send — detection and configuration only populate the picker.
 
 **Configure by hand.** ACP is configured in `config/acp.json` (copy
 `config/acp.json.example`). There is no web UI to edit it and no HTTP route
 writes it — a config blob any client can POST must never choose a command to
-run. Name a **known agent by key**; the server resolves the executable and
-argv from its own table:
+run. The file holds a `profiles` list (a bare JSON array and the legacy single
+object are also accepted). Name a **known agent by key**; the server resolves the
+executable and argv from its own table:
 
 ```json
 {
-  "name": "opencode",
-  "agent": "opencode",
-  "cwd": "",
-  "default": false
+  "profiles": [
+    {
+      "name": "opencode",
+      "agent": "opencode",
+      "model": "ollama/qwen3.8:latest",
+      "cwd": "",
+      "default": true
+    },
+    {
+      "name": "local-agent",
+      "command": "/usr/local/bin/my-agent",
+      "args": ["--acp"],
+      "env": {"AGENT_API_KEY": "replace-me"}
+    }
+  ]
 }
 ```
 
-- `name` — picker label; shown as `<name> · ACP`.
+- `name` — picker label; shown as `<name> · <model>`.
 - `agent` — key in the server's known-agent table (below); the command line is
   resolved from it.
+- `command` / `args` — the escape hatch for an agent the table does not know.
+  `command` is argv[0] only, no shell; put a wrapper executable here and the
+  agent in `args`.
+- `model` — optional agent model id. It is applied after the session is created
+  through the agent's own model option; an agent that exposes no model option,
+  or rejects the value, ends the turn with an in-band error instead of silently
+  running a different model. For `opencode acp`, values look like
+  `ollama/qwen3.8:latest`.
 - `cwd` — the agent's working directory; empty defaults to the notebook folder.
-- `env` — extra environment variables for the agent.
-- `default` — `true` makes ACP the startup pick.
+- `env` — extra environment variables. They are overlaid on the server's full
+  environment (the profile wins), so the agent inherits credentials and XDG
+  paths the server exports.
+- `default` — `true` nominates the profile as the fallback default.
 - `timeout` — per-turn wall-clock cap in seconds; defaults to 900.
+
+Several profiles may coexist with each other and with API providers. Settings →
+AI lists each valid profile read-only, and **Make default** selects any provider
+(API or ACP) as the startup pick; it wins over `default: true` and never edits
+the ACP file.
 
 Known keys: `opencode`, `claude`, `codex`, `gemini`, `goose`, `cursor`, `qwen`,
 `kimi`, `cline`, `openhands`, `auggie`, `copilot`, `kiro`. The command line
 lives in the server table, not in the file, so the file (and the browser) can
-only name a key. `agent` and `command` are **mutually exclusive**: setting
-both makes the file invalid. If the selected agent's executable is not on the
-host's `PATH`, the file is treated as unconfigured and no ACP entry appears.
+only name a key. `agent` and `command` are **mutually exclusive**: setting both
+drops that profile. An invalid entry is dropped on its own, so a typo does not
+disable the other profiles; if the selected agent's executable is not on the
+host's `PATH`, that profile is skipped.
 
 **Claude Code / Codex setup.** Neither ships an ACP server of its own, so both
 need an adapter binary on `PATH` before the key will appear as launchable. The
@@ -239,21 +268,20 @@ wrapping CLI must be installed and logged in first (`claude` / `codex`).
    and argv from its table, so no command path goes in the file:
 
    ```json
-   { "name": "claude", "agent": "claude", "default": true }
+   { "profiles": [{ "name": "claude", "agent": "claude", "default": true }] }
    ```
 
    ```json
-   { "name": "codex", "agent": "codex", "default": true }
+   { "profiles": [{ "name": "codex", "agent": "codex", "default": true }] }
    ```
 
-4. Reload the page, pick `<name> · ACP` in the ✨ panel, and send a message.
+4. Reload the page, pick the profile in the ✨ panel, and send a message.
 
-Until the adapter is installed, the key resolves to nothing: the file is
-treated as unconfigured and no ACP picker entry appears (`Settings → AI` still
-reports the CLI as present with its install hint). The adapter runs the
-underlying CLI as your user — to confine it, use the `command` escape hatch
-with the adapter as argv[0], following the sandbox pattern under **Trust
-boundary** below.
+Until the adapter is installed, the key resolves to nothing: that profile is
+skipped and no ACP picker entry appears for it (`Settings → AI` still reports
+the CLI as present with its install hint). The adapter runs the underlying CLI
+as your user — to confine it, use the `command` escape hatch with the adapter as
+argv[0], following the sandbox pattern under **Trust boundary** below.
 
 **Escape hatch.** For an agent the table does not know, give `command` +
 `args` instead of `agent`. `command` is **argv[0] only, no shell**; put a
@@ -261,15 +289,20 @@ wrapper executable here and the agent in `args`:
 
 ```json
 {
-  "name": "custom",
-  "command": "my-agent-launcher",
-  "args": ["acp"],
-  "default": false
+  "profiles": [
+    {
+      "name": "custom",
+      "command": "my-agent-launcher",
+      "args": ["acp"],
+      "default": false
+    }
+  ]
 }
 ```
 
-A malformed file turns the feature off silently: the picker simply shows no
-ACP entry. Edits take effect on the next send, with no restart.
+A malformed entry is dropped on its own; when no valid profile remains the
+feature is off and the picker shows no ACP entry. Edits take effect on the next
+send, with no restart.
 
 **Detection.** The server checks each known agent with a read-only `PATH`
 lookup — it resolves names, it never runs anything. `GET /api/ai/config`
@@ -278,8 +311,8 @@ agent whose wrapper CLI is installed but whose ACP adapter binary is not (today
 Claude Code and Codex, which need the `claude-agent-acp` / `codex-acp` adapter
 packages) also carries `adapterMissing: true` and an install `hint`. Settings →
 AI lists the detected agents read-only with their status — installed, ACP
-adapter missing (with the install hint), or not installed — and shows the
-selected key on the configured ACP row.
+adapter missing (with the install hint), or not installed — and shows each
+profile's allowlist key and configured model in its own block.
 
 **Trust boundary.** The ACP agent is a child process that runs **as the
 server user, with that user's filesystem access**. The notebook does not
@@ -290,13 +323,17 @@ and only the notebook writable:
 
 ```json
 {
-  "name": "opencode-sandboxed",
-  "command": "systemd-run",
-  "args": ["--user", "--scope", "--collect",
-           "-p", "ProtectSystem=strict",
-           "-p", "ProtectHome=read-only",
-           "-p", "ReadWritePaths=/mnt/projects/notebook",
-           "opencode", "acp"]
+  "profiles": [
+    {
+      "name": "opencode-sandboxed",
+      "command": "systemd-run",
+      "args": ["--user", "--scope", "--collect",
+               "-p", "ProtectSystem=strict",
+               "-p", "ProtectHome=read-only",
+               "-p", "ReadWritePaths=/mnt/projects/notebook",
+               "opencode", "acp"]
+    }
+  ]
 }
 ```
 
@@ -415,7 +452,7 @@ static/
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
 config/               config.json (UI state), auth.json (passwords), ai.json (AI),
-                      acp.json (ACP agent, hand-edited), workspaces.json
+                      acp.json (ACP profiles, hand-edited), workspaces.json
                       (workspace registry) — created on first run
 tests/
   test_app.py         stdlib unittest, hits the real Flask app via test client

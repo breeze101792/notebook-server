@@ -55,14 +55,21 @@ coding agent as a subprocess and streams its prose into the same panel. It is
 a peer of the OpenAI profiles in the picker only; the execution model is not
 the same.
 
-**Config and the picker.** ACP is configured in `config/acp.json`, a single
-hand-edited object. The profile names a **known agent by key**; the server
-resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
+**Config and the picker.** ACP is configured in `config/acp.json`, a
+hand-edited file of one or more profiles. Three shapes are accepted: the
+canonical `{"profiles": [ ... ]}` (shown below), a bare JSON array, and the
+legacy single profile object. Each profile names a **known agent by key**; the
+server resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
 `app.py`):
 
 ```jsonc
-{"name": "opencode", "agent": "opencode",
- "cwd": "", "env": {}, "default": false, "timeout": 900}
+{"profiles": [
+  {"name": "opencode", "agent": "opencode",
+   "model": "ollama/qwen3.8:latest",
+   "cwd": "", "env": {}, "default": true, "timeout": 900},
+  {"name": "local-agent", "command": "/usr/local/bin/my-agent",
+   "args": ["--acp"]}
+]}
 ```
 
 The command line lives in the server table, never in the file: a config blob
@@ -73,34 +80,60 @@ agent the table does not know. Known keys: `opencode`, `claude`, `codex`,
 `gemini`, `goose`, `cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`,
 `copilot`, `kiro`.
 
-`load_acp_config` (`app.py`) validates the whole object and fails closed
-to `{}` on any violation — never raises. Bounds: `name` ≤ 60 characters,
-`command` ≤ 300, `args` ≤ 32 entries of ≤ 1000 characters each, `cwd` a
-string, `env` a string-to-string map, `default` a boolean, `timeout` a finite
-positive number. An `agent` must name a table entry and must not be set
-alongside `command`; if the selected agent's executable is not on `PATH` the
-whole object is treated as unconfigured (`{}`), so a missing agent never yields
-a picker entry that always errors. A name that collides with an `ai.json`
-profile also returns `{}`, because `ai_chat` resolves the OpenAI profile first
-and the ACP branch could never run. An invalid file simply turns the feature
-off.
+`model` is optional (≤ 200 characters) and names the agent's own model. After
+`session/new`, `acp_client` looks for the session's model config option — the
+one whose `category` is `"model"`, else id `"model"` — and applies the value
+with `session/set_config_option` (`_model_option`, `_drive`, `acp_client.py`).
+An agent that exposes no such option ends the turn with the in-band error
+`"ACP agent does not expose a model option"`; a rejected value ends it with
+`"ACP agent rejected the configured model"`, and a value the agent does not
+actually select ends it with `"ACP agent did not apply the configured model"`. Verified against `opencode acp`,
+whose model values look like `ollama/qwen3.8:latest`.
 
-`GET /api/ai/config` returns the profile under the `acp` key as
-`{name, model: "ACP", agent, default}` or `null`; `command`, `args`, and `env`
-stay server-side. It also returns an always-present `acpAgents` array —
+The agent inherits the server's **full environment**, with the profile's `env`
+overlaid (the profile wins). `acp_client.run_turn` merges the environment
+before spawning; the SDK's spawn transport would otherwise trim the child to a
+fixed handful of variables and silently drop agent credentials and XDG paths
+(`acp_client.py`).
+
+`load_acp_configs` (`app.py`) validates each entry on its own and returns the
+valid profiles; `load_acp_config` is a compatibility wrapper returning the first
+profile or `{}`. It never raises. An invalid entry is dropped on its own, so one
+typo cannot disable the other profiles; duplicate names keep the first entry; a
+name that collides with an `ai.json` profile is dropped so the API profile keeps
+the name (the ACP branch could never run for it). Per-entry bounds: `name` ≤ 60
+characters, `command` ≤ 300, `args` ≤ 32 entries of ≤ 1000 characters each,
+`cwd` a string, `env` a string-to-string map, `model` ≤ 200 characters,
+`default` a boolean, `timeout` a finite positive number. An `agent` must name a
+table entry and must not be set alongside `command`; if the selected agent's
+executable is not on `PATH` that entry is dropped, so a missing agent never
+yields a picker entry that always errors. The feature is off when no valid
+profile remains.
+
+`GET /api/ai/config` returns every profile in an `acps` array as
+`{name, model, hasModel, agent, default}`; `model` is the configured model or the fallback
+label `"ACP"`, and `acp` carries the first entry (or `null`) for older clients.
+`command`, `args`, `env`, `cwd`, and `timeout` stay server-side. The `default`
+flag is computed from the resolved default provider
+(`_resolve_default_provider`, `app.py`): a stored `ai.json` `default` that names
+a saved server or an ACP profile wins; otherwise the first profile flagged
+`default: true`; otherwise `""` and the frontend falls back to the first entry.
+A default chosen in Settings therefore wins without the server rewriting
+`config/acp.json`. It also returns an always-present `acpAgents` array —
 `[{key, label, available}]`, built by a read-only `shutil.which` PATH lookup
 (`_detect_acp_agents`, `app.py`) — so the UI can show which known agents
 the host can launch; an agent whose wrapping CLI is present but whose ACP
 adapter is missing gains `adapterMissing: true` and a `hint` install command
-(today Claude Code and Codex). `loadAiConfig` appends one option labelled
-`<name> · ACP` after the OpenAI profiles, tags it client-side with `acp: true`,
-and selects it when `default` is true (`static/js/ai.js`). Settings →
-AI renders a read-only ACP row from `cfg.acp` (`buildAiAcpRow`,
-`static/js/settings.js`); it is deliberately kept out of the editable
-provider list so a provider save cannot re-send or overwrite it. The same row
-lists every detected agent from `cfg.acpAgents` with its status — installed,
-ACP adapter missing (showing the server's `hint`), or not installed
-(`buildAcpAgentLines`), and when no profile is configured yet but an agent is
+(today Claude Code and Codex). `loadAiConfig` appends **every** `acps` entry as
+an option labelled `<name> · <model>` after the OpenAI profiles, tags each
+client-side with `acp: true`, and selects `cfg.default` when it names a listed
+provider (`static/js/ai.js`). Settings → AI renders one read-only ACP section
+from `cfg.acps`: one panel head/help, one block per profile (a `Default` tag, or
+a `Make default` button), and one detected-agent list (`buildAiAcpSection`,
+`buildAiAcpProfile`, `static/js/settings.js`). "Make default" posts
+`default: <profile name>`; it never edits the profile. ACP profiles are
+deliberately kept out of the editable provider list, so a provider save cannot
+re-send or overwrite them. When no profile is configured yet but an agent is
 detected, an info row prompts the user to add an `agent` key by hand
 (`buildAiAcpInfoRow`) — the UI only reports; it never writes the file. `POST
 /api/ai/config` never writes `config/acp.json`: a config blob any authenticated
@@ -108,7 +141,7 @@ client can POST must never choose a command to execute. The file is read on
 every request, so an edit takes effect on the next send without a restart.
 
 **One turn.** `POST /api/ai/chat` serves ACP when the posted `server` is not
-an OpenAI profile but matches the `acp.json` name (`ai_chat`, `app.py`).
+an OpenAI profile but matches an ACP profile (`ai_chat`, `app.py`).
 Messages are validated by the same `_validate_chat_messages` used by the
 OpenAI relay, then system messages are dropped, image parts are rejected with
 400, and the surviving user/assistant turns are flattened into one prompt —
@@ -123,7 +156,9 @@ arrives (`activeServerIsAcp` / `buildRequestMessages`,
 exactly as for a model. `acp_client.run_turn` spawns a fresh agent process per
 request (`initialize → session/new → prompt`), kills it at turn end, and
 streams `agent_message_chunk` text back as OpenAI delta frames plus
-`data: [DONE]`. Each `tool_call` update the agent starts becomes a namespaced
+`data: [DONE]`. When the profile sets `model`, the client applies it to the
+session's model config option between `session/new` and `prompt` (`_drive`,
+`acp_client.py`). Each `tool_call` update the agent starts becomes a namespaced
 `data: {"acp":"trace","text":…}` frame that the panel renders as a trace line,
 so a long multi-step turn shows activity; thought, plan, and usage updates are
 dropped (`acp_client.py`). The prompt is prefixed with a short preamble

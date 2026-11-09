@@ -435,8 +435,9 @@ are stripped. The chat endpoint appends `/v1/chat/completions`
 ## `config/acp.json` — ACP agent
 
 A second provider kind, the Agent Client Protocol (ACP), is configured in
-`config/acp.json` (`ACP_FILE`, `app.py`). The file holds a single
-object; the feature is off when the file is missing or invalid.
+`config/acp.json` (`ACP_FILE`, `app.py`). The file holds one or more profiles;
+the feature is off when the file is missing or holds no valid profile. Several
+ACP profiles may coexist, and any of them may be the default.
 
 This file is **hand-edited**. The server never writes it and no HTTP route
 touches it, deliberately: a config blob that any authenticated client can POST
@@ -445,24 +446,39 @@ must never be able to choose a command to execute (`app.py`). Copy
 
 ```json
 {
-  "name": "opencode",
-  "agent": "opencode",
-  "cwd": "",
-  "env": {},
-  "default": false,
-  "timeout": 900
+  "profiles": [
+    {
+      "name": "opencode",
+      "agent": "opencode",
+      "model": "ollama/qwen3.8:latest",
+      "cwd": "",
+      "env": {},
+      "default": true,
+      "timeout": 900
+    },
+    {
+      "name": "local-agent",
+      "command": "/usr/local/bin/my-agent",
+      "args": ["--acp"]
+    }
+  ]
 }
 ```
 
+Three shapes are accepted: the canonical `{"profiles": [ ... ]}`, a bare JSON
+array of profiles, and the legacy single profile object. Anything else yields
+no profiles.
+
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `name` | string | Picker label; shown as `<name> · ACP`. Required. |
+| `name` | string | Picker label; shown as `<name> · <model>`. Required; a duplicate keeps the first entry. |
 | `agent` | string | Key in the server's known-agent table; the command line is resolved from it. Mutually exclusive with `command`. |
 | `command` | string | Executable to spawn, argv[0] only, no shell. Required unless `agent` is set; the escape hatch for an agent the table does not know. |
 | `args` | string[] | Arguments passed to `command`. Default `[]`. Used only with `command`. |
 | `cwd` | string | Agent working directory; empty defaults to the notebook folder. |
-| `env` | object | Extra environment variables (string to string). |
-| `default` | boolean | `true` makes the ACP profile the startup pick. |
+| `env` | object | Environment variables overlaid on the server's own environment (string to string). The profile wins on a key collision. |
+| `model` | string | Optional agent model id, at most 200 characters, applied after the session is created. |
+| `default` | boolean | `true` nominates the profile as the fallback default when `ai.json` names none. |
 | `timeout` | number | Per-turn wall-clock cap in seconds; default 900. |
 
 The known-agent keys are `opencode`, `claude`, `codex`, `gemini`, `goose`,
@@ -470,47 +486,87 @@ The known-agent keys are `opencode`, `claude`, `codex`, `gemini`, `goose`,
 `kiro` (`ACP_KNOWN_AGENTS`, `app.py`). The executable and argv for each
 live in that server-side table, not in the file, so neither the file nor the
 browser can supply a command for the common case. `agent` and `command` are
-mutually exclusive: supplying both makes the file invalid. Provenance for each
+mutually exclusive: supplying both drops that entry. Provenance for each
 command line is in
 [`../research/acp-agent-commands.md`](../research/acp-agent-commands.md). One
 fact there is unresolved: Gemini's dedicated ACP doc says `--acp` while the same
 repo's CLI cheatsheet still lists `--experimental-acp`; the table uses
 `--acp`.
 
-`load_acp_config` (`app.py`) validates the whole object and **fails
-closed to `{}`** — turning the feature off, never raising — on any violation:
+`load_acp_configs` (`app.py`) validates each entry on its own and returns the
+valid profiles; `load_acp_config` is a compatibility wrapper returning the first
+profile or `{}`. It never raises: an unset, unreadable, or malformed file yields
+`[]`. An invalid entry is dropped individually, so one typo cannot disable the
+other profiles. Duplicate names keep the first entry, and an entry whose name
+equals an `ai.json` server name is dropped so the API profile keeps it (such a
+name would be a dead picker entry, because `ai_chat` resolves the OpenAI profile
+first). Per-entry rules:
 
 - `name` must be a non-empty, non-whitespace string of at most 60 characters.
 - `agent`, when set, must name a key in `ACP_KNOWN_AGENTS` and must not be
   combined with `command`. The selected agent's executable must also be present
-  on `PATH`, or the file is treated as unconfigured (`{}`), so an uninstalled
-  agent never yields a picker entry that always errors. The executable is
-  located with `shutil.which` (`_acp_agent_command`, `app.py`), a
-  read-only name lookup that runs nothing.
+  on `PATH`, or the entry is dropped, so an uninstalled agent never yields a
+  picker entry that always errors. The executable is located with
+  `shutil.which` (`_acp_agent_command`, `app.py`), a read-only name lookup that
+  runs nothing.
 - `command`, when used instead of `agent`, must be a non-empty, non-whitespace
   string of at most 300 characters.
 - `args` must be a list of at most 32 strings, each at most 1000 characters.
 - `cwd` must be a string; `env` a map of string to string; `default` a
   boolean.
+- `model`, when present, must be a string of at most 200 characters
+  (`ACP_MAX_MODEL_LEN`, `app.py`).
 - `timeout`, when present, must be a finite positive number. `true`/`false`
   are rejected as a timeout, and `NaN`/`Infinity` are rejected.
-- `name` must not equal the name of an `ai.json` profile. A collision would
-  make a dead picker entry (`ai_chat` resolves the OpenAI profile first), so
-  it also fails closed.
+
+**Environment inheritance.** The agent inherits the server's full environment,
+with the profile's `env` overlaid (the profile wins). The SDK's spawn transport
+previously trimmed the child environment to `HOME`, `LOGNAME`, `PATH`, `SHELL`,
+`TERM`, and `USER`, which silently dropped agent credentials and XDG paths;
+`acp_client.run_turn` now merges the full environment before spawning
+(`acp_client.py`).
+
+**Model negotiation.** A profile's `model` is applied after `session/new`
+through the session's model config option -- the option whose `category` is
+`"model"`, else the option with id `"model"` -- with
+`session/set_config_option` (`_model_option`, `_drive`, `acp_client.py`). If the
+agent exposes no model option the turn ends with the in-band error `"ACP agent
+does not expose a model option"`; if the agent rejects the value it ends with
+`"ACP agent rejected the configured model"`. If the agent acknowledges the call
+but reports a different current model, the turn ends with
+`"ACP agent did not apply the configured model"`. The agent chooses its own model
+ids: verified against `opencode acp`, whose values look like
+`ollama/qwen3.8:latest`.
 
 Because `command` is argv[0] with no shell, a wrapper executable belongs in
 `command` and the agent in `args`; a single string such as
 `"systemd-run --scope opencode acp"` silently fails. The file is re-read on
 every request, so an edit takes effect on the next send with no restart.
 
-Four fields reach the browser: `name`, the fixed label `"ACP"` as `model`, the
-allowlist key `agent` (possibly `""` when the profile uses `command`), and
-`default` (`_public_acp_config`, `app.py`). `command`, `args`, and `env`
-stay server-side. The always-present `acpAgents` array in `GET /api/ai/config`
-reports which known agents the host can launch, with an adapter hint when a
-wrapper CLI is installed but its ACP adapter is missing (`_detect_acp_agents`,
-`app.py`). The full trust boundary — the agent runs as the server user
-with filesystem access and is not constrained by `safe_path` — is in
+Four fields per profile reach the browser: `name`, `model` (the configured model
+or the fallback label `"ACP"`), the allowlist key `agent` (possibly `""` when
+the profile uses `command`), and `default` (`_public_acp_configs`, `app.py`).
+`command`, `args`, `env`, `cwd`, and `timeout` stay server-side.
+`GET /api/ai/config` returns every profile in an `acps` array and keeps `acp` as
+the first profile (or `null`) for older clients. The `default` flag is computed from
+the resolved default provider, not from the raw file flag, so a default chosen
+in Settings → AI wins without the server rewriting `config/acp.json`
+(`_resolve_default_provider`, `app.py`):
+
+1. a stored `ai.json` `default` that names a saved server or an ACP profile;
+2. otherwise the first ACP profile flagged `default: true`;
+3. otherwise `""`, and the frontend falls back to the first entry.
+
+`POST /api/ai/config` accepts a `default` naming an ACP profile, so "Make
+default" in Settings → AI always takes effect. It rejects a posted server whose
+name equals an ACP profile name with 400, because routing would be ambiguous,
+and it still never creates, edits, or deletes `config/acp.json`.
+
+The always-present `acpAgents` array in `GET /api/ai/config` reports which known
+agents the host can launch, with an adapter hint when a wrapper CLI is installed
+but its ACP adapter is missing (`_detect_acp_agents`, `app.py`). The full trust
+boundary — the agent runs as the server user with filesystem access and is not
+constrained by `safe_path` — is in
 [`../architecture/ai-assistant.md`](../architecture/ai-assistant.md#acp-providers).
 
 ## Browser storage

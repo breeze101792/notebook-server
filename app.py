@@ -2085,7 +2085,7 @@ AI_FILE = os.path.join(CONFIG_DIR, "ai.json")
 # ACP profiles (Agent Client Protocol agents spawned as subprocesses) live in
 # their own hand-edited file -- deliberately NOT written through POST
 # /api/ai/config, because a config blob any authed client can POST must never
-# be able to choose a command to execute. See load_acp_config().
+# be able to choose a command to execute. See load_acp_configs().
 ACP_FILE = os.path.join(CONFIG_DIR, "acp.json")
 
 # Bounds on config/acp.json fields. The file is server-local and trusted, but
@@ -2095,6 +2095,7 @@ ACP_MAX_NAME_LEN = 60
 ACP_MAX_COMMAND_LEN = 300
 ACP_MAX_ARGS = 32
 ACP_MAX_ARG_LEN = 1000
+ACP_MAX_MODEL_LEN = 200
 ACP_MAX_PROMPT_BYTES = 8 * 1024 * 1024
 
 # Prepended to every ACP prompt. An ACP agent brings its own system prompt, so
@@ -2145,9 +2146,10 @@ ACP_KNOWN_AGENTS = (
     {"key": "kiro", "label": "Kiro",
      "commands": ("kiro-cli",), "args": ("acp",)},
 )
-# Fixed display label for the provider picker, which renders "<name> · <model>";
-# an ACP profile has no model, so it gets this type tag instead. Kept in one
-# place so the server's label and the browser's fallback can't drift.
+# Fallback display label for the provider picker, which renders
+# "<name> · <model>". A profile without a configured model gets this type tag
+# instead. Kept in one place so the server's label and the browser's fallback
+# can't drift.
 ACP_LABEL = "ACP"
 
 # Caps for the AI fetch tool so a single call can't balloon memory or hang
@@ -2221,6 +2223,20 @@ def load_ai_config():
     return data if isinstance(data, dict) else {}
 
 
+def _saved_server_names(data):
+    """Valid names of the saved ai.json servers, hashing only strings.
+
+    A hand-edited file can carry a non-string name; a set comprehension over
+    those would raise TypeError and take every AI route down with it.
+    """
+    names = set()
+    for server in data.get("servers") or []:
+        if (isinstance(server, dict)
+                and isinstance(server.get("name"), str)):
+            names.add(server["name"])
+    return names
+
+
 def _acp_known_agent(key):
     """Return the allowlist entry for `key`, or None when unknown."""
     for entry in ACP_KNOWN_AGENTS:
@@ -2245,40 +2261,50 @@ def _acp_agent_command(entry):
     return None
 
 
-def load_acp_config():
-    """Read the hand-edited config/acp.json, or {} when unset or invalid.
+def _acp_profile_entries(data):
+    """Raw profile objects from config/acp.json `data`, in file order.
 
-    ACP profiles are configured only by editing this file, never through
-    POST /api/ai/config (a client-POSTable blob must not pick a command to
-    run). Because it is trusted and hand-edited, the whole object is
-    validated here: any violation turns the feature off ({}), never raises.
-    Shape:
-        {"name": str, "agent": "<known key>", "command": str, "args": [str,
-         ...], "cwd": str, "env": {str: str}, "default": bool,
-         "timeout": positive number}
+    Three shapes are accepted: the canonical {"profiles": [...]}, a bare
+    array, and the legacy single profile object. Anything else yields no
+    entries rather than raising.
+    """
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "profiles" in data:
+            profiles = data["profiles"]
+            return profiles if isinstance(profiles, list) else []
+        return [data]
+    return []
+
+
+def _validate_acp_profile(data, saved_names):
+    """Validate one config/acp.json profile; None when the entry is invalid.
+
+    Each entry is validated on its own and dropped on any violation, so one
+    typo cannot disable every other profile. `saved_names` holds the names of
+    the ai.json servers: an ACP name that collides with one would be a dead
+    picker entry (ai_chat resolves the OpenAI profile first), so that entry
+    is dropped and the API profile keeps the name.
 
     "agent" names an entry in ACP_KNOWN_AGENTS and is mutually exclusive with
     "command": the argv is then resolved from that table, so the file names an
     entry instead of carrying a command line. "command" stays as the escape
-    hatch for an agent the table does not know.
+    hatch for an agent the table does not know. "model" is optional and names
+    the agent's own model, applied after session/new.
     """
-    try:
-        with open(ACP_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return {}
     if not isinstance(data, dict):
-        return {}
+        return None
 
     name = data.get("name")
     if (not isinstance(name, str) or not name.strip()
             or len(name.strip()) > ACP_MAX_NAME_LEN):
-        return {}
+        return None
     name = name.strip()
 
     agent = data.get("agent")
     if agent is not None and not isinstance(agent, str):
-        return {}
+        return None
     agent = (agent or "").strip()
 
     command = data.get("command")
@@ -2286,51 +2312,60 @@ def load_acp_config():
         # An allowlisted agent: resolve the executable from the table. Two
         # sources for the same argv would be an ambiguity waiting to bite.
         if command not in (None, ""):
-            return {}
+            return None
         entry = _acp_known_agent(agent)
         if entry is None:
-            return {}
+            return None
         resolved = _acp_agent_command(entry)
         if resolved is None:
-            return {}
+            return None
         command = resolved
         clean_args = list(entry["args"])
     else:
         if (not isinstance(command, str) or not command.strip()
                 or len(command.strip()) > ACP_MAX_COMMAND_LEN):
-            return {}
+            return None
         command = command.strip()
         args = data.get("args", [])
         if args is None:
             args = []
         if not isinstance(args, list) or len(args) > ACP_MAX_ARGS:
-            return {}
+            return None
         clean_args = []
         for arg in args:
             if not isinstance(arg, str) or len(arg) > ACP_MAX_ARG_LEN:
-                return {}
+                return None
             clean_args.append(arg)
 
     cwd = data.get("cwd", "")
     if cwd is None:
         cwd = ""
     if not isinstance(cwd, str):
-        return {}
+        return None
 
     env = data.get("env")
     if env is not None:
         if not isinstance(env, dict):
-            return {}
+            return None
         clean_env = {}
         for key, value in env.items():
             if not isinstance(key, str) or not isinstance(value, str):
-                return {}
+                return None
             clean_env[key] = value
         env = clean_env
 
+    model = data.get("model")
+    if model is None:
+        model = ""
+    if not isinstance(model, str):
+        return None
+    model = model.strip()
+    if len(model) > ACP_MAX_MODEL_LEN:
+        return None
+
     default = data.get("default", False)
     if not isinstance(default, bool):
-        return {}
+        return None
 
     timeout = data.get("timeout")
     if timeout is not None:
@@ -2339,18 +2374,56 @@ def load_acp_config():
         # math.isfinite is False for both, which "<= 0" alone would let pass.
         if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                 or not math.isfinite(timeout) or timeout <= 0):
-            return {}
+            return None
 
-    # A name that collides with an ai.json profile would make this a dead
-    # picker entry: ai_chat resolves the OpenAI profile first, so the ACP
-    # branch could never run. Fail closed rather than expose a provider that
-    # silently does something else.
-    if _saved_server(name) is not None:
-        return {}
+    if name in saved_names:
+        return None
 
     return {"name": name, "agent": agent, "command": command,
-            "args": clean_args, "cwd": cwd, "env": env, "default": default,
-            "timeout": timeout}
+            "args": clean_args, "cwd": cwd, "env": env, "model": model,
+            "default": default, "timeout": timeout}
+
+
+def load_acp_configs():
+    """Read the hand-edited config/acp.json and return its valid profiles.
+
+    ACP profiles are configured only by editing this file, never through
+    POST /api/ai/config (a client-POSTable blob must not pick a command to
+    run). Invalid entries are dropped individually so a typo in one profile
+    cannot disable the others; duplicate names keep the first entry. The file
+    is read once, and the ai.json server-name set once, so validation of N
+    profiles does not re-read the config per entry. Never raises: an unset,
+    unreadable or malformed file yields [].
+    """
+    try:
+        with open(ACP_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    saved_names = _saved_server_names(load_ai_config())
+    profiles = []
+    seen = set()
+    for raw in _acp_profile_entries(data):
+        profile = _validate_acp_profile(raw, saved_names)
+        if profile is None or profile["name"] in seen:
+            continue
+        seen.add(profile["name"])
+        profiles.append(profile)
+    return profiles
+
+
+def load_acp_config():
+    """First valid ACP profile, or {} when none (compatibility wrapper)."""
+    profiles = load_acp_configs()
+    return profiles[0] if profiles else {}
+
+
+def _acp_profile(name):
+    """Return the valid ACP profile called `name`, or None when unconfigured."""
+    for profile in load_acp_configs():
+        if profile["name"] == name:
+            return profile
+    return None
 
 
 def save_ai_config(data):
@@ -2438,22 +2511,50 @@ def _detect_acp_agents():
     return found
 
 
-def _public_acp_config():
-    """Browser-safe view of the ACP profile, or None when unconfigured.
+def _public_acp_configs(resolved_default):
+    """Browser-safe view of every ACP profile, in file order.
 
-    Only the name, a fixed type label, the default flag, and the allowlist key
-    are exposed. command / args / env stay server-side: the browser never needs
-    them and must not be able to read a command line. The key is not a secret --
-    it names an entry in ACP_KNOWN_AGENTS -- and the UI needs it to show which
-    agent is selected. The label exists only so the provider picker (which
-    shows "name · model") has a non-empty suffix.
+    Only the name, the model label, the allowlist key and the resolved
+    default flag are exposed. command / args / env / cwd / timeout stay
+    server-side: the browser never needs them and must not be able to read a
+    command line. The key is not a secret -- it names an entry in
+    ACP_KNOWN_AGENTS -- and the UI needs it to show which agent is selected.
+    A profile without a configured model carries the fixed ACP_LABEL so the
+    picker (which shows "name · model") always has a non-empty suffix.
+
+    `default` is computed from the resolved provider name, not from the raw
+    file flag, so a default chosen in the settings UI wins without the server
+    ever rewriting config/acp.json. `hasModel` distinguishes a configured
+    model from the ACP_LABEL fallback, so the settings panel does not present
+    the fallback as a real model id.
     """
-    cfg = load_acp_config()
-    if not cfg:
-        return None
-    return {"name": cfg["name"], "model": ACP_LABEL,
-            "agent": cfg.get("agent", ""),
-            "default": bool(cfg.get("default"))}
+    return [{"name": profile["name"],
+             "model": profile["model"] or ACP_LABEL,
+             "hasModel": bool(profile["model"]),
+             "agent": profile.get("agent", ""),
+             "default": profile["name"] == resolved_default}
+            for profile in load_acp_configs()]
+
+
+def _resolve_default_provider(data):
+    """Name of the provider the UI should select by default.
+
+    An ai.json "default" wins when it names a saved server or an ACP profile,
+    so "Make default" in the settings UI always takes effect. Otherwise the
+    first ACP profile flagged default:true keeps the legacy behaviour, and ""
+    lets the frontend fall back to the first entry.
+    """
+    stored = data.get("default", "")
+    server_names = _saved_server_names(data)
+    profiles = load_acp_configs()
+    if (isinstance(stored, str) and stored
+            and (stored in server_names
+                 or any(p["name"] == stored for p in profiles))):
+        return stored
+    for profile in profiles:
+        if profile["default"]:
+            return profile["name"]
+    return ""
 
 
 def _public_ai_config():
@@ -2461,6 +2562,8 @@ def _public_ai_config():
 
     The stored api_key is NEVER echoed back -- the settings UI re-sends
     replaceSecret to keep it, so a stolen config response can't be replayed.
+    "acp" is the first ACP profile, kept for older clients; "acps" is the
+    full list.
     """
     data = load_ai_config()
     servers = []
@@ -2479,10 +2582,13 @@ def _public_ai_config():
     # kept server-side so the browser never needs to know the LAN address.
     custom = data.get("custom_prompt")
     searx = data.get("searxng_url")
-    return {"servers": servers, "default": data.get("default", ""),
+    default = _resolve_default_provider(data)
+    acps = _public_acp_configs(default)
+    return {"servers": servers, "default": default,
             "customPrompt": custom if isinstance(custom, str) else "",
             "searxngUrl": searx if isinstance(searx, str) else "",
-            "acp": _public_acp_config(),
+            "acp": acps[0] if acps else None,
+            "acps": acps,
             "acpAgents": _detect_acp_agents()}
 
 
@@ -2537,6 +2643,9 @@ def ai_config_post():
     preserved when the field is omitted (older clients). searxngUrl is the
     optional SearXNG instance the search tool queries; it is preserved when
     omitted and cleared when sent as "".
+    `default` may name a saved server or an ACP profile, and a server name
+    that collides with an ACP profile is rejected so routing stays
+    unambiguous. config/acp.json itself is never written here.
     """
     data, error = expect_json("servers")
     if error:
@@ -2568,6 +2677,10 @@ def ai_config_post():
     if len(searxng_url) > 300:
         return err("searxngUrl is longer than 300 chars", 400)
     searxng_url = searxng_url.rstrip("/")
+    # A posted server that reuses an ACP profile's name would make routing
+    # ambiguous; the file stays hand-edited, so reject the save instead of
+    # creating the collision.
+    acp_names = {p["name"] for p in load_acp_configs()}
     cleaned = []
     seen = set()
     for i, raw in enumerate(servers_in):
@@ -2575,12 +2688,14 @@ def ai_config_post():
             clean = _sanitize_server(raw, i)
         except ValueError as exc:
             return err(str(exc), 400)
+        if clean["name"] in acp_names:
+            return err("servers[%d].name collides with an ACP profile" % i, 400)
         if any(s["name"] == clean["name"] for s in cleaned):
             return err("duplicate server name: %s" % clean["name"], 400)
         seen.add(clean["name"])
         cleaned.append(clean)
-    if default and default not in seen:
-        return err("default is not one of the server names", 400)
+    if default and default not in seen and default not in acp_names:
+        return err("default is not a saved server or ACP profile", 400)
     try:
         save_ai_config({"servers": cleaned, "default": default,
                         "custom_prompt": custom_prompt,
@@ -2786,13 +2901,14 @@ def _acp_chat_response(acp, data):
     """Stream one ACP turn as SSE: one agent process per request.
 
     The ACP profile lives in config/acp.json (never in the ai.json server
-    list), so this branch is reached when the POSTed server name matches the
+    list), so this branch is reached when the POSTed server name matches an
     ACP profile. Message validation is shared with the OpenAI path; system
     messages are then dropped (the agent has its own prompt) and image parts
     are rejected (no vision over ACP in v1). The surviving transcript is
-    flattened to one prompt string. Each SSE event mirrors the OpenAI relay's
-    framing so static/js/api.js parses it unchanged: text rides the OpenAI
-    delta shape, done is `data: [DONE]`, and a failure is the same
+    flattened to one prompt string. The profile's configured model, when set,
+    is applied by acp_client after session/new. Each SSE event mirrors the
+    OpenAI relay's framing so static/js/api.js parses it unchanged: text rides
+    the OpenAI delta shape, done is `data: [DONE]`, and a failure is the same
     `event: error` payload. The ACP client module is imported lazily so a
     missing agent-client-protocol package disables only ACP, never the server.
     """
@@ -2844,12 +2960,13 @@ def _acp_chat_response(acp, data):
     # so a relative-path tool call resolves against that notebook by default.
     cwd = acp.get("cwd") or root
     env = acp.get("env")
+    model = acp.get("model") or None
     timeout = acp.get("timeout")
 
     def pump():
         try:
             for event in acp_client.run_turn(
-                    command, args=args, cwd=cwd, env=env,
+                    command, args=args, cwd=cwd, env=env, model=model,
                     prompt=prompt, timeout=timeout, keepalive=True):
                 etype = event.get("type")
                 if etype == "text":
@@ -2904,7 +3021,7 @@ def ai_chat():
     IS the upstream body).
 
     The same route serves ACP profiles (config/acp.json): if the name is not
-    an OpenAI server but matches the ACP profile, the turn is driven through
+    an OpenAI server but matches an ACP profile, the turn is driven through
     acp_client and streamed in the same SSE envelope.
     """
     data = request.get_json(silent=True)
@@ -2912,9 +3029,9 @@ def ai_chat():
         data = {}
     stored = _saved_server(data.get("server", ""))
     if stored is None:
-        acp = load_acp_config()
-        if acp and acp.get("name") == data.get("server", ""):
-            return _acp_chat_response(acp, data)
+        profile = _acp_profile(data.get("server", ""))
+        if profile is not None:
+            return _acp_chat_response(profile, data)
         return err("Unknown or missing server", 400)
     url = _chat_url(stored.get("base_url", ""))
     if not url:

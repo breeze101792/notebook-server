@@ -2739,22 +2739,24 @@
       const cfg = await NB.api.aiGetConfig();
       servers = (cfg && cfg.servers) || [];
       // ACP profiles live in config/acp.json, not the ai.json server list, so
-      // the backend exposes one under "acp" for the picker only. Only its
-      // name and a type label reach the browser; command/args stay server-side.
-      if (cfg && cfg.acp && cfg.acp.name) {
+      // the backend exposes them separately for the picker only. Only each
+      // profile's name and model label reach the browser; command/args stay
+      // server-side. `acp` is the legacy single profile an older server sends.
+      const acps = (cfg && cfg.acps) ||
+        (cfg && cfg.acp ? [cfg.acp] : []);
+      for (const p of acps) {
+        if (!p || !p.name) continue;
         servers = servers.concat([{
-          name: cfg.acp.name,
+          name: p.name,
           baseUrl: "",
-          model: cfg.acp.model || "ACP",
+          model: p.model || "ACP",
           acp: true,
         }]);
       }
-      currentServer = (cfg && cfg.default) ||
+      // The server resolves the default already, including an ACP profile.
+      const wanted = cfg && cfg.default;
+      currentServer = servers.some(s => s.name === wanted) ? wanted :
         (servers.length ? servers[0].name : "");
-      // An ACP profile can nominate itself as the startup pick.
-      if (cfg && cfg.acp && cfg.acp.default && cfg.acp.name) {
-        currentServer = cfg.acp.name;
-      }
       globalCustomPrompt =
         cfg && typeof cfg.customPrompt === "string" ? cfg.customPrompt : "";
     } catch (e) {

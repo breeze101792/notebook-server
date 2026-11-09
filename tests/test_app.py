@@ -3272,7 +3272,7 @@ class TestAiConfig(BaseTest):
         expected_agents = [{"key": e["key"], "label": e["label"],
                             "available": False} for e in nb.ACP_KNOWN_AGENTS]
         self.assertEqual(data, {"servers": [], "default": "", "customPrompt": "",
-                                "searxngUrl": "", "acp": None,
+                                "searxngUrl": "", "acp": None, "acps": [],
                                 "acpAgents": expected_agents})
         # No file is created by a read.
         self.assertFalse(os.path.isfile(nb.AI_FILE))
@@ -3758,16 +3758,33 @@ class TestAcpConfig(BaseTest):
         with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
             json.dump(obj, f)
 
+    def _write_ai(self, obj):
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+
+    def test_non_string_ai_server_name_does_not_break_config(self):
+        # A hand-edited ai.json can carry a non-string name. The ACP loader
+        # hashes server names, so that must not raise and 500 every AI route.
+        self._write_ai({"servers": [{"name": ["not", "a", "string"],
+                                     "base_url": "http://x"}],
+                        "default": ""})
+        self._write_acp({"name": "ok", "command": "opencode"})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([p["name"] for p in data["acps"]], ["ok"])
+
     def test_valid_file_exposed_masked(self):
         self._write_acp({"name": "  opencode  ", "command": "opencode",
                          "args": ["acp"], "default": True, "timeout": 30})
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
+                                       "hasModel": False,
                                        "agent": "", "default": True})
         # Only name/model/agent/default reach the browser; the command line and
         # its cwd/env/timeout stay server-side.
-        self.assertEqual(set(data["acp"]), {"name", "model", "agent", "default"})
+        self.assertEqual(set(data["acp"]),
+                         {"name", "model", "hasModel", "agent", "default"})
         self.assertNotIn("command", data["acp"])
         self.assertNotIn("args", data["acp"])
 
@@ -3776,6 +3793,7 @@ class TestAcpConfig(BaseTest):
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
+                                       "hasModel": False,
                                        "agent": "", "default": False})
 
     def test_missing_file_is_none(self):
@@ -3867,6 +3885,7 @@ class TestAcpConfig(BaseTest):
                          "args": ["acp"]})
         code, data = self.jget("/api/ai/config")
         self.assertEqual(data["acp"], {"name": "other", "model": "ACP",
+                                       "hasModel": False,
                                        "agent": "", "default": False})
         # ...and removing the colliding profile re-enables the entry.
         self._write_acp({"name": "shared", "command": "opencode",
@@ -3874,7 +3893,177 @@ class TestAcpConfig(BaseTest):
         self.post("/api/ai/config", {"servers": [], "default": ""})
         code, data = self.jget("/api/ai/config")
         self.assertEqual(data["acp"], {"name": "shared", "model": "ACP",
+                                       "hasModel": False,
                                        "agent": "", "default": False})
+
+    # --- multiple profiles (config/acp.json shapes) -----------------------
+    def test_all_config_shapes_load(self):
+        # A lone legacy object, the canonical {"profiles": [...]} shape and a
+        # bare array all name the same profile list, in file order.
+        self._write_acp({"name": "legacy", "command": "echo"})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([p["name"] for p in data["acps"]], ["legacy"])
+        self.assertEqual(data["acp"], data["acps"][0])
+
+        two = [{"name": "one", "command": "echo"},
+               {"name": "two", "command": "echo"}]
+        for shape, payload in (("profiles", {"profiles": two}),
+                               ("bare", two)):
+            with self.subTest(shape=shape):
+                self._write_acp(payload)
+                code, data = self.jget("/api/ai/config")
+                self.assertEqual(code, 200)
+                self.assertEqual([p["name"] for p in data["acps"]],
+                                 ["one", "two"])
+                self.assertEqual(data["acp"], data["acps"][0])
+
+    def test_one_invalid_entry_is_dropped_not_the_rest(self):
+        # Validation is per entry: a typo in one profile must not disable its
+        # valid siblings.
+        self._write_acp([
+            {"name": "good", "command": "echo"},
+            {"name": 123, "command": "echo"},        # bad name
+            {"name": "", "command": "echo"},         # empty name
+            {"name": "also-good", "command": "echo"},
+        ])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([p["name"] for p in data["acps"]],
+                         ["good", "also-good"])
+
+    def test_duplicate_names_keep_the_first(self):
+        self._write_acp([
+            {"name": "dup", "command": "first"},
+            {"name": "dup", "command": "second"},
+        ])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(data["acps"]), 1)
+        self.assertEqual(data["acps"][0]["name"], "dup")
+        # The surviving profile really is the first entry.
+        self.assertEqual(nb.load_acp_config()["command"], "first")
+
+    def test_name_collision_drops_only_that_profile(self):
+        # A profile sharing an ai.json server name is a dead picker entry, so
+        # it is dropped; a non-colliding sibling survives.
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "shared", "baseUrl": "http://x", "apiKey": "k"}],
+            "default": "shared"})
+        self.assertEqual(r.status_code, 200)
+        self._write_acp([
+            {"name": "shared", "command": "echo"},
+            {"name": "free", "command": "echo"},
+        ])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([p["name"] for p in data["acps"]], ["free"])
+
+    def test_model_validation(self):
+        long_ok = "m" * nb.ACP_MAX_MODEL_LEN
+        cases = (
+            # (profile, expected public model, entry survives)
+            ({"name": "p", "command": "x", "model": "  llama3  "},
+             "llama3", True),
+            ({"name": "p", "command": "x", "model": ""}, "ACP", True),
+            ({"name": "p", "command": "x"}, "ACP", True),
+            ({"name": "p", "command": "x", "model": long_ok},
+             long_ok, True),
+            ({"name": "p", "command": "x", "model": 123}, None, False),
+            ({"name": "p", "command": "x", "model": "m" * 201},
+             None, False),
+        )
+        for profile, expected, survives in cases:
+            with self.subTest(profile=profile):
+                self._write_acp(profile)
+                code, data = self.jget("/api/ai/config")
+                self.assertEqual(code, 200)
+                if survives:
+                    self.assertEqual(len(data["acps"]), 1)
+                    self.assertEqual(data["acps"][0]["model"], expected)
+                    self.assertEqual(data["acps"][0]["hasModel"],
+                                     expected != nb.ACP_LABEL)
+                else:
+                    self.assertEqual(data["acps"], [])
+                    self.assertIsNone(data["acp"])
+
+    def test_public_profile_exposes_only_safe_keys(self):
+        # command/args/env/cwd/timeout stay server-side for every profile, and
+        # the legacy "acp" key is exactly the first one.
+        self._write_acp({"profiles": [
+            {"name": "one", "command": "x", "cwd": "/tmp",
+             "env": {"A": "b"}, "timeout": 9},
+            {"name": "two", "command": "y"},
+        ]})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([p["name"] for p in data["acps"]], ["one", "two"])
+        for profile in data["acps"]:
+            self.assertEqual(set(profile),
+                             {"name", "model", "hasModel", "agent", "default"})
+            for forbidden in ("command", "args", "env", "cwd", "timeout"):
+                self.assertNotIn(forbidden, profile)
+        self.assertEqual(data["acp"], data["acps"][0])
+
+    # --- default resolution ----------------------------------------------
+    def test_default_resolution(self):
+        # (a) ai.json default names an ACP profile: it wins over the file flag.
+        self._write_ai({"servers": [], "default": "p2"})
+        self._write_acp([
+            {"name": "p1", "command": "x", "default": False},
+            {"name": "p2", "command": "x", "default": False},
+        ])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["default"], "p2")
+        self.assertEqual({p["name"]: p["default"] for p in data["acps"]},
+                         {"p1": False, "p2": True})
+
+        # (b) an empty ai.json default falls back to the first profile flagged
+        # default:true.
+        self._write_ai({"servers": [], "default": ""})
+        self._write_acp([
+            {"name": "p1", "command": "x"},
+            {"name": "p2", "command": "x", "default": True},
+        ])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["default"], "p2")
+        self.assertEqual({p["name"]: p["default"] for p in data["acps"]},
+                         {"p1": False, "p2": True})
+
+        # (c) an API server default wins even when an ACP profile is flagged.
+        self._write_ai({
+            "servers": [{"name": "api", "base_url": "http://x",
+                         "api_key": "", "model": ""}],
+            "default": "api"})
+        self._write_acp([{"name": "p1", "command": "x", "default": True}])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["default"], "api")
+        self.assertFalse(data["acps"][0]["default"])
+
+    def test_post_accepts_default_naming_an_acp_profile(self):
+        self._write_acp({"name": "p1", "command": "x"})
+        r = self.post("/api/ai/config", {"servers": [], "default": "p1"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["default"], "p1")
+        with open(nb.AI_FILE, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["default"], "p1")
+
+    def test_post_rejects_server_colliding_with_acp_profile(self):
+        self._write_acp({"name": "p1", "command": "x"})
+        r = self.post("/api/ai/config", {"servers": [{
+            "name": "p1", "baseUrl": "http://x"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("collides with an ACP profile", r.get_json()["error"])
+
+    def test_post_rejects_default_naming_nothing(self):
+        self._write_acp({"name": "p1", "command": "x"})
+        r = self.post("/api/ai/config", {"servers": [], "default": "ghost"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("default is not a saved server or ACP profile",
+                      r.get_json()["error"])
 
     # --- agent-key resolution (ACP_KNOWN_AGENTS) --------------------------
     def test_known_agent_key_resolves_command(self):
@@ -3998,7 +4187,7 @@ class TestAcpChat(BaseTest):
 
     # --- helpers --------------------------------------------------------
     def _configure_acp(self, mode="normal", timeout=15, command=None,
-                       args=None, name=None):
+                       args=None, name=None, model=None):
         if args is None:
             args = [self.STUB, "--mode", mode, "--pidfile", self._pidfile]
         cfg = {"name": name or self.SERVER,
@@ -4006,6 +4195,8 @@ class TestAcpChat(BaseTest):
                "args": args,
                "cwd": nb.DATA_DIR,
                "timeout": timeout}
+        if model is not None:
+            cfg["model"] = model
         with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f)
 
@@ -4095,6 +4286,30 @@ class TestAcpChat(BaseTest):
         self.assertIn("data: [DONE]", body)
         # No in-band error frame on the success path.
         self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_configured_model_is_negotiated_end_to_end(self):
+        # A profile's configured model reaches the agent: the SSE text carries
+        # the model the stub negotiated after session/new.
+        self._configure_acp(mode="model", model="stub-other")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"model=stub-other"}}]}',
+                      body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_configured_model_without_option_is_inband_error(self):
+        # An agent that advertises no model option must fail the turn in-band
+        # rather than silently running a different model.
+        self._configure_acp(mode="nomodel", model="stub-other")
+        r = self._chat(self._user_turn())
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("ACP agent does not expose a model option", body)
         self._assert_reaped()
 
     def test_tool_call_update_streams_a_trace_frame(self):
@@ -4395,14 +4610,15 @@ class TestAcpClient(unittest.TestCase):
 
     STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
 
-    def _run(self, mode, timeout=15, command=None, args=None, prompt="User: hi"):
+    def _run(self, mode, timeout=15, command=None, args=None, prompt="User: hi",
+             model=None, env=None):
         import acp_client
         if args is None:
             args = [self.STUB, "--mode", mode]
         return list(acp_client.run_turn(
             sys.executable if command is None else command,
-            args=args, cwd=tempfile.gettempdir(), prompt=prompt,
-            timeout=timeout))
+            args=args, cwd=tempfile.gettempdir(), env=env, model=model,
+            prompt=prompt, timeout=timeout))
 
     @staticmethod
     def _terminals(events):
@@ -4466,6 +4682,49 @@ class TestAcpClient(unittest.TestCase):
         self.assertEqual([e["text"] for e in traces],
                          ["Running a shell command"])
         self.assertEqual(self._terminals(events)[0]["type"], "done")
+
+    def test_profile_env_overlays_the_full_server_env(self):
+        # The child must inherit the whole server environment (a server-only
+        # key arrives) while the caller's per-profile env wins on a shared key.
+        ENV_SHARED_KEY = "ACP_STUB_KEY"
+        ENV_SERVER_KEY = "ACP_STUB_SERVER"
+        server_env = {ENV_SHARED_KEY: "server-level",
+                      ENV_SERVER_KEY: "server-only"}
+        with mock.patch.dict(os.environ, server_env):
+            events = self._run("env",
+                               env={ENV_SHARED_KEY: "profile-level"})
+        text = "".join(e.get("text", "") for e in events
+                       if e.get("type") == "text")
+        self.assertIn("env key=profile-level", text)
+        self.assertIn("server=server-only", text)
+        self.assertEqual(self._terminals(events)[0]["type"], "done")
+
+    def test_model_is_negotiated_and_streamed(self):
+        # A configured model is applied through the session's model config
+        # option after session/new and is what the agent then runs.
+        events = self._run("model", model="stub-other")
+        text = "".join(e.get("text", "") for e in events
+                       if e.get("type") == "text")
+        self.assertIn("model=stub-other", text)
+        self.assertEqual(self._terminals(events)[0]["type"], "done")
+
+    def test_model_without_a_model_option_is_an_inband_error(self):
+        events = self._run("nomodel", model="stub-other")
+        terminals = self._terminals(events)
+        self.assertEqual(len(terminals), 1)
+        self.assertEqual(terminals[0]["type"], "error")
+        self.assertEqual(terminals[0]["message"],
+                         "ACP agent does not expose a model option")
+
+    def test_model_rejected_by_the_agent_is_an_inband_error(self):
+        # A stale/unaccepted model id must fail the turn, never silently run
+        # a different model.
+        events = self._run("modelreject", model="stub-other")
+        terminals = self._terminals(events)
+        self.assertEqual(len(terminals), 1)
+        self.assertEqual(terminals[0]["type"], "error")
+        self.assertEqual(terminals[0]["message"],
+                         "ACP agent rejected the configured model")
 
 
 class TestSeedMigration(unittest.TestCase):
